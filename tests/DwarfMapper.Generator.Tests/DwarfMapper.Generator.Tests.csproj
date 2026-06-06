@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <!-- CA1707: test methods intentionally use underscores (Given_When_Then / Method_Scenario_Expected style) -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Verify.Xunit" />
+    <PackageReference Include="Verify.SourceGenerators" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
+    <!-- TASK5-REENABLE: generator project does not exist until Task 5. Re-enable as an Analyzer reference then.
+    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    -->
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>
