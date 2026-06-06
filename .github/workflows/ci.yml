@@ -1,0 +1,58 @@
+# NOTE: pin each `uses:` to a full commit SHA before the first release (CRA/SLSA supply-chain hardening).
+name: ci
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore DwarfMapper.NET.sln
+      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --collect:"XPlat Code Coverage"
+
+  aot-trim-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      # Fails the build on any IL2xxx (trim) or IL3xxx (AOT) warning.
+      - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r linux-x64 -p:PublishAot=true -warnaserror
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+      - run: dotnet build DwarfMapper.NET.sln -c Release
+      - uses: github/codeql-action/analyze@v3
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet tool install --global CycloneDX
+      - run: dotnet CycloneDX DwarfMapper.NET.sln -o ./sbom
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: ./sbom
