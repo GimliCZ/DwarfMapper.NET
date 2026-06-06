@@ -195,6 +195,23 @@ These v2 features are the heaviest to prove correct, so they ride behind the v1 
 
 ---
 
+## License
+
+**GNU General Public License v2.0 only** (`SPDX: GPL-2.0-only`).
+
+DwarfMapper is free and open source, and it is **strong copyleft on purpose**. You may use, study, modify, and redistribute it freely. But note what that means *for this kind of library specifically*:
+
+> DwarfMapper is a **source generator** — it emits code directly into your assembly. Under GPLv2, software you build and distribute on top of it is a derivative work and must itself be released under GPLv2, with corresponding source made available to whoever you distribute it to.
+
+In plain terms: **if you build on DwarfMapper and ship it, your project is GPLv2 too, and your users get the source.** That is the point. The library stays free, and anyone who profits from it does so in the open, where its origin is visible.
+
+Caveats, stated honestly:
+- **SaaS is not distribution.** A company running DwarfMapper inside a hosted service never ships binaries, so GPLv2 does not compel them to publish source. (Closing that loophole would require AGPL — a deliberate choice we did *not* make.)
+- **GPLv2-only**, not "v2 or later" — the version is fixed.
+- GPLv2-only is incompatible with Apache-2.0 and GPLv3, which constrains what third-party code can be pulled in later. DwarfMapper has zero dependencies, so this is a non-issue today.
+
+The full license text lives in [`LICENSE`](LICENSE). Every source file carries an SPDX header (`// SPDX-License-Identifier: GPL-2.0-only`).
+
 ## Status
 
 🏗️ **Pre-alpha — design phase.** This README is the design contract. APIs shown are the intended shape and may change as the generator is built.

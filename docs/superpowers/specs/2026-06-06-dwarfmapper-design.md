@@ -20,6 +20,7 @@ A compile-time mapper where mislinking is structurally hard, maps are round-trip
 4. **Testing toolkit — separate package + analyzer hooks.** `DwarfMapper.Testing` (fixtures, seeded property-based fuzzer, round-trip verifier, informed dumps) plus generator-emitted metadata/hooks.
 5. **Authoring model — declarative only.** Partial classes + partial methods (Mapperly mechanics) with attribute config (`[MapProperty]`, `[MapIgnore]`, `[MapWith]`, `[Flatten]`, `[RoundTrip]`). No runtime fluent config (AutoMapper-style ergonomics expressed declaratively to stay AOT-safe).
 6. **Scope — Rich documented, core built first.** README documents the full Rich surface; projection/hooks/flattening/async are explicitly v2 on the roadmap because they are heaviest to prove correct.
+7. **License — GPL-2.0-only** (`SPDX: GPL-2.0-only`), no commercial tier. Strong copyleft chosen deliberately: because DwarfMapper is a source generator that emits into the consumer's assembly, GPLv2 makes downstream distributed apps GPLv2 too — the intended "free, and profit happens in the open" stance. Known trade-offs accepted: SaaS/hosted use is not distribution so it does not trigger disclosure (AGPL was explicitly declined); GPLv2-only is incompatible with Apache-2.0/GPLv3 (non-issue given zero dependencies). LICENSE file + per-file SPDX headers required.
 
 ## Architecture
 
