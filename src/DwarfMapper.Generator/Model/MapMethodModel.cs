@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0-only
+using System;
+using DwarfMapper.Generator.Collections;
+
+namespace DwarfMapper.Generator.Model;
+
+/// <summary>A single partial mapping method to implement.</summary>
+public sealed record MapMethodModel(
+    string MethodName,
+    string Accessibility,
+    string ReturnTypeFullName,
+    string ParameterTypeFullName,
+    string ParameterName,
+    bool ParameterIsReferenceType,
+    EquatableArray<MemberMap> Members) : IEquatable<MapMethodModel>;
