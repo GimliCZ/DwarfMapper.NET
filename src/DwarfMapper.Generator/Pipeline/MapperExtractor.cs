@@ -149,11 +149,15 @@ internal static class MapperExtractor
 
     private static IEnumerable<IPropertySymbol> EnumerateProperties(ITypeSymbol type)
     {
+        var seen = new HashSet<string>(System.StringComparer.Ordinal);
         for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
         {
             foreach (var p in current.GetMembers().OfType<IPropertySymbol>())
             {
-                yield return p;
+                if (seen.Add(p.Name))
+                {
+                    yield return p;
+                }
             }
         }
     }

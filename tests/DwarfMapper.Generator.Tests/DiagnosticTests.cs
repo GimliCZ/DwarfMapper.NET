@@ -56,4 +56,54 @@ public class DiagnosticTests
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF001");
     }
+
+    [Fact]
+    public void Void_partial_method_reports_DWARF003()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class Person { public int Age { get; set; } }
+            [DwarfMapper]
+            public partial class PersonMapper
+            {
+                public partial void ToDto(Person p);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF003");
+    }
+
+    [Fact]
+    public void No_implicit_conversion_reports_DWARF005()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class Person { public string Age { get; set; } = ""; }
+            public class PersonDto { public int Age { get; set; } }
+            [DwarfMapper]
+            public partial class PersonMapper
+            {
+                public partial PersonDto ToDto(Person p);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF005");
+    }
+
+    [Fact]
+    public void Destination_without_parameterless_ctor_reports_DWARF006()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class Person { public int Age { get; set; } }
+            public class PersonDto { public PersonDto(int x) { Age = x; } public int Age { get; set; } }
+            [DwarfMapper]
+            public partial class PersonMapper
+            {
+                public partial PersonDto ToDto(Person p);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF006");
+    }
 }
