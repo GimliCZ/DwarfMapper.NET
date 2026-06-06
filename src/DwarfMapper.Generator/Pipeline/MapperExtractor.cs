@@ -130,6 +130,18 @@ internal static class MapperExtractor
             result.Add(new MemberMap(target.Name, source.Name));
         }
 
+        foreach (var readOnly in ReadOnlyProperties(targetType).OrderBy(p => p.Name, System.StringComparer.Ordinal))
+        {
+            if (ignores.Contains(readOnly.Name))
+            {
+                continue;
+            }
+            if (sources.ContainsKey(readOnly.Name))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReadOnlyDestinationMember, location, readOnly.Name));
+            }
+        }
+
         return result;
     }
 
@@ -146,6 +158,12 @@ internal static class MapperExtractor
     private static IEnumerable<IPropertySymbol> SettableProperties(ITypeSymbol type) =>
         EnumerateProperties(type).Where(p =>
             !p.IsStatic && !p.IsIndexer && p.SetMethod is { DeclaredAccessibility: Accessibility.Public });
+
+    private static IEnumerable<IPropertySymbol> ReadOnlyProperties(ITypeSymbol type) =>
+        EnumerateProperties(type).Where(p =>
+            !p.IsStatic && !p.IsIndexer
+            && p.GetMethod is { DeclaredAccessibility: Accessibility.Public }
+            && p.SetMethod is not { DeclaredAccessibility: Accessibility.Public });
 
     private static IEnumerable<IPropertySymbol> EnumerateProperties(ITypeSymbol type)
     {

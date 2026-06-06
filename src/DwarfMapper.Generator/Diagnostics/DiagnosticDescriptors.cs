@@ -36,4 +36,10 @@ public static class DiagnosticDescriptors
         "Destination type is not constructible",
         "Destination type '{0}' must have an accessible parameterless constructor",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ReadOnlyDestinationMember = new(
+        "DWARF007",
+        "Destination member is read-only",
+        "Destination member '{0}' is read-only; a matching source value cannot be assigned and would be lost (annotate the method with [MapIgnore(\"{0}\")] if intentional)",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

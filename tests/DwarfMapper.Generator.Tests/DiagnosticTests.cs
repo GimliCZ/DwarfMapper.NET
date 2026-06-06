@@ -106,4 +106,76 @@ public class DiagnosticTests
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
         Assert.Contains(diagnostics, d => d.Id == "DWARF006");
     }
+
+    [Fact]
+    public void ReadOnly_destination_with_matching_source_reports_DWARF007()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class Person { public int Age { get; set; } }
+            public class PersonDto { public int Age { get; } }   // read-only, no setter
+            [DwarfMapper]
+            public partial class PersonMapper
+            {
+                public partial PersonDto ToDto(Person p);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF007" && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Age", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ReadOnly_destination_without_matching_source_is_silent()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class Person { public int Age { get; set; } }
+            public class PersonDto { public int Age { get; set; } public int Doubled => Age * 2; } // computed, no source
+            [DwarfMapper]
+            public partial class PersonMapper
+            {
+                public partial PersonDto ToDto(Person p);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ReadOnly_destination_can_be_silenced_with_MapIgnore()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class Person { public int Age { get; set; } }
+            public class PersonDto { public int Age { get; } }
+            [DwarfMapper]
+            public partial class PersonMapper
+            {
+                [MapIgnore("Age")]
+                public partial PersonDto ToDto(Person p);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
+    }
+
+    [Fact]
+    public void InitOnly_destination_is_mapped_not_flagged()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class Person { public int Age { get; set; } }
+            public class PersonDto { public int Age { get; init; } }
+            [DwarfMapper]
+            public partial class PersonMapper
+            {
+                public partial PersonDto ToDto(Person p);
+            }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Contains("Age = p.Age", generated, System.StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+    }
 }
