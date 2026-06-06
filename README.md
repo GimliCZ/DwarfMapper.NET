@@ -148,11 +148,15 @@ DwarfMapper treats mapping as an attack surface and a correctness surface at onc
 
 ## Packages
 
+DwarfMapper is **.NET 10 only**. The one exception is the generator assembly itself (see note below).
+
 | Package | Purpose | TFM |
 |---|---|---|
-| `DwarfMapper` | Attributes + tiny abstractions. Zero dependencies. | `netstandard2.0` |
-| `DwarfMapper.Generator` | Roslyn incremental source generator + analyzers/diagnostics. | `netstandard2.0` |
+| `DwarfMapper` | Attributes + tiny abstractions. Zero dependencies. | `net10.0` |
+| `DwarfMapper.Generator` | Roslyn incremental source generator + analyzers/diagnostics. | `netstandard2.0` * |
 | `DwarfMapper.Testing` | Fixture builders, seeded property-based fuzzer, round-trip verifier, informed dumps. xUnit/NUnit theory sources. | `net10.0` |
+
+\* The generator assembly targets `netstandard2.0` because Roslyn loads analyzers/source generators *into the compiler host*, which only accepts `netstandard2.0` components. This is a hard requirement of the Roslyn toolchain, not a runtime-support choice — the code it **generates** targets .NET 10 like everything else.
 
 ---
 

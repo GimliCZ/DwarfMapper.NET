@@ -24,7 +24,7 @@ A compile-time mapper where mislinking is structurally hard, maps are round-trip
 
 ## Architecture
 
-- **`DwarfMapper`** (`netstandard2.0`) — attributes + abstractions, zero deps.
+- **`DwarfMapper`** (`net10.0`) — attributes + abstractions, zero deps. (Project is .NET 10 only.)
 - **`DwarfMapper.Generator`** (`netstandard2.0`) — Roslyn incremental generator + analyzers/diagnostics.
 - **`DwarfMapper.Testing`** (`net10.0`) — fixtures, fuzzer, round-trip, informed dumps, xUnit/NUnit theory sources.
 - Repo: `src/`, `tests/` (incl. BenchmarkDotNet), `samples/`.

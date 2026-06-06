@@ -4,7 +4,7 @@
 
 **Goal:** Stand up the repository, security/CRA-aligned build infrastructure, and a working Roslyn incremental source generator that maps flat objects via *sort → pair → prove → emit*, turning an incomplete map into a **build error**.
 
-**Architecture:** Three projects — `DwarfMapper` (runtime attributes, `netstandard2.0`, zero deps), `DwarfMapper.Generator` (`IIncrementalGenerator`, `netstandard2.0`), and test projects. The generator uses `ForAttributeWithMetadataName` and value-equatable record models (no `ISymbol`/`Location` stored in the pipeline) so incrementality is preserved. Diagnostics are emitted as errors by default. Emitted code uses object-initializer syntax (supports `init` setters) with a null guard.
+**Architecture:** Three projects — `DwarfMapper` (runtime attributes, `net10.0` — project is .NET 10 only, zero deps), `DwarfMapper.Generator` (`IIncrementalGenerator`, `netstandard2.0` — mandated by Roslyn, which only loads netstandard2.0 analyzer assemblies into the compiler host), and test projects. The generator uses `ForAttributeWithMetadataName` and value-equatable record models (no `ISymbol`/`Location` stored in the pipeline) so incrementality is preserved. Diagnostics are emitted as errors by default. Emitted code uses object-initializer syntax (supports `init` setters) with a null guard.
 
 **Tech Stack:** .NET 10 / C# latest, Roslyn (`Microsoft.CodeAnalysis.CSharp` 4.14.0), xUnit, Verify.SourceGenerators (snapshot tests), Central Package Management, GitHub Actions (build/test/analyzers-as-errors/AOT+trim gate/CodeQL/CycloneDX SBOM).
 
