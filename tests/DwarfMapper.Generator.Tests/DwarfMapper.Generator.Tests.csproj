@@ -16,11 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
-    <!-- TASK5-REENABLE: generator project does not exist until Task 5. Re-enable as an Analyzer reference then.
-    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    -->
+    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
