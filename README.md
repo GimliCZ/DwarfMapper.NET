@@ -97,6 +97,22 @@ public partial class CustomerMapper
 
 If `CustomerDto` gains a `Region` property and you don't map or ignore it, **the build fails** with a diagnostic pointing at the unmapped member.
 
+### Configuring mapping
+
+```csharp
+[DwarfMapper(CaseInsensitive = true)]      // opt-in: match 'name' to 'Name'
+public partial class CustomerMapper
+{
+    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]  // explicit rename
+    public partial CustomerDto ToDto(Customer src);
+}
+```
+
+- **Fields and properties** are both mapped (public, instance; writable on the destination, readable on the source).
+- **Matching is exact/case-sensitive by default**; set `CaseInsensitive = true` to relax it (an ambiguous match then becomes `DWARF010`).
+- **`[MapProperty(source, target)]`** maps differently-named members and suppresses the completeness error for that destination; an unknown source/target is `DWARF009`/`DWARF008`.
+- A **read-only destination** member that has a matching source is flagged (`DWARF007`) rather than silently dropped.
+
 ---
 
 ## Resilience: the headline feature
