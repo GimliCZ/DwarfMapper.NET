@@ -6,6 +6,28 @@ namespace DwarfMapper.Generator.Tests;
 public class ProjectionTests
 {
     [Fact]
+    public void Projection_duplicate_MapProperty_reports_DWARF011_and_compiles()
+    {
+        const string s = """
+            using DwarfMapper;
+            using System.Linq;
+            namespace Demo;
+            public class Person { public string A { get; set; } = ""; public string B { get; set; } = ""; }
+            public class PersonDto { public string Name { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapProperty("A", "Name")]
+                [MapProperty("B", "Name")]
+                public partial IQueryable<PersonDto> Project(IQueryable<Person> src);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF011");
+        Assert.DoesNotContain(GeneratorTestHarness.RunAndGetCompilationErrors(s), d => d.Id == "CS1912");
+    }
+
+    [Fact]
     public void Projects_flat_members_via_select()
     {
         const string s = """

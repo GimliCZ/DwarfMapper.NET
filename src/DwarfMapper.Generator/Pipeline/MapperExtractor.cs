@@ -715,10 +715,21 @@ internal static class MapperExtractor
 
         var result = new List<MemberMap>();
         var handled = new HashSet<string>(System.StringComparer.Ordinal);
+        var explicitSeen = new HashSet<string>(System.StringComparer.Ordinal);
 
         foreach (var (srcName, tgtName, use) in explicitMaps)
         {
+            if (!explicitSeen.Add(tgtName))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DuplicateMapProperty, location, tgtName));
+                continue;
+            }
             handled.Add(tgtName);
+            if (ignores.Contains(tgtName))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName));
+                continue;
+            }
             if (!writableByName.TryGetValue(tgtName, out var tgtType))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownTarget, location, tgtName));
