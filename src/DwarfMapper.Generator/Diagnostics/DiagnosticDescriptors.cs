@@ -84,4 +84,10 @@ public static class DiagnosticDescriptors
         "Conversion method not found",
         "[MapProperty(Use = ...)] method '{0}' was not found or has an incompatible signature (it must take the source member type and return the destination member type)",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor IncompleteEnumMapping = new(
+        "DWARF015",
+        "Incomplete enum mapping",
+        "Enum member '{0}' has no destination member of the same name (by-name enum mapping); add it or use EnumStrategy.ByValue",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

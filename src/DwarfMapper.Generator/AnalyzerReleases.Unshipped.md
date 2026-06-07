@@ -18,3 +18,4 @@ DWARF011 | DwarfMapper | Error | Duplicate explicit mapping
 DWARF012 | DwarfMapper | Error | Conflicting [MapIgnore] and [MapProperty]
 DWARF013 | DwarfMapper | Error | Ambiguous conversion method
 DWARF014 | DwarfMapper | Error | Conversion method not found
+DWARF015 | DwarfMapper | Error | Incomplete enum mapping
