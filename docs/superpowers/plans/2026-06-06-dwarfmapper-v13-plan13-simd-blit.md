@@ -12,7 +12,7 @@
 **The proof (sound + semantically correct).** A reinterpret is emitted only when, walking both structs' instance fields in declaration order (= layout order for sequential structs):
 1. both element types are `IsUnmanagedType`,
 2. both are **source** structs with `LayoutKind.Sequential` (explicit or the C# struct default) and equal `Pack`,
-3. same field count, and each field pair has the **same name** (so positional copy == DwarfMapper's name-based mapping) and a **layout-identical type** (same primitive `SpecialType`, or recursively the same proof; **enums of differing types are excluded** because by-name enum mapping ≠ byte copy).
+3. at least one field, same field count, and each field pair has the **same name** (so positional copy == DwarfMapper's name-based mapping) and is a **primitive of the same `SpecialType`**. **v1 is primitives-only** — a field that is itself a struct or enum disqualifies auto-blit (nested-struct recursion is a deliberate later relaxation; differing enums are excluded anyway because by-name enum mapping ≠ byte copy).
 Padding is deterministic from field types + pack, so identical ordered fields + same pack ⇒ byte-identical layout. The size guard covers the rest. **Identity (`TSrc == TDst`) is NOT a reinterpret** — that's the existing `Clone()` memmove (Plan 6).
 
 **Tech Stack:** As Plans 1–12. Uses `System.Runtime.InteropServices.MemoryMarshal`, `System.Runtime.CompilerServices.Unsafe` (in-framework on net10).
@@ -144,6 +144,24 @@ public class BlitTests
         Assert.Contains("Clone()", gen, StringComparison.Ordinal);
         Assert.DoesNotContain("MemoryMarshal.Cast<", gen, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Nested_struct_field_does_not_auto_blit_v1()
+    {
+        // v1 is primitives-only: a struct containing a nested struct field must NOT auto-blit.
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public struct Inner { public float A; }
+            public struct SrcN { public Inner I; public float X; }
+            public struct DstN { public Inner I; public float X; }
+            public class C { public SrcN[] V { get; set; } = System.Array.Empty<SrcN>(); }
+            public class D { public DstN[] V { get; set; } = System.Array.Empty<DstN>(); }
+            [DwarfMapper] public partial class M { public partial D Map(C c); }
+            """;
+        var (_, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain("MemoryMarshal.Cast<", gen, StringComparison.Ordinal);
+    }
 }
 ```
 
@@ -159,8 +177,9 @@ using Microsoft.CodeAnalysis;
 namespace DwarfMapper.Generator.Pipeline;
 
 /// <summary>
-/// Proves whether two distinct unmanaged element types are byte-identical in layout AND
-/// field-name-aligned, so a positional reinterpret equals DwarfMapper's name-based mapping.
+/// Proves whether two distinct unmanaged structs are byte-identical in layout AND field-name-aligned,
+/// so a positional reinterpret equals DwarfMapper's name-based mapping. v1: PRIMITIVES-ONLY — every
+/// field must be a primitive (no nested structs); nested-struct recursion is a later relaxation.
 /// </summary>
 internal static class BlittableProof
 {
@@ -171,32 +190,20 @@ internal static class BlittableProof
         {
             return false;
         }
-        return LayoutIdentical(src, dst);
-    }
-
-    private static bool LayoutIdentical(ITypeSymbol a, ITypeSymbol b)
-    {
-        if (SymbolEqualityComparer.Default.Equals(a, b))
-        {
-            return true;
-        }
-        if (!a.IsUnmanagedType || !b.IsUnmanagedType)
+        if (!src.IsUnmanagedType || !dst.IsUnmanagedType)
         {
             return false;
         }
-        if (IsPrimitive(a) || IsPrimitive(b))
-        {
-            return a.SpecialType == b.SpecialType && a.SpecialType != SpecialType.None;
-        }
-        if (a is not INamedTypeSymbol na || b is not INamedTypeSymbol nb)
+        // Both must be plain (non-enum) structs (excludes enums and primitives at the top level).
+        if (src is not INamedTypeSymbol ns || dst is not INamedTypeSymbol nd)
         {
             return false;
         }
-        if (na.TypeKind != TypeKind.Struct || nb.TypeKind != TypeKind.Struct)
+        if (ns.TypeKind != TypeKind.Struct || nd.TypeKind != TypeKind.Struct)
         {
-            return false; // excludes enums (TypeKind.Enum): by-name enum mapping != byte copy
+            return false;
         }
-        if (!IsSourceSequential(na, out var packA) || !IsSourceSequential(nb, out var packB))
+        if (!IsSourceSequential(ns, out var packA) || !IsSourceSequential(nd, out var packB))
         {
             return false;
         }
@@ -205,9 +212,9 @@ internal static class BlittableProof
             return false;
         }
 
-        var fa = InstanceFields(na);
-        var fb = InstanceFields(nb);
-        if (fa.Count != fb.Count)
+        var fa = InstanceFields(ns);
+        var fb = InstanceFields(nd);
+        if (fa.Count == 0 || fa.Count != fb.Count)
         {
             return false;
         }
@@ -215,9 +222,10 @@ internal static class BlittableProof
         {
             if (!string.Equals(fa[i].Name, fb[i].Name, System.StringComparison.Ordinal))
             {
-                return false;
+                return false; // positional == name-based requires same names
             }
-            if (!LayoutIdentical(fa[i].Type, fb[i].Type))
+            // PRIMITIVES-ONLY (v1): each field must be a primitive of the same special type.
+            if (!IsPrimitive(fa[i].Type) || fa[i].Type.SpecialType != fb[i].Type.SpecialType)
             {
                 return false;
             }
