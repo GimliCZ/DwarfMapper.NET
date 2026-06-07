@@ -6,6 +6,26 @@ namespace DwarfMapper.Generator.Tests;
 public class BlitTests
 {
     [Fact]
+    public void Reinterpret_unknown_member_reports_DWARF022()
+    {
+        // A typo'd [Reinterpret] target must not be silently ignored.
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class C { public int V { get; set; } }
+            public class D { public int V { get; set; } }
+            [DwarfMapper] public partial class M
+            {
+                [Reinterpret("Nope")]
+                public partial D Map(C c);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF022" && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Nope", StringComparison.Ordinal));
+    }
+
+
+    [Fact]
     public void Layout_identical_structs_blit()
     {
         const string s = """

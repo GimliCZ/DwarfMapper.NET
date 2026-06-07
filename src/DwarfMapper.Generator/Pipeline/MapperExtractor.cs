@@ -180,7 +180,7 @@ internal static class MapperExtractor
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
-        NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots, IReadOnlyList<string> reinterpretMembers)
+        NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots, List<string> reinterpretMembers)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -350,6 +350,19 @@ internal static class MapperExtractor
             if (sourceGroups.ContainsKey(readOnly.Name))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReadOnlyDestinationMember, location, readOnly.Name));
+            }
+        }
+
+        // A [Reinterpret] name that matches no writable destination member is a typo — never silently ignore it.
+        if (reinterpretMembers.Count > 0)
+        {
+            var writableNames = new HashSet<string>(WritableMembers(targetType).Select(m => m.Name), System.StringComparer.Ordinal);
+            foreach (var rm in reinterpretMembers)
+            {
+                if (!writableNames.Contains(rm))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid, location, rm));
+                }
             }
         }
 
