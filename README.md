@@ -145,6 +145,8 @@ public partial class OrderMapper
 
 **Flattening.** `[Flatten("Address")]` pulls a complex source member's sub-members up to top-level destination members of the same name (`Address.City → City`). The flattened leaf goes through the same conversion rules (converters, enums, nullable). One level deep; a null flatten root throws at runtime. Unknown root → `DWARF016`; a name flattened from two roots → `DWARF017`.
 
+**Hooks.** `[BeforeMap]` (`void Hook(TSource)`) and `[AfterMap]` (`void Hook(TTarget)` or `void Hook(TSource, TTarget)`) methods on the mapper run around the generated body — validate the source, or fill computed/`[MapIgnore]`d destination members. Hooks apply to every mapping whose types are assignable to their parameters. An invalid signature is `DWARF018`.
+
 ---
 
 ## Resilience: the headline feature
