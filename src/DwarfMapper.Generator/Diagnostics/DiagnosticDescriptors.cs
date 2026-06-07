@@ -48,4 +48,16 @@ public static class DiagnosticDescriptors
         "Ambiguous source member",
         "Destination member '{0}' matches more than one source member under case-insensitive matching; rename or use [MapProperty]",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor MapPropertyUnknownTarget = new(
+        "DWARF008",
+        "MapProperty target not found",
+        "[MapProperty] destination member '{0}' does not exist or is not writable",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor MapPropertyUnknownSource = new(
+        "DWARF009",
+        "MapProperty source not found",
+        "[MapProperty] source member '{0}' does not exist or is not readable",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

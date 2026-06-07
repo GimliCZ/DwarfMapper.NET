@@ -70,9 +70,11 @@ internal static class MapperExtractor
                 ignores.Add(i);
             }
 
+            var explicitMaps = ReadExplicitMaps(method);
+
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
-                methodLocation, diagnostics, caseInsensitive);
+                methodLocation, diagnostics, caseInsensitive, explicitMaps);
 
             methods.Add(new MapMethodModel(
                 method.Name,
@@ -95,7 +97,7 @@ internal static class MapperExtractor
     private static List<MemberMap> ResolveMembers(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
-        bool caseInsensitive)
+        bool caseInsensitive, IReadOnlyList<(string Source, string Target)> explicitMaps)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -103,20 +105,56 @@ internal static class MapperExtractor
             .GroupBy(m => m.Name, comparer)
             .ToDictionary(g => g.Key, g => g.ToList(), comparer);
 
-        // SORT: canonical, declaration-order-independent ordering by member name.
+        var writableByName = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
+        foreach (var m in WritableMembers(targetType))
+        {
+            writableByName[m.Name] = m.Type;
+        }
+
+        var result = new List<MemberMap>();
+        var handledTargets = new HashSet<string>(System.StringComparer.Ordinal);
+
+        // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
+        foreach (var (srcName, tgtName) in explicitMaps)
+        {
+            handledTargets.Add(tgtName);
+
+            if (!writableByName.TryGetValue(tgtName, out var tgtType))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownTarget, location, tgtName));
+                continue;
+            }
+
+            var srcMatch = ReadableMembers(sourceType)
+                .Where(m => System.StringComparer.Ordinal.Equals(m.Name, srcName))
+                .Select(m => (ITypeSymbol?)m.Type)
+                .FirstOrDefault();
+            if (srcMatch is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
+                continue;
+            }
+
+            if (!HasImplicitConversion(compilation, srcMatch, tgtType))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, tgtName));
+                continue;
+            }
+
+            result.Add(new MemberMap(tgtName, srcName));
+        }
+
+        // AUTO: remaining writable targets matched by name under the comparer.
         var targets = WritableMembers(targetType)
             .OrderBy(m => m.Name, System.StringComparer.Ordinal)
             .ToList();
-
-        var result = new List<MemberMap>();
         foreach (var target in targets)
         {
-            if (ignores.Contains(target.Name))
+            if (handledTargets.Contains(target.Name) || ignores.Contains(target.Name))
             {
                 continue;
             }
 
-            // PAIR: resolved name under the configured comparer.
             if (!sourceGroups.TryGetValue(target.Name, out var matches))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name));
@@ -139,9 +177,10 @@ internal static class MapperExtractor
             result.Add(new MemberMap(target.Name, source.Name));
         }
 
+        // READ-ONLY destinations with a matching source (silent-loss guard).
         foreach (var readOnly in ReadOnlyMembers(targetType).OrderBy(m => m.Name, System.StringComparer.Ordinal))
         {
-            if (ignores.Contains(readOnly.Name))
+            if (handledTargets.Contains(readOnly.Name) || ignores.Contains(readOnly.Name))
             {
                 continue;
             }
@@ -236,6 +275,25 @@ internal static class MapperExtractor
             .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
             .Where(s => s is not null)
             .Select(s => s!);
+
+    private static List<(string Source, string Target)> ReadExplicitMaps(ISymbol method)
+    {
+        var maps = new List<(string Source, string Target)>();
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapPropertyAttribute")
+            {
+                continue;
+            }
+            if (attr.ConstructorArguments.Length == 2
+                && attr.ConstructorArguments[0].Value is string s
+                && attr.ConstructorArguments[1].Value is string t)
+            {
+                maps.Add((s, t));
+            }
+        }
+        return maps;
+    }
 
     private static bool ReadCaseInsensitive(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
     {

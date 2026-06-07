@@ -11,4 +11,6 @@ DWARF003 | DwarfMapper | Error | Invalid mapping method signature
 DWARF005 | DwarfMapper | Error | No implicit conversion between mapped members
 DWARF006 | DwarfMapper | Error | Destination type is not constructible
 DWARF007 | DwarfMapper | Error | Destination member is read-only
+DWARF008 | DwarfMapper | Error | MapProperty target not found
+DWARF009 | DwarfMapper | Error | MapProperty source not found
 DWARF010 | DwarfMapper | Error | Ambiguous source member
