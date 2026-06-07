@@ -10,4 +10,10 @@ namespace DwarfMapper;
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperAttribute : Attribute
 {
+    /// <summary>
+    /// When <c>true</c>, source and destination member names are matched
+    /// case-insensitively (ordinal-ignore-case). Defaults to <c>false</c>
+    /// (exact, case-sensitive matching).
+    /// </summary>
+    public bool CaseInsensitive { get; set; }
 }
