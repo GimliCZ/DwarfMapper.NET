@@ -14,4 +14,6 @@ public sealed record MapMethodModel(
     bool ParameterIsReferenceType,
     EquatableArray<MemberMap> Members,
     EquatableArray<string> BeforeHooks,
-    EquatableArray<HookCall> AfterHooks) : IEquatable<MapMethodModel>;
+    EquatableArray<HookCall> AfterHooks,
+    bool IsProjection,
+    string ElementTargetTypeFullName) : IEquatable<MapMethodModel>;

@@ -22,3 +22,4 @@ DWARF015 | DwarfMapper | Error | Incomplete enum mapping
 DWARF016 | DwarfMapper | Error | Invalid flatten source
 DWARF017 | DwarfMapper | Error | Ambiguous flattened member
 DWARF018 | DwarfMapper | Error | Invalid mapping hook signature
+DWARF019 | DwarfMapper | Error | Member is not projectable

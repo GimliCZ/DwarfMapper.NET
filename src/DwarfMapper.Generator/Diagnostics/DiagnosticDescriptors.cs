@@ -108,4 +108,10 @@ public static class DiagnosticDescriptors
         "Invalid mapping hook signature",
         "Hook method '{0}' must be void; [BeforeMap] takes one parameter, [AfterMap] takes one or two",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor NotProjectable = new(
+        "DWARF019",
+        "Member is not projectable",
+        "Projection member '{0}' is not directly assignable; IQueryable projections allow only direct member assignment (map it with a runtime mapper)",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

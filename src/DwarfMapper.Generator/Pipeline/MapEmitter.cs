@@ -52,6 +52,21 @@ internal static class MapEmitter
               .Append(method.ParameterName).AppendLine("));");
         }
 
+        if (method.IsProjection)
+        {
+            sb.Append(indent).Append("    return global::System.Linq.Queryable.Select(")
+              .Append(method.ParameterName).AppendLine(", __s => new " + method.ElementTargetTypeFullName);
+            sb.Append(indent).AppendLine("    {");
+            foreach (var member in method.Members)
+            {
+                sb.Append(indent).Append("        ").Append(member.TargetName)
+                  .Append(" = __s.").Append(member.SourceName).AppendLine(",");
+            }
+            sb.Append(indent).AppendLine("    });");
+            sb.Append(indent).AppendLine("}");
+            return;
+        }
+
         foreach (var before in method.BeforeHooks)
         {
             sb.Append(indent).Append("    ").Append(before).Append('(').Append(method.ParameterName).AppendLine(");");

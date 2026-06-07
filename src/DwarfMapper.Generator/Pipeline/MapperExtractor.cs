@@ -34,7 +34,7 @@ internal static class MapperExtractor
                 classSymbol.Name));
         }
 
-        var classIgnores = ReadIgnores(classSymbol);
+        var classIgnores = ReadIgnores(classSymbol).ToList();
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
@@ -58,6 +58,36 @@ internal static class MapperExtractor
             if (method.ReturnsVoid || method.Parameters.Length != 1)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod, methodLocation, method.Name));
+                continue;
+            }
+
+            if (IsQueryable(method.ReturnType, out var projTarget)
+                && IsQueryable(method.Parameters[0].Type, out var projSource)
+                && projTarget is INamedTypeSymbol projTargetNamed)
+            {
+                if (!HasAccessibleParameterlessCtor(projTargetNamed))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoParameterlessConstructor, methodLocation, projTargetNamed.Name));
+                    continue;
+                }
+                var projIgnores = new HashSet<string>(classIgnores);
+                foreach (var i in ReadIgnores(method)) { projIgnores.Add(i); }
+                var projMembers = ResolveProjectionMembers(
+                    projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
+                    methodLocation, diagnostics, caseInsensitive, ReadExplicitMaps(method));
+
+                methods.Add(new MapMethodModel(
+                    method.Name,
+                    AccessibilityText(method.DeclaredAccessibility),
+                    method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Name,
+                    true,
+                    EquatableArray.From(projMembers),
+                    EquatableArray.From(System.Array.Empty<string>()),
+                    EquatableArray.From(System.Array.Empty<HookCall>()),
+                    true,
+                    projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
                 continue;
             }
 
@@ -124,7 +154,9 @@ internal static class MapperExtractor
                 sourceType.IsReferenceType,
                 EquatableArray.From(members),
                 EquatableArray.From(applicableBefore),
-                EquatableArray.From(applicableAfter)));
+                EquatableArray.From(applicableAfter),
+                false,
+                ""));
         }
 
         return new MapperClassModel(
@@ -655,6 +687,80 @@ internal static class MapperExtractor
             }
         }
         return false;
+    }
+
+    private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
+    {
+        element = type;
+        if (type is INamedTypeSymbol n && n.Name == "IQueryable" && n.TypeArguments.Length == 1
+            && n.ContainingNamespace?.ToDisplayString() == "System.Linq")
+        {
+            element = n.TypeArguments[0];
+            return true;
+        }
+        return false;
+    }
+
+    private static List<MemberMap> ResolveProjectionMembers(
+        ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
+        Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
+        bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps)
+    {
+        var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+        var sources = ReadableMembers(sourceType)
+            .GroupBy(m => m.Name, comparer)
+            .ToDictionary(g => g.Key, g => g.First(), comparer);
+        var writableByName = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
+        foreach (var m in WritableMembers(targetType)) { writableByName[m.Name] = m.Type; }
+
+        var result = new List<MemberMap>();
+        var handled = new HashSet<string>(System.StringComparer.Ordinal);
+
+        foreach (var (srcName, tgtName, use) in explicitMaps)
+        {
+            handled.Add(tgtName);
+            if (!writableByName.TryGetValue(tgtName, out var tgtType))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownTarget, location, tgtName));
+                continue;
+            }
+            if (use is not null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NotProjectable, location, tgtName));
+                continue;
+            }
+            var sm = ReadableMembers(sourceType)
+                .Where(m => System.StringComparer.Ordinal.Equals(m.Name, srcName))
+                .Select(m => (ITypeSymbol?)m.Type).FirstOrDefault();
+            if (sm is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
+                continue;
+            }
+            if (!HasImplicitConversion(compilation, sm, tgtType))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NotProjectable, location, tgtName));
+                continue;
+            }
+            result.Add(new MemberMap(tgtName, srcName));
+        }
+
+        foreach (var target in WritableMembers(targetType).OrderBy(m => m.Name, System.StringComparer.Ordinal))
+        {
+            if (handled.Contains(target.Name) || ignores.Contains(target.Name)) { continue; }
+            if (!sources.TryGetValue(target.Name, out var src))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name));
+                continue;
+            }
+            if (!HasImplicitConversion(compilation, src.Type, target.Type))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NotProjectable, location, target.Name));
+                continue;
+            }
+            result.Add(new MemberMap(target.Name, src.Name));
+        }
+        return result;
     }
 
     private static string AccessibilityText(Accessibility a) => a switch

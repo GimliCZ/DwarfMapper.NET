@@ -57,5 +57,6 @@ internal static class GeneratorTestHarness
             .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
             .Select(a => MetadataReference.CreateFromFile(a.Location))
             .Cast<MetadataReference>()
-            .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+            .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location))
+            .Append(MetadataReference.CreateFromFile(typeof(System.Linq.Queryable).Assembly.Location));
 }
