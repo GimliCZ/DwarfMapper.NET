@@ -29,12 +29,23 @@ internal static class EnumConverter
         var tgtEnum = tgt.TypeKind == TypeKind.Enum;
         var srcNum = IsIntegral(src);
         var tgtNum = IsIntegral(tgt);
+        var srcStr = src.SpecialType == SpecialType.System_String;
+        var tgtStr = tgt.SpecialType == SpecialType.System_String;
 
         if (srcEnum && tgtEnum)
         {
             return strategy == EnumStrategy.ByValue
                 ? AddEnumByValue(synthesized, (INamedTypeSymbol)src, (INamedTypeSymbol)tgt)
                 : AddEnumByName(synthesized, (INamedTypeSymbol)src, (INamedTypeSymbol)tgt, location, targetName, diagnostics);
+        }
+
+        if (srcEnum && tgtStr)
+        {
+            return AddEnumToString(synthesized, (INamedTypeSymbol)src);
+        }
+        if (srcStr && tgtEnum)
+        {
+            return AddStringToEnum(synthesized, (INamedTypeSymbol)tgt);
         }
 
         if (srcEnum && tgtNum)
@@ -137,5 +148,39 @@ internal static class EnumConverter
             sb.Append(char.IsLetterOrDigit(ch) ? ch : '_');
         }
         return sb.ToString();
+    }
+
+    private static string AddEnumToString(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol src)
+    {
+        var name = "__DwarfMap_EnumStr_" + Sanitize(src);
+        if (!synth.ContainsKey(name))
+        {
+            var sb = new StringBuilder();
+            sb.Append("    private static string ").Append(name).Append('(').Append(Fq(src)).Append(" v) => v switch\n    {\n");
+            foreach (var m in EnumMembers(src))
+            {
+                sb.Append("        ").Append(Fq(src)).Append('.').Append(m.Name).Append(" => \"").Append(m.Name).Append("\",\n");
+            }
+            sb.Append("        _ => v.ToString(),\n    };\n");
+            synth[name] = new SynthesizedMethod(name, sb.ToString());
+        }
+        return name;
+    }
+
+    private static string AddStringToEnum(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol tgt)
+    {
+        var name = "__DwarfMap_StrEnum_" + Sanitize(tgt);
+        if (!synth.ContainsKey(name))
+        {
+            var sb = new StringBuilder();
+            sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name).Append("(string v) => v switch\n    {\n");
+            foreach (var m in EnumMembers(tgt))
+            {
+                sb.Append("        \"").Append(m.Name).Append("\" => ").Append(Fq(tgt)).Append('.').Append(m.Name).Append(",\n");
+            }
+            sb.Append("        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),\n    };\n");
+            synth[name] = new SynthesizedMethod(name, sb.ToString());
+        }
+        return name;
     }
 }
