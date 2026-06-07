@@ -149,6 +149,8 @@ public partial class OrderMapper
 
 **Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to `Dictionary<K2,V2>`, converting **both keys and values** through the same rules as any other member (converters, nested mappers, enums, nullable). Entries are filled via the indexer, so post-conversion key collisions overwrite rather than throw.
 
+**Projection (IQueryable).** A partial method `IQueryable<TDto> Project(IQueryable<T> src)` generates `src.Select(s => new TDto { … })` — an expression tree your ORM translates to SQL. **Projection is deliberately simple:** only directly-assignable members (plus `[MapProperty]` renames and `[MapIgnore]`) are projected — no method calls, no inline nested-projection "magic" (a known antipattern). A member needing a real conversion is `DWARF019`; do that mapping with a runtime mapper instead.
+
 ---
 
 ## Resilience: the headline feature
