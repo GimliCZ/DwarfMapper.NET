@@ -12,4 +12,6 @@ public sealed record MapMethodModel(
     string ParameterTypeFullName,
     string ParameterName,
     bool ParameterIsReferenceType,
-    EquatableArray<MemberMap> Members) : IEquatable<MapMethodModel>;
+    EquatableArray<MemberMap> Members,
+    EquatableArray<string> BeforeHooks,
+    EquatableArray<HookCall> AfterHooks) : IEquatable<MapMethodModel>;

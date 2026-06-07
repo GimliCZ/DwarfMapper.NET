@@ -102,4 +102,10 @@ public static class DiagnosticDescriptors
         "Ambiguous flattened member",
         "Destination member '{0}' is flattened from more than one source member; use [MapProperty] to disambiguate",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor InvalidHook = new(
+        "DWARF018",
+        "Invalid mapping hook signature",
+        "Hook method '{0}' must be void; [BeforeMap] takes one parameter, [AfterMap] takes one or two",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

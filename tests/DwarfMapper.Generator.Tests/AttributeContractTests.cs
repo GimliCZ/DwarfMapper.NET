@@ -75,4 +75,14 @@ public class AttributeContractTests
         Assert.True(usage.AllowMultiple);
         Assert.Equal(System.AttributeTargets.Method, usage.ValidOn);
     }
+
+    [Fact]
+    public void Hook_attributes_target_methods()
+    {
+        foreach (var t in new[] { typeof(BeforeMapAttribute), typeof(AfterMapAttribute) })
+        {
+            var u = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(t, typeof(System.AttributeUsageAttribute))!;
+            Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
+        }
+    }
 }

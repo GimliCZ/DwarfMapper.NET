@@ -52,7 +52,13 @@ internal static class MapEmitter
               .Append(method.ParameterName).AppendLine("));");
         }
 
-        sb.Append(indent).Append("    return new ").AppendLine(method.ReturnTypeFullName);
+        foreach (var before in method.BeforeHooks)
+        {
+            sb.Append(indent).Append("    ").Append(before).Append('(').Append(method.ParameterName).AppendLine(");");
+        }
+
+        var hasAfter = method.AfterHooks.Count > 0;
+        sb.Append(indent).Append("    ").Append(hasAfter ? "var __dwarf_target = new " : "return new ").AppendLine(method.ReturnTypeFullName);
         sb.Append(indent).AppendLine("    {");
         foreach (var member in method.Members)
         {
@@ -82,6 +88,21 @@ internal static class MapEmitter
             sb.AppendLine(",");
         }
         sb.Append(indent).AppendLine("    };");
+
+        if (hasAfter)
+        {
+            foreach (var after in method.AfterHooks)
+            {
+                sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                if (after.TakesSource)
+                {
+                    sb.Append(method.ParameterName).Append(", ");
+                }
+                sb.Append("__dwarf_target").AppendLine(");");
+            }
+            sb.Append(indent).Append("    return __dwarf_target;").AppendLine();
+        }
+
         sb.Append(indent).AppendLine("}");
     }
 }

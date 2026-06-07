@@ -41,6 +41,7 @@ internal static class MapperExtractor
         var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
+        var (beforeHookDefs, afterHookDefs) = CollectHooks(classSymbol, diagnostics);
         var methods = new List<MapMethodModel>();
 
         foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
@@ -89,6 +90,31 @@ internal static class MapperExtractor
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                 enumStrategy, synthesized, nullStrategy, flattenRoots);
 
+            var applicableBefore = new List<string>();
+            foreach (var h in beforeHookDefs)
+            {
+                if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.ParamType))
+                {
+                    applicableBefore.Add(h.Name);
+                }
+            }
+            var applicableAfter = new List<HookCall>();
+            foreach (var h in afterHookDefs)
+            {
+                if (h.P1 is null)
+                {
+                    if (HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P0))
+                    {
+                        applicableAfter.Add(new HookCall(h.Name, false));
+                    }
+                }
+                else if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0)
+                    && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1))
+                {
+                    applicableAfter.Add(new HookCall(h.Name, true));
+                }
+            }
+
             methods.Add(new MapMethodModel(
                 method.Name,
                 AccessibilityText(method.DeclaredAccessibility),
@@ -96,7 +122,9 @@ internal static class MapperExtractor
                 sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 method.Parameters[0].Name,
                 sourceType.IsReferenceType,
-                EquatableArray.From(members)));
+                EquatableArray.From(members),
+                EquatableArray.From(applicableBefore),
+                EquatableArray.From(applicableAfter)));
         }
 
         return new MapperClassModel(
@@ -383,6 +411,55 @@ internal static class MapperExtractor
             }
         }
         return methods;
+    }
+
+    private static (List<(string Name, ITypeSymbol ParamType)> Before, List<(string Name, ITypeSymbol P0, ITypeSymbol? P1)> After)
+        CollectHooks(INamedTypeSymbol classSymbol, List<DiagnosticInfo> diagnostics)
+    {
+        var before = new List<(string Name, ITypeSymbol ParamType)>();
+        var after = new List<(string Name, ITypeSymbol P0, ITypeSymbol? P1)>();
+        foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
+        {
+            var isBefore = m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.BeforeMapAttribute");
+            var isAfter = m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.AfterMapAttribute");
+            if (!isBefore && !isAfter)
+            {
+                continue;
+            }
+            var loc = LocationInfo.From(m.Locations.FirstOrDefault() ?? Location.None);
+            if (!m.ReturnsVoid)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidHook, loc, m.Name));
+                continue;
+            }
+            if (isBefore)
+            {
+                if (m.Parameters.Length != 1)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidHook, loc, m.Name));
+                }
+                else
+                {
+                    before.Add((m.Name, m.Parameters[0].Type));
+                }
+            }
+            if (isAfter)
+            {
+                if (m.Parameters.Length == 1)
+                {
+                    after.Add((m.Name, m.Parameters[0].Type, null));
+                }
+                else if (m.Parameters.Length == 2)
+                {
+                    after.Add((m.Name, m.Parameters[0].Type, m.Parameters[1].Type));
+                }
+                else
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidHook, loc, m.Name));
+                }
+            }
+        }
+        return (before, after);
     }
 
     private static bool HasImplicitConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target)
