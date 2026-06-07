@@ -159,13 +159,17 @@ internal static class MapperExtractor
                 ""));
         }
 
+        // CollectRoundTrips must be called before capturing diagnostics so that DWARF020/021 are included.
+        var roundTrips = CollectRoundTrips(classSymbol, ctx.SemanticModel.Compilation, diagnostics);
+
         return new MapperClassModel(
             classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
             classSymbol.Name,
             AccessibilityText(classSymbol.DeclaredAccessibility),
             EquatableArray.From(methods),
             EquatableArray.From(diagnostics),
-            EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, System.StringComparer.Ordinal)));
+            EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, System.StringComparer.Ordinal)),
+            EquatableArray.From(roundTrips));
     }
 
     private static List<MemberMap> ResolveMembers(
@@ -784,4 +788,51 @@ internal static class MapperExtractor
         Accessibility.Private => "private",
         _ => "public",
     };
+
+    private static List<RoundTripPair> CollectRoundTrips(INamedTypeSymbol classSymbol, Compilation compilation, List<DiagnosticInfo> diagnostics)
+    {
+        var pairs = new List<RoundTripPair>();
+        // Only emit a verifier when DwarfMapper.Testing is referenced — never force the test package into production.
+        if (compilation.GetTypeByMetadataName("DwarfMapper.Testing.RoundTrip") is null)
+        {
+            return pairs;
+        }
+
+        var partials = classSymbol.GetMembers().OfType<IMethodSymbol>()
+            .Where(m => m.MethodKind == MethodKind.Ordinary && m.IsPartialDefinition && !m.ReturnsVoid && m.Parameters.Length == 1)
+            .ToList();
+
+        foreach (var fwd in partials)
+        {
+            if (!fwd.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.RoundTripAttribute"))
+            {
+                continue;
+            }
+            var loc = LocationInfo.From(fwd.Locations.FirstOrDefault() ?? Location.None);
+            var src = fwd.Parameters[0].Type;
+            var dto = fwd.ReturnType;
+
+            var inverses = partials.Where(m =>
+                !SymbolEqualityComparer.Default.Equals(m, fwd)
+                && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, dto)
+                && SymbolEqualityComparer.Default.Equals(m.ReturnType, src)).ToList();
+
+            if (inverses.Count == 0)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.RoundTripNoInverse, loc, fwd.Name));
+                continue;
+            }
+            if (inverses.Count > 1)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.RoundTripAmbiguousInverse, loc, fwd.Name));
+                continue;
+            }
+            pairs.Add(new RoundTripPair(
+                fwd.Name,
+                inverses[0].Name,
+                src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                dto.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        }
+        return pairs;
+    }
 }

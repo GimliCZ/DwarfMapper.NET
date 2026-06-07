@@ -114,4 +114,16 @@ public static class DiagnosticDescriptors
         "Member is not projectable",
         "Projection member '{0}' is not directly assignable; IQueryable projections allow only direct member assignment (map it with a runtime mapper)",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor RoundTripNoInverse = new(
+        "DWARF020",
+        "No inverse for [RoundTrip]",
+        "[RoundTrip] method '{0}' has no inverse mapping method (a partial method with the source/destination types swapped)",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor RoundTripAmbiguousInverse = new(
+        "DWARF021",
+        "Ambiguous inverse for [RoundTrip]",
+        "[RoundTrip] method '{0}' has more than one candidate inverse mapping method",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

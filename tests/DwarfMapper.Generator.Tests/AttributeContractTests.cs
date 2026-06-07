@@ -85,4 +85,12 @@ public class AttributeContractTests
             Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
         }
     }
+
+    [Fact]
+    public void RoundTripAttribute_targets_methods()
+    {
+        var u = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
+            typeof(RoundTripAttribute), typeof(System.AttributeUsageAttribute))!;
+        Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
+    }
 }

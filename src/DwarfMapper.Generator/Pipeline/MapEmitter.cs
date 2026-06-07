@@ -34,6 +34,15 @@ internal static class MapEmitter
             sb.Append(synth.Code);
         }
 
+        foreach (var rt in model.RoundTrips)
+        {
+            sb.AppendLine();
+            sb.Append("    public void VerifyRoundTrip_").Append(rt.ForwardName).AppendLine("(int seed = 12345, int iterations = 100)");
+            sb.Append("        => global::DwarfMapper.Testing.RoundTrip.Verify<")
+              .Append(rt.SourceTypeFullName).Append(", ").Append(rt.DtoTypeFullName).Append(">(")
+              .Append(rt.ForwardName).Append(", ").Append(rt.BackwardName).AppendLine(", seed, iterations);");
+        }
+
         sb.AppendLine("}");
         return sb.ToString();
     }
