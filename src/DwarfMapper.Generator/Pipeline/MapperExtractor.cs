@@ -333,6 +333,20 @@ internal static class MapperExtractor
             return false;
         }
 
+        if (DictionaryConverter.TryResolve(srcType, tgtType, out var srcKey, out var srcVal, out var tgtKey, out var tgtVal, out var dictHasCount))
+        {
+            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull))
+            {
+                return false;
+            }
+            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull))
+            {
+                return false;
+            }
+            converterMethod = DictionaryConverter.Synthesize(synthesized, srcType, tgtKey, tgtVal, dictHasCount, keyConv, keyNull, valConv, valNull);
+            return true;
+        }
+
         if (CollectionConverter.TryResolve(srcType, tgtType, out var srcElem, out var tgtElem, out var collShape))
         {
             if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull))
