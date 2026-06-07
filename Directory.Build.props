@@ -20,8 +20,8 @@
     <!-- Package metadata (license is unambiguous in every artifact) -->
     <Authors>DwarfMapper contributors</Authors>
     <PackageLicenseExpression>GPL-2.0-only</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/REPLACE/DwarfMapper.NET</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/REPLACE/DwarfMapper.NET</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/GimliCZ/DwarfMapper.NET</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/GimliCZ/DwarfMapper.NET</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 </Project>
