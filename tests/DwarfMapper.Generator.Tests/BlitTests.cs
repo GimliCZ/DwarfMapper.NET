@@ -108,4 +108,44 @@ public class BlitTests
         var (_, gen) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain("MemoryMarshal.Cast<", gen, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Reinterpret_forces_blit_skipping_name_proof()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public struct SrcV { public float A; public float B; }   // names differ from target
+            public struct DstV { public float X; public float Y; }
+            public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+            public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+            [DwarfMapper] public partial class M
+            {
+                [Reinterpret("V")]
+                public partial D Map(C c);
+            }
+            """;
+        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        Assert.Contains("MemoryMarshal.Cast<", gen, StringComparison.Ordinal); // forced despite name mismatch
+    }
+
+    [Fact]
+    public void Reinterpret_on_non_array_reports_DWARF022()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class C { public int V { get; set; } }
+            public class D { public int V { get; set; } }
+            [DwarfMapper] public partial class M
+            {
+                [Reinterpret("V")]
+                public partial D Map(C c);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF022");
+    }
 }

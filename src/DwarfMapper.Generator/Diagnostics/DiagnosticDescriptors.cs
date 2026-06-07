@@ -126,4 +126,10 @@ public static class DiagnosticDescriptors
         "Ambiguous inverse for [RoundTrip]",
         "[RoundTrip] method '{0}' has more than one candidate inverse mapping method",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ReinterpretInvalid = new(
+        "DWARF022",
+        "Invalid [Reinterpret] target",
+        "[Reinterpret] member '{0}' must be an unmanaged array-to-array mapping",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

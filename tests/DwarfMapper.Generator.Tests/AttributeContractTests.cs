@@ -93,4 +93,14 @@ public class AttributeContractTests
             typeof(RoundTripAttribute), typeof(System.AttributeUsageAttribute))!;
         Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
     }
+
+    [Fact]
+    public void ReinterpretAttribute_targets_methods_allows_multiple()
+    {
+        Assert.Equal("V", new ReinterpretAttribute("V").Member);
+        var u = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
+            typeof(ReinterpretAttribute), typeof(System.AttributeUsageAttribute))!;
+        Assert.True(u.AllowMultiple);
+        Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
+    }
 }

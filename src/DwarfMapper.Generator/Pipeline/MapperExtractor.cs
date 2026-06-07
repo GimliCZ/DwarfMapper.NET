@@ -114,11 +114,12 @@ internal static class MapperExtractor
 
             var explicitMaps = ReadExplicitMaps(method);
             var flattenRoots = ReadFlattenRoots(method);
+            var reinterpretMembers = ReadReinterpretMembers(method);
 
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                enumStrategy, synthesized, nullStrategy, flattenRoots);
+                enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -179,7 +180,7 @@ internal static class MapperExtractor
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
-        NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots)
+        NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots, IReadOnlyList<string> reinterpretMembers)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -319,6 +320,20 @@ internal static class MapperExtractor
             }
 
             var source = matches[0];
+            if (reinterpretMembers.Contains(target.Name))
+            {
+                if (source.Type is IArrayTypeSymbol sa && target.Type is IArrayTypeSymbol ta
+                    && sa.ElementType.IsUnmanagedType && ta.ElementType.IsUnmanagedType)
+                {
+                    var blit = CollectionConverter.SynthesizeBlit(synthesized, source.Type, sa.ElementType, ta.ElementType);
+                    result.Add(new MemberMap(target.Name, source.Name, blit));
+                }
+                else
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid, location, target.Name));
+                }
+                continue;
+            }
             if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH))
             {
                 result.Add(new MemberMap(target.Name, source.Name, conv, nullH));
@@ -652,6 +667,21 @@ internal static class MapperExtractor
             }
         }
         return roots;
+    }
+
+    private static List<string> ReadReinterpretMembers(ISymbol method)
+    {
+        var members = new List<string>();
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() == "DwarfMapper.ReinterpretAttribute"
+                && attr.ConstructorArguments.Length == 1
+                && attr.ConstructorArguments[0].Value is string m)
+            {
+                members.Add(m);
+            }
+        }
+        return members;
     }
 
     private static EnumStrategy ReadEnumStrategy(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)

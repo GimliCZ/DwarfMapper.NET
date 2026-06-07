@@ -25,3 +25,4 @@ DWARF018 | DwarfMapper | Error | Invalid mapping hook signature
 DWARF019 | DwarfMapper | Error | Member is not projectable
 DWARF020 | DwarfMapper | Error | No inverse for [RoundTrip]
 DWARF021 | DwarfMapper | Error | Ambiguous inverse for [RoundTrip]
+DWARF022 | DwarfMapper | Error | Invalid [Reinterpret] target
