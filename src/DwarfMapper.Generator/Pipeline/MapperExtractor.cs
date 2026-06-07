@@ -11,6 +11,12 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DwarfMapper.Generator.Pipeline;
 
+internal enum NullStrategy
+{
+    Throw = 0,
+    SetDefault = 1,
+}
+
 internal static class MapperExtractor
 {
     public static MapperClassModel Extract(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
@@ -31,6 +37,7 @@ internal static class MapperExtractor
         var classIgnores = ReadIgnores(classSymbol);
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
+        var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
@@ -79,7 +86,7 @@ internal static class MapperExtractor
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                enumStrategy, synthesized);
+                enumStrategy, synthesized, nullStrategy);
 
             methods.Add(new MapMethodModel(
                 method.Name,
@@ -106,7 +113,8 @@ internal static class MapperExtractor
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-        EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized)
+        EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
+        NullStrategy nullStrategy)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -159,9 +167,9 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, location, tgtName, diagnostics, out var conv))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH))
             {
-                result.Add(new MemberMap(tgtName, srcName, conv));
+                result.Add(new MemberMap(tgtName, srcName, conv, nullH));
             }
         }
 
@@ -189,9 +197,9 @@ internal static class MapperExtractor
             }
 
             var source = matches[0];
-            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, location, target.Name, diagnostics, out var conv))
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH))
             {
-                result.Add(new MemberMap(target.Name, source.Name, conv));
+                result.Add(new MemberMap(target.Name, source.Name, conv, nullH));
             }
         }
 
@@ -216,10 +224,12 @@ internal static class MapperExtractor
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
+        NullStrategy nullStrategy,
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
-        out string? converterMethod)
+        out string? converterMethod, out Model.NullHandling nullHandling)
     {
         converterMethod = null;
+        nullHandling = Model.NullHandling.None;
 
         if (useMethod is not null)
         {
@@ -240,6 +250,12 @@ internal static class MapperExtractor
         if (HasImplicitConversion(compilation, srcType, tgtType))
         {
             return true; // direct assignment
+        }
+
+        if (IsNullableValue(srcType, out var underlying) && HasImplicitConversion(compilation, underlying, tgtType))
+        {
+            nullHandling = nullStrategy == NullStrategy.SetDefault ? Model.NullHandling.ValueOrDefault : Model.NullHandling.ThrowIfNull;
+            return true;
         }
 
         string? found = null;
@@ -305,6 +321,17 @@ internal static class MapperExtractor
     {
         var conversion = ((CSharpCompilation)compilation).ClassifyConversion(source, target);
         return conversion.IsImplicit && !conversion.IsUserDefined;
+    }
+
+    private static bool IsNullableValue(ITypeSymbol type, out ITypeSymbol underlying)
+    {
+        if (type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            underlying = named.TypeArguments[0];
+            return true;
+        }
+        underlying = type;
+        return false;
     }
 
     private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type)
@@ -424,6 +451,21 @@ internal static class MapperExtractor
             }
         }
         return EnumStrategy.ByName;
+    }
+
+    private static NullStrategy ReadNullStrategy(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "NullStrategy" && named.Value.Value is int i)
+                {
+                    return (NullStrategy)i;
+                }
+            }
+        }
+        return NullStrategy.Throw;
     }
 
     private static bool ReadCaseInsensitive(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)

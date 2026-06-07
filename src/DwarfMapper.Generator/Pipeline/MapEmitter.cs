@@ -57,14 +57,27 @@ internal static class MapEmitter
         foreach (var member in method.Members)
         {
             sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
-            if (member.ConverterMethod is null)
-            {
-                sb.Append(method.ParameterName).Append('.').Append(member.SourceName);
-            }
-            else
+            if (member.ConverterMethod is not null)
             {
                 sb.Append(member.ConverterMethod).Append('(')
                   .Append(method.ParameterName).Append('.').Append(member.SourceName).Append(')');
+            }
+            else
+            {
+                switch (member.NullHandling)
+                {
+                    case Model.NullHandling.ThrowIfNull:
+                        sb.Append(method.ParameterName).Append('.').Append(member.SourceName)
+                          .Append(" ?? throw new global::System.InvalidOperationException(\"Source member '")
+                          .Append(member.SourceName).Append("' was null\")");
+                        break;
+                    case Model.NullHandling.ValueOrDefault:
+                        sb.Append(method.ParameterName).Append('.').Append(member.SourceName).Append(".GetValueOrDefault()");
+                        break;
+                    default:
+                        sb.Append(method.ParameterName).Append('.').Append(member.SourceName);
+                        break;
+                }
             }
             sb.AppendLine(",");
         }

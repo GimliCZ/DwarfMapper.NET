@@ -2,10 +2,12 @@
 namespace DwarfMapper.Generator.Model;
 
 /// <summary>
-/// One resolved destination&lt;-source member assignment. When
-/// <see cref="ConverterMethod"/> is non-null, the source value is passed through
-/// that method (e.g. <c>Target = Convert(src.Source)</c>); otherwise it is
-/// assigned directly.
+/// One resolved destination&lt;-source member assignment. <see cref="ConverterMethod"/>,
+/// when set, transforms the value; otherwise <see cref="NullHandling"/> controls
+/// how a nullable value-type source is unwrapped.
 /// </summary>
-public sealed record MemberMap(string TargetName, string SourceName, string? ConverterMethod = null)
-    : System.IEquatable<MemberMap>;
+public sealed record MemberMap(
+    string TargetName,
+    string SourceName,
+    string? ConverterMethod = null,
+    NullHandling NullHandling = NullHandling.None) : System.IEquatable<MemberMap>;
