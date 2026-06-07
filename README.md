@@ -113,6 +113,27 @@ public partial class CustomerMapper
 - **`[MapProperty(source, target)]`** maps differently-named members and suppresses the completeness error for that destination; an unknown source/target is `DWARF009`/`DWARF008`.
 - A **read-only destination** member that has a matching source is flagged (`DWARF007`) rather than silently dropped.
 
+**Converting between types.** When a source and destination member have different types, DwarfMapper bridges them in one of two ways:
+
+```csharp
+[DwarfMapper]
+public partial class OrderMapper
+{
+    public partial OrderDto ToDto(Order o);
+    public partial AddressDto ToDto(Address a);   // nested: auto-wired by type signature
+
+    // custom scalar conversion: name a method with Use
+    [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(FormatMoney))]
+    public partial OrderDto ToDto2(Order o);
+
+    private static string FormatMoney(decimal d) => d.ToString("C");
+}
+```
+
+- **Nested objects** map automatically when you declare a mapping method for the nested type pair; it is found by signature and called (`Home = ToDto(o.Home)`).
+- **Custom conversions** use `[MapProperty(src, tgt, Use = nameof(Method))]`, where `Method` takes the source member type and returns the destination type.
+- An ambiguous auto-conversion is `DWARF013`; an invalid `Use` method is `DWARF014`. If no conversion is possible at all, you still get the completeness error `DWARF005`.
+
 ---
 
 ## Resilience: the headline feature
