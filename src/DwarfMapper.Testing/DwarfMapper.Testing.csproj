@@ -4,6 +4,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- CA5394: System.Random is intentional — seeded determinism is the feature, not crypto. -->
     <!-- CA1510: ThrowIfNull style rule; explicit pattern is fine here. -->
-    <NoWarn>$(NoWarn);CA5394;CA1510</NoWarn>
+    <!-- CA1032: RoundTripException always requires diff data; parameterless/string ctors would produce useless objects. -->
+    <NoWarn>$(NoWarn);CA5394;CA1510;CA1032</NoWarn>
   </PropertyGroup>
 </Project>
