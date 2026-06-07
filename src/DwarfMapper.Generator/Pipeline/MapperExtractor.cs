@@ -385,6 +385,12 @@ internal static class MapperExtractor
 
         if (CollectionConverter.TryResolve(srcType, tgtType, out var srcElem, out var tgtElem, out var collShape))
         {
+            if (collShape.Target == CollectionConverter.TargetKind.Array && collShape.SourceIsArray
+                && BlittableProof.CanReinterpret(srcElem, tgtElem))
+            {
+                converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
+                return true;
+            }
             if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull))
             {
                 return false; // element diagnostic already reported by the recursive call

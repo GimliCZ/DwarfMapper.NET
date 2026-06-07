@@ -128,6 +128,32 @@ internal static class CollectionConverter
         return name;
     }
 
+    /// <summary>Synthesize a reinterpret-blit array mapper (vectorized memmove with a runtime size guard).</summary>
+    public static string SynthesizeBlit(
+        Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcArrayType, ITypeSymbol srcElem, ITypeSymbol tgtElem)
+    {
+        var elem = Fq(tgtElem);
+        var srcE = Fq(srcElem);
+        var srcFq = Fq(srcArrayType);
+        var name = "__DwarfBlit_" + Hash(srcFq + "=>" + elem + "[]");
+        if (synth.ContainsKey(name))
+        {
+            return name;
+        }
+        var sb = new StringBuilder();
+        sb.Append("    private static ").Append(elem).Append("[] ").Append(name).Append('(').Append(srcFq).Append(" src)\n    {\n");
+        sb.Append("        if (src is null) return global::System.Array.Empty<").Append(elem).Append(">();\n");
+        sb.Append("        if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(srcE)
+          .Append(">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(elem).Append(">())\n");
+        sb.Append("            throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");\n");
+        sb.Append("        var __r = new ").Append(elem).Append("[src.Length];\n");
+        sb.Append("        global::System.Runtime.InteropServices.MemoryMarshal.Cast<").Append(srcE).Append(", ").Append(elem)
+          .Append(">(new global::System.ReadOnlySpan<").Append(srcE).Append(">(src)).CopyTo(__r);\n");
+        sb.Append("        return __r;\n    }\n");
+        synth[name] = new SynthesizedMethod(name, sb.ToString());
+        return name;
+    }
+
     private static string ElementExpr(string item, string? conv, NullHandling nh)
     {
         if (conv is not null)
