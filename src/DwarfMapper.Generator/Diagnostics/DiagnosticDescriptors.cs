@@ -90,4 +90,16 @@ public static class DiagnosticDescriptors
         "Incomplete enum mapping",
         "Enum member '{0}' has no destination member of the same name (by-name enum mapping); add it or use EnumStrategy.ByValue",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor FlattenRootInvalid = new(
+        "DWARF016",
+        "Invalid flatten source",
+        "[Flatten] source member '{0}' does not exist, is not readable, or has no readable sub-members",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AmbiguousFlatten = new(
+        "DWARF017",
+        "Ambiguous flattened member",
+        "Destination member '{0}' is flattened from more than one source member; use [MapProperty] to disambiguate",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

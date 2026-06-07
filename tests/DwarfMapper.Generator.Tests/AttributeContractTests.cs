@@ -65,4 +65,14 @@ public class AttributeContractTests
         Assert.Equal(NullStrategy.Throw, new DwarfMapperAttribute().NullStrategy);
         Assert.Equal(NullStrategy.SetDefault, new DwarfMapperAttribute { NullStrategy = NullStrategy.SetDefault }.NullStrategy);
     }
+
+    [Fact]
+    public void FlattenAttribute_exposes_source_and_allows_multiple()
+    {
+        Assert.Equal("Address", new FlattenAttribute("Address").SourceMember);
+        var usage = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
+            typeof(FlattenAttribute), typeof(System.AttributeUsageAttribute))!;
+        Assert.True(usage.AllowMultiple);
+        Assert.Equal(System.AttributeTargets.Method, usage.ValidOn);
+    }
 }

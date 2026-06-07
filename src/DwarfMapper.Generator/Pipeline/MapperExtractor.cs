@@ -82,11 +82,12 @@ internal static class MapperExtractor
             }
 
             var explicitMaps = ReadExplicitMaps(method);
+            var flattenRoots = ReadFlattenRoots(method);
 
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                enumStrategy, synthesized, nullStrategy);
+                enumStrategy, synthesized, nullStrategy, flattenRoots);
 
             methods.Add(new MapMethodModel(
                 method.Name,
@@ -114,7 +115,7 @@ internal static class MapperExtractor
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
-        NullStrategy nullStrategy)
+        NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -130,6 +131,28 @@ internal static class MapperExtractor
 
         var result = new List<MemberMap>();
         var handledTargets = new HashSet<string>(System.StringComparer.Ordinal);
+
+        var comparerForLeaves = comparer; // same comparer used for member matching
+        var flattenInfos = new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)>();
+        foreach (var root in flattenRoots)
+        {
+            var match = ReadableMembers(sourceType)
+                .Where(m => comparerForLeaves.Equals(m.Name, root))
+                .Select(m => ((string Name, ITypeSymbol Type)?)m)
+                .FirstOrDefault();
+            if (match is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
+                continue;
+            }
+            var leaves = ReadableMembers(match.Value.Type).ToList();
+            if (leaves.Count == 0)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
+                continue;
+            }
+            flattenInfos.Add((match.Value.Name, leaves));
+        }
 
         // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
         var explicitSeen = new HashSet<string>(System.StringComparer.Ordinal);
@@ -186,6 +209,33 @@ internal static class MapperExtractor
 
             if (!sourceGroups.TryGetValue(target.Name, out var matches))
             {
+                var flatMatches = new List<(string Root, string Leaf, ITypeSymbol LeafType)>();
+                foreach (var fi in flattenInfos)
+                {
+                    foreach (var leaf in fi.Leaves)
+                    {
+                        if (comparer.Equals(leaf.Name, target.Name))
+                        {
+                            flatMatches.Add((fi.Root, leaf.Name, leaf.Type));
+                        }
+                    }
+                }
+
+                if (flatMatches.Count > 1)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousFlatten, location, target.Name));
+                    continue;
+                }
+                if (flatMatches.Count == 1)
+                {
+                    var fm = flatMatches[0];
+                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull))
+                    {
+                        result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull));
+                    }
+                    continue;
+                }
+
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name));
                 continue;
             }
@@ -446,6 +496,21 @@ internal static class MapperExtractor
             }
         }
         return maps;
+    }
+
+    private static List<string> ReadFlattenRoots(ISymbol method)
+    {
+        var roots = new List<string>();
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() == "DwarfMapper.FlattenAttribute"
+                && attr.ConstructorArguments.Length == 1
+                && attr.ConstructorArguments[0].Value is string s)
+            {
+                roots.Add(s);
+            }
+        }
+        return roots;
     }
 
     private static EnumStrategy ReadEnumStrategy(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
