@@ -134,6 +134,11 @@ public partial class OrderMapper
 - **Custom conversions** use `[MapProperty(src, tgt, Use = nameof(Method))]`, where `Method` takes the source member type and returns the destination type.
 - An ambiguous auto-conversion is `DWARF013`; an invalid `Use` method is `DWARF014`. If no conversion is possible at all, you still get the completeness error `DWARF005`.
 
+**Enums.** Enum members map automatically:
+
+- **enum ↔ enum** by name (default) — a source member with no same-named destination member is `DWARF015`. Opt into value-based casting with `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]`.
+- **enum ↔ string** and **enum ↔ integral** are handled via generated `switch`/cast helpers (no reflection, AOT-safe).
+
 ---
 
 ## Resilience: the headline feature
