@@ -29,6 +29,7 @@ internal static class MapperExtractor
         }
 
         var classIgnores = ReadIgnores(classSymbol);
+        var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
         var methods = new List<MapMethodModel>();
 
         foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
@@ -71,7 +72,7 @@ internal static class MapperExtractor
 
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
-                methodLocation, diagnostics);
+                methodLocation, diagnostics, caseInsensitive);
 
             methods.Add(new MapMethodModel(
                 method.Name,
@@ -93,11 +94,14 @@ internal static class MapperExtractor
 
     private static List<MemberMap> ResolveMembers(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
-        Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+        Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
+        bool caseInsensitive)
     {
-        var sources = ReadableMembers(sourceType)
-            .GroupBy(m => m.Name, System.StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First(), System.StringComparer.Ordinal);
+        var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+
+        var sourceGroups = ReadableMembers(sourceType)
+            .GroupBy(m => m.Name, comparer)
+            .ToDictionary(g => g.Key, g => g.ToList(), comparer);
 
         // SORT: canonical, declaration-order-independent ordering by member name.
         var targets = WritableMembers(targetType)
@@ -112,15 +116,20 @@ internal static class MapperExtractor
                 continue;
             }
 
-            // PAIR: equal resolved name.
-            if (!sources.TryGetValue(target.Name, out var source))
+            // PAIR: resolved name under the configured comparer.
+            if (!sourceGroups.TryGetValue(target.Name, out var matches))
             {
-                // PROVE (completeness): every destination member must be accounted for.
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name));
                 continue;
             }
 
-            // PROVE (safety): an implicit, non-user-defined conversion must exist.
+            if (matches.Count > 1)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousMatch, location, target.Name));
+                continue;
+            }
+
+            var source = matches[0];
             if (!HasImplicitConversion(compilation, source.Type, target.Type))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, target.Name));
@@ -136,7 +145,7 @@ internal static class MapperExtractor
             {
                 continue;
             }
-            if (sources.ContainsKey(readOnly.Name))
+            if (sourceGroups.ContainsKey(readOnly.Name))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReadOnlyDestinationMember, location, readOnly.Name));
             }
@@ -227,6 +236,21 @@ internal static class MapperExtractor
             .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
             .Where(s => s is not null)
             .Select(s => s!);
+
+    private static bool ReadCaseInsensitive(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "CaseInsensitive" && named.Value.Value is bool b)
+                {
+                    return b;
+                }
+            }
+        }
+        return false;
+    }
 
     private static string AccessibilityText(Accessibility a) => a switch
     {

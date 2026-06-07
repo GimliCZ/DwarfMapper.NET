@@ -42,4 +42,10 @@ public static class DiagnosticDescriptors
         "Destination member is read-only",
         "Destination member '{0}' is read-only; a matching source value cannot be assigned and would be lost (annotate the method with [MapIgnore(\"{0}\")] if intentional)",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AmbiguousMatch = new(
+        "DWARF010",
+        "Ambiguous source member",
+        "Destination member '{0}' matches more than one source member under case-insensitive matching; rename or use [MapProperty]",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }
