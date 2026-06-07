@@ -23,4 +23,12 @@ public class DictionaryRuntimeTests
         Assert.Equal(1L, d.Scores["a"]);
         Assert.Equal(2L, d.Scores["b"]);
     }
+
+    [Fact]
+    public void Null_dictionary_source_maps_to_empty_not_throw()
+    {
+        var d = new DictMapper().Map(new DSrc { Scores = null! });
+        Assert.NotNull(d.Scores);
+        Assert.Empty(d.Scores);
+    }
 }

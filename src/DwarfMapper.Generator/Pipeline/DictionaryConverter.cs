@@ -45,8 +45,9 @@ internal static class DictionaryConverter
 
         var sb = new StringBuilder();
         sb.Append("    private ").Append(dictFq).Append(' ').Append(name).Append('(').Append(srcFq).Append(" src)\n    {\n");
+        // Guard before dereferencing src.Count (null source -> empty dictionary, never an NRE).
+        sb.Append("        if (src is null) return new ").Append(dictFq).Append("();\n");
         sb.Append("        var __r = new ").Append(dictFq).Append('(').Append(srcHasCount ? "src.Count" : "").Append(");\n");
-        sb.Append("        if (src is null) return __r;\n");
         sb.Append("        foreach (var __kv in src) { __r[").Append(keyExpr).Append("] = ").Append(valExpr).Append("; }\n");
         sb.Append("        return __r;\n");
         sb.Append("    }\n");
