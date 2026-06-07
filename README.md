@@ -170,6 +170,17 @@ A mapping-aware diff renderer. Instead of "two objects differ somewhere," you ge
 
 The diff knows the mapping graph, so it tells you *where the wiring broke*, not just *that values differ*.
 
+### Verifying maps today
+
+`DwarfMapper.Testing` ships the round-trip verifier you can call now:
+
+```csharp
+var m = new OrderMapper();
+RoundTrip.Verify<Order, OrderDto>(m.ToDto, m.FromDto);   // fuzzes inputs, asserts Back(Forward(x)) ≡ x
+```
+
+On a mismatch it throws with a mapping-aware dump (member path, expected vs. actual, and the replay seed). `ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The package is reflection-based and test-only — it is never AOT-published and does not affect the core library's reflection-free guarantees. (The `[RoundTrip]` attribute that *auto-emits* this test is a planned enhancement; the verifier above delivers the capability today.)
+
 ---
 
 ## Security model
