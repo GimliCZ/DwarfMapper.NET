@@ -31,6 +31,7 @@ internal static class MapperExtractor
         var classIgnores = ReadIgnores(classSymbol);
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
         var allMethods = CollectMethods(classSymbol);
+        var mapperMethods = CollectMapperMethods(classSymbol);
         var methods = new List<MapMethodModel>();
 
         foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
@@ -75,7 +76,7 @@ internal static class MapperExtractor
 
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
-                methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods);
+                methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods);
 
             methods.Add(new MapMethodModel(
                 method.Name,
@@ -99,7 +100,8 @@ internal static class MapperExtractor
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
-        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -152,7 +154,7 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, location, tgtName, diagnostics, out var conv))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, location, tgtName, diagnostics, out var conv))
             {
                 result.Add(new MemberMap(tgtName, srcName, conv));
             }
@@ -182,7 +184,7 @@ internal static class MapperExtractor
             }
 
             var source = matches[0];
-            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, location, target.Name, diagnostics, out var conv))
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, location, target.Name, diagnostics, out var conv))
             {
                 result.Add(new MemberMap(target.Name, source.Name, conv));
             }
@@ -207,6 +209,7 @@ internal static class MapperExtractor
     private static bool TryResolveConversion(
         Compilation compilation, ITypeSymbol srcType, ITypeSymbol tgtType, string? useMethod,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
         out string? converterMethod)
     {
@@ -233,6 +236,27 @@ internal static class MapperExtractor
             return true; // direct assignment
         }
 
+        string? found = null;
+        foreach (var c in autoCandidates)
+        {
+            if (HasImplicitConversion(compilation, srcType, c.ParamType)
+                && HasImplicitConversion(compilation, c.ReturnType, tgtType))
+            {
+                if (found is not null)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion, location, targetName));
+                    return false;
+                }
+                found = c.Name;
+            }
+        }
+
+        if (found is not null)
+        {
+            converterMethod = found;
+            return true;
+        }
+
         diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, targetName));
         return false;
     }
@@ -243,6 +267,20 @@ internal static class MapperExtractor
         foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
         {
             if (m.MethodKind == MethodKind.Ordinary && !m.ReturnsVoid && m.Parameters.Length == 1)
+            {
+                methods.Add((m.Name, m.Parameters[0].Type, m.ReturnType));
+            }
+        }
+        return methods;
+    }
+
+    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> CollectMapperMethods(INamedTypeSymbol classSymbol)
+    {
+        var methods = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>();
+        foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
+        {
+            if (m.MethodKind == MethodKind.Ordinary && m.IsPartialDefinition
+                && !m.ReturnsVoid && m.Parameters.Length == 1 && m.ReturnType is INamedTypeSymbol)
             {
                 methods.Add((m.Name, m.Parameters[0].Type, m.ReturnType));
             }

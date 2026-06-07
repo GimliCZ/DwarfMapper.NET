@@ -73,6 +73,12 @@ public static class DiagnosticDescriptors
         "Destination member '{0}' is both ignored via [MapIgnore] and mapped via [MapProperty]; remove one",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor AmbiguousConversion = new(
+        "DWARF013",
+        "Ambiguous conversion method",
+        "Cannot map to '{0}': more than one mapping method converts these types; disambiguate with [MapProperty(Use = ...)]",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor UseMethodInvalid = new(
         "DWARF014",
         "Conversion method not found",
