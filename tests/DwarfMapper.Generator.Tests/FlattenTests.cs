@@ -6,6 +6,27 @@ namespace DwarfMapper.Generator.Tests;
 public class FlattenTests
 {
     [Fact]
+    public void Scalar_flatten_root_reports_DWARF016()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Customer { public string Address { get; set; } = ""; }
+            public class CustomerDto { public int Length { get; set; } }
+            [DwarfMapper]
+            public partial class M
+            {
+                [Flatten("Address")]
+                public partial CustomerDto ToDto(Customer c);
+            }
+            """;
+        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
+        // A string root must NOT silently flatten string.Length.
+        Assert.Contains(diagnostics, d => d.Id == "DWARF016");
+        Assert.DoesNotContain("Length = c.Address.Length", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Flattens_nested_member_to_top_level()
     {
         const string s = """

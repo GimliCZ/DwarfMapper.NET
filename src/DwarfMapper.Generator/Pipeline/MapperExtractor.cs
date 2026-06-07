@@ -145,7 +145,15 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
                 continue;
             }
-            var leaves = ReadableMembers(match.Value.Type).ToList();
+            var rootType = match.Value.Type;
+            // Scalars (string, primitives, enums) are not flattenable roots — flattening their
+            // BCL members (e.g. string.Length) is never intended and must not happen silently.
+            if (rootType.SpecialType != SpecialType.None || rootType.TypeKind == TypeKind.Enum)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
+                continue;
+            }
+            var leaves = ReadableMembers(rootType).ToList();
             if (leaves.Count == 0)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
