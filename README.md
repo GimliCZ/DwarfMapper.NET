@@ -141,6 +141,8 @@ public partial class OrderMapper
 
 **Nullable values.** A nullable value-type source mapped to a non-nullable destination (`int? → int`) is unwrapped per `NullStrategy`: **throw on null** (default) or `[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]` to use the destination default.
 
+**Collections.** `T[]` and `List<T>` members map element-by-element, applying the same conversion rules per element (nested objects, converters, enums, nullable unwrap, even nested collections). When the element type is unchanged, the whole collection is bulk-copied (`T[]` → `T[]` clone, `→ List<T>` bulk constructor). Read-only source shapes (`IEnumerable<T>`, `IReadOnlyList<T>`, …) are accepted as sources.
+
 ---
 
 ## Resilience: the headline feature
