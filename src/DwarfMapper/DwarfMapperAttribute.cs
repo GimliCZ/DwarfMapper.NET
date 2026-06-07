@@ -21,4 +21,10 @@ public sealed class DwarfMapperAttribute : Attribute
     /// Strategy for enum-to-enum mapping. Defaults to <see cref="EnumStrategy.ByName"/>.
     /// </summary>
     public EnumStrategy EnumStrategy { get; set; } = EnumStrategy.ByName;
+
+    /// <summary>
+    /// How a nullable value-type source mapped to a non-nullable destination is
+    /// handled when null. Defaults to <see cref="NullStrategy.Throw"/>.
+    /// </summary>
+    public NullStrategy NullStrategy { get; set; } = NullStrategy.Throw;
 }

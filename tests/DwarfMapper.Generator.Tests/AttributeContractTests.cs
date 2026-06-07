@@ -58,4 +58,11 @@ public class AttributeContractTests
         Assert.Equal(EnumStrategy.ByName, new DwarfMapperAttribute().EnumStrategy);
         Assert.Equal(EnumStrategy.ByValue, new DwarfMapperAttribute { EnumStrategy = EnumStrategy.ByValue }.EnumStrategy);
     }
+
+    [Fact]
+    public void DwarfMapperAttribute_nullStrategy_defaults_Throw()
+    {
+        Assert.Equal(NullStrategy.Throw, new DwarfMapperAttribute().NullStrategy);
+        Assert.Equal(NullStrategy.SetDefault, new DwarfMapperAttribute { NullStrategy = NullStrategy.SetDefault }.NullStrategy);
+    }
 }
