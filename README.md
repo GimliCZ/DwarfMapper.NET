@@ -159,13 +159,21 @@ public partial class OrderMapper
 Unmapped destination members are a `DWARF` build error by default. Configure severity globally or per-mapper. This is the compile-time replacement for the manual "did I wire everything up?" review.
 
 ### `[RoundTrip]` verification
-Tag a forward/back method pair. The generator emits a harness (consumed by `DwarfMapper.Testing`) that:
-- generates fuzzed instances of the source type (seeded, reproducible),
-- runs `Back(Forward(x))`,
-- asserts structural equality against the original,
-- and on mismatch produces an **informed dump**.
+Tag the forward method with `[RoundTrip]`; the generator finds the inverse mapping method and emits a `VerifyRoundTrip_<method>(seed, iterations)` that fuzzes inputs (seeded, reproducible), runs `Back(Forward(x))`, asserts structural equality, and on mismatch throws an **informed dump**. One attribute replaces the fixtures you used to maintain by hand — call it from a single test:
 
-One attribute replaces the fixtures you used to maintain by hand.
+```csharp
+[DwarfMapper]
+public partial class OrderMapper
+{
+    [RoundTrip] public partial OrderDto ToDto(Order o);
+    public partial Order FromDto(OrderDto d);
+}
+
+[Fact]
+public void Order_roundtrips() => new OrderMapper().VerifyRoundTrip_ToDto();
+```
+
+Requires a reference to `DwarfMapper.Testing`; without it, `[RoundTrip]` is a no-op (no verifier is generated). No inverse → `DWARF020`; ambiguous inverse → `DWARF021`.
 
 ### Informed dumps
 A mapping-aware diff renderer. Instead of "two objects differ somewhere," you get:
@@ -187,7 +195,7 @@ var m = new OrderMapper();
 RoundTrip.Verify<Order, OrderDto>(m.ToDto, m.FromDto);   // fuzzes inputs, asserts Back(Forward(x)) ≡ x
 ```
 
-On a mismatch it throws with a mapping-aware dump (member path, expected vs. actual, and the replay seed). `ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The package is reflection-based and test-only — it is never AOT-published and does not affect the core library's reflection-free guarantees. (The `[RoundTrip]` attribute that *auto-emits* this test is a planned enhancement; the verifier above delivers the capability today.)
+On a mismatch it throws with a mapping-aware dump (member path, expected vs. actual, and the replay seed). `ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The package is reflection-based and test-only — it is never AOT-published and does not affect the core library's reflection-free guarantees. (Prefer `[RoundTrip]` above for the zero-boilerplate path; this direct call is for ad-hoc verification.)
 
 ---
 
