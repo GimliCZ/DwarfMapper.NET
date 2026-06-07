@@ -12,7 +12,8 @@ public sealed record MapperClassModel(
     string ClassName,
     string Accessibility,
     EquatableArray<MapMethodModel> Methods,
-    EquatableArray<DiagnosticInfo> Diagnostics) : IEquatable<MapperClassModel>
+    EquatableArray<DiagnosticInfo> Diagnostics,
+    EquatableArray<SynthesizedMethod> SynthesizedMethods) : IEquatable<MapperClassModel>
 {
     public string HintName => string.IsNullOrEmpty(Namespace) ? ClassName : $"{Namespace}.{ClassName}";
 

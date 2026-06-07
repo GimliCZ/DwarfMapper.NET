@@ -28,6 +28,12 @@ internal static class MapEmitter
             EmitMethod(sb, method, "    ");
         }
 
+        foreach (var synth in model.SynthesizedMethods)
+        {
+            sb.AppendLine();
+            sb.Append(synth.Code);
+        }
+
         sb.AppendLine("}");
         return sb.ToString();
     }

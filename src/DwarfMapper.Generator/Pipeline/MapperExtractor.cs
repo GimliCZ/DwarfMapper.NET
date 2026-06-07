@@ -30,6 +30,8 @@ internal static class MapperExtractor
 
         var classIgnores = ReadIgnores(classSymbol);
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
+        var enumStrategy = ReadEnumStrategy(ctx.Attributes);
+        var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
         var methods = new List<MapMethodModel>();
@@ -76,7 +78,8 @@ internal static class MapperExtractor
 
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
-                methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods);
+                methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
+                enumStrategy, synthesized);
 
             methods.Add(new MapMethodModel(
                 method.Name,
@@ -93,7 +96,8 @@ internal static class MapperExtractor
             classSymbol.Name,
             AccessibilityText(classSymbol.DeclaredAccessibility),
             EquatableArray.From(methods),
-            EquatableArray.From(diagnostics));
+            EquatableArray.From(diagnostics),
+            EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, System.StringComparer.Ordinal)));
     }
 
     private static List<MemberMap> ResolveMembers(
@@ -101,7 +105,8 @@ internal static class MapperExtractor
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
-        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates)
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+        EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -154,7 +159,7 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, location, tgtName, diagnostics, out var conv))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, location, tgtName, diagnostics, out var conv))
             {
                 result.Add(new MemberMap(tgtName, srcName, conv));
             }
@@ -184,7 +189,7 @@ internal static class MapperExtractor
             }
 
             var source = matches[0];
-            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, location, target.Name, diagnostics, out var conv))
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, location, target.Name, diagnostics, out var conv))
             {
                 result.Add(new MemberMap(target.Name, source.Name, conv));
             }
@@ -210,6 +215,7 @@ internal static class MapperExtractor
         Compilation compilation, ITypeSymbol srcType, ITypeSymbol tgtType, string? useMethod,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+        EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
         out string? converterMethod)
     {
@@ -254,6 +260,13 @@ internal static class MapperExtractor
         if (found is not null)
         {
             converterMethod = found;
+            return true;
+        }
+
+        var enumMethod = EnumConverter.TryCreate(srcType, tgtType, enumStrategy, synthesized, location, targetName, diagnostics);
+        if (enumMethod is not null)
+        {
+            converterMethod = enumMethod;
             return true;
         }
 
@@ -396,6 +409,21 @@ internal static class MapperExtractor
             }
         }
         return maps;
+    }
+
+    private static EnumStrategy ReadEnumStrategy(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "EnumStrategy" && named.Value.Value is int i)
+                {
+                    return (EnumStrategy)i;
+                }
+            }
+        }
+        return EnumStrategy.ByName;
     }
 
     private static bool ReadCaseInsensitive(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
