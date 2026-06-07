@@ -147,6 +147,8 @@ public partial class OrderMapper
 
 **Hooks.** `[BeforeMap]` (`void Hook(TSource)`) and `[AfterMap]` (`void Hook(TTarget)` or `void Hook(TSource, TTarget)`) methods on the mapper run around the generated body — validate the source, or fill computed/`[MapIgnore]`d destination members. Hooks apply to every mapping whose types are assignable to their parameters. An invalid signature is `DWARF018`.
 
+**Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to `Dictionary<K2,V2>`, converting **both keys and values** through the same rules as any other member (converters, nested mappers, enums, nullable). Entries are filled via the indexer, so post-conversion key collisions overwrite rather than throw.
+
 ---
 
 ## Resilience: the headline feature
