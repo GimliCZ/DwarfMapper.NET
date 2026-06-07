@@ -95,13 +95,13 @@ internal static class MapperExtractor
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics)
     {
-        var sources = ReadableProperties(sourceType)
-            .GroupBy(p => p.Name, System.StringComparer.Ordinal)
+        var sources = ReadableMembers(sourceType)
+            .GroupBy(m => m.Name, System.StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), System.StringComparer.Ordinal);
 
         // SORT: canonical, declaration-order-independent ordering by member name.
-        var targets = SettableProperties(targetType)
-            .OrderBy(p => p.Name, System.StringComparer.Ordinal)
+        var targets = WritableMembers(targetType)
+            .OrderBy(m => m.Name, System.StringComparer.Ordinal)
             .ToList();
 
         var result = new List<MemberMap>();
@@ -130,7 +130,7 @@ internal static class MapperExtractor
             result.Add(new MemberMap(target.Name, source.Name));
         }
 
-        foreach (var readOnly in ReadOnlyProperties(targetType).OrderBy(p => p.Name, System.StringComparer.Ordinal))
+        foreach (var readOnly in ReadOnlyMembers(targetType).OrderBy(m => m.Name, System.StringComparer.Ordinal))
         {
             if (ignores.Contains(readOnly.Name))
             {
@@ -151,33 +151,70 @@ internal static class MapperExtractor
         return conversion.IsImplicit && !conversion.IsUserDefined;
     }
 
-    private static IEnumerable<IPropertySymbol> ReadableProperties(ITypeSymbol type) =>
-        EnumerateProperties(type).Where(p =>
-            !p.IsStatic && !p.IsIndexer && p.GetMethod is { DeclaredAccessibility: Accessibility.Public });
-
-    private static IEnumerable<IPropertySymbol> SettableProperties(ITypeSymbol type) =>
-        EnumerateProperties(type).Where(p =>
-            !p.IsStatic && !p.IsIndexer && p.SetMethod is { DeclaredAccessibility: Accessibility.Public });
-
-    private static IEnumerable<IPropertySymbol> ReadOnlyProperties(ITypeSymbol type) =>
-        EnumerateProperties(type).Where(p =>
-            !p.IsStatic && !p.IsIndexer
-            && p.GetMethod is { DeclaredAccessibility: Accessibility.Public }
-            && p.SetMethod is not { DeclaredAccessibility: Accessibility.Public });
-
-    private static IEnumerable<IPropertySymbol> EnumerateProperties(ITypeSymbol type)
+    private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type)
     {
         var seen = new HashSet<string>(System.StringComparer.Ordinal);
         for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
         {
-            foreach (var p in current.GetMembers().OfType<IPropertySymbol>())
+            foreach (var m in current.GetMembers())
             {
-                if (seen.Add(p.Name))
+                if (m.IsStatic)
                 {
-                    yield return p;
+                    continue;
+                }
+                switch (m)
+                {
+                    case IPropertySymbol p when !p.IsIndexer && p.GetMethod is { DeclaredAccessibility: Accessibility.Public }:
+                        if (seen.Add(p.Name))
+                        {
+                            yield return (p.Name, p.Type);
+                        }
+                        break;
+                    case IFieldSymbol f when !f.IsImplicitlyDeclared && f.DeclaredAccessibility == Accessibility.Public:
+                        if (seen.Add(f.Name))
+                        {
+                            yield return (f.Name, f.Type);
+                        }
+                        break;
                 }
             }
         }
+    }
+
+    private static IEnumerable<(string Name, ITypeSymbol Type)> WritableMembers(ITypeSymbol type)
+    {
+        var seen = new HashSet<string>(System.StringComparer.Ordinal);
+        for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
+        {
+            foreach (var m in current.GetMembers())
+            {
+                if (m.IsStatic)
+                {
+                    continue;
+                }
+                switch (m)
+                {
+                    case IPropertySymbol p when !p.IsIndexer && p.SetMethod is { DeclaredAccessibility: Accessibility.Public }:
+                        if (seen.Add(p.Name))
+                        {
+                            yield return (p.Name, p.Type);
+                        }
+                        break;
+                    case IFieldSymbol f when !f.IsImplicitlyDeclared && !f.IsReadOnly && f.DeclaredAccessibility == Accessibility.Public:
+                        if (seen.Add(f.Name))
+                        {
+                            yield return (f.Name, f.Type);
+                        }
+                        break;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<(string Name, ITypeSymbol Type)> ReadOnlyMembers(ITypeSymbol type)
+    {
+        var writable = new HashSet<string>(WritableMembers(type).Select(m => m.Name), System.StringComparer.Ordinal);
+        return ReadableMembers(type).Where(m => !writable.Contains(m.Name));
     }
 
     private static bool HasAccessibleParameterlessCtor(INamedTypeSymbol type) =>
