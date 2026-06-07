@@ -16,4 +16,9 @@ public sealed class DwarfMapperAttribute : Attribute
     /// (exact, case-sensitive matching).
     /// </summary>
     public bool CaseInsensitive { get; set; }
+
+    /// <summary>
+    /// Strategy for enum-to-enum mapping. Defaults to <see cref="EnumStrategy.ByName"/>.
+    /// </summary>
+    public EnumStrategy EnumStrategy { get; set; } = EnumStrategy.ByName;
 }

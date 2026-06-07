@@ -51,4 +51,11 @@ public class AttributeContractTests
         Assert.Null(new MapPropertyAttribute("a", "b").Use);
         Assert.Equal("Conv", new MapPropertyAttribute("a", "b") { Use = "Conv" }.Use);
     }
+
+    [Fact]
+    public void DwarfMapperAttribute_enumStrategy_defaults_ByName()
+    {
+        Assert.Equal(EnumStrategy.ByName, new DwarfMapperAttribute().EnumStrategy);
+        Assert.Equal(EnumStrategy.ByValue, new DwarfMapperAttribute { EnumStrategy = EnumStrategy.ByValue }.EnumStrategy);
+    }
 }
