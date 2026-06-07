@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <!-- CA1707: underscore test names. CA1515/CA1051/CA1819/CA2227/CA1002: public test-helper DTOs by design. -->
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1819;CA2227;CA1002</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
+    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>
