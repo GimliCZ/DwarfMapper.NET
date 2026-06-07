@@ -247,6 +247,16 @@ internal static class MapperExtractor
             return false;
         }
 
+        if (CollectionConverter.TryResolve(srcType, tgtType, out var srcElem, out var tgtElem, out var collShape))
+        {
+            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull))
+            {
+                return false; // element diagnostic already reported by the recursive call
+            }
+            converterMethod = CollectionConverter.Synthesize(synthesized, srcType, srcElem, tgtElem, collShape, elemConv, elemNull);
+            return true;
+        }
+
         if (HasImplicitConversion(compilation, srcType, tgtType))
         {
             return true; // direct assignment
