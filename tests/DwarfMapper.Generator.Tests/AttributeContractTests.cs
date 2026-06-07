@@ -44,4 +44,11 @@ public class AttributeContractTests
     {
         Assert.False(new DwarfMapperAttribute().CaseInsensitive);
     }
+
+    [Fact]
+    public void MapPropertyAttribute_Use_defaults_null_and_is_settable()
+    {
+        Assert.Null(new MapPropertyAttribute("a", "b").Use);
+        Assert.Equal("Conv", new MapPropertyAttribute("a", "b") { Use = "Conv" }.Use);
+    }
 }

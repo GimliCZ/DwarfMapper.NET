@@ -30,6 +30,7 @@ internal static class MapperExtractor
 
         var classIgnores = ReadIgnores(classSymbol);
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
+        var allMethods = CollectMethods(classSymbol);
         var methods = new List<MapMethodModel>();
 
         foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
@@ -74,7 +75,7 @@ internal static class MapperExtractor
 
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
-                methodLocation, diagnostics, caseInsensitive, explicitMaps);
+                methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods);
 
             methods.Add(new MapMethodModel(
                 method.Name,
@@ -97,7 +98,8 @@ internal static class MapperExtractor
     private static List<MemberMap> ResolveMembers(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
-        bool caseInsensitive, IReadOnlyList<(string Source, string Target)> explicitMaps)
+        bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -116,7 +118,7 @@ internal static class MapperExtractor
 
         // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
         var explicitSeen = new HashSet<string>(System.StringComparer.Ordinal);
-        foreach (var (srcName, tgtName) in explicitMaps)
+        foreach (var (srcName, tgtName, useMethod) in explicitMaps)
         {
             if (!explicitSeen.Add(tgtName))
             {
@@ -150,13 +152,10 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (!HasImplicitConversion(compilation, srcMatch, tgtType))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, location, tgtName, diagnostics, out var conv))
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, tgtName));
-                continue;
+                result.Add(new MemberMap(tgtName, srcName, conv));
             }
-
-            result.Add(new MemberMap(tgtName, srcName));
         }
 
         // AUTO: remaining writable targets matched by name under the comparer.
@@ -183,13 +182,10 @@ internal static class MapperExtractor
             }
 
             var source = matches[0];
-            if (!HasImplicitConversion(compilation, source.Type, target.Type))
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, location, target.Name, diagnostics, out var conv))
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, target.Name));
-                continue;
+                result.Add(new MemberMap(target.Name, source.Name, conv));
             }
-
-            result.Add(new MemberMap(target.Name, source.Name));
         }
 
         // READ-ONLY destinations with a matching source (silent-loss guard).
@@ -206,6 +202,52 @@ internal static class MapperExtractor
         }
 
         return result;
+    }
+
+    private static bool TryResolveConversion(
+        Compilation compilation, ITypeSymbol srcType, ITypeSymbol tgtType, string? useMethod,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+        LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
+        out string? converterMethod)
+    {
+        converterMethod = null;
+
+        if (useMethod is not null)
+        {
+            foreach (var m in allMethods)
+            {
+                if (string.Equals(m.Name, useMethod, System.StringComparison.Ordinal)
+                    && HasImplicitConversion(compilation, srcType, m.ParamType)
+                    && HasImplicitConversion(compilation, m.ReturnType, tgtType))
+                {
+                    converterMethod = m.Name;
+                    return true;
+                }
+            }
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UseMethodInvalid, location, useMethod));
+            return false;
+        }
+
+        if (HasImplicitConversion(compilation, srcType, tgtType))
+        {
+            return true; // direct assignment
+        }
+
+        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, targetName));
+        return false;
+    }
+
+    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> CollectMethods(INamedTypeSymbol classSymbol)
+    {
+        var methods = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>();
+        foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
+        {
+            if (m.MethodKind == MethodKind.Ordinary && !m.ReturnsVoid && m.Parameters.Length == 1)
+            {
+                methods.Add((m.Name, m.Parameters[0].Type, m.ReturnType));
+            }
+        }
+        return methods;
     }
 
     private static bool HasImplicitConversion(Compilation compilation, ITypeSymbol source, ITypeSymbol target)
@@ -291,9 +333,9 @@ internal static class MapperExtractor
             .Where(s => s is not null)
             .Select(s => s!);
 
-    private static List<(string Source, string Target)> ReadExplicitMaps(ISymbol method)
+    private static List<(string Source, string Target, string? Use)> ReadExplicitMaps(ISymbol method)
     {
-        var maps = new List<(string Source, string Target)>();
+        var maps = new List<(string Source, string Target, string? Use)>();
         foreach (var attr in method.GetAttributes())
         {
             if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapPropertyAttribute")
@@ -304,7 +346,15 @@ internal static class MapperExtractor
                 && attr.ConstructorArguments[0].Value is string s
                 && attr.ConstructorArguments[1].Value is string t)
             {
-                maps.Add((s, t));
+                string? use = null;
+                foreach (var na in attr.NamedArguments)
+                {
+                    if (na.Key == "Use" && na.Value.Value is string u)
+                    {
+                        use = u;
+                    }
+                }
+                maps.Add((s, t, use));
             }
         }
         return maps;

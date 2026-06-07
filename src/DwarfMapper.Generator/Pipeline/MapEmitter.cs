@@ -50,8 +50,17 @@ internal static class MapEmitter
         sb.Append(indent).AppendLine("    {");
         foreach (var member in method.Members)
         {
-            sb.Append(indent).Append("        ").Append(member.TargetName)
-              .Append(" = ").Append(method.ParameterName).Append('.').Append(member.SourceName).AppendLine(",");
+            sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
+            if (member.ConverterMethod is null)
+            {
+                sb.Append(method.ParameterName).Append('.').Append(member.SourceName);
+            }
+            else
+            {
+                sb.Append(member.ConverterMethod).Append('(')
+                  .Append(method.ParameterName).Append('.').Append(member.SourceName).Append(')');
+            }
+            sb.AppendLine(",");
         }
         sb.Append(indent).AppendLine("    };");
         sb.Append(indent).AppendLine("}");

@@ -28,7 +28,7 @@ public static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor NoImplicitConversion = new(
         "DWARF005",
         "No implicit conversion between mapped members",
-        "Cannot map to '{0}': no implicit conversion exists from the source member type (custom converters arrive in a later release)",
+        "Cannot map to '{0}': no implicit conversion and no usable conversion method; declare a mapping method for the types or use [MapProperty(Use = ...)]",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor NoParameterlessConstructor = new(
@@ -71,5 +71,11 @@ public static class DiagnosticDescriptors
         "DWARF012",
         "Conflicting [MapIgnore] and [MapProperty]",
         "Destination member '{0}' is both ignored via [MapIgnore] and mapped via [MapProperty]; remove one",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor UseMethodInvalid = new(
+        "DWARF014",
+        "Conversion method not found",
+        "[MapProperty(Use = ...)] method '{0}' was not found or has an incompatible signature (it must take the source member type and return the destination member type)",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }
