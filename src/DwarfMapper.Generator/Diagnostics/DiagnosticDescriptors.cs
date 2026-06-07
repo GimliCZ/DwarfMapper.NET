@@ -60,4 +60,16 @@ public static class DiagnosticDescriptors
         "MapProperty source not found",
         "[MapProperty] source member '{0}' does not exist or is not readable",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor DuplicateMapProperty = new(
+        "DWARF011",
+        "Duplicate explicit mapping",
+        "Destination member '{0}' has more than one [MapProperty] mapping; keep only one",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor IgnoreExplicitConflict = new(
+        "DWARF012",
+        "Conflicting [MapIgnore] and [MapProperty]",
+        "Destination member '{0}' is both ignored via [MapIgnore] and mapped via [MapProperty]; remove one",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

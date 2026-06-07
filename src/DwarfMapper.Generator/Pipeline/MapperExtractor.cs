@@ -115,9 +115,24 @@ internal static class MapperExtractor
         var handledTargets = new HashSet<string>(System.StringComparer.Ordinal);
 
         // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
+        var explicitSeen = new HashSet<string>(System.StringComparer.Ordinal);
         foreach (var (srcName, tgtName) in explicitMaps)
         {
+            if (!explicitSeen.Add(tgtName))
+            {
+                // More than one [MapProperty] for the same destination.
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DuplicateMapProperty, location, tgtName));
+                continue;
+            }
+
             handledTargets.Add(tgtName);
+
+            if (ignores.Contains(tgtName))
+            {
+                // Contradictory: [MapIgnore] and [MapProperty] target the same member.
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName));
+                continue;
+            }
 
             if (!writableByName.TryGetValue(tgtName, out var tgtType))
             {

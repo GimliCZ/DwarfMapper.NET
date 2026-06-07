@@ -14,3 +14,5 @@ DWARF007 | DwarfMapper | Error | Destination member is read-only
 DWARF008 | DwarfMapper | Error | MapProperty target not found
 DWARF009 | DwarfMapper | Error | MapProperty source not found
 DWARF010 | DwarfMapper | Error | Ambiguous source member
+DWARF011 | DwarfMapper | Error | Duplicate explicit mapping
+DWARF012 | DwarfMapper | Error | Conflicting [MapIgnore] and [MapProperty]
