@@ -8,7 +8,7 @@ namespace DwarfMapper.Generator.Pipeline;
 
 internal static class CollectionConverter
 {
-    internal enum TargetKind { Array, List }
+    internal enum TargetKind { Array, List, HashSet }
     internal enum CountKind { None, Length, Count }
 
     internal readonly struct Shape
@@ -49,6 +49,11 @@ internal static class CollectionConverter
             tgtElem = le;
             targetKind = TargetKind.List;
         }
+        else if (IsHashSet(tgt, out var he))
+        {
+            tgtElem = he;
+            targetKind = TargetKind.HashSet;
+        }
         else
         {
             return false;
@@ -69,7 +74,12 @@ internal static class CollectionConverter
         ITypeSymbol srcType, ITypeSymbol srcElem, ITypeSymbol tgtElem, Shape shape,
         string? elemConverter, NullHandling elemNull)
     {
-        var name = "__DwarfMapColl_" + Hash(Fq(srcType) + "=>" + (shape.Target == TargetKind.Array ? Fq(tgtElem) + "[]" : "List<" + Fq(tgtElem) + ">"));
+        var name = "__DwarfMapColl_" + Hash(Fq(srcType) + "=>" + shape.Target switch
+        {
+            TargetKind.Array => Fq(tgtElem) + "[]",
+            TargetKind.List => "List<" + Fq(tgtElem) + ">",
+            _ => "HashSet<" + Fq(tgtElem) + ">",
+        });
         if (synth.ContainsKey(name))
         {
             return name;
@@ -106,7 +116,7 @@ internal static class CollectionConverter
             }
             sb.Append("    }\n");
         }
-        else // List
+        else if (shape.Target == TargetKind.List)
         {
             var listFq = "global::System.Collections.Generic.List<" + elem + ">";
             sb.Append("    private ").Append(listFq).Append(' ').Append(name).Append('(').Append(srcFq).Append(" src)\n    {\n");
@@ -117,6 +127,23 @@ internal static class CollectionConverter
             else
             {
                 sb.Append("        var __r = new ").Append(listFq).Append("();\n");
+                sb.Append("        if (src is null) return __r;\n");
+                sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
+                sb.Append("        return __r;\n");
+            }
+            sb.Append("    }\n");
+        }
+        else // TargetKind.HashSet
+        {
+            var setFq = "global::System.Collections.Generic.HashSet<" + elem + ">";
+            sb.Append("    private ").Append(setFq).Append(' ').Append(name).Append('(').Append(srcFq).Append(" src)\n    {\n");
+            if (identity && IsHashSet(srcType, out _))
+            {
+                sb.Append("        return src is null ? new ").Append(setFq).Append("() : new ").Append(setFq).Append("(src);\n");
+            }
+            else
+            {
+                sb.Append("        var __r = new ").Append(setFq).Append("();\n");
                 sb.Append("        if (src is null) return __r;\n");
                 sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
                 sb.Append("        return __r;\n");
@@ -173,6 +200,19 @@ internal static class CollectionConverter
         element = t;
         if (t is INamedTypeSymbol n && n.TypeArguments.Length == 1
             && n.Name == "List"
+            && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+        {
+            element = n.TypeArguments[0];
+            return true;
+        }
+        return false;
+    }
+
+    private static bool IsHashSet(ITypeSymbol t, out ITypeSymbol element)
+    {
+        element = t;
+        if (t is INamedTypeSymbol n && n.TypeArguments.Length == 1
+            && n.Name == "HashSet"
             && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
         {
             element = n.TypeArguments[0];
