@@ -99,6 +99,14 @@ public static class ObjectFactory
         {
             return new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMinutes(rng.Next(0, 5_000_000));
         }
+        if (type == typeof(DateTimeOffset))
+        {
+            return new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddMinutes(rng.Next(0, 5_000_000));
+        }
+        if (type == typeof(TimeSpan))
+        {
+            return TimeSpan.FromSeconds(rng.Next(1, 5_000_000));
+        }
         if (type.IsEnum)
         {
             var values = Enum.GetValues(type);
