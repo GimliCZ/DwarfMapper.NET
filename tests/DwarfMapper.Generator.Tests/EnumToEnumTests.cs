@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using System;
+using System.Linq;
 
 namespace DwarfMapper.Generator.Tests;
 
@@ -39,6 +40,28 @@ public class EnumToEnumTests
             """;
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
         Assert.Contains(diagnostics, d => d.Id == "DWARF015" && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Blue", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Incomplete_enum_in_two_methods_reports_DWARF015_each()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public enum Src { A, B, Blue }
+            public enum Dst { A, B }
+            public class X1 { public Src V { get; set; } }
+            public class Y1 { public Dst V { get; set; } }
+            public class X2 { public Src V { get; set; } }
+            public class Y2 { public Dst V { get; set; } }
+            [DwarfMapper] public partial class M
+            {
+                public partial Y1 MapA(X1 x);
+                public partial Y2 MapB(X2 x);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.True(diagnostics.Count(d => d.Id == "DWARF015") >= 2);
     }
 
     [Fact]

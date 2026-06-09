@@ -77,14 +77,30 @@ internal static class EnumConverter
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics)
     {
         var name = MethodName("EnumName", src, tgt);
+
+        // Completeness diagnostics are emitted on EVERY call (at the call's location),
+        // so that two mapping methods using the same incomplete enum pair each report DWARF015.
+        var targetNames = new HashSet<string>(System.StringComparer.Ordinal);
+        foreach (var m in EnumMembers(tgt))
+        {
+            targetNames.Add(m.Name);
+        }
+        var seenValuesForDiag = new HashSet<object>();
+        foreach (var m in EnumMembers(src))
+        {
+            if (m.ConstantValue is null || !seenValuesForDiag.Add(m.ConstantValue))
+            {
+                continue; // alias of an already-emitted value
+            }
+            if (!targetNames.Contains(m.Name))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IncompleteEnumMapping, location, m.Name));
+            }
+        }
+
+        // The synthesized switch method body is still registered only once (dedup by name).
         if (!synth.ContainsKey(name))
         {
-            var targetNames = new HashSet<string>(System.StringComparer.Ordinal);
-            foreach (var m in EnumMembers(tgt))
-            {
-                targetNames.Add(m.Name);
-            }
-
             var sb = new StringBuilder();
             sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
               .Append('(').Append(Fq(src)).Append(" v) => v switch\n    {\n");
@@ -99,10 +115,6 @@ internal static class EnumConverter
                 {
                     sb.Append("        ").Append(Fq(src)).Append('.').Append(m.Name)
                       .Append(" => ").Append(Fq(tgt)).Append('.').Append(m.Name).Append(",\n");
-                }
-                else
-                {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IncompleteEnumMapping, location, m.Name));
                 }
             }
             sb.Append("        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unmapped enum value\"),\n    };\n");
