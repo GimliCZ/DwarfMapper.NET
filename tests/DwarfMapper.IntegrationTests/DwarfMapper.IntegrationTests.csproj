@@ -7,7 +7,10 @@
     <!-- CA1051: FieldSource/FieldTarget intentionally use public fields to exercise the field-mapping code path -->
     <!-- CA1002/CA1819/CA2227/CA1861: collection test helper DTOs intentionally expose List<T>/array properties to exercise collection mapping -->
     <!-- CA1815: blittable test helper structs are POD layout fixtures; equality overrides are irrelevant to the test -->
-    <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815</NoWarn>
+    <!-- CA1028: enum underlying-type tests intentionally exercise non-int underlying types (byte, long, ulong) -->
+    <!-- CA1711: enum test helpers intentionally carry "Enum" suffix to clearly identify their role -->
+    <!-- CA1008: enum underlying-type tests intentionally omit zero member to exercise non-zero value truncation -->
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
