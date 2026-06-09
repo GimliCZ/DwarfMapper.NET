@@ -36,7 +36,7 @@ Speed is the supporting act: we match the fastest compile-time mappers on ordina
 ## Design principles
 
 - **0 reflection.** No `System.Reflection`, no `Reflection.Emit`, no runtime configuration. Everything is resolved by the source generator. NativeAOT- and trimming-safe, and verified so in CI.
-- **0 hidden allocation.** The mapper itself allocates nothing. Mapping into a new reference type allocates only that target (unavoidable); `MapTo(src, ref dest)` and span overloads give you true zero-allocation into caller-owned memory.
+- **0 hidden allocation.** The mapper itself allocates nothing. Mapping into a new reference type allocates only that target (unavoidable).
 - **0 silent data loss.** Completeness is enforced at compile time. Over-posting / mass-assignment-style bugs are designed out: only members the generator explicitly resolved are ever written.
 - **Provably-safe unsafe.** The blittable fast-path is gated by analyzer proofs (unmanaged types, matching size, no managed references, compatible layout). If a reinterpret cast cannot be proven safe, the generator falls back to plain assignments. It never emits an unprovable cast.
 - **Declarative only.** Configuration lives in attributes and partial methods — never a runtime fluent builder. (Fluent runtime config is the reflection trap that breaks AOT; we don't go there.)
@@ -86,12 +86,14 @@ Customize with attributes (all compile-time, all AOT-safe):
 public partial class CustomerMapper
 {
     [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]
-    [MapWith(typeof(MoneyToDecimalConverter))]   // custom conversion
+    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))]  // custom conversion
     [Flatten(nameof(Customer.Address))]          // Address.City -> City
     public partial CustomerDto ToDto(Customer src);
 
     [MapIgnore(nameof(Customer.PasswordHash))]   // explicit, intentional, audited
     public partial Customer FromDto(CustomerDto dto);
+
+    private static string FormatMoney(decimal d) => d.ToString("C");
 }
 ```
 
@@ -158,7 +160,7 @@ public partial class OrderMapper
 ## Resilience: the headline feature
 
 ### Completeness diagnostics
-Unmapped destination members are a `DWARF` build error by default. Configure severity globally or per-mapper. This is the compile-time replacement for the manual "did I wire everything up?" review.
+Unmapped destination members are a `DWARF` build error — always. There is no global or per-mapper severity override; completeness is enforced at compile time by design. This is the compile-time replacement for the manual "did I wire everything up?" review.
 
 ### `[RoundTrip]` verification
 Tag the forward method with `[RoundTrip]`; the generator finds the inverse mapping method and emits a `VerifyRoundTrip_<method>(seed, iterations)` that fuzzes inputs (seeded, reproducible), runs `Back(Forward(x))`, asserts structural equality, and on mismatch throws an **informed dump**. One attribute replaces the fixtures you used to maintain by hand — call it from a single test:
@@ -216,8 +218,6 @@ DwarfMapper treats mapping as an attack surface and a correctness surface at onc
 
 - **Direct-assignment path:** identical codegen to the fastest source-gen mappers — the JIT floor.
 - **Blittable fast-path:** contiguous unmanaged, layout-matched runs are bulk-copied; collections of such types are copied whole-span via `MemoryMarshal.Cast<TSrc, TDest>` and SIMD where it helps.
-- **Zero-alloc overloads:** `MapTo(src, ref dest)` and `Span<T>`/`ReadOnlySpan<T>` overloads for mapping into caller-owned memory.
-- **Benchmarks in-repo:** a BenchmarkDotNet suite compares DwarfMapper against Mapperly, Mapster, and AutoMapper across flat, nested, and blittable-collection scenarios. Numbers, not adjectives.
 
 ---
 
@@ -240,13 +240,15 @@ DwarfMapper is **.NET 10 only**. The one exception is the generator assembly its
 ```
 DwarfMapper.NET.sln
 src/
-  DwarfMapper/             # attributes + abstractions
-  DwarfMapper.Generator/   # incremental source generator + analyzers
-  DwarfMapper.Testing/     # fixtures, fuzzers, round-trip, informed dumps
+  DwarfMapper/               # attributes + abstractions
+  DwarfMapper.Generator/     # incremental source generator + analyzers
+  DwarfMapper.Testing/       # fixtures, fuzzers, round-trip, informed dumps
 tests/
-  DwarfMapper.Tests/       # generator snapshot + behavior tests
-  DwarfMapper.Benchmarks/  # BenchmarkDotNet vs. Mapperly/Mapster/AutoMapper
-samples/                   # runnable examples
+  DwarfMapper.Generator.Tests/   # generator snapshot + behavior tests
+  DwarfMapper.IntegrationTests/  # end-to-end mapping integration tests
+  DwarfMapper.Testing.Tests/     # DwarfMapper.Testing library unit tests
+samples/
+  DwarfMapper.AotSample/     # NativeAOT + trimming gate sample
 README.md
 ```
 
@@ -254,23 +256,24 @@ README.md
 
 ## Roadmap
 
-### v1 — provable core (build first)
-- Flat, nested, and collection/array/span mapping
+### v1 — shipped (feature-complete, pre-release)
+- Flat, nested, and collection (`T[]` / `List<T>` / `HashSet<T>` / `Dictionary<K,V>`) mapping
 - Enums and null handling
-- Custom converters (`[MapWith]`)
+- Custom per-member conversion: `[MapProperty(src, tgt, Use = nameof(Method))]`
 - Canonical sort → ordinal pairing
-- Completeness diagnostics (error by default)
-- Blittable bulk-copy + SIMD fast-path, analyzer-gated
+- Completeness diagnostics (build error by design — no configurable severity)
+- Blittable bulk-copy + SIMD fast-path, analyzer-gated; `[Reinterpret]` escape hatch
+- Flattening: `[Flatten("Root")]` pulls sub-members to top-level destination
+- Before/after mapping hooks: `[BeforeMap]` / `[AfterMap]`
+- `IQueryable` projection: `IQueryable<TDto> Project(IQueryable<T> src)` → SQL-translatable expression tree
 - `DwarfMapper.Testing`: fixtures, seeded fuzzer, `[RoundTrip]`, informed dumps
-- NativeAOT + trimming CI gate; BenchmarkDotNet suite
+- NativeAOT + trimming CI gate (verified; AOT sample in `samples/`)
 
-### v2 — richer surface (documented now, built after the core is proven)
-- Flattening / unflattening (`[Flatten]`)
-- Before/after mapping hooks
-- `IQueryable` projection (`ProjectTo`)
+### Planned
+- `MapTo(src, ref dest)` and `Span<T>`/`ReadOnlySpan<T>` zero-alloc overloads
 - `async` mapping pipelines
-
-These v2 features are the heaviest to prove correct, so they ride behind the v1 core rather than blocking it.
+- In-repo BenchmarkDotNet suite (DwarfMapper vs. Mapperly/Mapster/AutoMapper)
+- NuGet publish
 
 ---
 
@@ -293,7 +296,7 @@ The full license text lives in [`LICENSE`](LICENSE). Every source file carries a
 
 ## Status
 
-🏗️ **Pre-alpha — design phase.** This README is the design contract. APIs shown are the intended shape and may change as the generator is built.
+**Feature-complete v1 — pre-release / not yet published to NuGet.** The generator, all documented attributes, and the testing toolkit are built and covered by tests. APIs are stabilising. Not yet on NuGet; use via source or direct project reference. Feedback on rough edges welcome.
 
 ## Name
 
