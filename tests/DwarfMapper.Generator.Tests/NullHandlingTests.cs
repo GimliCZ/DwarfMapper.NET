@@ -69,4 +69,34 @@ public class NullHandlingTests
             """;
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
+
+    [Fact]
+    public void NullableEnum_to_enum_composes()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public enum E1 { A, B } public enum E2 { A, B }
+            public class A { public E1? S { get; set; } }
+            public class B { public E2 S { get; set; } }
+            [DwarfMapper] public partial class M { public partial B Map(A a); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void NullableEnum_to_int_composes()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public enum E1 { A, B }
+            public class A { public E1? S { get; set; } }
+            public class B { public int S { get; set; } }
+            [DwarfMapper] public partial class M { public partial B Map(A a); }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
 }

@@ -87,27 +87,41 @@ internal static class MapEmitter
         foreach (var member in method.Members)
         {
             sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
+            // Build the "inner value access" — the nullable-unwrapped (or plain) source expression.
+            // When NullHandling is set, we unwrap the nullable first; otherwise it is a plain access.
+            string innerAccess;
+            switch (member.NullHandling)
+            {
+                case Model.NullHandling.ThrowIfNull:
+                    innerAccess = method.ParameterName + "." + member.SourceName
+                        + " ?? throw new global::System.InvalidOperationException(\"Source member '"
+                        + member.SourceName + "' was null\")";
+                    break;
+                case Model.NullHandling.ValueOrDefault:
+                    innerAccess = method.ParameterName + "." + member.SourceName + ".GetValueOrDefault()";
+                    break;
+                default:
+                    innerAccess = method.ParameterName + "." + member.SourceName;
+                    break;
+            }
+            // Wrap the inner access with the converter if present.
             if (member.ConverterMethod is not null)
             {
-                sb.Append(member.ConverterMethod).Append('(')
-                  .Append(method.ParameterName).Append('.').Append(member.SourceName).Append(')');
+                if (member.NullHandling != Model.NullHandling.None)
+                {
+                    // Both converter and null-handling: Conv(src.X ?? throw ...) or Conv(src.X.GetValueOrDefault())
+                    sb.Append(member.ConverterMethod).Append('(').Append(innerAccess).Append(')');
+                }
+                else
+                {
+                    // Converter only (original path): Conv(src.X)
+                    sb.Append(member.ConverterMethod).Append('(')
+                      .Append(method.ParameterName).Append('.').Append(member.SourceName).Append(')');
+                }
             }
             else
             {
-                switch (member.NullHandling)
-                {
-                    case Model.NullHandling.ThrowIfNull:
-                        sb.Append(method.ParameterName).Append('.').Append(member.SourceName)
-                          .Append(" ?? throw new global::System.InvalidOperationException(\"Source member '")
-                          .Append(member.SourceName).Append("' was null\")");
-                        break;
-                    case Model.NullHandling.ValueOrDefault:
-                        sb.Append(method.ParameterName).Append('.').Append(member.SourceName).Append(".GetValueOrDefault()");
-                        break;
-                    default:
-                        sb.Append(method.ParameterName).Append('.').Append(member.SourceName);
-                        break;
-                }
+                sb.Append(innerAccess);
             }
             sb.AppendLine(",");
         }

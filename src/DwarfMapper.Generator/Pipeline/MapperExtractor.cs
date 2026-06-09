@@ -459,10 +459,28 @@ internal static class MapperExtractor
             return true; // direct assignment
         }
 
-        if (IsNullableValue(srcType, out var underlying) && HasImplicitConversion(compilation, underlying, tgtType))
+        if (IsNullableValue(srcType, out var underlying))
         {
-            nullHandling = nullStrategy == NullStrategy.SetDefault ? Model.NullHandling.ValueOrDefault : Model.NullHandling.ThrowIfNull;
-            return true;
+            // First check the simple implicit-conversion path (int? → int, int? → long, etc.)
+            if (HasImplicitConversion(compilation, underlying, tgtType))
+            {
+                nullHandling = nullStrategy == NullStrategy.SetDefault ? Model.NullHandling.ValueOrDefault : Model.NullHandling.ThrowIfNull;
+                return true;
+            }
+
+            // Recurse: try to resolve a conversion from the underlying (non-nullable) type to tgtType.
+            // This handles cases like E1? → E2 where E1 → E2 requires a synthesized conversion.
+            // Guard: 'underlying' is not itself nullable (Nullable<Nullable<T>> is illegal in C#).
+            if (TryResolveConversion(compilation, underlying, tgtType, useMethod, allMethods, autoCandidates,
+                    enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
+                    out var innerConv, out _))
+            {
+                nullHandling = nullStrategy == NullStrategy.SetDefault ? Model.NullHandling.ValueOrDefault : Model.NullHandling.ThrowIfNull;
+                converterMethod = innerConv; // may be null (direct assign after unwrap) or a synthesized method
+                return true;
+            }
+
+            // Fall through — let the rest of TryResolveConversion attempt further resolutions.
         }
 
         string? found = null;
