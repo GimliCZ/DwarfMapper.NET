@@ -86,8 +86,8 @@ public class EnumUnderlyingTests
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
-        // Emits a plain cast
-        Assert.Contains("(int)", generated, StringComparison.Ordinal);
+        // Emits CreateChecked (widening is safe; no overflow possible)
+        Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -107,17 +107,15 @@ public class EnumUnderlyingTests
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
 
-    // ── FINDING: enum → narrower numeric, no diagnostic emitted ──────────────
+    // ── Enum→numeric narrowing: now emits CreateChecked (throws on overflow) ──
 
     /// <summary>
-    /// FINDING: enum : long { Big = 4294967296L } mapped to int target generates
-    /// a plain cast <c>(int)v</c> with NO diagnostic.  At runtime (int)4294967296L == 0
-    /// — the value is silently truncated.  A DWARF diagnostic for narrowing
-    /// enum→numeric casts (where the enum's underlying type is wider than the numeric
-    /// target) should be considered.
+    /// enum : long { Big = 4294967296L } mapped to int target now emits
+    /// <c>global::System.Int32.CreateChecked((global::System.Int64)v)</c> with no diagnostic.
+    /// At runtime this throws <c>OverflowException</c> instead of silently truncating.
     /// </summary>
     [Fact]
-    public void FINDING_Enum_long_underlying_to_int_target_no_diagnostic_emitted()
+    public void Enum_long_underlying_to_int_target_no_diagnostic_emits_CreateChecked()
     {
         const string src = """
             using DwarfMapper;
@@ -130,30 +128,26 @@ public class EnumUnderlyingTests
             """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
 
-        // Currently no diagnostic is emitted — this is the silent narrowing gap.
-        // FINDING: no DWARF warning/error despite potential truncation.
+        // No diagnostic emitted — the overflow is a runtime concern.
         Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Warning
                                               || d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
 
-        // Confirm it compiles (i.e. the generator emits syntactically valid code)
+        // Confirm it compiles.
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
 
-        // Confirm the generated code uses a plain cast — no range check, no diagnostic
-        Assert.Contains("(int)", generated, StringComparison.Ordinal);
+        // Now emits CreateChecked, not a plain cast.
+        Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
 
-    // ── FINDING: ByValue enum→enum narrowing, no diagnostic emitted ──────────
+    // ── ByValue enum→enum narrowing: now emits CreateChecked ─────────────────
 
     /// <summary>
-    /// FINDING: EnumStrategy.ByValue is user-reachable via
-    /// [DwarfMapper(EnumStrategy = EnumStrategy.ByValue)].
-    /// When the source enum has a wider underlying type than the target enum,
-    /// the generator emits <c>(Tgt)(srcUnderlying)v</c> with NO diagnostic.
-    /// E.g. enum L : long { X = 256 } → enum B : byte yields (B)(long)v;
-    /// (byte)256L == 0 — silently lossy.
+    /// EnumStrategy.ByValue with a wider source underlying now emits
+    /// <c>(BEnum)global::System.Byte.CreateChecked((global::System.Int64)v)</c>.
+    /// Runtime overflow throws instead of silently wrapping.
     /// </summary>
     [Fact]
-    public void FINDING_ByValue_long_underlying_to_byte_underlying_no_diagnostic_emitted()
+    public void ByValue_long_underlying_to_byte_underlying_no_diagnostic_emits_CreateChecked()
     {
         const string src = """
             using DwarfMapper;
@@ -167,11 +161,11 @@ public class EnumUnderlyingTests
             """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
 
-        // FINDING: no diagnostic for ByValue narrowing either.
+        // No diagnostic emitted.
         Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
 
-        // ByValue emits a cast via the source underlying type: (BEnum)(long)v
-        Assert.Contains("(long)", generated, StringComparison.Ordinal);
+        // Now emits CreateChecked instead of a plain cast.
+        Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
 }

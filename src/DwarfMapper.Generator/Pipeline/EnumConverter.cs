@@ -50,11 +50,11 @@ internal static class EnumConverter
 
         if (srcEnum && tgtNum)
         {
-            return AddCast(synthesized, "EnumNum", src, tgt);
+            return AddEnumToNum(synthesized, (INamedTypeSymbol)src, tgt);
         }
         if (srcNum && tgtEnum)
         {
-            return AddCast(synthesized, "NumEnum", src, tgt);
+            return AddNumToEnum(synthesized, src, (INamedTypeSymbol)tgt);
         }
 
         return null;
@@ -65,8 +65,46 @@ internal static class EnumConverter
         var name = MethodName("EnumVal", src, tgt);
         if (!synth.ContainsKey(name))
         {
-            var underlying = Fq(src.EnumUnderlyingType!);
-            var code = $"    private static {Fq(tgt)} {name}({Fq(src)} v) => ({Fq(tgt)})({underlying})v;\n";
+            // Cast source enum to its underlying type, then use CreateChecked into the
+            // target enum's underlying type, then cast to the target enum.
+            // Throws OverflowException when the source value does not fit the target underlying.
+            var srcUnderlying = Fq(src.EnumUnderlyingType!);
+            var tgtUnderlying = Fq(tgt.EnumUnderlyingType!);
+            var code = $"    private static {Fq(tgt)} {name}({Fq(src)} v) => ({Fq(tgt)}){tgtUnderlying}.CreateChecked(({srcUnderlying})v);\n";
+            synth[name] = new SynthesizedMethod(name, code);
+        }
+        return name;
+    }
+
+    /// <summary>
+    /// enum → numeric: cast enum to its underlying type, then CreateChecked into target.
+    /// Throws OverflowException when the enum value does not fit the numeric target.
+    /// </summary>
+    private static string AddEnumToNum(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol srcEnum, ITypeSymbol tgtNum)
+    {
+        var name = MethodName("EnumNum", srcEnum, tgtNum);
+        if (!synth.ContainsKey(name))
+        {
+            var srcUnderlying = Fq(srcEnum.EnumUnderlyingType!);
+            // e.g.: global::System.Int32.CreateChecked((global::System.Int64)v)
+            var code = $"    private static {Fq(tgtNum)} {name}({Fq(srcEnum)} v) => {Fq(tgtNum)}.CreateChecked(({srcUnderlying})v);\n";
+            synth[name] = new SynthesizedMethod(name, code);
+        }
+        return name;
+    }
+
+    /// <summary>
+    /// numeric → enum: CreateChecked into the enum's underlying type, then cast to enum.
+    /// Throws OverflowException when the numeric value does not fit the enum's underlying.
+    /// </summary>
+    private static string AddNumToEnum(Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcNum, INamedTypeSymbol tgtEnum)
+    {
+        var name = MethodName("NumEnum", srcNum, tgtEnum);
+        if (!synth.ContainsKey(name))
+        {
+            var tgtUnderlying = Fq(tgtEnum.EnumUnderlyingType!);
+            // e.g.: (global::Demo.Color)global::System.Int32.CreateChecked(v)
+            var code = $"    private static {Fq(tgtEnum)} {name}({Fq(srcNum)} v) => ({Fq(tgtEnum)}){tgtUnderlying}.CreateChecked(v);\n";
             synth[name] = new SynthesizedMethod(name, code);
         }
         return name;
@@ -134,22 +172,7 @@ internal static class EnumConverter
         }
     }
 
-    private static string AddCast(Dictionary<string, SynthesizedMethod> synth, string prefix, ITypeSymbol src, ITypeSymbol tgt)
-    {
-        var name = MethodName(prefix, src, tgt);
-        if (!synth.ContainsKey(name))
-        {
-            var code = $"    private static {Fq(tgt)} {name}({Fq(src)} v) => ({Fq(tgt)})v;\n";
-            synth[name] = new SynthesizedMethod(name, code);
-        }
-        return name;
-    }
-
-    private static bool IsIntegral(ITypeSymbol t) => t.SpecialType is
-        SpecialType.System_SByte or SpecialType.System_Byte or
-        SpecialType.System_Int16 or SpecialType.System_UInt16 or
-        SpecialType.System_Int32 or SpecialType.System_UInt32 or
-        SpecialType.System_Int64 or SpecialType.System_UInt64;
+    private static bool IsIntegral(ITypeSymbol t) => TypeInterfaces.IsIntegral(t);
 
     private static string Fq(ITypeSymbol t) => t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 

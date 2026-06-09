@@ -53,10 +53,10 @@ public class LongHolder    { public long V { get; set; } }
 [DwarfMapper]
 public partial class EnumIntToLongMapper { public partial LongHolder Map(EIntHolder s); }
 
-// ── FINDING path: enum → narrower numeric (silent truncation) ─────────────────
+// ── Narrowing path: enum → narrower numeric (now uses CreateChecked — loud on overflow) ──
 // ELongBig : long { Big = 4294967296L }  mapped to int target.
-// The generator emits:  (int)v   which truncates via C# unchecked cast.
-// (int)4294967296L == 0  — the value is silently destroyed.
+// The generator now emits: global::System.Int32.CreateChecked((global::System.Int64)v)
+// which throws OverflowException for 4294967296L (does not fit int).
 public enum ELongBig : long { Big = 4294967296L }   // 2^32 — does NOT fit int
 public class ELongBigHolder { public ELongBig V { get; set; } }
 public class IntHolderNarrow { public int     V { get; set; } }
@@ -64,11 +64,20 @@ public class IntHolderNarrow { public int     V { get; set; } }
 [DwarfMapper]
 public partial class EnumLongToIntMapper { public partial IntHolderNarrow Map(ELongBigHolder s); }
 
-// ── ByValue: enum → enum narrowing (enum L : long { X = 256 } → enum B : byte) ─
+// Also test a small in-range value for enum→int narrowing (must still map correctly)
+public enum ELongSmall : long { Small = 100L }
+public class ELongSmallHolder { public ELongSmall V { get; set; } }
+public class IntHolderSmall   { public int        V { get; set; } }
+
+[DwarfMapper]
+public partial class EnumLongSmallToIntMapper { public partial IntHolderSmall Map(ELongSmallHolder s); }
+
+// ── ByValue: enum → enum narrowing (now uses CreateChecked — loud on overflow) ─
 // EnumStrategy.ByValue is user-reachable via [DwarfMapper(EnumStrategy = EnumStrategy.ByValue)].
-// Generator emits: (BValEnum)(long)v — (byte)256L == 0 (truncation, silently).
-public enum LValEnum : long  { X = 256 }
-public enum BValEnum : byte  { }          // no members — any cast lands outside defined values
+// Generator now emits: (BValEnum)global::System.Byte.CreateChecked((global::System.Int64)v)
+// which throws OverflowException for 256 (does not fit byte).
+public enum LValEnum : long  { X = 256, Y = 10 }
+public enum BValEnum : byte  { Y = 10 }   // Y=10 fits, X=256 does not
 public class LValHolder { public LValEnum V { get; set; } }
 public class BValHolder { public BValEnum V { get; set; } }
 
@@ -124,36 +133,37 @@ public class EnumUnderlyingRuntimeTests
         Assert.Equal((long)int.MaxValue, result.V);  // widening, no truncation
     }
 
-    // FINDING: enum : long { Big = 4294967296L } → int is a SILENT narrowing truncation.
-    // The generator emits `(int)v` (plain cast), which in unchecked C# truncates the
-    // low 32 bits: (int)4294967296L == 0.
-    // There is NO diagnostic (DWARF warning or error) for this case — the value is
-    // silently destroyed. This conflicts with the project's "no silent surprises" thesis
-    // and should be addressed with a diagnostic (e.g. DWARF-NNN: narrowing enum cast).
+    // enum : long { Big = 4294967296L } → int now throws OverflowException (checked via CreateChecked).
     [Fact]
-    public void FINDING_Enum_long_to_int_narrowing_truncates_silently()
+    public void Enum_long_to_int_narrowing_throws_on_overflow()
     {
-        var result = new EnumLongToIntMapper().Map(new ELongBigHolder { V = ELongBig.Big });
-
-        // FINDING: (int)4294967296L == 0 — the value 2^32 is silently truncated to 0.
-        // No generator diagnostic is emitted. The caller receives a completely wrong value
-        // with no indication that data was lost. A DWARF diagnostic for narrowing enum→numeric
-        // casts should be considered.
-        Assert.Equal(0, result.V);
+        var mapper = new EnumLongToIntMapper();
+        // 4294967296L does not fit int — CreateChecked must throw.
+        Assert.Throws<OverflowException>(() => mapper.Map(new ELongBigHolder { V = ELongBig.Big }));
     }
 
-    // ByValue reachable: enum L : long { X = 256 } → enum B : byte via ByValue.
-    // Generator emits: (BValEnum)(long)v — (byte)256L == 0 (wraps/truncates, no diagnostic).
-    // FINDING: ByValue narrowing enum→enum cast is also silently lossy.
+    // In-range enum : long → int still maps correctly.
     [Fact]
-    public void FINDING_EnumByValue_long_to_byte_underlying_truncates_silently()
+    public void Enum_long_to_int_in_range_preserves_value()
     {
-        var result = new EnumByValNarrowMapper().Map(new LValHolder { V = LValEnum.X });
+        var result = new EnumLongSmallToIntMapper().Map(new ELongSmallHolder { V = ELongSmall.Small });
+        Assert.Equal(100, result.V);
+    }
 
-        // FINDING: (BValEnum)(long)LValEnum.X where X=256 → (byte)256L == 0.
-        // The ByValue path uses (Tgt)(srcUnderlying)v which silently truncates when the
-        // source underlying value exceeds the target underlying range.
-        // No diagnostic is emitted. A DWARF diagnostic for narrowing ByValue casts is warranted.
-        Assert.Equal((BValEnum)0, result.V);
+    // ByValue enum L : long { X=256, Y=10 } → enum B : byte { Y=10 } — X=256 overflows byte.
+    [Fact]
+    public void EnumByValue_long_to_byte_narrowing_throws_on_overflow()
+    {
+        var mapper = new EnumByValNarrowMapper();
+        // LValEnum.X has value 256 which does not fit byte — CreateChecked must throw.
+        Assert.Throws<OverflowException>(() => mapper.Map(new LValHolder { V = LValEnum.X }));
+    }
+
+    // In-range ByValue: Y=10 fits byte — must still map correctly.
+    [Fact]
+    public void EnumByValue_long_to_byte_in_range_preserves_value()
+    {
+        var result = new EnumByValNarrowMapper().Map(new LValHolder { V = LValEnum.Y });
+        Assert.Equal(BValEnum.Y, result.V);
     }
 }
