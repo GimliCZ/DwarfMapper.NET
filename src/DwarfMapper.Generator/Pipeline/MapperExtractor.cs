@@ -483,6 +483,16 @@ internal static class MapperExtractor
             // Fall through — let the rest of TryResolveConversion attempt further resolutions.
         }
 
+        // Integral↔integral narrowing / sign-change: emit CreateChecked (throws on overflow).
+        // Must come after the implicit-conversion check (widening uses direct assign, not this).
+        // Enums have SpecialType.None — IsIntegral is false for them, so this never intercepts enums.
+        var numericMethod = NumericConverter.TryCreate(srcType, tgtType, synthesized);
+        if (numericMethod is not null)
+        {
+            converterMethod = numericMethod;
+            return true;
+        }
+
         string? found = null;
         foreach (var c in autoCandidates)
         {
