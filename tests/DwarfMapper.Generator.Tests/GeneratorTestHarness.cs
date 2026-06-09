@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
+using System;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using DwarfMapper;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -11,13 +14,7 @@ internal static class GeneratorTestHarness
 {
     public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(string source)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
-
-        var compilation = CSharpCompilation.Create(
-            "DwarfMapperTestAsm",
-            new[] { syntaxTree },
-            BuildReferences(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var compilation = BuildCompilation("DwarfMapperTestAsm", source);
 
         var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
@@ -36,13 +33,7 @@ internal static class GeneratorTestHarness
     /// </summary>
     public static ImmutableArray<Diagnostic> RunAndGetCompilationErrors(string source)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
-
-        var compilation = CSharpCompilation.Create(
-            "DwarfMapperCompileTestAsm",
-            new[] { syntaxTree },
-            BuildReferences(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var compilation = BuildCompilation("DwarfMapperCompileTestAsm", source);
 
         var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
@@ -52,7 +43,47 @@ internal static class GeneratorTestHarness
             .ToImmutableArray();
     }
 
-    private static IEnumerable<MetadataReference> BuildReferences() =>
+    /// <summary>
+    /// Runs the generator and emits the resulting compilation to an in-memory assembly.
+    /// Returns the loaded assembly (or null on emit failure) and any emit-time error diagnostics.
+    /// Each call uses a unique assembly name to avoid load collisions across seeds.
+    /// </summary>
+    public static (Assembly? Assembly, ImmutableArray<Diagnostic> Errors) EmitAssembly(string source)
+    {
+        var asmName = "FuzzAsm_" + Guid.NewGuid().ToString("N");
+        var compilation = BuildCompilation(asmName, source);
+
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        using var ms = new MemoryStream();
+        var result = outputCompilation.Emit(ms);
+
+        if (result.Success)
+        {
+            var asm = Assembly.Load(ms.ToArray());
+            return (asm, ImmutableArray<Diagnostic>.Empty);
+        }
+
+        var errors = result.Diagnostics
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToImmutableArray();
+        return (null, errors);
+    }
+
+    // ── Shared compilation builder ────────────────────────────────────────────
+
+    private static CSharpCompilation BuildCompilation(string assemblyName, string source)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        return CSharpCompilation.Create(
+            assemblyName,
+            new[] { syntaxTree },
+            BuildReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static System.Collections.Generic.IEnumerable<MetadataReference> BuildReferences() =>
         AppDomain.CurrentDomain.GetAssemblies()
             .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
             .Select(a => MetadataReference.CreateFromFile(a.Location))

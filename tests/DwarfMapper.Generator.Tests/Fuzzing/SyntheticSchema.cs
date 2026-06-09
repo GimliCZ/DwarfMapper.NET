@@ -38,6 +38,30 @@ internal static class SyntheticSchema
         "global::System.Guid", "global::System.DateTime",
     ];
 
+    /// <summary>
+    /// Generates a schema suitable for behavioral (value-preserving) property tests.
+    /// Identical to <see cref="Generate"/> except <c>HashSet&lt;T&gt;</c> members are excluded:
+    /// <c>StructuralComparer</c> compares <c>IEnumerable</c> element-by-element in iteration
+    /// order, but <c>HashSet&lt;T&gt;</c> enumeration order is an implementation detail that may
+    /// diverge between the source and destination instances even when the sets are equal.
+    /// All other types (arrays, lists, nullable value types, enums, nested structs, scalars)
+    /// are included as normal.
+    /// </summary>
+    public static string GenerateBehavioral(int seed)
+    {
+        var rng = new Random(seed);
+
+        int memberCount = rng.Next(1, 11); // 1..10 members
+
+        var members = new (string Name, string Type)[memberCount];
+        for (int i = 0; i < memberCount; i++)
+        {
+            members[i] = ($"Member{i}", PickTypeBehavioral(rng));
+        }
+
+        return BuildSource(members);
+    }
+
     public static string Generate(int seed)
     {
         var rng = new Random(seed);
@@ -50,6 +74,13 @@ internal static class SyntheticSchema
             members[i] = ($"Member{i}", PickType(rng));
         }
 
+        return BuildSource(members);
+    }
+
+    // ── Shared source builder ─────────────────────────────────────────────
+
+    private static string BuildSource((string Name, string Type)[] members)
+    {
         var sb = new StringBuilder();
 
         // ── File header ─────────────────────────────────────────────────
@@ -126,6 +157,33 @@ internal static class SyntheticSchema
             },
 
             // 18 → FuzzInner or FuzzInner[]
+            _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]",
+        };
+    }
+
+    /// <summary>
+    /// Type picker for behavioral (value-preserving) tests: identical to <see cref="PickType"/>
+    /// but category 16 (HashSet) is redirected to List.  <c>HashSet&lt;T&gt;</c> is excluded
+    /// because <c>StructuralComparer</c> walks <c>IEnumerable</c> by position; two equal
+    /// <c>HashSet&lt;T&gt;</c> instances may enumerate in different order after a copy.
+    /// </summary>
+    private static string PickTypeBehavioral(Random rng)
+    {
+        int category = rng.Next(0, 19);
+
+        return category switch
+        {
+            >= 0 and <= 12 => ScalarTypes[category],
+            13 => PickValueScalar(rng) + "?",
+            14 => PickScalarElement(rng) + "[]",
+            // 15 and 16 both → List<T> (HashSet excluded for ordering reasons)
+            15 or 16 => $"global::System.Collections.Generic.List<{PickScalarElement(rng)}>",
+            17 => rng.Next(3) switch
+            {
+                0 => "FuzzEnum",
+                1 => "FuzzEnum?",
+                _ => "FuzzEnum[]",
+            },
             _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]",
         };
     }
