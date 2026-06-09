@@ -206,4 +206,24 @@ public class BlitTests
         var (diagnostics, _) = GeneratorTestHarness.Run(s);
         Assert.Contains(diagnostics, d => d.Id == "DWARF022");
     }
+
+    [Fact]
+    public void Reinterpret_and_MapIgnore_conflict_reports_DWARF012()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public struct V { public int X; }
+            public class C { public V[] Items { get; set; } = System.Array.Empty<V>(); }
+            public class D { public V[] Items { get; set; } = System.Array.Empty<V>(); }
+            [DwarfMapper] public partial class M
+            {
+                [Reinterpret("Items")]
+                [MapIgnore("Items")]
+                public partial D Map(C c);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF012");
+    }
 }

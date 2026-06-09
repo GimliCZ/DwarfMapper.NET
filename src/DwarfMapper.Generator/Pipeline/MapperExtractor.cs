@@ -376,12 +376,17 @@ internal static class MapperExtractor
         }
 
         // A [Reinterpret] name that matches no writable destination member is a typo — never silently ignore it.
+        // A [Reinterpret] member that is ALSO in [MapIgnore] is a contradiction — report DWARF012.
         if (reinterpretMembers.Count > 0)
         {
             var writableNames = new HashSet<string>(WritableMembers(targetType).Select(m => m.Name), System.StringComparer.Ordinal);
             foreach (var rm in reinterpretMembers)
             {
-                if (!writableNames.Contains(rm))
+                if (ignores.Contains(rm))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, rm));
+                }
+                else if (!writableNames.Contains(rm))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid, location, rm));
                 }
