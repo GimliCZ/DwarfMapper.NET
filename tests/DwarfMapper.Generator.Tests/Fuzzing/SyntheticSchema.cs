@@ -29,13 +29,33 @@ internal static class SyntheticSchema
         "string", "string",             // weight 2
         "global::System.Guid",
         "global::System.DateTime",
+        // ── Extended scalar pool ───────────────────────────────────────────
+        "decimal",
+        "char",
+        "sbyte",
+        "uint",
+        "ushort",
+        "ulong",
+        "global::System.DateTimeOffset",
+        "global::System.TimeSpan",
     ];
+    // ScalarTypes has 21 entries (indices 0..20).
 
-    // All value-type scalars (for T? and collection element types)
+    // All value-type scalars (for T? and collection element types).
+    // string is NOT included here — it is a reference type and is not valid for T?.
+    // char, decimal, unsigned ints, DateTimeOffset, TimeSpan are all value types.
     private static readonly string[] ValueScalars =
     [
         "int", "long", "short", "byte", "double", "float", "bool",
         "global::System.Guid", "global::System.DateTime",
+        "decimal",
+        "char",
+        "sbyte",
+        "uint",
+        "ushort",
+        "ulong",
+        "global::System.DateTimeOffset",
+        "global::System.TimeSpan",
     ];
 
     /// <summary>
@@ -90,8 +110,12 @@ internal static class SyntheticSchema
         sb.AppendLine("namespace Fuzz;");
         sb.AppendLine();
 
-        // ── Shared enum (always emitted so any member using FuzzEnum compiles) ──
+        // ── Shared enums (always emitted so any member using FuzzEnum/FuzzEnumL compiles) ──
         sb.AppendLine("public enum FuzzEnum { A, B, C }");
+        sb.AppendLine();
+        // Non-default (long) underlying type: exercises by-name mapping across non-int underlying.
+        // Member values are kept small (0,1,2) so Convert.ToInt64 in the behavioral oracle is safe.
+        sb.AppendLine("public enum FuzzEnumL : long { A, B, C }");
         sb.AppendLine();
 
         // ── Shared nested struct ─────────────────────────────────────────
@@ -124,65 +148,80 @@ internal static class SyntheticSchema
         return sb.ToString();
     }
 
-    // ── Type picker ───────────────────────────────────────────────────────
+    // ── Type picker ───────────────────────────────────────────────────────────
+    //
+    // Category layout (27 slots total, rng.Next(0, 27) → 0..26):
+    //
+    //   0..20  → raw scalar from ScalarTypes[category]  (21 slots)
+    //   21     → T? (nullable value scalar)
+    //   22     → T[] (array of scalar/enum element)
+    //   23     → List<T>
+    //   24     → HashSet<T>
+    //   25     → FuzzEnum / FuzzEnumL variants
+    //   26     → FuzzInner / FuzzInner[]
 
     private static string PickType(Random rng)
     {
-        // 13 categories (0-12), weighted by how many slots each gets
-        int category = rng.Next(0, 19);
+        int category = rng.Next(0, 27);
 
         return category switch
         {
-            // 0-12 → raw scalar (13 slots)
-            >= 0 and <= 12 => ScalarTypes[category],
+            // 0-20 → raw scalar
+            >= 0 and <= 20 => ScalarTypes[category],
 
-            // 13 → T? (nullable value scalar)
-            13 => PickValueScalar(rng) + "?",
+            // 21 → T? (nullable value scalar)
+            21 => PickValueScalar(rng) + "?",
 
-            // 14 → T[] (array of scalar)
-            14 => PickScalarElement(rng) + "[]",
+            // 22 → T[] (array of scalar/enum element)
+            22 => PickScalarElement(rng) + "[]",
 
-            // 15 → List<T>
-            15 => $"global::System.Collections.Generic.List<{PickScalarElement(rng)}>",
+            // 23 → List<T>
+            23 => $"global::System.Collections.Generic.List<{PickScalarElement(rng)}>",
 
-            // 16 → HashSet<T>
-            16 => $"global::System.Collections.Generic.HashSet<{PickScalarElement(rng)}>",
+            // 24 → HashSet<T>
+            24 => $"global::System.Collections.Generic.HashSet<{PickScalarElement(rng)}>",
 
-            // 17 → FuzzEnum or FuzzEnum? or FuzzEnum[]
-            17 => rng.Next(3) switch
+            // 25 → FuzzEnum or FuzzEnumL variants
+            25 => rng.Next(6) switch
             {
                 0 => "FuzzEnum",
                 1 => "FuzzEnum?",
-                _ => "FuzzEnum[]",
+                2 => "FuzzEnum[]",
+                3 => "FuzzEnumL",
+                4 => "FuzzEnumL?",
+                _ => "FuzzEnumL[]",
             },
 
-            // 18 → FuzzInner or FuzzInner[]
+            // 26 → FuzzInner or FuzzInner[]
             _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]",
         };
     }
 
     /// <summary>
     /// Type picker for behavioral (value-preserving) tests: identical to <see cref="PickType"/>
-    /// but category 16 (HashSet) is redirected to List.  <c>HashSet&lt;T&gt;</c> is excluded
+    /// but category 24 (HashSet) is redirected to List.  <c>HashSet&lt;T&gt;</c> is excluded
     /// because <c>StructuralComparer</c> walks <c>IEnumerable</c> by position; two equal
     /// <c>HashSet&lt;T&gt;</c> instances may enumerate in different order after a copy.
     /// </summary>
     private static string PickTypeBehavioral(Random rng)
     {
-        int category = rng.Next(0, 19);
+        int category = rng.Next(0, 27);
 
         return category switch
         {
-            >= 0 and <= 12 => ScalarTypes[category],
-            13 => PickValueScalar(rng) + "?",
-            14 => PickScalarElement(rng) + "[]",
-            // 15 and 16 both → List<T> (HashSet excluded for ordering reasons)
-            15 or 16 => $"global::System.Collections.Generic.List<{PickScalarElement(rng)}>",
-            17 => rng.Next(3) switch
+            >= 0 and <= 20 => ScalarTypes[category],
+            21 => PickValueScalar(rng) + "?",
+            22 => PickScalarElement(rng) + "[]",
+            // 23 and 24 both → List<T> (HashSet excluded for ordering reasons)
+            23 or 24 => $"global::System.Collections.Generic.List<{PickScalarElement(rng)}>",
+            25 => rng.Next(6) switch
             {
                 0 => "FuzzEnum",
                 1 => "FuzzEnum?",
-                _ => "FuzzEnum[]",
+                2 => "FuzzEnum[]",
+                3 => "FuzzEnumL",
+                4 => "FuzzEnumL?",
+                _ => "FuzzEnumL[]",
             },
             _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]",
         };
@@ -203,6 +242,15 @@ internal static class SyntheticSchema
         "global::System.Guid",
         "global::System.DateTime",
         "FuzzEnum",
+        "FuzzEnumL",
+        "decimal",
+        "char",
+        "sbyte",
+        "uint",
+        "ushort",
+        "ulong",
+        "global::System.DateTimeOffset",
+        "global::System.TimeSpan",
     ];
 
     private static string PickScalarElement(Random rng) =>
