@@ -15,8 +15,33 @@ public partial class BlitMapper
     public partial BlitDst Map(BlitSrc s);
 }
 
+public struct SrcTransform { public SrcVec Pos; public int Id; }
+public struct DstTransform { public DstVec Pos; public int Id; }
+
+public class NestedBlitSrc { public SrcTransform[] Items { get; set; } = System.Array.Empty<SrcTransform>(); }
+public class NestedBlitDst { public DstTransform[] Items { get; set; } = System.Array.Empty<DstTransform>(); }
+
+[DwarfMapper]
+public partial class NestedBlitMapper
+{
+    public partial NestedBlitDst Map(NestedBlitSrc s);
+}
+
 public class BlitRuntimeTests
 {
+    [Fact]
+    public void Nested_struct_blit_copies_values()
+    {
+        var dst = new NestedBlitMapper().Map(new NestedBlitSrc
+        {
+            Items = new[] { new SrcTransform { Pos = new SrcVec { X = 1f, Y = 2f, Z = 3f }, Id = 7 } },
+        });
+        Assert.Single(dst.Items);
+        Assert.Equal(1f, dst.Items[0].Pos.X);
+        Assert.Equal(3f, dst.Items[0].Pos.Z);
+        Assert.Equal(7, dst.Items[0].Id);
+    }
+
     [Fact]
     public void Reinterpret_blit_copies_values()
     {
