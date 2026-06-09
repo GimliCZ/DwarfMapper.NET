@@ -7,8 +7,7 @@ namespace DwarfMapper.Generator.Pipeline;
 
 /// <summary>
 /// Proves whether two distinct unmanaged structs are byte-identical in layout AND field-name-aligned,
-/// so a positional reinterpret equals DwarfMapper's name-based mapping. v1: PRIMITIVES-ONLY — every
-/// field must be a primitive (no nested structs); nested-struct recursion is a later relaxation.
+/// so a positional reinterpret equals DwarfMapper's name-based mapping. Recurses through nested structs.
 /// </summary>
 internal static class BlittableProof
 {
@@ -19,26 +18,42 @@ internal static class BlittableProof
         {
             return false;
         }
-        if (!src.IsUnmanagedType || !dst.IsUnmanagedType)
+        return LayoutIdentical(src, dst);
+    }
+
+    /// <summary>
+    /// True when two types are byte-identical in layout AND field-name-aligned, so a positional
+    /// reinterpret equals DwarfMapper's name-based mapping. Recurses through nested structs.
+    /// </summary>
+    private static bool LayoutIdentical(ITypeSymbol a, ITypeSymbol b)
+    {
+        if (SymbolEqualityComparer.Default.Equals(a, b))
+        {
+            return true; // same type -> trivially same layout and name-aligned
+        }
+        if (!a.IsUnmanagedType || !b.IsUnmanagedType)
         {
             return false;
         }
-        // Both must be plain (non-enum) structs (excludes enums and primitives at the top level).
-        if (src is not INamedTypeSymbol ns || dst is not INamedTypeSymbol nd)
+        if (IsPrimitive(a) || IsPrimitive(b))
+        {
+            return a.SpecialType == b.SpecialType && a.SpecialType != SpecialType.None;
+        }
+        if (a is not INamedTypeSymbol na || b is not INamedTypeSymbol nb)
         {
             return false;
         }
-        if (ns.TypeKind != TypeKind.Struct)
+        if (na.TypeKind != TypeKind.Struct)
         {
             return false;
         }
 #pragma warning disable CA1508 // flow analysis false positive: INamedTypeSymbol can be Class/Enum/Interface/Delegate, not only Struct
-        if (nd.TypeKind != TypeKind.Struct)
+        if (nb.TypeKind != TypeKind.Struct)
         {
-            return false;
+            return false; // excludes enums (TypeKind.Enum): by-name enum mapping != byte copy
         }
 #pragma warning restore CA1508
-        if (!IsSourceSequential(ns, out var packA) || !IsSourceSequential(nd, out var packB))
+        if (!IsSourceSequential(na, out var packA) || !IsSourceSequential(nb, out var packB))
         {
             return false;
         }
@@ -47,8 +62,8 @@ internal static class BlittableProof
             return false;
         }
 
-        var fa = InstanceFields(ns);
-        var fb = InstanceFields(nd);
+        var fa = InstanceFields(na);
+        var fb = InstanceFields(nb);
         if (fa.Count == 0 || fa.Count != fb.Count)
         {
             return false;
@@ -59,10 +74,9 @@ internal static class BlittableProof
             {
                 return false; // positional == name-based requires same names
             }
-            // PRIMITIVES-ONLY (v1): each field must be a primitive of the same special type.
-            if (!IsPrimitive(fa[i].Type) || fa[i].Type.SpecialType != fb[i].Type.SpecialType)
+            if (!LayoutIdentical(fa[i].Type, fb[i].Type))
             {
-                return false;
+                return false; // recurse: primitive same-SpecialType, identical type, or nested layout-identical struct
             }
         }
         return true;

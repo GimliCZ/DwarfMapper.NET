@@ -112,21 +112,59 @@ public class BlitTests
     }
 
     [Fact]
-    public void Nested_struct_field_does_not_auto_blit_v1()
+    public void Nested_layout_identical_structs_blit()
     {
-        // v1 is primitives-only: a struct containing a nested struct field must NOT auto-blit.
         const string s = """
             using DwarfMapper;
             namespace Demo;
-            public struct Inner { public float A; }
-            public struct SrcN { public Inner I; public float X; }
-            public struct DstN { public Inner I; public float X; }
+            public struct SrcInner { public float A; public float B; }
+            public struct DstInner { public float A; public float B; }
+            public struct SrcN { public SrcInner I; public int N; }
+            public struct DstN { public DstInner I; public int N; }
+            public class C { public SrcN[] V { get; set; } = System.Array.Empty<SrcN>(); }
+            public class D { public DstN[] V { get; set; } = System.Array.Empty<DstN>(); }
+            [DwarfMapper] public partial class M { public partial D Map(C c); }
+            """;
+        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        Assert.Contains("MemoryMarshal.Cast<", gen, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Nested_struct_inner_name_mismatch_does_not_blit()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public struct SrcInner { public float A; }
+            public struct DstInner { public float Z; }   // inner field name differs
+            public struct SrcN { public SrcInner I; }
+            public struct DstN { public DstInner I; }
             public class C { public SrcN[] V { get; set; } = System.Array.Empty<SrcN>(); }
             public class D { public DstN[] V { get; set; } = System.Array.Empty<DstN>(); }
             [DwarfMapper] public partial class M { public partial D Map(C c); }
             """;
         var (_, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain("MemoryMarshal.Cast<", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("MemoryMarshal.Cast<", gen, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Nested_struct_inner_type_mismatch_does_not_blit()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public struct SrcInner { public float A; }
+            public struct DstInner { public int A; }     // inner field type differs (float vs int)
+            public struct SrcN { public SrcInner I; }
+            public struct DstN { public DstInner I; }
+            public class C { public SrcN[] V { get; set; } = System.Array.Empty<SrcN>(); }
+            public class D { public DstN[] V { get; set; } = System.Array.Empty<DstN>(); }
+            [DwarfMapper] public partial class M { public partial D Map(C c); }
+            """;
+        var (_, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain("MemoryMarshal.Cast<", gen, System.StringComparison.Ordinal);
     }
 
     [Fact]
