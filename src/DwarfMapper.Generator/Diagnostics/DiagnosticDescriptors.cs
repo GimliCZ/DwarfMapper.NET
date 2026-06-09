@@ -132,4 +132,10 @@ public static class DiagnosticDescriptors
         "Invalid [Reinterpret] target",
         "[Reinterpret] member '{0}' must be an unmanaged array-to-array mapping",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AfterMapValueTargetByValue = new(
+        "DWARF023",
+        "[AfterMap] value-type target must be passed by ref",
+        "[AfterMap] on a value-type target '{0}' must take the target parameter by 'ref', or its changes are lost",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

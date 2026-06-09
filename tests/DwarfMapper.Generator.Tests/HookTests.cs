@@ -106,4 +106,62 @@ public class HookTests
         var (_, gen) = GeneratorTestHarness.Run(s);
         Assert.Contains("Log(s);", gen, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void AfterMap_byvalue_on_struct_target_reports_DWARF023()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Src { public int X { get; set; } }
+            public struct Dst { public int X { get; set; } }
+            [DwarfMapper] public partial class M
+            {
+                public partial Dst Map(Src s);
+                [AfterMap] private static void Fix(Dst d) { }
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF023");
+    }
+
+    [Fact]
+    public void AfterMap_ref_on_struct_target_emits_ref_call()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Src { public int X { get; set; } }
+            public struct Dst { public int X { get; set; } }
+            [DwarfMapper] public partial class M
+            {
+                public partial Dst Map(Src s);
+                [AfterMap] private static void Fix(ref Dst d) { }
+            }
+            """;
+        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        Assert.Contains("Fix(ref __dwarf_target)", gen, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AfterMap_byvalue_on_class_target_unchanged()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Src { public int X { get; set; } }
+            public class Dst { public int X { get; set; } }
+            [DwarfMapper] public partial class M
+            {
+                public partial Dst Map(Src s);
+                [AfterMap] private static void Fix(Dst d) { }
+            }
+            """;
+        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF023");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        Assert.Contains("Fix(__dwarf_target)", gen, System.StringComparison.Ordinal);
+    }
 }

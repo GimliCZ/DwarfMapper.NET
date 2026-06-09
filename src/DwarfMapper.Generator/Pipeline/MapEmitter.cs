@@ -122,6 +122,10 @@ internal static class MapEmitter
                 {
                     sb.Append(method.ParameterName).Append(", ");
                 }
+                if (after.TargetByRef)
+                {
+                    sb.Append("ref ");
+                }
                 sb.Append("__dwarf_target").AppendLine(");");
             }
             sb.Append(indent).Append("    return __dwarf_target;").AppendLine();

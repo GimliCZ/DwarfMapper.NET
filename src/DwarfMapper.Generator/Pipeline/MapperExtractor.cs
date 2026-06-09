@@ -132,18 +132,40 @@ internal static class MapperExtractor
             var applicableAfter = new List<HookCall>();
             foreach (var h in afterHookDefs)
             {
+                bool applies;
+                bool takesSource;
                 if (h.P1 is null)
                 {
-                    if (HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P0))
-                    {
-                        applicableAfter.Add(new HookCall(h.Name, false));
-                    }
+                    applies = HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P0);
+                    takesSource = false;
                 }
-                else if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0)
-                    && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1))
+                else
                 {
-                    applicableAfter.Add(new HookCall(h.Name, true));
+                    applies = HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0)
+                        && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
+                    takesSource = true;
                 }
+
+                if (!applies)
+                {
+                    continue;
+                }
+
+                var targetIsValue = targetType.IsValueType;
+                var targetIsRef = h.TargetRefKind == RefKind.Ref;
+
+                if (targetIsValue && !targetIsRef)
+                {
+                    // Silent correctness bug: struct target passed by value — mutations would be lost.
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.AfterMapValueTargetByValue,
+                        methodLocation,
+                        targetType.Name));
+                    // Skip: do not emit this hook.
+                    continue;
+                }
+
+                applicableAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: targetIsRef));
             }
 
             methods.Add(new MapMethodModel(
@@ -497,11 +519,11 @@ internal static class MapperExtractor
         return methods;
     }
 
-    private static (List<(string Name, ITypeSymbol ParamType)> Before, List<(string Name, ITypeSymbol P0, ITypeSymbol? P1)> After)
+    private static (List<(string Name, ITypeSymbol ParamType)> Before, List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)> After)
         CollectHooks(INamedTypeSymbol classSymbol, List<DiagnosticInfo> diagnostics)
     {
         var before = new List<(string Name, ITypeSymbol ParamType)>();
-        var after = new List<(string Name, ITypeSymbol P0, ITypeSymbol? P1)>();
+        var after = new List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)>();
         foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
         {
             var isBefore = m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.BeforeMapAttribute");
@@ -531,11 +553,13 @@ internal static class MapperExtractor
             {
                 if (m.Parameters.Length == 1)
                 {
-                    after.Add((m.Name, m.Parameters[0].Type, null));
+                    // 1-param: the sole parameter is the target; capture its RefKind
+                    after.Add((m.Name, m.Parameters[0].Type, null, m.Parameters[0].RefKind));
                 }
                 else if (m.Parameters.Length == 2)
                 {
-                    after.Add((m.Name, m.Parameters[0].Type, m.Parameters[1].Type));
+                    // 2-param: P0=source, P1=target; capture P1's RefKind
+                    after.Add((m.Name, m.Parameters[0].Type, m.Parameters[1].Type, m.Parameters[1].RefKind));
                 }
                 else
                 {
