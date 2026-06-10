@@ -36,7 +36,7 @@ Deep auto-nesting · full collection/dictionary taxonomy · object-graph reconst
 
 **Completeness.** Each synthesized pair runs full completeness: an unmapped nested target member → DWARF001 at the originating method location (carry the member path, e.g. `Order.Customer.Address.Zip`). Read-only/no-conversion nested members → DWARF005/007 as today. So auto-nesting never silently drops data.
 
-**Opt-out.** `[DwarfMapper(AutoNest = false)]` → step 1 only; a nested pair with no user-declared mapper → DWARF005 (today's behavior). Per-mapper.
+**Opt-out granularity.** The `AutoNest` switch lives on the **mapper class** (`[DwarfMapper(AutoNest = false)]` on the `partial class`, NOT on a property) — it is the master "force-explicit-everywhere" toggle, with an optional **per-method** override (a method-level `[AutoNest(false)]`) so one mapping method in a class can differ. **Per-member** opt-out needs no new knob: to exclude one nested member from synthesis while still handling it, the user declares a `partial` mapper for that pair (always wins over synthesis), maps it with `[MapProperty(Use=…)]`, or `[MapIgnore]`s it. Default is `AutoNest = true`. With it off, a nested pair lacking a user mapper → DWARF005 (today's behavior).
 
 **Construction strategy for the nested target** reuses Part-18 `ConstructorSelector` (records/immutable/init/settable) — auto-nesting composes with constructor mapping for free.
 
@@ -76,6 +76,10 @@ Deep auto-nesting · full collection/dictionary taxonomy · object-graph reconst
 
 **Nested collections** (`List<List<T>>`, `T[][]`, `Dictionary<K,List<V>>`, `List<RecordDto>`): element/value type recurses through `TryResolveConversion` → Part A auto-nesting + Part B collection branch compose. Must be tested explicitly.
 
+**Materialized vs. unmaterialized (owner) — each target type carries a projection-translatability flag.** The taxonomy is shared with Part D: every target collection/dict kind is classified **projection-safe** (`List<T>`, `T[]`, `IEnumerable<T>`/`IReadOnlyList<T>`/`ICollection<T>` → inline `Select().ToList()/.ToArray()`, EF-translatable) or **projection-unsafe** (`HashSet`/`ISet`, all immutables, `Dictionary` and dict interfaces → not translatable; in a projection these become DWARF028, see Part D). The single `CollectionInfo` record exposes both the materialized construction strategy and `IsProjectionTranslatable`, so B and D never diverge.
+
+**Deferred / lazy enumerable targets.** When the target is exactly `IEnumerable<T>` (not a concrete collection), emit a **lazy** `src.Select(x => map(x))` **without** forcing `.ToList()` — the result stays deferred/unmaterialized (matching Mapperly + LINQ semantics), so the caller controls materialization. (A concrete target — `List`/array/etc. — materializes eagerly as today.) Document that a lazy target captures the source reference; re-enumeration re-maps.
+
 **Null handling (defensive, explicit, no silent surprise):** null source collection/dict → empty target by default (current behavior, never NRE); document. Null elements/values: existing `ThrowIfNull`/`ValueOrDefault`/`NullableProject` per element honored. A `[DwarfMapper(NullCollections = AsNull|AsEmpty)]` knob (default `AsEmpty`) so users can choose null-passthrough; default stays empty for safety.
 
 **Collections as constructor params / init members** already route through `TryResolveConversion` (Part 18) — add explicit coverage.
@@ -104,7 +108,24 @@ T MapNode(S s, ctx):
 ```
 This reconstructs *any* graph: each node visited once, all edges (forward, back, cross, shared) relinked. `A→B, B⇄C, C⇄D, B⇄D` ⇒ `A'→B', B'⇄C', C'⇄D', B'⇄D'` — topology-isomorphic.
 
-**Constructor-arg caveat (defensive):** register-before-populate requires the instance to exist before its members are set. For **settable/init** targets this is exact. For targets where a **graph node is itself a constructor parameter** that participates in a cycle, the node can't be registered before construction → that specific back-edge cannot be satisfied by ctor injection. Detect this at generator time and emit **DWARF030 (CyclicConstructorParameter)**: "a constructor parameter participates in a reference cycle; map it via a settable/init member or break the cycle." Loud, not silent.
+**Constructor-arg caveat (defensive):** register-before-populate requires the instance to exist before its members are set. For **settable/init** targets this is exact. For targets where a **graph node is itself a constructor parameter** that participates in a cycle, the node can't be registered before construction → that specific back-edge cannot be satisfied by ctor injection (the canonical immutable-cyclic-graph deadlock; serializers like System.Text.Json refuse it outright). Detect this at generator time and emit **DWARF030 (CyclicConstructorParameter)**: "a constructor parameter participates in a reference cycle; map it via a settable/init member or break the cycle." Loud, not silent. (Acyclic graphs into immutable targets work — ctor args mapped in topological order.)
+
+### Well-documented graph edge cases (researched) — MUST handle each
+Canonical object-graph-copy rules (System.Text.Json `ReferenceHandler`, BinaryFormatter `ObjectManager`, deep-clone literature):
+1. **Reference equality, never value equality (CRITICAL).** The identity map MUST use `System.Collections.Generic.ReferenceEqualityComparer.Instance` (≡ `RuntimeHelpers.GetHashCode` + `ReferenceEquals`), NEVER the default comparer. Otherwise **records / value-equality types** (which override `Equals`/`GetHashCode`) silently MERGE two distinct-but-equal nodes into one, or wrongly skip a back-edge. The generator must emit this comparer explicitly. (This is the single highest-severity correctness trap.)
+2. **Collections/arrays are graph nodes too.** A shared or cyclic `List<T>`/array/`Dictionary` instance must itself be registered in the identity map (register the target collection BEFORE adding elements), or two parents get distinct target lists / a list containing its ancestor infinite-loops. Generated collection code does register-before-fill for recursion-capable element types.
+3. **Self-loop** (`n.Self = n`), **diamonds/shared nodes**, **arbitrary SCCs** (the `A→B,B⇄C,C⇄D,B⇄D` case): all handled by register-before-populate; no special SCC detection needed.
+4. **Deep ACYCLIC chains → StackOverflow in the mapper itself.** Even with no cycle, a 100k-node chain recursing through generated methods overflows the stack. Mitigation: a **depth counter on recursion-capable pairs**, throwing a catchable **`DwarfMappingDepthException`** at `MaxDepth` (default **64**, matching System.Text.Json/AutoMapper; hard cap **1000** non-overridable). A silent `StackOverflowException` (uncatchable, crashes the process) is NEVER acceptable — turn it into a loud catchable exception. The counter is emitted ONLY on recursion-capable pairs (a finitely-deep acyclic type graph is bounded by construction → no counter, zero overhead).
+5. **Struct / value-type nodes excluded** from the identity map (copied by value; boxed-struct identity is meaningless). Only reference types are tracked. A struct containing a reference field still gets that field tracked when the reference is mapped.
+6. **Null edge first.** `if (s is null) return null;` is the absolute first line, before any map lookup (avoids null-key lookup throw).
+7. **Immutable cyclic target** = the register-before-populate deadlock → **DWARF030** (compile error). No runtime fix-up/forward-reference machinery (BinaryFormatter `ObjectManager` style) — explicitly out of scope.
+
+### Fidelity model ("full or degraded as the user wants")
+- `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.None | Preserve)]` (default `None`).
+  - **`None`**: no identity map. Recursion-capable pairs still get the depth counter → cyclic or over-deep data throws `DwarfMappingDepthException` (loud, catchable), never silent SO. Acyclic-within-depth graphs map fully. Zero overhead on non-recursion-capable pairs.
+  - **`Preserve` (full reconstruction):** identity map (`ReferenceEqualityComparer`) threaded through recursion-capable pairs; full topology — shared nodes, diamonds, all cycles — reconstructed isomorphically. One small dict per top-level `Map` call.
+- `[DwarfMapper(MaxDepth = N)]` (default 64, hard cap 1000): universal runtime bound on recursion-capable pairs.
+- `[DwarfMapper(OnCycle = Throw | SetNull)]` — the **degraded** knob when `ReferenceHandling = None`: `Throw` (default — depth cap) or `SetNull` (≡ System.Text.Json `IgnoreCycles`: the re-entrant back-edge is set to null, yielding a finite acyclic projection of a cyclic source — useful for display/DTO). Ignored under `Preserve` (cycles are reconstructed).
 
 **Public API.** `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.None | Preserve | PreserveDegraded)]` (default `None`).
 - **`None`** (default): no tracking, zero overhead. Acyclic deep graphs fine. Cyclic *data* → runtime `StackOverflowException` (documented; same as Mapperly default). Recursive *types* still compile.
@@ -113,18 +134,19 @@ This reconstructs *any* graph: each node visited once, all edges (forward, back,
 
 **Generator-time scoping optimization ("watch recursion properties," owner).** Detect which `(src,tgt)` pairs are **recursion-capable** — a member/element/param type that can reach back to an ancestor type in the graph (Tarjan-style SCC / back-edge detection over the type graph). Only those synthesized methods get the `TryGet/Set` wrapper + ctx parameter; acyclic pairs stay zero-overhead even when `ReferenceHandling = Preserve`. This minimizes the "magic" and cost to exactly where a cycle is possible.
 
-**Mechanism.** Public `T Map(S s)` creates the context and calls an internal `T Map(S s, DwarfRefContext ctx)`; the context threads through all recursion-capable synthesized methods. `DwarfRefContext` is a tiny struct/class wrapping `Dictionary<object,object>` (ref-equality) + depth counter — reflection-free, AOT-safe, in the core runtime package (not Testing). Threading is internal; the public signature is unchanged.
+**Mechanism.** Public `T Map(S s)` creates the context and calls an internal `T Map(S s, DwarfRefContext ctx)`; the context threads through all recursion-capable synthesized methods (only — acyclic pairs keep the plain signature). `DwarfRefContext` is a tiny class wrapping `Dictionary<object,object>(ReferenceEqualityComparer.Instance)` + an `int depth` — reflection-free, AOT-safe, in the core runtime package (not Testing). Under `None` it carries only the depth counter (no dict allocated unless `Preserve`). Threading is internal; the public signature is unchanged.
 
 **Interaction with projection (Part D):** reference handling is **incompatible** with IQueryable projection (stateful dict can't live in an expression tree) → a `[ReferenceHandling != None]` mapper used on a projection method → **DWARF028** translatability error.
 
 ### Tasks C
-- [ ] `DwarfRefContext` runtime type (ref-equality identity map + depth) in `src/DwarfMapper/`.
-- [ ] Generator-time recursion-capability analysis (back-edge/SCC over the synthesized type graph) → mark pairs needing tracking.
-- [ ] Emit, for tracked pairs: `if (s is null) return null; if (ctx.TryGet(s, out var e)) return (T)e; var t = new T(...); ctx.Set(s, t); …populate…; return t;`. Public/internal overload split; thread ctx through tracked calls only.
-- [ ] `PreserveDegraded` + `MaxDepth` truncation; `ReferenceHandlingStrategy` enum + attribute props.
-- [ ] DWARF030 (CyclicConstructorParameter) for an unbreakable ctor-arg back-edge.
-- [ ] Tests (TDD): self-ref (`Node.Parent`), tree (`Tree.Children` acyclic — Preserve and None both work for acyclic), pairwise `A⇄B`, the **owner graph `A→B, B⇄C, C⇄D, B⇄D`** (assert exact reconstructed topology: shared node B' is the *same instance* referenced by A',C',D'; cycles closed), diamond (two paths to one node → one target instance). `None` + cyclic data → assert documented (don't run the SO; assert generator chose no tracking). `PreserveDegraded` MaxDepth truncation (assert depth-N ref is null). DWARF030 for cyclic ctor param. Recursion-capability scoping: assert an acyclic pair emits NO ctx wrapper even under Preserve (generated-code assertion). AOT gate.
-- [ ] **Graph oracle for tests:** a reference-topology comparer (visited-set, compares by structural position + identity-sharing pattern) to verify reconstruction — see Part E.
+- [ ] `DwarfRefContext` runtime type in `src/DwarfMapper/`: `Dictionary<object,object>(ReferenceEqualityComparer.Instance)` (lazily allocated; only under `Preserve`) + `int depth` + `MaxDepth`; `TryGet`/`Set`/`EnterDepth`(throws `DwarfMappingDepthException` past cap). `DwarfMappingDepthException` type. AOT-safe, no reflection.
+- [ ] Generator-time **recursion-capability analysis** (back-edge / SCC over the synthesized `(src,tgt)` type graph) → mark exactly the pairs that can re-enter; only those get the ctx parameter + depth/identity wrapper. Also identify **collection/array element types** that are recursion-capable → register the collection instance too.
+- [ ] Emit, for tracked reference pairs: `if (s is null) return null; ctx.EnterDepth(); if (ctx.TryGet(s, out var e)) return (T)e; var t = new T(...); ctx.Set(s, t); …populate…; return t;`. Exclude **value types** from tracking (copy by value). Public/internal overload split; thread ctx through tracked calls only.
+- [ ] `ReferenceHandlingStrategy { None, Preserve }` + `MaxDepth` (default 64, hard cap 1000) + `OnCycle { Throw, SetNull }` attribute props. `SetNull` (None mode): break the re-entrant edge via an on-stack guard set → null.
+- [ ] **CRITICAL:** identity map uses `ReferenceEqualityComparer.Instance` — emit a generator test proving two **distinct-but-equal record** source nodes are NOT merged.
+- [ ] DWARF030 (CyclicConstructorParameter) for an unbreakable ctor-arg back-edge (cyclic→immutable target).
+- [ ] Tests (TDD), covering the researched checklist: null-first; self-loop (`n.Self=n` → `t.Self==t`); 2-node `A⇄B`; the **owner graph `A→B,B⇄C,C⇄D,B⇄D`** (assert shared node B' is the SAME instance referenced by A',C',D'; all cycles closed); diamond (one shared child → one target instance, referenced twice); **shared `List<T>`** referenced by two parents → one target list; **list cycle** (list containing its ancestor); two distinct-but-equal records NOT merged; **long chain > MaxDepth → `DwarfMappingDepthException`** (NOT StackOverflow); struct/record/class mixed graph; `OnCycle=SetNull` → back-edge null + finite output; `None` + recursion-capable: assert depth counter present (no silent SO); recursion-capability scoping: an acyclic pair emits NO ctx wrapper even under `Preserve` (generated-code assertion); DWARF030 for cyclic ctor param. AOT gate.
+- [ ] **Graph oracle for tests:** see Part E (topology-aware, identity-sharing-aware, visited-set comparer).
 
 ---
 
@@ -150,15 +172,17 @@ This reconstructs *any* graph: each node visited once, all edges (forward, back,
 
 ---
 
-# Part E — Defensive / holistic testing (the bar: cover every hole)
+# Part E — Defensive / holistic testing: exhaustive combinatorial coverage (the bar: cover every hole)
 
-**Fuzzer extension (`SyntheticSchema`/`ObjectFactory`/`StructuralComparer`/`BehavioralFuzzTests`):**
-- [ ] Add to the schema pool: `Dictionary<K,V>`, interface + immutable collection targets, **nested collections** (`List<List<T>>`, `T[][]`, `Dictionary<K,List<V>>`), and **nested reference-type objects** (a `class`/`record` member with its own auto-synthesized mapper, multiple levels).
-- [ ] Add **type-divergent** collection schemas (Src/Dst element types differ — `List<int>`→`int[]`, `int[]`→`List<long>`, `List<SrcRec>`→`List<DstRec>`) so cross-type collection conversion is fuzzed, not just identity shapes.
-- [ ] `ObjectFactory`: populate `Dictionary`/`HashSet`/immutable collections with data; build **graph fixtures** including shared nodes and cycles (for Part C).
-- [ ] `StructuralComparer`: make it **graph-aware** — a visited-set/identity-map comparison that verifies reference-topology reconstruction (shared node ⇒ same target instance; cycle ⇒ closed) without infinite recursion. Provide both a structural compare (values) and a topology compare (identity pattern).
-- [ ] Behavioral fuzz over emitted assemblies for the new shapes (value-preserving + topology-preserving). Keep deterministic seeds; replayable counterexamples.
-- [ ] A **projection fuzz/matrix**: generate SAFE projection schemas (assert compile + DWARF-free) and UNSAFE ones (assert DWARF028).
+**(owner) Exhaustive combination engine + self-materializer + fixtures.** Beyond random fuzzing, build a *systematic* engine that enumerates the cartesian product of **every system basic type × every complex container/composition shape**, generates a mapper for each, materializes instances, maps, and verifies. This is deterministic, replayable, and exhaustive (not just sampled).
+
+- [ ] **Self-materializer** (`ObjectFactory` v2): construct an instance of ANY type deterministically from a seed — every basic type (the full v17 set: bool, sbyte..ulong, char, float, double, decimal, string, Guid, DateTime, DateTimeOffset, TimeSpan, enums incl. non-`int` underlying), every supported collection/dict/immutable/interface target (with data), nested objects/records, and **reference graphs** with shared nodes + cycles (self-loop, A⇄B, the A→B/B⇄C/C⇄D/B⇄D shape, diamond, shared/cyclic list). Excludes nothing the mapper claims to support.
+- [ ] **Combinatorial schema generator** (`CombinatorialSchema`): enumerate the matrix
+  `{basic types B} × {shape S}` where `S ∈ { raw, B?, B[], List<B>, IReadOnlyList<B>, HashSet<B>, ImmutableArray<B>, Dictionary<string,B>, Dictionary<B,string>, nested-object{ B }, record(B), List<List<B>>, List<record(B)>, Dictionary<string,List<B>>, graph-node{ B + self-ref } }` — plus a bounded **composition depth** (shape-of-shape up to depth 2–3). For each cell: emit Src/Dst (identity AND a type-divergent variant where the element/member type widens, e.g. `int→long`, `SrcRec→DstRec`), run the generator (assert no unexpected DWARF), `EmitAssembly`, materialize via the self-materializer, map, and verify with the oracle. The matrix is enumerated exhaustively for depth ≤1 and sampled (seeded) for deeper compositions to bound test time; tag the heavy tier `[Trait("tier","exhaustive")]`.
+- [ ] **Golden fixtures**: hand-authored extreme cases that must never regress — the owner graph `A→B,B⇄C,C⇄D,B⇄D`; deep chain at MaxDepth boundary; record-equality-merge trap; shared list; immutable cyclic (→DWARF030); empty/null collections; dictionary with enum keys; nested `List<List<RecordDto>>`.
+- [ ] **Graph-aware oracle** (`StructuralComparer` v2): two comparison modes — (a) **value** compare (deep, MaxDepth-guarded, deterministic order for sets/dicts); (b) **topology** compare with a visited identity-map that asserts the reconstructed graph's *sharing/cycle pattern* matches the source's (shared source node ⇒ same target instance; cycle ⇒ closed), terminating on revisit. Used for Part C verification.
+- [ ] **Behavioral fuzz** over emitted assemblies for the new shapes (value- AND topology-preserving), deterministic seeds, replayable counterexamples; widen `SyntheticSchema` to include dicts, nested collections, nested reference objects, type-divergent collections, and graph shapes (HashSet/dict ordered deterministically for the oracle).
+- [ ] **Projection translatability matrix**: enumerate the SAFE constructs (assert compile + DWARF-free, and run through `IQueryable`/EF-InMemory where feasible to confirm shape) and the UNSAFE constructs (assert DWARF028 with the correct reason). Exhaustive over the construct list in Part D.
 
 **Adversarial review (mandatory before fold):** dispatch an independent reviewer over the whole feature with probes incl.: deep nesting depth limit; self/mutual/diamond/multi-cycle graphs; ctor-arg back-edge (DWARF030); covariant/abstract element types; interface targets with no concrete; immutable construction correctness; null source/element/value across every collection type; nested collection-of-records; `AutoNest=false` interactions; projection translatability for every UNSAFE construct (must reject, never emit query-time-throwing code); reference-handling scoping (acyclic pairs unwrapped); AOT/trim cleanliness of `DwarfRefContext` + immutable `CreateRange`. Fix every MUST-FIX (uncompilable output / silent loss / runtime-throw-that-should-be-compile-error) before fold.
 
@@ -166,14 +190,15 @@ This reconstructs *any* graph: each node visited once, all edges (forward, back,
 
 ---
 
-## Diagnostics added (from DWARF027)
-| ID | Meaning |
-|----|---------|
-| DWARF027 | Unsupported collection/dictionary target type (no construction strategy) |
-| DWARF028 | Projection mapping not translatable (would throw at query time) — `{member}`, `{reason}` |
-| DWARF030 | Constructor parameter participates in a reference cycle (cannot register-before-populate) |
-| DWARF031 | Nesting depth limit exceeded (generator backstop) |
-(DWARF029 reserved.)
+## Diagnostics & runtime exceptions added (from DWARF027)
+| ID | Kind | Meaning |
+|----|------|---------|
+| DWARF027 | compile error | Unsupported collection/dictionary target type (no construction strategy) |
+| DWARF028 | compile error | Projection mapping not translatable (would throw at query time) — `{member}`, `{reason}` |
+| DWARF030 | compile error | Constructor parameter participates in a reference cycle (cannot register-before-populate; cyclic→immutable target) |
+| DWARF031 | compile error | Generator-time nesting/type-graph backstop exceeded |
+| `DwarfMappingDepthException` | **runtime** | Recursion-capable mapping exceeded `MaxDepth` (default 64, hard cap 1000) — catchable; replaces silent `StackOverflowException` |
+(DWARF029 reserved. The depth limit is a runtime exception, not a compile diagnostic, because cyclicity/length is a property of the data, not the types.)
 
 ## Build sequence
 A (auto-nest + recursion-safe synthesis) → B (collection/dict taxonomy) → C (graph reconstruction) → D (translatable projection) → E (fuzz/adversarial), each TDD + committed + independently verified; fold to trunk after the whole-feature adversarial review.
