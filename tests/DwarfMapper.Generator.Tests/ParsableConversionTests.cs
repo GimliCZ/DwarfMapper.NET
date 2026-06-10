@@ -167,4 +167,75 @@ public class ParsableConversionTests
         // Must NOT use IFormattable path for enums
         Assert.DoesNotContain("null, global::System.Globalization.CultureInfo.InvariantCulture", generated, StringComparison.Ordinal);
     }
+
+    // ── float/double → int must NOT be auto-handled (lossy, requires Use=) ─────
+
+    [Fact]
+    public void Float_to_int_is_not_auto_resolved_reports_DWARF005()
+    {
+        // float→int is lossy (truncates fraction). ParsableConverter does not trigger
+        // (src is not string). NumericConverter does not trigger (float is not integral).
+        // This MUST remain DWARF005 — the user must supply Use= for lossy conversions.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public float V { get; set; } }
+            public class D { public int   V { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF005");
+    }
+
+    [Fact]
+    public void Double_to_int_is_not_auto_resolved_reports_DWARF005()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public double V { get; set; } }
+            public class D { public int    V { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF005");
+    }
+
+    [Fact]
+    public void Decimal_to_int_is_not_auto_resolved_reports_DWARF005()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public decimal V { get; set; } }
+            public class D { public int     V { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF005");
+    }
+
+    // ── string → string is identity (no Parse emitted) ────────────────────────
+
+    [Fact]
+    public void String_to_string_identity_does_NOT_emit_Parse()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public string V { get; set; } = ""; }
+            public class D { public string V { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        // string→string is implicit — no synthesized method
+        Assert.DoesNotContain(".Parse(", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("ToString(null", generated, StringComparison.Ordinal);
+    }
 }

@@ -7,7 +7,7 @@
     <!-- Sample app: top-level-statement file has types not in a namespace (CA1050)
          and public types in an exe that doesn't expose a public API (CA1515).
          These are intentional in a single-file sample — suppress both. -->
-    <NoWarn>$(NoWarn);CA1050;CA1515</NoWarn>
+    <NoWarn>$(NoWarn);CA1050;CA1515;CA1303</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />

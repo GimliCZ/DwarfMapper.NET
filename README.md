@@ -136,6 +136,23 @@ public partial class OrderMapper
 - **Custom conversions** use `[MapProperty(src, tgt, Use = nameof(Method))]`, where `Method` takes the source member type and returns the destination type.
 - An ambiguous auto-conversion is `DWARF013`; an invalid `Use` method is `DWARF014`. If no conversion is possible at all, you still get the completeness error `DWARF005`.
 
+**Built-in scalar conversions.** DwarfMapper handles common scalar type mismatches automatically without requiring `[MapProperty(Use=...)]`:
+
+| Conversion kind | Example | Emitted code | Notes |
+|---|---|---|---|
+| **Implicit / identity** | `byte → int`, `int → int` | direct assignment | Zero-cost; compiler-proven lossless |
+| **Integral narrowing** | `long → int`, `int → uint`, `uint → int` | `global::System.Int32.CreateChecked(v)` | Throws `OverflowException` if value doesn't fit; never silent truncation |
+| **string → T** (`T : IParsable<T>`) | `string → int`, `string → Guid`, `string → DateTime` | `global::System.Int32.Parse(v, InvariantCulture)` | Throws `FormatException`/`OverflowException` on bad input; InvariantCulture |
+| **T → string** (`T : IFormattable`) | `int → string`, `Guid → string`, `decimal → string` | `v.ToString(null, InvariantCulture)` | InvariantCulture (decimal separator is always `.`) |
+| **enum ↔ enum** (by name, default) | `Color.Red → Status.Red` | `switch` | Missing member → `DWARF015` |
+| **enum ↔ enum** (by value) | value cast | `CreateChecked` on underlying | Throws on overflow |
+| **enum ↔ string** | `Color.Red ↔ "Red"` | `switch` | No reflection |
+| **enum ↔ integral** | `Color → int` | `CreateChecked` on underlying | Throws on overflow |
+
+**Not automatically handled (require `Use=`):** float/double/decimal → integer (silent fractional truncation is never emitted automatically). Declare a custom method and reference it with `[MapProperty(Use=nameof(...))]`.
+
+All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/instance invocations — no reflection, no `Activator`, trim/NativeAOT-safe.
+
 **Enums.** Enum members map automatically:
 
 - **enum ↔ enum** by name (default) — a source member with no same-named destination member is `DWARF015`. Opt into value-based casting with `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]`.
