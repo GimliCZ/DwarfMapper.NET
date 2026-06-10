@@ -29,8 +29,10 @@ public class NestedMappingTests
     }
 
     [Fact]
-    public void Missing_nested_mapper_reports_DWARF005()
+    public void Missing_nested_mapper_with_AutoNest_false_reports_DWARF005()
     {
+        // With AutoNest=false, nested pairs without a user-declared mapper fall through to DWARF005
+        // (the original behavior before Plan 19 Part A).
         const string src = """
             using DwarfMapper;
             namespace Demo;
@@ -38,7 +40,7 @@ public class NestedMappingTests
             public class AddrDto { public string City { get; set; } = ""; }
             public class Person { public Addr Home { get; set; } = new(); }
             public class PersonDto { public AddrDto Home { get; set; } = new(); }
-            [DwarfMapper]
+            [DwarfMapper(AutoNest = false)]
             public partial class M
             {
                 public partial PersonDto ToDto(Person p);

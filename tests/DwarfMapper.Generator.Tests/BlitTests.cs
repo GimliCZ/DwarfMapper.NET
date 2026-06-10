@@ -57,9 +57,10 @@ public class BlitTests
             [DwarfMapper] public partial class M { public partial D Map(C c); }
             """;
         var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        // names differ -> not provable -> no blit -> no element conversion -> DWARF005
+        // Field names differ → blit not provable → no MemoryMarshal.Cast.
+        // With auto-nest, SrcV→DstV is synthesized and reports DWARF001 (X, Y unmapped).
         Assert.DoesNotContain("MemoryMarshal.Cast<", gen, StringComparison.Ordinal);
-        Assert.Contains(diagnostics, d => d.Id == "DWARF005");
+        Assert.Contains(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
     }
 
     [Fact]
