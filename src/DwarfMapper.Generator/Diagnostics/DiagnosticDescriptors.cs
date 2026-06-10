@@ -156,4 +156,12 @@ public static class DiagnosticDescriptors
         "No mappable constructor",
         "Destination type '{0}' has no accessible non-obsolete instance constructor to use for mapping",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    // DWARF027–030 reserved for Plan 19 Parts B–C (do not allocate here).
+
+    public static readonly DiagnosticDescriptor DeepNestingLimit = new(
+        "DWARF031",
+        "Generator nesting depth limit exceeded",
+        "Auto-synthesized nested mapper depth limit exceeded (512 distinct pairs) while processing '{0}'. Declare explicit mappers for deeply-nested types.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

@@ -17,4 +17,9 @@ public sealed record MapMethodModel(
     EquatableArray<HookCall> AfterHooks,
     bool IsProjection,
     string ElementTargetTypeFullName,
-    EquatableArray<MemberMap> ConstructorArguments = default) : IEquatable<MapMethodModel>;
+    EquatableArray<MemberMap> ConstructorArguments = default,
+    /// <summary>
+    /// <c>true</c> for user-declared partial methods (emitted as <c>public partial T Name(S s)</c>);
+    /// <c>false</c> for auto-synthesized nested methods (emitted as <c>private T Name(S s)</c>).
+    /// </summary>
+    bool IsPartial = true) : IEquatable<MapMethodModel>;

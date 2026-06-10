@@ -30,3 +30,4 @@ DWARF023 | DwarfMapper | Error | [AfterMap] value-type target must be passed by 
 DWARF024 | DwarfMapper | Error | Constructor parameter has no mappable source member
 DWARF025 | DwarfMapper | Error | Ambiguous constructor
 DWARF026 | DwarfMapper | Error | No mappable constructor
+DWARF031 | DwarfMapper | Error | Generator nesting depth limit exceeded
