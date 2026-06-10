@@ -74,6 +74,22 @@ catch (OverflowException)
     Console.WriteLine("record ctor param overflow: OverflowException (correct)");
 }
 
+// ── Auto-synthesized 2-level nested object mapper (Plan 19 Part A) ───────────
+// Generator synthesizes a private __DwarfMap_Obj_... method — no reflection.
+var aotNestedMapper = new AotNestedMapper();
+var aotNestedSrc = new AotOuterSrc
+{
+    Name = "Dwarven Gate",
+    Inner = new AotInnerSrc { X = 10, Y = 20 }
+};
+var aotNestedDst = aotNestedMapper.Map(aotNestedSrc);
+Console.WriteLine($"nested auto-map: {aotNestedDst.Name}, ({aotNestedDst.Inner.X},{aotNestedDst.Inner.Y})");
+if (aotNestedDst.Name != "Dwarven Gate" || aotNestedDst.Inner.X != 10 || aotNestedDst.Inner.Y != 20)
+{
+    Console.WriteLine("ERROR: nested auto-map values incorrect");
+    return 1;
+}
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -110,3 +126,12 @@ public record AotRecordDest(int Id, string Label, int Score);
 
 [DwarfMapper]
 public partial class AotRecordMapper { public partial AotRecordDest Map(AotRecordSrc s); }
+
+// ── Auto-nested types (Plan 19 Part A) ───────────────────────────────────────
+public class AotInnerSrc { public int X { get; set; } public int Y { get; set; } }
+public class AotOuterSrc { public string Name { get; set; } = ""; public AotInnerSrc Inner { get; set; } = new(); }
+public record AotInnerDst(int X, int Y);
+public record AotOuterDst(string Name, AotInnerDst Inner);
+
+[DwarfMapper]
+public partial class AotNestedMapper { public partial AotOuterDst Map(AotOuterSrc s); }
