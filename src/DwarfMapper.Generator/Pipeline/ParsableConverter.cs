@@ -45,13 +45,14 @@ internal static class ParsableConverter
             return AddStringToT(synthesized, tgt);
         }
 
-        // ── T → string (T : IFormattable) ────────────────────────────────────────
+        // ── T → string (T : IFormattable, or bool/char which are culture-invariant) ───
         if (tgt.SpecialType == SpecialType.System_String
             && src.SpecialType != SpecialType.System_String  // identity handled elsewhere
-            && src.TypeKind != TypeKind.Enum                  // enum→string via EnumConverter
-            && TypeInterfaces.ImplementsIFormattable(src))
+            && src.TypeKind != TypeKind.Enum)                 // enum→string via EnumConverter
         {
-            return AddTToString(synthesized, src);
+            bool isBoolOrChar = src.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char;
+            if (isBoolOrChar || TypeInterfaces.ImplementsIFormattable(src))
+                return AddTToString(synthesized, src);
         }
 
         return null;
@@ -64,9 +65,21 @@ internal static class ParsableConverter
         {
             var fqTgt = Fq(tgt);
             string code;
-            if (HasPublicParseWithFormatProvider(tgt))
+
+            if (tgt.SpecialType == SpecialType.System_DateTime)
             {
-                // Most types (int, Guid, DateTime, decimal, TimeSpan, …) expose a public
+                // Use ISO-8601 round-trip parsing so DateTimeKind ("Z" suffix → Utc) is preserved.
+                // Plain Parse with InvariantCulture treats "Z" as Local on .NET 10; RoundtripKind fixes that.
+                code = $"    private static {fqTgt} {name}(string v) => {fqTgt}.Parse(v, global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind);\n";
+            }
+            else if (IsDateTimeOffset(tgt))
+            {
+                // DateTimeOffset: RoundtripKind preserves the offset from "o" format strings.
+                code = $"    private static {fqTgt} {name}(string v) => {fqTgt}.Parse(v, global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind);\n";
+            }
+            else if (HasPublicParseWithFormatProvider(tgt))
+            {
+                // Most types (int, Guid, decimal, TimeSpan, …) expose a public
                 // static Parse(string, IFormatProvider) — use it with InvariantCulture.
                 // e.g.: global::System.Int32.Parse(v, global::System.Globalization.CultureInfo.InvariantCulture)
                 code = $"    private static {fqTgt} {name}(string v) => {fqTgt}.Parse(v, global::System.Globalization.CultureInfo.InvariantCulture);\n";
@@ -78,6 +91,7 @@ internal static class ParsableConverter
                 // e.g.: global::System.Boolean.Parse(v)
                 code = $"    private static {fqTgt} {name}(string v) => {fqTgt}.Parse(v);\n";
             }
+
             synth[name] = new SynthesizedMethod(name, code);
         }
         return name;
@@ -125,14 +139,41 @@ internal static class ParsableConverter
         var name = MethodName("FmtToStr", src);
         if (!synth.ContainsKey(name))
         {
-            // e.g.: private static string __DwarfMap_FmtToStr_...(global::System.Int32 v)
-            //           => v.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture);
             var fqSrc = Fq(src);
-            var code = $"    private static string {name}({fqSrc} v) => v.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture);\n";
+            string toStringExpr;
+
+            if (src.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char)
+            {
+                // bool and char are culture-invariant by nature; their public ToString()
+                // takes no arguments. The 2-arg ToString(string, IFormatProvider) is only
+                // an explicit IFormattable implementation and is NOT publicly callable.
+                toStringExpr = "v.ToString()";
+            }
+            else if (src.SpecialType == SpecialType.System_DateTime || IsDateTimeOffset(src))
+            {
+                // DateTime / DateTimeOffset: use ISO-8601 round-trip format "o".
+                // This preserves sub-second precision and DateTimeKind / UTC offset.
+                // Plain "G" format (the default when format is null) loses milliseconds/ticks.
+                toStringExpr = "v.ToString(\"o\", global::System.Globalization.CultureInfo.InvariantCulture)";
+            }
+            else
+            {
+                // All other IFormattable types (int, decimal, Guid, TimeSpan, …):
+                // use InvariantCulture for culture-independence (e.g. '.' as decimal separator).
+                toStringExpr = "v.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)";
+            }
+
+            var code = $"    private static string {name}({fqSrc} v) => {toStringExpr};\n";
             synth[name] = new SynthesizedMethod(name, code);
         }
         return name;
     }
+
+    /// <summary>Returns true when <paramref name="t"/> is System.DateTimeOffset.</summary>
+    private static bool IsDateTimeOffset(ITypeSymbol t) =>
+        t.ContainingNamespace?.ToDisplayString() == "System"
+        && t.Name == "DateTimeOffset"
+        && t.TypeKind == TypeKind.Struct;
 
     private static string Fq(ITypeSymbol t) =>
         t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);

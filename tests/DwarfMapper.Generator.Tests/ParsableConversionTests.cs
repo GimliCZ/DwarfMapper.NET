@@ -101,6 +101,136 @@ public class ParsableConversionTests
         Assert.Contains("ToString", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Char_to_string_compiles()
+    {
+        // char implements IFormattable explicitly only; it has NO public
+        // ToString(string, IFormatProvider) — the 2-arg call must NOT be emitted.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public char   V { get; set; } }
+            public class D { public string V { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void Bool_to_string_compiles_and_emits_ToString()
+    {
+        // bool does NOT implement IFormattable; TryCreate must special-case it.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public bool   V { get; set; } }
+            public class D { public string V { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Contains("ToString", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DateTime_to_string_emits_round_trip_format()
+    {
+        // DateTime→string must use "o" format to avoid sub-second precision loss.
+        const string src = """
+            using DwarfMapper;
+            using System;
+            namespace Demo;
+            public class S { public DateTime V { get; set; } }
+            public class D { public string   V { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        // Must emit "o" format for lossless round-trip
+        Assert.Contains("\"o\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void String_to_DateTime_emits_RoundtripKind()
+    {
+        // string→DateTime must use DateTimeStyles.RoundtripKind so Kind is preserved.
+        const string src = """
+            using DwarfMapper;
+            using System;
+            namespace Demo;
+            public class S { public string   V { get; set; } = ""; }
+            public class D { public DateTime V { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Contains("RoundtripKind", generated, StringComparison.Ordinal);
+    }
+
+    // ── Target-nullable composition ───────────────────────────────────────────
+
+    [Fact]
+    public void Int_to_nullable_long_still_uses_implicit_path()
+    {
+        // int→long? is implicit (widening) — should compile with NO synthesized method.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int   V { get; set; } }
+            public class D { public long? V { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Long_to_nullable_int_emits_CreateChecked()
+    {
+        // long→int? must synthesize a CreateChecked narrowing method.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public long V { get; set; } }
+            public class D { public int? V { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void String_to_nullable_int_compiles()
+    {
+        // string→int? — target is nullable, source is non-nullable string.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public string V { get; set; } = ""; }
+            public class D { public int?   V { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    }
+
     // ── Precedence: explicit Use= still wins over automatic IParsable ─────────
 
     [Fact]
