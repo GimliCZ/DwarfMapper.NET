@@ -508,6 +508,19 @@ internal static class MapperExtractor
             // 2. Auto-match by name under the configured comparer.
             if (!readableByName.TryGetValue(param.Name, out var matches) || matches.Count == 0)
             {
+                // No matching source member. If the parameter is OPTIONAL (author-declared default)
+                // or a params array, omit it from the emitted call so C# supplies the default /
+                // empty array. That honors the type author's intent and is not data loss — only a
+                // MANDATORY unmatched parameter breaks completeness (DWARF024).
+                if (param.HasExplicitDefaultValue || param.IsParams)
+                {
+                    // Account for it (positional record params also surface as init/get properties;
+                    // marking consumed excludes the matching property from the object-initializer AND
+                    // from completeness diagnostics) but do NOT add it to args — the emitted call omits
+                    // it so C# supplies the declared default / empty params array.
+                    consumedParams.Add(param.Name);
+                    continue;
+                }
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.ConstructorParameterUnmapped,
                     location, param.Name));

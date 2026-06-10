@@ -5,3 +5,5 @@ riderModule.iml
 /_ReSharper.Caches/
 # Verify snapshot received files (temporary; only .verified.txt is committed)
 *.received.txt
+# JetBrains Rider IDE
+.idea/

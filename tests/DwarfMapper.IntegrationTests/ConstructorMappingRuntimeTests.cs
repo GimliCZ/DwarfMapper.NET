@@ -130,10 +130,59 @@ public partial class NestedRecordMapper
     public partial InnerRecord Map(InnerClassSrc s);
 }
 
+// ── Optional ctor params (author-declared defaults) ──────────────────────────
+// Source lacks Note/Count entirely → the optional params must fall back to their
+// declared defaults, NOT trigger DWARF024. A common modern record shape.
+
+public class OptSrc { public int Id { get; set; } }
+public record OptDst(int Id, string Note = "default", int Count = 5);
+
+[DwarfMapper]
+public partial class OptionalParamMapper { public partial OptDst Map(OptSrc s); }
+
+// Optional param IS supplied by source → source wins over the default.
+public class OptSrc2 { public int Id { get; set; } public string Note { get; set; } = ""; }
+public record OptDst2(int Id, string Note = "default");
+
+[DwarfMapper]
+public partial class OptionalParamSuppliedMapper { public partial OptDst2 Map(OptSrc2 s); }
+
+// All-optional ctor, source supplies none → new T() with all defaults.
+public class AllOptSrc { public int Whatever { get; set; } }
+public record AllOptDst(int A = 1, int B = 2);
+
+[DwarfMapper]
+public partial class AllOptionalMapper { public partial AllOptDst Map(AllOptSrc s); }
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 public class ConstructorMappingRuntimeTests
 {
+    [Fact]
+    public void Optional_ctor_params_use_declared_defaults_when_source_lacks_them()
+    {
+        var result = new OptionalParamMapper().Map(new OptSrc { Id = 7 });
+        Assert.Equal(7, result.Id);
+        Assert.Equal("default", result.Note);
+        Assert.Equal(5, result.Count);
+    }
+
+    [Fact]
+    public void Optional_ctor_param_uses_source_value_when_present()
+    {
+        var result = new OptionalParamSuppliedMapper().Map(new OptSrc2 { Id = 3, Note = "fromsource" });
+        Assert.Equal(3, result.Id);
+        Assert.Equal("fromsource", result.Note);
+    }
+
+    [Fact]
+    public void All_optional_ctor_uses_all_defaults()
+    {
+        var result = new AllOptionalMapper().Map(new AllOptSrc { Whatever = 99 });
+        Assert.Equal(1, result.A);
+        Assert.Equal(2, result.B);
+    }
+
     [Fact]
     public void Record_to_record_maps_all_values()
     {
