@@ -38,11 +38,15 @@ internal static class MapperExtractor
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
+        var classAutoNest = ReadAutoNest(ctx.Attributes);
         var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
         var (beforeHookDefs, afterHookDefs) = CollectHooks(classSymbol, diagnostics);
         var methods = new List<MapMethodModel>();
+
+        // NestedMappingRegistry: local to this Extract call (contains ISymbol — never stored in model).
+        var nestedRegistry = new NestedMappingRegistry();
 
         foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
         {
@@ -115,6 +119,7 @@ internal static class MapperExtractor
             var explicitMaps = ReadExplicitMaps(method);
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
+            var methodAutoNest = ReadMethodAutoNest(method, classAutoNest);
 
             // Resolve constructor arguments (empty set when objInitOnly).
             MemberMap[] ctorArgs;
@@ -133,7 +138,7 @@ internal static class MapperExtractor
             {
                 if (!ResolveConstructorArguments(ctor, sourceType, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                    enumStrategy, synthesized, nullStrategy, out ctorArgs, out consumedParams))
+                    enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs, out consumedParams))
                 {
                     // At least one parameter was unmappable → DWARF024 already reported; skip emit.
                     continue;
@@ -148,7 +153,7 @@ internal static class MapperExtractor
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
-                consumedParams, requiredMustInitialize);
+                consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -212,6 +217,92 @@ internal static class MapperExtractor
                 EquatableArray.From(ctorArgs)));
         }
 
+        // ── Drain the NestedMappingRegistry queue ────────────────────────────────
+        // User-declared partial methods are already registered in mapperMethods (autoCandidates).
+        // We process synthesized pairs AFTER declared methods so user methods always win.
+        // Each dequeued pair may enqueue further pairs → loop until empty (terminates because
+        // each pair is registered-before-built, so revisits hit the memoization branch).
+        while (nestedRegistry.HasPending)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var (nestedSrc, nestedTgt, nestedName) = nestedRegistry.Dequeue();
+
+            // We use the location of the first declared method as the diagnostic anchor
+            // for nested diagnostics (acceptable per spec).
+            var nestedLocation = methods.Count > 0 ? methods[0].Members.Count > 0
+                ? (LocationInfo?)null : null : null;
+
+            // Choose construction strategy for the nested target type.
+            var nestedCtor = ConstructorSelector.Select(nestedTgt, diagnostics, nestedLocation, out var nestedObjInitOnly);
+            if (nestedCtor is null)
+            {
+                // DWARF025/026 already reported; skip body emission for this pair.
+                continue;
+            }
+
+            MemberMap[] nestedCtorArgs;
+            HashSet<string> nestedConsumed;
+            HashSet<string> nestedRequiredMustInit;
+
+            if (nestedObjInitOnly)
+            {
+                nestedCtorArgs = System.Array.Empty<MemberMap>();
+                nestedConsumed = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                nestedRequiredMustInit = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                if (!ResolveConstructorArguments(nestedCtor, nestedSrc, ctx.SemanticModel.Compilation,
+                    nestedLocation, diagnostics, caseInsensitive, System.Array.Empty<(string, string, string?)>(),
+                    allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
+                    classAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed))
+                {
+                    continue;
+                }
+                nestedRequiredMustInit = ComputeRequiredMustInitialize(nestedCtor, nestedTgt, nestedConsumed);
+            }
+
+            var nestedMembers = ResolveMembers(
+                nestedSrc, nestedTgt,
+                new HashSet<string>(System.StringComparer.Ordinal), // no ignores for synthesized
+                ctx.SemanticModel.Compilation,
+                nestedLocation, diagnostics, caseInsensitive,
+                System.Array.Empty<(string, string, string?)>(), // no explicit maps
+                allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
+                new List<string>(), new List<string>(), // no flatten/reinterpret
+                nestedConsumed, nestedRequiredMustInit,
+                classAutoNest, nestedRegistry);
+
+            // Build a private (non-partial) MapMethodModel for this synthesized pair.
+            var nestedModel = new MapMethodModel(
+                MethodName: nestedName,
+                Accessibility: "private",
+                ReturnTypeFullName: nestedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                ParameterTypeFullName: nestedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                ParameterName: "s",
+                ParameterIsReferenceType: nestedSrc.IsReferenceType,
+                Members: EquatableArray.From(nestedMembers),
+                BeforeHooks: EquatableArray.From(System.Array.Empty<string>()),
+                AfterHooks: EquatableArray.From(System.Array.Empty<HookCall>()),
+                IsProjection: false,
+                ElementTargetTypeFullName: "",
+                ConstructorArguments: EquatableArray.From(nestedCtorArgs),
+                IsPartial: false);
+
+            methods.Add(nestedModel);
+        }
+
+        // Report DWARF031 if the registry cap was exceeded.
+        if (nestedRegistry.CapExceeded)
+        {
+            // Use a null location — the cap is a generator-level limit, not method-specific.
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.DeepNestingLimit,
+                null,
+                nestedRegistry.CapTriggerType));
+        }
+
         // CollectRoundTrips must be called before capturing diagnostics so that DWARF020/021 are included.
         var roundTrips = CollectRoundTrips(classSymbol, ctx.SemanticModel.Compilation, diagnostics);
 
@@ -234,7 +325,9 @@ internal static class MapperExtractor
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
         NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots, List<string> reinterpretMembers,
         HashSet<string>? consumedCtorParams = null,
-        HashSet<string>? requiredMustInitialize = null)
+        HashSet<string>? requiredMustInitialize = null,
+        bool autoNest = false,
+        NestedMappingRegistry? nestedRegistry = null)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -326,7 +419,7 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, autoNest, nestedRegistry))
             {
                 result.Add(new MemberMap(tgtName, srcName, conv, nullH));
             }
@@ -375,7 +468,7 @@ internal static class MapperExtractor
                 if (flatMatches.Count == 1)
                 {
                     var fm = flatMatches[0];
-                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull))
+                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, autoNest, nestedRegistry))
                     {
                         result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull));
                     }
@@ -407,7 +500,7 @@ internal static class MapperExtractor
                 }
                 continue;
             }
-            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH))
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, autoNest, nestedRegistry))
             {
                 result.Add(new MemberMap(target.Name, source.Name, conv, nullH));
             }
@@ -470,6 +563,8 @@ internal static class MapperExtractor
         EnumStrategy enumStrategy,
         Dictionary<string, SynthesizedMethod> synthesized,
         NullStrategy nullStrategy,
+        bool autoNest,
+        NestedMappingRegistry? nestedRegistry,
         out MemberMap[] ctorArgs,
         out HashSet<string> consumedParams)
     {
@@ -509,7 +604,8 @@ internal static class MapperExtractor
                 var srcType = srcList[0].Type;
                 if (TryResolveConversion(compilation, srcType, param.Type, explicitInfo.Use,
                     allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
-                    location, param.Name, diagnostics, out var eConv, out var eNull))
+                    location, param.Name, diagnostics, out var eConv, out var eNull,
+                    autoNest, nestedRegistry))
                 {
                     args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull));
                     consumedParams.Add(param.Name);
@@ -555,7 +651,8 @@ internal static class MapperExtractor
             var srcMember = matches[0];
             if (TryResolveConversion(compilation, srcMember.Type, param.Type, null,
                 allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
-                location, param.Name, diagnostics, out var conv, out var nullH))
+                location, param.Name, diagnostics, out var conv, out var nullH,
+                autoNest, nestedRegistry))
             {
                 args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH));
                 consumedParams.Add(param.Name);
@@ -577,7 +674,9 @@ internal static class MapperExtractor
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
         NullStrategy nullStrategy,
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
-        out string? converterMethod, out Model.NullHandling nullHandling)
+        out string? converterMethod, out Model.NullHandling nullHandling,
+        bool autoNest = false,
+        NestedMappingRegistry? nestedRegistry = null)
     {
         converterMethod = null;
         nullHandling = Model.NullHandling.None;
@@ -600,11 +699,11 @@ internal static class MapperExtractor
 
         if (DictionaryConverter.TryResolve(srcType, tgtType, out var srcKey, out var srcVal, out var tgtKey, out var tgtVal, out var dictHasCount))
         {
-            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull))
+            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, autoNest, nestedRegistry))
             {
                 return false;
             }
-            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull))
+            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, autoNest, nestedRegistry))
             {
                 return false;
             }
@@ -620,7 +719,7 @@ internal static class MapperExtractor
                 converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
                 return true;
             }
-            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull))
+            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, autoNest, nestedRegistry))
             {
                 return false; // element diagnostic already reported by the recursive call
             }
@@ -640,7 +739,7 @@ internal static class MapperExtractor
         {
             if (TryResolveConversion(compilation, bothSrcU, bothTgtU, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerNN, out _) && innerNN is not null)
+                    out var innerNN, out _, autoNest, nestedRegistry) && innerNN is not null)
             {
                 converterMethod = innerNN;
                 nullHandling = Model.NullHandling.NullableProject;
@@ -663,7 +762,7 @@ internal static class MapperExtractor
             // Guard: 'underlying' is not itself nullable (Nullable<Nullable<T>> is illegal in C#).
             if (TryResolveConversion(compilation, underlying, tgtType, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerConv, out _))
+                    out var innerConv, out _, autoNest, nestedRegistry))
             {
                 nullHandling = nullStrategy == NullStrategy.SetDefault ? Model.NullHandling.ValueOrDefault : Model.NullHandling.ThrowIfNull;
                 converterMethod = innerConv; // may be null (direct assign after unwrap) or a synthesized method
@@ -682,7 +781,7 @@ internal static class MapperExtractor
         {
             if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerConvT, out _))
+                    out var innerConvT, out _, autoNest, nestedRegistry))
             {
                 converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
                 // nullHandling stays None — source is non-null, always yields a value
@@ -768,7 +867,94 @@ internal static class MapperExtractor
             return true;
         }
 
+        // ── Auto-synthesized nested object mapper ─────────────────────────────
+        // Placed LAST before DWARF005: only fires when nothing else resolved the pair.
+        // Gate: autoNest=true AND both types are mappable named object types.
+        if (autoNest && nestedRegistry is not null
+            && tgtType is INamedTypeSymbol namedTgt
+            && IsMappableObjectPair(compilation, srcType, namedTgt))
+        {
+            var synthName = nestedRegistry.GetOrReserve(srcType, namedTgt, location);
+            if (synthName is not null)
+            {
+                converterMethod = synthName;
+                return true;
+            }
+            // GetOrReserve returned null → cap exceeded; DWARF031 will be reported after drain.
+            // Fall through to DWARF005.
+        }
+
         diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, targetName));
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true when both <paramref name="src"/> and <paramref name="tgt"/> are named types
+    /// suitable for auto-nested-mapper synthesis. Excludes: scalars, enums, string, collection/
+    /// IEnumerable types, Nullable&lt;T&gt;, interfaces, and abstract target types.
+    /// </summary>
+    private static bool IsMappableObjectPair(Compilation compilation, ITypeSymbol src, INamedTypeSymbol tgt)
+    {
+        // Source must be a named type (class or struct/record, not array/pointer/etc.)
+        if (src is not INamedTypeSymbol namedSrc)
+            return false;
+
+        // Both must be Class or Struct (records are Class or Struct).
+        // This also implicitly excludes enums (TypeKind.Enum), interfaces (TypeKind.Interface),
+        // delegates, arrays, etc. — no separate enum guard needed.
+        if (namedSrc.TypeKind != TypeKind.Class && namedSrc.TypeKind != TypeKind.Struct)
+            return false;
+        if (tgt.TypeKind != TypeKind.Class && tgt.TypeKind != TypeKind.Struct)
+            return false;
+
+        // Not scalar / special types (string, int, Guid, etc.)
+        if (namedSrc.SpecialType != SpecialType.None || tgt.SpecialType != SpecialType.None)
+            return false;
+
+        // Not Nullable<T>
+        if (namedSrc.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+            return false;
+        if (tgt.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+            return false;
+
+        // Not an interface target (can't construct an interface)
+        if (tgt.IsAbstract)
+            return false;
+
+        // Not an IEnumerable / collection / dictionary (those are handled by CollectionConverter/DictionaryConverter earlier)
+        if (ImplementsIEnumerable(compilation, namedSrc) && namedSrc.TypeKind == TypeKind.Class && namedSrc.Name != "String")
+            return false;
+        if (ImplementsIEnumerable(compilation, tgt) && tgt.TypeKind == TypeKind.Class && tgt.Name != "String")
+            return false;
+
+        // Target must have a constructible constructor (ConstructorSelector-compatible).
+        // We do a lightweight check: at least one accessible non-static constructor.
+        if (!tgt.InstanceConstructors.Any(c =>
+                c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic))
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="type"/> implements <c>IEnumerable</c> (generic or non-generic),
+    /// which means it is a collection/sequence type that the CollectionConverter handles.
+    /// </summary>
+    private static bool ImplementsIEnumerable(Compilation compilation, INamedTypeSymbol type)
+    {
+        // Fast checks: well-known collection names
+        if (type.Name is "List" or "Array" or "HashSet" or "Dictionary" or "IEnumerable"
+            or "ICollection" or "IList" or "IReadOnlyList" or "IReadOnlyCollection" or "ISet")
+            return true;
+
+        // Check whether the type or any of its interfaces is IEnumerable<T> or IEnumerable
+        foreach (var iface in type.AllInterfaces)
+        {
+            if (iface.SpecialType == SpecialType.System_Collections_IEnumerable)
+                return true;
+            if (iface.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
+                return true;
+        }
         return false;
     }
 
@@ -1100,6 +1286,43 @@ internal static class MapperExtractor
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoNest"/> value
+    /// from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c>.
+    /// </summary>
+    private static bool ReadAutoNest(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "AutoNest" && named.Value.Value is bool b)
+                {
+                    return b;
+                }
+            }
+        }
+        return true; // default: auto-nesting enabled
+    }
+
+    /// <summary>
+    /// Reads the per-method <c>[AutoNest(bool)]</c> attribute override, falling back to
+    /// <paramref name="classDefault"/> when the attribute is absent.
+    /// </summary>
+    private static bool ReadMethodAutoNest(IMethodSymbol method, bool classDefault)
+    {
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() == "DwarfMapper.AutoNestAttribute"
+                && attr.ConstructorArguments.Length == 1
+                && attr.ConstructorArguments[0].Value is bool b)
+            {
+                return b;
+            }
+        }
+        return classDefault;
     }
 
     private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
