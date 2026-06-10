@@ -176,6 +176,35 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 
 **Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to `Dictionary<K2,V2>`, converting **both keys and values** through the same rules as any other member (converters, nested mappers, enums, nullable). Entries are filled via the indexer, so post-conversion key collisions overwrite rather than throw.
 
+**Constructor and record mapping.** DwarfMapper can map into targets that have **no parameterless constructor** — positional `record`s, `record struct`s, `readonly record struct`s, and constructor-based immutable classes/structs. The generator binds source members to constructor parameters by name, resolves any necessary conversion (same rules as property mapping), and emits a named-argument constructor call. `init`-only and mutable properties beyond the constructor parameters are object-initialized in the same statement.
+
+```csharp
+public record PersonDto(int Id, string Name);     // no parameterless ctor
+
+[DwarfMapper]
+public partial class PersonMapper
+{
+    public partial PersonDto ToDto(Person src);   // emits: new PersonDto(Id: src.Id, Name: src.Name)
+}
+```
+
+Every constructor parameter is **mandatory** — if DwarfMapper cannot find a matching source member, it emits `DWARF024 ConstructorParameterUnmapped` (a build error). Positional record members that are satisfied by a constructor parameter are not double-assigned in the object initializer.
+
+**Constructor selection policy** (deterministic, in order):
+1. A constructor annotated `[DwarfMapperConstructor]` is selected unconditionally. More than one annotated constructor → `DWARF025 AmbiguousConstructor`.
+2. An accessible parameterless constructor → object-initializer path (existing behavior, no ctor args emitted).
+3. Exactly one non-parameterless constructor → use it.
+4. Multiple non-parameterless constructors → pick the one with the most parameters; if there is a tie → `DWARF025`.
+5. No candidates → `DWARF026 NoMappableConstructor`.
+
+Obsolete constructors and the implicit record copy constructor (`R(R original)`) are always excluded from selection.
+
+**`[MapProperty]` works with constructor parameters.** Use `[MapProperty("SourceMember", "ctorParamName")]` to redirect a source member onto a differently-named constructor parameter.
+
+**All conversions apply to constructor parameters.** `CreateChecked` narrowing, `IParsable<T>` string parsing, enum conversions, nullable unwrap, and `T?→U?` null-preserving mapping all work identically on constructor parameters.
+
+**Emitted code is AOT-safe.** Named-argument constructor calls are concrete, non-reflective invocations — no `Activator.CreateInstance`, no expression trees.
+
 **Projection (IQueryable).** A partial method `IQueryable<TDto> Project(IQueryable<T> src)` generates `src.Select(s => new TDto { … })` — an expression tree your ORM translates to SQL. **Projection is deliberately simple:** only directly-assignable members (plus `[MapProperty]` renames and `[MapIgnore]`) are projected — no method calls, no inline nested-projection "magic" (a known antipattern). A member needing a real conversion is `DWARF019`; do that mapping with a runtime mapper instead.
 
 **Blittable fast-path (SIMD).** When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing, and the same ordered field names/types (including nested structs, recursively) — DwarfMapper skips the element loop and reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove, behind a JIT-folded runtime size guard. This is the one place DwarfMapper beats a hand-written name-based copy, and it is emitted **only when proven safe** — otherwise it falls back to the element loop. For layout-compatible types the proof can't confirm (differing field names you know are positionally correct, types from referenced assemblies), opt in with `[Reinterpret("Member")]` — still memory-safe (unmanaged + size guard), with the field correspondence as your assertion. A bad `[Reinterpret]` target is `DWARF022`.
@@ -293,6 +322,7 @@ README.md
 - `IQueryable` projection: `IQueryable<TDto> Project(IQueryable<T> src)` → SQL-translatable expression tree
 - `DwarfMapper.Testing`: fixtures, seeded fuzzer, `[RoundTrip]`, informed dumps
 - NativeAOT + trimming CI gate (verified; AOT sample in `samples/`)
+- **Constructor / record / immutable target mapping**: positional records, `record struct`, `readonly record struct`, readonly structs, constructor-only classes; all conversions apply to ctor params; `[DwarfMapperConstructor]` disambiguation; DWARF024/025/026; named-argument AOT-safe emit
 
 ### Planned
 - `MapTo(src, ref dest)` and `Span<T>`/`ReadOnlySpan<T>` zero-alloc overloads

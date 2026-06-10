@@ -51,7 +51,31 @@ var intToStrMapper = new IntToStringAotMapper();
 var strResult = intToStrMapper.Map(new IntHolder2 { V = -42 });
 Console.WriteLine($"int→string: {strResult.V}"); // -42
 
+// ── Positional record target with a converted ctor param (AOT gate) ────────────
+// Emits: new RecordDest(Id: ..., Score: global::System.Int32.CreateChecked(__s.Score))
+// Named-argument ctor call is concrete → AOT-safe (no reflection, no dynamic dispatch).
+var recordMapper = new AotRecordMapper();
+var recResult = recordMapper.Map(new AotRecordSrc { Id = 1, Label = "anvil", Score = 100L });
+Console.WriteLine($"record: {recResult.Id}:{recResult.Label}:{recResult.Score}");
+if (recResult.Id != 1 || recResult.Label != "anvil" || recResult.Score != 100)
+{
+    Console.WriteLine("ERROR: record mapping values incorrect");
+    return 1;
+}
+
+try
+{
+    recordMapper.Map(new AotRecordSrc { Id = 2, Label = "overflow", Score = (long)int.MaxValue + 1L });
+    Console.WriteLine("ERROR: expected OverflowException for record ctor param");
+    return 1;
+}
+catch (OverflowException)
+{
+    Console.WriteLine("record ctor param overflow: OverflowException (correct)");
+}
+
 Console.WriteLine("AOT gate: all checks passed.");
+return 0;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,3 +102,11 @@ public class StrHolder2   { public string V { get; set; } = ""; }
 [DwarfMapper] public partial class StringToIntAotMapper  { public partial IntHolder2 Map(StringHolder s); }
 [DwarfMapper] public partial class StringToGuidAotMapper { public partial GuidHolder  Map(StringHolder s); }
 [DwarfMapper] public partial class IntToStringAotMapper  { public partial StrHolder2  Map(IntHolder2 s); }
+
+// ── Positional record target with converted ctor param ───────────────────────
+// Score: long → int via CreateChecked (loud on overflow) — concrete named-arg call, AOT-safe.
+public class AotRecordSrc { public int Id { get; set; } public string Label { get; set; } = ""; public long Score { get; set; } }
+public record AotRecordDest(int Id, string Label, int Score);
+
+[DwarfMapper]
+public partial class AotRecordMapper { public partial AotRecordDest Map(AotRecordSrc s); }
