@@ -94,8 +94,10 @@ public class DiagnosticTests
     }
 
     [Fact]
-    public void Destination_without_parameterless_ctor_reports_DWARF006()
+    public void Destination_with_ctor_only_and_unmapped_param_reports_DWARF024()
     {
+        // PersonDto has a single non-parameterless ctor with param 'x', but source has 'Age' (no 'x').
+        // Previously DWARF006 (no parameterless ctor); now DWARF024 (ctor param unmapped).
         const string src = """
             using DwarfMapper;
             public class Person { public int Age { get; set; } }
@@ -107,7 +109,7 @@ public class DiagnosticTests
             }
             """;
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.Contains(diagnostics, d => d.Id == "DWARF006");
+        Assert.Contains(diagnostics, d => d.Id == "DWARF024");
     }
 
     [Fact]

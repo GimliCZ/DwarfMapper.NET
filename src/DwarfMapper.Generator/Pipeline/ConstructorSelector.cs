@@ -36,7 +36,41 @@ internal static class ConstructorSelector
     {
         useObjectInitializerOnly = false;
 
+        // ── Policy 0 (pre-filter): accessible parameterless ctor exists → object-initializer path.
+        // Must be checked BEFORE filtering by IsImplicitlyDeclared so that plain classes with
+        // implicitly-generated parameterless ctors (IsImplicitlyDeclared=true) are treated as
+        // "has parameterless ctor" and continue to use the existing object-initializer path.
+        // Record positional types do NOT have an implicit parameterless ctor, so they fall through.
+        var anyParameterless = target.InstanceConstructors.FirstOrDefault(c =>
+            c.DeclaredAccessibility == Accessibility.Public
+            && !c.IsStatic
+            && c.Parameters.Length == 0
+            && !IsObsolete(c));
+
+        if (anyParameterless is not null)
+        {
+            // Check whether any annotated constructor wins over the parameterless one.
+            // If so, fall through to explicit-annotation handling below.
+            var annotatedOverride = target.InstanceConstructors.FirstOrDefault(c =>
+                c.DeclaredAccessibility == Accessibility.Public
+                && !c.IsStatic
+                && !c.IsImplicitlyDeclared
+                && !IsObsolete(c)
+                && c.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute));
+
+            if (annotatedOverride is null)
+            {
+                // Parameterless ctor wins → object-initializer path.
+                useObjectInitializerOnly = true;
+                return anyParameterless;
+            }
+
+            // Annotated ctor overrides parameterless preference.
+            return annotatedOverride;
+        }
+
         // Build the candidate list: public, non-static, non-implicitly-declared, non-copy, non-obsolete.
+        // At this point we know there is no accessible parameterless ctor.
         var candidates = new List<IMethodSymbol>();
         foreach (var ctor in target.InstanceConstructors)
         {
@@ -68,27 +102,22 @@ internal static class ConstructorSelector
             return annotated[0];
         }
 
-        // ── Policy 2: parameterless ctor → object-initializer path ────────────
-        var parameterless = candidates.FirstOrDefault(c => c.Parameters.Length == 0);
-        if (parameterless is not null)
-        {
-            useObjectInitializerOnly = true;
-            return parameterless;
-        }
+        // ── Policy 2 (already handled above — no parameterless ctor at this point) ─
 
-        // ── Policy 3: exactly one non-parameterless candidate ─────────────────
+        // ── Policy 3: no candidates at all → DWARF026 ────────────────────────
         if (candidates.Count == 0)
         {
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoMappableConstructor, location, target.Name));
             return null;
         }
 
+        // ── Policy 4: exactly one non-parameterless candidate ─────────────────
         if (candidates.Count == 1)
         {
             return candidates[0];
         }
 
-        // ── Policy 4: multiple candidates → most params; tie → DWARF025 ───────
+        // ── Policy 5: multiple candidates → most params; tie → DWARF025 ───────
         var maxParams = candidates.Max(c => c.Parameters.Length);
         var withMax = candidates.Where(c => c.Parameters.Length == maxParams).ToList();
 

@@ -99,10 +99,10 @@ internal static class MapperExtractor
 
             var sourceType = method.Parameters[0].Type;
 
-            if (!HasAccessibleParameterlessCtor(targetType))
+            // Choose construction strategy for the target type.
+            var ctor = ConstructorSelector.Select(targetType, diagnostics, methodLocation, out var objInitOnly);
+            if (ctor is null)
             {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.NoParameterlessConstructor, methodLocation, targetType.Name));
                 continue;
             }
 
@@ -116,10 +116,29 @@ internal static class MapperExtractor
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
 
+            // Resolve constructor arguments (empty set when objInitOnly).
+            MemberMap[] ctorArgs;
+            HashSet<string> consumedParams;
+            if (objInitOnly)
+            {
+                ctorArgs = System.Array.Empty<MemberMap>();
+                consumedParams = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                if (!ResolveConstructorArguments(ctor, sourceType, ctx.SemanticModel.Compilation,
+                    methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
+                    enumStrategy, synthesized, nullStrategy, out ctorArgs, out consumedParams))
+                {
+                    // At least one parameter was unmappable → DWARF024 already reported; skip emit.
+                    continue;
+                }
+            }
+
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers);
+                enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers, consumedParams);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -179,7 +198,8 @@ internal static class MapperExtractor
                 EquatableArray.From(applicableBefore),
                 EquatableArray.From(applicableAfter),
                 false,
-                ""));
+                "",
+                EquatableArray.From(ctorArgs)));
         }
 
         // CollectRoundTrips must be called before capturing diagnostics so that DWARF020/021 are included.
@@ -202,7 +222,8 @@ internal static class MapperExtractor
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
-        NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots, List<string> reinterpretMembers)
+        NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots, List<string> reinterpretMembers,
+        HashSet<string>? consumedCtorParams = null)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -262,6 +283,13 @@ internal static class MapperExtractor
 
             handledTargets.Add(tgtName);
 
+            // If this explicit mapping targets a constructor parameter (already consumed), skip it here.
+            // The mapping was resolved in ResolveConstructorArguments.
+            if (consumedCtorParams is not null && consumedCtorParams.Contains(tgtName))
+            {
+                continue;
+            }
+
             if (ignores.Contains(tgtName))
             {
                 // Contradictory: [MapIgnore] and [MapProperty] target the same member.
@@ -297,6 +325,13 @@ internal static class MapperExtractor
             .ToList();
         foreach (var target in targets)
         {
+            // Skip members already consumed as constructor parameters (positional record members appear
+            // as both ctor params AND init properties — must not double-assign).
+            if (consumedCtorParams is not null && consumedCtorParams.Contains(target.Name))
+            {
+                continue;
+            }
+
             if (handledTargets.Contains(target.Name) || ignores.Contains(target.Name))
             {
                 continue;
@@ -363,9 +398,15 @@ internal static class MapperExtractor
         }
 
         // READ-ONLY destinations with a matching source (silent-loss guard).
+        // A read-only member satisfied via a constructor parameter is already mapped — no diagnostic.
         foreach (var readOnly in ReadOnlyMembers(targetType).OrderBy(m => m.Name, System.StringComparer.Ordinal))
         {
             if (handledTargets.Contains(readOnly.Name) || ignores.Contains(readOnly.Name))
+            {
+                continue;
+            }
+            // Satisfied via ctor param → not a silent loss.
+            if (consumedCtorParams is not null && consumedCtorParams.Contains(readOnly.Name))
             {
                 continue;
             }
@@ -394,6 +435,110 @@ internal static class MapperExtractor
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// For each constructor parameter, find a matching source member and resolve the conversion.
+    /// Every parameter is mandatory — if any fails, DWARF024 is reported and the method returns false.
+    /// </summary>
+    private static bool ResolveConstructorArguments(
+        IMethodSymbol ctor,
+        ITypeSymbol sourceType,
+        Compilation compilation,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics,
+        bool caseInsensitive,
+        IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+        EnumStrategy enumStrategy,
+        Dictionary<string, SynthesizedMethod> synthesized,
+        NullStrategy nullStrategy,
+        out MemberMap[] ctorArgs,
+        out HashSet<string> consumedParams)
+    {
+        var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+
+        // Build explicit-maps index: target (param) name → source name (exact match).
+        var explicitForParams = new Dictionary<string, (string Source, string? Use)>(System.StringComparer.Ordinal);
+        foreach (var (srcName, tgtName, use) in explicitMaps)
+        {
+            explicitForParams[tgtName] = (srcName, use);
+        }
+
+        var readableByName = ReadableMembers(sourceType)
+            .GroupBy(m => m.Name, comparer)
+            .ToDictionary(g => g.Key, g => g.ToList(), comparer);
+
+        var args = new List<MemberMap>();
+        // Case-insensitive set for deduplication (positional record param names can differ in case).
+        consumedParams = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        var allOk = true;
+
+        foreach (var param in ctor.Parameters)
+        {
+            // 1. Check for an explicit [MapProperty(src, paramName)] override.
+            if (explicitForParams.TryGetValue(param.Name, out var explicitInfo))
+            {
+                var srcList = ReadableMembers(sourceType)
+                    .Where(m => System.StringComparer.Ordinal.Equals(m.Name, explicitInfo.Source))
+                    .ToList();
+                if (srcList.Count == 0)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, explicitInfo.Source));
+                    allOk = false;
+                    continue;
+                }
+
+                var srcType = srcList[0].Type;
+                if (TryResolveConversion(compilation, srcType, param.Type, explicitInfo.Use,
+                    allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                    location, param.Name, diagnostics, out var eConv, out var eNull))
+                {
+                    args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull));
+                    consumedParams.Add(param.Name);
+                }
+                else
+                {
+                    allOk = false;
+                }
+                continue;
+            }
+
+            // 2. Auto-match by name under the configured comparer.
+            if (!readableByName.TryGetValue(param.Name, out var matches) || matches.Count == 0)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ConstructorParameterUnmapped,
+                    location, param.Name));
+                allOk = false;
+                continue;
+            }
+
+            if (matches.Count > 1)
+            {
+                // Ambiguous under case-insensitive matching — report as AmbiguousMatch.
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousMatch, location, param.Name));
+                allOk = false;
+                continue;
+            }
+
+            var srcMember = matches[0];
+            if (TryResolveConversion(compilation, srcMember.Type, param.Type, null,
+                allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                location, param.Name, diagnostics, out var conv, out var nullH))
+            {
+                args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH));
+                consumedParams.Add(param.Name);
+            }
+            else
+            {
+                allOk = false;
+            }
+        }
+
+        ctorArgs = args.ToArray();
+        return allOk;
     }
 
     private static bool TryResolveConversion(

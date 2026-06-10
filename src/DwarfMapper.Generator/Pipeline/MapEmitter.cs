@@ -81,74 +81,60 @@ internal static class MapEmitter
             sb.Append(indent).Append("    ").Append(before).Append('(').Append(method.ParameterName).AppendLine(");");
         }
 
+        var hasCtorArgs = method.ConstructorArguments.Count > 0;
+        var hasInitMembers = method.Members.Count > 0;
         var hasAfter = method.AfterHooks.Count > 0;
-        sb.Append(indent).Append("    ").Append(hasAfter ? "var __dwarf_target = new " : "return new ").AppendLine(method.ReturnTypeFullName);
-        sb.Append(indent).AppendLine("    {");
-        foreach (var member in method.Members)
+
+        // Begin construction expression: "var __dwarf_target = new T(...)" or "return new T(...)".
+        sb.Append(indent).Append("    ").Append(hasAfter ? "var __dwarf_target = new " : "return new ")
+          .Append(method.ReturnTypeFullName);
+
+        if (hasCtorArgs)
         {
-            sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
-
-            // NullableProject: both source and target are Nullable<T>. Emit null-preserving ternary:
-            //   src.X.HasValue ? Conv(src.X.Value) : null
-            // C# 9+ target-typed conditional unifies U (from Conv) and null into U?.
-            // If there is no converter (T→U implicit — shouldn't reach here, handled at line 457),
-            // fall back to direct assignment as a defensive measure.
-            if (member.NullHandling == Model.NullHandling.NullableProject)
+            // Named constructor arguments (clarity + safe against reordering).
+            sb.AppendLine("(");
+            var ctorArgs = method.ConstructorArguments;
+            for (var i = 0; i < ctorArgs.Count; i++)
             {
-                var srcExpr = method.ParameterName + "." + member.SourceName;
-                if (member.ConverterMethod is not null)
-                {
-                    sb.Append(srcExpr).Append(".HasValue ? ")
-                      .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value) : null");
-                }
+                var arg = ctorArgs[i];
+                sb.Append(indent).Append("        ").Append(arg.TargetName).Append(": ");
+                AppendValueExpression(sb, arg, method.ParameterName);
+                if (i < ctorArgs.Count - 1)
+                    sb.AppendLine(",");
                 else
-                {
-                    // Defensive fallback: T?→U? where T→U is implicit (direct assignment).
-                    sb.Append(srcExpr);
-                }
-                sb.AppendLine(",");
-                continue;
+                    sb.Append(')');
             }
 
-            // Build the "inner value access" — the nullable-unwrapped (or plain) source expression.
-            // When NullHandling is set, we unwrap the nullable first; otherwise it is a plain access.
-            string innerAccess;
-            switch (member.NullHandling)
+            if (hasInitMembers)
             {
-                case Model.NullHandling.ThrowIfNull:
-                    innerAccess = method.ParameterName + "." + member.SourceName
-                        + " ?? throw new global::System.InvalidOperationException(\"Source member '"
-                        + member.SourceName + "' was null\")";
-                    break;
-                case Model.NullHandling.ValueOrDefault:
-                    innerAccess = method.ParameterName + "." + member.SourceName + ".GetValueOrDefault()";
-                    break;
-                default:
-                    innerAccess = method.ParameterName + "." + member.SourceName;
-                    break;
-            }
-            // Wrap the inner access with the converter if present.
-            if (member.ConverterMethod is not null)
-            {
-                if (member.NullHandling != Model.NullHandling.None)
+                sb.AppendLine();
+                sb.Append(indent).AppendLine("    {");
+                foreach (var member in method.Members)
                 {
-                    // Both converter and null-handling: Conv(src.X ?? throw ...) or Conv(src.X.GetValueOrDefault())
-                    sb.Append(member.ConverterMethod).Append('(').Append(innerAccess).Append(')');
+                    sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
+                    AppendValueExpression(sb, member, method.ParameterName);
+                    sb.AppendLine(",");
                 }
-                else
-                {
-                    // Converter only (original path): Conv(src.X)
-                    sb.Append(member.ConverterMethod).Append('(')
-                      .Append(method.ParameterName).Append('.').Append(member.SourceName).Append(')');
-                }
+                sb.Append(indent).AppendLine("    };");
             }
             else
             {
-                sb.Append(innerAccess);
+                sb.AppendLine(";");
             }
-            sb.AppendLine(",");
         }
-        sb.Append(indent).AppendLine("    };");
+        else
+        {
+            // Original object-initializer only path (no ctor args).
+            sb.AppendLine();
+            sb.Append(indent).AppendLine("    {");
+            foreach (var member in method.Members)
+            {
+                sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
+                AppendValueExpression(sb, member, method.ParameterName);
+                sb.AppendLine(",");
+            }
+            sb.Append(indent).AppendLine("    };");
+        }
 
         if (hasAfter)
         {
@@ -169,5 +155,68 @@ internal static class MapEmitter
         }
 
         sb.Append(indent).AppendLine("}");
+    }
+
+    /// <summary>
+    /// Append the value expression for a single mapping (ctor arg or object-initializer member)
+    /// to <paramref name="sb"/>. Does NOT append a trailing comma or newline.
+    /// </summary>
+    private static void AppendValueExpression(StringBuilder sb, MemberMap member, string paramName)
+    {
+        // NullableProject: both source and target are Nullable<T>. Emit null-preserving ternary:
+        //   src.X.HasValue ? Conv(src.X.Value) : null
+        // C# 9+ target-typed conditional unifies U (from Conv) and null into U?.
+        if (member.NullHandling == Model.NullHandling.NullableProject)
+        {
+            var srcExpr = paramName + "." + member.SourceName;
+            if (member.ConverterMethod is not null)
+            {
+                sb.Append(srcExpr).Append(".HasValue ? ")
+                  .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value) : null");
+            }
+            else
+            {
+                // Defensive fallback: T?→U? where T→U is implicit (direct assignment).
+                sb.Append(srcExpr);
+            }
+            return;
+        }
+
+        // Build the "inner value access" — the nullable-unwrapped (or plain) source expression.
+        string innerAccess;
+        switch (member.NullHandling)
+        {
+            case Model.NullHandling.ThrowIfNull:
+                innerAccess = paramName + "." + member.SourceName
+                    + " ?? throw new global::System.InvalidOperationException(\"Source member '"
+                    + member.SourceName + "' was null\")";
+                break;
+            case Model.NullHandling.ValueOrDefault:
+                innerAccess = paramName + "." + member.SourceName + ".GetValueOrDefault()";
+                break;
+            default:
+                innerAccess = paramName + "." + member.SourceName;
+                break;
+        }
+
+        // Wrap the inner access with the converter if present.
+        if (member.ConverterMethod is not null)
+        {
+            if (member.NullHandling != Model.NullHandling.None)
+            {
+                // Both converter and null-handling: Conv(src.X ?? throw ...) or Conv(src.X.GetValueOrDefault())
+                sb.Append(member.ConverterMethod).Append('(').Append(innerAccess).Append(')');
+            }
+            else
+            {
+                // Converter only (original path): Conv(src.X)
+                sb.Append(member.ConverterMethod).Append('(')
+                  .Append(paramName).Append('.').Append(member.SourceName).Append(')');
+            }
+        }
+        else
+        {
+            sb.Append(innerAccess);
+        }
     }
 }

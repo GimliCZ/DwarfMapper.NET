@@ -142,7 +142,7 @@ public static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor ConstructorParameterUnmapped = new(
         "DWARF024",
         "Constructor parameter has no mappable source member",
-        "Constructor parameter '{0}' of '{1}' has no mappable source member; add a source member with a matching name or use [MapProperty(src, \"{0}\")]",
+        "Constructor parameter '{0}' has no mappable source member; add a source member with a matching name or use [MapProperty(src, \"<paramName>\")]",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor AmbiguousConstructor = new(
