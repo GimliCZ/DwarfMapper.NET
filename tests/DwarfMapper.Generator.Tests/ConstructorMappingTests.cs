@@ -211,4 +211,173 @@ public class ConstructorMappingTests
         Assert.Contains("new ", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("DWARF024", generated, StringComparison.Ordinal);
     }
+
+    // ── Regression: object-initializer form does NOT include ctor args ─────────
+
+    [Fact]
+    public void Settable_class_generated_code_has_no_ctor_args()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+            public class D { public int X { get; set; } public string Y { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (_, generated) = GeneratorTestHarness.Run(src);
+        // Object-initializer pattern: "new <type>" followed by "{", not "("
+        // The type is fully qualified in generated code.
+        var newIdx = generated.IndexOf("new global::Demo.D", StringComparison.Ordinal);
+        Assert.True(newIdx >= 0, $"Generated code should contain 'new global::Demo.D', got: {generated}");
+        var afterNew = generated.Substring(newIdx + "new global::Demo.D".Length).TrimStart();
+        // Should start with '{', not '('
+        Assert.True(afterNew.StartsWith('{') || afterNew.StartsWith("\r\n{", StringComparison.Ordinal) || afterNew.StartsWith("\n{", StringComparison.Ordinal),
+            $"Expected object-initializer (no ctor args), got: {afterNew.Substring(0, System.Math.Min(50, afterNew.Length))}");
+    }
+
+    // ── MapProperty → ctor param ──────────────────────────────────────────────
+
+    [Fact]
+    public void MapProperty_redirects_source_to_ctor_param()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int Age { get; set; } }
+            public record R(int Years);
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapProperty("Age", "Years")]
+                public partial R Map(S s);
+            }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        Assert.Contains("Years:", generated, StringComparison.Ordinal);
+        Assert.Contains("Age", generated, StringComparison.Ordinal);
+    }
+
+    // ── CaseInsensitive ctor param matching ──────────────────────────────────
+
+    [Fact]
+    public void CaseInsensitive_matches_ctor_param_with_different_case_source()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int myValue { get; set; } }
+            public class D
+            {
+                public D(int MyValue) { this.MyValue = MyValue; }
+                public int MyValue { get; }
+            }
+            [DwarfMapper(CaseInsensitive = true)]
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        Assert.Contains("MyValue:", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CaseSensitive_does_not_match_ctor_param_different_case()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int myValue { get; set; } }
+            public class D
+            {
+                public D(int MyValue) { this.MyValue = MyValue; }
+                public int MyValue { get; }
+            }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        // Without CaseInsensitive, "myValue" source ≠ "MyValue" param → DWARF024
+        Assert.Contains(diagnostics, d => d.Id == "DWARF024");
+    }
+
+    // ── Completeness still holds: unmapped settable non-ctor member → error ───
+
+    [Fact]
+    public void Completeness_still_errors_for_unmapped_settable_member()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } }
+            public record R(int X) { public string Extra { get; init; } = ""; }
+            [DwarfMapper]
+            public partial class M { public partial R Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        // 'Extra' is a settable (init) property not satisfied by ctor or source → DWARF001
+        Assert.Contains(diagnostics, d => d.Id == "DWARF001"
+            && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+                .Contains("Extra", StringComparison.Ordinal));
+    }
+
+    // ── record struct no error ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Record_struct_maps_via_ctor_no_error()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } public int Y { get; set; } }
+            public record struct RS(int X, int Y);
+            [DwarfMapper]
+            public partial class M { public partial RS Map(S s); }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        Assert.Contains("X:", generated, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── readonly record struct no error ───────────────────────────────────────
+
+    [Fact]
+    public void Readonly_record_struct_maps_via_ctor_no_error()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } }
+            public readonly record struct RRS(int X);
+            [DwarfMapper]
+            public partial class M { public partial RRS Map(S s); }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        Assert.Contains("X:", generated, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── Named ctor args in generated code ─────────────────────────────────────
+
+    [Fact]
+    public void Generated_ctor_call_uses_named_arguments()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+            public record R(int X, string Y);
+            [DwarfMapper]
+            public partial class M { public partial R Map(S s); }
+            """;
+        var (_, generated) = GeneratorTestHarness.Run(src);
+        // Named args: "X: " and "Y: " (or "x: " and "y: " depending on C# convention)
+        Assert.Contains(":", generated, StringComparison.Ordinal);
+        // Must have new R( not just new R { (type is fully qualified in generated code)
+        Assert.Contains("new global::Demo.R(", generated, StringComparison.Ordinal);
+    }
 }

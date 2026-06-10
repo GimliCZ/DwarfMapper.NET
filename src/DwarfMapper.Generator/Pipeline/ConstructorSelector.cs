@@ -37,15 +37,29 @@ internal static class ConstructorSelector
         useObjectInitializerOnly = false;
 
         // ── Policy 0 (pre-filter): accessible parameterless ctor exists → object-initializer path.
-        // Must be checked BEFORE filtering by IsImplicitlyDeclared so that plain classes with
-        // implicitly-generated parameterless ctors (IsImplicitlyDeclared=true) are treated as
-        // "has parameterless ctor" and continue to use the existing object-initializer path.
-        // Record positional types do NOT have an implicit parameterless ctor, so they fall through.
+        // We include implicitly-declared parameterless ctors here so that plain classes (which have
+        // an implicit public parameterless ctor) continue to use the existing object-initializer path.
+        // EXCEPTION: structs with explicit non-parameterless ctors — the implicit struct parameterless ctor
+        // is a no-op (zero-init) and we should prefer the explicit ctor for proper initialization.
+        // Detect this case: target is a value type AND has at least one explicit (non-implicitly-declared)
+        // non-parameterless ctor AND there is no explicit parameterless ctor.
+        var hasExplicitNonParameterlessCtor = target.InstanceConstructors.Any(c =>
+            !c.IsImplicitlyDeclared
+            && c.DeclaredAccessibility == Accessibility.Public
+            && !c.IsStatic
+            && c.Parameters.Length > 0
+            && !IsObsolete(c));
+
+        // For value types (structs) with explicit non-parameterless ctors, don't use the implicit
+        // parameterless ctor — prefer the explicit ctor instead.
+        var skipImplicitParameterlessCtor = target.IsValueType && hasExplicitNonParameterlessCtor;
+
         var anyParameterless = target.InstanceConstructors.FirstOrDefault(c =>
             c.DeclaredAccessibility == Accessibility.Public
             && !c.IsStatic
             && c.Parameters.Length == 0
-            && !IsObsolete(c));
+            && !IsObsolete(c)
+            && (!c.IsImplicitlyDeclared || !skipImplicitParameterlessCtor));
 
         if (anyParameterless is not null)
         {
