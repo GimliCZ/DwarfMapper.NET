@@ -142,12 +142,18 @@ public partial class OrderMapper
 |---|---|---|---|
 | **Implicit / identity** | `byte → int`, `int → int` | direct assignment | Zero-cost; compiler-proven lossless |
 | **Integral narrowing** | `long → int`, `int → uint`, `uint → int` | `global::System.Int32.CreateChecked(v)` | Throws `OverflowException` if value doesn't fit; never silent truncation |
-| **string → T** (`T : IParsable<T>`) | `string → int`, `string → Guid`, `string → DateTime` | `global::System.Int32.Parse(v, InvariantCulture)` | Throws `FormatException`/`OverflowException` on bad input; InvariantCulture |
+| **string → T** (`T : IParsable<T>`) | `string → int`, `string → Guid`, `string → bool`, `string → double` | `global::System.Int32.Parse(v, InvariantCulture)` | InvariantCulture; throws `FormatException`/`OverflowException` on bad input |
+| **string → DateTime / DateTimeOffset** | `string → DateTime` | `DateTime.Parse(v, InvariantCulture, DateTimeStyles.RoundtripKind)` | Preserves `DateTimeKind` (UTC, Local, Unspecified) and sub-second precision |
 | **T → string** (`T : IFormattable`) | `int → string`, `Guid → string`, `decimal → string` | `v.ToString(null, InvariantCulture)` | InvariantCulture (decimal separator is always `.`) |
+| **bool / char → string** | `bool → string`, `char → string` | `v.ToString()` | No-arg overload (culture-invariant by nature); `bool` → "True"/"False"; `char` → single-char string |
+| **DateTime / DateTimeOffset → string** | `DateTime → string` | `v.ToString("o", InvariantCulture)` | ISO-8601 round-trip format ("o"); lossless including sub-second precision and `Kind`/offset |
 | **enum ↔ enum** (by name, default) | `Color.Red → Status.Red` | `switch` | Missing member → `DWARF015` |
 | **enum ↔ enum** (by value) | value cast | `CreateChecked` on underlying | Throws on overflow |
 | **enum ↔ string** | `Color.Red ↔ "Red"` | `switch` | No reflection |
 | **enum ↔ integral** | `Color → int` | `CreateChecked` on underlying | Throws on overflow |
+| **T → T?** (target-nullable, non-nullable source) | `long → int?`, `string → int?`, `int → Color?` | inner conversion result implicitly lifted to `T?` | Overflow/format errors still propagate; nullable-source + nullable-target (`T?→U?`) is not yet auto-handled (DWARF005) |
+
+**User methods take precedence over built-in synthesized conversions.** Any non-partial single-parameter method on the mapper class that matches a `(srcType → tgtType)` pair is used automatically — at higher priority than `CreateChecked`/`Parse`/`ToString` synthesis. This lets you intentionally shadow the built-in with custom logic (e.g. a rounding `long→int`). Explicit `Use=` still wins first.
 
 **Not automatically handled (require `Use=`):** float/double/decimal → integer (silent fractional truncation is never emitted automatically). Declare a custom method and reference it with `[MapProperty(Use=nameof(...))]`.
 
@@ -158,7 +164,7 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 - **enum ↔ enum** by name (default) — a source member with no same-named destination member is `DWARF015`. Opt into value-based casting with `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]`.
 - **enum ↔ string** and **enum ↔ integral** are handled via generated `switch`/cast helpers (no reflection, AOT-safe).
 
-**Nullable values.** A nullable value-type source mapped to a non-nullable destination (`int? → int`) is unwrapped per `NullStrategy`: **throw on null** (default) or `[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]` to use the destination default.
+**Nullable values.** A nullable value-type source mapped to a non-nullable destination (`int? → int`) is unwrapped per `NullStrategy`: **throw on null** (default) or `[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]` to use the destination default. A non-nullable source mapped to a nullable-value-type destination (`long → int?`, `string → int?`) is handled automatically — the inner conversion (e.g. `CreateChecked`, `Parse`) runs, and the result is implicitly lifted to `T?`; overflow and format errors still propagate. Nullable-source + nullable-target (`long?→int?`) is not yet auto-handled (DWARF005; a documented follow-up).
 
 **Collections.** `T[]`, `List<T>`, and `HashSet<T>` members map element-by-element, applying the same conversion rules per element (nested objects, converters, enums, nullable unwrap, even nested collections). When the element type is unchanged, the whole collection is bulk-copied (`T[]` → `T[]` clone, `→ List<T>`/`HashSet<T>` bulk constructor). Read-only source shapes (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlySet<T>`, …) are accepted as sources.
 

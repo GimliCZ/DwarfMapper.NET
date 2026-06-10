@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using System;
+using System.Globalization;
 using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
@@ -21,6 +22,27 @@ public class StringDst2  { public string V { get; set; } = ""; }
 
 [DwarfMapper] public partial class IntToStringMapper   { public partial StringDst2 Map(IntSrc3 s); }
 [DwarfMapper] public partial class GuidToStringMapper  { public partial StringDst2 Map(GuidSrc  s); }
+
+// ── char ↔ string ─────────────────────────────────────────────────────────────
+
+public class CharSrc     { public char   V { get; set; } }
+public class StringDst3  { public string V { get; set; } = ""; }
+
+[DwarfMapper] public partial class CharToStringMapper  { public partial StringDst3 Map(CharSrc s); }
+
+// ── bool → string ─────────────────────────────────────────────────────────────
+
+public class BoolSrc     { public bool   V { get; set; } }
+
+[DwarfMapper] public partial class BoolToStringMapper  { public partial StringDst3 Map(BoolSrc s); }
+
+// ── string → double / float ───────────────────────────────────────────────────
+
+public class DoubleDst   { public double V { get; set; } }
+public class FloatDst    { public float  V { get; set; } }
+
+[DwarfMapper] public partial class StringToDoubleMapper { public partial DoubleDst Map(StringSrc s); }
+[DwarfMapper] public partial class StringToFloatMapper  { public partial FloatDst  Map(StringSrc s); }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -113,5 +135,95 @@ public class ParsableConversionRuntimeTests
         // MoneyMapper uses explicit Use= — verify it still works after ParsableConverter is wired in.
         var t = new MoneyMapper().Map(new MoneySource { Amount = "42" });
         Assert.Equal(42, t.Amount);
+    }
+
+    // ── char → string ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Char_to_string_maps_value()
+    {
+        var result = new CharToStringMapper().Map(new CharSrc { V = 'A' });
+        Assert.Equal("A", result.V);
+    }
+
+    [Fact]
+    public void Char_to_string_unicode_maps_value()
+    {
+        var result = new CharToStringMapper().Map(new CharSrc { V = 'é' });
+        Assert.Equal("é", result.V);
+    }
+
+    // ── bool → string ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Bool_to_string_true_maps()
+    {
+        var result = new BoolToStringMapper().Map(new BoolSrc { V = true });
+        Assert.Equal("True", result.V);
+    }
+
+    [Fact]
+    public void Bool_to_string_false_maps()
+    {
+        var result = new BoolToStringMapper().Map(new BoolSrc { V = false });
+        Assert.Equal("False", result.V);
+    }
+
+    [Fact]
+    public void Bool_to_string_round_trips_via_parse()
+    {
+        // "True" and "False" are accepted by bool.Parse — the round-trip must work.
+        var trueStr = new BoolToStringMapper().Map(new BoolSrc { V = true }).V;
+        var falseStr = new BoolToStringMapper().Map(new BoolSrc { V = false }).V;
+        Assert.True(bool.Parse(trueStr));
+        Assert.False(bool.Parse(falseStr));
+    }
+
+    // ── string → double / float ───────────────────────────────────────────────
+
+    [Fact]
+    public void String_to_double_maps_decimal_value()
+    {
+        var result = new StringToDoubleMapper().Map(new StringSrc { V = "3.14" });
+        Assert.Equal(3.14, result.V, precision: 10);
+    }
+
+    [Fact]
+    public void String_to_double_NaN_is_accepted()
+    {
+        // double.Parse("NaN") is valid and produces double.NaN — document this is intentional.
+        var result = new StringToDoubleMapper().Map(new StringSrc { V = "NaN" });
+        Assert.True(double.IsNaN(result.V));
+    }
+
+    [Fact]
+    public void String_to_double_bad_input_throws()
+        => Assert.ThrowsAny<Exception>(() => new StringToDoubleMapper().Map(new StringSrc { V = "abc" }));
+
+    [Fact]
+    public void String_to_float_maps_value()
+    {
+        var result = new StringToFloatMapper().Map(new StringSrc { V = "3.14" });
+        Assert.Equal(3.14f, result.V, precision: 2);
+    }
+
+    // ── Culture independence for double/float ─────────────────────────────────
+
+    [Fact]
+    public void String_to_double_under_de_DE_culture_uses_invariant()
+    {
+        // German culture uses ',' as decimal separator.
+        // The generated code uses InvariantCulture, so "3.14" must parse as 3.14, not 314.
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+            var result = new StringToDoubleMapper().Map(new StringSrc { V = "3.14" });
+            Assert.Equal(3.14, result.V, precision: 10);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 }
