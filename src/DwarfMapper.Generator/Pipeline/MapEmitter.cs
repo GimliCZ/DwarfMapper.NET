@@ -49,16 +49,38 @@ internal static class MapEmitter
 
     private static void EmitMethod(StringBuilder sb, MapMethodModel method, string indent)
     {
-        sb.Append(indent).Append(method.Accessibility).Append(" partial ")
-          .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-          .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName).AppendLine(")");
+        // IsPartial=true → user-declared partial: emit "public partial T Name(S s)"
+        // IsPartial=false → synthesized private: emit "private T Name(S s)" (no 'partial')
+        if (method.IsPartial)
+        {
+            sb.Append(indent).Append(method.Accessibility).Append(" partial ")
+              .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
+              .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName).AppendLine(")");
+        }
+        else
+        {
+            sb.Append(indent).Append("private ")
+              .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
+              .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName).AppendLine(")");
+        }
         sb.Append(indent).AppendLine("{");
 
         if (method.ParameterIsReferenceType)
         {
-            sb.Append(indent).Append("    if (").Append(method.ParameterName)
-              .Append(" is null) throw new global::System.ArgumentNullException(nameof(")
-              .Append(method.ParameterName).AppendLine("));");
+            if (method.IsPartial)
+            {
+                // Public partial mapper: null source is a programming error → loud ArgumentNullException.
+                sb.Append(indent).Append("    if (").Append(method.ParameterName)
+                  .Append(" is null) throw new global::System.ArgumentNullException(nameof(")
+                  .Append(method.ParameterName).AppendLine("));");
+            }
+            else
+            {
+                // Synthesized private nested mapper: null source → null target (defensive, not a throw).
+                // The calling mapper owns the outer null-check; the nested method propagates null.
+                sb.Append(indent).Append("    if (").Append(method.ParameterName)
+                  .AppendLine(" is null) return null!;");
+            }
         }
 
         if (method.IsProjection)
