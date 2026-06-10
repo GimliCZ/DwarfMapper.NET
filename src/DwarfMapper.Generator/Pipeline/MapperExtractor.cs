@@ -483,16 +483,32 @@ internal static class MapperExtractor
             // Fall through — let the rest of TryResolveConversion attempt further resolutions.
         }
 
-        // Integral↔integral narrowing / sign-change: emit CreateChecked (throws on overflow).
-        // Must come after the implicit-conversion check (widening uses direct assign, not this).
-        // Enums have SpecialType.None — IsIntegral is false for them, so this never intercepts enums.
-        var numericMethod = NumericConverter.TryCreate(srcType, tgtType, synthesized);
-        if (numericMethod is not null)
+        // Target-nullable composition: non-nullable src → T? (nullable target).
+        // When the source is NOT nullable but the target IS nullable, resolve src→underlying
+        // and let the implicit T→T? lift do the rest (valid C# assignment).
+        // Scope: non-nullable source only. nullable-source + nullable-target (T?→U?) is a
+        // documented follow-up (complex null-semantics; left as DWARF005 for now).
+        if (!IsNullableValue(srcType, out _) && IsNullableValue(tgtType, out var tgtUnderlying))
         {
-            converterMethod = numericMethod;
-            return true;
+            if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
+                    enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
+                    out var innerConvT, out _))
+            {
+                converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
+                // nullHandling stays None — source is non-null, always yields a value
+                return true;
+            }
+            // Did not resolve — fall through to DWARF005
+            return false;
         }
 
+        // User-provided auto-candidate methods (no Use= annotation, auto-matched by type).
+        // Checked BEFORE built-in synthesized converters (NumericConverter, ParsableConverter)
+        // so that a user method can intentionally shadow the built-in behavior.
+        // Two sources of user candidates:
+        //   1. autoCandidates  — partial mapper methods (S → D object-level mappers)
+        //   2. allMethods      — non-partial scalar converter helpers (e.g. int Shrink(long v))
+        //      These are already in allMethods; excluding partials avoids double-counting mappers.
         string? found = null;
         foreach (var c in autoCandidates)
         {
@@ -507,10 +523,40 @@ internal static class MapperExtractor
                 found = c.Name;
             }
         }
+        // Also search all non-partial user methods (scalar converters not declared as partial mappers).
+        foreach (var m in allMethods)
+        {
+            // Skip methods that are already in autoCandidates (partial mapper methods).
+            if (autoCandidates.Any(ac => string.Equals(ac.Name, m.Name, System.StringComparison.Ordinal)
+                    && SymbolEqualityComparer.Default.Equals(ac.ParamType, m.ParamType)
+                    && SymbolEqualityComparer.Default.Equals(ac.ReturnType, m.ReturnType)))
+                continue;
+            if (HasImplicitConversion(compilation, srcType, m.ParamType)
+                && HasImplicitConversion(compilation, m.ReturnType, tgtType))
+            {
+                if (found is not null)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion, location, targetName));
+                    return false;
+                }
+                found = m.Name;
+            }
+        }
 
         if (found is not null)
         {
             converterMethod = found;
+            return true;
+        }
+
+        // Integral↔integral narrowing / sign-change: emit CreateChecked (throws on overflow).
+        // Must come after the implicit-conversion check (widening uses direct assign, not this)
+        // and after user auto-candidates (user methods take precedence over built-in synthesis).
+        // Enums have SpecialType.None — IsIntegral is false for them, so this never intercepts enums.
+        var numericMethod = NumericConverter.TryCreate(srcType, tgtType, synthesized);
+        if (numericMethod is not null)
+        {
+            converterMethod = numericMethod;
             return true;
         }
 

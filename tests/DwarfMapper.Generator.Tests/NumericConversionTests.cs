@@ -214,6 +214,35 @@ public class NumericConversionTests
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
 
+    // ── Precedence: user auto-candidate method must win over built-in numeric ────
+
+    [Fact]
+    public void User_auto_candidate_method_wins_over_builtin_numeric()
+    {
+        // The mapper class contains a private static int Shrink(long v) method.
+        // When long→int is needed, the user-provided Shrink must win over the
+        // built-in NumericConverter synthesized method. Today NumericConverter fires
+        // BEFORE autoCandidates → this FAILS (generates __DwarfMap_Num_ instead of Shrink).
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public long V { get; set; } }
+            public class D { public int  V { get; set; } }
+            [DwarfMapper]
+            public partial class M
+            {
+                public partial D Map(S s);
+                private static int Shrink(long v) => (int)v;
+            }
+            """;
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        // User method must be called, not the synthesized one
+        Assert.Contains("Shrink", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("__DwarfMap_Num_", generated, StringComparison.Ordinal);
+    }
+
     // ── Nullable composition: int? → short should compose ─────────────────────
 
     [Fact]
