@@ -87,6 +87,29 @@ internal static class MapEmitter
         foreach (var member in method.Members)
         {
             sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
+
+            // NullableProject: both source and target are Nullable<T>. Emit null-preserving ternary:
+            //   src.X.HasValue ? Conv(src.X.Value) : null
+            // C# 9+ target-typed conditional unifies U (from Conv) and null into U?.
+            // If there is no converter (T→U implicit — shouldn't reach here, handled at line 457),
+            // fall back to direct assignment as a defensive measure.
+            if (member.NullHandling == Model.NullHandling.NullableProject)
+            {
+                var srcExpr = method.ParameterName + "." + member.SourceName;
+                if (member.ConverterMethod is not null)
+                {
+                    sb.Append(srcExpr).Append(".HasValue ? ")
+                      .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value) : null");
+                }
+                else
+                {
+                    // Defensive fallback: T?→U? where T→U is implicit (direct assignment).
+                    sb.Append(srcExpr);
+                }
+                sb.AppendLine(",");
+                continue;
+            }
+
             // Build the "inner value access" — the nullable-unwrapped (or plain) source expression.
             // When NullHandling is set, we unwrap the nullable first; otherwise it is a plain access.
             string innerAccess;

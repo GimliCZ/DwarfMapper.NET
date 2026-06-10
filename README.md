@@ -151,7 +151,9 @@ public partial class OrderMapper
 | **enum ↔ enum** (by value) | value cast | `CreateChecked` on underlying | Throws on overflow |
 | **enum ↔ string** | `Color.Red ↔ "Red"` | `switch` | No reflection |
 | **enum ↔ integral** | `Color → int` | `CreateChecked` on underlying | Throws on overflow |
-| **T → T?** (target-nullable, non-nullable source) | `long → int?`, `string → int?`, `int → Color?` | inner conversion result implicitly lifted to `T?` | Overflow/format errors still propagate; nullable-source + nullable-target (`T?→U?`) is not yet auto-handled (DWARF005) |
+| **T → T?** (target-nullable, non-nullable source) | `long → int?`, `string → int?`, `int → Color?` | inner conversion result implicitly lifted to `T?` | Overflow/format errors still propagate |
+| **T? → U?** (both nullable) | `long? → int?`, `E1? → E2?` | `src.HasValue ? Conv(src.Value) : null` | Null-preserving: null source → null target; non-null out-of-range still throws (e.g. `OverflowException`) |
+| **T? → U** (nullable source, non-nullable target) | `int? → short`, `E1? → E2` | `src ?? throw` (default strategy) or `src.GetValueOrDefault()` (`SetDefault`) | Follows mapper's `NullStrategy` setting |
 
 **User methods take precedence over built-in synthesized conversions.** Any non-partial single-parameter method on the mapper class that matches a `(srcType → tgtType)` pair is used automatically — at higher priority than `CreateChecked`/`Parse`/`ToString` synthesis. This lets you intentionally shadow the built-in with custom logic (e.g. a rounding `long→int`). Explicit `Use=` still wins first.
 

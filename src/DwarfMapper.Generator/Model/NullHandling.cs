@@ -12,4 +12,10 @@ public enum NullHandling
 
     /// <summary>Emit <c>x.GetValueOrDefault()</c>.</summary>
     ValueOrDefault = 2,
+
+    /// <summary>
+    /// Source and target are both <c>Nullable&lt;T&gt;</c>; emit
+    /// <c>x.HasValue ? Conv(x.Value) : null</c> (null-preserving).
+    /// </summary>
+    NullableProject = 3,
 }

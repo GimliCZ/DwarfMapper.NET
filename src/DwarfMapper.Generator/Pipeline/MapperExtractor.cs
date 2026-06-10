@@ -459,6 +459,22 @@ internal static class MapperExtractor
             return true; // direct assignment
         }
 
+        // Both nullable: T? → U? with a non-implicit inner T→U. Null-preserving (null → null).
+        // Must come before the source-nullable branch so that T?→U? with a synthesized inner
+        // conversion resolves to NullableProject rather than ThrowIfNull/ValueOrDefault.
+        if (IsNullableValue(srcType, out var bothSrcU) && IsNullableValue(tgtType, out var bothTgtU))
+        {
+            if (TryResolveConversion(compilation, bothSrcU, bothTgtU, useMethod, allMethods, autoCandidates,
+                    enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
+                    out var innerNN, out _) && innerNN is not null)
+            {
+                converterMethod = innerNN;
+                nullHandling = Model.NullHandling.NullableProject;
+                return true;
+            }
+            // Inner unresolved or has no converter (implicit, already caught above) — fall through.
+        }
+
         if (IsNullableValue(srcType, out var underlying))
         {
             // First check the simple implicit-conversion path (int? → int, int? → long, etc.)
