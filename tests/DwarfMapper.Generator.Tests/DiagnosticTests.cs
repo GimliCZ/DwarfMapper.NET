@@ -76,10 +76,13 @@ public class DiagnosticTests
     [Fact]
     public void No_implicit_conversion_reports_DWARF005()
     {
+        // string→int now auto-resolves via IParsable<int>; use truly incompatible types
+        // (a custom class that is not implicitly convertible and not IParsable/IFormattable).
         const string src = """
             using DwarfMapper;
-            public class Person { public string Age { get; set; } = ""; }
-            public class PersonDto { public int Age { get; set; } }
+            public class Widget { public int X { get; set; } }
+            public class PersonDto { public Widget Age { get; set; } = new(); }
+            public class Person    { public int   Age { get; set; } }
             [DwarfMapper]
             public partial class PersonMapper
             {

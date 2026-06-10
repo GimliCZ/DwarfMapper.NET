@@ -128,10 +128,13 @@ public class MapPropertyTests
     [Fact]
     public void MapProperty_incompatible_types_reports_DWARF005()
     {
+        // string→int now auto-resolves via IParsable<int>; use truly incompatible types
+        // (a custom class that is not implicitly convertible and not IParsable/IFormattable).
         const string src = """
             using DwarfMapper;
             namespace Demo;
-            public class Source { public string Full { get; set; } = ""; }
+            public class Box { public int Value { get; set; } }
+            public class Source { public Box Full { get; set; } = new(); }
             public class Target { public int Name { get; set; } }
             [DwarfMapper]
             public partial class M

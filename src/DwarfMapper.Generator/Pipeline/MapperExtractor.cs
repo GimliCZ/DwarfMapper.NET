@@ -514,6 +514,17 @@ internal static class MapperExtractor
             return true;
         }
 
+        // string↔T via IParsable<T>.Parse / IFormattable.ToString (InvariantCulture, loud on bad input).
+        // Wired AFTER autoCandidates (explicit Use= and auto-conversion methods still win) and BEFORE
+        // EnumConverter (enum↔string routes through EnumConverter's by-name switch; ParsableConverter
+        // guards against enum operands explicitly).
+        var parsableMethod = ParsableConverter.TryCreate(compilation, srcType, tgtType, synthesized);
+        if (parsableMethod is not null)
+        {
+            converterMethod = parsableMethod;
+            return true;
+        }
+
         var enumMethod = EnumConverter.TryCreate(srcType, tgtType, enumStrategy, synthesized, location, targetName, diagnostics);
         if (enumMethod is not null)
         {
