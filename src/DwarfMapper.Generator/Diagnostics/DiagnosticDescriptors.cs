@@ -138,4 +138,22 @@ public static class DiagnosticDescriptors
         "[AfterMap] value-type target must be passed by ref",
         "[AfterMap] on a value-type target '{0}' must take the target parameter by 'ref', or its changes are lost",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConstructorParameterUnmapped = new(
+        "DWARF024",
+        "Constructor parameter has no mappable source member",
+        "Constructor parameter '{0}' of '{1}' has no mappable source member; add a source member with a matching name or use [MapProperty(src, \"{0}\")]",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AmbiguousConstructor = new(
+        "DWARF025",
+        "Ambiguous constructor",
+        "Destination type '{0}' has multiple constructors with the same maximum parameter count; annotate the intended constructor with [DwarfMapperConstructor]",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor NoMappableConstructor = new(
+        "DWARF026",
+        "No mappable constructor",
+        "Destination type '{0}' has no accessible non-obsolete instance constructor to use for mapping",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

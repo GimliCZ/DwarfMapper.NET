@@ -27,3 +27,6 @@ DWARF020 | DwarfMapper | Error | No inverse for [RoundTrip]
 DWARF021 | DwarfMapper | Error | Ambiguous inverse for [RoundTrip]
 DWARF022 | DwarfMapper | Error | Invalid [Reinterpret] target
 DWARF023 | DwarfMapper | Error | [AfterMap] value-type target must be passed by ref
+DWARF024 | DwarfMapper | Error | Constructor parameter has no mappable source member
+DWARF025 | DwarfMapper | Error | Ambiguous constructor
+DWARF026 | DwarfMapper | Error | No mappable constructor
