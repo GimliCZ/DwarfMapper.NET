@@ -119,10 +119,15 @@ internal static class MapperExtractor
             // Resolve constructor arguments (empty set when objInitOnly).
             MemberMap[] ctorArgs;
             HashSet<string> consumedParams;
+            // Members that are `required` AND satisfied via a ctor param but whose ctor is NOT annotated
+            // [SetsRequiredMembers]: C# requires them to ALSO be set in the object initializer (CS9035).
+            // These must NOT be excluded from the initializer even though they are in consumedParams.
+            HashSet<string> requiredMustInitialize;
             if (objInitOnly)
             {
                 ctorArgs = System.Array.Empty<MemberMap>();
                 consumedParams = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                requiredMustInitialize = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
             }
             else
             {
@@ -133,12 +138,17 @@ internal static class MapperExtractor
                     // At least one parameter was unmappable → DWARF024 already reported; skip emit.
                     continue;
                 }
+
+                // Compute which consumed-param members are `required` and whose ctor lacks [SetsRequiredMembers].
+                // Those must still be emitted in the object initializer to satisfy the C# `required` rule.
+                requiredMustInitialize = ComputeRequiredMustInitialize(ctor, targetType, consumedParams);
             }
 
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers, consumedParams);
+                enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
+                consumedParams, requiredMustInitialize);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -223,7 +233,8 @@ internal static class MapperExtractor
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
         NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots, List<string> reinterpretMembers,
-        HashSet<string>? consumedCtorParams = null)
+        HashSet<string>? consumedCtorParams = null,
+        HashSet<string>? requiredMustInitialize = null)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -283,9 +294,11 @@ internal static class MapperExtractor
 
             handledTargets.Add(tgtName);
 
-            // If this explicit mapping targets a constructor parameter (already consumed), skip it here.
-            // The mapping was resolved in ResolveConstructorArguments.
-            if (consumedCtorParams is not null && consumedCtorParams.Contains(tgtName))
+            // If this explicit mapping targets a constructor parameter (already consumed), skip it here
+            // UNLESS the member is `required` and the ctor lacks [SetsRequiredMembers] — in that case
+            // the member must also appear in the object initializer to satisfy CS9035.
+            if (consumedCtorParams is not null && consumedCtorParams.Contains(tgtName)
+                && (requiredMustInitialize is null || !requiredMustInitialize.Contains(tgtName)))
             {
                 continue;
             }
@@ -327,7 +340,10 @@ internal static class MapperExtractor
         {
             // Skip members already consumed as constructor parameters (positional record members appear
             // as both ctor params AND init properties — must not double-assign).
-            if (consumedCtorParams is not null && consumedCtorParams.Contains(target.Name))
+            // EXCEPTION: `required` members whose ctor lacks [SetsRequiredMembers] must also be set in
+            // the object initializer (CS9035), so do NOT skip them.
+            if (consumedCtorParams is not null && consumedCtorParams.Contains(target.Name)
+                && (requiredMustInitialize is null || !requiredMustInitialize.Contains(target.Name)))
             {
                 continue;
             }
@@ -920,6 +936,62 @@ internal static class MapperExtractor
     private static bool HasAccessibleParameterlessCtor(INamedTypeSymbol type) =>
         type.InstanceConstructors.Any(c =>
             c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+
+    private const string SetsRequiredMembersAttribute = "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute";
+
+    /// <summary>
+    /// Returns the set of member names (case-insensitive) that are <c>required</c> AND satisfied via
+    /// a constructor parameter, but whose constructor does NOT carry
+    /// <c>[SetsRequiredMembers]</c>. These members must also be emitted in the object initializer to
+    /// avoid CS9035.
+    /// </summary>
+    private static HashSet<string> ComputeRequiredMustInitialize(
+        IMethodSymbol ctor,
+        INamedTypeSymbol targetType,
+        HashSet<string> consumedParams)
+    {
+        // If the chosen ctor is annotated [SetsRequiredMembers], C# considers all required members
+        // satisfied — no double-set needed.
+        var ctorHasSetsRequired = ctor.GetAttributes()
+            .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttribute);
+
+        if (ctorHasSetsRequired)
+        {
+            return new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        }
+
+        // Collect required member names from the target type hierarchy.
+        var required = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        for (var current = (ITypeSymbol)targetType;
+             current is not null && current.SpecialType != SpecialType.System_Object;
+             current = current.BaseType)
+        {
+            foreach (var member in current.GetMembers())
+            {
+                switch (member)
+                {
+                    case IPropertySymbol p when p.IsRequired:
+                        required.Add(p.Name);
+                        break;
+                    case IFieldSymbol f when f.IsRequired:
+                        required.Add(f.Name);
+                        break;
+                }
+            }
+        }
+
+        // The intersection: consumed params that are also required members.
+        var result = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        foreach (var name in consumedParams)
+        {
+            if (required.Contains(name))
+            {
+                result.Add(name);
+            }
+        }
+
+        return result;
+    }
 
     private static IEnumerable<string> ReadIgnores(ISymbol symbol) =>
         symbol.GetAttributes()

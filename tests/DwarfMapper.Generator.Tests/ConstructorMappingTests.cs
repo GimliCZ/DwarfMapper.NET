@@ -380,4 +380,203 @@ public class ConstructorMappingTests
         // Must have new R( not just new R { (type is fully qualified in generated code)
         Assert.Contains("new global::Demo.R(", generated, StringComparison.Ordinal);
     }
+
+    // ── MUST-FIX 1: required member that is also a ctor param → CS9035 ─────────
+
+    /// <summary>
+    /// A required member that is ALSO satisfied by a ctor param must still appear
+    /// in the object initializer (unless ctor is annotated [SetsRequiredMembers]).
+    /// Without the fix the generator emits new C(X: s.X) which violates CS9035.
+    /// </summary>
+    [Fact]
+    public void Required_member_that_is_ctor_param_without_SetsRequiredMembers_still_compiles()
+    {
+        // The ctor satisfies X at runtime, but C# also requires every `required` member to
+        // be set in the object initializer OR the ctor must carry [SetsRequiredMembers].
+        // Without the fix: generated "new C(X: s.X)" → CS9035.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } }
+            public class C
+            {
+                public C(int X) { this.X = X; }
+                public required int X { get; init; }
+            }
+            [DwarfMapper]
+            public partial class M { public partial C Map(S s); }
+            """;
+        var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
+        Assert.Empty(errors); // must not produce CS9035 or any compilation error
+    }
+
+    /// <summary>
+    /// When the selected ctor IS annotated [SetsRequiredMembers], the required member
+    /// must NOT appear in the object initializer (no double-set).
+    /// </summary>
+    [Fact]
+    public void Required_member_that_is_ctor_param_WITH_SetsRequiredMembers_no_initializer_redundancy()
+    {
+        const string src = """
+            using DwarfMapper;
+            using System.Diagnostics.CodeAnalysis;
+            namespace Demo;
+            public class S { public int X { get; set; } }
+            public class C
+            {
+                [SetsRequiredMembers]
+                public C(int X) { this.X = X; }
+                public required int X { get; init; }
+            }
+            [DwarfMapper]
+            public partial class M { public partial C Map(S s); }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        // With [SetsRequiredMembers], X is consumed by ctor — should NOT appear in initializer.
+        var parenClose = generated.IndexOf(')', StringComparison.Ordinal);
+        var afterParen = parenClose >= 0 ? generated.Substring(parenClose) : generated;
+        // There should be no "X =" in the initializer section.
+        Assert.DoesNotContain("X =", afterParen, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Plain positional record must still emit ONLY ctor args — no double-set in initializer.
+    /// Record positional members are NOT `required`, so the new logic must not affect them.
+    /// </summary>
+    [Fact]
+    public void Plain_positional_record_emits_only_ctor_args_no_initializer_redundancy()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+            public record R(int X, string Y);
+            [DwarfMapper]
+            public partial class M { public partial R Map(S s); }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        // X and Y in ctor args, must NOT appear in an object-initializer redundantly.
+        var parenClose = generated.IndexOf(')', StringComparison.Ordinal);
+        var afterParen = parenClose >= 0 ? generated.Substring(parenClose) : generated;
+        Assert.DoesNotContain("X =", afterParen, StringComparison.Ordinal);
+        Assert.DoesNotContain("Y =", afterParen, StringComparison.Ordinal);
+    }
+
+    // ── MUST-FIX 2: ref/out ctor param → CS1620 ──────────────────────────────
+
+    /// <summary>
+    /// A ctor with a ref parameter must NOT be selected (would produce CS1620).
+    /// Expect DWARF026 (no mappable constructor). Because the generator skips the method,
+    /// a CS8795 (partial method needs implementation) is expected but CS1620 must NOT appear.
+    /// </summary>
+    [Fact]
+    public void Ctor_with_ref_param_is_not_selected()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } }
+            public struct T
+            {
+                public T(ref int x) { X = x; }
+                public int X { get; }
+            }
+            [DwarfMapper]
+            public partial class M { public partial T Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        // Must emit DWARF026 — no mappable constructor.
+        Assert.Contains(diagnostics, d => d.Id == "DWARF026");
+        // The generator skips the method body (DWARF026 blocks it) → CS8795 is expected.
+        // The critical assertion: no CS1620 (which would mean a bad ref/out ctor call was emitted).
+        var compilationErrors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
+        Assert.DoesNotContain(compilationErrors, e => e.Id == "CS1620");
+        // CS8795 is expected because the partial method has no generated implementation.
+        Assert.Contains(compilationErrors, e => e.Id == "CS8795");
+    }
+
+    /// <summary>
+    /// A ctor with an out parameter must NOT be selected (would produce CS1620).
+    /// Expect DWARF026 (no mappable constructor) and no CS1620 in compiled output.
+    /// </summary>
+    [Fact]
+    public void Ctor_with_out_param_is_not_selected()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } }
+            public struct T
+            {
+                public T(out int x) { x = 0; X = x; }
+                public int X { get; }
+            }
+            [DwarfMapper]
+            public partial class M { public partial T Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF026");
+        var compilationErrors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
+        Assert.DoesNotContain(compilationErrors, e => e.Id == "CS1620");
+        Assert.Contains(compilationErrors, e => e.Id == "CS8795");
+    }
+
+    /// <summary>
+    /// A ctor with an `in` parameter IS callable with a plain named arg — must still be selected.
+    /// </summary>
+    [Fact]
+    public void Ctor_with_in_param_is_selected_and_compiles()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } }
+            public struct T
+            {
+                public T(in int X) { this.X = X; }
+                public int X { get; }
+            }
+            [DwarfMapper]
+            public partial class M { public partial T Map(S s); }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        Assert.Contains("X:", generated, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── SHOULD-FIX 3: annotated-ctor ambiguity when parameterless ctor exists ──
+
+    /// <summary>
+    /// When a parameterless ctor exists AND two ctors carry [DwarfMapperConstructor],
+    /// DWARF025 must be emitted (consistent with the no-parameterless path).
+    /// Previously FirstOrDefault silently picked the first annotated ctor.
+    /// </summary>
+    [Fact]
+    public void Two_annotated_ctors_with_parameterless_ctor_emits_DWARF025()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+            public class D
+            {
+                public D() { }
+                [DwarfMapperConstructor]
+                public D(int X) { this.X = X; }
+                [DwarfMapperConstructor]
+                public D(string Y) { this.Y = Y; }
+                public int X { get; set; }
+                public string Y { get; set; } = "";
+            }
+            [DwarfMapper]
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF025");
+    }
 }

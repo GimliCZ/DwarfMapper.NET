@@ -65,26 +65,37 @@ internal static class ConstructorSelector
         {
             // Check whether any annotated constructor wins over the parameterless one.
             // If so, fall through to explicit-annotation handling below.
-            var annotatedOverride = target.InstanceConstructors.FirstOrDefault(c =>
-                c.DeclaredAccessibility == Accessibility.Public
-                && !c.IsStatic
-                && !c.IsImplicitlyDeclared
-                && !IsObsolete(c)
-                && c.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute));
+            // Count all annotated candidates so that >1 → DWARF025 (same policy as the no-parameterless path).
+            var annotatedOverrides = target.InstanceConstructors
+                .Where(c =>
+                    c.DeclaredAccessibility == Accessibility.Public
+                    && !c.IsStatic
+                    && !c.IsImplicitlyDeclared
+                    && !IsObsolete(c)
+                    && c.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
+                .ToList();
 
-            if (annotatedOverride is null)
+            if (annotatedOverrides.Count == 0)
             {
                 // Parameterless ctor wins → object-initializer path.
                 useObjectInitializerOnly = true;
                 return anyParameterless;
             }
 
-            // Annotated ctor overrides parameterless preference.
-            return annotatedOverride;
+            if (annotatedOverrides.Count > 1)
+            {
+                // Multiple [DwarfMapperConstructor] annotations — ambiguous regardless of parameterless ctor.
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConstructor, location, target.Name));
+                return null;
+            }
+
+            // Exactly one annotated ctor overrides parameterless preference.
+            return annotatedOverrides[0];
         }
 
-        // Build the candidate list: public, non-static, non-implicitly-declared, non-copy, non-obsolete.
-        // At this point we know there is no accessible parameterless ctor.
+        // Build the candidate list: public, non-static, non-implicitly-declared, non-copy, non-obsolete,
+        // and no ref/out parameters (ref/out args cannot be emitted with plain named-argument syntax).
+        // `in` parameters (RefKind.In / ref-readonly) are fine — callable with plain named args.
         var candidates = new List<IMethodSymbol>();
         foreach (var ctor in target.InstanceConstructors)
         {
@@ -96,6 +107,9 @@ internal static class ConstructorSelector
                 && SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, target))
                 continue;
             if (IsObsolete(ctor)) continue;
+            // Exclude constructors with ref or out parameters — emitting them as plain named args
+            // would produce CS1620. `in` (RefKind.In) is fine and must NOT be excluded.
+            if (ctor.Parameters.Any(p => p.RefKind == RefKind.Ref || p.RefKind == RefKind.Out)) continue;
 
             candidates.Add(ctor);
         }

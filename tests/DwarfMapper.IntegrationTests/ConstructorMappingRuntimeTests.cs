@@ -107,6 +107,31 @@ public class RequiredCtorDst
 [DwarfMapper]
 public partial class RequiredCtorMapper { public partial RequiredCtorDst Map(RequiredCtorSrc s); }
 
+// ── MUST-FIX 1: required member that is ALSO a ctor param (no [SetsRequiredMembers]) ─
+
+public class RequiredCtorParamSrc { public int X { get; set; } }
+public class RequiredCtorParamDst
+{
+    public RequiredCtorParamDst(int X) { this.X = X; }
+    public required int X { get; init; }
+}
+
+[DwarfMapper]
+public partial class RequiredCtorParamMapper { public partial RequiredCtorParamDst Map(RequiredCtorParamSrc s); }
+
+// ── MUST-FIX 1b: same but WITH [SetsRequiredMembers] (verify no regression) ────
+
+public class RequiredCtorParamSetsSrc { public int X { get; set; } }
+public class RequiredCtorParamSetsDst
+{
+    [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
+    public RequiredCtorParamSetsDst(int X) { this.X = X; }
+    public required int X { get; init; }
+}
+
+[DwarfMapper]
+public partial class RequiredCtorParamSetsMapper { public partial RequiredCtorParamSetsDst Map(RequiredCtorParamSetsSrc s); }
+
 // ── Regression: class with parameterless ctor + settable props ────────────────
 
 public class RegSrc { public int X { get; set; } public string Y { get; set; } = ""; }
@@ -312,6 +337,24 @@ public class ConstructorMappingRuntimeTests
         var result = mapper.Map(new OuterClassSrc { Inner = new InnerClassSrc { V = 7 }, Outer = 100 });
         Assert.Equal(7, result.Inner.V);
         Assert.Equal(100, result.Outer);
+    }
+
+    // ── MUST-FIX 1: required member that is also a ctor param ─────────────────
+
+    [Fact]
+    public void Required_member_that_is_ctor_param_maps_correctly()
+    {
+        var mapper = new RequiredCtorParamMapper();
+        var result = mapper.Map(new RequiredCtorParamSrc { X = 42 });
+        Assert.Equal(42, result.X);
+    }
+
+    [Fact]
+    public void Required_member_with_SetsRequiredMembers_maps_correctly()
+    {
+        var mapper = new RequiredCtorParamSetsMapper();
+        var result = mapper.Map(new RequiredCtorParamSetsSrc { X = 99 });
+        Assert.Equal(99, result.X);
     }
 
 }
