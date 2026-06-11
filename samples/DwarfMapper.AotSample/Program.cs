@@ -140,6 +140,37 @@ if (!ReferenceEquals(tA, tA.Next.Next))
 }
 Console.WriteLine("preserve cycle back-edge: closed correctly (AOT-safe)");
 
+// ── IEnumerable<T> target (lazy path) + ImmutableArray<T>? (A2 coverage) ─────
+var collAotMapper = new CollAotMapper();
+var collSrc = new CollAotSrc
+{
+    Items = new int[] { 1, 2, 3 },
+    Names = new string[] { "ore", "stone" },
+};
+var collDst = collAotMapper.Map(collSrc);
+var itemList = new System.Collections.Generic.List<int>(collDst.Items);
+if (itemList.Count != 3 || itemList[0] != 1)
+{
+    Console.WriteLine("ERROR: IEnumerable<int> mapping incorrect");
+    return 1;
+}
+if (!collDst.Names.HasValue || collDst.Names.Value.Length != 2 || collDst.Names.Value[0] != "ore")
+{
+    Console.WriteLine("ERROR: ImmutableArray<string> mapping incorrect");
+    return 1;
+}
+Console.WriteLine($"coll aot: IEnumerable={itemList.Count} ImmutableArray={collDst.Names!.Value.Length} items");
+
+// null source + AsNull → ImmutableArray<int>? must yield HasValue=false
+var nullCollSrc = new CollAotSrc { Items = null, Names = null };
+var nullCollDst = collAotMapper.Map(nullCollSrc);
+if (nullCollDst.Names.HasValue)
+{
+    Console.WriteLine("ERROR: null source should yield ImmutableArray<int>? HasValue=false");
+    return 1;
+}
+Console.WriteLine("coll aot AsNull: ImmutableArray<string>? null source → HasValue=false (correct)");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -201,3 +232,20 @@ public class CycleNodeDto { public int V { get; set; } public CycleNodeDto? Next
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
 public partial class AotCycleMapper { public partial CycleNodeDto Map(CycleNode n); }
+
+// ── IEnumerable<T> target + ImmutableArray<T>? with AsNull (A5 AOT coverage) ─
+// IEnumerable<int> target: generator emits lazy Enumerable.Select (no materialisation).
+// ImmutableArray<string>?: AsNull + null source yields HasValue=false (A2 coverage).
+public class CollAotSrc
+{
+    public System.Collections.Generic.IReadOnlyList<int>? Items { get; set; }
+    public System.Collections.Generic.IReadOnlyList<string>? Names { get; set; }
+}
+public class CollAotDst
+{
+    public System.Collections.Generic.IEnumerable<int> Items { get; set; } = System.Array.Empty<int>();
+    public System.Collections.Immutable.ImmutableArray<string>? Names { get; set; }
+}
+
+[DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+public partial class CollAotMapper { public partial CollAotDst Map(CollAotSrc s); }
