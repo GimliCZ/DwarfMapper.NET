@@ -373,7 +373,18 @@ internal static class CollectionConverter
         else
         {
             // Unknown-count path: must buffer first; register after allocating final array.
+            // B3 fix: under Preserve, check TryGetReference BEFORE the fill loop (two parents sharing
+            // the same unknown-count source must produce ONE target array, not two independent copies).
+            // SetReference is called immediately after ToArray() so the second parent finds the array.
+            // Note: a cycle THROUGH this array (element refers back to the source array during fill)
+            // cannot be reconstructed correctly because the final array doesn't exist until after fill.
+            // That degenerate case is documented: register-before-fill is structurally impossible for
+            // unknown-count sources mapping to an array target. Two-parents-sharing is fully correct.
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
+            if (isPreserve)
+            {
+                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(elem).Append("[])__cc;\n");
+            }
             sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
             sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
             sb.Append("        var __r = __buf.ToArray();\n");

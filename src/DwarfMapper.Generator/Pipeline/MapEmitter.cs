@@ -116,16 +116,6 @@ internal static class MapEmitter
             }
         }
 
-        // ── Depth guard (synthesized recursion-capable methods only) ────────────
-        // Condition: depth >= ctx.MaxDepth (not strictly >, so that MaxDepth=8 allows depths 0..7
-        // and throws at depth 8 — meaning chains of length > MaxDepth throw as specified).
-        if (isSynthesizedRecursive)
-        {
-            sb.Append(indent).AppendLine("    if (depth >= ctx.MaxDepth)");
-            sb.Append(indent).Append("        throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
-            sb.AppendLine();
-        }
-
         // ── DwarfRefContext creation (public methods calling recursion-capable pairs) ─
         if (isPublicWithCtx)
         {
@@ -135,6 +125,20 @@ internal static class MapEmitter
             if (method.IsPreserveMode)
                 sb.Append(", true");
             sb.AppendLine(");");
+        }
+
+        // ── Depth guard (non-Preserve synthesized recursion-capable methods only) ────────
+        // For Preserve-mode recursion-capable methods the depth guard is emitted INSIDE
+        // EmitPreserveRegisterBeforePopulate, AFTER TryGetReference (B1 fix: cached nodes
+        // return without consuming depth). For non-Preserve mode, there is no identity map,
+        // so the guard is emitted here unconditionally before any construction logic.
+        // Condition: depth >= ctx.MaxDepth (not strictly >, so that MaxDepth=8 allows depths 0..7
+        // and throws at depth 8 — meaning chains of length > MaxDepth throw as specified).
+        if (isSynthesizedRecursive && !method.IsPreserveMode)
+        {
+            sb.Append(indent).AppendLine("    if (depth >= ctx.MaxDepth)");
+            sb.Append(indent).Append("        throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
+            sb.AppendLine();
         }
 
         if (method.IsProjection)
@@ -179,9 +183,18 @@ internal static class MapEmitter
             return;
         }
 
-        foreach (var before in method.BeforeHooks)
+        // Emit before-hooks here ONLY for non-Preserve paths.
+        // For Preserve-mode recursion-capable methods (both public and synthesized),
+        // before-hooks are emitted INSIDE EmitPreserveRegisterBeforePopulate AFTER TryGetReference
+        // (B2 fix: a cached node returns before the hook fires — hooks must not run twice).
+        var willUsePreservePath = method.IsPreserveMode && method.ParameterIsReferenceType
+            && (isSynthesizedRecursive || isPublicWithCtx);
+        if (!willUsePreservePath)
         {
-            sb.Append(indent).Append("    ").Append(before).Append('(').Append(method.ParameterName).AppendLine(");");
+            foreach (var before in method.BeforeHooks)
+            {
+                sb.Append(indent).Append("    ").Append(before).Append('(').Append(method.ParameterName).AppendLine(");");
+            }
         }
 
         var hasCtorArgs = method.ConstructorArguments.Count > 0;
@@ -317,7 +330,31 @@ internal static class MapEmitter
     {
         var p = method.ParameterName;
 
-        // Before hooks (public methods only).
+        // Step 1: Identity-map check — if already mapped, return the cached target.
+        // IMPORTANT: this MUST come before the depth guard (B1 fix).
+        // A shared/cyclic node first reached via a short path is registered in the identity map.
+        // When encountered again via a longer path that would exceed MaxDepth, the cached instance
+        // must be returned immediately without consuming depth or throwing. The depth guard only
+        // applies to genuinely-fresh nodes that have NOT been mapped yet.
+        // Cast is safe: the identity map is keyed by the source object; the value was stored
+        // by this same method, so it is always of type T.
+        sb.Append(indent).Append("    if (").Append(ctxVarName).Append(".TryGetReference(")
+          .Append(p).Append(", out var __dwarf_cached)) return (")
+          .Append(method.ReturnTypeFullName).AppendLine(")__dwarf_cached;");
+
+        // Depth guard for synthesized recursion-capable methods only (public methods have no depth guard).
+        // Condition: depth >= ctx.MaxDepth so that MaxDepth=8 allows depths 0..7 and throws at 8.
+        // Placed AFTER TryGetReference (B1 fix): a cached node returns immediately above; only
+        // genuinely-fresh, unregistered nodes check depth here.
+        if (!isPublicMethod)
+        {
+            sb.Append(indent).AppendLine("    if (depth >= ctx.MaxDepth)");
+            sb.Append(indent).Append("        throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
+            sb.AppendLine();
+        }
+
+        // Before hooks (public methods only) — emitted AFTER TryGetReference (B2 fix).
+        // A cached node returns immediately above; hooks must not fire again for the same source.
         if (isPublicMethod)
         {
             foreach (var before in method.BeforeHooks)
@@ -325,13 +362,6 @@ internal static class MapEmitter
                 sb.Append(indent).Append("    ").Append(before).Append('(').Append(p).AppendLine(");");
             }
         }
-
-        // Step 1: Identity-map check — if already mapped, return the cached target.
-        // Cast is safe: the identity map is keyed by the source object; the value was stored
-        // by this same method, so it is always of type T.
-        sb.Append(indent).Append("    if (").Append(ctxVarName).Append(".TryGetReference(")
-          .Append(p).Append(", out var __dwarf_cached)) return (")
-          .Append(method.ReturnTypeFullName).AppendLine(")__dwarf_cached;");
 
         // Step 2: Construct target. For the register-before-populate algorithm, the ctor
         // must be called WITHOUT graph-node members that participate in the cycle.

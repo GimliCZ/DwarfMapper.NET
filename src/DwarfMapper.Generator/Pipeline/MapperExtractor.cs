@@ -1343,6 +1343,21 @@ internal static class MapperExtractor
                     && HasImplicitConversion(compilation, srcType, m.ParamType)
                     && HasImplicitConversion(compilation, m.ReturnType, tgtType))
                 {
+                    // B4 / DWARF032: Under Preserve mode, a Use= converter pointing to an
+                    // arbitrary user function cannot participate in reference-identity tracking —
+                    // the generator does not own its body and cannot thread DwarfRefContext into it.
+                    // A shared/cyclic reference-type object routed through this method will be
+                    // duplicated rather than de-duplicated, silently producing wrong topology.
+                    // Only fire for REFERENCE-TYPE targets: scalars (int, Guid, enum, string, etc.)
+                    // are never tracked by the identity map and Use= on a scalar is fine.
+                    if (isPreserve && tgtType.IsReferenceType)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.ReferenceHandlingUseConverter,
+                            location, targetName));
+                        // Report the diagnostic AND return false so no silent wrong code is emitted.
+                        return false;
+                    }
                     converterMethod = m.Name;
                     return true;
                 }

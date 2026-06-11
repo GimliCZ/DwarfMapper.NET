@@ -184,4 +184,13 @@ public static class DiagnosticDescriptors
         "Generator nesting depth limit exceeded",
         "Auto-synthesized nested mapper depth limit exceeded (512 distinct pairs) while processing '{0}'. Declare explicit mappers for deeply-nested types.",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ReferenceHandlingUseConverter = new(
+        "DWARF032",
+        "[MapProperty(Use=)] converter cannot participate in reference-identity tracking",
+        "Member '{0}': a [MapProperty(Use=...)] converter cannot participate in reference-identity " +
+        "tracking under ReferenceHandling=Preserve because the generator does not own its body and " +
+        "cannot thread DwarfRefContext into it. The produced object will not be de-duplicated or have " +
+        "its back-edges closed. Map it without Use=, or accept that this member breaks topology fidelity.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

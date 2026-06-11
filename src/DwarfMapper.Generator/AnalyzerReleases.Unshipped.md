@@ -34,3 +34,4 @@ DWARF027 | DwarfMapper | Error | Unsupported collection/dictionary target type
 DWARF028 | DwarfMapper | Error | Projection mapping not translatable
 DWARF030 | DwarfMapper | Error | Constructor parameter participates in a reference cycle
 DWARF031 | DwarfMapper | Error | Generator nesting depth limit exceeded
+DWARF032 | DwarfMapper | Error | [MapProperty(Use=)] converter cannot participate in reference-identity tracking
