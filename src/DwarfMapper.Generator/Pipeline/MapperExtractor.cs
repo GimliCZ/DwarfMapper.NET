@@ -349,6 +349,32 @@ internal static class MapperExtractor
         // Now that the full dependency graph is known, compute which pairs are on cycles.
         nestedRegistry.ComputeRecursionCapability();
 
+        // ── Plan 19 C2 fix: Preserve-mode universal ctx threading ───────────────
+        // Under ReferenceHandling=Preserve, EVERY auto-synthesized object mapper
+        // (__DwarfMap_Obj_*) must receive and thread ctx/depth — not just those that are
+        // recursion-capable (on a type-graph cycle). Rationale: a shared (diamond) instance
+        // has no back-edge and thus is NOT recursion-capable, yet its mapper must still
+        // register-before-populate in the identity map so that two references to the same
+        // source object deduplicate to ONE target instance (Assert.Same). Restricting ctx
+        // to "recursion-capable" pairs leaves non-cyclic shared objects untracked → two
+        // distinct target copies → CS7036 when their callers lack ctx (the root bug).
+        // Fix: force-mark ALL __DwarfMap_Obj_* pairs as recursion-capable so they all get
+        // the (s, ctx, depth) signature and the register-before-populate emission path.
+        // None mode is unaffected: isPreserveMode=false skips this block.
+        if (isPreserveMode)
+        {
+            foreach (var (_, name) in pendingNestedModels)
+            {
+                // Only object-mapper pairs (__DwarfMap_Obj_* prefix). Collection helpers
+                // (__DwarfMapColl_*) and dict helpers (__DwarfMapDict_*) already receive
+                // the preserve treatment via isPreserve=true in CollectionConverter/DictionaryConverter.
+                if (name.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                    nestedRegistry.ForceRecursionCapable(name);
+            }
+            // Re-run to incorporate the newly forced entries.
+            nestedRegistry.ComputeRecursionCapability();
+        }
+
         // Build a set of method names that are recursion-capable (for the public method check).
         var recursionCapableNames = new HashSet<string>(System.StringComparer.Ordinal);
 
@@ -685,13 +711,76 @@ internal static class MapperExtractor
 
             if (needsCtx || (m.IsRecursionCapable && !m.IsPartial))
             {
+                var newRc = m.IsRecursionCapable || needsCtx;
                 methods[i] = m with
                 {
-                    IsRecursionCapable = m.IsRecursionCapable || needsCtx,
+                    IsRecursionCapable = newRc,
                     MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth, // only public methods carry MaxDepth
                     Members = EquatableArray.From(newMembers),
                     ConstructorArguments = EquatableArray.From(newCtorArgs),
                 };
+                // ── Preserve-mode propagation fix ──────────────────────────────────
+                // When a synthesized (non-partial) method is newly marked recursion-capable
+                // (because its own members need ctx, e.g. a Preserve-mode List<T> helper),
+                // record it in recursionCapableNames immediately so that public declared
+                // methods processed LATER in this same loop can see it.
+                // This handles the case where public methods come BEFORE their synthesized
+                // callees in the methods list (declaration order: public first, synth second).
+                // A second pass below handles the reverse order (synth processed first but
+                // public was already visited).
+                if (!m.IsPartial && newRc)
+                    recursionCapableNames.Add(m.MethodName);
+            }
+        }
+
+        // ── Preserve-mode second pass: propagate ctx to public methods whose synthesized callees
+        // became recursion-capable during the loop above but were visited BEFORE their callee.
+        // This fixes the ordering problem: public Map(SharingRoot) is added to methods[] before
+        // the synthesized __DwarfMap_Obj_...Holder... pair, so the first loop processes the
+        // public method before knowing the Holder mapper needs ctx. We now re-check all public
+        // declared methods under Preserve mode and patch any member/ctor-arg that calls a
+        // newly-added recursionCapableNames entry without ConverterNeedsDepthCtx=true.
+        if (isPreserveMode)
+        {
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                if (!m.IsPartial) continue; // only public declared methods
+                if (selfRecursivePublicMethods.Contains(m.MethodName)) continue; // already handled above
+
+                var patched = false;
+                var newMembers2 = m.Members.ToArray();
+                for (var mi = 0; mi < newMembers2.Length; mi++)
+                {
+                    var mem = newMembers2[mi];
+                    if (mem.ConverterMethod is null || mem.ConverterNeedsDepthCtx) continue;
+                    if (recursionCapableNames.Contains(mem.ConverterMethod))
+                    {
+                        newMembers2[mi] = mem with { ConverterNeedsDepthCtx = true };
+                        patched = true;
+                    }
+                }
+                var newCtorArgs2 = m.ConstructorArguments.ToArray();
+                for (var ci = 0; ci < newCtorArgs2.Length; ci++)
+                {
+                    var arg = newCtorArgs2[ci];
+                    if (arg.ConverterMethod is null || arg.ConverterNeedsDepthCtx) continue;
+                    if (recursionCapableNames.Contains(arg.ConverterMethod))
+                    {
+                        newCtorArgs2[ci] = arg with { ConverterNeedsDepthCtx = true };
+                        patched = true;
+                    }
+                }
+                if (patched)
+                {
+                    methods[i] = m with
+                    {
+                        IsRecursionCapable = true,
+                        MaxDepth = maxDepth,
+                        Members = EquatableArray.From(newMembers2),
+                        ConstructorArguments = EquatableArray.From(newCtorArgs2),
+                    };
+                }
             }
         }
 

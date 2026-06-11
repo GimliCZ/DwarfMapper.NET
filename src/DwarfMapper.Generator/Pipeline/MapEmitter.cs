@@ -351,7 +351,7 @@ internal static class MapEmitter
                 if (i < ctorArgs.Count - 1)
                     sb.AppendLine(",");
                 else
-                    sb.AppendLine(")");
+                    sb.AppendLine(");");
             }
         }
         else
