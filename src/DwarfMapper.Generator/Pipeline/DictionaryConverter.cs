@@ -46,16 +46,35 @@ internal static class DictionaryConverter
             out srcHasCount, out _);
     }
 
-    /// <summary>Synthesize (or reuse) the dictionary-mapping method and return its name.</summary>
+    // Shared preserve-mode signature suffix.
+    private const string CtxDepthParams = ", global::DwarfMapper.DwarfRefContext ctx, int depth";
+
+    /// <summary>
+    /// Synthesize (or reuse) the dictionary-mapping method and return its name.
+    /// </summary>
+    /// <param name="isPreserve">
+    /// When true, mutable dictionaries (Dictionary, IDictionary, IReadOnlyDictionary) register-before-fill
+    /// in the DwarfRefContext identity map; immutable dictionaries still thread ctx/depth to recursion-capable
+    /// value converters.
+    /// </param>
+    /// <param name="keyNeedsCtx">When true, the key converter requires (ctx, depth+1) extra args.</param>
+    /// <param name="valNeedsCtx">When true, the value converter requires (ctx, depth+1) extra args.</param>
     public static string Synthesize(
         Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcType,
         ITypeSymbol tgtKey, ITypeSymbol tgtVal, bool srcHasCount, DictTargetKind targetKind,
         string? keyConverter, NullHandling keyNull, string? valConverter, NullHandling valNull,
-        bool nullAsNull = false)
+        bool nullAsNull = false,
+        bool isPreserve = false, bool keyNeedsCtx = false, bool valNeedsCtx = false)
     {
         var keyFq  = Fq(tgtKey);
         var valFq  = Fq(tgtVal);
         var nullTag = nullAsNull ? "_nn" : "";
+
+        bool isMutableDict = targetKind != DictTargetKind.ImmutableDictionary
+                          && targetKind != DictTargetKind.IImmutableDictionary;
+        var effectivePreserve = isPreserve && isMutableDict;
+        var needsCtxSig = effectivePreserve || (isPreserve && (keyNeedsCtx || valNeedsCtx));
+        var preserveTag = needsCtxSig ? "_p" : "";
 
         string retTypeFq;
         switch (targetKind)
@@ -69,20 +88,21 @@ internal static class DictionaryConverter
                 break;
         }
 
-        var name = "__DwarfMapDict_" + Hash(Fq(srcType) + "=>" + retTypeFq + nullTag);
+        var name = "__DwarfMapDict_" + Hash(Fq(srcType) + "=>" + retTypeFq + nullTag + preserveTag);
         if (synth.ContainsKey(name))
             return name;
 
         var srcFq     = Fq(srcType);
         var srcParam  = srcFq + "?";  // always nullable; null guard inside handles it
         var retAnnot  = nullAsNull ? retTypeFq + "?" : retTypeFq;
-        var keyExpr   = Expr("__kv.Key",   keyConverter, keyNull);
-        var valExpr   = Expr("__kv.Value", valConverter, valNull);
+        var keyExpr   = Expr("__kv.Key",   keyConverter, keyNull, keyNeedsCtx);
+        var valExpr   = Expr("__kv.Value", valConverter, valNull, valNeedsCtx);
         var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
+        var ctxParams = needsCtxSig ? CtxDepthParams : "";
 
         var sb = new StringBuilder();
         sb.Append("    private ").Append(retAnnot).Append(' ').Append(name)
-          .Append('(').Append(srcParam).Append(" src)\n    {\n");
+          .Append('(').Append(srcParam).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (targetKind == DictTargetKind.ImmutableDictionary
             || targetKind == DictTargetKind.IImmutableDictionary)
@@ -105,7 +125,15 @@ internal static class DictionaryConverter
         {
             var dictFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
             sb.Append("        if (src is null) return ").Append(emptyDict).Append(";\n");
+            if (effectivePreserve)
+            {
+                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(dictFq).Append(")__cc;\n");
+            }
             sb.Append("        var __r = new ").Append(dictFq).Append('(').Append(srcHasCount ? "src.Count" : "").Append(");\n");
+            if (effectivePreserve)
+            {
+                sb.Append("        ctx.SetReference(src, __r);\n");
+            }
             sb.Append("        foreach (var __kv in src) { __r[").Append(keyExpr).Append("] = ").Append(valExpr).Append("; }\n");
             sb.Append("        return __r;\n");
         }
@@ -127,10 +155,13 @@ internal static class DictionaryConverter
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private static string Expr(string access, string? conv, NullHandling nh)
+    private static string Expr(string access, string? conv, NullHandling nh, bool needsCtx = false)
     {
         if (conv is not null)
-            return conv + "(" + access + ")";
+        {
+            var args = needsCtx ? access + ", ctx, depth + 1" : access;
+            return conv + "(" + args + ")";
+        }
         return nh switch
         {
             NullHandling.ThrowIfNull   => access + " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")",

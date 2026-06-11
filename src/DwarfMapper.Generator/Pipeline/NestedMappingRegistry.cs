@@ -160,6 +160,11 @@ internal sealed class NestedMappingRegistry
             if (CanReachSelf(start))
                 _recursionCapable.Add(start);
         }
+
+        // Also include any method that was force-marked as recursion-capable
+        // (e.g. object mappers that serve as element converters in Preserve collections).
+        foreach (var forced in _forcedRecursionCapable)
+            _recursionCapable.Add(forced);
     }
 
     /// <summary>
@@ -168,6 +173,22 @@ internal sealed class NestedMappingRegistry
     /// </summary>
     public bool IsRecursionCapable(string methodName)
         => _recursionCapable?.Contains(methodName) == true;
+
+    // ── Force-mark as recursion-capable ─────────────────────────────────────────
+    // Used by Preserve-mode collection helpers: when an object mapper is used as an element
+    // converter inside a Preserve collection, it MUST get the (ctx, depth) signature so the
+    // collection helper can thread ctx to it. We force-mark it before ComputeRecursionCapability
+    // so that the post-analysis patching includes it.
+    private readonly HashSet<string> _forcedRecursionCapable =
+        new HashSet<string>(System.StringComparer.Ordinal);
+
+    /// <summary>
+    /// Marks <paramref name="methodName"/> as recursion-capable unconditionally.
+    /// Call before <see cref="ComputeRecursionCapability"/> for the flag to take effect.
+    /// Used by Preserve-mode collection helpers that thread ctx to object-mapper elements.
+    /// </summary>
+    public void ForceRecursionCapable(string methodName)
+        => _forcedRecursionCapable.Add(methodName);
 
     private bool CanReachSelf(string start)
     {

@@ -171,7 +171,7 @@ internal static class MapperExtractor
                 if (!ResolveConstructorArguments(ctor, sourceType, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                     enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs, out consumedParams,
-                    nullCollections == NullCollectionsBehavior.AsNull))
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode))
                 {
                     // At least one parameter was unmappable → DWARF024 already reported; skip emit.
                     continue;
@@ -187,7 +187,7 @@ internal static class MapperExtractor
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -301,7 +301,7 @@ internal static class MapperExtractor
                     nestedLocation, diagnostics, caseInsensitive, System.Array.Empty<(string, string, string?)>(),
                     allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                     classAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
-                    nullCollections == NullCollectionsBehavior.AsNull))
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode))
                 {
                     nestedRegistry.ClearCurrentPair();
                     continue;
@@ -319,7 +319,7 @@ internal static class MapperExtractor
                 new List<string>(), new List<string>(), // no flatten/reinterpret
                 nestedConsumed, nestedRequiredMustInit,
                 classAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode);
 
             nestedRegistry.ClearCurrentPair();
 
@@ -554,13 +554,18 @@ internal static class MapperExtractor
                 // (a) self-calls → redirect to companion with depth ctx
                 // (b) calls to other self-recursive declared methods → redirect to their companions
                 // (c) calls to recursion-capable synthesized methods → add depth ctx
+                // (d) already-set ConverterNeedsDepthCtx (e.g. Preserve-mode collection helpers) → keep as-is
                 var newMembers2 = m.Members.ToArray();
                 for (var mi = 0; mi < newMembers2.Length; mi++)
                 {
                     var mem = newMembers2[mi];
                     if (mem.ConverterMethod is null) continue;
 
-                    if (string.Equals(mem.ConverterMethod, m.MethodName, System.StringComparison.Ordinal))
+                    if (mem.ConverterNeedsDepthCtx)
+                    {
+                        // Already marked (Preserve collection helper or previously patched).
+                    }
+                    else if (string.Equals(mem.ConverterMethod, m.MethodName, System.StringComparison.Ordinal))
                     {
                         // Self-call: redirect to companion.
                         newMembers2[mi] = mem with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
@@ -582,7 +587,11 @@ internal static class MapperExtractor
                     var arg = newCtorArgs2[ci];
                     if (arg.ConverterMethod is null) continue;
 
-                    if (string.Equals(arg.ConverterMethod, m.MethodName, System.StringComparison.Ordinal))
+                    if (arg.ConverterNeedsDepthCtx)
+                    {
+                        // Already marked (Preserve collection helper or previously patched).
+                    }
+                    else if (string.Equals(arg.ConverterMethod, m.MethodName, System.StringComparison.Ordinal))
                     {
                         newCtorArgs2[ci] = arg with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
                     }
@@ -622,7 +631,8 @@ internal static class MapperExtractor
             }
 
             // Check if any of this method's members/ctor-args uses a recursion-capable synthesized method
-            // OR a self-recursive declared method (which must be redirected to the companion).
+            // OR a self-recursive declared method (which must be redirected to the companion)
+            // OR a Preserve-mode collection helper that already has ConverterNeedsDepthCtx=true.
             var needsCtx = false;
             var newMembers = m.Members.ToArray();
             for (var mi = 0; mi < newMembers.Length; mi++)
@@ -630,7 +640,12 @@ internal static class MapperExtractor
                 var member = newMembers[mi];
                 if (member.ConverterMethod is null) continue;
 
-                if (recursionCapableNames.Contains(member.ConverterMethod))
+                if (member.ConverterNeedsDepthCtx)
+                {
+                    // Already marked (e.g. Preserve-mode collection helper set by ResolveMembers).
+                    needsCtx = true;
+                }
+                else if (recursionCapableNames.Contains(member.ConverterMethod))
                 {
                     newMembers[mi] = member with { ConverterNeedsDepthCtx = true };
                     needsCtx = true;
@@ -650,7 +665,12 @@ internal static class MapperExtractor
                 var arg = newCtorArgs[ci];
                 if (arg.ConverterMethod is null) continue;
 
-                if (recursionCapableNames.Contains(arg.ConverterMethod))
+                if (arg.ConverterNeedsDepthCtx)
+                {
+                    // Already marked (e.g. Preserve-mode collection helper set by ResolveConstructorArguments).
+                    needsCtx = true;
+                }
+                else if (recursionCapableNames.Contains(arg.ConverterMethod))
                 {
                     newCtorArgs[ci] = arg with { ConverterNeedsDepthCtx = true };
                     needsCtx = true;
@@ -822,7 +842,8 @@ internal static class MapperExtractor
         HashSet<string>? requiredMustInitialize = null,
         bool autoNest = false,
         NestedMappingRegistry? nestedRegistry = null,
-        bool nullAsNull = false)
+        bool nullAsNull = false,
+        bool isPreserve = false)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -914,9 +935,9 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, autoNest, nestedRegistry, nullAsNull))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve))
             {
-                result.Add(new MemberMap(tgtName, srcName, conv, nullH));
+                result.Add(new MemberMap(tgtName, srcName, conv, nullH, ConverterNeedsDepthCtx: convNeedsCtx));
             }
         }
 
@@ -963,9 +984,9 @@ internal static class MapperExtractor
                 if (flatMatches.Count == 1)
                 {
                     var fm = flatMatches[0];
-                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, autoNest, nestedRegistry, nullAsNull))
+                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve))
                     {
-                        result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull));
+                        result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, ConverterNeedsDepthCtx: fneedsCtx));
                     }
                     continue;
                 }
@@ -995,9 +1016,9 @@ internal static class MapperExtractor
                 }
                 continue;
             }
-            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, autoNest, nestedRegistry, nullAsNull))
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve))
             {
-                result.Add(new MemberMap(target.Name, source.Name, conv, nullH));
+                result.Add(new MemberMap(target.Name, source.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx));
             }
         }
 
@@ -1062,7 +1083,8 @@ internal static class MapperExtractor
         NestedMappingRegistry? nestedRegistry,
         out MemberMap[] ctorArgs,
         out HashSet<string> consumedParams,
-        bool nullAsNull = false)
+        bool nullAsNull = false,
+        bool isPreserve = false)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -1101,9 +1123,9 @@ internal static class MapperExtractor
                 if (TryResolveConversion(compilation, srcType, param.Type, explicitInfo.Use,
                     allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
                     location, param.Name, diagnostics, out var eConv, out var eNull,
-                    autoNest, nestedRegistry, nullAsNull))
+                    out var eNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve))
                 {
-                    args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull));
+                    args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull, ConverterNeedsDepthCtx: eNeedsCtx));
                     consumedParams.Add(param.Name);
                 }
                 else
@@ -1148,9 +1170,9 @@ internal static class MapperExtractor
             if (TryResolveConversion(compilation, srcMember.Type, param.Type, null,
                 allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
                 location, param.Name, diagnostics, out var conv, out var nullH,
-                autoNest, nestedRegistry, nullAsNull))
+                out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve))
             {
-                args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH));
+                args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx));
                 consumedParams.Add(param.Name);
             }
             else
@@ -1171,12 +1193,15 @@ internal static class MapperExtractor
         NullStrategy nullStrategy,
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
         out string? converterMethod, out Model.NullHandling nullHandling,
+        out bool converterNeedsCtx,
         bool autoNest = false,
         NestedMappingRegistry? nestedRegistry = null,
-        bool nullAsNull = false)
+        bool nullAsNull = false,
+        bool isPreserve = false)
     {
         converterMethod = null;
         nullHandling = Model.NullHandling.None;
+        converterNeedsCtx = false;
 
         if (useMethod is not null)
         {
@@ -1198,12 +1223,25 @@ internal static class MapperExtractor
                 out var srcKey, out var srcVal, out var tgtKey, out var tgtVal,
                 out var dictHasCount, out var dictTargetKind))
         {
-            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, autoNest, nestedRegistry))
+            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, out var keyNeedsCtx, autoNest, nestedRegistry, isPreserve: isPreserve))
                 return false;
-            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, autoNest, nestedRegistry))
+            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, out var valNeedsCtx, autoNest, nestedRegistry, isPreserve: isPreserve))
                 return false;
+            // Under Preserve mode: if the key/value converter is an auto-nested object mapper, force it RC.
+            if (isPreserve && nestedRegistry is not null)
+            {
+                if (keyConv is not null && keyConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                { nestedRegistry.ForceRecursionCapable(keyConv); keyNeedsCtx = true; }
+                if (valConv is not null && valConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                { nestedRegistry.ForceRecursionCapable(valConv); valNeedsCtx = true; }
+            }
             converterMethod = DictionaryConverter.Synthesize(synthesized, srcType, tgtKey, tgtVal,
-                dictHasCount, dictTargetKind, keyConv, keyNull, valConv, valNull, nullAsNull);
+                dictHasCount, dictTargetKind, keyConv, keyNull, valConv, valNull, nullAsNull,
+                isPreserve, keyNeedsCtx, valNeedsCtx);
+            // Under Preserve mode, mutable dicts emit a (ctx, depth) signature — the caller must pass ctx.
+            bool isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary
+                              && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
+            converterNeedsCtx = isPreserve && (isMutableDict || keyNeedsCtx || valNeedsCtx);
             return true;
         }
 
@@ -1216,9 +1254,28 @@ internal static class MapperExtractor
                 converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
                 return true;
             }
-            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, autoNest, nestedRegistry))
+            // Resolve element converter. Note: element conversion itself is not preserve-mode at
+            // this level — but we need to know if the element converter is recursion-capable (needs ctx).
+            // We pass isPreserve=false here initially.
+            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, out var elemNeedsCtx, autoNest, nestedRegistry, isPreserve: isPreserve))
                 return false; // element diagnostic already reported by the recursive call
-            converterMethod = CollectionConverter.Synthesize(synthesized, srcType, srcElem, tgtElem, collShape, elemConv, elemNull);
+
+            // Under Preserve mode: if the element converter is an auto-nested object mapper,
+            // we must force it to be recursion-capable so it gets the (ctx, depth) signature.
+            // This is required because the collection helper will call it with (elem, ctx, depth+1).
+            // Even if the element type is not on a cycle, under Preserve mode we want all
+            // object mappers used as collection elements to use the identity map.
+            if (isPreserve && elemConv is not null
+                && elemConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
+                && nestedRegistry is not null)
+            {
+                nestedRegistry.ForceRecursionCapable(elemConv);
+                elemNeedsCtx = true;
+            }
+
+            converterMethod = CollectionConverter.Synthesize(synthesized, srcType, srcElem, tgtElem, collShape, elemConv, elemNull, isPreserve, elemNeedsCtx);
+            // Under Preserve mode, mutable reference collections emit a (ctx, depth) signature.
+            converterNeedsCtx = isPreserve && (CollectionConverter.IsMutableReferenceCollection(collShape.Target) || elemNeedsCtx);
             return true;
         }
 
@@ -1244,7 +1301,7 @@ internal static class MapperExtractor
         {
             if (TryResolveConversion(compilation, bothSrcU, bothTgtU, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerNN, out _, autoNest, nestedRegistry) && innerNN is not null)
+                    out var innerNN, out _, out _, autoNest, nestedRegistry, nullAsNull, isPreserve: false) && innerNN is not null)
             {
                 converterMethod = innerNN;
                 nullHandling = Model.NullHandling.NullableProject;
@@ -1267,7 +1324,7 @@ internal static class MapperExtractor
             // Guard: 'underlying' is not itself nullable (Nullable<Nullable<T>> is illegal in C#).
             if (TryResolveConversion(compilation, underlying, tgtType, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerConv, out _, autoNest, nestedRegistry))
+                    out var innerConv, out _, out _, autoNest, nestedRegistry, nullAsNull, isPreserve: false))
             {
                 nullHandling = nullStrategy == NullStrategy.SetDefault ? Model.NullHandling.ValueOrDefault : Model.NullHandling.ThrowIfNull;
                 converterMethod = innerConv; // may be null (direct assign after unwrap) or a synthesized method
@@ -1286,7 +1343,7 @@ internal static class MapperExtractor
         {
             if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerConvT, out _, autoNest, nestedRegistry))
+                    out var innerConvT, out _, out _, autoNest, nestedRegistry, nullAsNull, isPreserve: false))
             {
                 converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
                 // nullHandling stays None — source is non-null, always yields a value
@@ -1339,8 +1396,23 @@ internal static class MapperExtractor
 
         if (found is not null)
         {
-            converterMethod = found;
-            return true;
+            // Plan 19 C2b: Under Preserve mode, if the found auto-candidate is a PUBLIC partial
+            // mapper method (from autoCandidates) and autoNest is enabled, prefer the synthesized
+            // private __DwarfMap_Obj_* form instead. Public methods don't accept the shared
+            // DwarfRefContext — calling them from a collection helper would create a fresh context,
+            // losing all identity information and causing infinite loops on cycles.
+            // We fall through to the auto-nest path below only when both conditions are true;
+            // user-provided converter helpers (allMethods, not autoCandidates) are always respected.
+            bool foundIsAutoCandidate = isPreserve && autoNest && nestedRegistry is not null
+                && autoCandidates.Any(ac => string.Equals(ac.Name, found, System.StringComparison.Ordinal))
+                && tgtType is INamedTypeSymbol
+                && IsMappableObjectPair(compilation, srcType, (INamedTypeSymbol)tgtType);
+            if (!foundIsAutoCandidate)
+            {
+                converterMethod = found;
+                return true;
+            }
+            // Fall through to synthesize a private __DwarfMap_Obj_* form.
         }
 
         // Integral↔integral narrowing / sign-change: emit CreateChecked (throws on overflow).
