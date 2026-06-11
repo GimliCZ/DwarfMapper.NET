@@ -49,13 +49,37 @@ internal static class MapEmitter
 
     private static void EmitMethod(StringBuilder sb, MapMethodModel method, string indent)
     {
+        // ── Determine depth-guard context ────────────────────────────────────────
+        // A synthesized method that is recursion-capable gets extra (ctx, depth) parameters
+        // and a depth guard at the top of its body.
+        // A public (partial) method that calls recursion-capable synthesized methods creates
+        // a DwarfRefContext upfront and passes it with depth=0 to the first tracked calls.
+        var isSynthesizedRecursive = !method.IsPartial && method.IsRecursionCapable;
+        var isPublicWithCtx = method.IsPartial && method.IsRecursionCapable;
+
+        // Param names used in emission:
+        //   public-with-ctx     : ctx variable = "__dwarf_ctx", depth passed = "0"
+        //   synthesized-recursive: ctx param   = "ctx",         depth passed = "depth + 1"
+        var ctxVarName  = isPublicWithCtx ? "__dwarf_ctx" : "ctx";
+        var depthPassFwd = isSynthesizedRecursive ? "depth + 1" : "0";
+
         // IsPartial=true → user-declared partial: emit "public partial T Name(S s)"
-        // IsPartial=false → synthesized private: emit "private T Name(S s)" (no 'partial')
+        // IsPartial=false → synthesized private: plain or depth-guarded
         if (method.IsPartial)
         {
+            // Public declared method — signature never changes (no ctx param for callers).
             sb.Append(indent).Append(method.Accessibility).Append(" partial ")
               .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
               .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName).AppendLine(")");
+        }
+        else if (isSynthesizedRecursive)
+        {
+            // Depth-guarded synthesized private method: extra (DwarfRefContext ctx, int depth) params.
+            sb.Append(indent).Append("private ")
+              .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
+              .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName)
+              .Append(", global::DwarfMapper.DwarfRefContext ctx, int depth")
+              .AppendLine(")");
         }
         else
         {
@@ -90,6 +114,24 @@ internal static class MapEmitter
                   .Append(method.ParameterTypeFullName)
                   .Append("' to value-type '").Append(method.ReturnTypeFullName).AppendLine("'.\");");
             }
+        }
+
+        // ── Depth guard (synthesized recursion-capable methods only) ────────────
+        // Condition: depth >= ctx.MaxDepth (not strictly >, so that MaxDepth=8 allows depths 0..7
+        // and throws at depth 8 — meaning chains of length > MaxDepth throw as specified).
+        if (isSynthesizedRecursive)
+        {
+            sb.Append(indent).AppendLine("    if (depth >= ctx.MaxDepth)");
+            sb.Append(indent).Append("        throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
+            sb.AppendLine();
+        }
+
+        // ── DwarfRefContext creation (public methods calling recursion-capable pairs) ─
+        if (isPublicWithCtx)
+        {
+            sb.Append(indent).Append("    var __dwarf_ctx = new global::DwarfMapper.DwarfRefContext(")
+              .Append(method.MaxDepth.ToString(System.Globalization.CultureInfo.InvariantCulture))
+              .AppendLine(");");
         }
 
         if (method.IsProjection)
@@ -129,7 +171,7 @@ internal static class MapEmitter
             {
                 var arg = ctorArgs[i];
                 sb.Append(indent).Append("        ").Append(arg.TargetName).Append(": ");
-                AppendValueExpression(sb, arg, method.ParameterName);
+                AppendValueExpression(sb, arg, method.ParameterName, ctxVarName, depthPassFwd);
                 if (i < ctorArgs.Count - 1)
                     sb.AppendLine(",");
                 else
@@ -143,7 +185,7 @@ internal static class MapEmitter
                 foreach (var member in method.Members)
                 {
                     sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
-                    AppendValueExpression(sb, member, method.ParameterName);
+                    AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
                 }
                 sb.Append(indent).AppendLine("    };");
@@ -161,7 +203,7 @@ internal static class MapEmitter
             foreach (var member in method.Members)
             {
                 sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
-                AppendValueExpression(sb, member, method.ParameterName);
+                AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                 sb.AppendLine(",");
             }
             sb.Append(indent).AppendLine("    };");
@@ -192,7 +234,18 @@ internal static class MapEmitter
     /// Append the value expression for a single mapping (ctor arg or object-initializer member)
     /// to <paramref name="sb"/>. Does NOT append a trailing comma or newline.
     /// </summary>
-    private static void AppendValueExpression(StringBuilder sb, MemberMap member, string paramName)
+    /// <param name="ctxVarName">
+    /// Name of the <c>DwarfRefContext</c> variable in scope (e.g. <c>"ctx"</c> or
+    /// <c>"__dwarf_ctx"</c>). Only used when <see cref="MemberMap.ConverterNeedsDepthCtx"/> is true.
+    /// </param>
+    /// <param name="depthArg">
+    /// The depth argument to forward (e.g. <c>"depth + 1"</c> from a recursion-capable synthesized
+    /// method, or <c>"0"</c> from the public entry point). Only used when
+    /// <see cref="MemberMap.ConverterNeedsDepthCtx"/> is true.
+    /// </param>
+    private static void AppendValueExpression(
+        StringBuilder sb, MemberMap member, string paramName,
+        string ctxVarName = "ctx", string depthArg = "0")
     {
         // NullableProject: both source and target are Nullable<T>. Emit null-preserving ternary:
         //   src.X.HasValue ? Conv(src.X.Value) : null
@@ -236,13 +289,32 @@ internal static class MapEmitter
             if (member.NullHandling != Model.NullHandling.None)
             {
                 // Both converter and null-handling: Conv(src.X ?? throw ...) or Conv(src.X.GetValueOrDefault())
-                sb.Append(member.ConverterMethod).Append('(').Append(innerAccess).Append(')');
+                if (member.ConverterNeedsDepthCtx)
+                    sb.Append(member.ConverterMethod).Append('(').Append(innerAccess)
+                      .Append(", ").Append(ctxVarName).Append(", ").Append(depthArg).Append(')');
+                else
+                    sb.Append(member.ConverterMethod).Append('(').Append(innerAccess).Append(')');
             }
             else
             {
-                // Converter only (original path): Conv(src.X)
-                sb.Append(member.ConverterMethod).Append('(')
-                  .Append(paramName).Append('.').Append(member.SourceName).Append(')');
+                // Converter only path: Conv(src.X) or Conv(src.X!) depending on nullability.
+                // The '!' null-forgiving operator is needed when the source member is a nullable
+                // reference type (e.g. Node? Next) but the converter expects non-null (Node).
+                // Synthesized nested mappers (__DwarfMap_Obj_... / __DwarfMap_Depth_...) always
+                // begin with a null guard (if (s is null) return null!) so the '!' is safe and
+                // suppresses CS8604. User-declared converters receive the source as-is (no '!').
+                var needsBang = member.ConverterNeedsDepthCtx
+                    || member.SourceIsNullableRef
+                    || member.ConverterMethod!.StartsWith("__DwarfMap_", System.StringComparison.Ordinal);
+                if (member.ConverterNeedsDepthCtx)
+                    sb.Append(member.ConverterMethod).Append('(')
+                      .Append(paramName).Append('.').Append(member.SourceName)
+                      .Append(needsBang ? "!" : "").Append(", ")
+                      .Append(ctxVarName).Append(", ").Append(depthArg).Append(')');
+                else
+                    sb.Append(member.ConverterMethod).Append('(')
+                      .Append(paramName).Append('.').Append(member.SourceName)
+                      .Append(needsBang ? "!)" : ")");
             }
         }
         else

@@ -46,6 +46,7 @@ internal static class MapperExtractor
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);
         var nullCollections = ReadNullCollections(ctx.Attributes);
+        var maxDepth = ReadMaxDepth(ctx.Attributes);
         var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
@@ -231,11 +232,20 @@ internal static class MapperExtractor
         // We process synthesized pairs AFTER declared methods so user methods always win.
         // Each dequeued pair may enqueue further pairs → loop until empty (terminates because
         // each pair is registered-before-built, so revisits hit the memoization branch).
+        // We also track dependency edges (nestedRegistry.SetCurrentPair) so that after the
+        // drain we can compute which pairs are recursion-capable (Plan 19 C1).
+        // Temporary list: collect models before we know their IsRecursionCapable flag.
+        var pendingNestedModels = new List<(MapMethodModel Model, string MethodName)>();
+
         while (nestedRegistry.HasPending)
         {
             ct.ThrowIfCancellationRequested();
 
             var (nestedSrc, nestedTgt, nestedName) = nestedRegistry.Dequeue();
+
+            // Inform the registry that we are now building this pair's body,
+            // so subsequent GetOrReserve calls record edges in the dependency graph.
+            nestedRegistry.SetCurrentPair(nestedName);
 
             // We use the location of the first declared method as the diagnostic anchor
             // for nested diagnostics (acceptable per spec).
@@ -247,6 +257,7 @@ internal static class MapperExtractor
             if (nestedCtor is null)
             {
                 // DWARF025/026 already reported; skip body emission for this pair.
+                nestedRegistry.ClearCurrentPair();
                 continue;
             }
 
@@ -268,6 +279,7 @@ internal static class MapperExtractor
                     classAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
                     nullCollections == NullCollectionsBehavior.AsNull))
                 {
+                    nestedRegistry.ClearCurrentPair();
                     continue;
                 }
                 nestedRequiredMustInit = ComputeRequiredMustInitialize(nestedCtor, nestedTgt, nestedConsumed);
@@ -285,7 +297,10 @@ internal static class MapperExtractor
                 classAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull);
 
+            nestedRegistry.ClearCurrentPair();
+
             // Build a private (non-partial) MapMethodModel for this synthesized pair.
+            // IsRecursionCapable is set to false here and patched below after ComputeRecursionCapability().
             var nestedModel = new MapMethodModel(
                 MethodName: nestedName,
                 Accessibility: "private",
@@ -300,9 +315,340 @@ internal static class MapperExtractor
                 ElementTargetTypeFullName: "",
                 ConstructorArguments: EquatableArray.From(nestedCtorArgs),
                 IsPartial: false,
-                ReturnIsReferenceType: nestedTgt.IsReferenceType);
+                ReturnIsReferenceType: nestedTgt.IsReferenceType,
+                IsRecursionCapable: false); // patched below
 
-            methods.Add(nestedModel);
+            pendingNestedModels.Add((nestedModel, nestedName));
+        }
+
+        // ── Recursion-capability analysis ────────────────────────────────────────
+        // Now that the full dependency graph is known, compute which pairs are on cycles.
+        nestedRegistry.ComputeRecursionCapability();
+
+        // Build a set of method names that are recursion-capable (for the public method check).
+        var recursionCapableNames = new HashSet<string>(System.StringComparer.Ordinal);
+
+        foreach (var (model, name) in pendingNestedModels)
+        {
+            var isRC = nestedRegistry.IsRecursionCapable(name);
+            if (isRC) recursionCapableNames.Add(name);
+            // Rebuild the model with the correct IsRecursionCapable flag.
+            methods.Add(model with { IsRecursionCapable = isRC });
+        }
+
+        // ── Also detect declared public methods on a recursion cycle ────────────
+        // Two cases:
+        //   Direct: Map(Node n) has member.ConverterMethod == "Map" (self-call).
+        //   Indirect: Map(A) calls __DwarfMap_Obj_B which calls Map (mutual cycle).
+        //
+        // We extend the call graph to include declared methods and run reachability.
+        // All_methods_graph: maps methodKey → set of methods it calls.
+        //
+        // KEY DISAMBIGUATION: Overloaded declared methods (e.g. ToDto(Person) and ToDto(Addr))
+        // share the same base name but must be tracked separately. We use:
+        //   Single overload  → key = MethodName  (e.g. "Map")
+        //   Multiple overloads → key = MethodName + "§" + ParameterTypeFullName
+        //     (e.g. "ToDto§global::Demo.Person", "ToDto§global::Demo.Addr")
+        //
+        // Synthesized methods always use their unique auto-generated name as key.
+        // When a synthesized method has a converter referencing a SINGLE-overload declared method,
+        // the edge target is just the method name. Callers targeting an overloaded name may
+        // traverse all overloads (conservative: at least one variant is reachable).
+
+        // Count declared methods per name to detect overloads.
+        var declaredNameCount = new Dictionary<string, int>(System.StringComparer.Ordinal);
+        for (var i = 0; i < methods.Count; i++)
+        {
+            var m = methods[i];
+            if (!m.IsPartial) continue;
+            declaredNameCount.TryGetValue(m.MethodName, out var prev);
+            declaredNameCount[m.MethodName] = prev + 1;
+        }
+
+        // Helper: get the graph key for a declared method.
+        string DeclKey(MapMethodModel mm)
+            => declaredNameCount.TryGetValue(mm.MethodName, out var cnt) && cnt > 1
+               ? mm.MethodName + "§" + mm.ParameterTypeFullName
+               : mm.MethodName;
+
+        var allCallGraph = new Dictionary<string, HashSet<string>>(System.StringComparer.Ordinal);
+
+        // Seed with synthesized method edges (already computed in registry, but not accessible here).
+        // Re-derive from pending models (synthesized methods always have unique names).
+        foreach (var (model, _) in pendingNestedModels)
+        {
+            var callerName = model.MethodName;
+            if (!allCallGraph.ContainsKey(callerName))
+                allCallGraph[callerName] = new HashSet<string>(System.StringComparer.Ordinal);
+
+            foreach (var mem in model.Members)
+                if (mem.ConverterMethod is not null)
+                    allCallGraph[callerName].Add(mem.ConverterMethod);
+            foreach (var arg in model.ConstructorArguments)
+                if (arg.ConverterMethod is not null)
+                    allCallGraph[callerName].Add(arg.ConverterMethod);
+        }
+
+        // Add declared methods to the graph using disambiguation keys.
+        for (var i = 0; i < methods.Count; i++)
+        {
+            var m = methods[i];
+            if (!m.IsPartial) continue;
+
+            var callerKey = DeclKey(m);
+            if (!allCallGraph.ContainsKey(callerKey))
+                allCallGraph[callerKey] = new HashSet<string>(System.StringComparer.Ordinal);
+
+            foreach (var mem in m.Members)
+            {
+                if (mem.ConverterMethod is null) continue;
+                // Resolve the edge target: if the converter is an overloaded declared method,
+                // we can't determine which overload without param-type info, so we add edges
+                // to ALL overloads of that name.  For non-overloaded names and synthesized
+                // names, add the name directly.
+                if (declaredNameCount.TryGetValue(mem.ConverterMethod, out var oc) && oc > 1)
+                {
+                    // Add edges to all OTHER overloads (not the method itself — a converter can't be
+                    // a self-call when it was auto-matched to a DIFFERENT overload by parameter type).
+                    for (var j = 0; j < methods.Count; j++)
+                    {
+                        var ov = methods[j];
+                        if (!ov.IsPartial) continue;
+                        if (!string.Equals(ov.MethodName, mem.ConverterMethod, System.StringComparison.Ordinal)) continue;
+                        var ovKey = DeclKey(ov);
+                        if (!string.Equals(ovKey, callerKey, System.StringComparison.Ordinal))
+                            allCallGraph[callerKey].Add(ovKey);
+                    }
+                }
+                else
+                {
+                    allCallGraph[callerKey].Add(mem.ConverterMethod);
+                }
+            }
+            foreach (var arg in m.ConstructorArguments)
+            {
+                if (arg.ConverterMethod is null) continue;
+                if (declaredNameCount.TryGetValue(arg.ConverterMethod, out var oc) && oc > 1)
+                {
+                    for (var j = 0; j < methods.Count; j++)
+                    {
+                        var ov = methods[j];
+                        if (!ov.IsPartial) continue;
+                        if (!string.Equals(ov.MethodName, arg.ConverterMethod, System.StringComparison.Ordinal)) continue;
+                        var ovKey = DeclKey(ov);
+                        if (!string.Equals(ovKey, callerKey, System.StringComparison.Ordinal))
+                            allCallGraph[callerKey].Add(ovKey);
+                    }
+                }
+                else
+                {
+                    allCallGraph[callerKey].Add(arg.ConverterMethod);
+                }
+            }
+        }
+
+        // For synthesized methods calling overloaded declared methods, also expand edges
+        // so DFS can follow the full cycle. If synth-method calls "Map" and there are
+        // two overloads "Map§A" and "Map§B", add edges to all variants except self.
+        foreach (var callerKey in allCallGraph.Keys.ToList())
+        {
+            var edges = allCallGraph[callerKey];
+            var expandedEdges = new System.Collections.Generic.List<string>();
+            foreach (var edge in edges)
+            {
+                if (declaredNameCount.TryGetValue(edge, out var oc) && oc > 1)
+                {
+                    // Replace simple name with qualified variants (excluding self to avoid false cycles).
+                    for (var j = 0; j < methods.Count; j++)
+                    {
+                        var ov = methods[j];
+                        if (!ov.IsPartial) continue;
+                        if (!string.Equals(ov.MethodName, edge, System.StringComparison.Ordinal)) continue;
+                        var ovKey = DeclKey(ov);
+                        if (!string.Equals(ovKey, callerKey, System.StringComparison.Ordinal))
+                            expandedEdges.Add(ovKey);
+                    }
+                }
+                else
+                {
+                    expandedEdges.Add(edge);
+                }
+            }
+            edges.Clear();
+            foreach (var e in expandedEdges) edges.Add(e);
+        }
+
+        // Find which declared methods are on a cycle (can reach themselves in allCallGraph).
+        var selfRecursivePublicMethods = new HashSet<string>(System.StringComparer.Ordinal);
+        for (var i = 0; i < methods.Count; i++)
+        {
+            var m = methods[i];
+            if (!m.IsPartial) continue;
+
+            var key = DeclKey(m);
+            if (CanReach(allCallGraph, key, key))
+            {
+                selfRecursivePublicMethods.Add(m.MethodName);
+                // Add the companion name so call-sites in synthesized methods can reference it.
+                var companionName = "__DwarfMap_Depth_" + m.MethodName;
+                recursionCapableNames.Add(companionName);
+            }
+        }
+
+        // Re-check synthesized methods using the full allCallGraph (which includes declared methods).
+        // The registry's edge graph only tracks synthesized→synthesized edges; it misses cycles that
+        // go through declared methods (e.g. __DwarfMap_Obj_B → Map → __DwarfMap_Obj_B).
+        // Any synthesized method on such a mixed cycle must also be recursion-capable.
+        for (var i = 0; i < methods.Count; i++)
+        {
+            var m = methods[i];
+            if (m.IsPartial) continue; // only synthesized methods
+
+            if (!recursionCapableNames.Contains(m.MethodName)
+                && CanReach(allCallGraph, m.MethodName, m.MethodName))
+            {
+                recursionCapableNames.Add(m.MethodName);
+                // Re-mark the method model as recursion-capable.
+                methods[i] = m with { IsRecursionCapable = true };
+            }
+        }
+
+        // ── Mark public methods and synthesized methods that call recursion-capable pairs ─
+        // The public Map(S s) method needs to create a DwarfRefContext if it calls (directly
+        // or indirectly through its members) a recursion-capable synthesized pair.
+        // We patch the already-added method models here.
+        for (var i = 0; i < methods.Count; i++)
+        {
+            var m = methods[i];
+
+            // For self-recursive declared methods: generate a companion and redirect.
+            if (m.IsPartial && selfRecursivePublicMethods.Contains(m.MethodName))
+            {
+                var companionName = "__DwarfMap_Depth_" + m.MethodName;
+
+                // Patch the members/ctor-args of the declared method:
+                // (a) self-calls → redirect to companion with depth ctx
+                // (b) calls to other self-recursive declared methods → redirect to their companions
+                // (c) calls to recursion-capable synthesized methods → add depth ctx
+                var newMembers2 = m.Members.ToArray();
+                for (var mi = 0; mi < newMembers2.Length; mi++)
+                {
+                    var mem = newMembers2[mi];
+                    if (mem.ConverterMethod is null) continue;
+
+                    if (string.Equals(mem.ConverterMethod, m.MethodName, System.StringComparison.Ordinal))
+                    {
+                        // Self-call: redirect to companion.
+                        newMembers2[mi] = mem with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
+                    }
+                    else if (selfRecursivePublicMethods.Contains(mem.ConverterMethod))
+                    {
+                        // Indirect recursive declared method: redirect to its companion.
+                        newMembers2[mi] = mem with { ConverterMethod = "__DwarfMap_Depth_" + mem.ConverterMethod, ConverterNeedsDepthCtx = true };
+                    }
+                    else if (recursionCapableNames.Contains(mem.ConverterMethod))
+                    {
+                        // Recursion-capable synthesized method: pass depth ctx.
+                        newMembers2[mi] = mem with { ConverterNeedsDepthCtx = true };
+                    }
+                }
+                var newCtorArgs2 = m.ConstructorArguments.ToArray();
+                for (var ci = 0; ci < newCtorArgs2.Length; ci++)
+                {
+                    var arg = newCtorArgs2[ci];
+                    if (arg.ConverterMethod is null) continue;
+
+                    if (string.Equals(arg.ConverterMethod, m.MethodName, System.StringComparison.Ordinal))
+                    {
+                        newCtorArgs2[ci] = arg with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
+                    }
+                    else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
+                    {
+                        newCtorArgs2[ci] = arg with { ConverterMethod = "__DwarfMap_Depth_" + arg.ConverterMethod, ConverterNeedsDepthCtx = true };
+                    }
+                    else if (recursionCapableNames.Contains(arg.ConverterMethod))
+                    {
+                        newCtorArgs2[ci] = arg with { ConverterNeedsDepthCtx = true };
+                    }
+                }
+
+                // Mark public method as needing ctx creation.
+                methods[i] = m with
+                {
+                    IsRecursionCapable = true,
+                    MaxDepth = maxDepth,
+                    Members = EquatableArray.From(newMembers2),
+                    ConstructorArguments = EquatableArray.From(newCtorArgs2),
+                };
+
+                // Synthesize the companion: same body, but IsRecursionCapable=true, IsPartial=false.
+                var companion = m with
+                {
+                    MethodName = companionName,
+                    Accessibility = "private",
+                    IsPartial = false,
+                    IsRecursionCapable = true,
+                    MaxDepth = maxDepth,
+                    Members = EquatableArray.From(newMembers2),
+                    ConstructorArguments = EquatableArray.From(newCtorArgs2),
+                    // Companion's self-calls also use the companion (already patched above).
+                };
+                methods.Add(companion);
+                continue;
+            }
+
+            // Check if any of this method's members/ctor-args uses a recursion-capable synthesized method
+            // OR a self-recursive declared method (which must be redirected to the companion).
+            var needsCtx = false;
+            var newMembers = m.Members.ToArray();
+            for (var mi = 0; mi < newMembers.Length; mi++)
+            {
+                var member = newMembers[mi];
+                if (member.ConverterMethod is null) continue;
+
+                if (recursionCapableNames.Contains(member.ConverterMethod))
+                {
+                    newMembers[mi] = member with { ConverterNeedsDepthCtx = true };
+                    needsCtx = true;
+                }
+                else if (selfRecursivePublicMethods.Contains(member.ConverterMethod))
+                {
+                    // Redirect call from declared public method to its depth-guarded companion.
+                    var companionName = "__DwarfMap_Depth_" + member.ConverterMethod;
+                    newMembers[mi] = member with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
+                    needsCtx = true;
+                }
+            }
+
+            var newCtorArgs = m.ConstructorArguments.ToArray();
+            for (var ci = 0; ci < newCtorArgs.Length; ci++)
+            {
+                var arg = newCtorArgs[ci];
+                if (arg.ConverterMethod is null) continue;
+
+                if (recursionCapableNames.Contains(arg.ConverterMethod))
+                {
+                    newCtorArgs[ci] = arg with { ConverterNeedsDepthCtx = true };
+                    needsCtx = true;
+                }
+                else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
+                {
+                    var companionName = "__DwarfMap_Depth_" + arg.ConverterMethod;
+                    newCtorArgs[ci] = arg with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
+                    needsCtx = true;
+                }
+            }
+
+            if (needsCtx || (m.IsRecursionCapable && !m.IsPartial))
+            {
+                methods[i] = m with
+                {
+                    IsRecursionCapable = m.IsRecursionCapable || needsCtx,
+                    MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth, // only public methods carry MaxDepth
+                    Members = EquatableArray.From(newMembers),
+                    ConstructorArguments = EquatableArray.From(newCtorArgs),
+                };
+            }
         }
 
         // Report DWARF031 if the registry cap was exceeded.
@@ -1360,6 +1706,27 @@ internal static class MapperExtractor
     /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoNest"/> value
     /// from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c>.
     /// </summary>
+    /// <summary>
+    /// Reads <c>[DwarfMapper(MaxDepth = N)]</c>; defaults to 64; clamps to [1, 1000].
+    /// </summary>
+    private static int ReadMaxDepth(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "MaxDepth" && named.Value.Value is int i)
+                {
+                    // Clamp to [1, 1000] — matches DwarfRefContext.AbsoluteMaxDepth
+                    if (i < 1) return 1;
+                    if (i > 1000) return 1000;
+                    return i;
+                }
+            }
+        }
+        return 64; // default
+    }
+
     private static bool ReadAutoNest(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
@@ -1492,6 +1859,35 @@ internal static class MapperExtractor
             result.Add(new MemberMap(target.Name, src.Name));
         }
         return result;
+    }
+
+    /// <summary>
+    /// DFS reachability: can we reach <paramref name="target"/> starting from <paramref name="start"/>
+    /// by following edges in the call graph? Used to detect recursive method cycles.
+    /// </summary>
+    private static bool CanReach(
+        Dictionary<string, HashSet<string>> graph,
+        string start,
+        string target)
+    {
+        var visited = new HashSet<string>(System.StringComparer.Ordinal);
+        var stack = new Stack<string>();
+        if (!graph.TryGetValue(start, out var startDeps)) return false;
+        foreach (var dep in startDeps)
+            stack.Push(dep);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (string.Equals(current, target, System.StringComparison.Ordinal)) return true;
+            if (!visited.Add(current)) continue;
+            if (graph.TryGetValue(current, out var deps))
+            {
+                foreach (var dep in deps)
+                    stack.Push(dep);
+            }
+        }
+        return false;
     }
 
     private static string AccessibilityText(Accessibility a) => a switch

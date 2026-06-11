@@ -12,6 +12,13 @@ namespace DwarfMapper.Generator.Pipeline;
 /// The register-before-build contract guarantees the generator never infinite-loops on
 /// recursive types: the key is inserted BEFORE the body is built, so a re-entrant pair
 /// hits the "already registered" path and returns the reserved method name immediately.
+///
+/// <para>
+/// <b>Recursion-capability analysis (Plan 19 C1):</b> while draining the build queue,
+/// the registry tracks a directed graph of which synthesized method calls which others.
+/// After the drain, <see cref="IsRecursionCapable"/> identifies methods on a cycle in
+/// that graph — only those get the depth-guarded signature.
+/// </para>
 /// </summary>
 internal sealed class NestedMappingRegistry
 {
@@ -22,6 +29,18 @@ internal sealed class NestedMappingRegistry
 
     private readonly Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name)> _buildQueue =
         new Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name)>();
+
+    // ── Recursion-capability analysis ────────────────────────────────────────────
+    // Directed graph: _edges[method] = set of methods that 'method' calls.
+    // Built during the drain loop (via SetCurrentPair + GetOrReserve).
+    private readonly Dictionary<string, HashSet<string>> _edges =
+        new Dictionary<string, HashSet<string>>(System.StringComparer.Ordinal);
+
+    // The method name currently being body-resolved (set by SetCurrentPair).
+    private string? _currentPair;
+
+    // Cached result; null until ComputeRecursionCapability() is called.
+    private HashSet<string>? _recursionCapable;
 
     /// <summary>
     /// Whether the depth cap was exceeded. When true a DWARF031 was already scheduled.
@@ -45,6 +64,24 @@ internal sealed class NestedMappingRegistry
         => _buildQueue.Dequeue();
 
     /// <summary>
+    /// Informs the registry that the body of <paramref name="methodName"/> is now being resolved.
+    /// Any subsequent <see cref="GetOrReserve"/> call (from member resolution of this pair)
+    /// will be recorded as a dependency edge.
+    /// </summary>
+    public void SetCurrentPair(string methodName)
+    {
+        _currentPair = methodName;
+        // Ensure a node exists for this method even if it calls nothing.
+        if (!_edges.ContainsKey(methodName))
+            _edges[methodName] = new HashSet<string>(System.StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Clears the current-pair context (call after body resolution is complete).
+    /// </summary>
+    public void ClearCurrentPair() => _currentPair = null;
+
+    /// <summary>
     /// If a method for <paramref name="src"/>→<paramref name="tgt"/> is already registered,
     /// returns its method name without enqueuing a new build. Otherwise reserves a unique
     /// FNV-1a-hashed name, enqueues the pair for body-building, and returns the name.
@@ -62,8 +99,13 @@ internal sealed class NestedMappingRegistry
         var tgtFqn = tgt.ToDisplayString(Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat);
         var key = (srcFqn, tgtFqn);
 
+        string methodName;
+
         if (_reserved.TryGetValue(key, out var existing))
         {
+            methodName = existing;
+            // Record the dependency edge: current pair → this pair (even if already registered).
+            RecordEdge(methodName);
             return existing;
         }
 
@@ -77,10 +119,79 @@ internal sealed class NestedMappingRegistry
             return null;
         }
 
-        var name = BuildMethodName(srcFqn, tgtFqn);
-        _reserved[key] = name;
-        _buildQueue.Enqueue((src, tgt, name));
-        return name;
+        methodName = BuildMethodName(srcFqn, tgtFqn);
+        _reserved[key] = methodName;
+        _buildQueue.Enqueue((src, tgt, methodName));
+
+        // Record the dependency edge: current pair → new pair.
+        RecordEdge(methodName);
+
+        return methodName;
+    }
+
+    private void RecordEdge(string calleeName)
+    {
+        if (_currentPair is null) return;
+        if (!_edges.TryGetValue(_currentPair, out var deps))
+        {
+            deps = new HashSet<string>(System.StringComparer.Ordinal);
+            _edges[_currentPair] = deps;
+        }
+        deps.Add(calleeName);
+    }
+
+    // ── Recursion-capability analysis ────────────────────────────────────────────
+
+    /// <summary>
+    /// Computes which synthesized methods are "recursion-capable" — i.e. the method can
+    /// transitively call itself (directly or indirectly). Must be called AFTER the build
+    /// queue is fully drained.
+    /// </summary>
+    /// <remarks>
+    /// Uses a simple DFS reachability check: method M is recursion-capable if M can
+    /// reach M in the directed call graph. This is equivalent to M being on a cycle.
+    /// </remarks>
+    public void ComputeRecursionCapability()
+    {
+        _recursionCapable = new HashSet<string>(System.StringComparer.Ordinal);
+
+        foreach (var start in _edges.Keys)
+        {
+            if (CanReachSelf(start))
+                _recursionCapable.Add(start);
+        }
+    }
+
+    /// <summary>
+    /// Returns true when the given synthesized method name is recursion-capable.
+    /// <see cref="ComputeRecursionCapability"/> must be called first.
+    /// </summary>
+    public bool IsRecursionCapable(string methodName)
+        => _recursionCapable?.Contains(methodName) == true;
+
+    private bool CanReachSelf(string start)
+    {
+        // DFS: can we return to 'start' following outgoing edges?
+        var visited = new HashSet<string>(System.StringComparer.Ordinal);
+        var stack = new Stack<string>();
+
+        if (!_edges.TryGetValue(start, out var startDeps)) return false;
+        foreach (var dep in startDeps)
+            stack.Push(dep);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            if (current == start) return true;
+            if (!visited.Add(current)) continue;
+            if (_edges.TryGetValue(current, out var deps))
+            {
+                foreach (var dep in deps)
+                    stack.Push(dep);
+            }
+        }
+
+        return false;
     }
 
     // ── Name synthesis ────────────────────────────────────────────────────────
