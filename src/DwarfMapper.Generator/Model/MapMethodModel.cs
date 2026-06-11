@@ -55,4 +55,13 @@ public sealed record MapMethodModel(
     /// The public entry method creates <c>DwarfRefContext(maxDepth, preserve: true)</c>.
     /// Non-recursion-capable pairs and None mode are UNCHANGED.
     /// </summary>
-    bool IsPreserveMode = false) : IEquatable<MapMethodModel>;
+    bool IsPreserveMode = false,
+    /// <summary>
+    /// For projection methods (<see cref="IsProjection"/> = true), the inline expression
+    /// fragments for each member (nested new / Select / ctor / direct assign).
+    /// When <see cref="ProjectionMembers"/> has exactly one entry with an empty
+    /// <see cref="ProjectionMemberMap.TargetName"/>, the single <see cref="ProjectionMemberMap.InlineExpr"/>
+    /// is the entire lambda body (constructor-only projection).
+    /// Empty for non-projection methods.
+    /// </summary>
+    EquatableArray<ProjectionMemberMap> ProjectionMembers = default) : IEquatable<MapMethodModel>;
