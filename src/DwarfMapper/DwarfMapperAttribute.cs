@@ -49,4 +49,19 @@ public sealed class DwarfMapperAttribute : Attribute
     /// </para>
     /// </summary>
     public NullCollectionStrategy NullCollections { get; set; } = NullCollectionStrategy.AsEmpty;
+
+    /// <summary>
+    /// Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64).
+    /// When a mapping reaches this depth, a <see cref="DwarfMappingDepthException"/> is thrown
+    /// instead of a silent (uncatchable) <see cref="System.StackOverflowException"/>.
+    /// <para>
+    /// The depth counter applies only to pairs that can form a cycle in the type graph
+    /// (self-referential or mutually-recursive types). Acyclic type graphs have zero overhead.
+    /// </para>
+    /// <para>
+    /// Hard cap: <c>1000</c>. Values above 1000 are silently clamped to 1000.
+    /// Default: <c>64</c> (matching System.Text.Json / AutoMapper defaults).
+    /// </para>
+    /// </summary>
+    public int MaxDepth { get; set; } = 64;
 }
