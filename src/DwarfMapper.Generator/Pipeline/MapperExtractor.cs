@@ -47,6 +47,8 @@ internal static class MapperExtractor
         var classAutoNest = ReadAutoNest(ctx.Attributes);
         var nullCollections = ReadNullCollections(ctx.Attributes);
         var maxDepth = ReadMaxDepth(ctx.Attributes);
+        var referenceHandling = ReadReferenceHandling(ctx.Attributes);
+        var isPreserveMode = referenceHandling == 1; // 1 = ReferenceHandlingStrategy.Preserve
         var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
@@ -648,6 +650,118 @@ internal static class MapperExtractor
                     Members = EquatableArray.From(newMembers),
                     ConstructorArguments = EquatableArray.From(newCtorArgs),
                 };
+            }
+        }
+
+        // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
+        // After recursion-capability is finalised, propagate IsPreserveMode and detect DWARF030.
+        if (isPreserveMode)
+        {
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+
+                // ── DWARF030: detect cyclic constructor parameters ─────────────────
+                // Two patterns:
+                // (A) Explicit cycle: ctor arg has ConverterNeedsDepthCtx = true (calls recursion-capable
+                //     synthesized method). The back-edge is injected via ctor → can't register-before-populate.
+                // (B) Identity self-map cycle: S == T AND the method has ctor args that copy S? members
+                //     by identity (no converter). Example: record ImmutableNode(int V, ImmutableNode? Next)
+                //     mapped to itself — Next is copied as s.Next (source ref), not the target. The record
+                //     is immutable so we can't fix it up. Even though this method may not be "recursion-capable"
+                //     in the type-graph sense (S=T → implicit conversion → no synthesized method), the
+                //     DATA can still be cyclic and the ctor arg prevents register-before-populate.
+                if (m.ConstructorArguments.Count > 0)
+                {
+                    // Pattern A: explicit recursion-capable ctor arg.
+                    foreach (var ctorArg in m.ConstructorArguments)
+                    {
+                        if (ctorArg.ConverterMethod is not null && ctorArg.ConverterNeedsDepthCtx)
+                        {
+                            var loc = (LocationInfo?)null;
+                            diagnostics.Add(new DiagnosticInfo(
+                                DiagnosticDescriptors.CyclicConstructorParameter,
+                                loc,
+                                ctorArg.TargetName));
+                        }
+                    }
+
+                    // Pattern B: self-map (S == T) with any ctor arg that has no converter.
+                    // For S==T, direct-assignment ctor args copy the source reference into the target.
+                    // If the source has a cycle (n.Next = n), the target's ctor arg will hold the source,
+                    // not the target. Since the type is immutable (has ctor args), we can't fix this up.
+                    // We only flag ctor args that are of reference type (not int/string/etc.) — but since
+                    // we don't have type info here, we flag ALL ctor args when the method is S→S and
+                    // recursion-capable (proven by members using ConverterNeedsDepthCtx).
+                    // More precisely: the method must be recursion-capable to be affected.
+                    if (m.IsRecursionCapable
+                        && string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, System.StringComparison.Ordinal))
+                    {
+                        foreach (var ctorArg in m.ConstructorArguments)
+                        {
+                            // Only flag args with no converter (identity copy of potentially cyclic member).
+                            // Args with a converter have already been checked above (Pattern A) or map scalars.
+                            if (ctorArg.ConverterMethod is null && !ctorArg.ConverterNeedsDepthCtx)
+                            {
+                                var loc = (LocationInfo?)null;
+                                diagnostics.Add(new DiagnosticInfo(
+                                    DiagnosticDescriptors.CyclicConstructorParameter,
+                                    loc,
+                                    ctorArg.TargetName));
+                            }
+                        }
+                    }
+                }
+
+                // Only recursion-capable methods need the Preserve-mode register-before-populate emission.
+                if (!m.IsRecursionCapable) continue;
+
+                // Mark the method as Preserve mode.
+                methods[i] = m with { IsPreserveMode = true };
+            }
+
+            // Pattern B (public declared methods): detect S==T self-recursive declared methods
+            // where the target has ctor args. These are recursion-capable by definition.
+            // The check above already covers it since we iterate ALL methods.
+            // Additional check: for public partial methods that are Preserve+RecursionCapable,
+            // check if the SOURCE type == RETURN type with ctor args — this covers user-declared
+            // self-mappers like Map(ImmutableNode n) → ImmutableNode.
+            // (This is already covered by the loop above for cases where m.IsRecursionCapable.)
+            //
+            // Special case: S==T where the method is NOT recursion-capable (pure identity copy,
+            // no auto-nest synthesized method). This happens for record self-maps. We detect it
+            // separately here because the isRecursionCapable gate filters them out above.
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                if (m.ConstructorArguments.Count == 0) continue;
+                if (m.IsRecursionCapable) continue; // already handled above
+                if (!m.ParameterIsReferenceType) continue; // value types excluded
+
+                // S == T (same type) with ctor args and NOT recursion-capable:
+                // This is the "record ImmutableNode(ImmutableNode? Next)" self-map case.
+                // The method isn't recursion-capable because S=T uses implicit conversion (no auto-nest),
+                // but at RUNTIME a cyclic ImmutableNode CAN exist. Under Preserve mode, this is
+                // an unsupported pattern → DWARF030 for the cyclic ctor args.
+                if (string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, System.StringComparison.Ordinal))
+                {
+                    // Flag ctor args that have the same type as the source (cyclic back-edge).
+                    // Since we don't have type info here, flag ALL non-scalar ctor args where
+                    // the source name suggests it's a complex member (has a converter or is the cycle).
+                    // Conservative approach: flag all ctor args with no converter when S==T.
+                    // The scalar ctor args (int, string, etc.) would also get flagged — this is
+                    // acceptable since the real issue is that ANY ctor arg in this scenario is suspect
+                    // (the ENTIRE pattern of immutable S=T mapping with cycles is broken).
+                    // In practice, DWARF030 is a COMPILE ERROR — the user MUST fix the type design.
+                    foreach (var ctorArg in m.ConstructorArguments)
+                    {
+                        var loc = (LocationInfo?)null;
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.CyclicConstructorParameter,
+                            loc,
+                            ctorArg.TargetName));
+                    }
+                }
             }
         }
 
@@ -1756,6 +1870,24 @@ internal static class MapperExtractor
             }
         }
         return NullCollectionsBehavior.AsEmpty;
+    }
+
+    /// <summary>
+    /// Reads <c>[DwarfMapper(ReferenceHandling = ...)]</c>; returns the integer value of the
+    /// <see cref="DwarfMapper.ReferenceHandlingStrategy"/> enum (0 = None, 1 = Preserve).
+    /// Defaults to 0 (None).
+    /// </summary>
+    private static int ReadReferenceHandling(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "ReferenceHandling" && named.Value.Value is int i)
+                    return i;
+            }
+        }
+        return 0; // None
     }
 
     /// <summary>

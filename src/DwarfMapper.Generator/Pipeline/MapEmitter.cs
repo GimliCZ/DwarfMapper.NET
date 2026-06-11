@@ -130,8 +130,11 @@ internal static class MapEmitter
         if (isPublicWithCtx)
         {
             sb.Append(indent).Append("    var __dwarf_ctx = new global::DwarfMapper.DwarfRefContext(")
-              .Append(method.MaxDepth.ToString(System.Globalization.CultureInfo.InvariantCulture))
-              .AppendLine(");");
+              .Append(method.MaxDepth.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            // Plan 19 C2: Preserve mode passes preserve:true to allocate the identity map.
+            if (method.IsPreserveMode)
+                sb.Append(", true");
+            sb.AppendLine(");");
         }
 
         if (method.IsProjection)
@@ -157,6 +160,30 @@ internal static class MapEmitter
         var hasCtorArgs = method.ConstructorArguments.Count > 0;
         var hasInitMembers = method.Members.Count > 0;
         var hasAfter = method.AfterHooks.Count > 0;
+
+        // ── Plan 19 C2: Register-before-populate (Preserve mode, recursion-capable) ──
+        // Both synthesized recursion-capable methods AND public methods under Preserve mode
+        // use register-before-populate to reconstruct arbitrary topologies:
+        //   1. Check identity map: if already registered, return the cached target.
+        //   2. Construct the target (ctor args only).
+        //   3. Register in the identity map BEFORE populating members → breaks ALL cycles.
+        //   4. Populate members via individual assignment statements.
+        //   5. Return.
+        //
+        // The public method MUST also register-before-populate because the public source object
+        // (`n`) can be encountered again via a recursive call (e.g. n.Self = n → self-loop;
+        // a.Next = b, b.Next = a → 2-node cycle). If we don't register before populating,
+        // the back-edge call re-constructs a NEW target instead of returning the in-progress one.
+        //
+        // Gate: isPreserve AND source is reference type (value types are never tracked; the
+        // null check above has already returned/thrown for null sources).
+        if (method.IsPreserveMode && method.ParameterIsReferenceType
+            && (isSynthesizedRecursive || isPublicWithCtx))
+        {
+            EmitPreserveRegisterBeforePopulate(sb, method, indent, ctxVarName, depthPassFwd, isPublicWithCtx);
+            sb.Append(indent).AppendLine("}");
+            return;
+        }
 
         // Begin construction expression: "var __dwarf_target = new T(...)" or "return new T(...)".
         sb.Append(indent).Append("    ").Append(hasAfter ? "var __dwarf_target = new " : "return new ")
@@ -228,6 +255,112 @@ internal static class MapEmitter
         }
 
         sb.Append(indent).AppendLine("}");
+    }
+
+    /// <summary>
+    /// Emits the register-before-populate multi-statement form for a recursion-capable
+    /// method under <c>ReferenceHandling = Preserve</c>.
+    ///
+    /// For synthesized private methods:
+    /// <code>
+    ///   if (ctx.TryGetReference(s, out var __dwarf_cached)) return (T)__dwarf_cached;
+    ///   var __dwarf_t = new T(ctorArg1: ..., ctorArg2: ...);
+    ///   ctx.SetReference(s, __dwarf_t);
+    ///   __dwarf_t.Member1 = ...;
+    ///   return __dwarf_t;
+    /// </code>
+    ///
+    /// For public partial methods (isPublicMethod=true):
+    /// <code>
+    ///   // Before hooks run first (if any)
+    ///   if (__dwarf_ctx.TryGetReference(n, out var __dwarf_cached)) return (T)__dwarf_cached;
+    ///   var __dwarf_t = new T(...);
+    ///   __dwarf_ctx.SetReference(n, __dwarf_t);
+    ///   __dwarf_t.Member1 = ...;
+    ///   // After hooks run on __dwarf_t (if any)
+    ///   return __dwarf_t;
+    /// </code>
+    ///
+    /// The TryGetReference/SetReference checks use the reference-identity comparer
+    /// (ReferenceEqualityComparer.Instance) so value-equal records are never merged.
+    /// </summary>
+    private static void EmitPreserveRegisterBeforePopulate(
+        StringBuilder sb, MapMethodModel method, string indent,
+        string ctxVarName, string depthPassFwd, bool isPublicMethod)
+    {
+        var p = method.ParameterName;
+
+        // Before hooks (public methods only).
+        if (isPublicMethod)
+        {
+            foreach (var before in method.BeforeHooks)
+            {
+                sb.Append(indent).Append("    ").Append(before).Append('(').Append(p).AppendLine(");");
+            }
+        }
+
+        // Step 1: Identity-map check — if already mapped, return the cached target.
+        // Cast is safe: the identity map is keyed by the source object; the value was stored
+        // by this same method, so it is always of type T.
+        sb.Append(indent).Append("    if (").Append(ctxVarName).Append(".TryGetReference(")
+          .Append(p).Append(", out var __dwarf_cached)) return (")
+          .Append(method.ReturnTypeFullName).AppendLine(")__dwarf_cached;");
+
+        // Step 2: Construct target. For the register-before-populate algorithm, the ctor
+        // must be called WITHOUT graph-node members that participate in the cycle.
+        // DWARF030 is emitted at generator time for any ctor arg that is recursion-capable.
+        var hasCtorArgs = method.ConstructorArguments.Count > 0;
+        sb.Append(indent).Append("    var __dwarf_t = new ").Append(method.ReturnTypeFullName);
+
+        if (hasCtorArgs)
+        {
+            sb.AppendLine("(");
+            var ctorArgs = method.ConstructorArguments;
+            for (var i = 0; i < ctorArgs.Count; i++)
+            {
+                var arg = ctorArgs[i];
+                sb.Append(indent).Append("        ").Append(arg.TargetName).Append(": ");
+                AppendValueExpression(sb, arg, p, ctxVarName, depthPassFwd);
+                if (i < ctorArgs.Count - 1)
+                    sb.AppendLine(",");
+                else
+                    sb.AppendLine(")");
+            }
+        }
+        else
+        {
+            sb.AppendLine("();");
+        }
+
+        // Step 3: Register BEFORE populating members — the critical invariant.
+        // This ensures any recursive call to map the same source object returns THIS instance,
+        // not a newly constructed duplicate. Breaks all cycles (self-loops, 2-node, N-node, diamonds).
+        sb.Append(indent).Append("    ").Append(ctxVarName).Append(".SetReference(")
+          .Append(p).AppendLine(", __dwarf_t);");
+
+        // Step 4: Populate settable members via individual assignment statements.
+        // Safe because __dwarf_t is in the identity map before any member recursion.
+        foreach (var member in method.Members)
+        {
+            sb.Append(indent).Append("    __dwarf_t.").Append(member.TargetName).Append(" = ");
+            AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
+            sb.AppendLine(";");
+        }
+
+        // After hooks (public methods only), then return.
+        if (isPublicMethod && method.AfterHooks.Count > 0)
+        {
+            foreach (var after in method.AfterHooks)
+            {
+                sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                if (after.TakesSource) sb.Append(p).Append(", ");
+                if (after.TargetByRef) sb.Append("ref ");
+                sb.Append("__dwarf_t").AppendLine(");");
+            }
+        }
+
+        // Step 5: Return the fully-populated target.
+        sb.Append(indent).AppendLine("    return __dwarf_t;");
     }
 
     /// <summary>

@@ -41,4 +41,18 @@ public sealed record MapMethodModel(
     /// The <c>MaxDepth</c> value configured on the mapper class (default 64).
     /// Only used when <see cref="IsRecursionCapable"/> is true for the public entry method.
     /// </summary>
-    int MaxDepth = 64) : IEquatable<MapMethodModel>;
+    int MaxDepth = 64,
+    /// <summary>
+    /// When <c>true</c>, <c>ReferenceHandling = Preserve</c> is active for this mapper class.
+    /// Recursion-capable synthesized methods switch from single-expression construction to the
+    /// register-before-populate multi-statement form:
+    /// <code>
+    ///   var __dwarf_t = new T(...);
+    ///   ctx.SetReference(s, __dwarf_t);
+    ///   __dwarf_t.Member1 = ...; __dwarf_t.Member2 = ...;
+    ///   return __dwarf_t;
+    /// </code>
+    /// The public entry method creates <c>DwarfRefContext(maxDepth, preserve: true)</c>.
+    /// Non-recursion-capable pairs and None mode are UNCHANGED.
+    /// </summary>
+    bool IsPreserveMode = false) : IEquatable<MapMethodModel>;

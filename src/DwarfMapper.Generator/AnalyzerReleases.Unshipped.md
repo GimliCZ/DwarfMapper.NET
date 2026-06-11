@@ -31,4 +31,5 @@ DWARF024 | DwarfMapper | Error | Constructor parameter has no mappable source me
 DWARF025 | DwarfMapper | Error | Ambiguous constructor
 DWARF026 | DwarfMapper | Error | No mappable constructor
 DWARF027 | DwarfMapper | Error | Unsupported collection/dictionary target type
+DWARF030 | DwarfMapper | Error | Constructor parameter participates in a reference cycle
 DWARF031 | DwarfMapper | Error | Generator nesting depth limit exceeded

@@ -163,7 +163,15 @@ public static class DiagnosticDescriptors
         "Cannot map to '{0}': unsupported collection or dictionary target type. Use [MapProperty(Use = ...)] to supply a custom converter, or map it manually.",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    // DWARF028–030 reserved for Plan 19 Parts C–D (do not allocate here).
+    // DWARF028–029 reserved for Plan 19 Parts D (projection translatability).
+
+    public static readonly DiagnosticDescriptor CyclicConstructorParameter = new(
+        "DWARF030",
+        "Constructor parameter participates in a reference cycle",
+        "Constructor parameter or init-only member '{0}' participates in a reference cycle with ReferenceHandling=Preserve. " +
+        "Register-before-populate cannot work when the cyclic back-edge is injected via a constructor parameter — " +
+        "map it via a settable member or break the cycle.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor DeepNestingLimit = new(
         "DWARF031",

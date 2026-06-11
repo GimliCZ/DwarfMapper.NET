@@ -51,6 +51,22 @@ public sealed class DwarfMapperAttribute : Attribute
     public NullCollectionStrategy NullCollections { get; set; } = NullCollectionStrategy.AsEmpty;
 
     /// <summary>
+    /// Controls how shared object references and cycles in the source graph are handled.
+    /// <para>
+    /// <see cref="ReferenceHandlingStrategy.None"/> (default): no identity map. Recursion-capable
+    /// pairs still get a depth counter — cyclic data throws <see cref="DwarfMappingDepthException"/>
+    /// at <see cref="MaxDepth"/>. Zero allocation overhead.
+    /// </para>
+    /// <para>
+    /// <see cref="ReferenceHandlingStrategy.Preserve"/>: full topology reconstruction — every distinct
+    /// source node mapped once, all edges (shared/cycle) relinked. One small dictionary allocation
+    /// per top-level <c>Map</c> call (keyed by reference identity via
+    /// <c>ReferenceEqualityComparer.Instance</c>).
+    /// </para>
+    /// </summary>
+    public ReferenceHandlingStrategy ReferenceHandling { get; set; } = ReferenceHandlingStrategy.None;
+
+    /// <summary>
     /// Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64).
     /// When a mapping reaches this depth, a <see cref="DwarfMappingDepthException"/> is thrown
     /// instead of a silent (uncatchable) <see cref="System.StackOverflowException"/>.
