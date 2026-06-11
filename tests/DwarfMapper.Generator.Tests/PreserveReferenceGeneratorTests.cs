@@ -332,4 +332,58 @@ public class PreserveReferenceGeneratorTests
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.DoesNotContain("DwarfRefContext", generated, StringComparison.Ordinal);
     }
+
+    // ── MF1: scalar ctor params must NOT trigger DWARF030 under Preserve ─────
+
+    // MF1-a: direct Src → record Dst(int, string) — scalars can never cycle → no DWARF030
+    [Fact]
+    public void Preserve_scalar_record_ctor_params_do_not_emit_DWARF030()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
+            public record Dst(int Id, string Name);
+            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+            public partial class M { public partial Dst Map(Src s); }
+            """;
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF030");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+    }
+
+    // MF1-b: non-cyclic reference ctor param — acyclic AddressDto is safe, no DWARF030
+    [Fact]
+    public void Preserve_noncyclic_ref_record_ctor_param_does_not_emit_DWARF030()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Address    { public string Street { get; set; } = ""; }
+            public class AddressDto { public string Street { get; set; } = ""; }
+            public class Src { public int Id { get; set; } public Address Addr { get; set; } = new(); }
+            public record Dto(int Id, AddressDto Addr);
+            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+            public partial class M { public partial Dto Map(Src s); }
+            """;
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF030");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+    }
+
+    // MF1-c: genuine S==T self-cycle with ctor → DWARF030 still fires (regression guard)
+    [Fact]
+    public void Preserve_self_cycle_record_ctor_still_emits_DWARF030()
+    {
+        // ImmutableNode maps to itself — the Next param IS a cyclic back-edge → DWARF030
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public record ImmutableNode(int V, ImmutableNode? Next);
+            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+            public partial class M { public partial ImmutableNode Map(ImmutableNode n); }
+            """;
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diags, d => d.Id == "DWARF030");
+    }
 }

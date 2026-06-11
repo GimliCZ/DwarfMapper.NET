@@ -425,4 +425,120 @@ public class ProjectionDeepTests
         // Must not be a raw assignment of the object reference
         Assert.DoesNotContain("Inner = __s.Inner,", gen, StringComparison.Ordinal);
     }
+
+    // ── MF2: nested positional record in projection → ctor projection, not member-init ─
+
+    // MF2-a: exact repro — nested record with no parameterless ctor must use ctor projection
+    [Fact]
+    public void Projection_nested_positional_record_compiles_via_ctor_not_member_init()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Cust { public string Name { get; set; } = ""; }
+            public record CustRec(string Name);
+            public class Order { public Cust Customer { get; set; } = new(); }
+            public class OrderDto { public CustRec Customer { get; set; } = null!; }
+            [DwarfMapper] public partial class M { public partial IQueryable<OrderDto> P(IQueryable<Order> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        // Must emit constructor call, NOT member-init (which would fail without parameterless ctor)
+        Assert.Contains("new global::D.CustRec(", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("new global::D.CustRec {", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
+    }
+
+    // MF2-b: nested settable class still uses member-init (regression guard)
+    [Fact]
+    public void Projection_nested_settable_class_still_uses_member_init()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Inner { public int X { get; set; } }
+            public class InnerDto { public int X { get; set; } }
+            public class Outer { public Inner Inner { get; set; } = new(); }
+            public class OuterDto { public InnerDto Inner { get; set; } = null!; }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> P(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        // Settable class → member-init form
+        Assert.Contains("new global::D.InnerDto {", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
+    }
+
+    // MF2-c: 2-level nested record projection compiles
+    [Fact]
+    public void Projection_2level_nested_record_compiles_cleanly()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class City { public string Name { get; set; } = ""; }
+            public record CityRec(string Name);
+            public class Address { public City City { get; set; } = new(); }
+            public record AddressRec(CityRec City);
+            public class Person { public Address Addr { get; set; } = new(); }
+            public class PersonDto { public AddressRec Addr { get; set; } = null!; }
+            [DwarfMapper] public partial class M { public partial IQueryable<PersonDto> P(IQueryable<Person> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        Assert.Contains("new global::D.CityRec(", gen, StringComparison.Ordinal);
+        Assert.Contains("new global::D.AddressRec(", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
+    }
+
+    // ── VF4: nullable collection SOURCE member in projection → null guard on the collection ─
+
+    [Fact]
+    public void Projection_nullable_collection_member_gets_source_null_guard()
+    {
+        // If __s.Items is null, Enumerable.Select(null!, ...) throws at query evaluation time.
+        // The source expression must be guarded: __s.Items == null ? null : Enumerable.Select(...)
+        const string s = """
+            using DwarfMapper; using System.Linq; using System.Collections.Generic;
+            namespace D;
+            public class Item { public int V { get; set; } }
+            public class ItemDto { public int V { get; set; } }
+            public class Outer { public List<Item>? Items { get; set; } }
+            public class OuterDto { public List<ItemDto>? Items { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> P(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        // The COLLECTION source expression (__s.Items) must be null-guarded before Select call.
+        // Pattern: "__s.Items == null ? null : Enumerable..."
+        Assert.Contains("__s.Items == null ? null :", gen, StringComparison.Ordinal);
+    }
+
+    // ── VF5: projection method with applicable hook silently drops it → DWARF028 ─
+
+    [Fact]
+    public void Projection_method_with_applicable_hook_emits_DWARF028_not_silent()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public int Id { get; set; } }
+            public class Dst { public int Id { get; set; } }
+            [DwarfMapper]
+            public partial class M
+            {
+                [BeforeMap] private static void Before(Src s) { }
+                public partial IQueryable<Dst> Project(IQueryable<Src> q);
+            }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        // Hook on a projection method is not supported → DWARF028
+        var d028 = diag.Where(d => d.Id == "DWARF028").ToList();
+        Assert.NotEmpty(d028);
+        Assert.Contains("hook", d028[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
 }

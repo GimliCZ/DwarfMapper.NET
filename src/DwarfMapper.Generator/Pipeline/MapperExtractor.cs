@@ -105,6 +105,39 @@ internal static class MapperExtractor
                     continue;
                 }
 
+                // VF5: Hooks (before/after) cannot live inside an expression tree.
+                // Detect any applicable hook for this projection's source/target and emit DWARF028
+                // instead of silently dropping it. Per thesis: loud, never silent.
+                var hasApplicableHook = false;
+                foreach (var h in beforeHookDefs)
+                {
+                    if (HasImplicitConversion(ctx.SemanticModel.Compilation, projSource, h.ParamType))
+                    {
+                        hasApplicableHook = true;
+                        break;
+                    }
+                }
+                if (!hasApplicableHook)
+                {
+                    foreach (var h in afterHookDefs)
+                    {
+                        bool applies = h.P1 is null
+                            ? HasImplicitConversion(ctx.SemanticModel.Compilation, projTargetNamed, h.P0)
+                            : HasImplicitConversion(ctx.SemanticModel.Compilation, projSource, h.P0)
+                              && HasImplicitConversion(ctx.SemanticModel.Compilation, projTargetNamed, h.P1);
+                        if (applies)
+                        {
+                            hasApplicableHook = true;
+                            break;
+                        }
+                    }
+                }
+                if (hasApplicableHook)
+                {
+                    EmitDWARF028(diagnostics, methodLocation, method.Name,
+                        "hooks (BeforeMap/AfterMap) are not supported in IQueryable projection (expression trees cannot contain hook calls); move hooks to a runtime mapper or remove them");
+                }
+
                 var projExplicitMaps = ReadExplicitMaps(method);
                 var projMembers = ResolveProjectionMembers(
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
@@ -804,10 +837,20 @@ internal static class MapperExtractor
                 //     DATA can still be cyclic and the ctor arg prevents register-before-populate.
                 if (m.ConstructorArguments.Count > 0)
                 {
-                    // Pattern A: explicit recursion-capable ctor arg.
+                    // Pattern A: explicit recursion-capable ctor arg whose converter is on a
+                    // call-graph cycle that includes the OUTER method. Under Preserve, ALL auto-nested
+                    // object mappers are forced recursion-capable for uniform topology tracking, so
+                    // ConverterNeedsDepthCtx=true alone is not sufficient — we must also verify that
+                    // the converter can reach back to the outer method (i.e. they are on the SAME cycle),
+                    // otherwise an acyclic nested mapper (e.g. Address→AddressDto) would be falsely
+                    // flagged as cyclic just because it got forced-RC for Preserve threading.
+                    // A scalar ctor param (int, string, Guid, enum) will have ConverterMethod=null and
+                    // never reaches this branch.
+                    var outerMethodKey = DeclKey(m);
                     foreach (var ctorArg in m.ConstructorArguments)
                     {
-                        if (ctorArg.ConverterMethod is not null && ctorArg.ConverterNeedsDepthCtx)
+                        if (ctorArg.ConverterMethod is not null && ctorArg.ConverterNeedsDepthCtx
+                            && CanReach(allCallGraph, ctorArg.ConverterMethod, outerMethodKey))
                         {
                             var loc = (LocationInfo?)null;
                             diagnostics.Add(new DiagnosticInfo(
@@ -2312,7 +2355,7 @@ internal static class MapperExtractor
             var srcElemFqn = srcElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var tgtElemFqn = tgtElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var selectCall = $"global::System.Linq.Enumerable.Select<{srcElemFqn}, {tgtElemFqn}>({srcExpr}, {elemParam} => {elemExpr})";
-            return shape.Target switch
+            var collectionExpr = shape.Target switch
             {
                 CollectionConverter.TargetKind.Array =>
                     $"global::System.Linq.Enumerable.ToArray<{tgtElemFqn}>({selectCall})",
@@ -2321,6 +2364,14 @@ internal static class MapperExtractor
                 _ =>
                     $"global::System.Linq.Enumerable.ToList<{tgtElemFqn}>({selectCall})",
             };
+            // If the source collection expression is a reference type (could be null in projection),
+            // guard it with a null-conditional ternary so Enumerable.Select is never called on null.
+            // EF Core translates the ternary correctly. Array sources are also reference types.
+            if (srcType.IsReferenceType)
+            {
+                return $"{srcExpr} == null ? null : {collectionExpr}";
+            }
+            return collectionExpr;
         }
 
         // ── Pre-check: Dictionary targets (always non-translatable in projection) ──
@@ -2420,16 +2471,28 @@ internal static class MapperExtractor
             .ToDictionary(m => m.Name, m => m, System.StringComparer.Ordinal);
 
         // Build member-init or ctor expression for the nested object.
-        // If the target has no writable members, try ctor projection.
+        // Mirror the decision logic in ResolveProjectionMembers:
+        //   • If the target has NO public parameterless constructor (positional record / ctor-only),
+        //     use constructor projection new T(arg0, arg1) — EF/expression-trees disallow named args.
+        //   • Otherwise use member-init new T { P1 = ..., P2 = ... }.
+        // The original check "writableTargetMembers.Count == 0" only catches types with no
+        // settable/init properties at all; it misses positional records whose init properties
+        // exist but whose constructor has no parameterless overload (CS7036 at compile time).
         var writableTargetMembers = WritableMembers(tgtType)
             .OrderBy(m => m.Name, System.StringComparer.Ordinal)
             .ToList();
 
+        var hasParameterlessCtor = tgtType.InstanceConstructors.Any(c =>
+            c.DeclaredAccessibility == Accessibility.Public
+            && !c.IsStatic
+            && c.Parameters.Length == 0);
+
         string innerBodyExpr;
 
-        if (writableTargetMembers.Count == 0)
+        if (writableTargetMembers.Count == 0 || !hasParameterlessCtor)
         {
-            // Try ctor projection
+            // Try ctor projection: use the public ctor with the most parameters.
+            // Expression trees require POSITIONAL args (CS0853: named args not allowed).
             var bestCtor = tgtType.InstanceConstructors
                 .Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length > 0)
                 .OrderByDescending(c => c.Parameters.Length)
@@ -2451,7 +2514,7 @@ internal static class MapperExtractor
         }
         else
         {
-            // Member-init expression
+            // Member-init expression: new T { P1 = expr1, P2 = expr2 }
             var memberParts = new System.Collections.Generic.List<string>();
             var anyFailed = false;
 
