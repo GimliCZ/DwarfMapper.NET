@@ -63,8 +63,9 @@ public class NestedAutoMapEdgeTests
         var (diags, generated) = GeneratorTestHarness.Run(src);
         // Not object-field-mapped → no synthesized object mapper for the struct-enumerable pair.
         Assert.DoesNotContain("__DwarfMap_Obj_global__Demo_SrcSeq", generated, StringComparison.Ordinal);
-        // It is loudly unsupported (DWARF005), not silently wrong and not spurious DWARF007.
-        Assert.Contains(diags, d => d.Id == "DWARF005");
+        // It is loudly unsupported (DWARF027 for custom collection-shaped types in Plan 19B,
+        // superseding the previous DWARF005 for these cases), not silently wrong.
+        Assert.Contains(diags, d => d.Id == "DWARF027" || d.Id == "DWARF005");
         Assert.DoesNotContain(diags, d => d.Id == "DWARF007");
     }
 

@@ -17,6 +17,12 @@ internal enum NullStrategy
     SetDefault = 1,
 }
 
+internal enum NullCollectionsBehavior
+{
+    AsEmpty = 0,
+    AsNull  = 1,
+}
+
 internal static class MapperExtractor
 {
     public static MapperClassModel Extract(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
@@ -39,6 +45,7 @@ internal static class MapperExtractor
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);
+        var nullCollections = ReadNullCollections(ctx.Attributes);
         var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
@@ -138,7 +145,8 @@ internal static class MapperExtractor
             {
                 if (!ResolveConstructorArguments(ctor, sourceType, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                    enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs, out consumedParams))
+                    enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs, out consumedParams,
+                    nullCollections == NullCollectionsBehavior.AsNull))
                 {
                     // At least one parameter was unmappable → DWARF024 already reported; skip emit.
                     continue;
@@ -153,7 +161,8 @@ internal static class MapperExtractor
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
-                consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry);
+                consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
+                nullCollections == NullCollectionsBehavior.AsNull);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -256,7 +265,8 @@ internal static class MapperExtractor
                 if (!ResolveConstructorArguments(nestedCtor, nestedSrc, ctx.SemanticModel.Compilation,
                     nestedLocation, diagnostics, caseInsensitive, System.Array.Empty<(string, string, string?)>(),
                     allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
-                    classAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed))
+                    classAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
+                    nullCollections == NullCollectionsBehavior.AsNull))
                 {
                     continue;
                 }
@@ -272,7 +282,8 @@ internal static class MapperExtractor
                 allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                 new List<string>(), new List<string>(), // no flatten/reinterpret
                 nestedConsumed, nestedRequiredMustInit,
-                classAutoNest, nestedRegistry);
+                classAutoNest, nestedRegistry,
+                nullCollections == NullCollectionsBehavior.AsNull);
 
             // Build a private (non-partial) MapMethodModel for this synthesized pair.
             var nestedModel = new MapMethodModel(
@@ -328,7 +339,8 @@ internal static class MapperExtractor
         HashSet<string>? consumedCtorParams = null,
         HashSet<string>? requiredMustInitialize = null,
         bool autoNest = false,
-        NestedMappingRegistry? nestedRegistry = null)
+        NestedMappingRegistry? nestedRegistry = null,
+        bool nullAsNull = false)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -420,7 +432,7 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, autoNest, nestedRegistry))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, autoNest, nestedRegistry, nullAsNull))
             {
                 result.Add(new MemberMap(tgtName, srcName, conv, nullH));
             }
@@ -469,7 +481,7 @@ internal static class MapperExtractor
                 if (flatMatches.Count == 1)
                 {
                     var fm = flatMatches[0];
-                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, autoNest, nestedRegistry))
+                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, autoNest, nestedRegistry, nullAsNull))
                     {
                         result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull));
                     }
@@ -501,7 +513,7 @@ internal static class MapperExtractor
                 }
                 continue;
             }
-            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, autoNest, nestedRegistry))
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, autoNest, nestedRegistry, nullAsNull))
             {
                 result.Add(new MemberMap(target.Name, source.Name, conv, nullH));
             }
@@ -567,7 +579,8 @@ internal static class MapperExtractor
         bool autoNest,
         NestedMappingRegistry? nestedRegistry,
         out MemberMap[] ctorArgs,
-        out HashSet<string> consumedParams)
+        out HashSet<string> consumedParams,
+        bool nullAsNull = false)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -606,7 +619,7 @@ internal static class MapperExtractor
                 if (TryResolveConversion(compilation, srcType, param.Type, explicitInfo.Use,
                     allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
                     location, param.Name, diagnostics, out var eConv, out var eNull,
-                    autoNest, nestedRegistry))
+                    autoNest, nestedRegistry, nullAsNull))
                 {
                     args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull));
                     consumedParams.Add(param.Name);
@@ -653,7 +666,7 @@ internal static class MapperExtractor
             if (TryResolveConversion(compilation, srcMember.Type, param.Type, null,
                 allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
                 location, param.Name, diagnostics, out var conv, out var nullH,
-                autoNest, nestedRegistry))
+                autoNest, nestedRegistry, nullAsNull))
             {
                 args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH));
                 consumedParams.Add(param.Name);
@@ -677,7 +690,8 @@ internal static class MapperExtractor
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
         out string? converterMethod, out Model.NullHandling nullHandling,
         bool autoNest = false,
-        NestedMappingRegistry? nestedRegistry = null)
+        NestedMappingRegistry? nestedRegistry = null,
+        bool nullAsNull = false)
     {
         converterMethod = null;
         nullHandling = Model.NullHandling.None;
@@ -698,21 +712,21 @@ internal static class MapperExtractor
             return false;
         }
 
-        if (DictionaryConverter.TryResolve(srcType, tgtType, out var srcKey, out var srcVal, out var tgtKey, out var tgtVal, out var dictHasCount))
+        if (DictionaryConverter.TryResolve(srcType, tgtType,
+                out var srcKey, out var srcVal, out var tgtKey, out var tgtVal,
+                out var dictHasCount, out var dictTargetKind))
         {
             if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, autoNest, nestedRegistry))
-            {
                 return false;
-            }
             if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, autoNest, nestedRegistry))
-            {
                 return false;
-            }
-            converterMethod = DictionaryConverter.Synthesize(synthesized, srcType, tgtKey, tgtVal, dictHasCount, keyConv, keyNull, valConv, valNull);
+            converterMethod = DictionaryConverter.Synthesize(synthesized, srcType, tgtKey, tgtVal,
+                dictHasCount, dictTargetKind, keyConv, keyNull, valConv, valNull, nullAsNull);
             return true;
         }
 
-        if (CollectionConverter.TryResolve(srcType, tgtType, out var srcElem, out var tgtElem, out var collShape))
+        if (CollectionConverter.TryResolve(srcType, tgtType,
+                out var srcElem, out var tgtElem, out var collShape, nullAsNull))
         {
             if (collShape.Target == CollectionConverter.TargetKind.Array && collShape.SourceIsArray
                 && BlittableProof.CanReinterpret(srcElem, tgtElem))
@@ -721,11 +735,19 @@ internal static class MapperExtractor
                 return true;
             }
             if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, autoNest, nestedRegistry))
-            {
                 return false; // element diagnostic already reported by the recursive call
-            }
             converterMethod = CollectionConverter.Synthesize(synthesized, srcType, srcElem, tgtElem, collShape, elemConv, elemNull);
             return true;
+        }
+
+        // ── DWARF027: target is collection/dict-shaped but not in the supported taxonomy ──
+        // Check this BEFORE the implicit-conversion / object-field-mapping fallbacks so the user
+        // gets a loud diagnostic instead of a wrong (or silent) mapping.
+        if (IsUnsupportedCollectionTarget(tgtType))
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnsupportedCollectionTarget,
+                location, targetName));
+            return false;
         }
 
         if (HasImplicitConversion(compilation, srcType, tgtType))
@@ -942,13 +964,23 @@ internal static class MapperExtractor
 
     /// <summary>
     /// Returns true when <paramref name="type"/> implements <c>IEnumerable</c> (generic or non-generic),
-    /// which means it is a collection/sequence type that the CollectionConverter handles.
+    /// which means it is a collection/sequence type that belongs to CollectionConverter/DictionaryConverter.
     /// </summary>
     private static bool ImplementsIEnumerable(Compilation compilation, INamedTypeSymbol type)
     {
-        // Fast checks: well-known collection names
-        if (type.Name is "List" or "Array" or "HashSet" or "Dictionary" or "IEnumerable"
-            or "ICollection" or "IList" or "IReadOnlyList" or "IReadOnlyCollection" or "ISet")
+        // Fast checks: well-known collection / dict names (all supported + well-known unsupported)
+        if (type.Name is "List" or "Array" or "HashSet" or "Dictionary"
+            or "IEnumerable" or "ICollection" or "IList"
+            or "IReadOnlyList" or "IReadOnlyCollection"
+            or "ISet" or "IReadOnlySet"
+            or "ImmutableArray" or "ImmutableList" or "IImmutableList"
+            or "ImmutableHashSet" or "IImmutableSet"
+            or "ImmutableDictionary" or "IImmutableDictionary"
+            or "IDictionary" or "IReadOnlyDictionary"
+            // well-known unsupported (DWARF027)
+            or "SortedSet" or "SortedDictionary" or "SortedList"
+            or "Queue" or "Stack" or "LinkedList"
+            or "ConcurrentDictionary" or "ConcurrentQueue" or "ConcurrentStack" or "ConcurrentBag")
             return true;
 
         // Check whether the type or any of its interfaces is IEnumerable<T> or IEnumerable
@@ -959,6 +991,38 @@ internal static class MapperExtractor
             if (iface.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
                 return true;
         }
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="type"/> is collection-shaped (implements IEnumerable,
+    /// is not string, is not already handled by CollectionConverter or DictionaryConverter)
+    /// → should emit DWARF027 rather than DWARF005.
+    /// </summary>
+    private static bool IsUnsupportedCollectionTarget(ITypeSymbol type)
+    {
+        if (type.SpecialType == SpecialType.System_String)
+            return false;
+
+        // Multi-dimensional array (not IArrayTypeSymbol with Rank > 1 check needed here)
+        if (type is IArrayTypeSymbol arr && arr.Rank > 1)
+            return true;
+
+        if (type is not INamedTypeSymbol named)
+            return false;
+
+        // Check if it implements IEnumerable (non-string collection-shaped)
+        foreach (var iface in named.AllInterfaces)
+        {
+            if (iface.SpecialType == SpecialType.System_Collections_IEnumerable)
+                return true;
+            if (iface.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+                return true;
+        }
+        // Also check the type itself (IEnumerable<T> as named type)
+        if (named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+            return true;
+
         return false;
     }
 
@@ -1309,6 +1373,22 @@ internal static class MapperExtractor
             }
         }
         return true; // default: auto-nesting enabled
+    }
+
+    /// <summary>
+    /// Reads <c>[DwarfMapper(NullCollections = ...)]</c>; defaults to <c>AsEmpty</c>.
+    /// </summary>
+    private static NullCollectionsBehavior ReadNullCollections(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "NullCollections" && named.Value.Value is int i)
+                    return (NullCollectionsBehavior)i;
+            }
+        }
+        return NullCollectionsBehavior.AsEmpty;
     }
 
     /// <summary>
