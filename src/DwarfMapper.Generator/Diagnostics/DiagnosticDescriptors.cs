@@ -193,4 +193,12 @@ public static class DiagnosticDescriptors
         "cannot thread DwarfRefContext into it. The produced object will not be de-duplicated or have " +
         "its back-edges closed. Map it without Use=, or accept that this member breaks topology fidelity.",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AbstractSourceAutoNest = new(
+        "DWARF033",
+        "Abstract or interface source type in auto-nested mapping",
+        "Source type '{0}' is abstract or an interface; auto-nested mapping only maps declared members " +
+        "and silently drops members that exist only on derived runtime types. Declare an explicit mapper, " +
+        "use [MapIgnore] to suppress, or make the source type concrete.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

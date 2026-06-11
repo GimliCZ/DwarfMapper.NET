@@ -8,6 +8,7 @@ Rule ID | Category | Severity | Notes
 DWARF001 | DwarfMapper | Error | Destination member is not mapped
 DWARF002 | DwarfMapper | Error | Mapper type must be partial
 DWARF003 | DwarfMapper | Error | Invalid mapping method signature
+; DWARF004 — reserved; do not reuse
 DWARF005 | DwarfMapper | Error | No implicit conversion between mapped members
 DWARF006 | DwarfMapper | Error | Destination type is not constructible
 DWARF007 | DwarfMapper | Error | Destination member is read-only
@@ -32,6 +33,8 @@ DWARF025 | DwarfMapper | Error | Ambiguous constructor
 DWARF026 | DwarfMapper | Error | No mappable constructor
 DWARF027 | DwarfMapper | Error | Unsupported collection/dictionary target type
 DWARF028 | DwarfMapper | Error | Projection mapping not translatable
+; DWARF029 — reserved; do not reuse
 DWARF030 | DwarfMapper | Error | Constructor parameter participates in a reference cycle
 DWARF031 | DwarfMapper | Error | Generator nesting depth limit exceeded
 DWARF032 | DwarfMapper | Error | [MapProperty(Use=)] converter cannot participate in reference-identity tracking
+DWARF033 | DwarfMapper | Error | Abstract or interface source type in auto-nested mapping

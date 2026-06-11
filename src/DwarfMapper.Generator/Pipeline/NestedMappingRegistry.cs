@@ -27,8 +27,12 @@ internal sealed class NestedMappingRegistry
     private readonly Dictionary<(string, string), string> _reserved =
         new Dictionary<(string, string), string>();
 
-    private readonly Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name)> _buildQueue =
-        new Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name)>();
+    private readonly Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest)> _buildQueue =
+        new Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest)>();
+
+    // C1: per-pair autoNest value that triggered the enqueue.
+    private readonly Dictionary<string, bool> _autoNestByName =
+        new Dictionary<string, bool>(System.StringComparer.Ordinal);
 
     // ── Recursion-capability analysis ────────────────────────────────────────────
     // Directed graph: _edges[method] = set of methods that 'method' calls.
@@ -58,9 +62,10 @@ internal sealed class NestedMappingRegistry
     public bool HasPending => _buildQueue.Count > 0;
 
     /// <summary>
-    /// Dequeues the next pending (src, tgt, methodName) to build.
+    /// Dequeues the next pending (src, tgt, methodName, autoNest) to build.
+    /// autoNest is the per-method value that triggered the enqueue (C1 fix).
     /// </summary>
-    public (ITypeSymbol Src, INamedTypeSymbol Tgt, string Name) Dequeue()
+    public (ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest) Dequeue()
         => _buildQueue.Dequeue();
 
     /// <summary>
@@ -93,7 +98,12 @@ internal sealed class NestedMappingRegistry
     /// recursion without needing a separate depth counter.
     /// </para>
     /// </summary>
-    public string? GetOrReserve(ITypeSymbol src, INamedTypeSymbol tgt, LocationInfo? location)
+    /// <param name="autoNest">
+    /// C1 fix: the per-method autoNest value that triggered this enqueue.
+    /// Stored alongside the pair so the drain loop uses THIS value (not the class-level default)
+    /// when resolving the pair's body, propagating the override to depth-2+ nested members.
+    /// </param>
+    public string? GetOrReserve(ITypeSymbol src, INamedTypeSymbol tgt, LocationInfo? location, bool autoNest = true)
     {
         var srcFqn = src.ToDisplayString(Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat);
         var tgtFqn = tgt.ToDisplayString(Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat);
@@ -121,13 +131,21 @@ internal sealed class NestedMappingRegistry
 
         methodName = BuildMethodName(srcFqn, tgtFqn);
         _reserved[key] = methodName;
-        _buildQueue.Enqueue((src, tgt, methodName));
+        _autoNestByName[methodName] = autoNest;
+        _buildQueue.Enqueue((src, tgt, methodName, autoNest));
 
         // Record the dependency edge: current pair → new pair.
         RecordEdge(methodName);
 
         return methodName;
     }
+
+    /// <summary>
+    /// Returns the autoNest value that was stored when this pair was enqueued (C1 fix).
+    /// Defaults to true when not found (should not happen during a well-formed drain).
+    /// </summary>
+    public bool GetAutoNest(string methodName)
+        => !_autoNestByName.TryGetValue(methodName, out var v) || v;
 
     private void RecordEdge(string calleeName)
     {
