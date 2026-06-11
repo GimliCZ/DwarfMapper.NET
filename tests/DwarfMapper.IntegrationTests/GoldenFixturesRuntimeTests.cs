@@ -125,12 +125,9 @@ public class GoldenNestedListOfListRecordTests
 }
 
 // ─── Golden 3: Shared list (topology) ─────────────────────────────────────────
-// BUG-FINDER FINDING: ReferenceHandling=Preserve tracks OBJECT identity (class instances)
-// via DwarfRefContext, but synthesized collection helpers (__DwarfMapColl_*) always create
-// a NEW collection — they do NOT consult the ctx identity map.
-// Therefore: two source nodes sharing the same List<int> instance will produce TWO separate
-// (equal-content but distinct-identity) target lists. This is a known generator limitation.
-// The commented-out test below documents the expected-but-not-yet-implemented behavior.
+// Plan 19 C2b: under ReferenceHandling=Preserve, collection instances participate in the
+// reference-identity graph. Synthesized collection helpers (__DwarfMapColl_*_p) register
+// in DwarfRefContext BEFORE filling, so a shared List<T> maps to ONE shared target list.
 
 public class GoldListOwnerSrc
 {
@@ -151,12 +148,11 @@ public partial class GoldSharedListMapper { public partial GoldListOwnerDst Map(
 
 public class GoldenSharedListTests
 {
-    // KNOWN LIMITATION: collection identity is not preserved even under ReferenceHandling=Preserve.
-    // Synthesized __DwarfMapColl_* helpers always allocate a new List<T> — they do not go through
-    // DwarfRefContext.TryGetReference/SetReference. This test documents the ACTUAL (limited) behaviour:
-    // the list CONTENT is correct but the two target nodes hold DIFFERENT list instances.
+    // Plan 19 C2b: collection identity IS preserved under ReferenceHandling=Preserve.
+    // Two source nodes sharing the same List<int> produce two target nodes sharing the SAME
+    // target List<int> instance.
     [Fact]
-    public void Shared_list_content_is_correct_but_identity_is_NOT_preserved()
+    public void Shared_list_same_target_instance_under_Preserve()
     {
         var shared = new List<int> { 10, 20, 30 };
         var a = new GoldListOwnerSrc { Tag = "A", Shared = shared };
@@ -166,20 +162,13 @@ public class GoldenSharedListTests
         var dstA = new GoldSharedListMapper().Map(a);
         var dstB = dstA.Sibling!;
 
-        // Content is preserved for both nodes.
+        // Content is preserved.
         Assert.Equal(new[] { 10, 20, 30 }, dstA.Shared);
-        Assert.Equal(new[] { 10, 20, 30 }, dstB.Shared);
         Assert.Equal("A", dstA.Tag);
         Assert.Equal("B", dstB.Tag);
 
-        // LIMITATION: collection identity is NOT preserved — each node gets its own copy.
-        // When this assertion starts FAILING it means the generator has been fixed to track
-        // collection identity in DwarfRefContext; move this test to the "Shared_list_same_target_instance"
-        // test (below, currently commented out).
-        Assert.False(ReferenceEquals(dstA.Shared, dstB.Shared),
-            "Known limitation: collection identity is not preserved under ReferenceHandling=Preserve; " +
-            "see GoldenSharedListTests for details. " +
-            "If this assertion starts FAILING the generator has been fixed — update this test.");
+        // Identity IS preserved — same source list → same target list.
+        Assert.Same(dstA.Shared, dstB.Shared);
     }
 
     [Fact]
@@ -192,9 +181,8 @@ public class GoldenSharedListTests
         var dstA = new GoldSharedListMapper().Map(a);
         var dstB = dstA.Sibling!;
 
-        // Distinct source lists → distinct target lists (as expected)
-        Assert.False(ReferenceEquals(dstA.Shared, dstB.Shared),
-            "Distinct source lists should produce distinct target list instances");
+        // Distinct source lists → distinct target lists.
+        Assert.NotSame(dstA.Shared, dstB.Shared);
         Assert.Equal(new[] { 1, 2 }, dstA.Shared);
         Assert.Equal(new[] { 3, 4 }, dstB.Shared);
     }
