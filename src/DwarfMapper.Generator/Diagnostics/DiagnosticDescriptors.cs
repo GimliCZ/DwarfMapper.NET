@@ -163,7 +163,13 @@ public static class DiagnosticDescriptors
         "Cannot map to '{0}': unsupported collection or dictionary target type. Use [MapProperty(Use = ...)] to supply a custom converter, or map it manually.",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    // DWARF028–029 reserved for Plan 19 Parts D (projection translatability).
+    public static readonly DiagnosticDescriptor ProjectionNotTranslatable = new(
+        "DWARF028",
+        "Projection mapping not translatable",
+        "Projection member '{0}' cannot be translated to SQL: {1}. Map it at runtime or use a type that is EF-Core-translatable.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    // DWARF029 reserved.
 
     public static readonly DiagnosticDescriptor CyclicConstructorParameter = new(
         "DWARF030",

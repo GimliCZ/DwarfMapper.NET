@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using System;
+using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests;
 
 public class ProjectionTests
 {
+    [Fact]
+    public void DWARF028_descriptor_exists_and_is_error()
+    {
+        var d = DwarfMapper.Generator.Diagnostics.DiagnosticDescriptors.ProjectionNotTranslatable;
+        Assert.Equal("DWARF028", d.Id);
+        Assert.Equal(DiagnosticSeverity.Error, d.DefaultSeverity);
+    }
+
     [Fact]
     public void Projection_duplicate_MapProperty_reports_DWARF011_and_compiles()
     {
