@@ -67,4 +67,43 @@ public class NestedAutoMapEdgeTests
         Assert.Contains(diags, d => d.Id == "DWARF005");
         Assert.DoesNotContain(diags, d => d.Id == "DWARF007");
     }
+
+    // Mutually-recursive TYPE graph (A→B→A). The generator must memoize-before-build and
+    // terminate (no hang). Acyclic data maps at runtime (cyclic data is Part C's concern).
+    [Fact]
+    public void Mutually_recursive_types_compile_without_generator_hang()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class A { public int Id { get; set; } public B? B { get; set; } }
+            public class B { public int Id { get; set; } public A? A { get; set; } }
+            public class ADto { public int Id { get; set; } public BDto? B { get; set; } }
+            public class BDto { public int Id { get; set; } public ADto? A { get; set; } }
+            [DwarfMapper] public partial class M { public partial ADto Map(A a); }
+            """;
+        var (diags, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        // Both directions synthesized exactly once each (memoized).
+        Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
+    }
+
+    // Closed generic nested types must synthesize + compile (incl. element conversion int→long).
+    [Fact]
+    public void Closed_generic_nested_type_compiles()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Box<T> { public T Value { get; set; } = default!; }
+            public class Src { public Box<int> B { get; set; } = new(); }
+            public class Dst { public Box<long> B { get; set; } = new(); }
+            [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+            """;
+        var (diags, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
+    }
 }
