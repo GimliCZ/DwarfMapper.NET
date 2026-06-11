@@ -11,6 +11,10 @@ using Microsoft.CodeAnalysis;
 namespace DwarfMapper.Generator.Tests.Fuzzing;
 
 // ─── Default-tier exhaustive tests (depth ≤1) ────────────────────────────────
+// NOTE (C9): [Trait("tier","exhaustive")] only ENABLES filtering — it does NOT
+// automatically exclude these tests from the default 'dotnet test' run. To skip
+// them you must explicitly pass --filter "tier!=exhaustive". Without that filter
+// ALL tests in this class run as part of the normal suite.
 
 /// <summary>
 /// Plan 19 Part E — exhaustive combinatorial engine (depth ≤1).

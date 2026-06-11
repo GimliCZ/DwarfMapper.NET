@@ -56,7 +56,12 @@ public static class ObjectFactoryV2
         if (type == typeof(ushort)) return (ushort)rng.Next(1, ushort.MaxValue);
         if (type == typeof(int))    return rng.Next(1, int.MaxValue);
         if (type == typeof(uint))   return (uint)rng.Next(1, int.MaxValue);
-        if (type == typeof(long))   return (long)rng.Next(1, int.MaxValue);
+        // C9: occasionally emit out-of-int-range long values so the long→int CreateChecked
+        // overflow path is exercised. 1-in-4 chance.
+        if (type == typeof(long))
+            return rng.Next(0, 4) == 0
+                ? rng.NextInt64(long.MinValue, long.MaxValue)
+                : (long)rng.Next(1, int.MaxValue);
         if (type == typeof(ulong))  return (ulong)rng.Next(1, int.MaxValue);
         if (type == typeof(float))  return (float)(rng.NextDouble() * 1000);
         if (type == typeof(double)) return rng.NextDouble() * 1000;

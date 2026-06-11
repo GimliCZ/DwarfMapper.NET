@@ -67,7 +67,11 @@ public static class ObjectFactory
         }
         if (type == typeof(long))
         {
-            return (long)rng.Next(1, int.MaxValue);
+            // C9: occasionally emit out-of-int-range values so the long→int CreateChecked overflow
+            // path is exercised by fuzz. 1-in-4 chance of a value that overflows int.
+            return rng.Next(0, 4) == 0
+                ? rng.NextInt64(long.MinValue, long.MaxValue)
+                : (long)rng.Next(1, int.MaxValue);
         }
         if (type == typeof(ulong))
         {

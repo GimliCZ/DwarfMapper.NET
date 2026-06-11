@@ -399,6 +399,8 @@ public static class GraphOracleComparer
     // For sets and dicts the order depends on iteration but for cross-type comparisons
     // within a single mapping result we compare src vs dst in the same order.
     // For stable assertions we sort scalar elements; for non-scalars we preserve order.
+    // C9: use a structural key for sorting that is float-precision stable — for floats/doubles,
+    // format with a high-precision round-trip format ("R") rather than default ToString().
     private static List<object?> ToSortedList(IEnumerable e)
     {
         var list = new List<object?>();
@@ -413,8 +415,20 @@ public static class GraphOracleComparer
                 if (x is null && y is null) return 0;
                 if (x is null) return -1;
                 if (y is null) return 1;
-                try { return StringComparer.Ordinal.Compare(
-                    x.ToString(), y.ToString()); }
+                try
+                {
+                    // C9: use a stable sort key — for float/double use "R" (round-trip) format;
+                    // for other scalars use InvariantCulture formatting for deterministic order.
+                    var xKey = x is float fx ? fx.ToString("R", CultureInfo.InvariantCulture)
+                             : x is double dx ? dx.ToString("R", CultureInfo.InvariantCulture)
+                             : x is IFormattable fi ? fi.ToString(null, CultureInfo.InvariantCulture)
+                             : x.ToString() ?? "";
+                    var yKey = y is float fy ? fy.ToString("R", CultureInfo.InvariantCulture)
+                             : y is double dy ? dy.ToString("R", CultureInfo.InvariantCulture)
+                             : y is IFormattable gi ? gi.ToString(null, CultureInfo.InvariantCulture)
+                             : y.ToString() ?? "";
+                    return StringComparer.Ordinal.Compare(xKey, yKey);
+                }
                 catch (InvalidOperationException) { return 0; }
                 catch (ArgumentException) { return 0; }
             });

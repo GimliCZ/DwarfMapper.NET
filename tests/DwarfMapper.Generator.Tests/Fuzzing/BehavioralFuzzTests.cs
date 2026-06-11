@@ -138,8 +138,15 @@ public class BehavioralFuzzTests
         {
             // Same type: use StructuralComparer directly (it's safe when types match)
             var nested = StructuralComparer.Diff(sv, dv);
+            // C9: strip the "root" prefix properly (was incorrectly stripping individual chars).
             foreach (var d in nested)
-                diffs.Add(new Diff(path + d.Path.TrimStart('r').TrimStart('o', 'o', 't'), d.Expected, d.Actual));
+            {
+                const string rootPrefix = "root";
+                var strippedPath = d.Path.StartsWith(rootPrefix, StringComparison.Ordinal)
+                    ? d.Path[rootPrefix.Length..]
+                    : d.Path;
+                diffs.Add(new Diff(path + strippedPath, d.Expected, d.Actual));
+            }
             return;
         }
 
