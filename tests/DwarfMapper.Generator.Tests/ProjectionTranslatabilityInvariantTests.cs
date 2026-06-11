@@ -10,7 +10,7 @@ namespace DwarfMapper.Generator.Tests;
 public class ProjectionTranslatabilityInvariantTests
 {
     private readonly ITestOutputHelper _o;
-    public _ProbeD(ITestOutputHelper o) => _o = o;
+    public ProjectionTranslatabilityInvariantTests(ITestOutputHelper o) => _o = o;
 
     [Fact]
     public void Nested_and_collection_projection_has_no_synthesized_helper()

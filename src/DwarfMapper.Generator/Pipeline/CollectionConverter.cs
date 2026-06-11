@@ -407,6 +407,14 @@ internal static class CollectionConverter
             ? "default(global::System.Collections.Immutable.ImmutableArray<" + elem + ">)"
             : "global::System.Collections.Immutable.ImmutableArray<" + elem + ">.Empty";
 
+        // When the source type itself is ImmutableArray<T> (a value-type struct), the nullable
+        // parameter is Nullable<ImmutableArray<T>> which does NOT implement IEnumerable<T>.
+        // We must unwrap it with .GetValueOrDefault() before passing to CreateRange / foreach.
+        bool srcIsImmutableArrayStruct = srcFq.StartsWith(
+            "global::System.Collections.Immutable.ImmutableArray<",
+            System.StringComparison.Ordinal);
+        string srcExpr = srcIsImmutableArrayStruct ? "src.GetValueOrDefault()" : "src";
+
         sb.Append("    private ").Append(tgtFq).Append(' ').Append(name)
           .Append('(').Append(paramType).Append(" src)\n    {\n");
 
@@ -414,19 +422,19 @@ internal static class CollectionConverter
         {
             // Known-count identity: use CreateRange with capacity hint.
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(src);\n");
+            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(").Append(srcExpr).Append(");\n");
         }
         else if (identity)
         {
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(src);\n");
+            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(").Append(srcExpr).Append(");\n");
         }
         else
         {
             // Need element conversion: build a List first, then CreateRange.
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
             sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
-            sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
+            sb.Append("        foreach (var __item in ").Append(srcExpr).Append(") { __buf.Add(").Append(item).Append("); }\n");
             sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(__buf);\n");
         }
         sb.Append("    }\n");
