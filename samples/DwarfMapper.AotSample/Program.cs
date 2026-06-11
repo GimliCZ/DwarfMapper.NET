@@ -90,6 +90,34 @@ if (aotNestedDst.Name != "Dwarven Gate" || aotNestedDst.Inner.X != 10 || aotNest
     return 1;
 }
 
+// ── Depth-guarded recursive map: linked list (Plan 19 Part C1) ───────────────
+// The generator emits a companion __DwarfMap_Depth_Map method with a depth guard.
+// Chains within MaxDepth(8) map correctly; deeper chains throw DwarfMappingDepthException.
+var depthMapper = new AotDepthNodeMapper();
+
+// Chain of 5 (within MaxDepth=8) → maps successfully
+var chain5Root = new AotNode { V = 1, Next = new AotNode { V = 2, Next = new AotNode { V = 3, Next = new AotNode { V = 4, Next = new AotNode { V = 5 } } } } };
+var chain5Dto = depthMapper.Map(chain5Root);
+var count = 0;
+for (var n = chain5Dto; n is not null; n = n.Next) count++;
+Console.WriteLine($"depth-guarded chain5: mapped {count} nodes (expected 5)");
+if (count != 5) { Console.WriteLine("ERROR: chain5 count wrong"); return 1; }
+
+// Chain of 10 (over MaxDepth=8) → DwarfMappingDepthException (not StackOverflow)
+var chain10Root = new AotNode { V = 0 };
+var cur = chain10Root;
+for (var i = 1; i < 10; i++) { var next = new AotNode { V = i }; cur.Next = next; cur = next; }
+try
+{
+    depthMapper.Map(chain10Root);
+    Console.WriteLine("ERROR: expected DwarfMappingDepthException for deep chain");
+    return 1;
+}
+catch (DwarfMapper.DwarfMappingDepthException ex)
+{
+    Console.WriteLine($"depth-guarded chain10: DwarfMappingDepthException caught (MaxDepth={ex.MaxDepth}) — correct");
+}
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -135,3 +163,11 @@ public record AotOuterDst(string Name, AotInnerDst Inner);
 
 [DwarfMapper]
 public partial class AotNestedMapper { public partial AotOuterDst Map(AotOuterSrc s); }
+
+// ── Depth-guarded recursive linked list (Plan 19 Part C1) ────────────────────
+// MaxDepth=8 means chains longer than 8 throw DwarfMappingDepthException, not StackOverflow.
+public class AotNode    { public int V { get; set; } public AotNode?    Next { get; set; } }
+public class AotNodeDto { public int V { get; set; } public AotNodeDto? Next { get; set; } }
+
+[DwarfMapper(MaxDepth = 8)]
+public partial class AotDepthNodeMapper { public partial AotNodeDto Map(AotNode n); }
