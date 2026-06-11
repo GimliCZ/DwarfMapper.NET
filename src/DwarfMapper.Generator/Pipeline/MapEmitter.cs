@@ -140,14 +140,41 @@ internal static class MapEmitter
         if (method.IsProjection)
         {
             sb.Append(indent).Append("    return global::System.Linq.Queryable.Select(")
-              .Append(method.ParameterName).AppendLine(", __s => new " + method.ElementTargetTypeFullName);
-            sb.Append(indent).AppendLine("    {");
-            foreach (var member in method.Members)
+              .Append(method.ParameterName).Append(", __s => ");
+
+            var projMembers = method.ProjectionMembers;
+
+            if (projMembers.Count == 1 && projMembers[0].TargetName.Length == 0)
             {
-                sb.Append(indent).Append("        ").Append(member.TargetName)
-                  .Append(" = __s.").Append(member.SourceName).AppendLine(",");
+                // Ctor-only projection: the entire lambda body is the single inline expression.
+                // e.g.  __s => new global::D.DstRec(x: __s.X, y: __s.Y)
+                sb.Append(projMembers[0].InlineExpr).AppendLine(");");
             }
-            sb.Append(indent).AppendLine("    });");
+            else if (projMembers.Count > 0)
+            {
+                // Member-init projection with inline expression fragments (Plan 19D recursive resolver).
+                sb.AppendLine("new " + method.ElementTargetTypeFullName);
+                sb.Append(indent).AppendLine("    {");
+                foreach (var pm in projMembers)
+                {
+                    sb.Append(indent).Append("        ").Append(pm.TargetName)
+                      .Append(" = ").Append(pm.InlineExpr).AppendLine(",");
+                }
+                sb.Append(indent).AppendLine("    });");
+            }
+            else
+            {
+                // Fallback: legacy flat Members path (backward compat / error-case placeholder).
+                sb.AppendLine("new " + method.ElementTargetTypeFullName);
+                sb.Append(indent).AppendLine("    {");
+                foreach (var member in method.Members)
+                {
+                    sb.Append(indent).Append("        ").Append(member.TargetName)
+                      .Append(" = __s.").Append(member.SourceName).AppendLine(",");
+                }
+                sb.Append(indent).AppendLine("    });");
+            }
+
             sb.Append(indent).AppendLine("}");
             return;
         }

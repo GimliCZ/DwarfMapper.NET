@@ -79,16 +79,37 @@ internal static class MapperExtractor
                 && IsQueryable(method.Parameters[0].Type, out var projSource)
                 && projTarget is INamedTypeSymbol projTargetNamed)
             {
-                if (!HasAccessibleParameterlessCtor(projTargetNamed))
-                {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoParameterlessConstructor, methodLocation, projTargetNamed.Name));
-                    continue;
-                }
                 var projIgnores = new HashSet<string>(classIgnores);
                 foreach (var i in ReadIgnores(method)) { projIgnores.Add(i); }
+
+                // Plan 19D: DWARF028 — ReferenceHandling != None is incompatible with projection
+                // (a stateful identity map cannot live inside an expression tree).
+                if (referenceHandling != 0)
+                {
+                    EmitDWARF028(diagnostics, methodLocation, method.Name,
+                        "reference handling is not supported in projection (stateful identity map cannot live in an expression tree); use ReferenceHandling=None or map at runtime");
+                    // Still add the method with empty projection members so no further cascades.
+                    methods.Add(new MapMethodModel(
+                        method.Name,
+                        AccessibilityText(method.DeclaredAccessibility),
+                        method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        method.Parameters[0].Name,
+                        true,
+                        EquatableArray.From(System.Array.Empty<MemberMap>()),
+                        EquatableArray.From(System.Array.Empty<string>()),
+                        EquatableArray.From(System.Array.Empty<HookCall>()),
+                        true,
+                        projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        ProjectionMembers: EquatableArray.From(System.Array.Empty<ProjectionMemberMap>())));
+                    continue;
+                }
+
+                var projExplicitMaps = ReadExplicitMaps(method);
                 var projMembers = ResolveProjectionMembers(
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
-                    methodLocation, diagnostics, caseInsensitive, ReadExplicitMaps(method));
+                    methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumStrategy,
+                    referenceHandling, "__s");
 
                 methods.Add(new MapMethodModel(
                     method.Name,
@@ -97,11 +118,12 @@ internal static class MapperExtractor
                     method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     method.Parameters[0].Name,
                     true,
-                    EquatableArray.From(projMembers),
+                    EquatableArray.From(System.Array.Empty<MemberMap>()),
                     EquatableArray.From(System.Array.Empty<string>()),
                     EquatableArray.From(System.Array.Empty<HookCall>()),
                     true,
-                    projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+                    projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    ProjectionMembers: EquatableArray.From(projMembers.ToArray())));
                 continue;
             }
 
@@ -1920,10 +1942,42 @@ internal static class MapperExtractor
         return false;
     }
 
-    private static List<MemberMap> ResolveProjectionMembers(
+    // ── Plan 19D: max depth for projection recursion ─────────────────────────
+    // Beyond this depth, DWARF028 is emitted instead of recursing further.
+    // Keeps generated lambda bodies finite and prevents stack-overflow in the generator.
+    private const int ProjectionMaxDepth = 32;
+
+    /// <summary>
+    /// Emits DWARF028 (ProjectionNotTranslatable) with a fully-formatted single-arg message.
+    /// The descriptor uses "{0}" so both member name and reason are concatenated here.
+    /// </summary>
+    private static void EmitDWARF028(
+        List<DiagnosticInfo> diagnostics,
+        LocationInfo? location,
+        string memberName,
+        string reason)
+    {
+        var msg = $"Projection member '{memberName}' cannot be translated to SQL: {reason}.";
+        diagnostics.Add(new DiagnosticInfo(
+            DiagnosticDescriptors.ProjectionNotTranslatable, location, msg));
+    }
+
+    /// <summary>
+    /// New (Plan 19D) recursive projection resolver. Produces a list of
+    /// <see cref="ProjectionMemberMap"/> with inline expression fragments (no helper calls).
+    ///
+    /// DWARF019 vs. DWARF028 decision:
+    ///   DWARF019 (NotProjectable) is kept ONLY for attribute-conflict cases in explicit maps
+    ///   ([MapProperty(Use=)] on a projection method — that is an attribute usage error).
+    ///   DWARF028 (ProjectionNotTranslatable) is used for all type-conversion unsafety:
+    ///   narrowing numeric, parsable string↔T, enum by-name, non-translatable collections,
+    ///   reference handling, and "no translatable conversion found" fallback.
+    /// </summary>
+    private static List<ProjectionMemberMap> ResolveProjectionMembers(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
-        bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps)
+        bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
+        EnumStrategy enumStrategy, int referenceHandling, string paramExpr)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
         var sources = ReadableMembers(sourceType)
@@ -1932,10 +1986,11 @@ internal static class MapperExtractor
         var writableByName = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
         foreach (var m in WritableMembers(targetType)) { writableByName[m.Name] = m.Type; }
 
-        var result = new List<MemberMap>();
+        var result = new List<ProjectionMemberMap>();
         var handled = new HashSet<string>(System.StringComparer.Ordinal);
         var explicitSeen = new HashSet<string>(System.StringComparer.Ordinal);
 
+        // ── Explicit maps ([MapProperty]) ────────────────────────────────────
         foreach (var (srcName, tgtName, use) in explicitMaps)
         {
             if (!explicitSeen.Add(tgtName))
@@ -1954,9 +2009,11 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownTarget, location, tgtName));
                 continue;
             }
+            // DWARF019 for Use= (attribute conflict, not a type error)
             if (use is not null)
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NotProjectable, location, tgtName));
+                EmitDWARF028(diagnostics, location, tgtName,
+                    "custom converter (Use=) is not translatable in projection; remove Use= or map at runtime");
                 continue;
             }
             var sm = ReadableMembers(sourceType)
@@ -1967,15 +2024,52 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
                 continue;
             }
-            if (!HasImplicitConversion(compilation, sm, tgtType))
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NotProjectable, location, tgtName));
-                continue;
-            }
-            result.Add(new MemberMap(tgtName, srcName));
+            var srcExprForExplicit = paramExpr + "." + srcName;
+            var inlineExpr = ResolveProjectionExpr(
+                sm, tgtType, srcExprForExplicit, 0, compilation, location,
+                diagnostics, tgtName, enumStrategy);
+            if (inlineExpr is not null)
+                result.Add(new ProjectionMemberMap(tgtName, inlineExpr));
         }
 
-        foreach (var target in WritableMembers(targetType).OrderBy(m => m.Name, System.StringComparer.Ordinal))
+        // ── Auto-matched writable members ────────────────────────────────────
+
+        // For IQueryable projection, member-init syntax is only SQL-translatable when the target
+        // type has a public parameterless constructor (EF Core materialises via default ctor then
+        // sets members). Positional records and other ctor-only types must use constructor projection.
+        var hasParameterlessCtor = targetType.InstanceConstructors.Any(c =>
+            c.DeclaredAccessibility == Accessibility.Public
+            && !c.IsStatic
+            && c.Parameters.Length == 0);
+
+        var writableMembers = WritableMembers(targetType)
+            .OrderBy(m => m.Name, System.StringComparer.Ordinal)
+            .ToList();
+
+        if (writableMembers.Count == 0 || !hasParameterlessCtor)
+        {
+            // Try constructor projection: select the ctor with the most params matching source.
+            ConstructorSelector.Select(targetType, diagnostics, location, out var ctorOnly);
+            var bestCtor = targetType.InstanceConstructors
+                .Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length > 0)
+                .OrderByDescending(c => c.Parameters.Length)
+                .FirstOrDefault();
+
+            if (bestCtor is not null)
+            {
+                var ctorExpr = ResolveProjectionCtorExpr(
+                    bestCtor, sourceType, paramExpr, 0,
+                    compilation, location, diagnostics, targetType, enumStrategy, comparer);
+                if (ctorExpr is not null)
+                {
+                    // Store as a whole-lambda body (TargetName = "")
+                    result.Add(new ProjectionMemberMap("", ctorExpr));
+                }
+            }
+            return result;
+        }
+
+        foreach (var target in writableMembers)
         {
             if (handled.Contains(target.Name) || ignores.Contains(target.Name)) { continue; }
             if (!sources.TryGetValue(target.Name, out var src))
@@ -1983,14 +2077,309 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name));
                 continue;
             }
-            if (!HasImplicitConversion(compilation, src.Type, target.Type))
+            var srcAccessExpr = paramExpr + "." + src.Name;
+            var inlineExpr = ResolveProjectionExpr(
+                src.Type, target.Type, srcAccessExpr, 0,
+                compilation, location, diagnostics, target.Name, enumStrategy);
+            if (inlineExpr is not null)
+                result.Add(new ProjectionMemberMap(target.Name, inlineExpr));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Resolve a single inline projection expression for a source→target type pair.
+    /// Returns the inline C# expression string (pure, no helper calls), or null when
+    /// DWARF028 has been emitted (unsafe construct).
+    ///
+    /// SAFE:
+    ///   1. Direct-assignable (implicit conversion incl. widening numeric).
+    ///   2. Enum by-value cast: (TgtEnum)srcExpr.
+    ///   3. Nested named object: new TgtType { M1 = ..., M2 = ... } (recursive).
+    ///   4. Collection (projection-translatable): .Select(...).ToList()/.ToArray()/lazy.
+    ///
+    /// UNSAFE → DWARF028:
+    ///   - Narrowing numeric (CreateChecked path).
+    ///   - String↔T parsable (IParsable/IFormattable path).
+    ///   - Enum by-name (switch path).
+    ///   - Non-translatable collection target (HashSet/ISet/immutable/dict).
+    ///   - Depth > ProjectionMaxDepth.
+    ///   - No translatable conversion found.
+    /// </summary>
+    private static string? ResolveProjectionExpr(
+        ITypeSymbol srcType, ITypeSymbol tgtType,
+        string srcExpr,
+        int depth,
+        Compilation compilation,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics,
+        string targetMemberName,
+        EnumStrategy enumStrategy)
+    {
+        // ── Depth guard ───────────────────────────────────────────────────────
+        if (depth > ProjectionMaxDepth)
+        {
+            EmitDWARF028(diagnostics, location, targetMemberName,
+                $"projection nesting depth exceeded {ProjectionMaxDepth}; split into a runtime mapper");
+            return null;
+        }
+
+        // ── Pre-check: collection/dictionary targets BEFORE implicit-conversion ──
+        // EF Core cannot translate HashSet/Dictionary/immutable collection projections even
+        // when source==target (same type is directly assignable but NOT SQL-translatable).
+        // We must check collection-shaped types BEFORE the HasImplicitConversion fast-path.
+        if (CollectionConverter.TryResolve(srcType, tgtType,
+                out var srcElem, out var tgtElem, out var shape))
+        {
+            if (!CollectionConverter.IsTargetKindTranslatable(shape.Target))
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NotProjectable, location, target.Name));
+                var tgtTypeName = tgtType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                EmitDWARF028(diagnostics, location, targetMemberName,
+                    $"collection type '{tgtTypeName}' is not translatable in projection (HashSet/ISet/immutable/Dictionary targets are not supported by EF Core)");
+                return null;
+            }
+
+            // Translatable collection: emit .Select(...).ToList()/.ToArray()/lazy
+            var elemParam = $"__i{depth}";
+            var elemExpr = ResolveProjectionExpr(
+                srcElem, tgtElem, elemParam, depth + 1,
+                compilation, location, diagnostics, targetMemberName, enumStrategy);
+            if (elemExpr is null) return null; // DWARF028 already emitted
+
+            // Use fully-qualified Enumerable.Select to avoid needing 'using System.Linq' in generated code.
+            var srcElemFqn = srcElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var tgtElemFqn = tgtElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var selectCall = $"global::System.Linq.Enumerable.Select<{srcElemFqn}, {tgtElemFqn}>({srcExpr}, {elemParam} => {elemExpr})";
+            return shape.Target switch
+            {
+                CollectionConverter.TargetKind.Array =>
+                    $"global::System.Linq.Enumerable.ToArray<{tgtElemFqn}>({selectCall})",
+                CollectionConverter.TargetKind.IEnumerable =>
+                    selectCall, // lazy, no terminal
+                _ =>
+                    $"global::System.Linq.Enumerable.ToList<{tgtElemFqn}>({selectCall})",
+            };
+        }
+
+        // ── Pre-check: Dictionary targets (always non-translatable in projection) ──
+        // Check before HasImplicitConversion to catch same-type dictionary members.
+        if (DictionaryConverter.TryResolve(srcType, tgtType,
+                out _, out _, out _, out _, out _, out _))
+        {
+            EmitDWARF028(diagnostics, location, targetMemberName,
+                "Dictionary targets are not translatable in projection; map at runtime");
+            return null;
+        }
+
+        // ── 1. Direct-assignable (implicit — covers widening numeric, same-type, etc.) ──
+        if (HasImplicitConversion(compilation, srcType, tgtType))
+        {
+            return srcExpr;
+        }
+
+        // ── 2. Enum by-value cast ─────────────────────────────────────────────
+        if (srcType.TypeKind == TypeKind.Enum && tgtType.TypeKind == TypeKind.Enum
+            && enumStrategy == EnumStrategy.ByValue)
+        {
+            var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return $"({tgtFqn}){srcExpr}";
+        }
+
+        // ── UNSAFE: enum by-name (enumStrategy == ByName, different enum types) ──
+        if ((srcType.TypeKind == TypeKind.Enum || tgtType.TypeKind == TypeKind.Enum)
+            && enumStrategy == EnumStrategy.ByName)
+        {
+            EmitDWARF028(diagnostics, location, targetMemberName,
+                "enum by-name mapping is not translatable in projection; use EnumStrategy.ByValue or map at runtime");
+            return null;
+        }
+
+        // ── UNSAFE: numeric narrowing (NumericConverter would fire: both integral, no implicit) ──
+        if (TypeInterfaces.IsIntegral(srcType) && TypeInterfaces.IsIntegral(tgtType))
+        {
+            EmitDWARF028(diagnostics, location, targetMemberName,
+                "narrowing numeric conversion is not SQL-translatable (would need CreateChecked); map at runtime or use a widening target type");
+            return null;
+        }
+
+        // ── UNSAFE: string↔T parsable (ParsableConverter would fire) ─────────
+        if ((srcType.SpecialType == SpecialType.System_String
+             && tgtType.TypeKind != TypeKind.Enum
+             && TypeInterfaces.ImplementsIParsable(compilation, tgtType))
+            || (tgtType.SpecialType == SpecialType.System_String
+                && srcType.SpecialType != SpecialType.System_String
+                && srcType.TypeKind != TypeKind.Enum
+                && (TypeInterfaces.ImplementsIFormattable(srcType)
+                    || srcType.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char)))
+        {
+            EmitDWARF028(diagnostics, location, targetMemberName,
+                "string parse/format is not translatable in projection (IParsable/IFormattable); map at runtime");
+            return null;
+        }
+
+        // ── 3. Nested named object (recursive) ───────────────────────────────
+        if (srcType is INamedTypeSymbol namedSrc && tgtType is INamedTypeSymbol namedTgt
+            && IsMappableObjectPair(compilation, srcType, namedTgt))
+        {
+            return ResolveProjectionNestedObjectExpr(
+                namedSrc, namedTgt, srcExpr, depth, compilation, location, diagnostics,
+                targetMemberName, enumStrategy);
+        }
+
+        // ── Nullable T? → T (source is nullable, unwrap for the inner expression) ──
+        if (IsNullableValue(srcType, out var srcUnderlying))
+        {
+            var innerExpr = ResolveProjectionExpr(
+                srcUnderlying, tgtType, srcExpr + ".Value", depth,
+                compilation, location, diagnostics, targetMemberName, enumStrategy);
+            return innerExpr;
+        }
+
+        // ── Fallback: no translatable conversion found ────────────────────────
+        EmitDWARF028(diagnostics, location, targetMemberName,
+            "no translatable conversion found; map at runtime instead");
+        return null;
+    }
+
+    /// <summary>
+    /// Build an inline member-init expression for a nested object target.
+    /// For nullable reference source: emits null-navigation ternary.
+    /// For non-null / value-type source: emits plain member-init.
+    /// </summary>
+    private static string? ResolveProjectionNestedObjectExpr(
+        INamedTypeSymbol srcType, INamedTypeSymbol tgtType,
+        string srcExpr, int depth,
+        Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
+        string targetMemberName, EnumStrategy enumStrategy)
+    {
+        var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        var srcReadable = ReadableMembers(srcType)
+            .ToDictionary(m => m.Name, m => m, System.StringComparer.Ordinal);
+
+        // Build member-init or ctor expression for the nested object.
+        // If the target has no writable members, try ctor projection.
+        var writableTargetMembers = WritableMembers(tgtType)
+            .OrderBy(m => m.Name, System.StringComparer.Ordinal)
+            .ToList();
+
+        string innerBodyExpr;
+
+        if (writableTargetMembers.Count == 0)
+        {
+            // Try ctor projection
+            var bestCtor = tgtType.InstanceConstructors
+                .Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length > 0)
+                .OrderByDescending(c => c.Parameters.Length)
+                .FirstOrDefault();
+
+            if (bestCtor is null)
+            {
+                EmitDWARF028(diagnostics, location, targetMemberName,
+                    $"nested type '{tgtFqn}' has no writable members and no usable constructor");
+                return null;
+            }
+
+            var ctorExpr = ResolveProjectionCtorExpr(
+                bestCtor, srcType, srcExpr, depth,
+                compilation, location, diagnostics, tgtType, enumStrategy,
+                System.StringComparer.Ordinal);
+            if (ctorExpr is null) return null;
+            innerBodyExpr = ctorExpr;
+        }
+        else
+        {
+            // Member-init expression
+            var memberParts = new System.Collections.Generic.List<string>();
+            var anyFailed = false;
+
+            foreach (var tgtMember in writableTargetMembers)
+            {
+                if (!srcReadable.TryGetValue(tgtMember.Name, out var srcMember))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.UnmappedMember, location, targetMemberName + "." + tgtMember.Name));
+                    anyFailed = true;
+                    continue;
+                }
+
+                var memberSrcExpr = srcExpr + "." + srcMember.Name;
+                var memberInlineExpr = ResolveProjectionExpr(
+                    srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
+                    compilation, location, diagnostics,
+                    targetMemberName + "." + tgtMember.Name, enumStrategy);
+
+                if (memberInlineExpr is null)
+                {
+                    anyFailed = true;
+                    continue;
+                }
+                memberParts.Add($"{tgtMember.Name} = {memberInlineExpr}");
+            }
+
+            if (anyFailed) return null;
+            innerBodyExpr = $"new {tgtFqn} {{ {string.Join(", ", memberParts)} }}";
+        }
+
+        // Wrap with null-navigation ternary if source is a reference type (could be null in projection)
+        if (srcType.IsReferenceType)
+        {
+            return $"{srcExpr} == null ? null : {innerBodyExpr}";
+        }
+        return innerBodyExpr;
+    }
+
+    /// <summary>
+    /// Build an inline constructor-call expression for targets with only ctor params (records etc.).
+    /// e.g. "new global::D.DstRec(x: __s.X, y: __s.Y)"
+    /// </summary>
+    private static string? ResolveProjectionCtorExpr(
+        IMethodSymbol ctor,
+        ITypeSymbol srcType,
+        string srcExpr,
+        int depth,
+        Compilation compilation,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics,
+        INamedTypeSymbol tgtType,
+        EnumStrategy enumStrategy,
+        System.StringComparer comparer)
+    {
+        var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var srcReadable = ReadableMembers(srcType)
+            .GroupBy(m => m.Name, comparer)
+            .ToDictionary(g => g.Key, g => g.First(), comparer);
+
+        var argParts = new System.Collections.Generic.List<string>();
+        var anyFailed = false;
+
+        foreach (var param in ctor.Parameters)
+        {
+            if (!srcReadable.TryGetValue(param.Name, out var srcMember))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ConstructorParameterUnmapped, location, param.Name));
+                anyFailed = true;
                 continue;
             }
-            result.Add(new MemberMap(target.Name, src.Name));
+
+            var paramSrcExpr = srcExpr + "." + srcMember.Name;
+            var paramInlineExpr = ResolveProjectionExpr(
+                srcMember.Type, param.Type, paramSrcExpr, depth + 1,
+                compilation, location, diagnostics, param.Name, enumStrategy);
+
+            if (paramInlineExpr is null)
+            {
+                anyFailed = true;
+                continue;
+            }
+            // Expression trees do not allow named arguments (CS0853): emit positional args.
+            argParts.Add(paramInlineExpr);
         }
-        return result;
+
+        if (anyFailed) return null;
+        return $"new {tgtFqn}({string.Join(", ", argParts)})";
     }
 
     /// <summary>

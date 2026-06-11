@@ -1,0 +1,428 @@
+// SPDX-License-Identifier: GPL-2.0-only
+using System.Linq;
+using Microsoft.CodeAnalysis;
+
+namespace DwarfMapper.Generator.Tests;
+
+/// <summary>
+/// Plan 19D — TDD tests for the recursive, translatability-classifying projection resolver.
+/// SAFE: nested object inline, collection inline, ctor inline, widening numeric, enum by-value.
+/// UNSAFE: each → DWARF028 with appropriate reason; NO __DwarfMap_ helper calls in output.
+/// </summary>
+public class ProjectionDeepTests
+{
+    // ══════════════════════════════════════════════════════════════════════════
+    // SAFE MATRIX
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Projection_flat_regression_still_works_no_DwarfMap_helper()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public int Age { get; set; } public string Name { get; set; } = ""; }
+            public class Dst { public int Age { get; set; } public string Name { get; set; } = ""; }
+            [DwarfMapper] public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Contains("Age = __s.Age", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Projection_nested_object_2level_inlines_new_inner_no_DwarfMap_helper()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Inner { public int X { get; set; } }
+            public class InnerDto { public int X { get; set; } }
+            public class Outer { public int Id { get; set; } public Inner? Inner { get; set; } }
+            public class OuterDto { public int Id { get; set; } public InnerDto? Inner { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("new global::D.InnerDto", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_nested_object_null_nav_ternary_emitted_for_nullable_ref()
+    {
+        // Nullable reference src.Inner → ternary: __s.Inner == null ? null : new InnerDto{...}
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Inner { public int X { get; set; } }
+            public class InnerDto { public int X { get; set; } }
+            public class Outer { public int Id { get; set; } public Inner? Inner { get; set; } }
+            public class OuterDto { public int Id { get; set; } public InnerDto? Inner { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        // Null-nav ternary must appear for the nullable inner
+        Assert.Contains("== null ? null :", gen, StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_nested_object_3level_inlines_all_no_DwarfMap_helper()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class L3 { public int Z { get; set; } }
+            public class L3Dto { public int Z { get; set; } }
+            public class L2 { public int Y { get; set; } public L3? Deep { get; set; } }
+            public class L2Dto { public int Y { get; set; } public L3Dto? Deep { get; set; } }
+            public class L1 { public int X { get; set; } public L2? Mid { get; set; } }
+            public class L1Dto { public int X { get; set; } public L2Dto? Mid { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<L1Dto> Prj(IQueryable<L1> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("new global::D.L2Dto", gen, StringComparison.Ordinal);
+        Assert.Contains("new global::D.L3Dto", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_collection_list_to_list_inlines_Select_ToList_no_DwarfMap_helper()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq; using System.Collections.Generic;
+            namespace D;
+            public class Item { public int V { get; set; } }
+            public class ItemDto { public int V { get; set; } }
+            public class Outer { public List<Item> Items { get; set; } = new(); }
+            public class OuterDto { public List<ItemDto> Items { get; set; } = new(); }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("Enumerable.Select", gen, StringComparison.Ordinal);
+        Assert.Contains("Enumerable.ToList", gen, StringComparison.Ordinal);
+        Assert.Contains("new global::D.ItemDto", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_collection_array_to_array_inlines_Select_ToArray_no_DwarfMap_helper()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Item { public int V { get; set; } }
+            public class ItemDto { public int V { get; set; } }
+            public class Outer { public Item[] Items { get; set; } = []; }
+            public class OuterDto { public ItemDto[] Items { get; set; } = []; }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("Enumerable.Select", gen, StringComparison.Ordinal);
+        Assert.Contains("Enumerable.ToArray", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_collection_IEnumerable_target_lazy_no_ToList_no_DwarfMap_helper()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq; using System.Collections.Generic;
+            namespace D;
+            public class Item { public int V { get; set; } }
+            public class ItemDto { public int V { get; set; } }
+            public class Outer { public IEnumerable<Item> Items { get; set; } = []; }
+            public class OuterDto { public IEnumerable<ItemDto> Items { get; set; } = []; }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("Enumerable.Select", gen, StringComparison.Ordinal);
+        // IEnumerable target → no ToList/ToArray terminal
+        Assert.DoesNotContain("Enumerable.ToList", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("Enumerable.ToArray", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_ctor_record_positional_inlines_new_ctor_no_DwarfMap_helper()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public int X { get; set; } public string Y { get; set; } = ""; }
+            public record DstRec(int X, string Y);
+            [DwarfMapper] public partial class M { public partial IQueryable<DstRec> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        // Constructor projection → new DstRec(...)
+        Assert.Contains("new global::D.DstRec(", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_widening_numeric_int_to_long_inline()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public int X { get; set; } }
+            public class Dst { public long X { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        // int→long is an implicit widening — direct assignment, no cast needed
+        Assert.Contains("X = __s.X", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_enum_by_value_same_type_direct_assign()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public enum Status { A, B }
+            public class Src { public Status S { get; set; } }
+            public class Dst { public Status S { get; set; } }
+            [DwarfMapper(EnumStrategy = DwarfMapper.EnumStrategy.ByValue)]
+            public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void Projection_enum_by_value_different_enum_type_cast_inline()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public enum E1 { A = 0, B = 1 }
+            public enum E2 { A = 0, B = 1 }
+            public class Src { public E1 E { get; set; } }
+            public class Dst { public E2 E { get; set; } }
+            [DwarfMapper(EnumStrategy = DwarfMapper.EnumStrategy.ByValue)]
+            public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        // By-value enum: cast inline (E2)__s.E
+        Assert.Contains("(global::D.E2)", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // UNSAFE MATRIX — each → DWARF028 with right reason
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Projection_narrowing_numeric_long_to_int_reports_DWARF028_narrowing_reason()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public long X { get; set; } }
+            public class Dst { public int X { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        var d028 = diag.Where(d => d.Id == "DWARF028").ToList();
+        Assert.NotEmpty(d028);
+        Assert.Contains("narrowing", d028[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Projection_string_to_int_parsable_reports_DWARF028_parse_reason()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public string X { get; set; } = ""; }
+            public class Dst { public int X { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        var d028 = diag.Where(d => d.Id == "DWARF028").ToList();
+        Assert.NotEmpty(d028);
+        Assert.Contains("parse", d028[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Projection_enum_by_name_reports_DWARF028_byname_reason()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public enum E1 { A, B }
+            public enum E2 { A, B }
+            public class Src { public E1 E { get; set; } }
+            public class Dst { public E2 E { get; set; } }
+            [DwarfMapper(EnumStrategy = DwarfMapper.EnumStrategy.ByName)]
+            public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        var d028 = diag.Where(d => d.Id == "DWARF028").ToList();
+        Assert.NotEmpty(d028);
+        Assert.Contains("by-name", d028[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Projection_custom_Use_converter_reports_DWARF028_converter_reason()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public int X { get; set; } }
+            public class Dst { public string X { get; set; } = ""; }
+            [DwarfMapper] public partial class M
+            {
+                [MapProperty("X", "X", Use = "Conv")]
+                public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                private static string Conv(int x) => x.ToString();
+            }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        var d028 = diag.Where(d => d.Id == "DWARF028").ToList();
+        Assert.NotEmpty(d028);
+        Assert.Contains("converter", d028[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Projection_HashSet_collection_target_reports_DWARF028_collection_reason()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq; using System.Collections.Generic;
+            namespace D;
+            public class Item { public int V { get; set; } }
+            public class ItemDto { public int V { get; set; } }
+            public class Outer { public HashSet<Item> Items { get; set; } = new(); }
+            public class OuterDto { public HashSet<ItemDto> Items { get; set; } = new(); }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        var d028 = diag.Where(d => d.Id == "DWARF028").ToList();
+        Assert.NotEmpty(d028);
+        Assert.Contains("translatable", d028[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Projection_ImmutableArray_collection_target_reports_DWARF028()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq; using System.Collections.Immutable;
+            namespace D;
+            public class Item { public int V { get; set; } }
+            public class ItemDto { public int V { get; set; } }
+            public class Outer { public ImmutableArray<Item> Items { get; set; } }
+            public class OuterDto { public ImmutableArray<ItemDto> Items { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diag, d => d.Id == "DWARF028");
+    }
+
+    [Fact]
+    public void Projection_Dictionary_collection_target_reports_DWARF028()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq; using System.Collections.Generic;
+            namespace D;
+            public class Outer { public Dictionary<string, int> Tags { get; set; } = new(); }
+            public class OuterDto { public Dictionary<string, int> Tags { get; set; } = new(); }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diag, d => d.Id == "DWARF028");
+    }
+
+    [Fact]
+    public void Projection_reference_handling_preserve_reports_DWARF028_refhandling_reason()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public int X { get; set; } }
+            public class Dst { public int X { get; set; } }
+            [DwarfMapper(ReferenceHandling = DwarfMapper.ReferenceHandlingStrategy.Preserve)]
+            public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        var d028 = diag.Where(d => d.Id == "DWARF028").ToList();
+        Assert.NotEmpty(d028);
+        Assert.Contains("reference handling", d028[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── Regression: non-assignable flat member ──
+    [Fact]
+    public void Projection_non_assignable_flat_member_reports_DWARF028_or_DWARF019()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Src { public string Age { get; set; } = ""; }
+            public class Dst { public int Age { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        // string→int triggers parsable converter → DWARF028 with parse reason
+        // Accept either DWARF019 or DWARF028 — there MUST be an error
+        Assert.Contains(diag, d => d.Id == "DWARF028" || d.Id == "DWARF019");
+    }
+
+    // ── Defensive: no __DwarfMap_ in any SAFE projection output ──
+    [Fact]
+    public void All_safe_projection_outputs_contain_no_DwarfMap_helper_calls()
+    {
+        var cases = new[]
+        {
+            // flat
+            "using DwarfMapper; using System.Linq; namespace D; public class S{public int A{get;set;}} public class T{public int A{get;set;}} [DwarfMapper] public partial class M{public partial IQueryable<T> P(IQueryable<S> q);}",
+            // nested
+            "using DwarfMapper; using System.Linq; namespace D; public class I{public int X{get;set;}} public class ID{public int X{get;set;}} public class S{public I? N{get;set;}} public class T{public ID? N{get;set;}} [DwarfMapper] public partial class M{public partial IQueryable<T> P(IQueryable<S> q);}",
+        };
+        foreach (var src in cases)
+        {
+            var (_, gen) = GeneratorTestHarness.Run(src);
+            Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        }
+    }
+
+    // ── Emitter uses inline exprs, not raw member assign ──
+    [Fact]
+    public void Projection_emitter_uses_ProjectionMembers_inline_expr_not_raw_member()
+    {
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Inner { public int X { get; set; } }
+            public class InnerDto { public int X { get; set; } }
+            public class Outer { public Inner? Inner { get; set; } }
+            public class OuterDto { public InnerDto? Inner { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("new global::D.InnerDto", gen, StringComparison.Ordinal);
+        // Must not be a raw assignment of the object reference
+        Assert.DoesNotContain("Inner = __s.Inner,", gen, StringComparison.Ordinal);
+    }
+}

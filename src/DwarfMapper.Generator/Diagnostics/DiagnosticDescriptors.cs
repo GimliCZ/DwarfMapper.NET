@@ -166,7 +166,7 @@ public static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor ProjectionNotTranslatable = new(
         "DWARF028",
         "Projection mapping not translatable",
-        "Projection member '{0}' cannot be translated to SQL: {1}. Map it at runtime or use a type that is EF-Core-translatable.",
+        "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
     // DWARF029 reserved.

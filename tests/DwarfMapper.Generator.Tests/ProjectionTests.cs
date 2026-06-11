@@ -93,8 +93,9 @@ public class ProjectionTests
     }
 
     [Fact]
-    public void Projection_non_assignable_member_reports_DWARF019()
+    public void Projection_non_assignable_member_reports_DWARF028()
     {
+        // Plan 19D: string→int in a projection is an untranslatable string-parse → DWARF028.
         const string s = """
             using DwarfMapper;
             using System.Linq;
@@ -105,6 +106,6 @@ public class ProjectionTests
             public partial class M { public partial IQueryable<PersonDto> Project(IQueryable<Person> src); }
             """;
         var (diagnostics, _) = GeneratorTestHarness.Run(s);
-        Assert.Contains(diagnostics, d => d.Id == "DWARF019");
+        Assert.Contains(diagnostics, d => d.Id == "DWARF028");
     }
 }
