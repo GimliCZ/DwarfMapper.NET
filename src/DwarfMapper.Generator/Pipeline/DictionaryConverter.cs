@@ -8,78 +8,174 @@ namespace DwarfMapper.Generator.Pipeline;
 
 internal static class DictionaryConverter
 {
+    internal enum DictTargetKind
+    {
+        Dictionary,          // Dictionary<K,V>         — concrete (today)
+        IDictionary,         // IDictionary<K,V>        → Dictionary<K,V>
+        IReadOnlyDictionary, // IReadOnlyDictionary<K,V> → Dictionary<K,V>
+        ImmutableDictionary, // ImmutableDictionary<K,V>
+        IImmutableDictionary,// IImmutableDictionary<K,V> → ImmutableDictionary<K,V>
+    }
+
     /// <summary>Detect a dictionary source/target pair and its key/value element types.</summary>
+    public static bool TryResolve(
+        ITypeSymbol src, ITypeSymbol tgt,
+        out ITypeSymbol srcKey, out ITypeSymbol srcVal,
+        out ITypeSymbol tgtKey, out ITypeSymbol tgtVal,
+        out bool srcHasCount,
+        out DictTargetKind targetKind)
+    {
+        srcKey = src; srcVal = src; tgtKey = tgt; tgtVal = tgt;
+        srcHasCount = false;
+        targetKind  = DictTargetKind.Dictionary;
+
+        if (!TryGetDictTarget(tgt, out tgtKey, out tgtVal, out targetKind))
+            return false;
+
+        return TryGetKeyValue(src, out srcKey, out srcVal, out srcHasCount);
+    }
+
+    // Keep old overload for callers that don't need targetKind.
     public static bool TryResolve(
         ITypeSymbol src, ITypeSymbol tgt,
         out ITypeSymbol srcKey, out ITypeSymbol srcVal,
         out ITypeSymbol tgtKey, out ITypeSymbol tgtVal,
         out bool srcHasCount)
     {
-        srcKey = src; srcVal = src; tgtKey = tgt; tgtVal = tgt; srcHasCount = false;
-
-        if (!IsDictionary(tgt, out tgtKey, out tgtVal))
-        {
-            return false;
-        }
-        return TryGetKeyValue(src, out srcKey, out srcVal, out srcHasCount);
+        return TryResolve(src, tgt, out srcKey, out srcVal, out tgtKey, out tgtVal,
+            out srcHasCount, out _);
     }
 
     /// <summary>Synthesize (or reuse) the dictionary-mapping method and return its name.</summary>
     public static string Synthesize(
         Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcType,
-        ITypeSymbol tgtKey, ITypeSymbol tgtVal, bool srcHasCount,
-        string? keyConverter, NullHandling keyNull, string? valConverter, NullHandling valNull)
+        ITypeSymbol tgtKey, ITypeSymbol tgtVal, bool srcHasCount, DictTargetKind targetKind,
+        string? keyConverter, NullHandling keyNull, string? valConverter, NullHandling valNull,
+        bool nullAsNull = false)
     {
-        var keyFq = Fq(tgtKey);
-        var valFq = Fq(tgtVal);
-        var dictFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
-        var name = "__DwarfMapDict_" + Hash(Fq(srcType) + "=>" + dictFq);
-        if (synth.ContainsKey(name))
+        var keyFq  = Fq(tgtKey);
+        var valFq  = Fq(tgtVal);
+        var nullTag = nullAsNull ? "_nn" : "";
+
+        string retTypeFq;
+        switch (targetKind)
         {
-            return name;
+            case DictTargetKind.ImmutableDictionary:
+            case DictTargetKind.IImmutableDictionary:
+                retTypeFq = "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">";
+                break;
+            default:
+                retTypeFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
+                break;
         }
 
-        var srcFq = Fq(srcType);
-        var keyExpr = Expr("__kv.Key", keyConverter, keyNull);
-        var valExpr = Expr("__kv.Value", valConverter, valNull);
+        var name = "__DwarfMapDict_" + Hash(Fq(srcType) + "=>" + retTypeFq + nullTag);
+        if (synth.ContainsKey(name))
+            return name;
+
+        var srcFq     = Fq(srcType);
+        var srcParam  = srcFq + "?";  // always nullable; null guard inside handles it
+        var retAnnot  = nullAsNull ? retTypeFq + "?" : retTypeFq;
+        var keyExpr   = Expr("__kv.Key",   keyConverter, keyNull);
+        var valExpr   = Expr("__kv.Value", valConverter, valNull);
+        var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
 
         var sb = new StringBuilder();
-        sb.Append("    private ").Append(dictFq).Append(' ').Append(name).Append('(').Append(srcFq).Append(" src)\n    {\n");
-        // Guard before dereferencing src.Count (null source -> empty dictionary, never an NRE).
-        sb.Append("        if (src is null) return new ").Append(dictFq).Append("();\n");
-        sb.Append("        var __r = new ").Append(dictFq).Append('(').Append(srcHasCount ? "src.Count" : "").Append(");\n");
-        sb.Append("        foreach (var __kv in src) { __r[").Append(keyExpr).Append("] = ").Append(valExpr).Append("; }\n");
-        sb.Append("        return __r;\n");
-        sb.Append("    }\n");
+        sb.Append("    private ").Append(retAnnot).Append(' ').Append(name)
+          .Append('(').Append(srcParam).Append(" src)\n    {\n");
 
+        if (targetKind == DictTargetKind.ImmutableDictionary
+            || targetKind == DictTargetKind.IImmutableDictionary)
+        {
+            var emptyImm = nullAsNull
+                ? "null"
+                : "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">.Empty";
+
+            sb.Append("        if (src is null) return ").Append(emptyImm).Append(";\n");
+            // Build a List<KeyValuePair<K,V>>, then CreateRange.
+            var kvpFq = "global::System.Collections.Generic.KeyValuePair<" + keyFq + ", " + valFq + ">";
+            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(kvpFq).Append(">();\n");
+            sb.Append("        foreach (var __kv in src)\n");
+            sb.Append("        {\n");
+            sb.Append("            __buf.Add(new ").Append(kvpFq).Append('(').Append(keyExpr).Append(", ").Append(valExpr).Append("));\n");
+            sb.Append("        }\n");
+            sb.Append("        return global::System.Collections.Immutable.ImmutableDictionary.CreateRange(__buf);\n");
+        }
+        else
+        {
+            var dictFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
+            sb.Append("        if (src is null) return ").Append(emptyDict).Append(";\n");
+            sb.Append("        var __r = new ").Append(dictFq).Append('(').Append(srcHasCount ? "src.Count" : "").Append(");\n");
+            sb.Append("        foreach (var __kv in src) { __r[").Append(keyExpr).Append("] = ").Append(valExpr).Append("; }\n");
+            sb.Append("        return __r;\n");
+        }
+
+        sb.Append("    }\n");
         synth[name] = new SynthesizedMethod(name, sb.ToString());
         return name;
     }
 
+    // Old overload (no targetKind, no nullAsNull) for existing call-sites.
+    public static string Synthesize(
+        Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcType,
+        ITypeSymbol tgtKey, ITypeSymbol tgtVal, bool srcHasCount,
+        string? keyConverter, NullHandling keyNull, string? valConverter, NullHandling valNull)
+    {
+        return Synthesize(synth, srcType, tgtKey, tgtVal, srcHasCount,
+            DictTargetKind.Dictionary, keyConverter, keyNull, valConverter, valNull);
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
     private static string Expr(string access, string? conv, NullHandling nh)
     {
         if (conv is not null)
-        {
             return conv + "(" + access + ")";
-        }
         return nh switch
         {
-            NullHandling.ThrowIfNull => access + " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")",
+            NullHandling.ThrowIfNull   => access + " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")",
             NullHandling.ValueOrDefault => access + ".GetValueOrDefault()",
             _ => access,
         };
     }
 
-    private static bool IsDictionary(ITypeSymbol t, out ITypeSymbol key, out ITypeSymbol val)
+    private static bool TryGetDictTarget(ITypeSymbol t,
+        out ITypeSymbol key, out ITypeSymbol val, out DictTargetKind kind)
     {
-        key = t; val = t;
-        if (t is INamedTypeSymbol n && n.TypeArguments.Length == 2
-            && n.Name == "Dictionary"
-            && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+        key = t; val = t; kind = DictTargetKind.Dictionary;
+
+        if (t is not INamedTypeSymbol n || n.TypeArguments.Length != 2)
+            return false;
+
+        var ns   = n.ContainingNamespace?.ToDisplayString();
+        var name = n.Name;
+
+        if (ns == "System.Collections.Generic")
         {
-            key = n.TypeArguments[0];
-            val = n.TypeArguments[1];
-            return true;
+            switch (name)
+            {
+                case "Dictionary":
+                    key = n.TypeArguments[0]; val = n.TypeArguments[1];
+                    kind = DictTargetKind.Dictionary; return true;
+                case "IDictionary":
+                    key = n.TypeArguments[0]; val = n.TypeArguments[1];
+                    kind = DictTargetKind.IDictionary; return true;
+                case "IReadOnlyDictionary":
+                    key = n.TypeArguments[0]; val = n.TypeArguments[1];
+                    kind = DictTargetKind.IReadOnlyDictionary; return true;
+            }
+        }
+        else if (ns == "System.Collections.Immutable")
+        {
+            switch (name)
+            {
+                case "ImmutableDictionary":
+                    key = n.TypeArguments[0]; val = n.TypeArguments[1];
+                    kind = DictTargetKind.ImmutableDictionary; return true;
+                case "IImmutableDictionary":
+                    key = n.TypeArguments[0]; val = n.TypeArguments[1];
+                    kind = DictTargetKind.IImmutableDictionary; return true;
+            }
         }
         return false;
     }
@@ -103,9 +199,8 @@ internal static class DictionaryConverter
             }
         }
         if (kvp is null)
-        {
             return false;
-        }
+
         key = kvp.TypeArguments[0];
         val = kvp.TypeArguments[1];
 
@@ -126,12 +221,11 @@ internal static class DictionaryConverter
     {
         yield return t;
         foreach (var i in t.AllInterfaces)
-        {
             yield return i;
-        }
     }
 
-    private static string Fq(ITypeSymbol t) => t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    private static string Fq(ITypeSymbol t) =>
+        t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private static string Hash(string s)
     {
