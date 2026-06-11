@@ -118,6 +118,28 @@ catch (DwarfMapper.DwarfMappingDepthException ex)
     Console.WriteLine($"depth-guarded chain10: DwarfMappingDepthException caught (MaxDepth={ex.MaxDepth}) — correct");
 }
 
+// ── Preserve mode: 2-node cycle — topology reconstruction (Plan 19 Part C2) ───
+// The generator emits register-before-populate code so every source node is mapped
+// exactly once and back-edges are relinked using a ReferenceEqualityComparer-keyed
+// identity map.  ReferenceEqualityComparer and Dictionary are AOT-safe.
+var cycleMapper = new AotCycleMapper();
+
+var cA = new CycleNode { V = 10 };
+var cB = new CycleNode { V = 20 };
+cA.Next = cB;
+cB.Next = cA; // cycle: A→B→A
+
+var tA = cycleMapper.Map(cA);
+Console.WriteLine($"preserve cycle: tA.V={tA.V}, tA.Next.V={tA.Next!.V}");
+if (tA.V != 10) { Console.WriteLine("ERROR: preserve cycle tA.V wrong"); return 1; }
+if (tA.Next.V != 20) { Console.WriteLine("ERROR: preserve cycle tA.Next.V wrong"); return 1; }
+if (!ReferenceEquals(tA, tA.Next.Next))
+{
+    Console.WriteLine("ERROR: preserve cycle back-edge not closed (tA.Next.Next != tA)");
+    return 1;
+}
+Console.WriteLine("preserve cycle back-edge: closed correctly (AOT-safe)");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -171,3 +193,11 @@ public class AotNodeDto { public int V { get; set; } public AotNodeDto? Next { g
 
 [DwarfMapper(MaxDepth = 8)]
 public partial class AotDepthNodeMapper { public partial AotNodeDto Map(AotNode n); }
+
+// ── Preserve mode: 2-node cycle (Plan 19 Part C2) ────────────────────────────
+// ReferenceEqualityComparer + Dictionary<object,object> are reflection-free and AOT-safe.
+public class CycleNode    { public int V { get; set; } public CycleNode?    Next { get; set; } }
+public class CycleNodeDto { public int V { get; set; } public CycleNodeDto? Next { get; set; } }
+
+[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+public partial class AotCycleMapper { public partial CycleNodeDto Map(CycleNode n); }
