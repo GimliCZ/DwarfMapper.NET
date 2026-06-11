@@ -74,12 +74,21 @@ internal static class MapEmitter
                   .Append(" is null) throw new global::System.ArgumentNullException(nameof(")
                   .Append(method.ParameterName).AppendLine("));");
             }
-            else
+            else if (method.ReturnIsReferenceType)
             {
-                // Synthesized private nested mapper: null source → null target (defensive, not a throw).
-                // The calling mapper owns the outer null-check; the nested method propagates null.
+                // Synthesized private nested mapper with a REFERENCE target: null source → null target
+                // (defensive, not a throw). The calling mapper owns the outer null-check.
                 sb.Append(indent).Append("    if (").Append(method.ParameterName)
                   .AppendLine(" is null) return null!;");
+            }
+            else
+            {
+                // Synthesized private nested mapper with a VALUE-TYPE target: cannot return null
+                // (would be CS0037), so a null source is a loud failure rather than a silent default.
+                sb.Append(indent).Append("    if (").Append(method.ParameterName)
+                  .Append(" is null) throw new global::System.InvalidOperationException(\"Cannot map a null '")
+                  .Append(method.ParameterTypeFullName)
+                  .Append("' to value-type '").Append(method.ReturnTypeFullName).AppendLine("'.\");");
             }
         }
 

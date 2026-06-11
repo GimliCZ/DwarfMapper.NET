@@ -288,7 +288,8 @@ internal static class MapperExtractor
                 IsProjection: false,
                 ElementTargetTypeFullName: "",
                 ConstructorArguments: EquatableArray.From(nestedCtorArgs),
-                IsPartial: false);
+                IsPartial: false,
+                ReturnIsReferenceType: nestedTgt.IsReferenceType);
 
             methods.Add(nestedModel);
         }
@@ -921,10 +922,13 @@ internal static class MapperExtractor
         if (tgt.IsAbstract)
             return false;
 
-        // Not an IEnumerable / collection / dictionary (those are handled by CollectionConverter/DictionaryConverter earlier)
-        if (ImplementsIEnumerable(compilation, namedSrc) && namedSrc.TypeKind == TypeKind.Class && namedSrc.Name != "String")
+        // Not an IEnumerable / collection / dictionary — REGARDLESS of class vs struct.
+        // (Struct collections like ImmutableArray<T> must NOT be object-field-mapped; they belong to
+        //  CollectionConverter/DictionaryConverter, or fall to DWARF005 until supported. string is
+        //  already excluded above by the SpecialType.None check.)
+        if (ImplementsIEnumerable(compilation, namedSrc))
             return false;
-        if (ImplementsIEnumerable(compilation, tgt) && tgt.TypeKind == TypeKind.Class && tgt.Name != "String")
+        if (ImplementsIEnumerable(compilation, tgt))
             return false;
 
         // Target must have a constructible constructor (ConstructorSelector-compatible).

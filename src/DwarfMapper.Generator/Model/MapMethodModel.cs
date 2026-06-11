@@ -22,4 +22,10 @@ public sealed record MapMethodModel(
     /// <c>true</c> for user-declared partial methods (emitted as <c>public partial T Name(S s)</c>);
     /// <c>false</c> for auto-synthesized nested methods (emitted as <c>private T Name(S s)</c>).
     /// </summary>
-    bool IsPartial = true) : IEquatable<MapMethodModel>;
+    bool IsPartial = true,
+    /// <summary>
+    /// Whether the return (target) type is a reference type. Controls the synthesized
+    /// null-guard: a reference return can <c>return null!</c>; a value-type return cannot,
+    /// so it throws instead (avoids CS0037 on a struct/record-struct nested target).
+    /// </summary>
+    bool ReturnIsReferenceType = true) : IEquatable<MapMethodModel>;
