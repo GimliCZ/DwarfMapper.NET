@@ -35,4 +35,18 @@ public sealed class DwarfMapperAttribute : Attribute
     /// for every nested type (today's behavior).
     /// </summary>
     public bool AutoNest { get; set; } = true;
+
+    /// <summary>
+    /// Controls how a null source collection or dictionary is mapped.
+    /// <para>
+    /// <see cref="NullCollectionStrategy.AsEmpty"/> (default): a null source
+    /// produces an empty target; the mapper never throws <see cref="System.NullReferenceException"/>
+    /// for a null collection.
+    /// </para>
+    /// <para>
+    /// <see cref="NullCollectionStrategy.AsNull"/>: a null source propagates as
+    /// <c>null</c> on the target. The target member must be a nullable reference type.
+    /// </para>
+    /// </summary>
+    public NullCollectionStrategy NullCollections { get; set; } = NullCollectionStrategy.AsEmpty;
 }

@@ -157,7 +157,13 @@ public static class DiagnosticDescriptors
         "Destination type '{0}' has no accessible non-obsolete instance constructor to use for mapping",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    // DWARF027–030 reserved for Plan 19 Parts B–C (do not allocate here).
+    public static readonly DiagnosticDescriptor UnsupportedCollectionTarget = new(
+        "DWARF027",
+        "Unsupported collection/dictionary target type",
+        "Cannot map to '{0}': unsupported collection or dictionary target type. Use [MapProperty(Use = ...)] to supply a custom converter, or map it manually.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    // DWARF028–030 reserved for Plan 19 Parts C–D (do not allocate here).
 
     public static readonly DiagnosticDescriptor DeepNestingLimit = new(
         "DWARF031",
