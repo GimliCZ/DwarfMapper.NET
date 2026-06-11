@@ -28,4 +28,17 @@ public sealed record MapMethodModel(
     /// null-guard: a reference return can <c>return null!</c>; a value-type return cannot,
     /// so it throws instead (avoids CS0037 on a struct/record-struct nested target).
     /// </summary>
-    bool ReturnIsReferenceType = true) : IEquatable<MapMethodModel>;
+    bool ReturnIsReferenceType = true,
+    /// <summary>
+    /// When <c>true</c>, this synthesized method is on a type-graph cycle and must be
+    /// emitted with the depth-guarded signature <c>(S s, DwarfRefContext ctx, int depth)</c>.
+    /// The public declared mapper creates a <see cref="global::DwarfMapper.DwarfRefContext"/>
+    /// and passes <c>ctx, 0</c> into the first tracked call.
+    /// False for acyclic pairs (zero overhead).
+    /// </summary>
+    bool IsRecursionCapable = false,
+    /// <summary>
+    /// The <c>MaxDepth</c> value configured on the mapper class (default 64).
+    /// Only used when <see cref="IsRecursionCapable"/> is true for the public entry method.
+    /// </summary>
+    int MaxDepth = 64) : IEquatable<MapMethodModel>;
