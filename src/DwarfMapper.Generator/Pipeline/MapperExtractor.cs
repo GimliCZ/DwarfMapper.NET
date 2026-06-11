@@ -1355,9 +1355,17 @@ internal static class MapperExtractor
                 out var srcKey, out var srcVal, out var tgtKey, out var tgtVal,
                 out var dictHasCount, out var dictTargetKind))
         {
-            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, out var keyNeedsCtx, autoNest, nestedRegistry, isPreserve: isPreserve))
+            // A3: determine effective null-as-null for the OUTER dict helper based on target nullability.
+            // If nullAsNull=true but the target dict type is non-nullable, fall back to AsEmpty
+            // to prevent CS8601 (nullable helper assigned to non-nullable field).
+            bool dictEffectiveNullAsNull = nullAsNull && IsNullableReferenceType(tgtType);
+
+            // A1: propagate nullAsNull to nested key/value converters so nullable elements
+            // (e.g. the value type List<int>? in Dictionary<string, List<int>?>) generate
+            // helpers that preserve null instead of silently mapping to empty.
+            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, out var keyNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve))
                 return false;
-            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, out var valNeedsCtx, autoNest, nestedRegistry, isPreserve: isPreserve))
+            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, out var valNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve))
                 return false;
             // Under Preserve mode: if the key/value converter is an auto-nested object mapper, force it RC.
             if (isPreserve && nestedRegistry is not null)
@@ -1368,7 +1376,7 @@ internal static class MapperExtractor
                 { nestedRegistry.ForceRecursionCapable(valConv); valNeedsCtx = true; }
             }
             converterMethod = DictionaryConverter.Synthesize(synthesized, srcType, tgtKey, tgtVal,
-                dictHasCount, dictTargetKind, keyConv, keyNull, valConv, valNull, nullAsNull,
+                dictHasCount, dictTargetKind, keyConv, keyNull, valConv, valNull, dictEffectiveNullAsNull,
                 isPreserve, keyNeedsCtx, valNeedsCtx);
             // Under Preserve mode, mutable dicts emit a (ctx, depth) signature — the caller must pass ctx.
             bool isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary
@@ -1386,10 +1394,22 @@ internal static class MapperExtractor
                 converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
                 return true;
             }
-            // Resolve element converter. Note: element conversion itself is not preserve-mode at
-            // this level — but we need to know if the element converter is recursion-capable (needs ctx).
-            // We pass isPreserve=false here initially.
-            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, out var elemNeedsCtx, autoNest, nestedRegistry, isPreserve: isPreserve))
+
+            // A3: determine effective null-as-null for the OUTER collection helper based on target nullability.
+            // Reference-type collections: fall back to AsEmpty when target is non-nullable to prevent CS8601.
+            // ImmutableArray<T>?: CollectionConverter.TryResolve already handles Nullable<ImmutableArray<T>>
+            // by unwrapping it and setting nullAsNull=true in the shape, so collShape.NullAsNull is already
+            // correct and we just need to preserve it.
+            bool collEffectiveNullAsNull = collShape.Target == CollectionConverter.TargetKind.ImmutableArray
+                // ImmutableArray: shape.NullAsNull is authoritative (set by TryResolve for Nullable<> unwrapping).
+                ? collShape.NullAsNull
+                // Reference-type collections: only AsNull when target field is nullable ref type.
+                : (nullAsNull && IsNullableReferenceType(tgtType));
+
+            // A1: propagate nullAsNull to the element converter so nullable elements
+            // (e.g. element type List<int>? inside List<List<int>?>) generate helpers
+            // that preserve null instead of silently mapping to empty.
+            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, out var elemNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve))
                 return false; // element diagnostic already reported by the recursive call
 
             // Under Preserve mode: if the element converter is an auto-nested object mapper,
@@ -1404,6 +1424,10 @@ internal static class MapperExtractor
                 nestedRegistry.ForceRecursionCapable(elemConv);
                 elemNeedsCtx = true;
             }
+
+            // Apply effective nullAsNull (A3: may be false even when nullAsNull=true if target is non-nullable).
+            if (collEffectiveNullAsNull != nullAsNull)
+                collShape = new CollectionConverter.Shape(collShape.Target, collShape.SourceIsArray, collShape.Count, collEffectiveNullAsNull);
 
             converterMethod = CollectionConverter.Synthesize(synthesized, srcType, srcElem, tgtElem, collShape, elemConv, elemNull, isPreserve, elemNeedsCtx);
             // Under Preserve mode, mutable reference collections emit a (ctx, depth) signature.
@@ -1806,6 +1830,22 @@ internal static class MapperExtractor
         underlying = type;
         return false;
     }
+
+    /// <summary>
+    /// Returns true when <paramref name="type"/> is a nullable reference type
+    /// (i.e. a reference type with <c>NullableAnnotation.Annotated</c>), e.g. <c>List&lt;int&gt;?</c>.
+    /// Used to decide whether AsNull semantics are safe for a given target field (A3).
+    /// </summary>
+    private static bool IsNullableReferenceType(ITypeSymbol type) =>
+        type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated;
+
+    /// <summary>
+    /// Returns true when <paramref name="type"/> carries a nullable annotation
+    /// (either a nullable reference type or a nullable value type like <c>ImmutableArray&lt;T&gt;?</c>).
+    /// Used for value-type struct nullable targets such as <c>ImmutableArray&lt;T&gt;?</c> (A2/A3).
+    /// </summary>
+    private static bool IsNullableAnnotated(ITypeSymbol type) =>
+        type.NullableAnnotation == NullableAnnotation.Annotated;
 
     private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type)
     {

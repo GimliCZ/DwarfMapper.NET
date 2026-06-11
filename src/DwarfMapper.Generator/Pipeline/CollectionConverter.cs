@@ -82,6 +82,20 @@ internal static class CollectionConverter
         if (src.SpecialType == SpecialType.System_String || tgt.SpecialType == SpecialType.System_String)
             return false;
 
+        // A2: Nullable<ImmutableArray<T>> (i.e. ImmutableArray<T>?) is a nullable value-type struct.
+        // Unwrap it and set nullAsNull=true so the helper returns ImmutableArray<T>? (null for null input).
+        if (tgt is INamedTypeSymbol tgtNullable
+            && tgtNullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            && tgtNullable.TypeArguments.Length == 1)
+        {
+            var inner = tgtNullable.TypeArguments[0];
+            if (IsExactNamedType(inner, "ImmutableArray", "System.Collections.Immutable", 1, out _))
+            {
+                // Recurse with the unwrapped target and nullAsNull=true.
+                return TryResolve(src, inner, out srcElem, out tgtElem, out shape, nullAsNull: true);
+            }
+        }
+
         TargetKind targetKind;
 
         // ── Concrete T[] ─────────────────────────────────────────────────────
@@ -225,8 +239,13 @@ internal static class CollectionConverter
         string? elemConverter, NullHandling elemNull,
         bool isPreserve = false, bool elemNeedsCtx = false)
     {
-        var elemFq  = Fq(tgtElem);
+        // Use nullable-aware format for element type so emitted container types and Add() calls match
+        // nullable element types (e.g. List<List<int>?> not List<List<int>>).
+        var elemFq  = FqTypeArg(tgtElem);
         var srcFq   = Fq(srcType);
+        // Nullable-aware param type: strips outer nullable annotation then re-adds ?, preserving
+        // inner nullable type arguments (e.g. Dictionary<string, List<int>?> → Dictionary<string, List<int>?>?).
+        var srcParamType = FqNullableParam(srcType);
         var nullTag = shape.NullAsNull ? "_nn" : "";
         var preserveTag = (isPreserve && (IsMutableReferenceCollection(shape.Target) || elemNeedsCtx)) ? "_p" : "";
 
@@ -265,7 +284,7 @@ internal static class CollectionConverter
         switch (shape.Target)
         {
             case TargetKind.Array:
-                EmitArray(sb, name, srcFq, elemFq, item, shape, identity, shape.NullAsNull, effectivePreserve);
+                EmitArray(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, effectivePreserve);
                 break;
 
             case TargetKind.List:
@@ -273,35 +292,35 @@ internal static class CollectionConverter
             case TargetKind.IList:
             case TargetKind.IReadOnlyList:
             case TargetKind.IReadOnlyCollection:
-                EmitList(sb, name, srcFq, elemFq, item, shape, identity, shape.NullAsNull, effectivePreserve);
+                EmitList(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, effectivePreserve);
                 break;
 
             case TargetKind.HashSet:
             case TargetKind.ISet:
             case TargetKind.IReadOnlySet:
-                EmitHashSet(sb, name, srcFq, elemFq, item, srcType, identity, shape.NullAsNull, effectivePreserve);
+                EmitHashSet(sb, name, srcFq, srcParamType, elemFq, item, srcType, identity, shape.NullAsNull, effectivePreserve);
                 break;
 
             case TargetKind.IEnumerable:
                 // IEnumerable is lazy — cannot register-before-fill (no concrete instance exists).
                 // Still thread ctx/depth to element if needed (via closure in the Select lambda).
-                EmitLazyEnumerable(sb, name, srcFq, srcElem, elemFq, item, shape, identity, shape.NullAsNull, isPreserve && elemNeedsCtx);
+                EmitLazyEnumerable(sb, name, srcFq, srcParamType, srcElem, elemFq, item, shape, identity, shape.NullAsNull, isPreserve && elemNeedsCtx);
                 break;
 
             case TargetKind.ImmutableArray:
                 // ImmutableArray is a value-type struct — cannot be registered.
                 // Thread ctx/depth to element via the fill loop.
-                EmitImmutableArray(sb, name, srcFq, elemFq, item, shape, identity, shape.NullAsNull, isPreserve && elemNeedsCtx);
+                EmitImmutableArray(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, isPreserve && elemNeedsCtx);
                 break;
 
             case TargetKind.ImmutableList:
             case TargetKind.IImmutableList:
-                EmitImmutableList(sb, name, srcFq, elemFq, item, shape, identity, shape.NullAsNull, isPreserve && elemNeedsCtx);
+                EmitImmutableList(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, isPreserve && elemNeedsCtx);
                 break;
 
             case TargetKind.ImmutableHashSet:
             case TargetKind.IImmutableSet:
-                EmitImmutableHashSet(sb, name, srcFq, elemFq, item, shape, identity, shape.NullAsNull, isPreserve && elemNeedsCtx);
+                EmitImmutableHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, isPreserve && elemNeedsCtx);
                 break;
         }
 
@@ -315,11 +334,11 @@ internal static class CollectionConverter
     private const string CtxDepthParams = ", global::DwarfMapper.DwarfRefContext ctx, int depth";
 
     private static void EmitArray(
-        StringBuilder sb, string name, string srcFq, string elem,
+        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool isPreserve)
     {
         var retType   = nullAsNull ? elem + "[]?" : elem + "[]";
-        var paramType = srcFq + "?";  // always nullable; null guard inside the body handles it
+        var paramType = srcParamType;  // nullable-aware; null guard inside the body handles it
         var emptyExpr = nullAsNull ? "null" : "global::System.Array.Empty<" + elem + ">()";
         var ctxParams = isPreserve ? CtxDepthParams : "";
 
@@ -368,13 +387,13 @@ internal static class CollectionConverter
     }
 
     private static void EmitList(
-        StringBuilder sb, string name, string srcFq, string elem,
+        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool isPreserve)
     {
         var listFq    = "global::System.Collections.Generic.List<" + elem + ">";
         var retFq     = nullAsNull ? listFq + "?" : listFq;
         var emptyExpr = nullAsNull ? "null" : "new " + listFq + "()";
-        var paramType = srcFq + "?";  // always nullable; null guard inside handles it
+        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
         var ctxParams = isPreserve ? CtxDepthParams : "";
 
         // Return type is always List<T> (concrete); the field type is an interface but assignable.
@@ -397,8 +416,8 @@ internal static class CollectionConverter
         }
         else
         {
-            sb.Append("        var __r = new ").Append(listFq).Append("();\n");
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
+            sb.Append("        var __r = new ").Append(listFq).Append("();\n");
             sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
             sb.Append("        return __r;\n");
         }
@@ -406,13 +425,13 @@ internal static class CollectionConverter
     }
 
     private static void EmitHashSet(
-        StringBuilder sb, string name, string srcFq, string elem,
+        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, ITypeSymbol srcType, bool identity, bool nullAsNull, bool isPreserve)
     {
         var setFq     = "global::System.Collections.Generic.HashSet<" + elem + ">";
         var retFq     = nullAsNull ? setFq + "?" : setFq;
         var emptyExpr = nullAsNull ? "null" : "new " + setFq + "()";
-        var paramType = srcFq + "?";  // always nullable; null guard inside handles it
+        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
         var ctxParams = isPreserve ? CtxDepthParams : "";
 
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
@@ -434,8 +453,8 @@ internal static class CollectionConverter
         }
         else
         {
-            sb.Append("        var __r = new ").Append(setFq).Append("();\n");
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
+            sb.Append("        var __r = new ").Append(setFq).Append("();\n");
             sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
             sb.Append("        return __r;\n");
         }
@@ -443,20 +462,20 @@ internal static class CollectionConverter
     }
 
     private static void EmitLazyEnumerable(
-        StringBuilder sb, string name, string srcFq, ITypeSymbol srcElemType, string elem,
+        StringBuilder sb, string name, string srcFq, string srcParamType, ITypeSymbol srcElemType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
         // Return type is IEnumerable<T> (deferred — no materialisation).
         // IEnumerable is lazy: we cannot register-before-fill (no concrete instance).
         // We CAN thread ctx/depth into the Select lambda if the element converter needs it.
-        // However, since IEnumerable deferred evaluation means ctx lifetime could be tricky,
-        // for simplicity and correctness we materialise (via Select) and thread ctx if needed.
+        // Note: Enumerable.Select returns a lazy sequence (not materialised); the consumer
+        // enumerates it on demand, which is correct for IEnumerable<T> target fields.
         var ieFq      = "global::System.Collections.Generic.IEnumerable<" + elem + ">";
         var retFq     = nullAsNull ? ieFq + "?" : ieFq;
         var emptyExpr = nullAsNull
             ? "null"
             : "global::System.Array.Empty<" + elem + ">()";
-        var paramType = srcFq + "?";  // always nullable; null guard inside handles it
+        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
         var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
 
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
@@ -482,14 +501,16 @@ internal static class CollectionConverter
     }
 
     private static void EmitImmutableArray(
-        StringBuilder sb, string name, string srcFq, string elem,
+        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
         var tgtFq     = "global::System.Collections.Immutable.ImmutableArray<" + elem + ">";
-        var paramType = srcFq + "?";  // always nullable; null guard inside handles it
-        // ImmutableArray<T> is a value type — no nullable return type annotation needed
+        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
+        // ImmutableArray<T> is a value type. Under AsNull, we emit ImmutableArray<T>? (nullable struct)
+        // so a null source maps to null (HasValue=false) rather than default(ImmutableArray<T>)
+        // which would yield HasValue=true with an empty value — a silent loss.
         var emptyExpr = nullAsNull
-            ? "default(global::System.Collections.Immutable.ImmutableArray<" + elem + ">)"
+            ? "null"
             : "global::System.Collections.Immutable.ImmutableArray<" + elem + ">.Empty";
         var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
 
@@ -501,7 +522,10 @@ internal static class CollectionConverter
             System.StringComparison.Ordinal);
         string srcExpr = srcIsImmutableArrayStruct ? "src.GetValueOrDefault()" : "src";
 
-        sb.Append("    private ").Append(tgtFq).Append(' ').Append(name)
+        // Under AsNull, return ImmutableArray<T>? so null source yields null (HasValue=false).
+        var retTypeFq = nullAsNull ? tgtFq + "?" : tgtFq;
+
+        sb.Append("    private ").Append(retTypeFq).Append(' ').Append(name)
           .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity && shape.Count != CountKind.None && !elemNeedsCtx)
@@ -527,12 +551,12 @@ internal static class CollectionConverter
     }
 
     private static void EmitImmutableList(
-        StringBuilder sb, string name, string srcFq, string elem,
+        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
         var tgtFq     = "global::System.Collections.Immutable.ImmutableList<" + elem + ">";
         var retFq     = nullAsNull ? tgtFq + "?" : tgtFq;
-        var paramType = srcFq + "?";  // always nullable; null guard inside handles it
+        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
         var emptyExpr = nullAsNull
             ? "null"
             : "global::System.Collections.Immutable.ImmutableList<" + elem + ">.Empty";
@@ -557,12 +581,12 @@ internal static class CollectionConverter
     }
 
     private static void EmitImmutableHashSet(
-        StringBuilder sb, string name, string srcFq, string elem,
+        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
         var tgtFq     = "global::System.Collections.Immutable.ImmutableHashSet<" + elem + ">";
         var retFq     = nullAsNull ? tgtFq + "?" : tgtFq;
-        var paramType = srcFq + "?";  // always nullable; null guard inside handles it
+        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
         var emptyExpr = nullAsNull
             ? "null"
             : "global::System.Collections.Immutable.ImmutableHashSet<" + elem + ">.Empty";
@@ -743,6 +767,38 @@ internal static class CollectionConverter
 
     private static string Fq(ITypeSymbol t) =>
         t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    /// <summary>
+    /// Formats a type argument with nullable annotation preserved (e.g. <c>List&lt;int&gt;?</c>).
+    /// Used for element types in the generated container type names and Add() calls so nullable
+    /// element types (e.g. element <c>List&lt;int&gt;?</c>) are correctly reflected in the helper.
+    /// </summary>
+    private static string FqTypeArg(ITypeSymbol t) =>
+        t.ToDisplayString(NullableFullyQualifiedFormat);
+
+    // Nullable-aware fully-qualified format — includes ? on nullable reference type arguments.
+    // Used for PARAMETER types so the helper signature accepts nullable-annotated source types
+    // (e.g. Dictionary<string, List<int>?>) without a CS8620 mismatch.
+    private static readonly Microsoft.CodeAnalysis.SymbolDisplayFormat NullableFullyQualifiedFormat =
+        Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(
+                Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions
+                | Microsoft.CodeAnalysis.SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
+    /// <summary>
+    /// Computes the nullable-outer parameter type for a collection/dict helper method.
+    /// Strips any OUTER nullable annotation (e.g. <c>List&lt;int&gt;?</c> → <c>List&lt;int&gt;</c>),
+    /// formats with inner nullable annotations preserved, then adds <c>?</c> for the outer nullable.
+    /// This ensures the helper accepts both nullable and non-nullable outer types while correctly
+    /// matching inner-nullable type arguments (e.g. <c>Dictionary&lt;string, List&lt;int&gt;?&gt;</c>).
+    /// </summary>
+    private static string FqNullableParam(ITypeSymbol t)
+    {
+        // Strip outer nullable annotation so we don't double-annotate (List<int>? → List<int>).
+        // Inner annotations on type arguments are preserved by the nullable format.
+        var stripped = t.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
+        return stripped.ToDisplayString(NullableFullyQualifiedFormat) + "?";
+    }
 
     private static string Hash(string s)
     {

@@ -66,8 +66,10 @@ internal static class DictionaryConverter
         bool nullAsNull = false,
         bool isPreserve = false, bool keyNeedsCtx = false, bool valNeedsCtx = false)
     {
-        var keyFq  = Fq(tgtKey);
-        var valFq  = Fq(tgtVal);
+        // Use nullable-aware format for key/value types so the generated dict type args match
+        // the actual target type (e.g. Dictionary<string, List<int>?> not Dictionary<string, List<int>>).
+        var keyFq  = FqTypeArg(tgtKey);
+        var valFq  = FqTypeArg(tgtVal);
         var nullTag = nullAsNull ? "_nn" : "";
 
         bool isMutableDict = targetKind != DictTargetKind.ImmutableDictionary
@@ -93,7 +95,9 @@ internal static class DictionaryConverter
             return name;
 
         var srcFq     = Fq(srcType);
-        var srcParam  = srcFq + "?";  // always nullable; null guard inside handles it
+        // Nullable-aware param type: strips outer nullable, preserves inner nullable type arguments,
+        // then adds ? for the outer — avoids CS8620 when source has nullable value/element types.
+        var srcParam  = FqNullableParam(srcType);
         var retAnnot  = nullAsNull ? retTypeFq + "?" : retTypeFq;
         var keyExpr   = Expr("__kv.Key",   keyConverter, keyNull, keyNeedsCtx);
         var valExpr   = Expr("__kv.Value", valConverter, valNull, valNeedsCtx);
@@ -257,6 +261,30 @@ internal static class DictionaryConverter
 
     private static string Fq(ITypeSymbol t) =>
         t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    // Nullable-aware format — includes ? on nullable reference type arguments.
+    private static readonly Microsoft.CodeAnalysis.SymbolDisplayFormat NullableFullyQualifiedFormat =
+        Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(
+                Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions
+                | Microsoft.CodeAnalysis.SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
+    /// <summary>
+    /// Formats a type argument with nullable annotation preserved (e.g. <c>List&lt;int&gt;?</c>).
+    /// Used for key/value type arguments in the generated dict type name.
+    /// </summary>
+    private static string FqTypeArg(ITypeSymbol t) =>
+        t.ToDisplayString(NullableFullyQualifiedFormat);
+
+    /// <summary>
+    /// Computes the nullable-outer parameter type for a dict helper: strips outer nullable annotation,
+    /// preserves inner nullable type arguments, then adds <c>?</c> for the outer nullable.
+    /// </summary>
+    private static string FqNullableParam(ITypeSymbol t)
+    {
+        var stripped = t.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
+        return stripped.ToDisplayString(NullableFullyQualifiedFormat) + "?";
+    }
 
     private static string Hash(string s)
     {

@@ -12,9 +12,10 @@ namespace DwarfMapper.Generator.Tests;
 
 internal static class GeneratorTestHarness
 {
-    public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(string source)
+    public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(string source,
+        NullableContextOptions nullable = NullableContextOptions.Disable)
     {
-        var compilation = BuildCompilation("DwarfMapperTestAsm", source);
+        var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
 
         var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
@@ -31,9 +32,10 @@ internal static class GeneratorTestHarness
     /// Runs the generator and returns the C# ERROR diagnostics of the final
     /// compilation (original source + generated sources). Empty => generated code compiles.
     /// </summary>
-    public static ImmutableArray<Diagnostic> RunAndGetCompilationErrors(string source)
+    public static ImmutableArray<Diagnostic> RunAndGetCompilationErrors(string source,
+        NullableContextOptions nullable = NullableContextOptions.Disable)
     {
-        var compilation = BuildCompilation("DwarfMapperCompileTestAsm", source);
+        var compilation = BuildCompilation("DwarfMapperCompileTestAsm", source, nullable);
 
         var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
@@ -73,14 +75,16 @@ internal static class GeneratorTestHarness
 
     // ── Shared compilation builder ────────────────────────────────────────────
 
-    private static CSharpCompilation BuildCompilation(string assemblyName, string source)
+    private static CSharpCompilation BuildCompilation(string assemblyName, string source,
+        NullableContextOptions nullable = NullableContextOptions.Disable)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
         return CSharpCompilation.Create(
             assemblyName,
             new[] { syntaxTree },
             BuildReferences(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: nullable));
     }
 
     private static System.Collections.Generic.IEnumerable<MetadataReference> BuildReferences() =>
