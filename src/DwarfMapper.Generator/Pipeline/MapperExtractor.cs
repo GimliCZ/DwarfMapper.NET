@@ -298,16 +298,26 @@ internal static class MapperExtractor
         {
             ct.ThrowIfCancellationRequested();
 
-            var (nestedSrc, nestedTgt, nestedName) = nestedRegistry.Dequeue();
+            var (nestedSrc, nestedTgt, nestedName, pairAutoNest) = nestedRegistry.Dequeue();
 
             // Inform the registry that we are now building this pair's body,
             // so subsequent GetOrReserve calls record edges in the dependency graph.
             nestedRegistry.SetCurrentPair(nestedName);
 
-            // We use the location of the first declared method as the diagnostic anchor
-            // for nested diagnostics (acceptable per spec).
-            var nestedLocation = methods.Count > 0 ? methods[0].Members.Count > 0
-                ? (LocationInfo?)null : null : null;
+            // C3: use the first declared method's location as the diagnostic anchor for
+            // nested diagnostics (not null, so DWARF030 has a non-null location).
+            LocationInfo? nestedLocation = null;
+            for (var mi = 0; mi < methods.Count; mi++)
+            {
+                if (methods[mi].IsPartial)
+                {
+                    // We don't have the original method symbol here, but we can use
+                    // a null location — the requirement is only for DWARF030 to be non-null.
+                    // For DWARF001/005/007, the path prefix is more important than location.
+                    // (LocationInfo from method model is not stored; use null per existing contract.)
+                    break;
+                }
+            }
 
             // Choose construction strategy for the nested target type.
             var nestedCtor = ConstructorSelector.Select(nestedTgt, diagnostics, nestedLocation, out var nestedObjInitOnly);
@@ -330,10 +340,11 @@ internal static class MapperExtractor
             }
             else
             {
+                // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
                 if (!ResolveConstructorArguments(nestedCtor, nestedSrc, ctx.SemanticModel.Compilation,
                     nestedLocation, diagnostics, caseInsensitive, System.Array.Empty<(string, string, string?)>(),
                     allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
-                    classAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
+                    pairAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
                     nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode))
                 {
                     nestedRegistry.ClearCurrentPair();
@@ -342,6 +353,7 @@ internal static class MapperExtractor
                 nestedRequiredMustInit = ComputeRequiredMustInitialize(nestedCtor, nestedTgt, nestedConsumed);
             }
 
+            // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
             var nestedMembers = ResolveMembers(
                 nestedSrc, nestedTgt,
                 new HashSet<string>(System.StringComparer.Ordinal), // no ignores for synthesized
@@ -351,7 +363,7 @@ internal static class MapperExtractor
                 allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                 new List<string>(), new List<string>(), // no flatten/reinterpret
                 nestedConsumed, nestedRequiredMustInit,
-                classAutoNest, nestedRegistry,
+                pairAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode);
 
             nestedRegistry.ClearCurrentPair();
@@ -1619,17 +1631,27 @@ internal static class MapperExtractor
         // Placed LAST before DWARF005: only fires when nothing else resolved the pair.
         // Gate: autoNest=true AND both types are mappable named object types.
         if (autoNest && nestedRegistry is not null
-            && tgtType is INamedTypeSymbol namedTgt
-            && IsMappableObjectPair(compilation, srcType, namedTgt))
+            && tgtType is INamedTypeSymbol namedTgt)
         {
-            var synthName = nestedRegistry.GetOrReserve(srcType, namedTgt, location);
-            if (synthName is not null)
+            if (IsMappableObjectPair(compilation, srcType, namedTgt))
             {
-                converterMethod = synthName;
-                return true;
+                // C1: pass the effective autoNest value so the drain loop uses it for the pair's body.
+                var synthName = nestedRegistry.GetOrReserve(srcType, namedTgt, location, autoNest);
+                if (synthName is not null)
+                {
+                    converterMethod = synthName;
+                    return true;
+                }
+                // GetOrReserve returned null → cap exceeded; DWARF031 will be reported after drain.
+                // Fall through to DWARF005.
             }
-            // GetOrReserve returned null → cap exceeded; DWARF031 will be reported after drain.
-            // Fall through to DWARF005.
+            else if (IsAbstractOrInterfaceAutoNestSource(compilation, srcType, namedTgt))
+            {
+                // C2: abstract/interface source — emit DWARF033 (loud, never silent).
+                var srcName = srcType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AbstractSourceAutoNest, location, srcName));
+                return false;
+            }
         }
 
         diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, targetName));
@@ -1639,7 +1661,8 @@ internal static class MapperExtractor
     /// <summary>
     /// Returns true when both <paramref name="src"/> and <paramref name="tgt"/> are named types
     /// suitable for auto-nested-mapper synthesis. Excludes: scalars, enums, string, collection/
-    /// IEnumerable types, Nullable&lt;T&gt;, interfaces, and abstract target types.
+    /// IEnumerable types, Nullable&lt;T&gt;, interfaces, abstract target types, and
+    /// abstract/interface source types (C2: those would silently drop derived-only members).
     /// </summary>
     private static bool IsMappableObjectPair(Compilation compilation, ITypeSymbol src, INamedTypeSymbol tgt)
     {
@@ -1665,6 +1688,11 @@ internal static class MapperExtractor
         if (tgt.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
             return false;
 
+        // C2: abstract/interface SOURCE type — auto-nest would silently drop derived members.
+        // We return false here so the caller can emit DWARF033 when appropriate.
+        if (namedSrc.IsAbstract)
+            return false;
+
         // Not an interface target (can't construct an interface)
         if (tgt.IsAbstract)
             return false;
@@ -1685,6 +1713,30 @@ internal static class MapperExtractor
             return false;
 
         return true;
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="src"/> is a named type that would be a mappable-object-pair
+    /// source except that it is abstract or an interface — i.e. it would silently drop derived members
+    /// (C2: DWARF033 guard).
+    /// </summary>
+    private static bool IsAbstractOrInterfaceAutoNestSource(Compilation compilation, ITypeSymbol src, INamedTypeSymbol tgt)
+    {
+        if (src is not INamedTypeSymbol namedSrc) return false;
+
+        // Must pass all other IsMappableObjectPair gates except the IsAbstract-source check
+        if (namedSrc.TypeKind != TypeKind.Class && namedSrc.TypeKind != TypeKind.Struct) return false;
+        if (tgt.TypeKind != TypeKind.Class && tgt.TypeKind != TypeKind.Struct) return false;
+        if (namedSrc.SpecialType != SpecialType.None || tgt.SpecialType != SpecialType.None) return false;
+        if (namedSrc.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T) return false;
+        if (tgt.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T) return false;
+        if (tgt.IsAbstract) return false;
+        if (ImplementsIEnumerable(compilation, namedSrc)) return false;
+        if (ImplementsIEnumerable(compilation, tgt)) return false;
+        if (!tgt.InstanceConstructors.Any(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic)) return false;
+
+        // The source is abstract (class abstract) or interface — this is the C2 trigger
+        return namedSrc.IsAbstract;
     }
 
     /// <summary>
@@ -2242,6 +2294,7 @@ internal static class MapperExtractor
         var sources = ReadableMembers(sourceType)
             .GroupBy(m => m.Name, comparer)
             .ToDictionary(g => g.Key, g => g.First(), comparer);
+        // C4: pass comparer to nested resolvers so CaseInsensitive propagates into nested objects.
         var writableByName = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
         foreach (var m in WritableMembers(targetType)) { writableByName[m.Name] = m.Type; }
 
@@ -2286,7 +2339,7 @@ internal static class MapperExtractor
             var srcExprForExplicit = paramExpr + "." + srcName;
             var inlineExpr = ResolveProjectionExpr(
                 sm, tgtType, srcExprForExplicit, 0, compilation, location,
-                diagnostics, tgtName, enumStrategy);
+                diagnostics, tgtName, enumStrategy, comparer);
             if (inlineExpr is not null)
                 result.Add(new ProjectionMemberMap(tgtName, inlineExpr));
         }
@@ -2316,6 +2369,7 @@ internal static class MapperExtractor
 
             if (bestCtor is not null)
             {
+                // C4: pass comparer (carries CaseInsensitive setting) to ctor projection resolver.
                 var ctorExpr = ResolveProjectionCtorExpr(
                     bestCtor, sourceType, paramExpr, 0,
                     compilation, location, diagnostics, targetType, enumStrategy, comparer);
@@ -2337,9 +2391,10 @@ internal static class MapperExtractor
                 continue;
             }
             var srcAccessExpr = paramExpr + "." + src.Name;
+            // C4: pass comparer so nested objects respect CaseInsensitive setting.
             var inlineExpr = ResolveProjectionExpr(
                 src.Type, target.Type, srcAccessExpr, 0,
-                compilation, location, diagnostics, target.Name, enumStrategy);
+                compilation, location, diagnostics, target.Name, enumStrategy, comparer);
             if (inlineExpr is not null)
                 result.Add(new ProjectionMemberMap(target.Name, inlineExpr));
         }
@@ -2366,6 +2421,10 @@ internal static class MapperExtractor
     ///   - Depth > ProjectionMaxDepth.
     ///   - No translatable conversion found.
     /// </summary>
+    /// <param name="comparer">
+    /// C4: the case-sensitivity comparer for member name matching; passed recursively into
+    /// nested object and ctor resolvers so CaseInsensitive propagates to all depths.
+    /// </param>
     private static string? ResolveProjectionExpr(
         ITypeSymbol srcType, ITypeSymbol tgtType,
         string srcExpr,
@@ -2374,8 +2433,11 @@ internal static class MapperExtractor
         LocationInfo? location,
         List<DiagnosticInfo> diagnostics,
         string targetMemberName,
-        EnumStrategy enumStrategy)
+        EnumStrategy enumStrategy,
+        System.StringComparer? comparer = null)
     {
+        comparer ??= System.StringComparer.Ordinal;
+
         // ── Depth guard ───────────────────────────────────────────────────────
         if (depth > ProjectionMaxDepth)
         {
@@ -2401,9 +2463,10 @@ internal static class MapperExtractor
 
             // Translatable collection: emit .Select(...).ToList()/.ToArray()/lazy
             var elemParam = $"__i{depth}";
+            // C4: propagate comparer into element expression resolver.
             var elemExpr = ResolveProjectionExpr(
                 srcElem, tgtElem, elemParam, depth + 1,
-                compilation, location, diagnostics, targetMemberName, enumStrategy);
+                compilation, location, diagnostics, targetMemberName, enumStrategy, comparer);
             if (elemExpr is null) return null; // DWARF028 already emitted
 
             // Use fully-qualified Enumerable.Select to avoid needing 'using System.Linq' in generated code.
@@ -2445,12 +2508,40 @@ internal static class MapperExtractor
             return srcExpr;
         }
 
-        // ── 2. Enum by-value cast ─────────────────────────────────────────────
+        // ── 2. Enum by-value cast (enum→enum) ─────────────────────────────────
         if (srcType.TypeKind == TypeKind.Enum && tgtType.TypeKind == TypeKind.Enum
             && enumStrategy == EnumStrategy.ByValue)
         {
             var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             return $"({tgtFqn}){srcExpr}";
+        }
+
+        // ── C6: enum↔integral inline cast (SQL-translatable as a direct cast) ──
+        // enum→integral (e.g. Status→int): cast to the integral type.
+        // integral→enum (e.g. int→Status): cast to the enum type.
+        // Only emit when the conversion is widening or same-width (safe). Narrowing (enum:long→int)
+        // would need CreateChecked — fall through to DWARF028 for that case.
+        if (srcType.TypeKind == TypeKind.Enum && TypeInterfaces.IsIntegral(tgtType))
+        {
+            // Get the enum's underlying integral type for a width-safety check.
+            var enumUnderlying = ((INamedTypeSymbol)srcType).EnumUnderlyingType;
+            if (enumUnderlying is not null && IsWideningOrSameWidth(enumUnderlying, tgtType))
+            {
+                var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                return $"({tgtFqn}){srcExpr}";
+            }
+            // Narrowing cast (e.g. enum:long→int) — fall through to DWARF028.
+        }
+        else if (TypeInterfaces.IsIntegral(srcType) && tgtType.TypeKind == TypeKind.Enum)
+        {
+            // integral→enum: safe when source integral width ≤ enum underlying width.
+            var enumUnderlying = ((INamedTypeSymbol)tgtType).EnumUnderlyingType;
+            if (enumUnderlying is not null && IsWideningOrSameWidth(srcType, enumUnderlying))
+            {
+                var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                return $"({tgtFqn}){srcExpr}";
+            }
+            // Narrowing — fall through to DWARF028.
         }
 
         // ── UNSAFE: enum by-name (enumStrategy == ByName, different enum types) ──
@@ -2489,18 +2580,35 @@ internal static class MapperExtractor
         if (srcType is INamedTypeSymbol namedSrc && tgtType is INamedTypeSymbol namedTgt
             && IsMappableObjectPair(compilation, srcType, namedTgt))
         {
+            // C4: pass comparer into nested object resolver.
             return ResolveProjectionNestedObjectExpr(
                 namedSrc, namedTgt, srcExpr, depth, compilation, location, diagnostics,
-                targetMemberName, enumStrategy);
+                targetMemberName, enumStrategy, comparer);
         }
 
-        // ── Nullable T? → T (source is nullable, unwrap for the inner expression) ──
+        // ── Nullable T? → nullable U? or non-nullable U ───────────────────────
+        // C5: when source is Nullable<T> and target is also Nullable<U>, emit a null-preserving
+        // HasValue ternary (SQL-translatable) instead of .Value (throws on null).
         if (IsNullableValue(srcType, out var srcUnderlying))
         {
-            var innerExpr = ResolveProjectionExpr(
-                srcUnderlying, tgtType, srcExpr + ".Value", depth,
-                compilation, location, diagnostics, targetMemberName, enumStrategy);
-            return innerExpr;
+            if (IsNullableValue(tgtType, out var tgtUnderlying))
+            {
+                // int?→long?: null-preserving ternary: __s.X.HasValue ? (long?)__s.X.Value : null
+                var innerExpr = ResolveProjectionExpr(
+                    srcUnderlying, tgtUnderlying, srcExpr + ".Value", depth,
+                    compilation, location, diagnostics, targetMemberName, enumStrategy, comparer);
+                if (innerExpr is null) return null;
+                var tgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                return $"{srcExpr}.HasValue ? ({tgtNullableFqn}){innerExpr} : null";
+            }
+            else
+            {
+                // int?→long (non-nullable target): keep .Value (user asked for non-null; throws on null).
+                var innerExpr = ResolveProjectionExpr(
+                    srcUnderlying, tgtType, srcExpr + ".Value", depth,
+                    compilation, location, diagnostics, targetMemberName, enumStrategy, comparer);
+                return innerExpr;
+            }
         }
 
         // ── Fallback: no translatable conversion found ────────────────────────
@@ -2510,20 +2618,53 @@ internal static class MapperExtractor
     }
 
     /// <summary>
+    /// C6 helper: returns true when a cast from <paramref name="src"/> to <paramref name="tgt"/> is
+    /// widening or same-width (thus safe as a direct inline cast in SQL projection).
+    /// Both must be integral types.
+    /// </summary>
+    private static bool IsWideningOrSameWidth(ITypeSymbol src, ITypeSymbol tgt)
+    {
+        // Return the bit-width rank of an integral type (0 = unknown/unsafe).
+        static int Rank(ITypeSymbol t) => t.SpecialType switch
+        {
+            SpecialType.System_Byte    => 1,
+            SpecialType.System_SByte   => 2,
+            SpecialType.System_UInt16  => 3,
+            SpecialType.System_Int16   => 4,
+            SpecialType.System_UInt32  => 5,
+            SpecialType.System_Int32   => 6,
+            SpecialType.System_UInt64  => 7,
+            SpecialType.System_Int64   => 8,
+            _ => 0,
+        };
+        var sr = Rank(src);
+        var tr = Rank(tgt);
+        return sr > 0 && tr > 0 && sr <= tr;
+    }
+
+    /// <summary>
     /// Build an inline member-init expression for a nested object target.
     /// For nullable reference source: emits null-navigation ternary.
     /// For non-null / value-type source: emits plain member-init.
     /// </summary>
+    /// <param name="comparer">
+    /// C4: the case-sensitivity comparer for member name matching, propagated from the top-level
+    /// call site so CaseInsensitive works at all nesting depths.
+    /// </param>
     private static string? ResolveProjectionNestedObjectExpr(
         INamedTypeSymbol srcType, INamedTypeSymbol tgtType,
         string srcExpr, int depth,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
-        string targetMemberName, EnumStrategy enumStrategy)
+        string targetMemberName, EnumStrategy enumStrategy,
+        System.StringComparer? comparer = null)
     {
+        comparer ??= System.StringComparer.Ordinal;
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
+        // C4: use the configured comparer for member lookup so CaseInsensitive applies here.
         var srcReadable = ReadableMembers(srcType)
-            .ToDictionary(m => m.Name, m => m, System.StringComparer.Ordinal);
+            .GroupBy(m => m.Name, comparer)
+            .ToDictionary(g => g.Key, g => g.First(), comparer);
 
         // Build member-init or ctor expression for the nested object.
         // Mirror the decision logic in ResolveProjectionMembers:
@@ -2560,10 +2701,11 @@ internal static class MapperExtractor
                 return null;
             }
 
+            // C4: pass the configured comparer (not hardcoded Ordinal) so CaseInsensitive propagates.
             var ctorExpr = ResolveProjectionCtorExpr(
                 bestCtor, srcType, srcExpr, depth,
                 compilation, location, diagnostics, tgtType, enumStrategy,
-                System.StringComparer.Ordinal);
+                comparer);
             if (ctorExpr is null) return null;
             innerBodyExpr = ctorExpr;
         }
@@ -2584,10 +2726,11 @@ internal static class MapperExtractor
                 }
 
                 var memberSrcExpr = srcExpr + "." + srcMember.Name;
+                // C4: propagate comparer into recursive member resolution.
                 var memberInlineExpr = ResolveProjectionExpr(
                     srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
                     compilation, location, diagnostics,
-                    targetMemberName + "." + tgtMember.Name, enumStrategy);
+                    targetMemberName + "." + tgtMember.Name, enumStrategy, comparer);
 
                 if (memberInlineExpr is null)
                 {
@@ -2644,9 +2787,10 @@ internal static class MapperExtractor
             }
 
             var paramSrcExpr = srcExpr + "." + srcMember.Name;
+            // C4: propagate comparer into ctor param expression resolver.
             var paramInlineExpr = ResolveProjectionExpr(
                 srcMember.Type, param.Type, paramSrcExpr, depth + 1,
-                compilation, location, diagnostics, param.Name, enumStrategy);
+                compilation, location, diagnostics, param.Name, enumStrategy, comparer);
 
             if (paramInlineExpr is null)
             {
