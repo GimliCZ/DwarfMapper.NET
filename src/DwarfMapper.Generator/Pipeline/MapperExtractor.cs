@@ -168,6 +168,133 @@ internal static class MapperExtractor
 
             var sourceType = method.Parameters[0].Type;
 
+            // Read methodAutoNest early — needed by both Plan 21 (derived dispatch) and the normal path.
+            var methodAutoNest = ReadMethodAutoNest(method, classAutoNest);
+
+            // ── Plan 21: [MapDerivedType] dispatch ───────────────────────────
+            var rawDerivedPairs = ReadDerivedTypeAttributes(method, ctx.SemanticModel.Compilation);
+            if (rawDerivedPairs.Count > 0)
+            {
+                var resolvedArms = new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod)>();
+                var seenSrcTypes = new HashSet<string>(System.StringComparer.Ordinal);
+
+                foreach (var (derivedSrc, derivedTgt) in rawDerivedPairs)
+                {
+                    var srcFqn = derivedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    var tgtFqn = derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+                    // 1. srcDerived must be assignable to method source type.
+                    if (!HasImplicitConversion(ctx.SemanticModel.Compilation, derivedSrc, sourceType))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.InvalidMapDerivedType,
+                            methodLocation,
+                            $"[MapDerivedType] source type '{srcFqn}' is not assignable to method source type '{sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}'; derived source must inherit from or implement the method's source type."));
+                        continue;
+                    }
+
+                    // 2. tgtDerived must be assignable to method return type.
+                    if (!HasImplicitConversion(ctx.SemanticModel.Compilation, derivedTgt, targetType))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.InvalidMapDerivedType,
+                            methodLocation,
+                            $"[MapDerivedType] target type '{tgtFqn}' is not assignable to method return type '{targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}'; derived target must inherit from or implement the method's return type."));
+                        continue;
+                    }
+
+                    // 3. No duplicate source types.
+                    if (!seenSrcTypes.Add(srcFqn))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.InvalidMapDerivedType,
+                            methodLocation,
+                            $"[MapDerivedType] duplicate source type '{srcFqn}'; each derived source type may only be registered once per dispatch method."));
+                        continue;
+                    }
+
+                    // 4. Resolve converter via TryResolveConversion.
+                    bool resolved = TryResolveConversion(
+                        ctx.SemanticModel.Compilation,
+                        derivedSrc, derivedTgt,
+                        null,
+                        allMethods, mapperMethods,
+                        enumStrategy, synthesized,
+                        nullStrategy,
+                        methodLocation, srcFqn, diagnostics,
+                        out var armConverter, out _, out _,
+                        methodAutoNest, nestedRegistry,
+                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode);
+
+                    if (!resolved || armConverter is null)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.InvalidMapDerivedType,
+                            methodLocation,
+                            $"[MapDerivedType] pair ('{srcFqn}', '{tgtFqn}') is not mappable: no declared partial overload and not auto-nestable."));
+                        continue;
+                    }
+
+                    resolvedArms.Add((derivedSrc, derivedTgt, armConverter));
+                }
+
+                // Sort arms most-derived-first.
+                var sortedArms = SortArmsMostDerivedFirst(resolvedArms, ctx.SemanticModel.Compilation);
+                var armModels = sortedArms
+                    .Select(a => new DerivedTypeArm(
+                        a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        a.ConverterMethod))
+                    .ToArray();
+
+                // Collect applicable hooks.
+                var derivedBefore = new List<string>();
+                foreach (var h in beforeHookDefs)
+                {
+                    if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.ParamType))
+                        derivedBefore.Add(h.Name);
+                }
+                var derivedAfter = new List<HookCall>();
+                foreach (var h in afterHookDefs)
+                {
+                    bool applies;
+                    bool takesSource;
+                    if (h.P1 is null)
+                    {
+                        applies = HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P0);
+                        takesSource = false;
+                    }
+                    else
+                    {
+                        applies = HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0)
+                            && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
+                        takesSource = true;
+                    }
+                    if (!applies) continue;
+                    var targetIsRef = h.TargetRefKind == RefKind.Ref;
+                    if (targetType.IsValueType && !targetIsRef) continue;
+                    derivedAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: targetIsRef));
+                }
+
+                methods.Add(new MapMethodModel(
+                    method.Name,
+                    AccessibilityText(method.DeclaredAccessibility),
+                    targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Name,
+                    sourceType.IsReferenceType,
+                    EquatableArray.From(System.Array.Empty<MemberMap>()),
+                    EquatableArray.From(derivedBefore),
+                    EquatableArray.From(derivedAfter),
+                    IsProjection: false,
+                    ElementTargetTypeFullName: "",
+                    ConstructorArguments: EquatableArray.From(System.Array.Empty<MemberMap>()),
+                    IsPartial: true,
+                    ReturnIsReferenceType: targetType.IsReferenceType,
+                    DerivedTypeArms: EquatableArray.From(armModels)));
+                continue;
+            }
+            // ── End Plan 21 ──────────────────────────────────────────────────
+
             // Choose construction strategy for the target type.
             var ctor = ConstructorSelector.Select(targetType, diagnostics, methodLocation, out var objInitOnly);
             if (ctor is null)
@@ -184,7 +311,6 @@ internal static class MapperExtractor
             var explicitMaps = ReadExplicitMaps(method);
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
-            var methodAutoNest = ReadMethodAutoNest(method, classAutoNest);
 
             // ── Plan 20: [FlattenGraph] ───────────────────────────────────────
             // Read and resolve [FlattenGraph] directives BEFORE ResolveMembers so that
@@ -1362,6 +1488,78 @@ internal static class MapperExtractor
 
         ctorArgs = args.ToArray();
         return allOk;
+    }
+
+    /// <summary>
+    /// Reads [MapDerivedType&lt;TSource,TTarget&gt;] (generic) and
+    /// [MapDerivedType(typeof(TSource),typeof(TTarget))] (non-generic) annotations from a method.
+    /// Returns raw pairs of (srcType, tgtType) INamedTypeSymbol — not yet validated.
+    /// </summary>
+    private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt)> ReadDerivedTypeAttributes(
+        IMethodSymbol method, Compilation compilation)
+    {
+        var result = new List<(INamedTypeSymbol, INamedTypeSymbol)>();
+        foreach (var attr in method.GetAttributes())
+        {
+            var cls = attr.AttributeClass;
+            if (cls is null) continue;
+
+            // Generic form: MapDerivedTypeAttribute<TSource, TTarget>
+            if (cls.IsGenericType
+                && cls.ConstructedFrom?.ToDisplayString().StartsWith(
+                    "DwarfMapper.MapDerivedTypeAttribute<", System.StringComparison.Ordinal) == true
+                && cls.TypeArguments.Length == 2
+                && cls.TypeArguments[0] is INamedTypeSymbol gSrc
+                && cls.TypeArguments[1] is INamedTypeSymbol gTgt)
+            {
+                result.Add((gSrc, gTgt));
+                continue;
+            }
+
+            // Non-generic form: [MapDerivedType(typeof(TSource), typeof(TTarget))]
+            var fqn = cls.ToDisplayString();
+            if (fqn == "DwarfMapper.MapDerivedTypeAttribute"
+                && attr.ConstructorArguments.Length == 2
+                && attr.ConstructorArguments[0].Value is INamedTypeSymbol nSrc
+                && attr.ConstructorArguments[1].Value is INamedTypeSymbol nTgt)
+            {
+                result.Add((nSrc, nTgt));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Returns the inheritance depth of <paramref name="type"/> (number of base classes between
+    /// it and System.Object). Interfaces return depth 0.
+    /// </summary>
+    private static int InheritanceDepth(ITypeSymbol type)
+    {
+        var depth = 0;
+        var current = type.BaseType;
+        while (current is not null && current.SpecialType != SpecialType.System_Object)
+        {
+            depth++;
+            current = current.BaseType;
+        }
+        return depth;
+    }
+
+    /// <summary>
+    /// Sorts derived-type arms so that more-derived types appear before less-derived ones (most-derived-first).
+    /// Stable for unrelated types (preserves declaration order).
+    /// </summary>
+    private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod)>
+        SortArmsMostDerivedFirst(
+            List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod)> arms,
+            Compilation compilation)
+    {
+        return arms
+            .Select((arm, idx) => (arm, idx, depth: InheritanceDepth(arm.Src)))
+            .OrderByDescending(x => x.depth)
+            .ThenBy(x => x.idx)
+            .Select(x => x.arm)
+            .ToList();
     }
 
     private static bool TryResolveConversion(

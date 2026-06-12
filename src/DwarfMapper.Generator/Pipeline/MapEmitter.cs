@@ -183,6 +183,14 @@ internal static class MapEmitter
             return;
         }
 
+        // ── Plan 21: [MapDerivedType] derived-dispatch switch ────────────────
+        if (method.DerivedTypeArms.Count > 0)
+        {
+            EmitDerivedDispatchBody(sb, method, indent);
+            sb.Append(indent).AppendLine("}");
+            return;
+        }
+
         // Emit before-hooks here ONLY for non-Preserve paths.
         // For Preserve-mode recursion-capable methods (both public and synthesized),
         // before-hooks are emitted INSIDE EmitPreserveRegisterBeforePopulate AFTER TryGetReference
@@ -418,6 +426,61 @@ internal static class MapEmitter
 
         // Step 5: Return the fully-populated target.
         sb.Append(indent).AppendLine("    return __dwarf_t;");
+    }
+
+    /// <summary>
+    /// Emits the switch-expression dispatch body for a [MapDerivedType]-annotated method.
+    /// Generated switch is most-derived-first (sorted by MapperExtractor).
+    /// Wildcard arm throws ArgumentException (loud, never silent).
+    /// </summary>
+    private static void EmitDerivedDispatchBody(
+        StringBuilder sb, MapMethodModel method, string indent)
+    {
+        var p = method.ParameterName;
+        var arms = method.DerivedTypeArms;
+        var hasAfter = method.AfterHooks.Count > 0;
+
+        // Before hooks (if any)
+        foreach (var before in method.BeforeHooks)
+        {
+            sb.Append(indent).Append("    ").Append(before).Append('(').Append(p).AppendLine(");");
+        }
+
+        // Switch expression
+        var switchLine = hasAfter
+            ? $"    var __dwarf_target = {p} switch"
+            : $"    return {p} switch";
+        sb.Append(indent).AppendLine(switchLine);
+        sb.Append(indent).AppendLine("    {");
+
+        foreach (var arm in arms)
+        {
+            sb.Append(indent).Append("        ")
+              .Append(arm.SrcFqn).Append(" __s => ").Append(arm.ConverterMethod).AppendLine("(__s),");
+        }
+
+        // Wildcard arm: throw ArgumentException for unregistered runtime type
+        sb.Append(indent).Append("        ")
+          .Append("_ => throw new global::System.ArgumentException(")
+          .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
+          .Append(p).Append(".GetType()")
+          .Append(" + \"' mapping to '").Append(method.ReturnTypeFullName).Append("'.\", nameof(")
+          .Append(p).AppendLine(")),");
+
+        sb.Append(indent).AppendLine("    };");
+
+        // After hooks (if any), then return
+        if (hasAfter)
+        {
+            foreach (var after in method.AfterHooks)
+            {
+                sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                if (after.TakesSource) sb.Append(p).Append(", ");
+                if (after.TargetByRef) sb.Append("ref ");
+                sb.Append("__dwarf_target").AppendLine(");");
+            }
+            sb.Append(indent).AppendLine("    return __dwarf_target;");
+        }
     }
 
     /// <summary>
