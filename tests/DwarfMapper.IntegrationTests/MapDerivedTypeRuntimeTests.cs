@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: GPL-2.0-only
+using System;
+using System.Collections.Generic;
+using DwarfMapper;
+
+namespace DwarfMapper.IntegrationTests;
+
+// ── Type hierarchy ─────────────────────────────────────────────────────────────
+
+public abstract class DrvAnimal { public string Name { get; set; } = ""; }
+public class DrvDog : DrvAnimal { public string Breed { get; set; } = ""; }
+public class DrvCat : DrvAnimal { public int Lives { get; set; } }
+public class DrvUnknown : DrvAnimal { }
+
+// 3-level: Puppy : DrvDog : DrvAnimal
+public class DrvPuppy : DrvDog { public bool IsVaccinated { get; set; } }
+
+// Interface-based hierarchy
+public interface IDrvCreature { string Name { get; set; } }
+public class DrvFish : IDrvCreature { public string Name { get; set; } = ""; public int Fins { get; set; } }
+public class DrvBird : IDrvCreature { public string Name { get; set; } = ""; public bool CanFly { get; set; } }
+
+// DTOs — must form an inheritance hierarchy matching the source hierarchy
+public class DrvAnimalDto { public string Name { get; set; } = ""; }
+public class DrvDogDto : DrvAnimalDto { public string Breed { get; set; } = ""; }
+public class DrvCatDto : DrvAnimalDto { public int Lives { get; set; } }
+public class DrvPuppyDto : DrvDogDto { public bool IsVaccinated { get; set; } }
+public interface IDrvCreatureDto { string Name { get; } }
+public record DrvFishDto(string Name, int Fins) : IDrvCreatureDto;
+public record DrvBirdDto(string Name, bool CanFly) : IDrvCreatureDto;
+
+// ── Mappers ────────────────────────────────────────────────────────────────────
+
+// Generic attribute syntax — declared overloads for Dog/Cat
+[DwarfMapper]
+public partial class DrvAnimalMapper
+{
+    [MapDerivedType<DrvDog, DrvDogDto>]
+    [MapDerivedType<DrvCat, DrvCatDto>]
+    public partial DrvAnimalDto Map(DrvAnimal a);
+
+    public partial DrvDogDto Map(DrvDog d);
+    public partial DrvCatDto Map(DrvCat c);
+}
+
+// Non-generic (typeof) syntax — declared overloads for Dog/Cat
+[DwarfMapper]
+public partial class DrvAnimalTypeofMapper
+{
+    [MapDerivedType(typeof(DrvDog), typeof(DrvDogDto))]
+    [MapDerivedType(typeof(DrvCat), typeof(DrvCatDto))]
+    public partial DrvAnimalDto Map(DrvAnimal a);
+
+    public partial DrvDogDto Map(DrvDog d);
+    public partial DrvCatDto Map(DrvCat c);
+}
+
+// 3-level hierarchy: Puppy must be first (most-derived), then Dog
+[DwarfMapper]
+public partial class DrvAnimalThreeLevelMapper
+{
+    [MapDerivedType<DrvPuppy, DrvPuppyDto>]
+    [MapDerivedType<DrvDog, DrvDogDto>]
+    public partial DrvAnimalDto Map(DrvAnimal a);
+
+    public partial DrvPuppyDto Map(DrvPuppy p);
+    public partial DrvDogDto Map(DrvDog d);
+}
+
+// Auto-nest (no declared overloads) — generator synthesizes __DwarfMap_Obj_...
+[DwarfMapper(AutoNest = true)]
+public partial class DrvAutoNestMapper
+{
+    [MapDerivedType<DrvDog, DrvDogDto>]
+    [MapDerivedType<DrvCat, DrvCatDto>]
+    public partial DrvAnimalDto Map(DrvAnimal a);
+}
+
+// Interface source
+[DwarfMapper]
+public partial class DrvCreatureMapper
+{
+    [MapDerivedType<DrvFish, DrvFishDto>]
+    [MapDerivedType<DrvBird, DrvBirdDto>]
+    public partial IDrvCreatureDto Map(IDrvCreature c);
+
+    public partial DrvFishDto Map(DrvFish f);
+    public partial DrvBirdDto Map(DrvBird b);
+}
+
+// Collection scenario: use dispatch method in a loop
+[DwarfMapper]
+public partial class DrvAnimalCollectionMapper
+{
+    [MapDerivedType<DrvDog, DrvDogDto>]
+    [MapDerivedType<DrvCat, DrvCatDto>]
+    public partial DrvAnimalDto Map(DrvAnimal a);
+
+    public partial DrvDogDto Map(DrvDog d);
+    public partial DrvCatDto Map(DrvCat c);
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+public class MapDerivedTypeRuntimeTests
+{
+    [Fact]
+    public void Generic_attr_Dog_dispatches_to_DogDto()
+    {
+        var m = new DrvAnimalMapper();
+        var result = m.Map(new DrvDog { Name = "Rex", Breed = "Husky" });
+        var dog = Assert.IsType<DrvDogDto>(result);
+        Assert.Equal("Rex", dog.Name);
+        Assert.Equal("Husky", dog.Breed);
+    }
+
+    [Fact]
+    public void Generic_attr_Cat_dispatches_to_CatDto()
+    {
+        var m = new DrvAnimalMapper();
+        var result = m.Map(new DrvCat { Name = "Whiskers", Lives = 9 });
+        var cat = Assert.IsType<DrvCatDto>(result);
+        Assert.Equal("Whiskers", cat.Name);
+        Assert.Equal(9, cat.Lives);
+    }
+
+    [Fact]
+    public void Typeof_attr_Dog_dispatches_to_DogDto()
+    {
+        var m = new DrvAnimalTypeofMapper();
+        var result = m.Map(new DrvDog { Name = "Buddy", Breed = "Lab" });
+        Assert.Equal("Buddy", result.Name);
+    }
+
+    [Fact]
+    public void Typeof_attr_Cat_dispatches_to_CatDto()
+    {
+        var m = new DrvAnimalTypeofMapper();
+        var result = m.Map(new DrvCat { Name = "Luna", Lives = 7 });
+        var cat = Assert.IsType<DrvCatDto>(result);
+        Assert.Equal(7, cat.Lives);
+    }
+
+    [Fact]
+    public void ThreeLevel_Puppy_dispatches_via_Puppy_arm_not_Dog_arm()
+    {
+        var m = new DrvAnimalThreeLevelMapper();
+        var puppy = new DrvPuppy { Name = "Spot", Breed = "Dalmatian", IsVaccinated = true };
+        var result = m.Map(puppy);
+        var dto = Assert.IsType<DrvPuppyDto>(result);
+        Assert.True(dto.IsVaccinated);
+        Assert.Equal("Spot", dto.Name);
+        Assert.Equal("Dalmatian", dto.Breed);
+    }
+
+    [Fact]
+    public void ThreeLevel_Dog_dispatches_via_Dog_arm()
+    {
+        var m = new DrvAnimalThreeLevelMapper();
+        var dog = new DrvDog { Name = "Max", Breed = "Shepherd" };
+        var result = m.Map(dog);
+        var dto = Assert.IsType<DrvDogDto>(result);
+        Assert.Equal("Max", dto.Name);
+        Assert.Equal("Shepherd", dto.Breed);
+    }
+
+    [Fact]
+    public void Unregistered_type_throws_ArgumentException()
+    {
+        var m = new DrvAnimalMapper();
+        var ex = Assert.Throws<ArgumentException>(() => m.Map(new DrvUnknown { Name = "????" }));
+        Assert.Contains("DwarfMapper", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("MapDerivedType", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Null_source_throws_ArgumentNullException()
+    {
+        var m = new DrvAnimalMapper();
+        Assert.Throws<ArgumentNullException>(() => m.Map((DrvAnimal)null!));
+    }
+
+    [Fact]
+    public void Interface_source_Fish_dispatches_correctly()
+    {
+        var m = new DrvCreatureMapper();
+        var result = m.Map(new DrvFish { Name = "Nemo", Fins = 8 });
+        var dto = Assert.IsType<DrvFishDto>(result);
+        Assert.Equal("Nemo", dto.Name);
+        Assert.Equal(8, dto.Fins);
+    }
+
+    [Fact]
+    public void Interface_source_Bird_dispatches_correctly()
+    {
+        var m = new DrvCreatureMapper();
+        var result = m.Map(new DrvBird { Name = "Tweety", CanFly = true });
+        var dto = Assert.IsType<DrvBirdDto>(result);
+        Assert.True(dto.CanFly);
+    }
+
+    [Fact]
+    public void Record_ctor_target_maps_correctly()
+    {
+        var m = new DrvCreatureMapper();
+        var fish = new DrvFish { Name = "Dory", Fins = 4 };
+        var dto = Assert.IsType<DrvFishDto>(m.Map(fish));
+        Assert.Equal("Dory", dto.Name);
+        Assert.Equal(4, dto.Fins);
+    }
+
+    [Fact]
+    public void AutoNest_Dog_dispatches_without_declared_overload()
+    {
+        var m = new DrvAutoNestMapper();
+        var result = m.Map(new DrvDog { Name = "Rexo", Breed = "Poodle" });
+        Assert.Equal("Rexo", result.Name);
+    }
+
+    [Fact]
+    public void Collection_mixed_Dog_Cat_dispatches_each_element()
+    {
+        var m = new DrvAnimalCollectionMapper();
+        var animals = new List<DrvAnimal>
+        {
+            new DrvDog { Name = "Rex", Breed = "Husky" },
+            new DrvCat { Name = "Luna", Lives = 9 },
+            new DrvDog { Name = "Buddy", Breed = "Lab" },
+        };
+        // Map each element via the dispatch method
+        var dtos = animals.ConvertAll(a => m.Map(a));
+        Assert.Equal(3, dtos.Count);
+        // Collection uses the dispatch method so DrvDogDto/DrvCatDto are returned as DrvAnimalDto
+        Assert.Equal("Rex", dtos[0].Name);
+        Assert.Equal("Luna", dtos[1].Name);
+        Assert.Equal("Buddy", dtos[2].Name);
+        // Verify actual runtime types
+        Assert.IsType<DrvDogDto>(dtos[0]);
+        Assert.IsType<DrvCatDto>(dtos[1]);
+        Assert.IsType<DrvDogDto>(dtos[2]);
+    }
+}
