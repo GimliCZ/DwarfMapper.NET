@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using System;
+using System.Linq;
 using DwarfMapper;
 
 // ── Basic identity mapper (original gate) ─────────────────────────────────────
@@ -208,6 +209,67 @@ catch (ArgumentException)
 }
 Console.WriteLine("poly dispatch: all AOT checks passed.");
 
+// ── Heterogeneous [FlattenGraph] (Plan 22 AOT gate) ───────────────────────────
+// AOT-safe: BFS with HashSet<object>(ReferenceEqualityComparer) + runtime-type switch
+// (no reflection). Each concrete node type maps to the correct derived DTO.
+var heteroFgMapper = new AotHeteroFgMapper();
+
+// Build: root-folder → [file1, sub-folder → [file2]]
+// Total nodes: root, file1, sub, file2 = 4
+var aotFile1 = new AotFsFile { Name = "readme.txt", Size = 42L };
+var aotFile2 = new AotFsFile { Name = "main.cs",    Size = 100L };
+var aotSub   = new AotFsFolder { Name = "src",
+    Children = new System.Collections.Generic.List<AotFsNode> { aotFile2 } };
+var aotRoot  = new AotFsFolder { Name = "root",
+    Children = new System.Collections.Generic.List<AotFsNode> { aotFile1, aotSub } };
+
+var heteroTree = new AotFsTree { Root = aotRoot, Tag = "plan22" };
+var heteroResult = heteroFgMapper.Map(heteroTree);
+
+Console.WriteLine($"hetero-flatten: nodes={heteroResult.Nodes.Count}, tag={heteroResult.Tag}");
+if (heteroResult.Nodes.Count != 4) { Console.WriteLine($"ERROR: hetero-flatten node count wrong (got {heteroResult.Nodes.Count})"); return 1; }
+if (heteroResult.Tag != "plan22") { Console.WriteLine("ERROR: hetero-flatten root tag wrong"); return 1; }
+
+// Verify correct derived DTO types: 2 folders (root, src) + 2 files (readme, main.cs)
+var folderDtos = heteroResult.Nodes.OfType<AotFsFolderDto>().ToList();
+var fileDtos   = heteroResult.Nodes.OfType<AotFsFileDto>().ToList();
+if (folderDtos.Count != 2) { Console.WriteLine($"ERROR: hetero-flatten expected 2 FolderDto, got {folderDtos.Count}"); return 1; }
+if (fileDtos.Count != 2)   { Console.WriteLine($"ERROR: hetero-flatten expected 2 FileDto, got {fileDtos.Count}"); return 1; }
+
+// Verify edges are degraded (null) — topology intentionally lost
+if (folderDtos.Any(f => f.Children is not null)) { Console.WriteLine("ERROR: hetero-flatten FolderDto.Children not null (topology not degraded)"); return 1; }
+
+// Verify leaf members preserved
+var file1Dto = fileDtos.FirstOrDefault(f => f.Name == "readme.txt");
+if (file1Dto is null) { Console.WriteLine("ERROR: hetero-flatten file1 not found by name"); return 1; }
+if (file1Dto.Size != 42L) { Console.WriteLine($"ERROR: hetero-flatten file1 Size wrong (got {file1Dto.Size})"); return 1; }
+
+// Cross-type cycle: folder → file → folder via Parent (cycle safety)
+var aotCycleFile   = new AotFsFile   { Name = "cycleFile.txt", Size = 1L };
+var aotCycleFolder = new AotFsFolder { Name = "cycleFolder",
+    Children = new System.Collections.Generic.List<AotFsNode> { aotCycleFile } };
+aotCycleFile.Parent = aotCycleFolder; // cross-type back-edge
+var cycleTree = new AotFsTree { Root = aotCycleFolder };
+var cycleResult = heteroFgMapper.Map(cycleTree);
+if (cycleResult.Nodes.Count != 2) { Console.WriteLine($"ERROR: hetero-flatten cycle node count wrong (got {cycleResult.Nodes.Count})"); return 1; }
+Console.WriteLine("hetero-flatten: cycle terminates correctly (AOT-safe)");
+
+// Unregistered type → ArgumentException (loud, never silent)
+var aotUnknown = new AotFsSymlink { Name = "link.lnk" };
+var unknownTree = new AotFsTree { Root = aotUnknown };
+try
+{
+    heteroFgMapper.Map(unknownTree);
+    Console.WriteLine("ERROR: hetero-flatten expected ArgumentException for unregistered type");
+    return 1;
+}
+catch (ArgumentException)
+{
+    Console.WriteLine("hetero-flatten unregistered: ArgumentException (correct, loud)");
+}
+
+Console.WriteLine("hetero-flatten [FlattenGraph]: all AOT checks passed.");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -319,4 +381,42 @@ public partial class AotPolyMapper
 
     public partial AotPolyDogDto Map(AotPolyDog d);
     public partial AotPolyCatDto Map(AotPolyCat c);
+}
+
+// ── Heterogeneous [FlattenGraph] types (Plan 22 AOT gate) ─────────────────────
+// AOT-safe: concrete switch (no reflection), ReferenceEqualityComparer, no dynamic dispatch.
+// Each concrete node type maps to the correct derived DTO; cross-type cycles terminate.
+public abstract class AotFsNode
+{
+    public string Name { get; set; } = "";
+    public AotFsNode? Parent { get; set; }
+}
+public class AotFsFolder : AotFsNode
+{
+    // IReadOnlyList<> satisfies CA1002 (prefer read-only collection interface) and CA2227 (no public setter)
+    public System.Collections.Generic.IReadOnlyList<AotFsNode> Children { get; set; } = new System.Collections.Generic.List<AotFsNode>();
+}
+public class AotFsFile   : AotFsNode { public long Size { get; set; } }
+public class AotFsSymlink : AotFsNode { } // unregistered — used for loud-failure test
+public abstract class AotFsNodeDto { public string Name { get; set; } = ""; }
+public class AotFsFolderDto : AotFsNodeDto
+{
+    public System.Collections.Generic.IReadOnlyList<AotFsNodeDto>? Children { get; set; }
+    public AotFsNodeDto? Parent { get; set; }
+}
+public class AotFsFileDto   : AotFsNodeDto { public long Size { get; set; } public AotFsNodeDto? Parent { get; set; } }
+public class AotFsTree    { public AotFsNode? Root { get; set; } public string Tag { get; set; } = ""; }
+public class AotFsTreeDto
+{
+    public System.Collections.Generic.IReadOnlyList<AotFsNodeDto> Nodes { get; set; } = new System.Collections.Generic.List<AotFsNodeDto>();
+    public string Tag { get; set; } = "";
+}
+
+[DwarfMapper]
+public partial class AotHeteroFgMapper
+{
+    [FlattenGraph(nameof(AotFsTree.Root), nameof(AotFsTreeDto.Nodes))]
+    [MapDerivedType<AotFsFolder, AotFsFolderDto>]
+    [MapDerivedType<AotFsFile, AotFsFileDto>]
+    public partial AotFsTreeDto Map(AotFsTree tree);
 }
