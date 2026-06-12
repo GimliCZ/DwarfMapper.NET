@@ -1,0 +1,1 @@
+﻿DWARF024|Error|Constructor parameter 'x' has no mappable source member; add a source member with a matching name or use [MapProperty(src, "<paramName>")]

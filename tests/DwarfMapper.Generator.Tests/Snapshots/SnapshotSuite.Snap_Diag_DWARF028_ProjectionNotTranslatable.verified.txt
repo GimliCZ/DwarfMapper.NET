@@ -1,0 +1,1 @@
+﻿DWARF028|Error|Projection member 'Amount' cannot be translated to SQL: custom converter (Use=) is not translatable in projection; remove Use= or map at runtime.

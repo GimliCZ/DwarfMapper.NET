@@ -1,0 +1,1 @@
+﻿DWARF001|Error|Destination member 'Name' has no matching source member; map it or annotate the method with [MapIgnore("Name")]
