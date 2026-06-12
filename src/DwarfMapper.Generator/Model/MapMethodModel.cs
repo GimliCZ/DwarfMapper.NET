@@ -72,4 +72,9 @@ public sealed record MapMethodModel(
     /// <see cref="MemberMap"/> entries whose <see cref="MemberMap.ConverterMethod"/> is the
     /// synthesized traversal or array-wrapper helper.
     /// </summary>
-    EquatableArray<FlattenGraphDirective> FlattenGraphDirectives = default) : IEquatable<MapMethodModel>;
+    EquatableArray<FlattenGraphDirective> FlattenGraphDirectives = default,
+    /// <summary>
+    /// Sorted (most-derived-first) arms for a derived-type dispatch method.
+    /// Non-empty when the method carries [MapDerivedType] annotations.
+    /// </summary>
+    EquatableArray<DerivedTypeArm> DerivedTypeArms = default) : IEquatable<MapMethodModel>;

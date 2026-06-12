@@ -207,4 +207,10 @@ public static class DiagnosticDescriptors
         "Invalid [FlattenGraph] configuration",
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor InvalidMapDerivedType = new(
+        "DWARF035",
+        "Invalid [MapDerivedType] configuration",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }
