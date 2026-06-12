@@ -295,6 +295,65 @@ internal static class MapperExtractor
             }
             // ── End Plan 21 ──────────────────────────────────────────────────
 
+            // ── Fix 1: Top-level collection/dictionary-returning method ──────────────────
+            // If the return type is a recognized collection or dictionary TARGET shape,
+            // route through TryResolveConversion to get a synthesized helper, then emit
+            // "return helper(param);" instead of running ConstructorSelector → DWARF007.
+            // Detection: call CollectionConverter.TryResolve / DictionaryConverter.TryResolve
+            // with targetType as both src and target — they check the TARGET shape first.
+            // Scope: only fires when the return type IS a collection/dict; object/record/scalar
+            // return types fail both TryResolve calls and fall through unchanged.
+            var isCollReturn = CollectionConverter.TryResolve(targetType, targetType,
+                out _, out _, out _, false);
+            var isDictReturn = !isCollReturn && DictionaryConverter.TryResolve(targetType, targetType,
+                out _, out _, out _, out _, out _);
+
+            if (isCollReturn || isDictReturn)
+            {
+                bool tlResolved = TryResolveConversion(
+                    ctx.SemanticModel.Compilation,
+                    sourceType, targetType,
+                    null,
+                    allMethods, mapperMethods,
+                    enumStrategy, synthesized,
+                    nullStrategy,
+                    methodLocation, method.Name, diagnostics,
+                    out var tlConverter, out _, out var tlNeedsCtx,
+                    methodAutoNest, nestedRegistry,
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode);
+
+                if (!tlResolved || tlConverter is null)
+                {
+                    // Element conversion failed (diagnostic already reported). Skip this method.
+                    continue;
+                }
+
+                var tlMember = new MemberMap(
+                    TargetName: "",
+                    SourceName: "", // sentinel: emit helper(param) not helper(param.Member)
+                    ConverterMethod: tlConverter,
+                    ConverterNeedsDepthCtx: tlNeedsCtx);
+
+                methods.Add(new MapMethodModel(
+                    method.Name,
+                    AccessibilityText(method.DeclaredAccessibility),
+                    targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Name,
+                    sourceType.IsReferenceType,
+                    EquatableArray.From(new[] { tlMember }),
+                    EquatableArray.From(System.Array.Empty<string>()),
+                    EquatableArray.From(System.Array.Empty<HookCall>()),
+                    IsProjection: false,
+                    ElementTargetTypeFullName: "",
+                    ConstructorArguments: EquatableArray.From(System.Array.Empty<MemberMap>()),
+                    IsPartial: true,
+                    ReturnIsReferenceType: targetType.IsReferenceType,
+                    IsTopLevelCollectionConversion: true));
+                continue;
+            }
+            // ── End Fix 1 ────────────────────────────────────────────────────────────────
+
             // Choose construction strategy for the target type.
             var ctor = ConstructorSelector.Select(targetType, diagnostics, methodLocation, out var objInitOnly);
             if (ctor is null)

@@ -100,6 +100,30 @@ public partial class DrvAnimalCollectionMapper
     public partial DrvCatDto Map(DrvCat c);
 }
 
+// Zoo/ZooDto: collection MEMBER with [MapDerivedType] dispatch (Fix 2 regression)
+public class Zoo
+{
+    public List<DrvAnimal> Animals { get; set; } = new();
+}
+
+public class ZooDto
+{
+    public List<DrvAnimalDto> Animals { get; set; } = new();
+}
+
+[DwarfMapper]
+public partial class ZooMapper
+{
+    public partial ZooDto Map(Zoo zoo);
+
+    [MapDerivedType<DrvDog, DrvDogDto>]
+    [MapDerivedType<DrvCat, DrvCatDto>]
+    public partial DrvAnimalDto Map(DrvAnimal a);
+
+    public partial DrvDogDto Map(DrvDog d);
+    public partial DrvCatDto Map(DrvCat c);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 public class MapDerivedTypeRuntimeTests
@@ -238,5 +262,36 @@ public class MapDerivedTypeRuntimeTests
         Assert.IsType<DrvDogDto>(dtos[0]);
         Assert.IsType<DrvCatDto>(dtos[1]);
         Assert.IsType<DrvDogDto>(dtos[2]);
+    }
+
+    [Fact]
+    public void Generated_collection_member_dispatches_each_element_via_MapDerivedType()
+    {
+        var m = new ZooMapper();
+        var zoo = new Zoo
+        {
+            Animals = new List<DrvAnimal>
+            {
+                new DrvDog { Name = "Rex", Breed = "Husky" },
+                new DrvCat { Name = "Luna", Lives = 9 },
+                new DrvDog { Name = "Buddy", Breed = "Lab" },
+            }
+        };
+
+        var dto = m.Map(zoo);
+
+        Assert.Equal(3, dto.Animals.Count);
+
+        var dog1 = Assert.IsType<DrvDogDto>(dto.Animals[0]);
+        Assert.Equal("Rex", dog1.Name);
+        Assert.Equal("Husky", dog1.Breed);
+
+        var cat = Assert.IsType<DrvCatDto>(dto.Animals[1]);
+        Assert.Equal("Luna", cat.Name);
+        Assert.Equal(9, cat.Lives);
+
+        var dog2 = Assert.IsType<DrvDogDto>(dto.Animals[2]);
+        Assert.Equal("Buddy", dog2.Name);
+        Assert.Equal("Lab", dog2.Breed);
     }
 }

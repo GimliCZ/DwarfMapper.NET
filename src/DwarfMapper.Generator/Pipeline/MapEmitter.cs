@@ -141,6 +141,23 @@ internal static class MapEmitter
             sb.AppendLine();
         }
 
+        // ── Fix 1: Top-level collection/dictionary-returning method ───────────────────
+        // When IsTopLevelCollectionConversion=true, Members[0] is a sentinel with
+        // SourceName="" and ConverterMethod = the synthesized collection/dict helper.
+        // Emit: return helper(param);  [or with ctx,0 if the helper needs depth ctx]
+        if (method.IsTopLevelCollectionConversion && method.Members.Count == 1)
+        {
+            var tlm = method.Members[0];
+            var p = method.ParameterName;
+            sb.Append(indent).Append("    return ").Append(tlm.ConverterMethod!).Append('(').Append(p);
+            if (tlm.ConverterNeedsDepthCtx)
+                sb.Append(", ").Append(ctxVarName).Append(", 0");
+            sb.AppendLine(");");
+            sb.Append(indent).AppendLine("}");
+            return;
+        }
+        // ── End Fix 1 ────────────────────────────────────────────────────────────────
+
         if (method.IsProjection)
         {
             sb.Append(indent).Append("    return global::System.Linq.Queryable.Select(")

@@ -121,4 +121,105 @@ public class CollectionTests
         var (_, gen) = GeneratorTestHarness.Run(s);
         Assert.Contains("Name = a.Name", gen, StringComparison.Ordinal);
     }
+
+    // ── Fix 1: Top-level collection/dictionary-returning partial methods ──────────
+
+    [Fact]
+    public void TopLevel_List_long_to_List_int_no_DWARF007()
+    {
+        const string s = """
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            [DwarfMapper]
+            public partial class M
+            {
+                public partial List<int> Map(List<long> xs);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void TopLevel_List_Src_to_List_Dto_auto_nest_no_DWARF007()
+    {
+        const string s = """
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            public class Src { public int Value { get; set; } }
+            public class Dto { public int Value { get; set; } }
+            [DwarfMapper(AutoNest = true)]
+            public partial class M
+            {
+                public partial List<Dto> MapAll(List<Src> xs);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void TopLevel_Dictionary_string_long_to_Dictionary_string_int_no_DWARF007()
+    {
+        const string s = """
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            [DwarfMapper]
+            public partial class M
+            {
+                public partial Dictionary<string, int> Map(Dictionary<string, long> d);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void TopLevel_intArray_to_List_int_no_DWARF007()
+    {
+        const string s = """
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            [DwarfMapper]
+            public partial class M
+            {
+                public partial List<int> Map(int[] xs);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
+    public void TopLevel_polymorphic_List_Animal_to_List_AnimalDto_no_DWARF007()
+    {
+        const string s = """
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            public abstract class Animal { public string Name { get; set; } = ""; }
+            public class Dog : Animal { public string Breed { get; set; } = ""; }
+            public class AnimalDto { public string Name { get; set; } = ""; }
+            public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M
+            {
+                public partial List<AnimalDto> MapAll(List<Animal> animals);
+                [MapDerivedType<Dog, DogDto>]
+                public partial AnimalDto Map(Animal a);
+                public partial DogDto Map(Dog d);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
 }

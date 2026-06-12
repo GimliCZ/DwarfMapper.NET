@@ -74,6 +74,16 @@ public sealed record MapMethodModel(
     /// </summary>
     EquatableArray<FlattenGraphDirective> FlattenGraphDirectives = default,
     /// <summary>
+    /// When <c>true</c>, this is a top-level partial method whose return type is a
+    /// collection or dictionary. The method body is emitted as:
+    /// <code>return __converter_helper__(param);</code>
+    /// where the single entry in <see cref="Members"/> carries the synthesized helper name
+    /// in <see cref="MemberMap.ConverterMethod"/> and <see cref="MemberMap.SourceName"/> == ""
+    /// (sentinel: source is the raw parameter).
+    /// The normal object-construction path (<c>return new T(...) { ... }</c>) is NOT used.
+    /// </summary>
+    bool IsTopLevelCollectionConversion = false,
+    /// <summary>
     /// Sorted (most-derived-first) arms for a derived-type dispatch method.
     /// Non-empty when the method carries [MapDerivedType] annotations.
     /// </summary>
