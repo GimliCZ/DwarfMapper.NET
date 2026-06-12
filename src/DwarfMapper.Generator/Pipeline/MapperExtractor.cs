@@ -186,6 +186,35 @@ internal static class MapperExtractor
             var reinterpretMembers = ReadReinterpretMembers(method);
             var methodAutoNest = ReadMethodAutoNest(method, classAutoNest);
 
+            // ── Plan 20: [FlattenGraph] ───────────────────────────────────────
+            // Read and resolve [FlattenGraph] directives BEFORE ResolveMembers so that
+            // target collection members can be added to ignores and skipped from normal mapping.
+            var flattenGraphRaw = ReadFlattenGraphAttributes(method);
+            var flattenGraphConsumed = new HashSet<string>(System.StringComparer.Ordinal);
+            List<Model.FlattenGraphDirective> resolvedFgDirectives;
+            List<MemberMap> fgInjectedMembers;
+
+            if (flattenGraphRaw.Count > 0)
+            {
+                (resolvedFgDirectives, fgInjectedMembers) = ResolveFlattenGraphDirectives(
+                    sourceType, targetType, flattenGraphRaw, ctx.SemanticModel.Compilation,
+                    methodLocation, diagnostics, allMethods, mapperMethods,
+                    enumStrategy, synthesized, nullStrategy,
+                    methodAutoNest, nestedRegistry,
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
+                    flattenGraphConsumed);
+
+                // Add consumed targets to ignores so ResolveMembers skips them and
+                // does not emit DWARF001 (unmapped) for them.
+                foreach (var consumed in flattenGraphConsumed)
+                    ignores.Add(consumed);
+            }
+            else
+            {
+                resolvedFgDirectives = new List<Model.FlattenGraphDirective>();
+                fgInjectedMembers = new List<MemberMap>();
+            }
+
             // Resolve constructor arguments (empty set when objInitOnly).
             MemberMap[] ctorArgs;
             HashSet<string> consumedParams;
@@ -221,6 +250,11 @@ internal static class MapperExtractor
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode);
+
+            // Append FlattenGraph-injected member maps (traversal helper calls).
+            // These come AFTER normal members so the object initializer order is:
+            //   normal scalars/nested first, then flat-graph collections.
+            members.AddRange(fgInjectedMembers);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -281,7 +315,8 @@ internal static class MapperExtractor
                 EquatableArray.From(applicableAfter),
                 false,
                 "",
-                EquatableArray.From(ctorArgs)));
+                EquatableArray.From(ctorArgs),
+                FlattenGraphDirectives: EquatableArray.From(resolvedFgDirectives.ToArray())));
         }
 
         // ── Drain the NestedMappingRegistry queue ────────────────────────────────
@@ -2087,6 +2122,510 @@ internal static class MapperExtractor
             }
         }
         return roots;
+    }
+
+    // ── Plan 20: [FlattenGraph] ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Reads raw [FlattenGraph(srcNav, tgtColl)] annotation pairs from a method symbol.
+    /// </summary>
+    private static List<(string SourceNavigation, string TargetCollection)> ReadFlattenGraphAttributes(ISymbol method)
+    {
+        var result = new List<(string, string)>();
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() == "DwarfMapper.FlattenGraphAttribute"
+                && attr.ConstructorArguments.Length == 2
+                && attr.ConstructorArguments[0].Value is string src
+                && attr.ConstructorArguments[1].Value is string tgt)
+            {
+                result.Add((src, tgt));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// FNV-1a hash for generating unique helper method name suffixes.
+    /// Same algorithm as CollectionConverter.
+    /// </summary>
+    private static string FlattenGraphHash(string s)
+    {
+        unchecked
+        {
+            uint h = 2166136261u;
+            foreach (var c in s)
+            {
+                h ^= c;
+                h *= 16777619u;
+            }
+            return h.ToString("x8", System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
+
+    /// <summary>
+    /// Checks whether <paramref name="t"/> is a named generic type with the given
+    /// <paramref name="name"/> and <paramref name="ns"/> with exactly <paramref name="arity"/>
+    /// type arguments. Returns the first type argument via <paramref name="firstArg"/> if matched.
+    /// </summary>
+    private static bool IsExactNamedTypeHelper(
+        ITypeSymbol t, string name, string ns, int arity, out ITypeSymbol? firstArg)
+    {
+        firstArg = null;
+        if (t is INamedTypeSymbol n
+            && n.Name == name
+            && n.TypeArguments.Length == arity
+            && n.ContainingNamespace?.ToDisplayString() == ns)
+        {
+            firstArg = n.TypeArguments[0];
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Resolves and validates [FlattenGraph] directives for a single method, synthesizes
+    /// the required BFS traversal and flat-node helpers, and returns the resolved directives
+    /// plus the MemberMap entries to inject into the method's normal member list.
+    /// <para>
+    /// Mutates: <paramref name="synthesized"/> (adds helpers), <paramref name="consumedTargets"/>
+    /// (adds target collection member names so ResolveMembers skips them).
+    /// </para>
+    /// </summary>
+    private static (List<Model.FlattenGraphDirective> Directives, List<MemberMap> InjectedMembers)
+        ResolveFlattenGraphDirectives(
+            ITypeSymbol sourceType,
+            INamedTypeSymbol targetType,
+            IReadOnlyList<(string SourceNavigation, string TargetCollection)> rawDirectives,
+            Compilation compilation,
+            LocationInfo? location,
+            List<DiagnosticInfo> diagnostics,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+            IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+            EnumStrategy enumStrategy,
+            Dictionary<string, SynthesizedMethod> synthesized,
+            NullStrategy nullStrategy,
+            bool autoNest,
+            NestedMappingRegistry? nestedRegistry,
+            bool nullAsNull,
+            bool isPreserve,
+            HashSet<string> consumedTargets)
+    {
+        var directives = new List<Model.FlattenGraphDirective>();
+        var injected = new List<MemberMap>();
+
+        foreach (var (srcNavName, tgtCollName) in rawDirectives)
+        {
+            // 1. Resolve source navigation member on sourceType
+            ITypeSymbol? srcNavType = null;
+            foreach (var m in ReadableMembers(sourceType))
+            {
+                if (string.Equals(m.Name, srcNavName, System.StringComparison.Ordinal))
+                {
+                    srcNavType = m.Type;
+                    break;
+                }
+            }
+
+            if (srcNavType is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidFlattenGraph, location,
+                    $"[FlattenGraph] source navigation '{srcNavName}' does not exist or is not readable on '{sourceType.Name}'"));
+                continue;
+            }
+
+            // 2. Determine TNode type: directly a named reference type, or element of a collection
+            ITypeSymbol nodeType;
+            bool srcNavIsCollection;
+
+            if (srcNavType is IArrayTypeSymbol arrNav && arrNav.Rank == 1
+                && arrNav.ElementType.IsReferenceType)
+            {
+                nodeType = arrNav.ElementType;
+                srcNavIsCollection = true;
+            }
+            else if (CollectionConverter.TryGetEnumerableElement(srcNavType, out var navElemType, out _)
+                     && navElemType.IsReferenceType)
+            {
+                nodeType = navElemType;
+                srcNavIsCollection = true;
+            }
+            else if (srcNavType.IsReferenceType && srcNavType.TypeKind != TypeKind.Array)
+            {
+                nodeType = srcNavType;
+                srcNavIsCollection = false;
+            }
+            else
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidFlattenGraph, location,
+                    $"[FlattenGraph] source navigation '{srcNavName}' must be a reference type or a collection of a reference type (the node type)"));
+                continue;
+            }
+
+            // 3. Resolve target collection member on targetType
+            ITypeSymbol? tgtCollType = null;
+            foreach (var m in WritableMembers(targetType))
+            {
+                if (string.Equals(m.Name, tgtCollName, System.StringComparison.Ordinal))
+                {
+                    tgtCollType = m.Type;
+                    break;
+                }
+            }
+
+            if (tgtCollType is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidFlattenGraph, location,
+                    $"[FlattenGraph] target collection '{tgtCollName}' does not exist or is not writable on '{targetType.Name}'"));
+                continue;
+            }
+
+            // 4. Determine nodeDtoType: element of the target collection, and the suffix kind
+            ITypeSymbol nodeDtoType;
+            bool needsToArray;
+
+            if (tgtCollType is IArrayTypeSymbol arrTgt && arrTgt.Rank == 1)
+            {
+                nodeDtoType = arrTgt.ElementType;
+                needsToArray = true;
+            }
+            else if (IsExactNamedTypeHelper(tgtCollType, "List", "System.Collections.Generic", 1, out var listElem))
+            {
+                nodeDtoType = listElem!;
+                needsToArray = false;
+            }
+            else if (IsExactNamedTypeHelper(tgtCollType, "IReadOnlyList", "System.Collections.Generic", 1, out var rlElem))
+            {
+                nodeDtoType = rlElem!;
+                needsToArray = false; // List<T> implements IReadOnlyList<T>
+            }
+            else if (IsExactNamedTypeHelper(tgtCollType, "ICollection", "System.Collections.Generic", 1, out var icElem))
+            {
+                nodeDtoType = icElem!;
+                needsToArray = false; // List<T> implements ICollection<T>
+            }
+            else if (IsExactNamedTypeHelper(tgtCollType, "IReadOnlyCollection", "System.Collections.Generic", 1, out var ircElem))
+            {
+                nodeDtoType = ircElem!;
+                needsToArray = false; // List<T> implements IReadOnlyCollection<T>
+            }
+            else if (IsExactNamedTypeHelper(tgtCollType, "IList", "System.Collections.Generic", 1, out var ilElem))
+            {
+                nodeDtoType = ilElem!;
+                needsToArray = false; // List<T> implements IList<T>
+            }
+            else if (IsExactNamedTypeHelper(tgtCollType, "IEnumerable", "System.Collections.Generic", 1, out var ieElem))
+            {
+                nodeDtoType = ieElem!;
+                needsToArray = false; // List<T> implements IEnumerable<T>
+            }
+            else
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidFlattenGraph, location,
+                    $"[FlattenGraph] target collection '{tgtCollName}' on '{targetType.Name}' must be " +
+                    $"List<T>, T[], IReadOnlyList<T>, ICollection<T>, IReadOnlyCollection<T>, IList<T>, or IEnumerable<T>"));
+                continue;
+            }
+
+            // 5. Validate nodeType → nodeDtoType structural compatibility.
+            // We do NOT call TryResolveConversion here because it eagerly synthesizes helpers
+            // (including recursion-capable Obj mappers and collection helpers) with baked-in
+            // signatures that may become inconsistent once the drain loop marks them recursion-capable.
+            // Instead: check structural compatibility — at minimum, nodeDtoType must be a named type
+            // with a public parameterless constructor (or be constructable), OR there must be a declared
+            // mapper for this pair. The flat-node helper only maps leaf members; unmappable leaves are
+            // silently skipped, so the check is just a sanity gate on type kind.
+            bool nodeDtoIsConstructible = false;
+            if (nodeDtoType is INamedTypeSymbol namedDtoCheck)
+            {
+                nodeDtoIsConstructible =
+                    (namedDtoCheck.TypeKind == TypeKind.Class || namedDtoCheck.TypeKind == TypeKind.Struct)
+                    && namedDtoCheck.SpecialType == SpecialType.None
+                    && namedDtoCheck.InstanceConstructors.Any(c =>
+                        c.DeclaredAccessibility == Accessibility.Public);
+            }
+            // Also accept if there's an explicit declared mapper method for this pair.
+            var hasDeclaredMapper = false;
+            foreach (var m in allMethods)
+            {
+                if (HasImplicitConversion(compilation, nodeType, m.ParamType)
+                    && HasImplicitConversion(compilation, m.ReturnType, nodeDtoType))
+                {
+                    hasDeclaredMapper = true;
+                    break;
+                }
+            }
+            // Accept implicit conversion too (value types, same type, etc.)
+            var hasImplicit = HasImplicitConversion(compilation, nodeType, nodeDtoType);
+
+            if (!nodeDtoIsConstructible && !hasDeclaredMapper && !hasImplicit)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidFlattenGraph, location,
+                    $"[FlattenGraph] node DTO type '{nodeDtoType.Name}' is not constructible " +
+                    $"(must be a class or struct with a public constructor)"));
+                continue;
+            }
+
+            // 6. Partition TNode readable members into edge (same type as nodeType or collection thereof) vs leaf
+            var nodeMembers = ReadableMembers(nodeType).ToList();
+            var edgeMembers = new List<(string Name, bool IsCollection)>();
+            var leafMembers = new List<(string Name, ITypeSymbol Type)>();
+
+            var nodeTypeNoAnnotation = nodeType.WithNullableAnnotation(NullableAnnotation.None);
+
+            foreach (var nm in nodeMembers)
+            {
+                var memberTypeNoAnnotation = nm.Type.WithNullableAnnotation(NullableAnnotation.None);
+
+                // Direct node reference: same type as TNode (ignoring nullability)
+                if (SymbolEqualityComparer.Default.Equals(memberTypeNoAnnotation, nodeTypeNoAnnotation))
+                {
+                    edgeMembers.Add((nm.Name, false));
+                    continue;
+                }
+
+                // Nullable<TNode> (for structs — unlikely but supported)
+                if (nm.Type is INamedTypeSymbol nmNamed
+                    && nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+                    && SymbolEqualityComparer.Default.Equals(
+                        nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None),
+                        nodeTypeNoAnnotation))
+                {
+                    edgeMembers.Add((nm.Name, false));
+                    continue;
+                }
+
+                // Collection of TNode
+                bool isEdgeColl = false;
+                if (nm.Type is IArrayTypeSymbol arrEdge && arrEdge.Rank == 1
+                    && SymbolEqualityComparer.Default.Equals(
+                        arrEdge.ElementType.WithNullableAnnotation(NullableAnnotation.None),
+                        nodeTypeNoAnnotation))
+                {
+                    isEdgeColl = true;
+                }
+                else if (CollectionConverter.TryGetEnumerableElement(nm.Type, out var edgeElem, out _)
+                    && SymbolEqualityComparer.Default.Equals(
+                        edgeElem.WithNullableAnnotation(NullableAnnotation.None),
+                        nodeTypeNoAnnotation))
+                {
+                    isEdgeColl = true;
+                }
+
+                if (isEdgeColl)
+                {
+                    edgeMembers.Add((nm.Name, true));
+                }
+                else
+                {
+                    leafMembers.Add((nm.Name, nm.Type));
+                }
+            }
+
+            // 7. Get writable members of nodeDtoType for the flat-node helper
+            var dtoWritable = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
+            foreach (var m in WritableMembers(nodeDtoType))
+                dtoWritable[m.Name] = m.Type;
+
+            // 8. Build hash key and helper names
+            var hashKey = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                        + "=>"
+                        + nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var hash = FlattenGraphHash(hashKey);
+
+            var flatNodeHelperName    = "__DwarfMap_FlatNode_" + hash;
+            var traversalHelperName   = "__DwarfMap_FlattenGraph_" + hash;
+
+            // 9. Synthesize __DwarfMap_FlatNode_HASH (maps one TNode leaf-only → TNodeDto)
+            if (!synthesized.ContainsKey(flatNodeHelperName))
+            {
+                var nodeFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var dtoFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var sb = new System.Text.StringBuilder();
+                sb.Append("    private ").Append(dtoFq).Append(' ').Append(flatNodeHelperName)
+                  .Append('(').Append(nodeFq).AppendLine("? n)");
+                sb.AppendLine("    {");
+                sb.AppendLine("        if (n is null) return null!;");
+                sb.Append("        return new ").Append(dtoFq).AppendLine();
+                sb.AppendLine("        {");
+
+                // Leaf members: map with conversion where available
+                foreach (var leaf in leafMembers)
+                {
+                    if (!dtoWritable.TryGetValue(leaf.Name, out var dtoMemberType))
+                        continue;
+
+                    var leafTestDiags = new List<DiagnosticInfo>();
+                    if (TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
+                            allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                            location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
+                            autoNest, nestedRegistry, nullAsNull: false, isPreserve: false))
+                    {
+                        sb.Append("            ").Append(leaf.Name).Append(" = ");
+                        AppendFlatNodeMemberExpr(sb, "n", leaf.Name, leafConv, leafNull);
+                        sb.AppendLine(",");
+                    }
+                    // If not resolvable, leave the member unset (DTO default).
+                }
+
+                // Edge members on DTO: null them out (topology degradation — the point of [FlattenGraph])
+                foreach (var edge in edgeMembers)
+                {
+                    if (!dtoWritable.ContainsKey(edge.Name))
+                        continue;
+                    sb.Append("            ").Append(edge.Name).AppendLine(" = null,");
+                }
+
+                sb.AppendLine("        };");
+                sb.AppendLine("    }");
+                synthesized[flatNodeHelperName] = new SynthesizedMethod(flatNodeHelperName, sb.ToString());
+            }
+
+            // 10. Synthesize __DwarfMap_FlattenGraph_HASH (BFS traversal → List<TNodeDto>)
+            if (!synthesized.ContainsKey(traversalHelperName))
+            {
+                var nodeFq    = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var dtoFq     = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var listFq    = "global::System.Collections.Generic.List<" + dtoFq + ">";
+                var queueFq   = "global::System.Collections.Generic.Queue<" + nodeFq + ">";
+                var hashSetFq = "global::System.Collections.Generic.HashSet<object>";
+
+                var sb = new System.Text.StringBuilder();
+                sb.Append("    private ").Append(listFq).Append(' ').Append(traversalHelperName)
+                  .Append('(').Append(nodeFq);
+
+                // When the source nav is a single reference (not a collection), entry can be null → nullable param.
+                sb.AppendLine(srcNavIsCollection ? "[]? entry)" : "? entry)");
+                sb.AppendLine("    {");
+                sb.Append("        var __result = new ").Append(listFq).AppendLine("();");
+
+                if (srcNavIsCollection)
+                {
+                    // Entry is a collection — seed the queue from all non-null elements
+                    sb.AppendLine("        if (entry is null) return __result;");
+                    sb.Append("        var __visited = new ").Append(hashSetFq)
+                      .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                    sb.Append("        var __queue = new ").Append(queueFq).AppendLine("();");
+                    sb.AppendLine("        foreach (var __seed in entry) if (__seed is not null && __visited.Add(__seed)) __queue.Enqueue(__seed);");
+                }
+                else
+                {
+                    sb.AppendLine("        if (entry is null) return __result;");
+                    sb.Append("        var __visited = new ").Append(hashSetFq)
+                      .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                    sb.Append("        var __queue = new ").Append(queueFq).AppendLine("();");
+                    sb.AppendLine("        __visited.Add(entry);");
+                    sb.AppendLine("        __queue.Enqueue(entry);");
+                }
+
+                sb.AppendLine("        while (__queue.Count > 0)");
+                sb.AppendLine("        {");
+                sb.AppendLine("            var __n = __queue.Dequeue();");
+                sb.Append("            __result.Add(").Append(flatNodeHelperName).AppendLine("(__n));");
+
+                // Enqueue reachable nodes via edge members of TNode
+                foreach (var edge in edgeMembers)
+                {
+                    if (!edge.IsCollection)
+                    {
+                        sb.Append("            if (__n.").Append(edge.Name)
+                          .Append(" is { } __e_").Append(edge.Name)
+                          .Append(" && __visited.Add(__e_").Append(edge.Name)
+                          .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
+                    }
+                    else
+                    {
+                        sb.Append("            if (__n.").Append(edge.Name)
+                          .Append(" is { } __c_").Append(edge.Name)
+                          .Append(") foreach (var __x in __c_").Append(edge.Name)
+                          .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
+                    }
+                }
+
+                sb.AppendLine("        }");
+                sb.AppendLine("        return __result;");
+                sb.AppendLine("    }");
+                synthesized[traversalHelperName] = new SynthesizedMethod(traversalHelperName, sb.ToString());
+            }
+
+            // 11. For array targets, synthesize a thin .ToArray() wrapper
+            string converterHelperName;
+            if (needsToArray)
+            {
+                var nodeFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var dtoFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var wrapperName = "__DwarfMap_FlattenGraphArr_" + hash;
+                if (!synthesized.ContainsKey(wrapperName))
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append("    private ").Append(dtoFq).Append("[] ").Append(wrapperName)
+                      .Append('(').Append(nodeFq);
+                    sb.AppendLine(srcNavIsCollection ? "[]? entry)" : "? entry)");
+                    sb.Append("        => ").Append(traversalHelperName).AppendLine("(entry).ToArray();");
+                    synthesized[wrapperName] = new SynthesizedMethod(wrapperName, sb.ToString());
+                }
+                converterHelperName = wrapperName;
+            }
+            else
+            {
+                converterHelperName = traversalHelperName;
+            }
+
+            // 12. Mark target collection as consumed (ResolveMembers must skip it)
+            consumedTargets.Add(tgtCollName);
+
+            // 13. Build a MemberMap for the injection — emitter handles it like any other member
+            //     SourceIsNullableRef=true ensures '!' is added if needed (the traversal helper handles null internally)
+            injected.Add(new MemberMap(
+                TargetName: tgtCollName,
+                SourceName: srcNavName,
+                ConverterMethod: converterHelperName,
+                NullHandling: Model.NullHandling.None,
+                ConverterNeedsDepthCtx: false,
+                SourceIsNullableRef: true));
+
+            // 14. Record directive (for model completeness / snapshot tests)
+            directives.Add(new Model.FlattenGraphDirective(
+                srcNavName, tgtCollName, traversalHelperName, converterHelperName));
+        }
+
+        return (directives, injected);
+    }
+
+    /// <summary>
+    /// Appends a member-access value expression to <paramref name="sb"/> for use inside
+    /// a <c>__DwarfMap_FlatNode_*</c> helper. Does NOT append trailing comma or newline.
+    /// </summary>
+    private static void AppendFlatNodeMemberExpr(
+        System.Text.StringBuilder sb,
+        string paramName,
+        string memberName,
+        string? conv,
+        Model.NullHandling nh)
+    {
+        var access = paramName + "." + memberName;
+        if (conv is not null)
+        {
+            var needsBang = conv.StartsWith("__DwarfMap_", System.StringComparison.Ordinal);
+            sb.Append(conv).Append('(').Append(access).Append(needsBang ? "!" : "").Append(')');
+        }
+        else
+        {
+            switch (nh)
+            {
+                case Model.NullHandling.ThrowIfNull:
+                    sb.Append(access)
+                      .Append(" ?? throw new global::System.InvalidOperationException(\"Source member '")
+                      .Append(memberName).Append("' was null\")");
+                    break;
+                case Model.NullHandling.ValueOrDefault:
+                    sb.Append(access).Append(".GetValueOrDefault()");
+                    break;
+                default:
+                    sb.Append(access);
+                    break;
+            }
+        }
     }
 
     private static List<string> ReadReinterpretMembers(ISymbol method)

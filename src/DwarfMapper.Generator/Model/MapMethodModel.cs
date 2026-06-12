@@ -64,4 +64,12 @@ public sealed record MapMethodModel(
     /// is the entire lambda body (constructor-only projection).
     /// Empty for non-projection methods.
     /// </summary>
-    EquatableArray<ProjectionMemberMap> ProjectionMembers = default) : IEquatable<MapMethodModel>;
+    EquatableArray<ProjectionMemberMap> ProjectionMembers = default,
+    /// <summary>
+    /// Resolved [FlattenGraph] directives for this method.
+    /// Empty for methods without [FlattenGraph] annotations.
+    /// Stored for snapshot/documentation; the emitter generates code via injected
+    /// <see cref="MemberMap"/> entries whose <see cref="MemberMap.ConverterMethod"/> is the
+    /// synthesized traversal or array-wrapper helper.
+    /// </summary>
+    EquatableArray<FlattenGraphDirective> FlattenGraphDirectives = default) : IEquatable<MapMethodModel>;

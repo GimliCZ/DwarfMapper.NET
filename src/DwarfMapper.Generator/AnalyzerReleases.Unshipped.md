@@ -38,3 +38,4 @@ DWARF030 | DwarfMapper | Error | Constructor parameter participates in a referen
 DWARF031 | DwarfMapper | Error | Generator nesting depth limit exceeded
 DWARF032 | DwarfMapper | Error | [MapProperty(Use=)] converter cannot participate in reference-identity tracking
 DWARF033 | DwarfMapper | Error | Abstract or interface source type in auto-nested mapping
+DWARF034 | DwarfMapper | Error | Invalid [FlattenGraph] configuration

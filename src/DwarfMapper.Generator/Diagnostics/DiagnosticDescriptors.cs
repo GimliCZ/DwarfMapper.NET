@@ -201,4 +201,10 @@ public static class DiagnosticDescriptors
         "and silently drops members that exist only on derived runtime types. Declare an explicit mapper, " +
         "use [MapIgnore] to suppress, or make the source type concrete.",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor InvalidFlattenGraph = new(
+        "DWARF034",
+        "Invalid [FlattenGraph] configuration",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }
