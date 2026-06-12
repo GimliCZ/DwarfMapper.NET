@@ -171,6 +171,24 @@ if (nullCollDst.Names.HasValue)
 }
 Console.WriteLine("coll aot AsNull: ImmutableArray<string>? null source → HasValue=false (correct)");
 
+// ── [FlattenGraph]: BFS graph collapse with topology degradation (Plan 20) ─────
+// ReferenceEqualityComparer + Queue + HashSet are AOT-safe (no reflection).
+// A 2-node cycle: fgA → fgB → fgA; flattened → 2 distinct nodes, edges nulled.
+var fgMapper = new AotFlattenGraphMapper();
+var fgA = new FgAotNode { Name = "alpha" };
+var fgB = new FgAotNode { Name = "beta" };
+fgA.Next = fgB;
+fgB.Next = fgA; // cycle
+
+var fgRoot = new FgAotRoot { Entry = fgA, Label = "mine" };
+var fgResult = fgMapper.Map(fgRoot);
+Console.WriteLine($"flatten-graph: nodes={fgResult.Nodes.Count}, label={fgResult.Label}");
+if (fgResult.Nodes.Count != 2) { Console.WriteLine("ERROR: flatten-graph node count wrong"); return 1; }
+if (fgResult.Label != "mine") { Console.WriteLine("ERROR: flatten-graph root label wrong"); return 1; }
+// Edges must be null (topology degraded)
+if (fgResult.Nodes.Any(n => n.Next is not null)) { Console.WriteLine("ERROR: flatten-graph edge not nulled"); return 1; }
+Console.WriteLine("flatten-graph cycle: 2 nodes, edges nulled (topology degradation correct, AOT-safe)");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -249,3 +267,17 @@ public class CollAotDst
 
 [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
 public partial class CollAotMapper { public partial CollAotDst Map(CollAotSrc s); }
+
+// ── [FlattenGraph] types (Plan 20 AOT gate) ───────────────────────────────────
+// AOT-safe: ReferenceEqualityComparer, Queue<T>, HashSet<object> — no reflection.
+public class FgAotNode    { public string Name { get; set; } = ""; public FgAotNode? Next { get; set; } }
+public class FgAotNodeDto { public string Name { get; set; } = ""; public FgAotNodeDto? Next { get; set; } }
+public class FgAotRoot    { public FgAotNode? Entry { get; set; } public string Label { get; set; } = ""; }
+public class FgAotRootDto { public System.Collections.Generic.IReadOnlyList<FgAotNodeDto> Nodes { get; set; } = new System.Collections.Generic.List<FgAotNodeDto>(); public string Label { get; set; } = ""; }
+
+[DwarfMapper]
+public partial class AotFlattenGraphMapper
+{
+    [FlattenGraph(nameof(FgAotRoot.Entry), nameof(FgAotRootDto.Nodes))]
+    public partial FgAotRootDto Map(FgAotRoot root);
+}
