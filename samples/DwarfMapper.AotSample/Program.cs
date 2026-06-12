@@ -189,6 +189,25 @@ if (fgResult.Label != "mine") { Console.WriteLine("ERROR: flatten-graph root lab
 if (fgResult.Nodes.Any(n => n.Next is not null)) { Console.WriteLine("ERROR: flatten-graph edge not nulled"); return 1; }
 Console.WriteLine("flatten-graph cycle: 2 nodes, edges nulled (topology degradation correct, AOT-safe)");
 
+// ── [MapDerivedType] polymorphic dispatch (Plan 21 AOT gate) ──────────────────
+var polyMapper = new AotPolyMapper();
+var dogResult = polyMapper.Map(new AotPolyDog { Name = "Rex", Breed = "Husky" });
+Console.WriteLine($"poly Dog: Name={dogResult.Name}");
+if (dogResult.Name != "Rex") { Console.WriteLine("ERROR: poly Dog name wrong"); return 1; }
+var catResult = polyMapper.Map(new AotPolyCat { Name = "Luna", Lives = 9 });
+Console.WriteLine($"poly Cat: Name={catResult.Name}");
+try
+{
+    polyMapper.Map(new AotPolyUnknown { Name = "?" });
+    Console.WriteLine("ERROR: expected ArgumentException for unregistered type");
+    return 1;
+}
+catch (ArgumentException)
+{
+    Console.WriteLine("poly unregistered: ArgumentException (correct)");
+}
+Console.WriteLine("poly dispatch: all AOT checks passed.");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -280,4 +299,24 @@ public partial class AotFlattenGraphMapper
 {
     [FlattenGraph(nameof(FgAotRoot.Entry), nameof(FgAotRootDto.Nodes))]
     public partial FgAotRootDto Map(FgAotRoot root);
+}
+
+// ── [MapDerivedType] types (Plan 21 AOT gate) ─────────────────────────────────
+public abstract class AotPolyAnimalBase { public string Name { get; set; } = ""; }
+public class AotPolyDog : AotPolyAnimalBase { public string Breed { get; set; } = ""; }
+public class AotPolyCat : AotPolyAnimalBase { public int Lives { get; set; } }
+public class AotPolyUnknown : AotPolyAnimalBase { }
+public class AotPolyAnimalBaseDto { public string Name { get; set; } = ""; }
+public class AotPolyDogDto : AotPolyAnimalBaseDto { public string Breed { get; set; } = ""; }
+public class AotPolyCatDto : AotPolyAnimalBaseDto { public int Lives { get; set; } }
+
+[DwarfMapper]
+public partial class AotPolyMapper
+{
+    [MapDerivedType<AotPolyDog, AotPolyDogDto>]
+    [MapDerivedType<AotPolyCat, AotPolyCatDto>]
+    public partial AotPolyAnimalBaseDto Map(AotPolyAnimalBase a);
+
+    public partial AotPolyDogDto Map(AotPolyDog d);
+    public partial AotPolyCatDto Map(AotPolyCat c);
 }
