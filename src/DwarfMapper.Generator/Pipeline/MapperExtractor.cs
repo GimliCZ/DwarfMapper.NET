@@ -43,6 +43,7 @@ internal static class MapperExtractor
         var classIgnores = ReadIgnores(classSymbol).ToList();
         var classIgnoreSources = ReadIgnoreSources(classSymbol).ToList();
         var requiredMapping = ReadRequiredMapping(ctx.Attributes); // 0 = Target (default), 1 = Both
+        var nameConvention = ReadNameConvention(ctx.Attributes);   // 0 = Exact (default), 1 = Flexible
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
@@ -629,7 +630,8 @@ internal static class MapperExtractor
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
-                mapValues: mapValues, valueProviders: valueProviders, extraParams: extraParams);
+                mapValues: mapValues, valueProviders: valueProviders, extraParams: extraParams,
+                nameConvention: nameConvention);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -1717,13 +1719,21 @@ internal static class MapperExtractor
         bool implicitConversions = true,
         IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use)>? mapValues = null,
         IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
-        IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null)
+        IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
+        int nameConvention = 0)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+        // NameConvention.Flexible: match on a normalized key (strip '_', lowercase) so PascalCase/camelCase/
+        // snake_case/UPPER_CASE are interchangeable. Auto-match only; explicit/flatten paths stay exact.
+        var flexible = nameConvention == 1;
 
-        var sourceGroups = ReadableMembers(sourceType)
-            .GroupBy(m => m.Name, comparer)
-            .ToDictionary(g => g.Key, g => g.ToList(), comparer);
+        var sourceGroups = flexible
+            ? ReadableMembers(sourceType)
+                .GroupBy(m => NormalizeName(m.Name), System.StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.ToList(), System.StringComparer.Ordinal)
+            : ReadableMembers(sourceType)
+                .GroupBy(m => m.Name, comparer)
+                .ToDictionary(g => g.Key, g => g.ToList(), comparer);
 
         var writableByName = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
         foreach (var m in WritableMembers(targetType))
@@ -1963,7 +1973,7 @@ internal static class MapperExtractor
                 }
             }
 
-            if (!sourceGroups.TryGetValue(target.Name, out var matches))
+            if (!sourceGroups.TryGetValue(flexible ? NormalizeName(target.Name) : target.Name, out var matches))
             {
                 var flatMatches = new List<(string Root, string Leaf, ITypeSymbol LeafType)>();
                 foreach (var fi in flattenInfos)
@@ -1999,7 +2009,11 @@ internal static class MapperExtractor
 
             if (matches.Count > 1)
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousMatch, location, target.Name));
+                diagnostics.Add(flexible
+                    ? new DiagnosticInfo(DiagnosticDescriptors.AmbiguousNormalizedMatch, location,
+                        $"target '{target.Name}' matches multiple source members under NameConvention.Flexible ("
+                        + string.Join(", ", matches.Select(m => m.Name)) + "); disambiguate with [MapProperty]")
+                    : new DiagnosticInfo(DiagnosticDescriptors.AmbiguousMatch, location, target.Name));
                 continue;
             }
 
@@ -4769,6 +4783,29 @@ internal static class MapperExtractor
                 if (named.Key == "RequiredMapping" && named.Value.Value is int v)
                     return v;
         return 0; // RequiredMappingStrategy.Target
+    }
+
+    /// <summary>Reads <c>[DwarfMapper(NameConvention = ...)]</c>: 0 = Exact (default), 1 = Flexible.</summary>
+    private static int ReadNameConvention(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+            foreach (var named in attr.NamedArguments)
+                if (named.Key == "NameConvention" && named.Value.Value is int v)
+                    return v;
+        return 0; // NameConvention.Exact
+    }
+
+    /// <summary>
+    /// Canonical form for <see cref="NameConvention.Flexible"/> matching: removes <c>_</c> and lowercases,
+    /// so <c>PascalCase</c>/<c>camelCase</c>/<c>snake_case</c>/<c>UPPER_CASE</c> all reduce to the same key.
+    /// </summary>
+    private static string NormalizeName(string name)
+    {
+        var sb = new System.Text.StringBuilder(name.Length);
+        foreach (var c in name)
+            if (c != '_')
+                sb.Append(char.ToLowerInvariant(c));
+        return sb.ToString();
     }
 
     /// <summary>

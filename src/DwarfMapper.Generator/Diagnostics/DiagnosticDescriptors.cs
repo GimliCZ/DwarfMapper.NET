@@ -291,4 +291,10 @@ public static class DiagnosticDescriptors
         "Additional mapping parameter is unused",
         "{0}",
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AmbiguousNormalizedMatch = new(
+        "DWARF048",
+        "Ambiguous member match under NameConvention.Flexible",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

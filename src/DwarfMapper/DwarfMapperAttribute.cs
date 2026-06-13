@@ -126,4 +126,12 @@ public sealed class DwarfMapperAttribute : Attribute
     /// <c>dotnet_diagnostic.DWARF039.severity = error</c> in <c>.editorconfig</c>.
     /// </summary>
     public RequiredMappingStrategy RequiredMapping { get; set; } = RequiredMappingStrategy.Target;
+
+    /// <summary>
+    /// Member-name matching strategy. Defaults to <see cref="NameConvention.Exact"/> (today's behaviour).
+    /// <see cref="NameConvention.Flexible"/> matches across casing styles (<c>PascalCase</c> ↔
+    /// <c>camelCase</c> ↔ <c>snake_case</c> ↔ <c>UPPER_CASE</c>) by normalizing names; a post-normalization
+    /// collision is the build error <c>DWARF048</c>.
+    /// </summary>
+    public NameConvention NameConvention { get; set; } = NameConvention.Exact;
 }

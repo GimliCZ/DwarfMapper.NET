@@ -52,3 +52,4 @@ DWARF044 | DwarfMapper | Info | [MapProperty] source path traverses a nullable m
 DWARF045 | DwarfMapper | Error | Invalid [MapProperty] unflatten target path
 DWARF046 | DwarfMapper | Error | Conflicting [MapProperty] unflatten target
 DWARF047 | DwarfMapper | Info | Additional mapping parameter is unused
+DWARF048 | DwarfMapper | Error | Ambiguous member match under NameConvention.Flexible
