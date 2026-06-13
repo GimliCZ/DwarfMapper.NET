@@ -4,7 +4,12 @@
     <IsPackable>false</IsPackable>
     <!-- CA1707: test methods intentionally use underscores (Given_When_Then / Method_Scenario_Expected style) -->
     <!-- CA5394: SyntheticSchema uses System.Random for deterministic seeded fuzzing, not cryptography -->
-    <NoWarn>$(NoWarn);CA1707;CA5394;CA1515</NoWarn>
+    <!-- CA1707: test methods intentionally use underscores -->
+    <!-- CA5394: deterministic seeded fuzzing uses System.Random -->
+    <!-- CA1515: test types need not be sealed -->
+    <!-- CA1861: InlineData / inline array literals are acceptable in test code -->
+    <!-- CA1508: dead-code analyzer false positive in test assertions -->
+    <NoWarn>$(NoWarn);CA1707;CA5394;CA1515;CA1861;CA1508</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
