@@ -257,4 +257,18 @@ public static class DiagnosticDescriptors
         "Conflicting or invalid [MapValue]",
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor PathSegmentNotFound = new(
+        "DWARF043",
+        "[MapProperty] source path segment not found",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    // Info: a nullable reference on the interior of a source path can throw NullReferenceException at
+    // runtime when dereferenced. Suppress via dotnet_diagnostic.DWARF044.severity = none in .editorconfig.
+    public static readonly DiagnosticDescriptor PathNullableHop = new(
+        "DWARF044",
+        "[MapProperty] source path traverses a nullable member",
+        "{0}",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
 }

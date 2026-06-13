@@ -135,6 +135,7 @@ public partial class OrderMapper
 
 - **Nested objects** map automatically when you declare a mapping method for the nested type pair; it is found by signature and called (`Home = ToDto(o.Home)`).
 - **Custom conversions** use `[MapProperty(src, tgt, Use = nameof(Method))]`, where `Method` takes the source member type and returns the destination type.
+- **Deep source paths**: the source may be a **dotted path** that reads through the object graph — `[MapProperty("Customer.Name", nameof(Dto.CustomerName))]` emits `s.Customer.Name` (member names never contain dots, so the path is unambiguous). The leaf type goes through the same conversion rules (`Use=` works too). An unresolvable segment is `DWARF043`; a **nullable interior hop** (which can throw `NullReferenceException` at runtime) is the `DWARF044` suggestion.
 - An ambiguous auto-conversion is `DWARF013`; an invalid `Use` method is `DWARF014`. If no conversion is possible at all, you still get the completeness error `DWARF005`.
 
 **Constant & computed values (`[MapValue]`).** Assign a destination member that has no source — and count it as mapped (suppressing `DWARF001`):

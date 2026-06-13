@@ -427,6 +427,19 @@ public class FeatureInteractionCompileMatrixTests
             }
             """);
 
+        // ── 11b. MapProperty deep source path ────────────────────────────────
+        yield return new FimMatrixCase("mapproperty_deep_path", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Inner { public string Name { get; set; } = ""; }
+            public class Src { public Inner Inner { get; set; } = new(); }
+            public class Dst { public string InnerName { get; set; } = ""; }
+            [DwarfMapper] public partial class M {
+                [MapProperty("Inner.Name", nameof(Dst.InnerName))]
+                public partial Dst Map(Src s);
+            }
+            """);
+
         // ── 12. BeforeMap hook ────────────────────────────────────────────────
 
         yield return new FimMatrixCase("beforemap_hook", """

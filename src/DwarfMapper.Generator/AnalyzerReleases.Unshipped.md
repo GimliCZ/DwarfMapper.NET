@@ -47,3 +47,5 @@ DWARF039 | DwarfMapper | Info | Source member is read by no destination member (
 DWARF040 | DwarfMapper | Error | Constant [MapValue] is not assignable to the destination
 DWARF041 | DwarfMapper | Error | [MapValue(Use=)] provider method is invalid
 DWARF042 | DwarfMapper | Error | Conflicting or invalid [MapValue]
+DWARF043 | DwarfMapper | Error | [MapProperty] source path segment not found
+DWARF044 | DwarfMapper | Info | [MapProperty] source path traverses a nullable member

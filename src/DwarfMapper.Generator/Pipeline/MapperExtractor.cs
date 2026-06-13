@@ -1782,10 +1782,32 @@ internal static class MapperExtractor
                 continue;
             }
 
-            var srcMatch = ReadableMembers(sourceType)
-                .Where(m => System.StringComparer.Ordinal.Equals(m.Name, srcName))
-                .Select(m => (ITypeSymbol?)m.Type)
-                .FirstOrDefault();
+            ITypeSymbol? srcMatch;
+            if (srcName.IndexOf('.') >= 0)
+            {
+                // Deep source path, e.g. "Customer.Name" → resolve hop-by-hop (member names never contain
+                // dots, so this is unambiguous). The leaf type drives the conversion; the dotted SourceName
+                // is emitted verbatim as `s.Customer.Name` (a null interior hop throws at runtime — DWARF044
+                // warns when that is possible).
+                if (!TryResolveSourcePath(sourceType, srcName, out srcMatch, out var nullableHop, out var badSegment))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathSegmentNotFound, location,
+                        $"[MapProperty] source path '{srcName}' has no member '{badSegment}'"));
+                    continue;
+                }
+                if (nullableHop)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
+                        $"[MapProperty] source path '{srcName}' traverses a nullable member; a null interior value throws at runtime"));
+                }
+            }
+            else
+            {
+                srcMatch = ReadableMembers(sourceType)
+                    .Where(m => System.StringComparer.Ordinal.Equals(m.Name, srcName))
+                    .Select(m => (ITypeSymbol?)m.Type)
+                    .FirstOrDefault();
+            }
             if (srcMatch is null)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
@@ -3301,6 +3323,45 @@ internal static class MapperExtractor
         literal = targetType.SpecialType is SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal
             ? $"({targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({formatted})"
             : formatted;
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves a dotted source path (e.g. <c>"Customer.Name"</c>) hop-by-hop from <paramref name="root"/>,
+    /// returning the leaf member's type. <paramref name="nullableHop"/> is set when an <i>interior</i> hop
+    /// (any but the last) is a nullable/oblivious reference — dereferencing it can throw at runtime
+    /// (DWARF044). On failure, <paramref name="badSegment"/> names the first unresolved segment (DWARF043).
+    /// Segments are matched by exact ordinal name (member names never contain dots).
+    /// </summary>
+    private static bool TryResolveSourcePath(
+        ITypeSymbol root, string dottedPath, out ITypeSymbol? leafType, out bool nullableHop, out string badSegment)
+    {
+        leafType = null;
+        nullableHop = false;
+        badSegment = "";
+        var segments = dottedPath.Split('.');
+        ITypeSymbol current = root;
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var seg = segments[i];
+            var member = ReadableMembers(current)
+                .Where(m => System.StringComparer.Ordinal.Equals(m.Name, seg))
+                .Select(m => ((string Name, ITypeSymbol Type)?)m)
+                .FirstOrDefault();
+            if (member is null)
+            {
+                badSegment = seg;
+                return false;
+            }
+            if (i < segments.Length - 1
+                && member.Value.Type.IsReferenceType
+                && member.Value.Type.NullableAnnotation != NullableAnnotation.NotAnnotated)
+            {
+                nullableHop = true;
+            }
+            current = member.Value.Type;
+        }
+        leafType = current;
         return true;
     }
 
