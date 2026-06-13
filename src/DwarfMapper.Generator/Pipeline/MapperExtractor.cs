@@ -799,6 +799,27 @@ internal static class MapperExtractor
             }
         }
 
+        // Inject helper → element-method edges for None-mode ctx-upgrade candidates. A collection/dict
+        // helper's internal call to its element method is invisible to this graph (helpers aren't method
+        // models), so a cycle routed ONLY through a collection/dict edge (Map → helper → Map) would go
+        // undetected and the element method would never get a depth companion. Adding the edge makes the
+        // cycle visible → the element method is flagged self-recursive → companion synthesized → the
+        // re-synthesis pass below upgrades the helper to depth-guarded ctx threading (no silent SO).
+        foreach (var cand in nestedRegistry.CtxUpgradeCandidates)
+        {
+            if (!allCallGraph.ContainsKey(cand.HelperName))
+                allCallGraph[cand.HelperName] = new HashSet<string>(System.StringComparer.Ordinal);
+            foreach (var em in cand.ElemMethods)
+            {
+                // Only inject NON-overloaded element methods: a raw overloaded name would be expanded
+                // to edges for ALL overloads, manufacturing a false self-cycle (e.g. Map(Person) →
+                // List<Addr> helper → Map(Addr) wrongly resolving to Map(Person)). Overloaded
+                // self-map-through-collection falls back to the documented None-mode behaviour.
+                if (em is not null && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1))
+                    allCallGraph[cand.HelperName].Add(em);
+            }
+        }
+
         // For synthesized methods calling overloaded declared methods, also expand edges
         // so DFS can follow the full cycle. If synth-method calls "Map" and there are
         // two overloads "Map§A" and "Map§B", add edges to all variants except self.
@@ -845,6 +866,26 @@ internal static class MapperExtractor
                 var companionName = "__DwarfMap_Depth_" + m.MethodName;
                 recursionCapableNames.Add(companionName);
             }
+        }
+
+        // ── None+Throw: upgrade collection/dict helpers whose element method is self-recursive ──
+        // Now that selfRecursivePublicMethods is known, re-synthesize any recorded None-mode helper
+        // whose element/key/value resolved to a now-self-recursive public method: route it through the
+        // depth-guarded `__DwarfMap_Depth_<method>` companion and thread (ctx, depth). Adding the helper
+        // name to recursionCapableNames makes every referencing member/method pick up ctx threading via
+        // the existing patching loops below — so a deep/cyclic graph through a collection edge throws
+        // DwarfMappingDepthException instead of a silent StackOverflow. Non-recursive collections are
+        // never recorded, so they stay zero-overhead.
+        foreach (var cand in nestedRegistry.CtxUpgradeCandidates)
+        {
+            // Self-recursive AND non-overloaded (overloaded names can't be safely disambiguated to a
+            // single companion here — see the call-graph injection note above).
+            bool Upgradeable(string? em) => em is not null && selfRecursivePublicMethods.Contains(em)
+                && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1);
+            if (!cand.ElemMethods.Any(Upgradeable))
+                continue;
+            cand.ReSynth(name => Upgradeable(name) ? "__DwarfMap_Depth_" + name : name);
+            recursionCapableNames.Add(cand.HelperName);
         }
 
         // Re-check synthesized methods using the full allCallGraph (which includes declared methods).
@@ -2033,6 +2074,35 @@ internal static class MapperExtractor
             bool isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary
                               && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
             converterNeedsCtx = (isPreserve && isMutableDict) || keyNeedsCtx || valNeedsCtx;
+
+            // None+Throw: a key/value resolved to a PUBLIC declared method. Record a re-synthesis
+            // closure so the post-pass can upgrade this dict helper if that method is self-recursive.
+            if (!isPreserve && !isSetNull && nestedRegistry is not null)
+            {
+                bool KeyIsPublicObj = keyConv is not null && !keyNeedsCtx && !keyConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
+                    && tgtKey is INamedTypeSymbol tk && IsMappableObjectPair(compilation, srcKey, tk);
+                bool ValIsPublicObj = valConv is not null && !valNeedsCtx && !valConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
+                    && tgtVal is INamedTypeSymbol tv && IsMappableObjectPair(compilation, srcVal, tv);
+                if (KeyIsPublicObj || ValIsPublicObj)
+                {
+                    var hName = converterMethod!;
+                    var elems = new List<string>();
+                    if (KeyIsPublicObj) elems.Add(keyConv!);
+                    if (ValIsPublicObj) elems.Add(valConv!);
+                    var cSrc = srcType; var cTk = tgtKey; var cTv = tgtVal; var cHas = dictHasCount; var cKind = dictTargetKind;
+                    var cKeyConv = keyConv; var cKeyNull = keyNull; var cValConv = valConv; var cValNull = valNull;
+                    var cNullAsNull = dictEffectiveNullAsNull;
+                    nestedRegistry.RecordCtxUpgradeCandidate(hName, elems.ToArray(), resolve =>
+                    {
+                        var nk = cKeyConv; var nkCtx = false;
+                        if (KeyIsPublicObj) { var r = resolve(cKeyConv!); if (!string.Equals(r, cKeyConv, System.StringComparison.Ordinal)) { nk = r; nkCtx = true; } }
+                        var nv = cValConv; var nvCtx = false;
+                        if (ValIsPublicObj) { var r = resolve(cValConv!); if (!string.Equals(r, cValConv, System.StringComparison.Ordinal)) { nv = r; nvCtx = true; } }
+                        DictionaryConverter.SynthesizeInPlace(synthesized, hName, cSrc, cTk, cTv, cHas, cKind,
+                            nk, cKeyNull, nkCtx, nv, cValNull, nvCtx, cNullAsNull);
+                    });
+                }
+            }
             return true;
         }
 
@@ -2084,6 +2154,20 @@ internal static class MapperExtractor
             // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
             // element is recursion-capable (Preserve, or None/SetNull self-referential element).
             converterNeedsCtx = (isPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) || elemNeedsCtx;
+
+            // None+Throw: the element resolved to a PUBLIC declared method (e.g. a self-map `Map`).
+            // Record a re-synthesis closure; if that method turns out self-recursive, the post-pass
+            // upgrades this helper to thread ctx into the depth-guarded companion (no silent SO).
+            if (!isPreserve && !isSetNull && !elemNeedsCtx && nestedRegistry is not null
+                && elemConv is not null && !elemConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
+                && tgtElem is INamedTypeSymbol tgtElemNamed
+                && IsMappableObjectPair(compilation, srcElem, tgtElemNamed))
+            {
+                var hName = converterMethod!;
+                var capSrc = srcType; var capElem = srcElem; var capTgt = tgtElem; var capShape = collShape; var capNull = elemNull;
+                nestedRegistry.RecordCtxUpgradeCandidate(hName, new[] { elemConv }, resolve =>
+                    CollectionConverter.SynthesizeInPlace(synthesized, hName, capSrc, capElem, capTgt, capShape, resolve(elemConv), capNull));
+            }
             return true;
         }
 

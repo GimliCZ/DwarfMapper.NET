@@ -164,6 +164,61 @@ internal static class DictionaryConverter
             DictTargetKind.Dictionary, keyConverter, keyNull, valConverter, valNull);
     }
 
+    /// <summary>
+    /// Re-emits an EXISTING dictionary helper (keyed by <paramref name="existingName"/>) so it threads
+    /// <c>(ctx, depth)</c> and routes the recursion-capable key/value through a ctx-accepting converter
+    /// (typically a <c>__DwarfMap_Depth_*</c> companion). Used by the post-pass when a None-mode
+    /// dictionary's key/value method is discovered self-recursive — overwrites the original body
+    /// (which StackOverflowed on a fresh context) with a depth-guarded one. Never register-before-fills.
+    /// </summary>
+    public static void SynthesizeInPlace(
+        Dictionary<string, SynthesizedMethod> synth, string existingName, ITypeSymbol srcType,
+        ITypeSymbol tgtKey, ITypeSymbol tgtVal, bool srcHasCount, DictTargetKind targetKind,
+        string? keyConverter, NullHandling keyNull, bool keyNeedsCtx,
+        string? valConverter, NullHandling valNull, bool valNeedsCtx, bool nullAsNull)
+    {
+        var keyFq = FqTypeArg(tgtKey);
+        var valFq = FqTypeArg(tgtVal);
+        bool isImmutable = targetKind == DictTargetKind.ImmutableDictionary
+                        || targetKind == DictTargetKind.IImmutableDictionary;
+        var retTypeFq = isImmutable
+            ? "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">"
+            : "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
+
+        var srcParam = FqNullableParam(srcType);
+        var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
+        var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyNeedsCtx);
+        var valExpr = Expr("__kv.Value", valConverter, valNull, valNeedsCtx);
+
+        var sb = new StringBuilder();
+        sb.Append("    private ").Append(retAnnot).Append(' ').Append(existingName)
+          .Append('(').Append(srcParam).Append(" src").Append(CtxDepthParams).Append(")\n    {\n");
+
+        if (isImmutable)
+        {
+            var emptyImm = nullAsNull ? "null"
+                : "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">.Empty";
+            sb.Append("        if (src is null) return ").Append(emptyImm).Append(";\n");
+            var kvpFq = "global::System.Collections.Generic.KeyValuePair<" + keyFq + ", " + valFq + ">";
+            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(kvpFq).Append(">();\n");
+            sb.Append("        foreach (var __kv in src)\n        {\n");
+            sb.Append("            __buf.Add(new ").Append(kvpFq).Append('(').Append(keyExpr).Append(", ").Append(valExpr).Append("));\n");
+            sb.Append("        }\n");
+            sb.Append("        return global::System.Collections.Immutable.ImmutableDictionary.CreateRange(__buf);\n");
+        }
+        else
+        {
+            var dictFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
+            var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
+            sb.Append("        if (src is null) return ").Append(emptyDict).Append(";\n");
+            sb.Append("        var __r = new ").Append(dictFq).Append('(').Append(srcHasCount ? "src.Count" : "").Append(");\n");
+            sb.Append("        foreach (var __kv in src) { __r[").Append(keyExpr).Append("] = ").Append(valExpr).Append("; }\n");
+            sb.Append("        return __r;\n");
+        }
+        sb.Append("    }\n");
+        synth[existingName] = new SynthesizedMethod(existingName, sb.ToString());
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private static string Expr(string access, string? conv, NullHandling nh, bool needsCtx = false)

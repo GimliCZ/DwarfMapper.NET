@@ -208,6 +208,28 @@ internal sealed class NestedMappingRegistry
     public void ForceRecursionCapable(string methodName)
         => _forcedRecursionCapable.Add(methodName);
 
+    // ── None-mode collection/dict ctx-upgrade candidates ────────────────────────
+    // A None-mode collection/dict helper whose element/key/value resolves to a PUBLIC declared
+    // method (e.g. a self-map `Map`) is synthesized to call that public entry directly — which
+    // allocates a fresh DwarfRefContext per element, resetting the depth guard and StackOverflowing
+    // on a deep/cyclic graph routed through the collection edge. We record a re-synthesis closure;
+    // after recursion-capability is finalised, the post-pass upgrades only those helpers whose
+    // element method turned out self-recursive (companion exists), keeping non-recursive collections
+    // zero-overhead. Closures capture ITypeSymbols — safe because the registry is Extract-scoped.
+    private readonly List<(string HelperName, string[] ElemMethods, System.Action<System.Func<string, string>> ReSynth)> _ctxUpgradeCandidates =
+        new List<(string, string[], System.Action<System.Func<string, string>>)>();
+
+    /// <summary>Records a collection/dict helper that may need ctx-threading if one of
+    /// <paramref name="elemMethods"/> turns out self-recursive. <paramref name="reSynth"/> receives a
+    /// resolver (method → ctx-companion-name if self-recursive, else the method itself) and rewrites
+    /// the helper body in place.</summary>
+    public void RecordCtxUpgradeCandidate(string helperName, string[] elemMethods, System.Action<System.Func<string, string>> reSynth)
+        => _ctxUpgradeCandidates.Add((helperName, elemMethods, reSynth));
+
+    /// <summary>The recorded None-mode ctx-upgrade candidates (see <see cref="RecordCtxUpgradeCandidate"/>).</summary>
+    public IReadOnlyList<(string HelperName, string[] ElemMethods, System.Action<System.Func<string, string>> ReSynth)> CtxUpgradeCandidates
+        => _ctxUpgradeCandidates;
+
     private bool CanReachSelf(string start)
     {
         // DFS: can we return to 'start' following outgoing edges?

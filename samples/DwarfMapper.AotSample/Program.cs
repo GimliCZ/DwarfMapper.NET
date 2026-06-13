@@ -119,6 +119,24 @@ catch (DwarfMapper.DwarfMappingDepthException ex)
     Console.WriteLine($"depth-guarded chain10: DwarfMappingDepthException caught (MaxDepth={ex.MaxDepth}) — correct");
 }
 
+// ── None mode: depth guard THROUGH a collection edge (Plan 19 Part-C follow-up) ─
+// A self-referential type reached via a List<T> depth-caps with a catchable exception instead of
+// a silent StackOverflow — the shared depth ctx is threaded into the (re-synthesized) element mapper.
+var collDepthMapper = new AotCollDepthMapper();
+var cdHead = new AotCollNode { V = 0 };
+var cdCur = cdHead;
+for (var i = 1; i < 20; i++) { var n = new AotCollNode { V = i }; cdCur.Kids = new System.Collections.Generic.List<AotCollNode> { n }; cdCur = n; }
+try
+{
+    collDepthMapper.Map(cdHead); // 20 deep > MaxDepth(8)
+    Console.WriteLine("ERROR: expected DwarfMappingDepthException for deep collection chain");
+    return 1;
+}
+catch (DwarfMapper.DwarfMappingDepthException)
+{
+    Console.WriteLine("none-mode collection depth: DwarfMappingDepthException (not StackOverflow) — correct");
+}
+
 // ── Preserve mode: 2-node cycle — topology reconstruction (Plan 19 Part C2) ───
 // The generator emits register-before-populate code so every source node is mapped
 // exactly once and back-edges are relinked using a ReferenceEqualityComparer-keyed
@@ -365,6 +383,13 @@ public class AotNodeDto { public int V { get; set; } public AotNodeDto? Next { g
 
 [DwarfMapper(MaxDepth = 8)]
 public partial class AotDepthNodeMapper { public partial AotNodeDto Map(AotNode n); }
+
+// None-mode self-referential type through a collection edge — depth-guarded (no silent SO).
+public class AotCollNode    { public int V { get; set; } public System.Collections.Generic.IReadOnlyList<AotCollNode>? Kids { get; set; } }
+public class AotCollNodeDto { public int V { get; set; } public System.Collections.Generic.IReadOnlyList<AotCollNodeDto>? Kids { get; set; } }
+
+[DwarfMapper(MaxDepth = 8)]
+public partial class AotCollDepthMapper { public partial AotCollNodeDto Map(AotCollNode n); }
 
 // ── Preserve mode: 2-node cycle (Plan 19 Part C2) ────────────────────────────
 // ReferenceEqualityComparer + Dictionary<object,object> are reflection-free and AOT-safe.

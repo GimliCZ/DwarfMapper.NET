@@ -283,7 +283,6 @@ internal static class CollectionConverter
                        && elemConverter is null
                        && elemNull == NullHandling.None;
         var item  = ElementExpr("__item", elemConverter, elemNull, elemNeedsCtx);
-        var sb    = new StringBuilder();
 
         // Effective preserve: are we emitting register-before-fill for THIS collection? (Preserve only.)
         var registerBeforeFill = isPreserve && IsMutableReferenceCollection(shape.Target);
@@ -293,6 +292,46 @@ internal static class CollectionConverter
         // a collection edge — without turning on register-before-fill outside Preserve.
         var threadCtx = registerBeforeFill || elemNeedsCtx;
 
+        var sb = new StringBuilder();
+        EmitBody(sb, name, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape, identity, threadCtx, registerBeforeFill);
+
+        synth[name] = new SynthesizedMethod(name, sb.ToString());
+        return name;
+    }
+
+    /// <summary>
+    /// Re-emits an EXISTING collection helper (keyed by <paramref name="existingName"/>) so it threads
+    /// <c>(ctx, depth)</c> and routes each element through <paramref name="ctxElementConverter"/>
+    /// (a recursion-capable method — typically a <c>__DwarfMap_Depth_*</c> companion). Used by the
+    /// post-pass when a None-mode collection's element method is discovered to be self-recursive:
+    /// the originally-emitted body (which called the public entry on a fresh context → StackOverflow)
+    /// is overwritten in place with a depth-guarded, ctx-threaded body. Never register-before-fills
+    /// (that is Preserve-only). Overwriting in place keeps the helper name stable, so existing member
+    /// references stay valid — they just gain <c>ConverterNeedsDepthCtx = true</c>.
+    /// </summary>
+    public static void SynthesizeInPlace(
+        Dictionary<string, SynthesizedMethod> synth, string existingName,
+        ITypeSymbol srcType, ITypeSymbol srcElem, ITypeSymbol tgtElem, Shape shape,
+        string ctxElementConverter, NullHandling elemNull)
+    {
+        var elemFq = FqTypeArg(tgtElem);
+        var srcFq = Fq(srcType);
+        var srcParamType = FqNullableParam(srcType);
+        // Recursion-capable element → identity fast-path is never applicable; element call threads ctx.
+        var item = ElementExpr("__item", ctxElementConverter, elemNull, needsCtx: true);
+
+        var sb = new StringBuilder();
+        EmitBody(sb, existingName, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape,
+            identity: false, threadCtx: true, registerBeforeFill: false);
+        synth[existingName] = new SynthesizedMethod(existingName, sb.ToString());
+    }
+
+    /// <summary>Dispatches body emission to the per-shape emitter. Shared by Synthesize / SynthesizeInPlace.</summary>
+    private static void EmitBody(
+        StringBuilder sb, string name, string srcFq, string srcParamType, ITypeSymbol srcType,
+        ITypeSymbol srcElem, string elemFq, string item, Shape shape, bool identity,
+        bool threadCtx, bool registerBeforeFill)
+    {
         switch (shape.Target)
         {
             case TargetKind.Array:
@@ -335,9 +374,6 @@ internal static class CollectionConverter
                 EmitImmutableHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx);
                 break;
         }
-
-        synth[name] = new SynthesizedMethod(name, sb.ToString());
-        return name;
     }
 
     // ── Emitters ─────────────────────────────────────────────────────────────
