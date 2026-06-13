@@ -114,6 +114,166 @@ public static class GraphOracleComparer
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
+    // (c) FLATTEN-GRAPH ORACLE
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Oracle for [FlattenGraph] mappers. Given the source entry node and the
+    /// flat result list, verifies:
+    /// (a) result count == BFS-reachable node count from srcEntry (reference equality),
+    /// (b) every result node's properties that ARE navigation edges (reference to same
+    ///     node type or assignable) are null (topology degraded).
+    ///
+    /// Returns a list of violation strings; empty = oracle passes.
+    ///
+    /// <paramref name="srcEntry"/> — the entry node of the source graph.
+    /// <paramref name="resultNodes"/> — the flat result collection (IEnumerable).
+    /// <paramref name="nodeBaseType"/> — the common base type of source nodes.
+    /// <paramref name="dtoBaseType"/> — the common base type of result DTOs.
+    /// </summary>
+    public static IReadOnlyList<string> FlattenGraphDiff(
+        object? srcEntry,
+        System.Collections.IEnumerable? resultNodes,
+        Type nodeBaseType,
+        Type dtoBaseType)
+    {
+        if (nodeBaseType is null) throw new ArgumentNullException(nameof(nodeBaseType));
+        if (dtoBaseType is null) throw new ArgumentNullException(nameof(dtoBaseType));
+
+        var violations = new List<string>();
+
+        // (a) Compute BFS-reachable set from srcEntry (reference equality)
+        var reachable = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        if (srcEntry is not null)
+        {
+            var queue = new Queue<object>();
+            queue.Enqueue(srcEntry);
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                if (!reachable.Add(current)) continue; // already visited
+                // Enqueue all properties that are node-typed edges
+                foreach (var p in current.GetType().GetProperties(
+                             BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (!p.CanRead || p.GetIndexParameters().Length != 0) continue;
+                    var val = p.GetValue(current);
+                    if (val is null) continue;
+                    EnqueueEdgeValue(val, p.PropertyType, nodeBaseType, queue, reachable);
+                }
+            }
+        }
+
+        var resultList = new List<object>();
+        if (resultNodes is not null)
+            foreach (var item in resultNodes)
+                if (item is not null) resultList.Add(item);
+
+        // (a) Count check
+        if (resultList.Count != reachable.Count)
+            violations.Add(
+                $"FlattenGraph count mismatch: BFS-reachable={reachable.Count}, result.Count={resultList.Count}");
+
+        // (b) Edge-null check: every result DTO's navigation properties must be null
+        foreach (var dto in resultList)
+        {
+            foreach (var p in dto.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!p.CanRead || p.GetIndexParameters().Length != 0) continue;
+                if (!IsNavigationProperty(p.PropertyType, dtoBaseType)) continue;
+                var val = p.GetValue(dto);
+                if (val is not null)
+                    violations.Add(
+                        $"FlattenGraph edge not degraded: {dto.GetType().Name}.{p.Name} = {val} (expected null)");
+            }
+        }
+
+        return violations;
+    }
+
+    /// <summary>Render FlattenGraphDiff violations as a readable string.</summary>
+    public static string RenderFlattenGraphDiff(IReadOnlyList<string> violations)
+    {
+        if (violations is null) throw new ArgumentNullException(nameof(violations));
+        var sb = new StringBuilder();
+        foreach (var v in violations)
+            sb.AppendLine("  FLATGRAPH: " + v);
+        return sb.ToString();
+    }
+
+    // ── FlattenGraph oracle helpers ───────────────────────────────────────────────
+
+    private static void EnqueueEdgeValue(
+        object val, Type propType, Type nodeBaseType, Queue<object> queue,
+        HashSet<object> visited)
+    {
+        // Single-reference edge
+        if (nodeBaseType.IsAssignableFrom(propType) || propType.IsAssignableFrom(nodeBaseType))
+        {
+            if (!visited.Contains(val))
+                queue.Enqueue(val);
+            return;
+        }
+        // Collection edge: IEnumerable — enumerate and enqueue node-typed elements
+        if (val is System.Collections.IEnumerable enumerable && val is not string)
+        {
+            foreach (var item in enumerable)
+            {
+                if (item is null) continue;
+                var itemType = item.GetType();
+                if (nodeBaseType.IsAssignableFrom(itemType) || itemType.IsAssignableFrom(nodeBaseType))
+                {
+                    if (!visited.Contains(item))
+                        queue.Enqueue(item);
+                }
+            }
+            // Dictionary values — try to get Values property
+            var valuesProp = val.GetType().GetProperty("Values");
+            if (valuesProp is not null)
+            {
+                var values = valuesProp.GetValue(val) as System.Collections.IEnumerable;
+                if (values is not null)
+                {
+                    foreach (var v2 in values)
+                    {
+                        if (v2 is null) continue;
+                        var vt = v2.GetType();
+                        if (nodeBaseType.IsAssignableFrom(vt) || vt.IsAssignableFrom(nodeBaseType))
+                        {
+                            if (!visited.Contains(v2))
+                                queue.Enqueue(v2);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static bool IsNavigationProperty(Type propType, Type dtoBaseType)
+    {
+        // Single-ref navigation
+        if (dtoBaseType.IsAssignableFrom(propType) || propType.IsAssignableFrom(dtoBaseType))
+            return true;
+        // Array navigation
+        if (propType.IsArray)
+        {
+            var elem = propType.GetElementType()!;
+            return dtoBaseType.IsAssignableFrom(elem) || elem.IsAssignableFrom(dtoBaseType);
+        }
+        // Generic collection navigation (e.g. List<DtoBase>)
+        if (propType.IsGenericType)
+        {
+            var args = propType.GetGenericArguments();
+            foreach (var arg in args)
+            {
+                if (dtoBaseType.IsAssignableFrom(arg) || arg.IsAssignableFrom(dtoBaseType))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // Implementation — value compare
     // ─────────────────────────────────────────────────────────────────────────────
 
