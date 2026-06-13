@@ -124,6 +124,52 @@ public partial class ZooMapper
     public partial DrvCatDto Map(DrvCat c);
 }
 
+// ── Interface hierarchy with WRONG declaration order — audit #1 adversarial ──
+// IFoo : IBar; DrvC : IFoo — declared [IBar] BEFORE [IFoo] (wrong order)
+// Generator MUST sort most-derived-first; DrvC must dispatch to IFoo arm (IDrvFooDto), not IBar arm.
+public interface IDrvBar { string Tag { get; set; } }
+public interface IDrvFoo : IDrvBar { int Extra { get; set; } }
+public class DrvC : IDrvFoo { public string Tag { get; set; } = ""; public int Extra { get; set; } }
+public class IDrvBarDto { public string Tag { get; set; } = ""; }
+public class IDrvFooDto : IDrvBarDto { public int Extra { get; set; } }
+
+[DwarfMapper]
+public partial class DrvIfaceOrderMapper
+{
+    // Declaration order is deliberately WRONG: concrete DrvC arm listed LAST (most specific should win)
+    [MapDerivedType(typeof(IDrvBar), typeof(IDrvBarDto))]  // IBar arm — less derived; declared first
+    [MapDerivedType<DrvC, IDrvFooDto>]                     // DrvC : IDrvFoo : IDrvBar — most derived; declared last
+    public partial IDrvBarDto Map(IDrvBar x);
+
+    // Explicit overload for concrete DrvC → IDrvFooDto
+    public partial IDrvFooDto Map(DrvC c);
+}
+
+// ── 4-arm class hierarchy with wrong declaration order ────────────────────────
+public abstract class DrvBase { public string Id { get; set; } = ""; }
+public class DrvLevel1 : DrvBase { public int L1 { get; set; } }
+public class DrvLevel2 : DrvLevel1 { public int L2 { get; set; } }
+public class DrvLevel3 : DrvLevel2 { public int L3 { get; set; } }
+
+public class DrvBaseDto { public string Id { get; set; } = ""; }
+public class DrvLevel1Dto : DrvBaseDto { public int L1 { get; set; } }
+public class DrvLevel2Dto : DrvLevel1Dto { public int L2 { get; set; } }
+public class DrvLevel3Dto : DrvLevel2Dto { public int L3 { get; set; } }
+
+[DwarfMapper]
+public partial class DrvFourArmMapper
+{
+    // Deliberately wrong order: level1 first, leaf last
+    [MapDerivedType<DrvLevel1, DrvLevel1Dto>]
+    [MapDerivedType<DrvLevel2, DrvLevel2Dto>]
+    [MapDerivedType<DrvLevel3, DrvLevel3Dto>]
+    public partial DrvBaseDto Map(DrvBase b);
+
+    public partial DrvLevel1Dto Map(DrvLevel1 x);
+    public partial DrvLevel2Dto Map(DrvLevel2 x);
+    public partial DrvLevel3Dto Map(DrvLevel3 x);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 public class MapDerivedTypeRuntimeTests
@@ -153,7 +199,10 @@ public class MapDerivedTypeRuntimeTests
     {
         var m = new DrvAnimalTypeofMapper();
         var result = m.Map(new DrvDog { Name = "Buddy", Breed = "Lab" });
-        Assert.Equal("Buddy", result.Name);
+        // Must dispatch to DogDto — not just base AnimalDto
+        var dog = Assert.IsType<DrvDogDto>(result);
+        Assert.Equal("Buddy", dog.Name);
+        Assert.Equal("Lab", dog.Breed);  // derived-only member — proves correct dispatch
     }
 
     [Fact]
@@ -238,7 +287,10 @@ public class MapDerivedTypeRuntimeTests
     {
         var m = new DrvAutoNestMapper();
         var result = m.Map(new DrvDog { Name = "Rexo", Breed = "Poodle" });
-        Assert.Equal("Rexo", result.Name);
+        // Must dispatch to DogDto — synthesized __DwarfMap_Obj_ helper, not base
+        var dog = Assert.IsType<DrvDogDto>(result);
+        Assert.Equal("Rexo", dog.Name);
+        Assert.Equal("Poodle", dog.Breed);  // derived-only member — proves auto-nest dispatch worked
     }
 
     [Fact]
@@ -293,5 +345,45 @@ public class MapDerivedTypeRuntimeTests
         var dog2 = Assert.IsType<DrvDogDto>(dto.Animals[2]);
         Assert.Equal("Buddy", dog2.Name);
         Assert.Equal("Lab", dog2.Breed);
+    }
+
+    [Fact]
+    public void Interface_hierarchy_wrong_decl_order_C_dispatches_to_IFoo_not_IBar()
+    {
+        // DrvC : IDrvFoo : IDrvBar — declared in wrong order ([IBar] before [DrvC])
+        // Generator sorts most-derived-first; DrvC arm must win over IBar arm
+        var m = new DrvIfaceOrderMapper();
+        var c = new DrvC { Tag = "t1", Extra = 42 };
+        var result = m.Map(c);
+        var dto = Assert.IsType<IDrvFooDto>(result);   // NOT IDrvBarDto
+        Assert.Equal(42, dto.Extra);                    // derived-only member
+        Assert.Equal("t1", dto.Tag);
+    }
+
+    [Fact]
+    public void Four_arm_class_hierarchy_wrong_decl_order_level3_dispatches_correctly()
+    {
+        var m = new DrvFourArmMapper();
+        var l3 = new DrvLevel3 { Id = "x", L1 = 1, L2 = 2, L3 = 3 };
+        var result = m.Map(l3);
+        var dto = Assert.IsType<DrvLevel3Dto>(result);
+        Assert.Equal(3, dto.L3);                         // leaf-only member
+        Assert.Equal(2, dto.L2);
+        Assert.Equal(1, dto.L1);
+        Assert.Equal("x", dto.Id);
+    }
+
+    [Fact]
+    public void Four_arm_class_hierarchy_wrong_decl_order_level2_dispatches_correctly()
+    {
+        var m = new DrvFourArmMapper();
+        var l2 = new DrvLevel2 { Id = "y", L1 = 10, L2 = 20 };
+        var result = m.Map(l2);
+        var dto = Assert.IsType<DrvLevel2Dto>(result);
+        Assert.Equal(20, dto.L2);
+        Assert.Equal(10, dto.L1);
+        Assert.Equal("y", dto.Id);
+        // Result is DrvLevel2Dto — not upgraded to DrvLevel3Dto (correct dispatch)
+        Assert.False(result is DrvLevel3Dto);
     }
 }
