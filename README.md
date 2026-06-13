@@ -335,6 +335,9 @@ README.md
 - `DwarfMapper.Testing`: fixtures, seeded fuzzer, `[RoundTrip]`, informed dumps
 - NativeAOT + trimming CI gate (verified; AOT sample in `samples/`)
 - **Constructor / record / immutable target mapping**: positional records, `record struct`, `readonly record struct`, readonly structs, constructor-only classes; all conversions apply to ctor params; `[DwarfMapperConstructor]` disambiguation; DWARF024/025/026; named-argument AOT-safe emit
+- **Object-graph composition**: auto-synthesized nested mappers; full collection/dictionary taxonomy + nested compositions; deep auto-nesting
+- **Reference handling**: `ReferenceHandling = Preserve` (full topology reconstruction), `OnCycle = SetNull` (System.Text.Json-style cycle breaking), and `None` depth-guarding — all three handle cycles through **direct, collection, and dictionary edges** with no silent `StackOverflowException` (catchable `DwarfMappingDepthException` at `MaxDepth`)
+- **Polymorphic dispatch** (`[MapDerivedType]`) and graph degradation (`[FlattenGraph]`, homogeneous + heterogeneous)
 
 ### Planned
 - `MapTo(src, ref dest)` and `Span<T>`/`ReadOnlySpan<T>` zero-alloc overloads
