@@ -7,3 +7,7 @@ riderModule.iml
 *.received.txt
 # JetBrains Rider IDE
 .idea/
+# Coverage / test output (coverlet XPlat Code Coverage drops these)
+TestResults/
+**/TestResults/
+coverage.cobertura.xml

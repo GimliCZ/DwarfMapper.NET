@@ -30,16 +30,18 @@ jobs:
         # IMPORTANT: pushing ci.yml requires the `workflow` OAuth scope.
         run: |
           set -euo pipefail
-          COBERTURA=$(find TestResults -name "coverage.cobertura.xml" | head -1)
-          if [ -z "$COBERTURA" ]; then echo "No coverage.cobertura.xml found"; exit 1; fi
-          python3 - "$COBERTURA" <<'PYEOF'
+          # A solution-wide `dotnet test --collect` emits ONE cobertura per test
+          # project (Generator.Tests, IntegrationTests, Testing.Tests). Only one of
+          # them contains the <package name="DwarfMapper.Generator"> node — so we
+          # scan ALL reports and key the gate off that package directly, rather than
+          # the file-level root rate (which is diluted by, or missing, the generator).
+          mapfile -t COBERTURA < <(find TestResults -name "coverage.cobertura.xml")
+          if [ ${#COBERTURA[@]} -eq 0 ]; then echo "No coverage.cobertura.xml found"; exit 1; fi
+          python3 - "${COBERTURA[@]}" <<'PYEOF'
 import sys
 import xml.etree.ElementTree as ET
 
-path = sys.argv[1]
-tree = ET.parse(path)
-root = tree.getroot()
-
+GENERATOR_PACKAGE   = "DwarfMapper.Generator"
 LINE_THRESHOLD      = 0.80
 BRANCH_THRESHOLD    = 0.70
 FILE_LINE_THRESHOLD = 0.90
@@ -49,28 +51,35 @@ target_files = {
     "LocationInfo.cs", "FlattenGraphDirective.cs",
 }
 
-overall_line   = float(root.attrib.get("line-rate",   "0"))
-overall_branch = float(root.attrib.get("branch-rate", "0"))
+# Locate the generator package across every report. If split across multiple
+# reports, keep the best line-rate per file and the best package-level rates.
+gen_line = gen_branch = -1.0
+file_rates = {}
+for path in sys.argv[1:]:
+    root = ET.parse(path).getroot()
+    for pkg in root.iter("package"):
+        if pkg.attrib.get("name") != GENERATOR_PACKAGE:
+            continue
+        gen_line   = max(gen_line,   float(pkg.attrib.get("line-rate",   "0")))
+        gen_branch = max(gen_branch, float(pkg.attrib.get("branch-rate", "0")))
+        for cls in pkg.iter("class"):
+            filename = cls.attrib.get("filename", "").replace("\\", "/").split("/")[-1]
+            if filename in target_files:
+                rate = float(cls.attrib.get("line-rate", "0"))
+                file_rates[filename] = max(file_rates.get(filename, 0.0), rate)
 
 failures = []
-
-if overall_line < LINE_THRESHOLD:
-    failures.append(f"Overall line coverage {overall_line*100:.1f}% < {LINE_THRESHOLD*100:.0f}%")
-if overall_branch < BRANCH_THRESHOLD:
-    failures.append(f"Overall branch coverage {overall_branch*100:.1f}% < {BRANCH_THRESHOLD*100:.0f}%")
-
-file_rates = {}
-for cls in root.iter("class"):
-    filename = cls.attrib.get("filename", "").replace("\\", "/").split("/")[-1]
-    if filename in target_files:
-        rate = float(cls.attrib.get("line-rate", "0"))
-        if filename not in file_rates or rate > file_rates[filename]:
-            file_rates[filename] = rate
-
-for fname in target_files:
-    rate = file_rates.get(fname, 0.0)
-    if rate < FILE_LINE_THRESHOLD:
-        failures.append(f"{fname} line coverage {rate*100:.1f}% < {FILE_LINE_THRESHOLD*100:.0f}%")
+if gen_line < 0:
+    failures.append(f"No '{GENERATOR_PACKAGE}' package found in any coverage report")
+else:
+    if gen_line < LINE_THRESHOLD:
+        failures.append(f"Generator line coverage {gen_line*100:.1f}% < {LINE_THRESHOLD*100:.0f}%")
+    if gen_branch < BRANCH_THRESHOLD:
+        failures.append(f"Generator branch coverage {gen_branch*100:.1f}% < {BRANCH_THRESHOLD*100:.0f}%")
+    for fname in target_files:
+        rate = file_rates.get(fname, 0.0)
+        if rate < FILE_LINE_THRESHOLD:
+            failures.append(f"{fname} line coverage {rate*100:.1f}% < {FILE_LINE_THRESHOLD*100:.0f}%")
 
 if failures:
     print("COVERAGE GATE FAILED:")
@@ -78,7 +87,7 @@ if failures:
         print(f"  - {msg}")
     sys.exit(1)
 
-print(f"Coverage gate PASSED  overall line={overall_line*100:.1f}% branch={overall_branch*100:.1f}%")
+print(f"Coverage gate PASSED  generator line={gen_line*100:.1f}% branch={gen_branch*100:.1f}%")
 for fname, rate in sorted(file_rates.items()):
     print(f"  {fname}: {rate*100:.1f}%")
 PYEOF
