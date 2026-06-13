@@ -697,6 +697,71 @@ internal static class CollectionConverter
         return name;
     }
 
+    // ── SIMD widening for primitive array conversions ────────────────────────────
+    // The seven element pairs that System.Numerics.Vector.Widen supports — each is a PROVABLY-LOSSLESS
+    // same-signedness widening (smaller → larger of the same kind), so the vectorized result is bit-for-bit
+    // identical to the scalar implicit widening. Anything else (sign changes, narrowing, multi-step,
+    // nullable, non-primitive) is NOT in this set and falls back to the element loop / CreateChecked path.
+    private static readonly (SpecialType Src, SpecialType Tgt)[] WidenPairs =
+    {
+        (SpecialType.System_Byte,   SpecialType.System_UInt16),
+        (SpecialType.System_UInt16, SpecialType.System_UInt32),
+        (SpecialType.System_UInt32, SpecialType.System_UInt64),
+        (SpecialType.System_SByte,  SpecialType.System_Int16),
+        (SpecialType.System_Int16,  SpecialType.System_Int32),
+        (SpecialType.System_Int32,  SpecialType.System_Int64),
+        (SpecialType.System_Single, SpecialType.System_Double),
+    };
+
+    /// <summary>
+    /// True when <paramref name="srcElem"/>→<paramref name="tgtElem"/> is one of the seven
+    /// <c>Vector.Widen</c>-supported lossless primitive widenings (e.g. <c>int→long</c>, <c>float→double</c>).
+    /// </summary>
+    public static bool IsWidenPair(ITypeSymbol srcElem, ITypeSymbol tgtElem)
+    {
+        foreach (var p in WidenPairs)
+            if (srcElem.SpecialType == p.Src && tgtElem.SpecialType == p.Tgt)
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Synthesizes a vectorized <c>TSrc[] → TDst[]</c> widening helper using <c>Vector.Widen</c>, with a
+    /// hardware-accelerated guard and a scalar tail/fallback. The output is identical to the scalar
+    /// implicit widening — this is purely a throughput optimisation. Reflection-free / AOT-safe
+    /// (<c>Vector&lt;T&gt;</c> + <c>Vector.Widen</c> are JIT/AOT intrinsics).
+    /// </summary>
+    public static string SynthesizeSimdWiden(
+        Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcArrayType, ITypeSymbol srcElem, ITypeSymbol tgtElem)
+    {
+        var dst   = Fq(tgtElem);
+        var srcE  = Fq(srcElem);
+        var srcFq = Fq(srcArrayType);
+        var name  = "__DwarfWiden_" + Hash(srcFq + "=>" + dst + "[]");
+        if (synth.ContainsKey(name))
+            return name;
+
+        var sb = new StringBuilder();
+        sb.Append("    private static ").Append(dst).Append("[] ").Append(name).Append('(').Append(srcFq).Append(" src)\n    {\n");
+        sb.Append("        if (src is null) return global::System.Array.Empty<").Append(dst).Append(">();\n");
+        sb.Append("        var __r = new ").Append(dst).Append("[src.Length];\n");
+        sb.Append("        int __i = 0;\n");
+        sb.Append("        if (global::System.Numerics.Vector.IsHardwareAccelerated)\n        {\n");
+        sb.Append("            int __w = global::System.Numerics.Vector<").Append(srcE).Append(">.Count;\n");
+        sb.Append("            int __half = global::System.Numerics.Vector<").Append(dst).Append(">.Count;\n");
+        sb.Append("            for (; __i + __w <= src.Length; __i += __w)\n            {\n");
+        sb.Append("                var __v = new global::System.Numerics.Vector<").Append(srcE).Append(">(src, __i);\n");
+        sb.Append("                global::System.Numerics.Vector.Widen(__v, out var __lo, out var __hi);\n");
+        sb.Append("                __lo.CopyTo(__r, __i);\n");
+        sb.Append("                __hi.CopyTo(__r, __i + __half);\n");
+        sb.Append("            }\n        }\n");
+        // Scalar tail (and full path when not hardware-accelerated): the implicit widening cast.
+        sb.Append("        for (; __i < src.Length; __i++) __r[__i] = src[__i];\n");
+        sb.Append("        return __r;\n    }\n");
+        synth[name] = new SynthesizedMethod(name, sb.ToString());
+        return name;
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>

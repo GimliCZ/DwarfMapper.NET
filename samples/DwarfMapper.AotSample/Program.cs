@@ -359,6 +359,17 @@ catch (ArgumentException) { spanThrew = true; }
 if (!spanThrew) { Console.WriteLine("ERROR: span map should throw on too-small destination"); return 1; }
 Console.WriteLine("span map: mapped into stack buffer; too-small dest throws (AOT-safe, zero-alloc)");
 
+// ── SIMD widening for primitive arrays (int[] → long[]) (Planned → shipped) ───
+// Vector.Widen path; AOT-safe (Vector<T> is a JIT/AOT intrinsic). Result must equal scalar widen.
+var widenMapper = new AotWidenMapper();
+var widenSrc = new AotWidenSrc { V = new int[37] };
+for (var i = 0; i < widenSrc.V.Length; i++) widenSrc.V[i] = i - 18;
+var widenDst = widenMapper.Map(widenSrc);
+var widenOk = widenDst.V.Length == widenSrc.V.Length;
+for (var i = 0; widenOk && i < widenSrc.V.Length; i++) widenOk = widenDst.V[i] == (long)widenSrc.V[i];
+if (!widenOk) { Console.WriteLine("ERROR: SIMD widen result != scalar widen"); return 1; }
+Console.WriteLine($"simd widen: int[{widenSrc.V.Length}] → long[] equals scalar widen (AOT-safe, vectorized)");
+
 // ── Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src) (Planned → shipped) ─
 // Async iterator state machine is AOT-safe (no reflection). Lazily transforms an async sequence.
 static async System.Collections.Generic.IAsyncEnumerable<AotAsyncSrc> AotAsyncSource()
@@ -447,6 +458,13 @@ public partial class AotUpdateMapper { public partial AotUpdDst Update(AotUpdSrc
 // Zero-alloc span map.
 [DwarfMapper]
 public partial class AotSpanMapper { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+
+// SIMD widening for primitive arrays.
+public class AotWidenSrc { public int[] V { get; set; } = System.Array.Empty<int>(); }
+public class AotWidenDst { public long[] V { get; set; } = System.Array.Empty<long>(); }
+
+[DwarfMapper]
+public partial class AotWidenMapper { public partial AotWidenDst Map(AotWidenSrc s); }
 
 // Async streaming map.
 public class AotAsyncSrc { public int V { get; set; } }

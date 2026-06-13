@@ -5,8 +5,10 @@ A capability, testing, performance, and **migration-ease** comparison against th
 .NET mappers. Benchmarks live in [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/).
 
 > **Licensing note.** AutoMapper is referenced as **14.0.0 only** — the last **MIT** release. v15+ is
-> RPL-1.5 + commercial (GPL-incompatible); we deliberately use nothing from it. Mapperly (4.3.1) and
-> Mapster (10.0.8) are MIT. All three are benchmark-only and never referenced by the shipped library.
+> RPL-1.5 + commercial (GPL-incompatible); we deliberately use nothing from it. Mapperly (4.3.1),
+> Mapster (10.0.8), and AgileMapper (1.8.1) are MIT. All are benchmark-only and never referenced by the
+> shipped library. (TinyMapper / ExpressMapper / Nelibur were evaluated and dropped: net10-incompatible
+> TFMs and/or abandoned. A fifth column, AgileMapper, is included as a second runtime-tier data point.)
 
 ## Approach & licensing at a glance
 
@@ -38,6 +40,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Zero-alloc `Span<T>` mapping** | ✅ | ❌ | ❌ | ❌ |
 | **Async streaming `IAsyncEnumerable`** | ✅ | ❌ | ✅ | ❌ |
 | **Blittable / SIMD bulk-copy fast-path** | ✅ `MemoryMarshal.Cast` | ❌ | ❌ | ❌ |
+| **SIMD primitive-widening (`int[]`→`long[]`)** | ✅ `Vector.Widen` | ❌ | ❌ | ❌ |
 | **Completeness = build error** | ✅ `DWARF001` (always) | diagnostics | ❌ | `AssertConfigurationIsValid()` (test-time) |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 
@@ -152,9 +155,18 @@ dotnet run -c Release --project benchmarks/DwarfMapper.Benchmarks
 
 ### Higher instructions / SIMD
 
-DwarfMapper's blittable fast-path reinterprets a layout-identical `TSrc[]`→`TDst[]` as a single
-`MemoryMarshal.Cast` block copy behind a JIT-folded size guard — the runtime lowers that memmove to the
-widest available vector instructions (AVX/SSE) automatically, so the struct-array case runs at memcpy
-speed while every competitor copies field-by-field. A natural next frontier (not yet implemented) is
-SIMD-*widening* for primitive element conversions (e.g. `int[]`→`long[]`, `float[]`→`double[]`) via
-`System.Runtime.Intrinsics` with a scalar fallback; tracked as a future enhancement.
+DwarfMapper has **two** SIMD fast-paths that no competitor offers:
+
+1. **Blittable bulk copy** — a layout-identical `TSrc[]`→`TDst[]` is reinterpreted as a single
+   `MemoryMarshal.Cast` block copy behind a JIT-folded size guard; the runtime lowers that memmove to the
+   widest available vector instructions automatically (struct-array case at memcpy speed).
+2. **SIMD widening** (shipped) — a lossless primitive widen array (`int[]`→`long[]`, `short[]`→`int[]`,
+   `byte[]`→`ushort[]`, `float[]`→`double[]`, and the unsigned/sbyte variants — the seven
+   `System.Numerics.Vector.Widen` pairs) is vectorized with `Vector.Widen` behind a
+   `Vector.IsHardwareAccelerated` guard and a scalar tail. The result is **bit-for-bit identical to the
+   scalar implicit widen** (verified by adversary/fuzz tests over every length around the vector boundary
+   and the full value range, plus an AOT gate) — it is purely a throughput win and stays reflection-free /
+   NativeAOT-safe. Competitors copy these element-by-element.
+
+Both are emitted only when provably safe; everything else falls back to the element loop (with
+`CreateChecked` for narrowing). See the `Blit` and `Widen` benchmark categories.

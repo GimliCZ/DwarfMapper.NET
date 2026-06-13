@@ -2333,6 +2333,16 @@ internal static class MapperExtractor
                 return true;
             }
 
+            // SIMD widening fast-path: array→array of a lossless primitive widen pair (e.g. int[]→long[],
+            // float[]→double[]) → Vector.Widen. Identical result to the scalar implicit widen; reflection-free.
+            // Comes AFTER blit (same-size pairs blit; widen pairs differ in size so CanReinterpret is false).
+            if (collShape.Target == CollectionConverter.TargetKind.Array && collShape.SourceIsArray
+                && CollectionConverter.IsWidenPair(srcElem, tgtElem))
+            {
+                converterMethod = CollectionConverter.SynthesizeSimdWiden(synthesized, srcType, srcElem, tgtElem);
+                return true;
+            }
+
             // A3: determine effective null-as-null for the OUTER collection helper based on target nullability.
             // Reference-type collections: fall back to AsEmpty when target is non-nullable to prevent CS8601.
             // ImmutableArray<T>?: CollectionConverter.TryResolve already handles Nullable<ImmutableArray<T>>
