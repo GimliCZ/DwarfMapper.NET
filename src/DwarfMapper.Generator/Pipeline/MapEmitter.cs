@@ -96,7 +96,9 @@ internal static class MapEmitter
         if (method.IsPartial)
         {
             // Public declared method — signature never changes (no ctx param for callers).
-            sb.Append(indent).Append(method.Accessibility).Append(" partial ")
+            // [GenerateMap]-synthesized entries are emitted as a FULL method (no `partial` keyword),
+            // since the user never declared a partial to implement.
+            sb.Append(indent).Append(method.Accessibility).Append(method.EmitAsNonPartial ? " " : " partial ")
               .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
               .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName).AppendLine(")");
         }

@@ -123,6 +123,13 @@ public sealed record MapMethodModel(
     /// <summary>The destination span parameter name for an <see cref="IsSpanMap"/> method.</summary>
     string SpanTargetParameterName = "",
     /// <summary>
+    /// When <c>true</c>, this is an attribute-declared mapper (<c>[GenerateMap&lt;S,T&gt;]</c>) emitted as a
+    /// FULL <c>public</c> method rather than a <c>partial</c> implementation — the user did not declare a
+    /// partial method, so the generated file provides the whole method. Treated like <see cref="IsPartial"/>
+    /// for all body logic (it is a public entry); only the signature omits the <c>partial</c> keyword.
+    /// </summary>
+    bool EmitAsNonPartial = false,
+    /// <summary>
     /// When <c>true</c>, this is an async streaming map
     /// <c>IAsyncEnumerable&lt;D&gt; Map(IAsyncEnumerable&lt;S&gt; src)</c>: emitted as an
     /// <c>async</c> iterator (<c>await foreach … yield return conv(item)</c>) that lazily transforms

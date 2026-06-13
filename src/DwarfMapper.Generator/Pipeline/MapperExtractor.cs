@@ -678,6 +678,86 @@ internal static class MapperExtractor
                 FlattenGraphDirectives: EquatableArray.From(resolvedFgDirectives.ToArray())));
         }
 
+        // ── [GenerateMap<TSrc, TTgt>] — low-ceremony attribute-declared mappers ──────
+        // For each [GenerateMap<S,T>] on the mapper class, synthesize a public `T Map(S)` overload
+        // (EmitAsNonPartial → emitted as a full method, not a partial impl) with the SAME completeness
+        // gate, conversions, nested/collection handling, constructor mapping, and hooks as a declared
+        // partial mapper. Source/target types stay plain POCOs (no attributes on them) — migrating from
+        // e.g. AutoMapper's CreateMap<A,B>() is a near-mechanical 1:1 replace with [GenerateMap<A,B>].
+        var genComp = ctx.SemanticModel.Compilation;
+        var genLoc = LocationInfo.From(classSyntax.Identifier.GetLocation());
+        var emptyExplicit = System.Array.Empty<(string Source, string Target, string? Use)>();
+        foreach (var attr in classSymbol.GetAttributes())
+        {
+            if (attr.AttributeClass is not { Name: "GenerateMapAttribute" } ac
+                || ac.TypeArguments.Length != 2
+                || ac.ContainingNamespace?.Name != "DwarfMapper")
+                continue;
+            if (ac.TypeArguments[1] is not INamedTypeSymbol genTgt) continue;
+            var genSrc = ac.TypeArguments[0];
+
+            var genCtor = ConstructorSelector.Select(genTgt, diagnostics, genLoc, out var genObjInitOnly);
+            if (genCtor is null) continue;
+
+            MemberMap[] genCtorArgs;
+            HashSet<string> genConsumed;
+            HashSet<string> genRequiredInit;
+            if (genObjInitOnly)
+            {
+                genCtorArgs = System.Array.Empty<MemberMap>();
+                genConsumed = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                genRequiredInit = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                if (!ResolveConstructorArguments(genCtor, genSrc, genComp, genLoc, diagnostics,
+                        caseInsensitive, emptyExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
+                        nullStrategy, classAutoNest, nestedRegistry, out genCtorArgs, out genConsumed,
+                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode))
+                    continue;
+                genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgt, genConsumed);
+            }
+
+            var genMembers = ResolveMembers(
+                genSrc, genTgt, new HashSet<string>(classIgnores), genComp, genLoc, diagnostics,
+                caseInsensitive, emptyExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
+                nullStrategy, System.Array.Empty<string>(), new List<string>(),
+                genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode);
+
+            var genBefore = new List<string>();
+            foreach (var h in beforeHookDefs)
+                if (HasImplicitConversion(genComp, genSrc, h.ParamType)) genBefore.Add(h.Name);
+            var genAfter = new List<HookCall>();
+            foreach (var h in afterHookDefs)
+            {
+                bool applies; bool takesSource;
+                if (h.P1 is null) { applies = HasImplicitConversion(genComp, genTgt, h.P0); takesSource = false; }
+                else { applies = HasImplicitConversion(genComp, genSrc, h.P0) && HasImplicitConversion(genComp, genTgt, h.P1); takesSource = true; }
+                if (!applies) continue;
+                var tIsRef = h.TargetRefKind == RefKind.Ref;
+                if (genTgt.IsValueType && !tIsRef) continue;
+                genAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: tIsRef));
+            }
+
+            methods.Add(new MapMethodModel(
+                "Map",
+                "public",
+                genTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                genSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                "src",
+                genSrc.IsReferenceType,
+                EquatableArray.From(genMembers),
+                EquatableArray.From(genBefore),
+                EquatableArray.From(genAfter),
+                IsProjection: false,
+                ElementTargetTypeFullName: "",
+                ConstructorArguments: EquatableArray.From(genCtorArgs),
+                IsPartial: true,
+                ReturnIsReferenceType: genTgt.IsReferenceType,
+                EmitAsNonPartial: true));
+        }
+
         // ── Drain the NestedMappingRegistry queue ────────────────────────────────
         // User-declared partial methods are already registered in mapperMethods (autoCandidates).
         // We process synthesized pairs AFTER declared methods so user methods always win.

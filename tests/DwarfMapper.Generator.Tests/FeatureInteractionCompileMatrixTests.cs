@@ -455,6 +455,17 @@ public class FeatureInteractionCompileMatrixTests
                 public partial PersonDto Map(Person p);
             }
             """);
+
+        // ── 16. [GenerateMap<S,T>] — attribute-declared low-ceremony mapper ───
+        yield return new FimMatrixCase("generate_map_attribute", """
+            using DwarfMapper;
+            namespace Fim;
+            public class GmA { public int Id { get; set; } public long Score { get; set; } }
+            public class GmB { public int Id { get; set; } public int Score { get; set; } }
+            [DwarfMapper]
+            [GenerateMap<GmA, GmB>]
+            public partial class M { }
+            """);
     }
 
     // ── Theory data ──────────────────────────────────────────────────────────
