@@ -215,4 +215,11 @@ public static class DiagnosticDescriptors
         "Ambiguous [MapDerivedType] dispatch arms",
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor OnCycleIgnoredUnderPreserve = new(
+        "DWARF037",
+        "OnCycle is ignored under ReferenceHandling.Preserve",
+        "Mapper '{0}' sets OnCycle = SetNull together with ReferenceHandling = Preserve; "
+            + "OnCycle only applies in None mode (Preserve reconstructs cycles faithfully), so the setting has no effect",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 }

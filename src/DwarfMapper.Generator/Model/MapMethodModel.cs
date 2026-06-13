@@ -87,4 +87,13 @@ public sealed record MapMethodModel(
     /// Sorted (most-derived-first) arms for a derived-type dispatch method.
     /// Non-empty when the method carries [MapDerivedType] annotations.
     /// </summary>
-    EquatableArray<DerivedTypeArm> DerivedTypeArms = default) : IEquatable<MapMethodModel>;
+    EquatableArray<DerivedTypeArm> DerivedTypeArms = default,
+    /// <summary>
+    /// When <c>true</c>, <c>ReferenceHandling = None</c> with <c>OnCycle = SetNull</c> is active.
+    /// Recursion-capable reference pairs wrap their body in an on-stack guard
+    /// (<c>DwarfRefContext.TryEnterNode</c>/<c>ExitNode</c>): a re-entrant back-edge to a node
+    /// already on the active mapping stack returns <c>null</c>, breaking the cycle with a finite
+    /// acyclic projection. The public entry creates <c>DwarfRefContext(maxDepth, setNull: true)</c>.
+    /// Mutually exclusive with <see cref="IsPreserveMode"/> (Preserve ignores OnCycle).
+    /// </summary>
+    bool IsSetNullMode = false) : IEquatable<MapMethodModel>;

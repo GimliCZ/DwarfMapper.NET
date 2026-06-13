@@ -67,6 +67,24 @@ public sealed class DwarfMapperAttribute : Attribute
     public ReferenceHandlingStrategy ReferenceHandling { get; set; } = ReferenceHandlingStrategy.None;
 
     /// <summary>
+    /// How a reference cycle in the source data is handled while
+    /// <see cref="ReferenceHandlingStrategy.None"/> is active (the default reference mode).
+    /// <para>
+    /// <see cref="OnCycleStrategy.Throw"/> (default): a cycle (or over-deep chain) throws a
+    /// catchable <see cref="DwarfMappingDepthException"/> at <see cref="MaxDepth"/>.
+    /// </para>
+    /// <para>
+    /// <see cref="OnCycleStrategy.SetNull"/>: the re-entrant back-edge is set to <c>null</c>
+    /// (≡ <c>System.Text.Json</c> <c>IgnoreCycles</c>), producing a finite acyclic projection.
+    /// </para>
+    /// <para>
+    /// Ignored under <see cref="ReferenceHandlingStrategy.Preserve"/> (cycles are reconstructed);
+    /// configuring both reports <c>DWARF037</c>.
+    /// </para>
+    /// </summary>
+    public OnCycleStrategy OnCycle { get; set; } = OnCycleStrategy.Throw;
+
+    /// <summary>
     /// Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64).
     /// When a mapping reaches this depth, a <see cref="DwarfMappingDepthException"/> is thrown
     /// instead of a silent (uncatchable) <see cref="System.StackOverflowException"/>.

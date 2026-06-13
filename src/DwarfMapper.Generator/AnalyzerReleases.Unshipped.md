@@ -41,3 +41,4 @@ DWARF033 | DwarfMapper | Error | Abstract or interface source type in auto-neste
 DWARF034 | DwarfMapper | Error | Invalid [FlattenGraph] configuration
 DWARF035 | DwarfMapper | Error | Invalid [MapDerivedType] configuration
 DWARF036 | DwarfMapper | Error | Ambiguous [MapDerivedType] dispatch arms
+DWARF037 | DwarfMapper | Warning | OnCycle is ignored under ReferenceHandling.Preserve

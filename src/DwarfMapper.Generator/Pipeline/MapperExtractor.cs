@@ -49,6 +49,17 @@ internal static class MapperExtractor
         var maxDepth = ReadMaxDepth(ctx.Attributes);
         var referenceHandling = ReadReferenceHandling(ctx.Attributes);
         var isPreserveMode = referenceHandling == 1; // 1 = ReferenceHandlingStrategy.Preserve
+        var onCycle = ReadOnCycle(ctx.Attributes);   // 0 = Throw, 1 = SetNull
+        // SetNull is only meaningful in None mode; under Preserve, cycles are reconstructed and
+        // OnCycle is ignored → DWARF037 (loud, not a silent no-op).
+        var isSetNullMode = onCycle == 1 && !isPreserveMode;
+        if (onCycle == 1 && isPreserveMode)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.OnCycleIgnoredUnderPreserve,
+                LocationInfo.From(classSyntax.Identifier.GetLocation()),
+                classSymbol.Name));
+        }
         var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
@@ -1334,6 +1345,26 @@ internal static class MapperExtractor
                             ctorArg.TargetName));
                     }
                 }
+            }
+        }
+
+        // ── OnCycle = SetNull post-processing (None mode) ────────────────────────
+        // After recursion-capability is finalised, flag every recursion-capable method so the
+        // emitter wraps its body in the on-stack guard (TryEnterNode/ExitNode) and the public
+        // entry allocates DwarfRefContext(maxDepth, setNull: true). Only reference-type pairs
+        // can form a reference cycle, so value-type sources are left untouched (they keep the
+        // plain depth-guarded None body — a struct cannot be its own ancestor on the stack).
+        // This is the None-mode analogue of the Preserve post-pass above, but far simpler:
+        // construction is unchanged (no register-before-populate, no DWARF030, no dispatch
+        // wrapper) — the guard only nulls a re-entrant back-edge.
+        if (isSetNullMode)
+        {
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                if (!m.IsRecursionCapable) continue;       // only pairs that can re-enter
+                if (!m.ParameterIsReferenceType) continue; // value types never form ref cycles
+                methods[i] = m with { IsSetNullMode = true };
             }
         }
 
@@ -3900,6 +3931,24 @@ internal static class MapperExtractor
             }
         }
         return 0; // None
+    }
+
+    /// <summary>
+    /// Reads <c>[DwarfMapper(OnCycle = ...)]</c>; returns the integer value of the
+    /// <see cref="DwarfMapper.OnCycleStrategy"/> enum (0 = Throw, 1 = SetNull).
+    /// Defaults to 0 (Throw).
+    /// </summary>
+    private static int ReadOnCycle(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "OnCycle" && named.Value.Value is int i)
+                    return i;
+            }
+        }
+        return 0; // Throw
     }
 
     /// <summary>

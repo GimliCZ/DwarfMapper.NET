@@ -63,6 +63,13 @@ internal static class MapEmitter
         var ctxVarName  = isPublicWithCtx ? "__dwarf_ctx" : "ctx";
         var depthPassFwd = isSynthesizedRecursive ? "depth + 1" : "0";
 
+        // OnCycle = SetNull (None mode): recursion-capable reference pairs wrap their body in an
+        // on-stack guard. Gated on a reference-type source (value types are never tracked) and on
+        // recursion-capability (only re-entrant pairs need the guard). When active, the standalone
+        // depth guard and before-hooks are emitted INSIDE the guarded body instead of here.
+        var willUseSetNullPath = method.IsSetNullMode && method.ParameterIsReferenceType
+            && (isSynthesizedRecursive || isPublicWithCtx);
+
         // IsPartial=true → user-declared partial: emit "public partial T Name(S s)"
         // IsPartial=false → synthesized private: plain or depth-guarded
         if (method.IsPartial)
@@ -124,6 +131,9 @@ internal static class MapEmitter
             // Plan 19 C2: Preserve mode passes preserve:true to allocate the identity map.
             if (method.IsPreserveMode)
                 sb.Append(", true");
+            // OnCycle = SetNull (None mode) passes setNull:true to allocate the on-stack guard.
+            else if (method.IsSetNullMode)
+                sb.Append(", preserve: false, setNull: true");
             sb.AppendLine(");");
         }
 
@@ -134,7 +144,7 @@ internal static class MapEmitter
         // so the guard is emitted here unconditionally before any construction logic.
         // Condition: depth >= ctx.MaxDepth (not strictly >, so that MaxDepth=8 allows depths 0..7
         // and throws at depth 8 — meaning chains of length > MaxDepth throw as specified).
-        if (isSynthesizedRecursive && !method.IsPreserveMode)
+        if (isSynthesizedRecursive && !method.IsPreserveMode && !willUseSetNullPath)
         {
             sb.Append(indent).AppendLine("    if (depth >= ctx.MaxDepth)");
             sb.Append(indent).Append("        throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
@@ -214,7 +224,7 @@ internal static class MapEmitter
         // (B2 fix: a cached node returns before the hook fires — hooks must not run twice).
         var willUsePreservePath = method.IsPreserveMode && method.ParameterIsReferenceType
             && (isSynthesizedRecursive || isPublicWithCtx);
-        if (!willUsePreservePath)
+        if (!willUsePreservePath && !willUseSetNullPath)
         {
             foreach (var before in method.BeforeHooks)
             {
@@ -246,6 +256,15 @@ internal static class MapEmitter
             && (isSynthesizedRecursive || isPublicWithCtx))
         {
             EmitPreserveRegisterBeforePopulate(sb, method, indent, ctxVarName, depthPassFwd, isPublicWithCtx);
+            sb.Append(indent).AppendLine("}");
+            return;
+        }
+
+        // ── OnCycle = SetNull (None mode): on-stack-guarded body ─────────────────────
+        // Recursion-capable reference pairs break cycles by nulling the re-entrant back-edge.
+        if (willUseSetNullPath)
+        {
+            EmitSetNullGuardedBody(sb, method, indent, ctxVarName, depthPassFwd, isPublicWithCtx);
             sb.Append(indent).AppendLine("}");
             return;
         }
@@ -443,6 +462,132 @@ internal static class MapEmitter
 
         // Step 5: Return the fully-populated target.
         sb.Append(indent).AppendLine("    return __dwarf_t;");
+    }
+
+    /// <summary>
+    /// Emits the on-stack-guarded body for a recursion-capable reference pair under
+    /// <c>ReferenceHandling = None</c> with <c>OnCycle = SetNull</c>.
+    ///
+    /// <code>
+    ///   if (!ctx.TryEnterNode(s)) return null!;   // re-entrant back-edge → break the cycle with null
+    ///   try
+    ///   {
+    ///       if (depth >= ctx.MaxDepth) throw ...;  // synthesized only — backstop for deep ACYCLIC chains
+    ///       // before hooks (public method only)
+    ///       return new T(...) { Member = map(s.Member, ctx, depth + 1), ... };
+    ///   }
+    ///   finally { ctx.ExitNode(s); }
+    /// </code>
+    ///
+    /// Unlike Preserve, the target is NOT registered: SetNull tracks the SOURCE stack, so a shared
+    /// but acyclic node (a diamond) is re-mapped on each path (its source leaves the stack before
+    /// the second parent is visited) and only true ancestor cycles are nulled. Construction is the
+    /// normal object-initializer form (members recurse with <c>ctx, depth + 1</c>); the guard simply
+    /// nulls the back-edge when a node is re-entered while still on the stack.
+    /// </summary>
+    private static void EmitSetNullGuardedBody(
+        StringBuilder sb, MapMethodModel method, string indent,
+        string ctxVarName, string depthPassFwd, bool isPublicMethod)
+    {
+        var p = method.ParameterName;
+
+        // Back-edge guard: a source already on the active mapping stack → break cycle with null.
+        // null! suppresses the nullable-return warning (the caller assigns it to a member; a
+        // non-nullable target member simply receives null, matching System.Text.Json IgnoreCycles).
+        sb.Append(indent).Append("    if (!").Append(ctxVarName).Append(".TryEnterNode(")
+          .Append(p).AppendLine(")) return null!;");
+        sb.Append(indent).AppendLine("    try");
+        sb.Append(indent).AppendLine("    {");
+
+        // Depth guard (synthesized recursion-capable methods only) — a backstop for deep ACYCLIC
+        // chains. Cycles are already broken by the on-stack guard above, so this rarely fires under
+        // SetNull, but a 100k-deep acyclic chain still must throw rather than StackOverflow.
+        if (!isPublicMethod)
+        {
+            sb.Append(indent).AppendLine("        if (depth >= ctx.MaxDepth)");
+            sb.Append(indent).AppendLine("            throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
+        }
+
+        // Before hooks (public method only; synthesized pairs carry none). Emitted after a successful
+        // enter so they fire exactly once for the root.
+        if (isPublicMethod)
+        {
+            foreach (var before in method.BeforeHooks)
+            {
+                sb.Append(indent).Append("        ").Append(before).Append('(').Append(p).AppendLine(");");
+            }
+        }
+
+        var hasCtorArgs = method.ConstructorArguments.Count > 0;
+        var hasInitMembers = method.Members.Count > 0;
+        var hasAfter = method.AfterHooks.Count > 0;
+
+        // Construction — identical shape to the normal None path, indented inside the try block.
+        sb.Append(indent).Append("        ").Append(hasAfter ? "var __dwarf_target = new " : "return new ")
+          .Append(method.ReturnTypeFullName);
+
+        if (hasCtorArgs)
+        {
+            sb.AppendLine("(");
+            var ctorArgs = method.ConstructorArguments;
+            for (var i = 0; i < ctorArgs.Count; i++)
+            {
+                var arg = ctorArgs[i];
+                sb.Append(indent).Append("            ").Append(arg.TargetName).Append(": ");
+                AppendValueExpression(sb, arg, p, ctxVarName, depthPassFwd);
+                if (i < ctorArgs.Count - 1)
+                    sb.AppendLine(",");
+                else
+                    sb.Append(')');
+            }
+
+            if (hasInitMembers)
+            {
+                sb.AppendLine();
+                sb.Append(indent).AppendLine("        {");
+                foreach (var member in method.Members)
+                {
+                    sb.Append(indent).Append("            ").Append(member.TargetName).Append(" = ");
+                    AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
+                    sb.AppendLine(",");
+                }
+                sb.Append(indent).AppendLine("        };");
+            }
+            else
+            {
+                sb.AppendLine(";");
+            }
+        }
+        else
+        {
+            sb.AppendLine();
+            sb.Append(indent).AppendLine("        {");
+            foreach (var member in method.Members)
+            {
+                sb.Append(indent).Append("            ").Append(member.TargetName).Append(" = ");
+                AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
+                sb.AppendLine(",");
+            }
+            sb.Append(indent).AppendLine("        };");
+        }
+
+        if (hasAfter)
+        {
+            foreach (var after in method.AfterHooks)
+            {
+                sb.Append(indent).Append("        ").Append(after.Name).Append('(');
+                if (after.TakesSource) sb.Append(p).Append(", ");
+                if (after.TargetByRef) sb.Append("ref ");
+                sb.Append("__dwarf_target").AppendLine(");");
+            }
+            sb.Append(indent).AppendLine("        return __dwarf_target;");
+        }
+
+        sb.Append(indent).AppendLine("    }");
+        sb.Append(indent).AppendLine("    finally");
+        sb.Append(indent).AppendLine("    {");
+        sb.Append(indent).Append("        ").Append(ctxVarName).Append(".ExitNode(").Append(p).AppendLine(");");
+        sb.Append(indent).AppendLine("    }");
     }
 
     /// <summary>
