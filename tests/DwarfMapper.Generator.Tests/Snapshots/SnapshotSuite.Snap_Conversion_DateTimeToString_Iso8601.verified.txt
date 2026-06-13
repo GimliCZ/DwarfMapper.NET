@@ -11,7 +11,7 @@ public partial class M
         global::System.ArgumentNullException.ThrowIfNull(a);
         return new global::Demo.B
         {
-            V = __DwarfMap_FmtToStr_global__System_DateTime_ac1782bd(a.V!),
+            V = __DwarfMap_FmtToStr_global__System_DateTime_ac1782bd(a.V),
         };
     }
 

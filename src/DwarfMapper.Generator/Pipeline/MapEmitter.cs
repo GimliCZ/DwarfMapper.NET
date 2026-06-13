@@ -878,14 +878,23 @@ internal static class MapEmitter
             else
             {
                 // Converter only path: Conv(src.X) or Conv(src.X!) depending on nullability.
-                // The '!' null-forgiving operator is needed when the source member is a nullable
-                // reference type (e.g. Node? Next) but the converter expects non-null (Node).
-                // Synthesized nested mappers (__DwarfMap_Obj_... / __DwarfMap_Depth_...) always
-                // begin with a null guard (if (s is null) return null!) so the '!' is safe and
-                // suppresses CS8604. User-declared converters receive the source as-is (no '!').
+                // The '!' null-forgiving operator is needed ONLY when BOTH hold:
+                //   (a) the source member is a possibly-null reference (nullable-annotated or
+                //       oblivious) — SourceIsNullableRef, set precisely at MemberMap construction via
+                //       SourceMayBeNullRef; value types (enums, numerics, Nullable<T>) and
+                //       non-nullable references are false and so never get a spurious '!', and
+                //   (b) the converter's parameter is NON-nullable. The synthesized scalar/nested
+                //       converters (__DwarfMap_Num_/_StrParse_/_EnumName_/_Obj_ …) take a non-null
+                //       parameter (and null-guard internally, so '!' is safe), whereas the
+                //       collection/dictionary helpers (__DwarfMapColl/__DwarfMapDict/__DwarfBlit/
+                //       __DwarfWiden) take a NULLABLE parameter and handle null→empty themselves, so
+                //       they never need '!'. The `__DwarfMap_` prefix (with the trailing underscore)
+                //       distinguishes the former from the latter.
+                // Recursion-capable converters always receive the source through a null-guarded
+                // helper, hence the ConverterNeedsDepthCtx clause forces '!' regardless.
                 var needsBang = member.ConverterNeedsDepthCtx
-                    || member.SourceIsNullableRef
-                    || member.ConverterMethod!.StartsWith("__DwarfMap_", System.StringComparison.Ordinal);
+                    || (member.SourceIsNullableRef
+                        && member.ConverterMethod!.StartsWith("__DwarfMap_", System.StringComparison.Ordinal));
                 if (member.ConverterNeedsDepthCtx)
                     sb.Append(member.ConverterMethod).Append('(')
                       .Append(paramName).Append('.').Append(member.SourceName)

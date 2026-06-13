@@ -11,7 +11,7 @@ public partial class M
         global::System.ArgumentNullException.ThrowIfNull(a);
         return new global::Demo.B
         {
-            V = __DwarfMap_Num_long__int_4bf5d59e(a.V!),
+            V = __DwarfMap_Num_long__int_4bf5d59e(a.V),
         };
     }
 

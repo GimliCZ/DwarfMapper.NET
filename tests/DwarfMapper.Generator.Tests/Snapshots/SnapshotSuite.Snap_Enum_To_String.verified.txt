@@ -11,7 +11,7 @@ public partial class M
         global::System.ArgumentNullException.ThrowIfNull(a);
         return new global::Demo.B
         {
-            V = __DwarfMap_EnumStr_global__Demo_Color_a3f7b448(a.V!),
+            V = __DwarfMap_EnumStr_global__Demo_Color_a3f7b448(a.V),
         };
     }
 

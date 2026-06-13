@@ -12,7 +12,7 @@ public partial class M
         global::System.ArgumentNullException.ThrowIfNull(dest);
         dest.Id = src.Id;
         dest.Name = src.Name;
-        dest.Score = __DwarfMap_Num_long__int_4bf5d59e(src.Score!);
+        dest.Score = __DwarfMap_Num_long__int_4bf5d59e(src.Score);
     }
 
     private static int __DwarfMap_Num_long__int_4bf5d59e(long v) => int.CreateChecked(v);

@@ -11,7 +11,7 @@ public partial class M
         global::System.ArgumentNullException.ThrowIfNull(a);
         return new global::Demo.B
         {
-            P = __DwarfMap_EnumNum_global__Demo_Priority__int_5bd4a057(a.P!),
+            P = __DwarfMap_EnumNum_global__Demo_Priority__int_5bd4a057(a.P),
         };
     }
 

@@ -1760,7 +1760,8 @@ internal static class MapperExtractor
 
             if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
-                result.Add(new MemberMap(tgtName, srcName, conv, nullH, ConverterNeedsDepthCtx: convNeedsCtx));
+                result.Add(new MemberMap(tgtName, srcName, conv, nullH, ConverterNeedsDepthCtx: convNeedsCtx,
+                    SourceIsNullableRef: SourceMayBeNullRef(srcMatch)));
             }
         }
 
@@ -1809,7 +1810,8 @@ internal static class MapperExtractor
                     var fm = flatMatches[0];
                     if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
                     {
-                        result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, ConverterNeedsDepthCtx: fneedsCtx));
+                        result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, ConverterNeedsDepthCtx: fneedsCtx,
+                            SourceIsNullableRef: SourceMayBeNullRef(fm.LeafType)));
                     }
                     continue;
                 }
@@ -1831,7 +1833,8 @@ internal static class MapperExtractor
                     && sa.ElementType.IsUnmanagedType && ta.ElementType.IsUnmanagedType)
                 {
                     var blit = CollectionConverter.SynthesizeBlit(synthesized, source.Type, sa.ElementType, ta.ElementType);
-                    result.Add(new MemberMap(target.Name, source.Name, blit));
+                    result.Add(new MemberMap(target.Name, source.Name, blit,
+                        SourceIsNullableRef: SourceMayBeNullRef(source.Type)));
                 }
                 else
                 {
@@ -1841,7 +1844,8 @@ internal static class MapperExtractor
             }
             if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
-                result.Add(new MemberMap(target.Name, source.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx));
+                result.Add(new MemberMap(target.Name, source.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx,
+                    SourceIsNullableRef: SourceMayBeNullRef(source.Type)));
             }
         }
 
@@ -1950,7 +1954,8 @@ internal static class MapperExtractor
                     location, param.Name, diagnostics, out var eConv, out var eNull,
                     out var eNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
                 {
-                    args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull, ConverterNeedsDepthCtx: eNeedsCtx));
+                    args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull, ConverterNeedsDepthCtx: eNeedsCtx,
+                        SourceIsNullableRef: SourceMayBeNullRef(srcType)));
                     consumedParams.Add(param.Name);
                 }
                 else
@@ -1997,7 +2002,8 @@ internal static class MapperExtractor
                 location, param.Name, diagnostics, out var conv, out var nullH,
                 out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
-                args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx));
+                args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx,
+                    SourceIsNullableRef: SourceMayBeNullRef(srcMember.Type)));
                 consumedParams.Add(param.Name);
             }
             else
@@ -2883,6 +2889,17 @@ internal static class MapperExtractor
     /// </summary>
     private static bool IsNullableAnnotated(ITypeSymbol type) =>
         type.NullableAnnotation == NullableAnnotation.Annotated;
+
+    /// <summary>
+    /// True when a source member of this type may be null from the compiler's point of view — a
+    /// reference type that is nullable-annotated OR oblivious (<c>#nullable disable</c> context).
+    /// Drives the null-forgiving <c>!</c> at synthesized-converter call sites: only such sources can
+    /// trip CS8604 when the converter's parameter is non-nullable. Value types (enums, numerics,
+    /// <c>Nullable&lt;T&gt;</c>) and non-nullable references never need it, so the emitter omits the
+    /// otherwise-spurious <c>!</c> for them. <see cref="MemberMap.SourceIsNullableRef"/>.
+    /// </summary>
+    private static bool SourceMayBeNullRef(ITypeSymbol type) =>
+        type.IsReferenceType && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
 
     private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type)
     {
