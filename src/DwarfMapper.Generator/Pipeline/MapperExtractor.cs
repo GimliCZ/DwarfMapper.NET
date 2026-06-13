@@ -41,6 +41,8 @@ internal static class MapperExtractor
         }
 
         var classIgnores = ReadIgnores(classSymbol).ToList();
+        var classIgnoreSources = ReadIgnoreSources(classSymbol).ToList();
+        var requiredMapping = ReadRequiredMapping(ctx.Attributes); // 0 = Target (default), 1 = Both
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
@@ -615,6 +617,33 @@ internal static class MapperExtractor
             // These come AFTER normal members so the object initializer order is:
             //   normal scalars/nested first, then flat-graph collections.
             members.AddRange(fgInjectedMembers);
+
+            // ── Source-member coverage (RequiredMapping = Both) ───────────────────────────
+            // The source-side mirror of the DWARF001 completeness gate: under `Both`, every readable
+            // source member must be read by some destination (member OR constructor argument). A source
+            // consumed by nothing surfaces DWARF039 (Info suggestion), unless suppressed by
+            // [MapIgnoreSource]. Dotted source names (flattened leaves) mark their root consumed.
+            if (requiredMapping == 1) // RequiredMappingStrategy.Both
+            {
+                var ignoreSources = new HashSet<string>(classIgnoreSources, System.StringComparer.Ordinal);
+                foreach (var s in ReadIgnoreSources(method))
+                    ignoreSources.Add(s);
+
+                var consumed = new HashSet<string>(System.StringComparer.Ordinal);
+                foreach (var m in members)
+                    AddConsumed(consumed, m.SourceName);
+                foreach (var m in ctorArgs)
+                    AddConsumed(consumed, m.SourceName);
+
+                foreach (var (name, _) in ReadableMembers(sourceType))
+                {
+                    if (!consumed.Contains(name) && !ignoreSources.Contains(name))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.UnconsumedSourceMember, methodLocation, name));
+                    }
+                }
+            }
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -3064,6 +3093,17 @@ internal static class MapperExtractor
             .Where(s => s is not null)
             .Select(s => s!);
 
+    /// <summary>
+    /// Reads <c>[MapIgnoreSource("Member")]</c> names — the source-side mirror of <see cref="ReadIgnores"/>.
+    /// Used to suppress the DWARF039 source-coverage suggestion for specific source members.
+    /// </summary>
+    private static IEnumerable<string> ReadIgnoreSources(ISymbol symbol) =>
+        symbol.GetAttributes()
+            .Where(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.MapIgnoreSourceAttribute")
+            .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
+            .Where(s => s is not null)
+            .Select(s => s!);
+
     private static List<(string Source, string Target, string? Use)> ReadExplicitMaps(ISymbol method)
     {
         var maps = new List<(string Source, string Target, string? Use)>();
@@ -4311,6 +4351,33 @@ internal static class MapperExtractor
                 if (named.Key == "ImplicitConversions" && named.Value.Value is bool b)
                     return b;
         return true;
+    }
+
+    /// <summary>
+    /// Reads <c>[DwarfMapper(RequiredMapping = ...)]</c>. Returns the enum's int value:
+    /// 0 = <c>Target</c> (default — destination-coverage only), 1 = <c>Both</c> (also require every
+    /// source member consumed → DWARF039 for leftovers).
+    /// </summary>
+    private static int ReadRequiredMapping(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+            foreach (var named in attr.NamedArguments)
+                if (named.Key == "RequiredMapping" && named.Value.Value is int v)
+                    return v;
+        return 0; // RequiredMappingStrategy.Target
+    }
+
+    /// <summary>
+    /// Adds the top-level source member consumed by <paramref name="sourceName"/> to
+    /// <paramref name="consumed"/>. A dotted path (a flattened leaf like <c>"Address.City"</c>) marks its
+    /// root (<c>Address</c>) consumed; the empty sentinel (top-level collection / constant value) is ignored.
+    /// </summary>
+    private static void AddConsumed(HashSet<string> consumed, string sourceName)
+    {
+        if (string.IsNullOrEmpty(sourceName))
+            return;
+        var dot = sourceName.IndexOf('.');
+        consumed.Add(dot < 0 ? sourceName : sourceName.Substring(0, dot));
     }
 
     /// <summary>

@@ -114,6 +114,7 @@ public partial class CustomerMapper
 - **Matching is exact/case-sensitive by default**; set `CaseInsensitive = true` to relax it (an ambiguous match then becomes `DWARF010`).
 - **`[MapProperty(source, target)]`** maps differently-named members and suppresses the completeness error for that destination; an unknown source/target is `DWARF009`/`DWARF008`.
 - A **read-only destination** member that has a matching source is flagged (`DWARF007`) rather than silently dropped.
+- **Source-member coverage (opt-in).** By default the completeness gate is destination-side only (every target must be mapped). Set `[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]` to also require every **source** member to be read by some destination — a source consumed by nothing (incl. via a constructor argument or a `[Flatten]` root) surfaces the **`DWARF039`** suggestion (Info), so a forgotten/mis-wired field is never silent. Suppress one with `[MapIgnoreSource("Member")]` (class- or method-level, the source-side mirror of `[MapIgnore]`); make it strict with `dotnet_diagnostic.DWARF039.severity = error` in `.editorconfig`.
 
 **Converting between types.** When a source and destination member have different types, DwarfMapper bridges them in one of two ways:
 

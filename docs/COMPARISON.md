@@ -47,6 +47,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Blittable / SIMD bulk-copy fast-path** | ✅ `MemoryMarshal.Cast` | ❌ | ❌ | ❌ |
 | **SIMD primitive-widening (`int[]`→`long[]`)** | ✅ `Vector.Widen` | ❌ | ❌ | ❌ |
 | **Completeness = build error** | ✅ `DWARF001` (always) | diagnostics | ❌ | `AssertConfigurationIsValid()` (test-time) |
+| **Source-member coverage (unused-source check)** | ✅ `RequiredMapping=Both` → `DWARF039` (opt-in); `[MapIgnoreSource]` | ✅ `RMG020` | ❌ | ✅ (validates) |
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` suggestion, or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 

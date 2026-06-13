@@ -230,4 +230,13 @@ public static class DiagnosticDescriptors
         "Implicit type conversion applied",
         "{0}",
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
+
+    // Emitted only under [DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]. Info (suggestion)
+    // by default — visible, never silent, never build-breaking; escalate via
+    // dotnet_diagnostic.DWARF039.severity = error in .editorconfig.
+    public static readonly DiagnosticDescriptor UnconsumedSourceMember = new(
+        "DWARF039",
+        "Source member is read by no destination member",
+        "Source member '{0}' is read by no destination member; map it, or annotate the mapper/method with [MapIgnoreSource(\"{0}\")]",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
 }

@@ -388,6 +388,18 @@ public class FeatureInteractionCompileMatrixTests
             }
             """);
 
+        // ── 10b. MapIgnoreSource + RequiredMapping = Both (source-coverage) ───
+        yield return new FimMatrixCase("mapignoresource_both", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public int X { get; set; } public int Unused { get; set; } }
+            public class Dst { public int X { get; set; } }
+            [DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)] public partial class M {
+                [MapIgnoreSource("Unused")]
+                public partial Dst Map(Src s);
+            }
+            """);
+
         // ── 11. MapProperty rename ────────────────────────────────────────────
 
         yield return new FimMatrixCase("mapproperty_rename", """

@@ -115,4 +115,15 @@ public sealed class DwarfMapperAttribute : Attribute
     /// </para>
     /// </summary>
     public int MaxDepth { get; set; } = 64;
+
+    /// <summary>
+    /// Which side(s) of the mapping must be fully covered. Defaults to
+    /// <see cref="RequiredMappingStrategy.Target"/> (today's behaviour — every destination member must be
+    /// mapped). Set to <see cref="RequiredMappingStrategy.Both"/> to additionally require every source
+    /// member to be read by some destination; an unconsumed source member then surfaces the
+    /// <c>DWARF039</c> suggestion (Info). Suppress a specific member with
+    /// <c>[MapIgnoreSource("Member")]</c>; escalate to a build error via
+    /// <c>dotnet_diagnostic.DWARF039.severity = error</c> in <c>.editorconfig</c>.
+    /// </summary>
+    public RequiredMappingStrategy RequiredMapping { get; set; } = RequiredMappingStrategy.Target;
 }
