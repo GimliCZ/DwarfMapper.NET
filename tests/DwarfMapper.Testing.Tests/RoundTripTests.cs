@@ -31,7 +31,10 @@ public class RoundTripTests
     public void Lossless_roundtrip_passes()
     {
         var m = new PersonRoundTripMapper();
-        RoundTrip.Verify<Person, PersonDto>(m.ToDto, m.FromDto, seed: 7, iterations: 50);
+        // Assert.Null(exception) makes the assertion explicit: the verifier must not throw.
+        var ex = Record.Exception(() =>
+            RoundTrip.Verify<Person, PersonDto>(m.ToDto, m.FromDto, seed: 7, iterations: 50));
+        Assert.Null(ex);
     }
 
     [Fact]

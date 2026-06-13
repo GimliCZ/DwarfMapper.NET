@@ -19,6 +19,8 @@ public class RoundTripAttributeTests
     public void Generated_verifier_passes_for_lossless_pair()
     {
         // The generator emitted VerifyRoundTrip_ToDto; calling it fuzz-verifies the round trip.
-        new RtMapper().VerifyRoundTrip_ToDto(seed: 7, iterations: 50);
+        // Assert.Null(exception) makes the assertion explicit: the verifier must not throw.
+        var ex = Record.Exception(() => new RtMapper().VerifyRoundTrip_ToDto(seed: 7, iterations: 50));
+        Assert.Null(ex);
     }
 }
