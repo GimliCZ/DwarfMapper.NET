@@ -24,4 +24,11 @@ public sealed record MemberMap(
     /// Only set when <see cref="ConverterMethod"/> is a synthesized nested mapper that starts
     /// with a null-guard (<c>if (s is null) return null!</c>), so null is handled safely.
     /// </summary>
-    bool SourceIsNullableRef = false) : System.IEquatable<MemberMap>;
+    bool SourceIsNullableRef = false,
+    /// <summary>
+    /// When non-null, this raw C# expression is emitted verbatim as the member's value, bypassing all
+    /// source-member access / converter / null-handling logic. Used by <c>[MapValue]</c> for constant
+    /// literals (e.g. <c>"api-v2"</c>) and computed providers (e.g. <c>Now()</c>). <see cref="SourceName"/>
+    /// is empty in this case.
+    /// </summary>
+    string? ValueExpression = null) : System.IEquatable<MemberMap>;

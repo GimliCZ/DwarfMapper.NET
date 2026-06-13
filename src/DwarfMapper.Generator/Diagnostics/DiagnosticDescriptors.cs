@@ -239,4 +239,22 @@ public static class DiagnosticDescriptors
         "Source member is read by no destination member",
         "Source member '{0}' is read by no destination member; map it, or annotate the mapper/method with [MapIgnoreSource(\"{0}\")]",
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor MapValueTypeMismatch = new(
+        "DWARF040",
+        "Constant [MapValue] is not assignable to the destination",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor MapValueUseInvalid = new(
+        "DWARF041",
+        "[MapValue(Use=)] provider method is invalid",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor MapValueInvalid = new(
+        "DWARF042",
+        "Conflicting or invalid [MapValue]",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

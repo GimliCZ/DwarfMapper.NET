@@ -66,6 +66,7 @@ internal static class MapperExtractor
         var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
+        var valueProviders = CollectValueProviders(classSymbol); // parameterless methods for [MapValue(Use=)]
         var (beforeHookDefs, afterHookDefs) = CollectHooks(classSymbol, diagnostics);
         var methods = new List<MapMethodModel>();
 
@@ -543,6 +544,7 @@ internal static class MapperExtractor
             }
 
             var explicitMaps = ReadExplicitMaps(method);
+            var mapValues = ReadMapValues(method);
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
 
@@ -611,7 +613,8 @@ internal static class MapperExtractor
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
+                mapValues: mapValues, valueProviders: valueProviders);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -1695,7 +1698,9 @@ internal static class MapperExtractor
         bool nullAsNull = false,
         bool isPreserve = false,
         bool isSetNull = false,
-        bool implicitConversions = true)
+        bool implicitConversions = true,
+        IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use)>? mapValues = null,
+        IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -1791,6 +1796,65 @@ internal static class MapperExtractor
             {
                 result.Add(new MemberMap(tgtName, srcName, conv, nullH, ConverterNeedsDepthCtx: convNeedsCtx,
                     SourceIsNullableRef: SourceMayBeNullRef(srcMatch)));
+            }
+        }
+
+        // MAPVALUE: constant / computed values assigned to a destination member (no source). Processed
+        // after [MapProperty] (so conflicts are caught) and before AUTO matching. A [MapValue]'d target
+        // counts as mapped, suppressing DWARF001.
+        foreach (var mv in mapValues ?? System.Array.Empty<(string Target, bool IsConstant, TypedConstant Value, string? Use)>())
+        {
+            var mvTgt = mv.Target;
+            if (!handledTargets.Add(mvTgt))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                    $"[MapValue] target '{mvTgt}' conflicts with another mapping for the same member"));
+                continue;
+            }
+            if (ignores.Contains(mvTgt))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                    $"[MapValue] target '{mvTgt}' is also [MapIgnore]d"));
+                continue;
+            }
+            if (consumedCtorParams is not null && consumedCtorParams.Contains(mvTgt))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                    $"[MapValue] cannot target constructor parameter '{mvTgt}' yet (object-initialized members only)"));
+                continue;
+            }
+            if (!writableByName.TryGetValue(mvTgt, out var mvTgtType))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                    $"[MapValue] target '{mvTgt}' is not a writable destination member"));
+                continue;
+            }
+
+            if (mv.IsConstant)
+            {
+                if (!TryFormatConstant(mv.Value, mvTgtType, compilation, out var literal, out var why))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, location, why));
+                    continue;
+                }
+                result.Add(new MemberMap(mvTgt, "", ValueExpression: literal));
+            }
+            else if (mv.Use is not null)
+            {
+                var provider = (valueProviders ?? System.Array.Empty<(string Name, ITypeSymbol ReturnType)>())
+                    .FirstOrDefault(p => System.StringComparer.Ordinal.Equals(p.Name, mv.Use));
+                if (provider.Name is null || !HasImplicitConversion(compilation, provider.ReturnType, mvTgtType))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueUseInvalid, location,
+                        $"[MapValue(Use = \"{mv.Use}\")] for '{mvTgt}' must name a parameterless method whose return type is assignable to '{mvTgtType.ToDisplayString()}'"));
+                    continue;
+                }
+                result.Add(new MemberMap(mvTgt, "", ValueExpression: mv.Use + "()"));
+            }
+            else
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                    $"[MapValue] for '{mvTgt}' provides neither a constant value nor Use="));
             }
         }
 
@@ -2821,6 +2885,23 @@ internal static class MapperExtractor
         return methods;
     }
 
+    /// <summary>
+    /// Collects parameterless, non-void methods on the mapper — the candidate value providers for
+    /// <c>[MapValue(Use = nameof(...))]</c>. Returns <c>(Name, ReturnType)</c> pairs.
+    /// </summary>
+    private static List<(string Name, ITypeSymbol ReturnType)> CollectValueProviders(INamedTypeSymbol classSymbol)
+    {
+        var providers = new List<(string Name, ITypeSymbol ReturnType)>();
+        foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
+        {
+            if (m.MethodKind == MethodKind.Ordinary && !m.ReturnsVoid && m.Parameters.Length == 0)
+            {
+                providers.Add((m.Name, m.ReturnType));
+            }
+        }
+        return providers;
+    }
+
     private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> CollectMapperMethods(INamedTypeSymbol classSymbol)
     {
         var methods = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>();
@@ -3129,6 +3210,98 @@ internal static class MapperExtractor
             }
         }
         return maps;
+    }
+
+    /// <summary>
+    /// Reads <c>[MapValue]</c> annotations. A two-argument form (<c>IsConstant = true</c>) carries a
+    /// constant <c>Value</c>; the one-argument form carries a <c>Use</c> provider-method name. The
+    /// <c>Use</c> named argument is also honoured on the two-argument form (Use wins).
+    /// </summary>
+    private static List<(string Target, bool IsConstant, TypedConstant Value, string? Use)> ReadMapValues(ISymbol method)
+    {
+        var result = new List<(string, bool, TypedConstant, string?)>();
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapValueAttribute")
+            {
+                continue;
+            }
+            if (attr.ConstructorArguments.Length == 0
+                || attr.ConstructorArguments[0].Value is not string target)
+            {
+                continue;
+            }
+            string? use = null;
+            foreach (var na in attr.NamedArguments)
+            {
+                if (na.Key == "Use" && na.Value.Value is string u)
+                {
+                    use = u;
+                }
+            }
+            // Two-arg ctor → constant value in [1]; one-arg ctor → Use-driven.
+            var isConstant = attr.ConstructorArguments.Length == 2 && use is null;
+            var value = attr.ConstructorArguments.Length == 2 ? attr.ConstructorArguments[1] : default;
+            result.Add((target, isConstant, value, use));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Formats a <c>[MapValue]</c> constant as a C# literal assignable to <paramref name="targetType"/>,
+    /// or fails with a reason. Only attribute-legal constants are supported (string, bool, char, numeric,
+    /// enum, null); arrays/typeof and non-assignable values fail (the caller emits DWARF040). Floating/
+    /// decimal targets are cast to the target type so an un-suffixed literal (e.g. <c>1.5</c>) compiles.
+    /// </summary>
+    private static bool TryFormatConstant(
+        TypedConstant tc, ITypeSymbol targetType, Compilation compilation, out string literal, out string why)
+    {
+        literal = "";
+        why = "";
+        if (tc.Kind is TypedConstantKind.Array or TypedConstantKind.Type or TypedConstantKind.Error)
+        {
+            why = $"[MapValue] constant for '{targetType.ToDisplayString()}' must be a string, bool, char, numeric, enum, or null";
+            return false;
+        }
+
+        if (tc.IsNull)
+        {
+            var acceptsNull = targetType.IsReferenceType
+                || (targetType is INamedTypeSymbol nt && nt.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
+            if (!acceptsNull)
+            {
+                why = $"[MapValue] cannot assign null to non-nullable type '{targetType.ToDisplayString()}'";
+                return false;
+            }
+            literal = "null";
+            return true;
+        }
+
+        if (tc.Kind == TypedConstantKind.Enum)
+        {
+            if (tc.Type is null || !HasImplicitConversion(compilation, tc.Type, targetType))
+            {
+                why = $"[MapValue] enum constant of type '{tc.Type?.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
+                return false;
+            }
+            var enumFqn = tc.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            literal = $"({enumFqn})({SymbolDisplay.FormatPrimitive(tc.Value!, quoteStrings: false, useHexadecimalNumbers: false)})";
+            return true;
+        }
+
+        // Primitive (string/bool/char/numeric).
+        if (tc.Type is not null && !HasImplicitConversion(compilation, tc.Type, targetType))
+        {
+            why = $"[MapValue] constant of type '{tc.Type.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
+            return false;
+        }
+        var formatted = SymbolDisplay.FormatPrimitive(tc.Value!, quoteStrings: true, useHexadecimalNumbers: false);
+        // Floating/decimal targets need an explicit cast — an un-suffixed literal like "1.5" is a double
+        // and would not compile when assigned to float/decimal.
+        literal = targetType.SpecialType is SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal
+            ? $"({targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({formatted})"
+            : formatted;
+        return true;
     }
 
     private static List<string> ReadFlattenRoots(ISymbol method)

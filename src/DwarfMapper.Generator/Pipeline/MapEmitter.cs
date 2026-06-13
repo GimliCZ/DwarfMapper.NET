@@ -827,6 +827,13 @@ internal static class MapEmitter
         StringBuilder sb, MemberMap member, string paramName,
         string ctxVarName = "ctx", string depthArg = "0")
     {
+        // [MapValue]: a raw constant/computed expression assigned verbatim — no source access.
+        if (member.ValueExpression is not null)
+        {
+            sb.Append(member.ValueExpression);
+            return;
+        }
+
         // NullableProject: both source and target are Nullable<T>. Emit null-preserving ternary:
         //   src.X.HasValue ? Conv(src.X.Value) : null
         // C# 9+ target-typed conditional unifies U (from Conv) and null into U?.

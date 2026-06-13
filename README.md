@@ -137,6 +137,16 @@ public partial class OrderMapper
 - **Custom conversions** use `[MapProperty(src, tgt, Use = nameof(Method))]`, where `Method` takes the source member type and returns the destination type.
 - An ambiguous auto-conversion is `DWARF013`; an invalid `Use` method is `DWARF014`. If no conversion is possible at all, you still get the completeness error `DWARF005`.
 
+**Constant & computed values (`[MapValue]`).** Assign a destination member that has no source — and count it as mapped (suppressing `DWARF001`):
+
+```csharp
+[MapValue(nameof(OrderDto.Source), "api-v2")]            // constant literal
+[MapValue(nameof(OrderDto.ImportedAt), Use = nameof(Now))] // computed: a parameterless method
+private static System.DateTime Now() => System.DateTime.UtcNow;
+```
+
+A constant must be an attribute-legal value (string, bool, char, numeric, enum, or null) **assignable to the destination type** — a mismatch (e.g. `"x"` to an `int`, or `null` to a non-nullable value type) is `DWARF040`. A `Use` provider must be a **parameterless** method whose return type is assignable to the destination — otherwise `DWARF041`. Conflicting with `[MapProperty]`/`[MapIgnore]` on the same target, an unknown target, or targeting a constructor parameter is `DWARF042`.
+
 **Built-in scalar conversions.** DwarfMapper handles common scalar type mismatches automatically without requiring `[MapProperty(Use=...)]`:
 
 | Conversion kind | Example | Emitted code | Notes |

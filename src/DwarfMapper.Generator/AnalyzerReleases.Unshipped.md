@@ -44,3 +44,6 @@ DWARF036 | DwarfMapper | Error | Ambiguous [MapDerivedType] dispatch arms
 DWARF037 | DwarfMapper | Warning | OnCycle is ignored under ReferenceHandling.Preserve
 DWARF038 | DwarfMapper | Info | Implicit type conversion applied (Error when ImplicitConversions = false)
 DWARF039 | DwarfMapper | Info | Source member is read by no destination member (RequiredMapping = Both)
+DWARF040 | DwarfMapper | Error | Constant [MapValue] is not assignable to the destination
+DWARF041 | DwarfMapper | Error | [MapValue(Use=)] provider method is invalid
+DWARF042 | DwarfMapper | Error | Conflicting or invalid [MapValue]

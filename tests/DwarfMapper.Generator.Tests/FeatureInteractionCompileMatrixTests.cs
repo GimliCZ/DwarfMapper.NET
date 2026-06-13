@@ -400,6 +400,20 @@ public class FeatureInteractionCompileMatrixTests
             }
             """);
 
+        // ── 10c. MapValue (constant + computed) ──────────────────────────────
+        yield return new FimMatrixCase("mapvalue_const_and_computed", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public int X { get; set; } }
+            public class Dst { public int X { get; set; } public string Tag { get; set; } = ""; public int Seq { get; set; } }
+            [DwarfMapper] public partial class M {
+                [MapValue(nameof(Dst.Tag), "fixed")]
+                [MapValue(nameof(Dst.Seq), Use = nameof(Next))]
+                public partial Dst Map(Src s);
+                private static int Next() => 1;
+            }
+            """);
+
         // ── 11. MapProperty rename ────────────────────────────────────────────
 
         yield return new FimMatrixCase("mapproperty_rename", """
