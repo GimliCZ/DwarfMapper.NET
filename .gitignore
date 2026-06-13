@@ -11,3 +11,6 @@ riderModule.iml
 TestResults/
 **/TestResults/
 coverage.cobertura.xml
+
+# BenchmarkDotNet output
+**/BenchmarkDotNet.Artifacts/

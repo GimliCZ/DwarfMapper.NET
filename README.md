@@ -362,10 +362,11 @@ README.md
 - **Polymorphic dispatch** (`[MapDerivedType]`) and graph degradation (`[FlattenGraph]`, homogeneous + heterogeneous)
 - **Update-into-existing**: `void Map(S src, T dest)` / `T Map(S src, T dest)` maps onto an existing instance (identity preserved); same completeness gate, conversions, hooks, `[MapProperty]`/`[MapIgnore]`
 - **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no allocation), with a defensive length guard (too-small destination throws, never silent truncation)
+- **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written baseline across flat / nested / collection / blit scenarios; builds in CI, run locally for numbers
 
 ### Planned
-- `async` mapping pipelines
-- In-repo BenchmarkDotNet suite (DwarfMapper vs. Mapperly/Mapster/AutoMapper)
+- `async` mapping pipelines (streaming `IAsyncEnumerable<T>` — design pending)
+- Competitor benchmark comparisons (Mapperly / Mapster / AutoMapper)
 - NuGet publish
 
 ---
