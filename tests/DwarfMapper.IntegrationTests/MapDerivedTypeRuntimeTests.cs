@@ -387,3 +387,91 @@ public class MapDerivedTypeRuntimeTests
         Assert.False(result is DrvLevel3Dto);
     }
 }
+
+// ── Item 1 regression: MapDerivedType + Preserve → shared instance dedup ──────
+// A container with two Animal-typed members both pointing to the SAME Dog instance.
+// Under ReferenceHandling=Preserve, the two dispatch calls must yield the SAME
+// target DogDto instance (identity preservation via the ctx identity map).
+// PsvAnimal is abstract so C2b (concrete-src auto-nest bypass) does NOT fire for
+// PsvAnimal→PsvAnimalDto; the dispatch method Map(PsvAnimal) is used instead.
+public abstract class PsvAnimal { public string Name { get; set; } = ""; }
+public class PsvDog : PsvAnimal { public string Breed { get; set; } = ""; }
+public class PsvAnimalDto { public string Name { get; set; } = ""; }
+public class PsvDogDto : PsvAnimalDto { public string Breed { get; set; } = ""; }
+
+public class PsvTwoSlot
+{
+    public PsvAnimal? First  { get; set; }
+    public PsvAnimal? Second { get; set; }
+}
+
+public class PsvTwoSlotDto
+{
+    public PsvAnimalDto? First  { get; set; }
+    public PsvAnimalDto? Second { get; set; }
+}
+
+// PsvAnimal is abstract, so C2b does NOT bypass the dispatch method for the container's
+// PsvAnimal→PsvAnimalDto member mapping. The MF-B fix synthesizes a private ctx-accepting
+// dispatch wrapper __DwarfMap_Disp_* so the container shares ctx across both members,
+// enabling identity dedup when First and Second point to the same Dog instance.
+[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+public partial class PsvDerivedMapper
+{
+    // Dispatch method named "Map" (overloaded), so container mapper's member resolution
+    // for PsvAnimal→PsvAnimalDto picks it up as the converter method.
+    [MapDerivedType<PsvDog, PsvDogDto>]
+    public partial PsvAnimalDto Map(PsvAnimal a);
+
+    // Explicit Dog→DogDto overload (no AutoNest needed).
+    public partial PsvDogDto Map(PsvDog d);
+
+    public partial PsvTwoSlotDto Map(PsvTwoSlot c);
+}
+
+public class MapDerivedTypePreserveRegressionTests
+{
+    // Item 1: same Dog instance referenced from two slots → Assert.Same on target DTOs.
+    // This locks the dedup behaviour that was verified already by the MF-A fix: the
+    // dispatch method forwards ctx to arm converters, which in turn call the
+    // __DwarfMap_Obj_* helpers that do TryGetReference/SetReference under Preserve.
+    [Fact]
+    public void Preserve_shared_Dog_via_dispatch_yields_same_target_instance()
+    {
+        var dog = new PsvDog { Name = "Rex", Breed = "Husky" };
+        var container = new PsvTwoSlot { First = dog, Second = dog }; // SAME instance
+
+        var m = new PsvDerivedMapper();
+        var dto = m.Map(container);
+
+        Assert.NotNull(dto.First);
+        Assert.NotNull(dto.Second);
+
+        // Values must be correct
+        var first  = Assert.IsType<PsvDogDto>(dto.First);
+        var second = Assert.IsType<PsvDogDto>(dto.Second);
+        Assert.Equal("Rex",   first.Name);
+        Assert.Equal("Husky", first.Breed);
+
+        // Topology: same source → same target (reference identity preserved via identity map)
+        Assert.Same(dto.First, dto.Second);
+    }
+
+    [Fact]
+    public void Preserve_distinct_Dog_instances_yield_distinct_target_instances()
+    {
+        // Two DISTINCT Dog sources → two DISTINCT DogDto targets (not collapsed)
+        var dog1 = new PsvDog { Name = "Rex",   Breed = "Husky" };
+        var dog2 = new PsvDog { Name = "Buddy", Breed = "Lab" };
+        var container = new PsvTwoSlot { First = dog1, Second = dog2 };
+
+        var m = new PsvDerivedMapper();
+        var dto = m.Map(container);
+
+        Assert.NotNull(dto.First);
+        Assert.NotNull(dto.Second);
+        Assert.NotSame(dto.First, dto.Second); // distinct sources → distinct targets
+        Assert.Equal("Rex",   dto.First!.Name);
+        Assert.Equal("Buddy", dto.Second!.Name);
+    }
+}

@@ -40,3 +40,4 @@ DWARF032 | DwarfMapper | Error | [MapProperty(Use=)] converter cannot participat
 DWARF033 | DwarfMapper | Error | Abstract or interface source type in auto-nested mapping
 DWARF034 | DwarfMapper | Error | Invalid [FlattenGraph] configuration
 DWARF035 | DwarfMapper | Error | Invalid [MapDerivedType] configuration
+DWARF036 | DwarfMapper | Error | Ambiguous [MapDerivedType] dispatch arms

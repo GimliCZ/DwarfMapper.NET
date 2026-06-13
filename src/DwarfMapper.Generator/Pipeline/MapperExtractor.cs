@@ -253,6 +253,15 @@ internal static class MapperExtractor
 
                 // Sort arms most-derived-first.
                 var sortedArms = SortArmsMostDerivedFirst(resolvedArms, ctx.SemanticModel.Compilation);
+
+                // DWARF036: detect mutually-unorderable interface/abstract source arms.
+                // If two arm source types are neither assignable to each other AND at least one
+                // is an interface or abstract class, a concrete type could implement/inherit both
+                // and would dispatch non-deterministically (whichever arm is first wins).
+                // Concrete-to-concrete pairs are NOT ambiguous: a concrete instance has exactly
+                // one runtime type, so at most one arm can match at runtime.
+                DetectAmbiguousInterfaceArms(sortedArms, ctx.SemanticModel.Compilation, methodLocation, diagnostics);
+
                 var armModels = sortedArms
                     .Select(a => new DerivedTypeArm(
                         a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
@@ -1111,6 +1120,101 @@ internal static class MapperExtractor
         }
         // ── End MF-A fix ─────────────────────────────────────────────────────────
 
+        // ── MF-B fix: Preserve + [MapDerivedType] dispatch wrapper synthesis ─────────
+        // Problem: a container mapper under Preserve has a member like First=Map(animal) where
+        // Map(PsvAnimal) is a [MapDerivedType] dispatch method. Each call to the PUBLIC dispatch
+        // creates a FRESH DwarfRefContext — so two members sharing the same source object land in
+        // different identity maps and never deduplicate.
+        //
+        // Fix: synthesize a private ctx-accepting dispatch wrapper __DwarfMap_Disp_*(s, ctx, depth)
+        // for every public dispatch method that is recursion-capable (arms use ctx) in Preserve mode.
+        // The wrapper:
+        //   1. Null-guards the source.
+        //   2. TryGetReference — returns the cached target if the source was already mapped.
+        //   3. Depth-guards against infinite dispatch chains.
+        //   4. Dispatches via the same switch expression (forwarding ctx+depth to arm converters).
+        //   5. SetReference — caches the result keyed by the BASE source reference.
+        //
+        // Then patch every member/ctor-arg (in both synthesized and public methods) that calls the
+        // PUBLIC dispatch by name to instead call the wrapper (with ConverterNeedsDepthCtx=true).
+        // Any public method with patched members is promoted to IsRecursionCapable+IsPreserveMode
+        // so the emitter creates a shared DwarfRefContext and threads it through all members.
+        var dispatchWrapperByPublicName = new System.Collections.Generic.Dictionary<string, string>(
+            System.StringComparer.Ordinal);
+        if (isPreserveMode)
+        {
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var m = methods[i];
+                if (m.DerivedTypeArms.Count == 0) continue;   // not a dispatch method
+                if (!m.IsRecursionCapable) continue;           // arm converters don't need ctx
+                if (!m.IsPartial) continue;                    // only public declared dispatch methods
+
+                var wrapperName = NestedMappingRegistry.BuildDispatchWrapperName(
+                    m.ParameterTypeFullName, m.ReturnTypeFullName);
+
+                if (!synthesized.ContainsKey(wrapperName))
+                {
+                    var wrapperCode = BuildDispatchWrapperCode(m, wrapperName);
+                    synthesized[wrapperName] = new SynthesizedMethod(wrapperName, wrapperCode);
+                }
+
+                dispatchWrapperByPublicName[m.MethodName] = wrapperName;
+                recursionCapableNames.Add(wrapperName);
+            }
+
+            // Patch: redirect members/ctor-args that call a public dispatch method to the wrapper.
+            if (dispatchWrapperByPublicName.Count > 0)
+            {
+                for (var i = 0; i < methods.Count; i++)
+                {
+                    var m = methods[i];
+                    if (m.DerivedTypeArms.Count > 0) continue; // skip the dispatch methods themselves
+
+                    var patched = false;
+                    var newMembers = m.Members.ToArray();
+                    for (var mi = 0; mi < newMembers.Length; mi++)
+                    {
+                        var mem = newMembers[mi];
+                        if (mem.ConverterMethod is null || mem.ConverterNeedsDepthCtx) continue;
+                        if (dispatchWrapperByPublicName.TryGetValue(mem.ConverterMethod, out var wn))
+                        {
+                            newMembers[mi] = mem with { ConverterMethod = wn, ConverterNeedsDepthCtx = true };
+                            patched = true;
+                        }
+                    }
+                    var newCtorArgs = m.ConstructorArguments.ToArray();
+                    for (var ci = 0; ci < newCtorArgs.Length; ci++)
+                    {
+                        var arg = newCtorArgs[ci];
+                        if (arg.ConverterMethod is null || arg.ConverterNeedsDepthCtx) continue;
+                        if (dispatchWrapperByPublicName.TryGetValue(arg.ConverterMethod, out var wn))
+                        {
+                            newCtorArgs[ci] = arg with { ConverterMethod = wn, ConverterNeedsDepthCtx = true };
+                            patched = true;
+                        }
+                    }
+                    if (patched)
+                    {
+                        // Public methods patched to use ctx-accepting wrappers must create a shared
+                        // DwarfRefContext. Promote to IsRecursionCapable+IsPreserveMode so the emitter
+                        // generates: var __dwarf_ctx = new DwarfRefContext(maxDepth, true); and threads
+                        // ctx into all wrapper calls via the register-before-populate path.
+                        var newRc = m.IsPartial ? true : m.IsRecursionCapable;
+                        methods[i] = m with
+                        {
+                            Members = EquatableArray.From(newMembers),
+                            ConstructorArguments = EquatableArray.From(newCtorArgs),
+                            IsRecursionCapable = newRc,
+                            MaxDepth = m.IsPartial && !m.IsRecursionCapable ? maxDepth : m.MaxDepth,
+                            IsPreserveMode = m.IsPartial ? true : m.IsPreserveMode,
+                        };
+                    }
+                }
+            }
+        }
+        // ── End MF-B fix ─────────────────────────────────────────────────────────
+
         // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
         // After recursion-capability is finalised, propagate IsPreserveMode and detect DWARF030.
         if (isPreserveMode)
@@ -1696,6 +1800,118 @@ internal static class MapperExtractor
             return a.idx - b.idx; // stable: preserve original declaration order
         });
         return indexed.Select(x => x.arm).ToList();
+    }
+
+    /// <summary>
+    /// DWARF036: detects mutually-unorderable interface or abstract source arms.
+    ///
+    /// Two arm source types A and B are "ambiguous" when:
+    ///   1. Neither HasImplicitConversion(A,B) nor HasImplicitConversion(B,A) — they are unorderable.
+    ///   2. At least one of A or B is an interface or abstract class — meaning a concrete type
+    ///      could simultaneously satisfy both arms (e.g. class C : IFoo, IBar).
+    ///
+    /// Rationale: if both types are concrete (non-abstract classes), a concrete runtime instance
+    /// can match at most ONE arm by TypeKind/IsAbstract rules (its exact runtime type is one class),
+    /// so unrelated concrete-vs-concrete arms are not ambiguous in practice.
+    ///
+    /// Fires per-pair so multiple ambiguous pairings each produce a separate diagnostic.
+    /// </summary>
+    private static void DetectAmbiguousInterfaceArms(
+        List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)> arms,
+        Compilation compilation,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        for (var i = 0; i < arms.Count; i++)
+        {
+            for (var j = i + 1; j < arms.Count; j++)
+            {
+                var a = arms[i].Src;
+                var b = arms[j].Src;
+
+                // Check orderability: if either is assignable to the other the sort gives a stable order.
+                var aToB = HasImplicitConversion(compilation, a, b);
+                var bToA = HasImplicitConversion(compilation, b, a);
+                if (aToB || bToA) continue; // orderable → not ambiguous
+
+                // Check if at least one is an interface or abstract class.
+                // A concrete class (TypeKind=Class, IsAbstract=false) can't be implemented/inherited
+                // by another independent type at runtime, so two concrete unrelated classes are safe.
+                var aIsAbstractOrInterface = a.TypeKind == TypeKind.Interface || a.IsAbstract;
+                var bIsAbstractOrInterface = b.TypeKind == TypeKind.Interface || b.IsAbstract;
+
+                if (!aIsAbstractOrInterface && !bIsAbstractOrInterface) continue; // both concrete → safe
+
+                var aFqn = a.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var bFqn = b.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.AmbiguousDerivedType,
+                    location,
+                    $"[MapDerivedType] source types '{aFqn}' and '{bFqn}' are both interfaces or abstract types that are mutually unorderable (neither inherits from the other); any concrete type implementing both would dispatch ambiguously to whichever arm appears first. Make one a subtype of the other, remove one, or change both to concrete types."));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Synthesizes the source code for a Preserve-mode dispatch wrapper that accepts a shared
+    /// <c>DwarfRefContext</c> and threads it to arm converters.
+    ///
+    /// The wrapper does the identity-map TryGetReference/SetReference dance around the dispatch switch
+    /// so that when a container helper (e.g. <c>__DwarfMap_Obj_Container_*</c>) calls the wrapper
+    /// twice with the SAME source reference, the second call returns the already-mapped target — i.e.
+    /// <see cref="Assert.Same"/> topology fidelity under <c>ReferenceHandling = Preserve</c>.
+    ///
+    /// Pattern (for src=PsvAnimal, tgt=PsvAnimalDto):
+    /// <code>
+    ///   private PsvAnimalDto __DwarfMap_Disp_...(PsvAnimal a, DwarfRefContext ctx, int depth)
+    ///   {
+    ///       if (a is null) return null!;
+    ///       if (ctx.TryGetReference(a, out var __dwarf_cached)) return (PsvAnimalDto)__dwarf_cached;
+    ///       if (depth >= ctx.MaxDepth) throw new DwarfMappingDepthException(...);
+    ///       var __dwarf_t = a switch { PsvDog __s => __DwarfMap_Obj_PsvDog_PsvDogDto_*(ctx,depth+1), ... };
+    ///       ctx.SetReference(a, __dwarf_t);
+    ///       return __dwarf_t;
+    ///   }
+    /// </code>
+    /// </summary>
+    private static string BuildDispatchWrapperCode(MapMethodModel dispatchMethod, string wrapperName)
+    {
+        var sb = new System.Text.StringBuilder();
+        var p   = dispatchMethod.ParameterName;
+        var src = dispatchMethod.ParameterTypeFullName;
+        var tgt = dispatchMethod.ReturnTypeFullName;
+        var arms = dispatchMethod.DerivedTypeArms;
+
+        sb.Append("    private ").Append(tgt).Append(' ').Append(wrapperName)
+          .Append('(').Append(src).Append(' ').Append(p)
+          .AppendLine(", global::DwarfMapper.DwarfRefContext ctx, int depth)");
+        sb.AppendLine("    {");
+        if (dispatchMethod.ParameterIsReferenceType)
+            sb.Append("        if (").Append(p).AppendLine(" is null) return null!;");
+        sb.Append("        if (ctx.TryGetReference(").Append(p)
+          .Append(", out var __dwarf_cached)) return (").Append(tgt).AppendLine(")__dwarf_cached;");
+        sb.AppendLine("        if (depth >= ctx.MaxDepth)");
+        sb.AppendLine("            throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
+        sb.Append("        var __dwarf_t = ").Append(p).AppendLine(" switch");
+        sb.AppendLine("        {");
+        foreach (var arm in arms)
+        {
+            sb.Append("            ").Append(arm.SrcFqn).Append(" __s => ").Append(arm.ConverterMethod).Append("(__s");
+            if (arm.ConverterNeedsDepthCtx)
+                sb.Append(", ctx, depth + 1");
+            sb.AppendLine("),");
+        }
+        // Wildcard arm matching the public dispatch method's throw.
+        sb.Append("            _ => throw new global::System.ArgumentException(")
+          .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
+          .Append(p).Append(".GetType() + \"' mapping to '").Append(tgt).Append("'.\", nameof(")
+          .Append(p).AppendLine(")),");
+        sb.AppendLine("        };");
+        sb.Append("        ctx.SetReference(").Append(p).AppendLine(", __dwarf_t);");
+        sb.AppendLine("        return __dwarf_t;");
+        sb.AppendLine("    }");
+        return sb.ToString();
     }
 
     private static bool TryResolveConversion(

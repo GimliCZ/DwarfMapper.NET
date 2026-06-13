@@ -247,6 +247,21 @@ internal sealed class NestedMappingRegistry
         return $"__DwarfMap_Obj_{srcSan}_{tgtSan}_{hash:X8}";
     }
 
+    /// <summary>
+    /// Produces a deterministic private name for a Preserve-mode dispatch wrapper for the given
+    /// (source, target) pair. Uses prefix <c>__DwarfMap_Disp_</c> to distinguish it from the
+    /// regular auto-nest <c>__DwarfMap_Obj_</c> helpers.
+    /// Called by MapperExtractor after the MF-A fix to synthesize ctx-threading wrappers for
+    /// [MapDerivedType] dispatch methods under ReferenceHandling=Preserve.
+    /// </summary>
+    internal static string BuildDispatchWrapperName(string srcFqn, string tgtFqn)
+    {
+        var srcSan = Sanitize(srcFqn);
+        var tgtSan = Sanitize(tgtFqn);
+        var hash = Fnv1a32(srcFqn + "\x00" + tgtFqn);
+        return $"__DwarfMap_Disp_{srcSan}_{tgtSan}_{hash:X8}";
+    }
+
     /// <summary>Strips non-identifier characters, keeping only letters, digits, underscores.</summary>
     private static string Sanitize(string fqn)
     {
@@ -267,7 +282,26 @@ internal sealed class NestedMappingRegistry
         return sb.ToString();
     }
 
-    /// <summary>FNV-1a 32-bit hash — fast, deterministic, good dispersion for type names.</summary>
+    /// <summary>
+    /// FNV-1a 32-bit hash — fast, deterministic, good dispersion for type names.
+    ///
+    /// <para><b>Collision analysis (Item 3 audit finding)</b>: two distinct (srcFqn, tgtFqn) pairs
+    /// could theoretically produce the same 32-bit hash, yielding the same method name. A collision
+    /// guard is intentionally omitted because:
+    /// <list type="bullet">
+    ///   <item>The primary deduplication key in <see cref="_reserved"/> is the <c>(srcFqn, tgtFqn)</c>
+    ///   string TUPLE — not the hash. So two distinct pairs never overwrite each other's registry entry.</item>
+    ///   <item>A hash collision would produce two distinct pairs registered under different keys but with
+    ///   the same method name. This would cause a C# compiler error (duplicate method) in the generated
+    ///   output — making the collision loudly visible rather than silent.</item>
+    ///   <item>32-bit FNV over fully-qualified C# type names: collision probability is ~1 in 4 billion
+    ///   per distinct pair. Typical mappers have fewer than 50 type pairs — astronomically unlikely.</item>
+    /// </list>
+    /// If a collision ever surfaces, the generated code will fail to compile (CS0111 duplicate member),
+    /// which is a loud, actionable signal. At that point, widening to 64-bit or adding a suffix counter
+    /// would be the appropriate fix.
+    /// </para>
+    /// </summary>
     private static uint Fnv1a32(string s)
     {
         const uint Offset = 2166136261u;

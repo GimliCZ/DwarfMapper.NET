@@ -209,4 +209,10 @@ public static class DiagnosticDescriptors
         "Invalid [MapDerivedType] configuration",
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AmbiguousDerivedType = new(
+        "DWARF036",
+        "Ambiguous [MapDerivedType] dispatch arms",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }
