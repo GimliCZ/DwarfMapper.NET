@@ -15,7 +15,7 @@ public partial class M
         {
             return new global::Demo.NodeDto
             {
-                Next = __DwarfMap_Depth_Map(n.Next!, __dwarf_ctx, 0),
+                Next = __DwarfMap_Obj_global__Demo_Node_global__Demo_NodeDto_3F897622(n.Next!, __dwarf_ctx, 0),
                 V = n.V,
             };
         }
@@ -24,23 +24,23 @@ public partial class M
             __dwarf_ctx.ExitNode(n);
         }
     }
-    private global::Demo.NodeDto __DwarfMap_Depth_Map(global::Demo.Node n, global::DwarfMapper.DwarfRefContext ctx, int depth)
+    private global::Demo.NodeDto __DwarfMap_Obj_global__Demo_Node_global__Demo_NodeDto_3F897622(global::Demo.Node s, global::DwarfMapper.DwarfRefContext ctx, int depth)
     {
-        if (n is null) return null!;
-        if (!ctx.TryEnterNode(n)) return null!;
+        if (s is null) return null!;
+        if (!ctx.TryEnterNode(s)) return null!;
         try
         {
             if (depth >= ctx.MaxDepth)
                 throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);
             return new global::Demo.NodeDto
             {
-                Next = __DwarfMap_Depth_Map(n.Next!, ctx, depth + 1),
-                V = n.V,
+                Next = __DwarfMap_Obj_global__Demo_Node_global__Demo_NodeDto_3F897622(s.Next!, ctx, depth + 1),
+                V = s.V,
             };
         }
         finally
         {
-            ctx.ExitNode(n);
+            ctx.ExitNode(s);
         }
     }
 }

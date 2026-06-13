@@ -137,4 +137,50 @@ public class SetNullCycleGeneratorTests
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF037");
     }
+
+    // ── 9. SetNull threads ctx through a collection-element mapper (no fresh ctx) ─
+    [Fact]
+    public void SetNull_collection_element_threads_ctx_into_helper()
+    {
+        const string src = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace Demo;
+            public class Tree    { public int V { get; set; } public List<Tree>? Children { get; set; } }
+            public class TreeDto { public int V { get; set; } public List<TreeDto>? Children { get; set; } }
+            [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+            public partial class M { public partial TreeDto Map(Tree t); }
+            """;
+        var (diags, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        // The collection helper must accept (ctx, depth) and forward them to the element mapper —
+        // proving one shared context flows across the collection edge (no fresh-context re-entry).
+        Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
+        Assert.Contains("ctx, depth + 1", generated, StringComparison.Ordinal);
+        Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+        // Must NOT register-before-fill (that is Preserve-only).
+        Assert.DoesNotContain("SetReference", generated, StringComparison.Ordinal);
+    }
+
+    // ── 10. SetNull threads ctx through a dictionary-value mapper ────────────────
+    [Fact]
+    public void SetNull_dictionary_value_threads_ctx_into_helper()
+    {
+        const string src = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace Demo;
+            public class Node    { public int V { get; set; } public Dictionary<string, Node>? E { get; set; } }
+            public class NodeDto { public int V { get; set; } public Dictionary<string, NodeDto>? E { get; set; } }
+            [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+            public partial class M { public partial NodeDto Map(Node n); }
+            """;
+        var (diags, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
+        Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetReference", generated, StringComparison.Ordinal);
+    }
 }

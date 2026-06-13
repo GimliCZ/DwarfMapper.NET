@@ -75,8 +75,15 @@ internal static class DictionaryConverter
         bool isMutableDict = targetKind != DictTargetKind.ImmutableDictionary
                           && targetKind != DictTargetKind.IImmutableDictionary;
         var effectivePreserve = isPreserve && isMutableDict;
-        var needsCtxSig = effectivePreserve || (isPreserve && (keyNeedsCtx || valNeedsCtx));
-        var preserveTag = needsCtxSig ? "_p" : "";
+        // Thread the (ctx, depth) signature whenever we register (Preserve mutable) OR a key/value
+        // converter is recursion-capable — the latter now also fires in None/SetNull mode so a cycle
+        // routed through a dictionary value breaks via the element's own guard. register-before-fill
+        // stays Preserve-only (effectivePreserve), so None/SetNull never registers.
+        var threadCtx = effectivePreserve || keyNeedsCtx || valNeedsCtx;
+        // Tag preserves Preserve names byte-for-byte ("_p"); "_c" is the new ctx-only (no register)
+        // variant used by None/SetNull recursive key/value.
+        var preserveTag = (isPreserve && (effectivePreserve || keyNeedsCtx || valNeedsCtx)) ? "_p"
+                        : ((keyNeedsCtx || valNeedsCtx) ? "_c" : "");
 
         string retTypeFq;
         switch (targetKind)
@@ -102,7 +109,7 @@ internal static class DictionaryConverter
         var keyExpr   = Expr("__kv.Key",   keyConverter, keyNull, keyNeedsCtx);
         var valExpr   = Expr("__kv.Value", valConverter, valNull, valNeedsCtx);
         var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
-        var ctxParams = needsCtxSig ? CtxDepthParams : "";
+        var ctxParams = threadCtx ? CtxDepthParams : "";
 
         var sb = new StringBuilder();
         sb.Append("    private ").Append(retAnnot).Append(' ').Append(name)

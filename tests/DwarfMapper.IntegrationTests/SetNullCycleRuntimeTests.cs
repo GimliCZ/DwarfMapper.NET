@@ -169,13 +169,8 @@ public class SetNullCycleRuntimeTests
     }
 }
 
-// ── Collection-edge "shared but acyclic" — supported (no cycle through the list) ─
-// A cycle routed THROUGH a collection edge (e.g. child.Children contains the root) is a
-// DEFERRED limitation: in None mode the depth counter / on-stack guard is not threaded into
-// collection element mappers (they call the public entry, which allocates a fresh context),
-// matching the documented None-mode "cyclic data" behaviour. SetNull breaks cycles formed by
-// direct reference MEMBERS (Self/Next/Parent), which is what these tests cover. The acyclic
-// collection case below confirms collections still map correctly under SetNull.
+// ── Acyclic collection under SetNull (sanity; cyclic-collection cases live in
+//    SetNullCollectionCycleRuntimeTests, which the shared ctx now breaks correctly) ─
 public class SnList    { public int V { get; set; } public System.Collections.Generic.List<SnLeaf>? Items { get; set; } }
 public class SnListDto { public int V { get; set; } public System.Collections.Generic.List<SnLeafDto>? Items { get; set; } }
 

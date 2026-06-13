@@ -162,6 +162,27 @@ if (snResult.Next.Next is not null)
 }
 Console.WriteLine("setnull cycle: back-edge nulled, finite projection (AOT-safe)");
 
+// ── OnCycle = SetNull through a COLLECTION edge (Plan 19 Part-C follow-up) ─────
+// The shared ctx threads through the collection element mapper, so a cycle routed through
+// a List<T> breaks (the re-entrant element becomes null) — AOT-safe, no fresh context.
+var setNullCollMapper = new AotSetNullCollMapper();
+var snRoot = new SetNullTreeNode { V = 1 };
+var snChild = new SetNullTreeNode { V = 2 };
+snRoot.Children = new System.Collections.Generic.List<SetNullTreeNode> { snChild };
+snChild.Children = new System.Collections.Generic.List<SetNullTreeNode> { snRoot }; // cycle through the list
+var snCollResult = setNullCollMapper.Map(snRoot);
+if (snCollResult.V != 1 || snCollResult.Children is null || snCollResult.Children.Count != 1 || snCollResult.Children[0].V != 2)
+{
+    Console.WriteLine("ERROR: setnull collection mapping values incorrect");
+    return 1;
+}
+if (snCollResult.Children[0].Children is null || snCollResult.Children[0].Children!.Count != 1 || snCollResult.Children[0].Children![0] is not null)
+{
+    Console.WriteLine("ERROR: setnull collection back-edge not nulled");
+    return 1;
+}
+Console.WriteLine("setnull collection cycle: list back-edge nulled, terminates (AOT-safe)");
+
 // ── IEnumerable<T> target (lazy path) + ImmutableArray<T>? (A2 coverage) ─────
 var collAotMapper = new CollAotMapper();
 var collSrc = new CollAotSrc
@@ -360,6 +381,13 @@ public class SetNullNodeDto { public int V { get; set; } public SetNullNodeDto? 
 
 [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
 public partial class AotSetNullMapper { public partial SetNullNodeDto Map(SetNullNode n); }
+
+// SetNull through a collection edge — shared ctx threaded into the collection element mapper.
+public class SetNullTreeNode    { public int V { get; set; } public System.Collections.Generic.IReadOnlyList<SetNullTreeNode>? Children { get; set; } }
+public class SetNullTreeNodeDto { public int V { get; set; } public System.Collections.Generic.IReadOnlyList<SetNullTreeNodeDto>? Children { get; set; } }
+
+[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+public partial class AotSetNullCollMapper { public partial SetNullTreeNodeDto Map(SetNullTreeNode n); }
 
 // ── IEnumerable<T> target + ImmutableArray<T>? with AsNull (A5 AOT coverage) ─
 // IEnumerable<int> target: generator emits lazy Enumerable.Select (no materialisation).
