@@ -123,17 +123,17 @@ See [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/)
 hand-written vs. the three competitors across **flat / nested / collection / blittable-struct** scenarios
 with `[MemoryDiagnoser]`.
 
-Representative numbers (.NET 10, short run — relative ordering is the point; absolute ns vary by hardware,
-run locally for your own):
+Confirmed full run — BenchmarkDotNet DefaultJob, **.NET 10.0.1, X64 RyuJIT AVX2** (absolute ns vary by
+hardware; relative ordering is the point — run locally for your own):
 
 | Scenario | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.8 | AutoMapper 14.0.0 | hand-written |
 |---|---:|---:|---:|---:|---:|
-| Flat (1 object) | 5.2 ns | 5.2 ns | 14.4 ns | 53.5 ns | 4.5 ns |
-| Flat — ratio vs hand | 1.17× | 1.17× | 3.2× | **12×** | 1.00 |
-| Nested | 13.0 ns | 10.7 ns | 19.1 ns | 57.7 ns | — |
-| Array (1000 objects) | 4.70 µs | 4.67 µs | 6.10 µs | 5.37 µs | — |
-| **Blit (1000 structs)** | **0.41 µs** | 0.98 µs | 1.01 µs | 1.03 µs | — |
-| Allocations (Flat) | 40 B (= hand) | 40 B | 40 B | 40 B | 40 B |
+| Flat (1 object) | 4.76 ns | 4.60 ns | 13.0 ns | 52.2 ns | 4.53 ns |
+| Flat — ratio vs hand | **1.05×** | 1.02× | 2.87× | **11.5×** | 1.00 |
+| Nested | **10.7 ns** | 11.3 ns | 23.0 ns | 58.5 ns | — |
+| Array (1000 objects) | 4.61 µs | 4.53 µs | 5.90 µs | 5.32 µs | — |
+| **Blit (1000 structs)** | **0.41 µs** | 0.99 µs | 1.00 µs | 1.05 µs | — |
+| Allocations (all scenarios) | = hand-written | = | = | = | baseline |
 
 **Takeaways:**
 - DwarfMapper **matches hand-written** (tied with Mapperly, the other source generator) with **zero
