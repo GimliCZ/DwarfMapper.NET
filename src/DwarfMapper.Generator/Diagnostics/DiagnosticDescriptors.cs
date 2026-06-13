@@ -297,4 +297,16 @@ public static class DiagnosticDescriptors
         "Ambiguous member match under NameConvention.Flexible",
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor NullSubstituteInvalid = new(
+        "DWARF049",
+        "Invalid [MapProperty(NullSubstitute=)]",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor WhenPredicateInvalid = new(
+        "DWARF050",
+        "Invalid [MapProperty(When=)] predicate",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

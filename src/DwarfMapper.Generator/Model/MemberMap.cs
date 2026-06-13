@@ -39,4 +39,16 @@ public sealed record MemberMap(
     /// (<c>if (t.Address is null) t.Address = new …();</c>) before assigning the leaf. Single intermediate
     /// only.
     /// </summary>
-    string? UnflattenIntermediateFqn = null) : System.IEquatable<MemberMap>;
+    string? UnflattenIntermediateFqn = null,
+    /// <summary>
+    /// When non-null, a constant literal substituted when the (nullable) source member is null:
+    /// emitted as <c>param.Source ?? &lt;literal&gt;</c>. Set by <c>[MapProperty(NullSubstitute = …)]</c>
+    /// (direct-assignable members only).
+    /// </summary>
+    string? NullSubstituteLiteral = null,
+    /// <summary>
+    /// When non-null, a parameterless-on-source predicate guarding this assignment: the emitter writes
+    /// <c>if (Predicate(param)) target.Member = …;</c> post-construction. Set by
+    /// <c>[MapProperty(When = nameof(...))]</c>; the member keeps its destination default when false.
+    /// </summary>
+    string? WhenPredicate = null) : System.IEquatable<MemberMap>;

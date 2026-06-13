@@ -263,11 +263,17 @@ internal static class MapEmitter
         var hasCtorArgs = method.ConstructorArguments.Count > 0;
         var hasInitMembers = method.Members.Count > 0;
         var hasAfter = method.AfterHooks.Count > 0;
-        // Unflatten members (dotted target like "Address.City") are assigned AFTER construction (the
-        // intermediate is instantiated first), so they force the local-variable form.
+        // Deferred members are assigned AFTER construction (so they force the local-variable form):
+        // unflatten members (dotted target — the intermediate is instantiated first) and When-guarded
+        // members ([MapProperty(When=)] — emitted inside an `if`).
         var hasUnflatten = false;
-        foreach (var m in method.Members) { if (m.UnflattenIntermediateFqn is not null) { hasUnflatten = true; break; } }
-        var useLocalForm = hasAfter || hasUnflatten;
+        var hasWhen = false;
+        foreach (var m in method.Members)
+        {
+            if (m.UnflattenIntermediateFqn is not null) hasUnflatten = true;
+            if (m.WhenPredicate is not null) hasWhen = true;
+        }
+        var useLocalForm = hasAfter || hasUnflatten || hasWhen;
 
         // ── Plan 19 C2: Register-before-populate (Preserve mode, recursion-capable) ──
         // Both synthesized recursion-capable methods AND public methods under Preserve mode
@@ -328,7 +334,7 @@ internal static class MapEmitter
                 sb.Append(indent).AppendLine("    {");
                 foreach (var member in method.Members)
                 {
-                    if (member.UnflattenIntermediateFqn is not null) continue; // assigned post-construction
+                    if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
                     sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
                     AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
@@ -347,7 +353,7 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("    {");
             foreach (var member in method.Members)
             {
-                if (member.UnflattenIntermediateFqn is not null) continue; // assigned post-construction
+                if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
                 sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
                 AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                 sb.AppendLine(",");
@@ -371,6 +377,20 @@ internal static class MapEmitter
                       .Append(" = new ").Append(member.UnflattenIntermediateFqn).Append("();").AppendLine();
                 }
                 sb.Append(indent).Append("    __dwarf_target.").Append(member.TargetName).Append(" = ");
+                AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
+                sb.AppendLine(";");
+            }
+        }
+
+        // When-guarded assignments: emit `if (Predicate(src)) target = value;` (member keeps its default
+        // when the predicate is false). Unflatten members are handled above and excluded here.
+        if (hasWhen)
+        {
+            foreach (var member in method.Members)
+            {
+                if (member.WhenPredicate is null || member.UnflattenIntermediateFqn is not null) continue;
+                sb.Append(indent).Append("    if (").Append(member.WhenPredicate).Append('(')
+                  .Append(method.ParameterName).Append(")) __dwarf_target.").Append(member.TargetName).Append(" = ");
                 AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                 sb.AppendLine(";");
             }
@@ -861,6 +881,13 @@ internal static class MapEmitter
         if (member.ValueExpression is not null)
         {
             sb.Append(member.ValueExpression);
+            return;
+        }
+
+        // [MapProperty(NullSubstitute=)]: coalesce a null source member to a constant (direct members only).
+        if (member.NullSubstituteLiteral is not null && member.ConverterMethod is null)
+        {
+            sb.Append(paramName).Append('.').Append(member.SourceName).Append(" ?? ").Append(member.NullSubstituteLiteral);
             return;
         }
 

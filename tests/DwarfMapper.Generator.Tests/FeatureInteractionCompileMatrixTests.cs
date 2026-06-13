@@ -454,6 +454,21 @@ public class FeatureInteractionCompileMatrixTests
             }
             """);
 
+        // ── 11d. MapProperty NullSubstitute + When ───────────────────────────
+        yield return new FimMatrixCase("mapproperty_nullsubst_when", """
+            using DwarfMapper;
+            #nullable enable
+            namespace Fim;
+            public class Src { public string? Name { get; set; } public int Tier { get; set; } public int Bonus { get; set; } }
+            public class Dst { public string Name { get; set; } = ""; public int Tier { get; set; } public int Bonus { get; set; } }
+            [DwarfMapper] public partial class M {
+                [MapProperty(nameof(Src.Name), nameof(Dst.Name), NullSubstitute = "(none)")]
+                [MapProperty(nameof(Src.Bonus), nameof(Dst.Bonus), When = nameof(Ok))]
+                public partial Dst Map(Src s);
+                private static bool Ok(Src s) => s.Tier > 0;
+            }
+            """);
+
         // ── 12. BeforeMap hook ────────────────────────────────────────────────
 
         yield return new FimMatrixCase("beforemap_hook", """

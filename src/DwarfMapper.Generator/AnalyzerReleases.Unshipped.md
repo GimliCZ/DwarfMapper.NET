@@ -53,3 +53,5 @@ DWARF045 | DwarfMapper | Error | Invalid [MapProperty] unflatten target path
 DWARF046 | DwarfMapper | Error | Conflicting [MapProperty] unflatten target
 DWARF047 | DwarfMapper | Info | Additional mapping parameter is unused
 DWARF048 | DwarfMapper | Error | Ambiguous member match under NameConvention.Flexible
+DWARF049 | DwarfMapper | Error | Invalid [MapProperty(NullSubstitute=)]
+DWARF050 | DwarfMapper | Error | Invalid [MapProperty(When=)] predicate

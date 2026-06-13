@@ -31,4 +31,18 @@ public sealed class MapPropertyAttribute : Attribute
     /// the source member type and return the destination member type.
     /// </summary>
     public string? Use { get; set; }
+
+    /// <summary>
+    /// Optional constant substituted when the (nullable) source member is null — emitted as
+    /// <c>source ?? value</c>. The value must be assignable to the destination type (else <c>DWARF049</c>).
+    /// Direct-assignable members only (no <see cref="Use"/> converter).
+    /// </summary>
+    public object? NullSubstitute { get; set; }
+
+    /// <summary>
+    /// Optional name of a <c>bool</c>-returning predicate method on the mapper that takes the source; the
+    /// assignment is emitted only when it returns true (<c>if (Predicate(src)) target.Member = …;</c>),
+    /// otherwise the destination keeps its default. An invalid predicate is <c>DWARF050</c>.
+    /// </summary>
+    public string? When { get; set; }
 }

@@ -53,6 +53,8 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Unflattening (dotted target `→ Address.City`)** | ✅ single-level (`DWARF045/046`) | ~ | ✅ | ✅ (`ReverseMap`) |
 | **Additional mapping parameters** | ✅ `Map(S s, …extra)` by name (`DWARF047` unused) | ✅ | ~ | ✅ (context) |
 | **Naming conventions (snake/camel/UPPER)** | ✅ `NameConvention.Flexible` (`DWARF048` collision) | ~ | ✅ | ✅ |
+| **Per-member null substitution** | ✅ `NullSubstitute=` (type-checked, `DWARF049`) | ~ | ✅ | ✅ |
+| **Conditional member (`When=`)** | ✅ predicate `When=` (`DWARF050`) | ❌ | ✅ | ✅ |
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` suggestion, or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 

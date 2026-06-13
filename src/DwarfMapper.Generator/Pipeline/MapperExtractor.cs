@@ -560,6 +560,7 @@ internal static class MapperExtractor
             }
 
             var explicitMaps = ReadExplicitMaps(method);
+            var mapPropExtras = ReadMapPropertyExtras(method);
             var mapValues = ReadMapValues(method);
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
@@ -631,7 +632,7 @@ internal static class MapperExtractor
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
                 mapValues: mapValues, valueProviders: valueProviders, extraParams: extraParams,
-                nameConvention: nameConvention);
+                nameConvention: nameConvention, mapPropertyExtras: mapPropExtras);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -1720,8 +1721,13 @@ internal static class MapperExtractor
         IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use)>? mapValues = null,
         IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
         IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
-        int nameConvention = 0)
+        int nameConvention = 0,
+        IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)>? mapPropertyExtras = null)
     {
+        var extrasByTarget = new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When)>(System.StringComparer.Ordinal);
+        if (mapPropertyExtras is not null)
+            foreach (var e in mapPropertyExtras)
+                extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When);
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
         // NameConvention.Flexible: match on a normalized key (strip '_', lowercase) so PascalCase/camelCase/
         // snake_case/UPPER_CASE are interchangeable. Auto-match only; explicit/flatten paths stay exact.
@@ -1861,8 +1867,53 @@ internal static class MapperExtractor
 
             if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
+                // Phase 8: NullSubstitute (direct-assignable only) and When (guarded assignment).
+                string? nullSubLit = null;
+                string? whenPred = null;
+                if (extrasByTarget.TryGetValue(tgtName, out var ex))
+                {
+                    if (ex.HasNullSub)
+                    {
+                        if (conv is not null)
+                        {
+                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid, location,
+                                $"[MapProperty(NullSubstitute=)] for '{tgtName}' is not supported together with a converter (Use=)"));
+                        }
+                        else if (!TryFormatConstant(ex.NullSub, tgtType, compilation, out var lit, out var why))
+                        {
+                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid, location, why));
+                        }
+                        else
+                        {
+                            nullSubLit = lit;
+                        }
+                    }
+                    if (ex.When is not null)
+                    {
+                        var ok = false;
+                        foreach (var m in allMethods)
+                        {
+                            if (System.StringComparer.Ordinal.Equals(m.Name, ex.When)
+                                && m.ReturnType.SpecialType == SpecialType.System_Boolean
+                                && HasImplicitConversion(compilation, sourceType, m.ParamType))
+                            {
+                                ok = true;
+                                break;
+                            }
+                        }
+                        if (!ok)
+                        {
+                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.WhenPredicateInvalid, location,
+                                $"[MapProperty(When = \"{ex.When}\")] for '{tgtName}' must name a bool-returning method that takes the source"));
+                        }
+                        else
+                        {
+                            whenPred = ex.When;
+                        }
+                    }
+                }
                 result.Add(new MemberMap(tgtName, srcName, conv, nullH, ConverterNeedsDepthCtx: convNeedsCtx,
-                    SourceIsNullableRef: SourceMayBeNullRef(srcMatch)));
+                    SourceIsNullableRef: SourceMayBeNullRef(srcMatch), NullSubstituteLiteral: nullSubLit, WhenPredicate: whenPred));
             }
         }
 
@@ -3547,6 +3598,38 @@ internal static class MapperExtractor
             handledTargets.Add(rootName);
             unflattenRoots.Add(rootName);
         }
+    }
+
+    /// <summary>
+    /// Reads the optional <c>NullSubstitute</c> / <c>When</c> named arguments of <c>[MapProperty]</c>
+    /// (Phase 8), keyed by destination target. Separate from <see cref="ReadExplicitMaps"/> so the shared
+    /// (Source, Target, Use) tuple — also consumed by constructor-argument resolution — is unchanged.
+    /// </summary>
+    private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)> ReadMapPropertyExtras(ISymbol method)
+    {
+        var result = new List<(string, bool, TypedConstant, string?)>();
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapPropertyAttribute"
+                || attr.ConstructorArguments.Length < 2
+                || attr.ConstructorArguments[1].Value is not string target)
+            {
+                continue;
+            }
+            var hasNullSub = false;
+            TypedConstant nullSub = default;
+            string? when = null;
+            foreach (var na in attr.NamedArguments)
+            {
+                if (na.Key == "NullSubstitute") { hasNullSub = true; nullSub = na.Value; }
+                else if (na.Key == "When" && na.Value.Value is string w) { when = w; }
+            }
+            if (hasNullSub || when is not null)
+            {
+                result.Add((target, hasNullSub, nullSub, when));
+            }
+        }
+        return result;
     }
 
     private static List<string> ReadFlattenRoots(ISymbol method)
