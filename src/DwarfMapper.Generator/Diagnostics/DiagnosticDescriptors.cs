@@ -31,11 +31,7 @@ public static class DiagnosticDescriptors
         "Cannot map to '{0}': no implicit conversion and no usable conversion method; declare a mapping method for the types or use [MapProperty(Use = ...)]",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor NoParameterlessConstructor = new(
-        "DWARF006",
-        "Destination type is not constructible",
-        "Destination type '{0}' must have an accessible parameterless constructor",
-        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+    // DWARF006 removed: superseded by DWARF026 (NoMappableConstructor). Reserved but no descriptor.
 
     public static readonly DiagnosticDescriptor ReadOnlyDestinationMember = new(
         "DWARF007",

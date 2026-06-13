@@ -10,7 +10,7 @@ DWARF002 | DwarfMapper | Error | Mapper type must be partial
 DWARF003 | DwarfMapper | Error | Invalid mapping method signature
 ; DWARF004 — reserved; do not reuse
 DWARF005 | DwarfMapper | Error | No implicit conversion between mapped members
-DWARF006 | DwarfMapper | Error | Destination type is not constructible
+; DWARF006 — retired; superseded by DWARF026 (NoMappableConstructor); do not reuse
 DWARF007 | DwarfMapper | Error | Destination member is read-only
 DWARF008 | DwarfMapper | Error | MapProperty target not found
 DWARF009 | DwarfMapper | Error | MapProperty source not found
