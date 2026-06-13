@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+using System.Collections.Generic;
 using AutoMapper;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
@@ -17,6 +18,11 @@ public sealed class NestedDst { public int Id { get; set; } public FlatDst Inner
 public sealed class ArraySrc { public FlatSrc[] Items { get; set; } = System.Array.Empty<FlatSrc>(); }
 public sealed class ArrayDst { public FlatDst[] Items { get; set; } = System.Array.Empty<FlatDst>(); }
 
+// List<T> target with element conversion → DwarfMapper's plain-fill path (now pre-sized from
+// src.Count). Isolates the capacity win: Add() into a pre-sized List never re-grows the backing array.
+public sealed class ListSrc { public List<FlatSrc> Items { get; set; } = new(); }
+public sealed class ListDst { public List<FlatDst> Items { get; set; } = new(); }
+
 // Layout-identical struct pair → DwarfMapper emits the SIMD reinterpret blit; competitors copy field-by-field.
 public struct Vec3Src { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } }
 public struct Vec3Dst { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } }
@@ -34,6 +40,7 @@ public partial class DwarfM
     public partial FlatDst MapFlat(FlatSrc s);       // also used for NestedDst.Inner
     public partial NestedDst MapNested(NestedSrc s);
     public partial ArrayDst MapArray(ArraySrc s);
+    public partial ListDst MapList(ListSrc s);       // List<T> → List<T> (pre-sized plain fill)
     public partial BlitDst MapBlit(BlitSrc s);       // Vec3[] → SIMD blit
     public partial WidenDst MapWiden(WidenSrc s);    // int[] → long[] → SIMD widen
 }
@@ -45,6 +52,7 @@ public partial class MapperlyM
     public partial FlatDst MapFlat(FlatSrc s);
     public partial NestedDst MapNested(NestedSrc s);
     public partial ArrayDst MapArray(ArraySrc s);
+    public partial ListDst MapList(ListSrc s);
     public partial BlitDst MapBlit(BlitSrc s);
     public partial WidenDst MapWiden(WidenSrc s);
 }
@@ -61,6 +69,7 @@ public class MapperBenchmarks
     private FlatSrc _flat = null!;
     private NestedSrc _nested = null!;
     private ArraySrc _array = null!;
+    private ListSrc _list = null!;
     private BlitSrc _blit = null!;
     private WidenSrc _widen = null!;
 
@@ -76,6 +85,7 @@ public class MapperBenchmarks
         var items = new FlatSrc[N];
         for (var i = 0; i < N; i++) items[i] = new FlatSrc { Id = i, Name = "n" + i, Score = i, Active = i % 2 == 0 };
         _array = new ArraySrc { Items = items };
+        _list = new ListSrc { Items = new List<FlatSrc>(items) };
 
         var vecs = new Vec3Src[N];
         for (var i = 0; i < N; i++) vecs[i] = new Vec3Src { X = i, Y = i + 1, Z = i + 2 };
@@ -90,6 +100,7 @@ public class MapperBenchmarks
             c.CreateMap<FlatSrc, FlatDst>();
             c.CreateMap<NestedSrc, NestedDst>();
             c.CreateMap<ArraySrc, ArrayDst>();
+            c.CreateMap<ListSrc, ListDst>();
             c.CreateMap<Vec3Src, Vec3Dst>();
             c.CreateMap<BlitSrc, BlitDst>();
             c.CreateMap<WidenSrc, WidenDst>();
@@ -115,6 +126,12 @@ public class MapperBenchmarks
     [Benchmark, BenchmarkCategory("Array")] public ArrayDst Array_Mapperly() => _mapperly.MapArray(_array);
     [Benchmark, BenchmarkCategory("Array")] public ArrayDst Array_Mapster() => _array.Adapt<ArrayDst>();
     [Benchmark, BenchmarkCategory("Array")] public ArrayDst Array_AutoMapper() => _auto.Map<ArrayDst>(_array);
+
+    // ── List<T> with element conversion (pre-sized plain fill vs Add-and-grow) ──
+    [Benchmark, BenchmarkCategory("List")] public ListDst List_Dwarf() => _dwarf.MapList(_list);
+    [Benchmark, BenchmarkCategory("List")] public ListDst List_Mapperly() => _mapperly.MapList(_list);
+    [Benchmark, BenchmarkCategory("List")] public ListDst List_Mapster() => _list.Adapt<ListDst>();
+    [Benchmark, BenchmarkCategory("List")] public ListDst List_AutoMapper() => _auto.Map<ListDst>(_list);
 
     // ── Blittable struct array (DwarfMapper's SIMD reinterpret vs element copy) ──
     [Benchmark, BenchmarkCategory("Blit")] public BlitDst Blit_Dwarf() => _dwarf.MapBlit(_blit);

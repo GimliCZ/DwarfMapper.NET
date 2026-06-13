@@ -9,7 +9,7 @@
          public benchmark methods/types in an exe (CA1515), members that look static-able
          (CA1822), Console usage (CA1303), and BDN's own attribute patterns. These are
          intentional in a benchmark project — relax them here only. -->
-    <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA1822;CA1819;CA5394;CA1051;CA1707;CA1815</NoWarn>
+    <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA1822;CA1819;CA5394;CA1051;CA1707;CA1815;CA2227;CA1002</NoWarn>
     <!-- NU1903: AutoMapper 14.0.0 (the last MIT/GPL-compatible release; v15+ is RPL-1.5) carries a
          known advisory. This is a BENCHMARK-ONLY, non-shipped project (IsPackable=false) that maps
          in-memory POCOs with no untrusted input, so the advisory is not exercised. The shipped
