@@ -137,4 +137,11 @@ public sealed record MapMethodModel(
     /// <c>IAsyncEnumerable&lt;S&gt;</c>, <see cref="ReturnTypeFullName"/> the destination
     /// <c>IAsyncEnumerable&lt;D&gt;</c>, and the element conversion is <see cref="Members"/>[0].
     /// </summary>
-    bool IsAsyncStreamMap = false) : IEquatable<MapMethodModel>;
+    bool IsAsyncStreamMap = false,
+    /// <summary>
+    /// Additional source-like parameters declared after the source (e.g. <c>Dto Map(Entity e, string
+    /// tenant)</c>), each pre-formatted as <c>"global::Type name"</c> for direct signature emission. They
+    /// are matched to destination members by name (precedence: explicit &gt; extra parameter &gt; by-name
+    /// member) and are deliberately NOT propagated into nested mappings.
+    /// </summary>
+    EquatableArray<string> ExtraParameters = default) : IEquatable<MapMethodModel>;

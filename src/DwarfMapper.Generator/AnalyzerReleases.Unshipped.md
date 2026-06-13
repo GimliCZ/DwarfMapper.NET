@@ -51,3 +51,4 @@ DWARF043 | DwarfMapper | Error | [MapProperty] source path segment not found
 DWARF044 | DwarfMapper | Info | [MapProperty] source path traverses a nullable member
 DWARF045 | DwarfMapper | Error | Invalid [MapProperty] unflatten target path
 DWARF046 | DwarfMapper | Error | Conflicting [MapProperty] unflatten target
+DWARF047 | DwarfMapper | Info | Additional mapping parameter is unused

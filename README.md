@@ -187,6 +187,8 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 
 **Flattening.** `[Flatten("Address")]` pulls a complex source member's sub-members up to top-level destination members of the same name (`Address.City → City`). The flattened leaf goes through the same conversion rules (converters, enums, nullable). One level deep; a null flatten root throws at runtime. Unknown root → `DWARF016`; a name flattened from two roots → `DWARF017`.
 
+**Additional mapping parameters.** A map method may declare **extra parameters after the source** — `public partial Dto Map(Entity e, string tenant)` — each matched to a destination member **by name** (case-insensitively) and emitted directly: `Tenant = tenant`. Precedence is `[MapProperty]`/`[MapValue]` > extra parameter > by-name source member. An extra parameter that matches no destination is the `DWARF047` suggestion. Extra parameters are **not** propagated into nested mappings (the nested mapper keeps its single-source signature) — pass values explicitly where needed.
+
 **Hooks.** `[BeforeMap]` (`void Hook(TSource)`) and `[AfterMap]` (`void Hook(TTarget)` or `void Hook(TSource, TTarget)`) methods on the mapper run around the generated body — validate the source, or fill computed/`[MapIgnore]`d destination members. Hooks apply to every mapping whose types are assignable to their parameters. An invalid signature is `DWARF018`.
 
 **Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to `Dictionary<K2,V2>`, converting **both keys and values** through the same rules as any other member (converters, nested mappers, enums, nullable). Entries are filled via the indexer, so post-conversion key collisions overwrite rather than throw.

@@ -283,4 +283,12 @@ public static class DiagnosticDescriptors
         "Conflicting [MapProperty] unflatten target",
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    // Info: an additional mapping parameter matched no destination member. Suppress via
+    // dotnet_diagnostic.DWARF047.severity = none in .editorconfig.
+    public static readonly DiagnosticDescriptor UnusedMappingParameter = new(
+        "DWARF047",
+        "Additional mapping parameter is unused",
+        "{0}",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
 }

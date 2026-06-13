@@ -221,13 +221,16 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (method.ReturnsVoid || method.Parameters.Length != 1)
+            // A construction mapper has the source as parameter 0 and may declare ADDITIONAL parameters
+            // (Phase 5) used as extra named value sources — so allow >= 1, not exactly 1.
+            if (method.ReturnsVoid || method.Parameters.Length < 1)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod, methodLocation, method.Name));
                 continue;
             }
 
-            if (IsQueryable(method.ReturnType, out var projTarget)
+            if (method.Parameters.Length == 1
+                && IsQueryable(method.ReturnType, out var projTarget)
                 && IsQueryable(method.Parameters[0].Type, out var projSource)
                 && projTarget is INamedTypeSymbol projTargetNamed)
             {
@@ -319,6 +322,18 @@ internal static class MapperExtractor
             }
 
             var sourceType = method.Parameters[0].Type;
+
+            // Phase 5: parameters after the source are extra named value sources, matched to destination
+            // members by name (precedence: explicit > extra parameter > by-name). Pre-format their
+            // signature fragments ("global::Type name") for emission.
+            var extraParams = new List<(string Name, ITypeSymbol Type)>();
+            var extraParamSig = new List<string>();
+            for (var pi = 1; pi < method.Parameters.Length; pi++)
+            {
+                var ep = method.Parameters[pi];
+                extraParams.Add((ep.Name, ep.Type));
+                extraParamSig.Add(ep.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + " " + ep.Name);
+            }
 
             // Read methodAutoNest early — needed by both Plan 21 (derived dispatch) and the normal path.
             var methodAutoNest = ReadMethodAutoNest(method, classAutoNest);
@@ -614,7 +629,7 @@ internal static class MapperExtractor
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
-                mapValues: mapValues, valueProviders: valueProviders);
+                mapValues: mapValues, valueProviders: valueProviders, extraParams: extraParams);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -708,7 +723,8 @@ internal static class MapperExtractor
                 false,
                 "",
                 EquatableArray.From(ctorArgs),
-                FlattenGraphDirectives: EquatableArray.From(resolvedFgDirectives.ToArray())));
+                FlattenGraphDirectives: EquatableArray.From(resolvedFgDirectives.ToArray()),
+                ExtraParameters: EquatableArray.From(extraParamSig.ToArray())));
         }
 
         // ── [GenerateMap<TSrc, TTgt>] — low-ceremony attribute-declared mappers ──────
@@ -1700,7 +1716,8 @@ internal static class MapperExtractor
         bool isSetNull = false,
         bool implicitConversions = true,
         IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use)>? mapValues = null,
-        IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null)
+        IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
+        IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -1719,6 +1736,8 @@ internal static class MapperExtractor
         // Intermediate roots already opened by an unflatten leaf — additional leaves into the same root
         // are allowed (City + Street → Address); only a DIRECT mapping of the root conflicts (DWARF046).
         var unflattenRoots = new HashSet<string>(System.StringComparer.Ordinal);
+        // Phase 5: which additional parameters were consumed by a destination (the rest → DWARF047).
+        var consumedExtraParams = new HashSet<string>(comparer);
 
         var comparerForLeaves = comparer; // same comparer used for member matching
         var flattenInfos = new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)>();
@@ -1917,6 +1936,33 @@ internal static class MapperExtractor
                 continue;
             }
 
+            // Phase 5: an additional parameter matching this target by name wins over a by-name source
+            // member. Emitted as the parameter name directly (or a scalar conversion of it). Converters
+            // that need recursion context are not used here (extra params are not propagated to nesting).
+            if (extraParams is not null)
+            {
+                // Extra parameters match destinations case-insensitively (e.g. param `tenant` → `Tenant`),
+                // independent of the mapper's member-matching case sensitivity.
+                (string Name, ITypeSymbol Type) ep = default;
+                foreach (var cand in extraParams)
+                {
+                    if (System.StringComparer.OrdinalIgnoreCase.Equals(cand.Name, target.Name)) { ep = cand; break; }
+                }
+                if (ep.Name is not null
+                    && TryResolveConversion(compilation, ep.Type!, target.Type, null, allMethods, autoCandidates,
+                        enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics,
+                        out var epConv, out _, out var epNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
+                        isSetNull: isSetNull, implicitConversions: implicitConversions)
+                    && !epNeedsCtx)
+                {
+                    var valueExpr = epConv is null ? ep.Name : epConv + "(" + ep.Name + ")";
+                    result.Add(new MemberMap(target.Name, "", ValueExpression: valueExpr));
+                    handledTargets.Add(target.Name);
+                    consumedExtraParams.Add(ep.Name);
+                    continue;
+                }
+            }
+
             if (!sourceGroups.TryGetValue(target.Name, out var matches))
             {
                 var flatMatches = new List<(string Root, string Leaf, ITypeSymbol LeafType)>();
@@ -2013,6 +2059,19 @@ internal static class MapperExtractor
                 else if (!writableNames.Contains(rm))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid, location, rm));
+                }
+            }
+        }
+
+        // Phase 5: an additional parameter that matched no destination member is a suggestion (DWARF047).
+        if (extraParams is not null)
+        {
+            foreach (var ep in extraParams)
+            {
+                if (!consumedExtraParams.Contains(ep.Name))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnusedMappingParameter, location,
+                        $"mapping parameter '{ep.Name}' matched no destination member"));
                 }
             }
         }

@@ -100,7 +100,9 @@ internal static class MapEmitter
             // since the user never declared a partial to implement.
             sb.Append(indent).Append(method.Accessibility).Append(method.EmitAsNonPartial ? " " : " partial ")
               .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-              .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName).AppendLine(")");
+              .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(method.ParameterName);
+            foreach (var ep in method.ExtraParameters) sb.Append(", ").Append(ep); // Phase 5: extra params
+            sb.AppendLine(")");
         }
         else if (isSynthesizedRecursive)
         {
