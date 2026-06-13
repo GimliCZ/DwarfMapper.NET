@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.CustomerDto ToDto(global::Demo.Customer c)
     {
-        if (c is null) throw new global::System.ArgumentNullException(nameof(c));
+        global::System.ArgumentNullException.ThrowIfNull(c);
         return new global::Demo.CustomerDto
         {
             City = c.Address.City,

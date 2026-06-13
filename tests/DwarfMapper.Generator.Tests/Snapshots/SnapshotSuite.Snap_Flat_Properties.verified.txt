@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.PersonDto Map(global::Demo.Person p)
     {
-        if (p is null) throw new global::System.ArgumentNullException(nameof(p));
+        global::System.ArgumentNullException.ThrowIfNull(p);
         return new global::Demo.PersonDto
         {
             Age = p.Age,

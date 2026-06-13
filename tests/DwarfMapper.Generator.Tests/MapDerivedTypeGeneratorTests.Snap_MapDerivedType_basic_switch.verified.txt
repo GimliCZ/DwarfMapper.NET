@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.AnimalDto Map(global::Demo.Animal a)
     {
-        if (a is null) throw new global::System.ArgumentNullException(nameof(a));
+        global::System.ArgumentNullException.ThrowIfNull(a);
         return a switch
         {
             global::Demo.Dog __s => Map(__s),
@@ -18,7 +18,7 @@ public partial class M
     }
     public partial global::Demo.DogDto Map(global::Demo.Dog d)
     {
-        if (d is null) throw new global::System.ArgumentNullException(nameof(d));
+        global::System.ArgumentNullException.ThrowIfNull(d);
         return new global::Demo.DogDto
         {
             Breed = d.Breed,
@@ -27,7 +27,7 @@ public partial class M
     }
     public partial global::Demo.CatDto Map(global::Demo.Cat c)
     {
-        if (c is null) throw new global::System.ArgumentNullException(nameof(c));
+        global::System.ArgumentNullException.ThrowIfNull(c);
         return new global::Demo.CatDto
         {
             Lives = c.Lives,

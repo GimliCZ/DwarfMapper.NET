@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.ContainerDto Map(global::Demo.Container c)
     {
-        if (c is null) throw new global::System.ArgumentNullException(nameof(c));
+        global::System.ArgumentNullException.ThrowIfNull(c);
         return new global::Demo.ContainerDto
         {
             Items = __DwarfMapColl_29365ccf(c.Items),

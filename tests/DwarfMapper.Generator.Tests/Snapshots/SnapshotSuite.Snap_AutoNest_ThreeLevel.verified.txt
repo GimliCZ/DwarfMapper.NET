@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.PersonDto Map(global::Demo.Person p)
     {
-        if (p is null) throw new global::System.ArgumentNullException(nameof(p));
+        global::System.ArgumentNullException.ThrowIfNull(p);
         return new global::Demo.PersonDto(
             Home: __DwarfMap_Obj_global__Demo_Addr_global__Demo_AddrDto_D2C556F2(p.Home!),
             FullName: p.FullName);

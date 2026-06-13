@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.RootDto Map(global::Demo.Root r)
     {
-        if (r is null) throw new global::System.ArgumentNullException(nameof(r));
+        global::System.ArgumentNullException.ThrowIfNull(r);
         return new global::Demo.RootDto
         {
             Nodes = __DwarfMap_FlattenGraphArr_28a2fa25(r.Entry!),

@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::System.Linq.IQueryable<global::Demo.PersonDto> Project(global::System.Linq.IQueryable<global::Demo.Person> src)
     {
-        if (src is null) throw new global::System.ArgumentNullException(nameof(src));
+        global::System.ArgumentNullException.ThrowIfNull(src);
         return global::System.Linq.Queryable.Select(src, __s => new global::Demo.PersonDto
         {
             Age = __s.Age,

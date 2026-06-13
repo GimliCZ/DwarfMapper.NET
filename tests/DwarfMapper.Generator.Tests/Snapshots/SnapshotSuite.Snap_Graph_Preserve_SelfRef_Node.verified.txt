@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.NodeDto Map(global::Demo.Node n)
     {
-        if (n is null) throw new global::System.ArgumentNullException(nameof(n));
+        global::System.ArgumentNullException.ThrowIfNull(n);
         var __dwarf_ctx = new global::DwarfMapper.DwarfRefContext(64, true);
         if (__dwarf_ctx.TryGetReference(n, out var __dwarf_cached)) return (global::Demo.NodeDto)__dwarf_cached;
         var __dwarf_t = new global::Demo.NodeDto();

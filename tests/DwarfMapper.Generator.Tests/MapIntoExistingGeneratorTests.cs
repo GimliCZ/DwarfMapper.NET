@@ -30,9 +30,9 @@ public class MapIntoExistingGeneratorTests
         Assert.Contains("dest.Id = ", generated, StringComparison.Ordinal);
         Assert.Contains("dest.Name = ", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("new global::Demo.D", generated, StringComparison.Ordinal);
-        // Both parameters null-guarded.
-        Assert.Contains("ArgumentNullException(nameof(src))", generated, StringComparison.Ordinal);
-        Assert.Contains("ArgumentNullException(nameof(dest))", generated, StringComparison.Ordinal);
+        // Both parameters null-guarded via the BCL throw-helper.
+        Assert.Contains("ArgumentNullException.ThrowIfNull(src)", generated, StringComparison.Ordinal);
+        Assert.Contains("ArgumentNullException.ThrowIfNull(dest)", generated, StringComparison.Ordinal);
     }
 
     [Fact]

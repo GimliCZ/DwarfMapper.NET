@@ -124,9 +124,12 @@ internal static class MapEmitter
             if (method.IsPartial)
             {
                 // Public partial mapper: null source is a programming error → loud ArgumentNullException.
-                sb.Append(indent).Append("    if (").Append(method.ParameterName)
-                  .Append(" is null) throw new global::System.ArgumentNullException(nameof(")
-                  .Append(method.ParameterName).AppendLine("));");
+                // Use the BCL throw-helper ArgumentNullException.ThrowIfNull: the actual `throw` lives in a
+                // [DoesNotReturn]/NoInlining helper, so this hot method stays small IL and inlines readily
+                // (an inline `throw new …` bloats IL and can block inlining). Same loud-on-null semantics;
+                // the paramName is captured via [CallerArgumentExpression].
+                sb.Append(indent).Append("    global::System.ArgumentNullException.ThrowIfNull(")
+                  .Append(method.ParameterName).AppendLine(");");
             }
             else if (method.ReturnIsReferenceType)
             {
@@ -577,12 +580,11 @@ internal static class MapEmitter
           .Append(method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
         sb.Append(indent).AppendLine("{");
 
-        // Null guards (loud — mapping into/from null is a programming error).
+        // Null guards (loud — mapping into/from null is a programming error). BCL throw-helper keeps
+        // the hot path small IL (see the public-mapper note above).
         if (method.ParameterIsReferenceType)
-            sb.Append(indent).Append("    if (").Append(src)
-              .Append(" is null) throw new global::System.ArgumentNullException(nameof(").Append(src).AppendLine("));");
-        sb.Append(indent).Append("    if (").Append(dst)
-          .Append(" is null) throw new global::System.ArgumentNullException(nameof(").Append(dst).AppendLine("));");
+            sb.Append(indent).Append("    global::System.ArgumentNullException.ThrowIfNull(").Append(src).AppendLine(");");
+        sb.Append(indent).Append("    global::System.ArgumentNullException.ThrowIfNull(").Append(dst).AppendLine(");");
 
         var anyCtx = false;
         foreach (var m in method.Members) { if (m.ConverterNeedsDepthCtx) { anyCtx = true; break; } }

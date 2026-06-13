@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.TreeDto Map(global::Demo.Tree t)
     {
-        if (t is null) throw new global::System.ArgumentNullException(nameof(t));
+        global::System.ArgumentNullException.ThrowIfNull(t);
         var __dwarf_ctx = new global::DwarfMapper.DwarfRefContext(64);
         return new global::Demo.TreeDto
         {

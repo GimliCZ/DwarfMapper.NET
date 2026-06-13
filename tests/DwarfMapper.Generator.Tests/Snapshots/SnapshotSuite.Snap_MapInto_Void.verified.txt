@@ -8,8 +8,8 @@ public partial class M
 {
     public partial void Update(global::Demo.S src, global::Demo.D dest)
     {
-        if (src is null) throw new global::System.ArgumentNullException(nameof(src));
-        if (dest is null) throw new global::System.ArgumentNullException(nameof(dest));
+        global::System.ArgumentNullException.ThrowIfNull(src);
+        global::System.ArgumentNullException.ThrowIfNull(dest);
         dest.Id = src.Id;
         dest.Name = src.Name;
         dest.Score = __DwarfMap_Num_long__int_4bf5d59e(src.Score!);

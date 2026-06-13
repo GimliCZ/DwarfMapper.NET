@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.B Map(global::Demo.A a)
     {
-        if (a is null) throw new global::System.ArgumentNullException(nameof(a));
+        global::System.ArgumentNullException.ThrowIfNull(a);
         return new global::Demo.B
         {
             N = a.N,

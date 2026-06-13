@@ -8,7 +8,7 @@ public partial class M
 {
     public partial global::Demo.NodeDto Map(global::Demo.Node n)
     {
-        if (n is null) throw new global::System.ArgumentNullException(nameof(n));
+        global::System.ArgumentNullException.ThrowIfNull(n);
         var __dwarf_ctx = new global::DwarfMapper.DwarfRefContext(64, preserve: false, setNull: true);
         if (!__dwarf_ctx.TryEnterNode(n)) return null!;
         try
