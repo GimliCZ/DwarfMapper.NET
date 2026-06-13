@@ -349,7 +349,7 @@ internal static class CollectionConverter
             case TargetKind.HashSet:
             case TargetKind.ISet:
             case TargetKind.IReadOnlySet:
-                EmitHashSet(sb, name, srcFq, srcParamType, elemFq, item, srcType, identity, shape.NullAsNull, threadCtx, registerBeforeFill);
+                EmitHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, srcType, identity, shape.NullAsNull, threadCtx, registerBeforeFill);
                 break;
 
             case TargetKind.IEnumerable:
@@ -380,6 +380,20 @@ internal static class CollectionConverter
 
     // Shared preserve-mode signature suffix: (DwarfRefContext ctx, int depth)
     private const string CtxDepthParams = ", global::DwarfMapper.DwarfRefContext ctx, int depth";
+
+    /// <summary>
+    /// The count-bearing capacity argument for a pre-sizable target (<c>List</c>/<c>HashSet</c>), or
+    /// <c>""</c> when the source count is not known cheaply (lazy/unknown-count). Pre-sizing avoids the
+    /// repeated internal-array doubling+copy that <c>new List&lt;T&gt;()</c> + <c>Add</c> incurs — matching
+    /// what the array (<c>new T[src.Length]</c>) and dictionary (<c>new Dictionary(src.Count)</c>) paths
+    /// already do. Over-reservation for sets (distinct &lt; source count) is harmless.
+    /// </summary>
+    private static string CapacityArg(Shape shape) => shape.Count switch
+    {
+        CountKind.Length => "src.Length",
+        CountKind.Count => "src.Count",
+        _ => "",
+    };
 
     private static void EmitArray(
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
@@ -468,7 +482,7 @@ internal static class CollectionConverter
         {
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
             sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(listFq).Append(")__cc;\n");
-            sb.Append("        var __r = new ").Append(listFq).Append('(').Append(shape.Count != CountKind.None ? (shape.Count == CountKind.Length ? "src.Length" : "src.Count") : "").Append(");\n");
+            sb.Append("        var __r = new ").Append(listFq).Append('(').Append(CapacityArg(shape)).Append(");\n");
             sb.Append("        ctx.SetReference(src, __r);\n");
             sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
             sb.Append("        return __r;\n");
@@ -477,8 +491,10 @@ internal static class CollectionConverter
         {
             // Plain fill. When threadCtx is true (None/SetNull recursive element), `item` already
             // contains the (..., ctx, depth + 1) arguments and ctx is in scope from the signature.
+            // Pre-size from the known source count (CapacityArg) so large lists don't repeatedly
+            // double+copy their backing array — same rationale as the array/dictionary paths.
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        var __r = new ").Append(listFq).Append("();\n");
+            sb.Append("        var __r = new ").Append(listFq).Append('(').Append(CapacityArg(shape)).Append(");\n");
             sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
             sb.Append("        return __r;\n");
         }
@@ -487,7 +503,7 @@ internal static class CollectionConverter
 
     private static void EmitHashSet(
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
-        string item, ITypeSymbol srcType, bool identity, bool nullAsNull, bool threadCtx, bool registerBeforeFill)
+        string item, Shape shape, ITypeSymbol srcType, bool identity, bool nullAsNull, bool threadCtx, bool registerBeforeFill)
     {
         var setFq     = "global::System.Collections.Generic.HashSet<" + elem + ">";
         var retFq     = nullAsNull ? setFq + "?" : setFq;
@@ -507,7 +523,7 @@ internal static class CollectionConverter
         {
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
             sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(setFq).Append(")__cc;\n");
-            sb.Append("        var __r = new ").Append(setFq).Append("();\n");
+            sb.Append("        var __r = new ").Append(setFq).Append('(').Append(CapacityArg(shape)).Append(");\n");
             sb.Append("        ctx.SetReference(src, __r);\n");
             sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
             sb.Append("        return __r;\n");
@@ -515,7 +531,7 @@ internal static class CollectionConverter
         else
         {
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        var __r = new ").Append(setFq).Append("();\n");
+            sb.Append("        var __r = new ").Append(setFq).Append('(').Append(CapacityArg(shape)).Append(");\n");
             sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
             sb.Append("        return __r;\n");
         }

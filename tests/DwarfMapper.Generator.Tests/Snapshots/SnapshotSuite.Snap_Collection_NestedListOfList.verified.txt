@@ -18,7 +18,7 @@ public partial class M
     private global::System.Collections.Generic.List<global::System.Collections.Generic.List<int>> __DwarfMapColl_0513756c(global::System.Collections.Generic.List<global::System.Collections.Generic.List<int>>? src)
     {
         if (src is null) return new global::System.Collections.Generic.List<global::System.Collections.Generic.List<int>>();
-        var __r = new global::System.Collections.Generic.List<global::System.Collections.Generic.List<int>>();
+        var __r = new global::System.Collections.Generic.List<global::System.Collections.Generic.List<int>>(src.Count);
         foreach (var __item in src) { __r.Add(__DwarfMapColl_aea4ecd8(__item)); }
         return __r;
     }

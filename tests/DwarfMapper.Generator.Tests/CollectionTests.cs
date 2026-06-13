@@ -44,6 +44,63 @@ public class CollectionTests
     }
 
     [Fact]
+    public void List_element_conversion_presizes_from_source_count()
+    {
+        // Non-identity element conversion → plain-fill path. Must pre-size the target List from the
+        // known source count so Add() never re-grows the backing array (matches array/dict paths).
+        const string s = """
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            public class Inner { public int X { get; set; } }
+            public class InnerD { public int X { get; set; } }
+            public class A { public List<Inner> Xs { get; set; } = new(); }
+            public class B { public List<InnerD> Xs { get; set; } = new(); }
+            [DwarfMapper] public partial class M { public partial B Map(A a); }
+            """;
+        NoErrors(s);
+        var (_, gen) = GeneratorTestHarness.Run(s);
+        // The fill buffer is pre-sized; only the null→empty guard keeps the bare ctor.
+        Assert.Contains("var __r = new global::System.Collections.Generic.List<global::Demo.InnerD>(src.Count)", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Array_to_list_element_conversion_presizes_from_length()
+    {
+        const string s = """
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            public class Inner { public int X { get; set; } }
+            public class InnerD { public int X { get; set; } }
+            public class A { public Inner[] Xs { get; set; } = System.Array.Empty<Inner>(); }
+            public class B { public List<InnerD> Xs { get; set; } = new(); }
+            [DwarfMapper] public partial class M { public partial B Map(A a); }
+            """;
+        NoErrors(s);
+        var (_, gen) = GeneratorTestHarness.Run(s);
+        Assert.Contains("new global::System.Collections.Generic.List<global::Demo.InnerD>(src.Length)", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HashSet_element_conversion_presizes_from_source_count()
+    {
+        const string s = """
+            using DwarfMapper;
+            using System.Collections.Generic;
+            namespace Demo;
+            public class Inner { public int X { get; set; } }
+            public class InnerD { public int X { get; set; } }
+            public class A { public List<Inner> Xs { get; set; } = new(); }
+            public class B { public HashSet<InnerD> Xs { get; set; } = new(); }
+            [DwarfMapper] public partial class M { public partial B Map(A a); }
+            """;
+        NoErrors(s);
+        var (_, gen) = GeneratorTestHarness.Run(s);
+        Assert.Contains("new global::System.Collections.Generic.HashSet<global::Demo.InnerD>(src.Count)", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Array_to_list_maps()
     {
         const string s = """

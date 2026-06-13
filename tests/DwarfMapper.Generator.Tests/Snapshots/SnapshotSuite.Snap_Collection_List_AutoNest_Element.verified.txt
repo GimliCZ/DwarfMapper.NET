@@ -25,7 +25,7 @@ public partial class M
     private global::System.Collections.Generic.List<global::Demo.ItemDto> __DwarfMapColl_29365ccf(global::System.Collections.Generic.List<global::Demo.Item>? src)
     {
         if (src is null) return new global::System.Collections.Generic.List<global::Demo.ItemDto>();
-        var __r = new global::System.Collections.Generic.List<global::Demo.ItemDto>();
+        var __r = new global::System.Collections.Generic.List<global::Demo.ItemDto>(src.Count);
         foreach (var __item in src) { __r.Add(__DwarfMap_Obj_global__Demo_Item_global__Demo_ItemDto_905ECFE2(__item)); }
         return __r;
     }
