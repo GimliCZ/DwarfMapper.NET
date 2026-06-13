@@ -141,6 +141,27 @@ if (!ReferenceEquals(tA, tA.Next.Next))
 }
 Console.WriteLine("preserve cycle back-edge: closed correctly (AOT-safe)");
 
+// ── OnCycle = SetNull: None-mode cycle breaking (Plan 19 Part C) ──────────────
+// AOT-safe: on-stack HashSet<object>(ReferenceEqualityComparer) guard; the re-entrant
+// back-edge is nulled (≡ System.Text.Json IgnoreCycles) — no reflection, no dynamic dispatch.
+var setNullMapper = new AotSetNullMapper();
+
+var snA = new SetNullNode { V = 10 };
+var snB = new SetNullNode { V = 20 };
+snA.Next = snB;
+snB.Next = snA; // cycle: A→B→A
+
+var snResult = setNullMapper.Map(snA);
+Console.WriteLine($"setnull cycle: A.V={snResult.V}, A.Next.V={snResult.Next!.V}, A.Next.Next={(snResult.Next.Next is null ? "null" : "NOT-null")}");
+if (snResult.V != 10) { Console.WriteLine("ERROR: setnull A.V wrong"); return 1; }
+if (snResult.Next.V != 20) { Console.WriteLine("ERROR: setnull A.Next.V wrong"); return 1; }
+if (snResult.Next.Next is not null)
+{
+    Console.WriteLine("ERROR: setnull back-edge not nulled (B.Next should be null)");
+    return 1;
+}
+Console.WriteLine("setnull cycle: back-edge nulled, finite projection (AOT-safe)");
+
 // ── IEnumerable<T> target (lazy path) + ImmutableArray<T>? (A2 coverage) ─────
 var collAotMapper = new CollAotMapper();
 var collSrc = new CollAotSrc
@@ -331,6 +352,14 @@ public class CycleNodeDto { public int V { get; set; } public CycleNodeDto? Next
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
 public partial class AotCycleMapper { public partial CycleNodeDto Map(CycleNode n); }
+
+// ── OnCycle = SetNull: None-mode cycle breaking (Plan 19 Part C) ──────────────
+// On-stack HashSet<object>(ReferenceEqualityComparer) guard — reflection-free, AOT-safe.
+public class SetNullNode    { public int V { get; set; } public SetNullNode?    Next { get; set; } }
+public class SetNullNodeDto { public int V { get; set; } public SetNullNodeDto? Next { get; set; } }
+
+[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+public partial class AotSetNullMapper { public partial SetNullNodeDto Map(SetNullNode n); }
 
 // ── IEnumerable<T> target + ImmutableArray<T>? with AsNull (A5 AOT coverage) ─
 // IEnumerable<int> target: generator emits lazy Enumerable.Select (no materialisation).

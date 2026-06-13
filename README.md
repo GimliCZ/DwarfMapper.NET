@@ -209,6 +209,18 @@ Obsolete constructors and the implicit record copy constructor (`R(R original)`)
 
 **Blittable fast-path (SIMD).** When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing, and the same ordered field names/types (including nested structs, recursively) — DwarfMapper skips the element loop and reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove, behind a JIT-folded runtime size guard. This is the one place DwarfMapper beats a hand-written name-based copy, and it is emitted **only when proven safe** — otherwise it falls back to the element loop. For layout-compatible types the proof can't confirm (differing field names you know are positionally correct, types from referenced assemblies), opt in with `[Reinterpret("Member")]` — still memory-safe (unmanaged + size guard), with the field correspondence as your assertion. A bad `[Reinterpret]` target is `DWARF022`.
 
+**Reference handling & cycles.** Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recursive types) are detected at generator time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead. The behaviour for shared references and cycles is controlled per mapper:
+
+```csharp
+[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]   // full topology
+[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]                        // break cycles with null
+[DwarfMapper(MaxDepth = 128)]                                          // depth bound (default 64)
+```
+
+- **`ReferenceHandling = None`** (default): no identity tracking, zero allocation. Recursion-capable pairs carry a depth counter — a cycle (or an over-deep chain) reached via a **direct reference member** throws a loud, catchable `DwarfMappingDepthException` at `MaxDepth` (default 64, hard cap 1000) instead of a silent `StackOverflowException`.
+- **`ReferenceHandling = Preserve`**: a reference-identity map (`ReferenceEqualityComparer`, register-before-populate) is threaded through the recursive pairs, reconstructing the **complete topology** — shared nodes, diamonds, and all cycles are relinked isomorphically; two distinct-but-value-equal records are never merged. One small dictionary per top-level `Map` call.
+- **`OnCycle = SetNull`** (None mode only): breaks a reference cycle by **nulling the re-entrant back-edge** — equivalent to `System.Text.Json`'s `ReferenceHandler.IgnoreCycles`. A node already on the active mapping stack is not mapped again; the member pointing back to it becomes `null`, yielding a finite acyclic projection (handy for display/DTO shapes). Shared-but-acyclic nodes (diamonds) are still mapped on each path (duplicated) — only true ancestor cycles are nulled. Setting `OnCycle = SetNull` together with `Preserve` reports `DWARF037` (Preserve reconstructs cycles, so `OnCycle` has no effect). *Scope:* `SetNull` breaks cycles formed by direct reference members; a cycle routed exclusively through a **collection/dictionary edge** is not broken in this version (it follows the documented None-mode behaviour — use `Preserve` for cyclic collection graphs).
+
 ---
 
 ## Resilience: the headline feature

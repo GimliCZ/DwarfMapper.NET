@@ -22,6 +22,22 @@ public partial class SnapshotSuite
         return Verifier.Verify(generated);
     }
 
+    // ── OnCycle = SetNull: on-stack guard (TryEnterNode/ExitNode + try/finally) ─
+    [Fact]
+    public Task Snap_Graph_OnCycle_SetNull()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+            public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+            [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+            public partial class M { public partial NodeDto Map(Node n); }
+            """;
+        var (_, generated) = GeneratorTestHarness.Run(src);
+        return Verifier.Verify(generated);
+    }
+
     // ── Depth-guarded recursive type (None mode) ──────────────────────────────
     [Fact]
     public Task Snap_Graph_DepthGuarded_Recursive_None()

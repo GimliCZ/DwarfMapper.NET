@@ -209,6 +209,10 @@ A (auto-nest + recursion-safe synthesis) → B (collection/dict taxonomy) → C 
 - Robust/resilient/scalable: generator-time recursion memoization + depth backstop (never hangs); reference handling scoped to recursion-capable pairs (zero cost otherwise); degraded mode bounds huge graphs; AOT-safe throughout. ✅
 - Thesis-defining differentiator: compile-time projection-translatability proof — "if it would throw in SQL, it won't compile." ✅
 
+## Implemented later (post-v19)
+- `OnCycle = SetNull` (Plan 19 Part-C remaining item, shipped v23): None-mode cycle breaking via an on-stack guard (`DwarfRefContext.TryEnterNode`/`ExitNode`, `ReferenceEqualityComparer`); a re-entrant back-edge to a node on the active mapping stack is nulled (≡ STJ `IgnoreCycles`). `DWARF037` (Warning) when combined with `Preserve` (ignored). Covers self-loop / 2-N-node cycles / cyclic diamond (duplicated children, back-edges null) / mutual recursion across types / deep-acyclic depth backstop; fuzz-proven to always terminate with acyclic, deterministic output. Golden snapshot + AOT gate added.
+  - **Limitation (deferred):** `SetNull` breaks cycles formed by **direct reference members**. A cycle routed exclusively through a **collection/dictionary edge** is NOT broken — in None mode the on-stack/depth context is not threaded into collection element mappers (they call the public entry, which allocates a fresh context), matching the documented None-mode "cyclic data → StackOverflow" behaviour. Extending None/SetNull ctx-threading into collection elements (as Preserve already does) is the follow-up; `Preserve` already handles cyclic collection graphs.
+
 ## Deferred (explicit, with rationale)
 - Exotic collections: `SortedSet`/`SortedDictionary` (ordering semantics), `ConcurrentDictionary`, `Queue`/`Stack` (order/ctor nuance), `Span`/`Memory` targets, multidimensional `T[,]`. → DWARF027 until added.
 - `ReferenceHandling` for projection (impossible by translation constraint — permanently DWARF028).

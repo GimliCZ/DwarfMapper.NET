@@ -168,3 +168,31 @@ public class SetNullCycleRuntimeTests
         Assert.Null(t2.Next.Next);
     }
 }
+
+// ── Collection-edge "shared but acyclic" — supported (no cycle through the list) ─
+// A cycle routed THROUGH a collection edge (e.g. child.Children contains the root) is a
+// DEFERRED limitation: in None mode the depth counter / on-stack guard is not threaded into
+// collection element mappers (they call the public entry, which allocates a fresh context),
+// matching the documented None-mode "cyclic data" behaviour. SetNull breaks cycles formed by
+// direct reference MEMBERS (Self/Next/Parent), which is what these tests cover. The acyclic
+// collection case below confirms collections still map correctly under SetNull.
+public class SnList    { public int V { get; set; } public System.Collections.Generic.List<SnLeaf>? Items { get; set; } }
+public class SnListDto { public int V { get; set; } public System.Collections.Generic.List<SnLeafDto>? Items { get; set; } }
+
+[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+public partial class SnListMapper { public partial SnListDto Map(SnList s); }
+
+public class SetNullCollectionRuntimeTests
+{
+    [Fact]
+    public void AcyclicCollection_maps_correctly_under_SetNull()
+    {
+        var s = new SnList { V = 1, Items = new() { new SnLeaf { V = 7 }, new SnLeaf { V = 8 } } };
+        var t = new SnListMapper().Map(s);
+        Assert.Equal(1, t.V);
+        Assert.NotNull(t.Items);
+        Assert.Equal(2, t.Items!.Count);
+        Assert.Equal(7, t.Items[0].V);
+        Assert.Equal(8, t.Items[1].V);
+    }
+}
