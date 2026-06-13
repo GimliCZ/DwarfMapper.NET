@@ -77,6 +77,13 @@ internal static class MapEmitter
             return;
         }
 
+        // Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src).
+        if (method.IsAsyncStreamMap)
+        {
+            EmitAsyncStreamMapMethod(sb, method, indent);
+            return;
+        }
+
         // Update-into-existing: void/T Map(S src, T dest) — assign onto an existing instance.
         if (method.IsUpdateInto)
         {
@@ -476,6 +483,36 @@ internal static class MapEmitter
 
         // Step 5: Return the fully-populated target.
         sb.Append(indent).AppendLine("    return __dwarf_t;");
+    }
+
+    /// <summary>
+    /// Emits an async streaming map <c>IAsyncEnumerable&lt;D&gt; Map(IAsyncEnumerable&lt;S&gt; src)</c> as an
+    /// <c>async</c> iterator: <c>await foreach (var item in src) yield return conv(item);</c>. Lazily
+    /// transforms the source sequence element-by-element (no buffering; streaming/back-pressure preserved).
+    /// </summary>
+    private static void EmitAsyncStreamMapMethod(StringBuilder sb, MapMethodModel method, string indent)
+    {
+        var src = method.ParameterName;
+
+        sb.Append(indent).Append(method.Accessibility).Append(" async partial ")
+          .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
+          .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src).AppendLine(")");
+        sb.Append(indent).AppendLine("{");
+        sb.Append(indent).Append("    await foreach (var __item in ").Append(src).AppendLine(")");
+
+        var elem = method.Members.Count > 0 ? method.Members[0] : null;
+        sb.Append(indent).Append("        yield return ");
+        if (elem?.ConverterMethod is null)
+        {
+            // Direct/implicit element conversion.
+            sb.Append("__item");
+        }
+        else
+        {
+            sb.Append(elem.ConverterMethod).Append("(__item)");
+        }
+        sb.AppendLine(";");
+        sb.Append(indent).AppendLine("}");
     }
 
     /// <summary>

@@ -52,4 +52,21 @@ public partial class SnapshotSuite
         var (_, generated) = GeneratorTestHarness.Run(src);
         return Verifier.Verify(generated);
     }
+
+    // ── Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src) ──
+    [Fact]
+    public Task Snap_AsyncStreamMap()
+    {
+        const string src = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int Id { get; set; } public long Score { get; set; } }
+            public class D { public int Id { get; set; } public int Score { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src); }
+            """;
+        var (_, generated) = GeneratorTestHarness.Run(src);
+        return Verifier.Verify(generated);
+    }
 }

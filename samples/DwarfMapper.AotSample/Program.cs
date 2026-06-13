@@ -359,6 +359,23 @@ catch (ArgumentException) { spanThrew = true; }
 if (!spanThrew) { Console.WriteLine("ERROR: span map should throw on too-small destination"); return 1; }
 Console.WriteLine("span map: mapped into stack buffer; too-small dest throws (AOT-safe, zero-alloc)");
 
+// ── Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src) (Planned → shipped) ─
+// Async iterator state machine is AOT-safe (no reflection). Lazily transforms an async sequence.
+static async System.Collections.Generic.IAsyncEnumerable<AotAsyncSrc> AotAsyncSource()
+{
+    for (var i = 1; i <= 3; i++) { await System.Threading.Tasks.Task.Yield(); yield return new AotAsyncSrc { V = i }; }
+}
+var asyncMapper = new AotAsyncMapper();
+var asyncCollected = new System.Collections.Generic.List<AotAsyncDst>();
+await foreach (var d in asyncMapper.Map(AotAsyncSource()))
+    asyncCollected.Add(d);
+if (asyncCollected.Count != 3 || asyncCollected[0].V != 1 || asyncCollected[2].V != 3)
+{
+    Console.WriteLine("ERROR: async stream map incorrect");
+    return 1;
+}
+Console.WriteLine($"async stream: mapped {asyncCollected.Count} elements lazily (AOT-safe)");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -430,6 +447,16 @@ public partial class AotUpdateMapper { public partial AotUpdDst Update(AotUpdSrc
 // Zero-alloc span map.
 [DwarfMapper]
 public partial class AotSpanMapper { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+
+// Async streaming map.
+public class AotAsyncSrc { public int V { get; set; } }
+public class AotAsyncDst { public int V { get; set; } }
+
+[DwarfMapper]
+public partial class AotAsyncMapper
+{
+    public partial System.Collections.Generic.IAsyncEnumerable<AotAsyncDst> Map(System.Collections.Generic.IAsyncEnumerable<AotAsyncSrc> src);
+}
 
 // ── Preserve mode: 2-node cycle (Plan 19 Part C2) ────────────────────────────
 // ReferenceEqualityComparer + Dictionary<object,object> are reflection-free and AOT-safe.

@@ -121,4 +121,13 @@ public sealed record MapMethodModel(
     /// </summary>
     bool IsSpanMap = false,
     /// <summary>The destination span parameter name for an <see cref="IsSpanMap"/> method.</summary>
-    string SpanTargetParameterName = "") : IEquatable<MapMethodModel>;
+    string SpanTargetParameterName = "",
+    /// <summary>
+    /// When <c>true</c>, this is an async streaming map
+    /// <c>IAsyncEnumerable&lt;D&gt; Map(IAsyncEnumerable&lt;S&gt; src)</c>: emitted as an
+    /// <c>async</c> iterator (<c>await foreach … yield return conv(item)</c>) that lazily transforms
+    /// the source sequence element-by-element. <see cref="ParameterTypeFullName"/> is the source
+    /// <c>IAsyncEnumerable&lt;S&gt;</c>, <see cref="ReturnTypeFullName"/> the destination
+    /// <c>IAsyncEnumerable&lt;D&gt;</c>, and the element conversion is <see cref="Members"/>[0].
+    /// </summary>
+    bool IsAsyncStreamMap = false) : IEquatable<MapMethodModel>;

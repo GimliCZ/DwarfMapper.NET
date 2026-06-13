@@ -180,6 +180,43 @@ internal static class MapperExtractor
                 continue;
             }
 
+            // ── Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src) ──
+            // Emitted as an async iterator (await foreach … yield return conv(item)) that lazily
+            // transforms the source sequence — preserves streaming/back-pressure, no buffering.
+            if (method.Parameters.Length == 1 && !method.ReturnsVoid
+                && TryGetAsyncEnumerableElement(method.Parameters[0].Type, out var asSrcElem)
+                && TryGetAsyncEnumerableElement(method.ReturnType, out var asDstElem))
+            {
+                var asComp = ctx.SemanticModel.Compilation;
+                var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
+                if (!TryResolveConversion(asComp, asSrcElem, asDstElem, null, allMethods, mapperMethods,
+                        enumStrategy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
+                        out var asConv, out var asNull, out var asNeedsCtx, asAutoNest, nestedRegistry,
+                        nullAsNull: false, isPreserve: false))
+                {
+                    continue; // element pair not mappable → diagnostic already added
+                }
+
+                var asElemMember = new MemberMap(
+                    TargetName: "", SourceName: "", ConverterMethod: asConv,
+                    NullHandling: asNull, ConverterNeedsDepthCtx: asNeedsCtx);
+
+                methods.Add(new MapMethodModel(
+                    method.Name,
+                    AccessibilityText(method.DeclaredAccessibility),
+                    method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Name,
+                    false,
+                    EquatableArray.From(new[] { asElemMember }),
+                    EquatableArray.From(System.Array.Empty<string>()),
+                    EquatableArray.From(System.Array.Empty<HookCall>()),
+                    false,
+                    "",
+                    IsAsyncStreamMap: true));
+                continue;
+            }
+
             if (method.ReturnsVoid || method.Parameters.Length != 1)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod, methodLocation, method.Name));
@@ -4771,6 +4808,27 @@ internal static class MapperExtractor
         {
             element = n.TypeArguments[0];
             isReadOnly = string.Equals(n.Name, "ReadOnlySpan", System.StringComparison.Ordinal);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Recognises <c>System.Collections.Generic.IAsyncEnumerable&lt;T&gt;</c>, returning the element type.
+    /// Used to detect async streaming map methods.
+    /// </summary>
+    private static bool TryGetAsyncEnumerableElement(ITypeSymbol t, out ITypeSymbol element)
+    {
+        element = null!;
+        if (t is INamedTypeSymbol n
+            && n.TypeArguments.Length == 1
+            && string.Equals(n.Name, "IAsyncEnumerable", System.StringComparison.Ordinal)
+            && n.ContainingNamespace is { Name: "Generic" } g
+            && g.ContainingNamespace is { Name: "Collections" } c
+            && c.ContainingNamespace is { Name: "System" } s
+            && s.ContainingNamespace.IsGlobalNamespace)
+        {
+            element = n.TypeArguments[0];
             return true;
         }
         return false;

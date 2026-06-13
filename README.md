@@ -231,6 +231,15 @@ public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<lon
 
 Each element runs through the full conversion pipeline (`dst[i] = convert(src[i])`). The destination must be a writable `Span<D>` (source may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws `ArgumentException` — never a silent truncation.
 
+**Async streaming.** Declare `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` to lazily transform an async sequence — the generator emits an `async` iterator (`await foreach … yield return convert(item)`) that streams element-by-element without buffering, preserving back-pressure:
+
+```csharp
+[DwarfMapper]
+public partial class M { public partial IAsyncEnumerable<Dto> Map(IAsyncEnumerable<Entity> src); }
+```
+
+Ideal for mapping a streamed data source (DB cursor, network stream) to DTOs without materializing the whole sequence.
+
 **Reference handling & cycles.** Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recursive types) are detected at generator time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead. The behaviour for shared references and cycles is controlled per mapper:
 
 ```csharp
@@ -363,9 +372,9 @@ README.md
 - **Update-into-existing**: `void Map(S src, T dest)` / `T Map(S src, T dest)` maps onto an existing instance (identity preserved); same completeness gate, conversions, hooks, `[MapProperty]`/`[MapIgnore]`
 - **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no allocation), with a defensive length guard (too-small destination throws, never silent truncation)
 - **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written baseline across flat / nested / collection / blit scenarios; builds in CI, run locally for numbers
+- **Async streaming**: `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` lazily transforms an async sequence element-by-element (emitted as an `async` iterator; streaming/back-pressure preserved)
 
 ### Planned
-- `async` mapping pipelines (streaming `IAsyncEnumerable<T>` — design pending)
 - Competitor benchmark comparisons (Mapperly / Mapster / AutoMapper)
 - NuGet publish
 
