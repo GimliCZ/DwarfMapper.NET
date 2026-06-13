@@ -74,10 +74,11 @@ internal static class CombinatorialSchema
         "IReadOnlyList",
         "HashSet",
         "ImmutableArray",
-        "DictStringKey",    // Dictionary<string, B>
-        "DictStringValue",  // Dictionary<B, string>  (only valid for value-types as key)
+        "DictStringKey",           // Dictionary<string, B>
+        "DictStringValue",         // Dictionary<B, string>  (only valid for value-types as key)
         "nested_object",
         "record_type",
+        "polymorphic_dispatch",    // [MapDerivedType] dispatch — Plan 22 coverage
     ];
 
     // Depth-2 shapes (heavier — tagged exhaustive tier, sampled)
@@ -156,6 +157,14 @@ internal static class CombinatorialSchema
 
         // Filter: DictStringValue requires a value-type or string key (to avoid duplicate key risk)
         if (shape == "DictStringValue" && !IsValidDictKey(basicType)) return null;
+
+        // polymorphic_dispatch: special source builder — self-contained, not a member type
+        if (shape == "polymorphic_dispatch")
+        {
+            var polySource = BuildPolymorphicDispatchSource(basicType, srcElem, dstElem, seed);
+            if (polySource is null) return null;
+            return new MatrixCell(basicType, shape, variant, "CmbPolyBase", "CmbPolyBaseDto", polySource, seed);
+        }
 
         // Build source code
         string? source = BuildSource(basicType, srcElem, dstElem, shape, seed);
@@ -237,24 +246,74 @@ internal static class CombinatorialSchema
         return sb.ToString();
     }
 
+    private static string? BuildPolymorphicDispatchSource(
+        string basicType, string srcElem, string dstElem, int seed)
+    {
+        // For polymorphic_dispatch, the basic type is the member type on the concrete class.
+        // We always use the same element type (srcElem==dstElem for Identity variant).
+        // The abstract base and concrete source share the element type as a plain member.
+        var sb = new StringBuilder();
+        sb.AppendLine("// CombinatorialSchema auto-generated — do not edit");
+        sb.AppendLine("// seed=" + seed.ToString(CultureInfo.InvariantCulture));
+        sb.AppendLine("// shape=polymorphic_dispatch");
+        sb.AppendLine("using DwarfMapper;");
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine("using System.Collections.Immutable;");
+        sb.AppendLine();
+        sb.AppendLine("namespace Cmb;");
+        sb.AppendLine();
+        sb.AppendLine("public enum Cmb_IntEnum  { A = 1, B = 2, C = 3 }");
+        sb.AppendLine("public enum Cmb_LongEnum : long { A = 1, B = 2, C = 3 }");
+        sb.AppendLine();
+
+        // Abstract base source/dto
+        sb.AppendLine("public abstract class CmbPolyBase { public string Tag { get; set; } = \"\"; }");
+        sb.AppendLine("public class CmbPolyConcrete : CmbPolyBase { public " + srcElem + " Val { get; set; }" + DefaultInit(srcElem) + " }");
+        sb.AppendLine();
+        sb.AppendLine("public abstract class CmbPolyBaseDto { public string Tag { get; set; } = \"\"; }");
+        sb.AppendLine("public class CmbPolyConcreteDto : CmbPolyBaseDto { public " + dstElem + " Val { get; set; }" + DefaultInit(dstElem) + " }");
+        sb.AppendLine();
+
+        // Src/Dst wrappers (for cell compatibility: CmbSrc/CmbDst still need to exist)
+        sb.AppendLine("public class CmbSrc { public string Id { get; set; } = \"\"; }");
+        sb.AppendLine("public class CmbDst { public string Id { get; set; } = \"\"; }");
+        sb.AppendLine();
+
+        sb.AppendLine("[global::DwarfMapper.DwarfMapper]");
+        sb.AppendLine("public partial class CmbMapper");
+        sb.AppendLine("{");
+        sb.AppendLine("    // Plain map for CmbSrc→CmbDst (satisfies cell contract)");
+        sb.AppendLine("    public partial CmbDst Map(CmbSrc s);");
+        sb.AppendLine("    // Polymorphic dispatch: abstract base → base DTO");
+        sb.AppendLine("    [global::DwarfMapper.MapDerivedType<CmbPolyConcrete, CmbPolyConcreteDto>]");
+        sb.AppendLine("    public partial CmbPolyBaseDto MapPoly(CmbPolyBase b);");
+        sb.AppendLine("    // Explicit overload for concrete type");
+        sb.AppendLine("    public partial CmbPolyConcreteDto Map(CmbPolyConcrete c);");
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
     // ── Type helpers ─────────────────────────────────────────────────────────────
 
     private static string ShapeMemberType(string elem, string shape, bool src) => shape switch
     {
-        "raw"             => elem,
-        "nullable"        => elem + "?",
-        "array"           => elem + "[]",
-        "List"            => $"global::System.Collections.Generic.List<{elem}>",
-        "IReadOnlyList"   => $"global::System.Collections.Generic.IReadOnlyList<{elem}>",
-        "HashSet"         => $"global::System.Collections.Generic.HashSet<{elem}>",
-        "ImmutableArray"  => $"global::System.Collections.Immutable.ImmutableArray<{elem}>",
-        "DictStringKey"   => $"global::System.Collections.Generic.Dictionary<string, {elem}>",
-        "DictStringValue" => $"global::System.Collections.Generic.Dictionary<{elem}, string>",
-        "nested_object"   => $"CmbNested_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
-        "record_type"     => $"CmbRecord_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
-        "ListOfList"      => $"global::System.Collections.Generic.List<global::System.Collections.Generic.List<{elem}>>",
-        "ListOfRecord"    => $"global::System.Collections.Generic.List<CmbRecEl_{EscapeType(elem)}_{(src ? "Src" : "Dst")}>",
-        "DictStringListValue" => $"global::System.Collections.Generic.Dictionary<string, global::System.Collections.Generic.List<{elem}>>",
+        "raw"                   => elem,
+        "nullable"              => elem + "?",
+        "array"                 => elem + "[]",
+        "List"                  => $"global::System.Collections.Generic.List<{elem}>",
+        "IReadOnlyList"         => $"global::System.Collections.Generic.IReadOnlyList<{elem}>",
+        "HashSet"               => $"global::System.Collections.Generic.HashSet<{elem}>",
+        "ImmutableArray"        => $"global::System.Collections.Immutable.ImmutableArray<{elem}>",
+        "DictStringKey"         => $"global::System.Collections.Generic.Dictionary<string, {elem}>",
+        "DictStringValue"       => $"global::System.Collections.Generic.Dictionary<{elem}, string>",
+        "nested_object"         => $"CmbNested_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
+        "record_type"           => $"CmbRecord_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
+        "ListOfList"            => $"global::System.Collections.Generic.List<global::System.Collections.Generic.List<{elem}>>",
+        "ListOfRecord"          => $"global::System.Collections.Generic.List<CmbRecEl_{EscapeType(elem)}_{(src ? "Src" : "Dst")}>",
+        "DictStringListValue"   => $"global::System.Collections.Generic.Dictionary<string, global::System.Collections.Generic.List<{elem}>>",
+        "polymorphic_dispatch"  => src ? "CmbPolyBase" : "CmbPolyBaseDto",  // handled by dedicated builder
         _ => null!
     };
 
