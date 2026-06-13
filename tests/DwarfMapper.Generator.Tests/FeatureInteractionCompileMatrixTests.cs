@@ -374,6 +374,87 @@ public class FeatureInteractionCompileMatrixTests
             public class Dst { public ImmutableArray<int> Vals { get; set; } = ImmutableArray<int>.Empty; }
             [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
             """);
+
+        // ── 10. MapIgnore ─────────────────────────────────────────────────────
+
+        yield return new FimMatrixCase("mapignore_member", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public int X { get; set; } public int Secret { get; set; } }
+            public class Dst { public int X { get; set; } }
+            [DwarfMapper] public partial class M {
+                [MapIgnore("Secret")]
+                public partial Dst Map(Src s);
+            }
+            """);
+
+        // ── 11. MapProperty rename ────────────────────────────────────────────
+
+        yield return new FimMatrixCase("mapproperty_rename", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public int OldName { get; set; } }
+            public class Dst { public int NewName { get; set; } }
+            [DwarfMapper] public partial class M {
+                [MapProperty("OldName", "NewName")]
+                public partial Dst Map(Src s);
+            }
+            """);
+
+        // ── 12. BeforeMap hook ────────────────────────────────────────────────
+
+        yield return new FimMatrixCase("beforemap_hook", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public int X { get; set; } }
+            public class Dst { public int X { get; set; } }
+            [DwarfMapper] public partial class M {
+                public partial Dst Map(Src s);
+                [BeforeMap] private static void Validate(Src s) { }
+            }
+            """);
+
+        // ── 13. AfterMap hook ─────────────────────────────────────────────────
+
+        yield return new FimMatrixCase("aftermap_hook", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public int X { get; set; } }
+            public class Dst { public int X { get; set; } }
+            [DwarfMapper] public partial class M {
+                public partial Dst Map(Src s);
+                [AfterMap] private static void Postprocess(Src s, Dst d) { }
+            }
+            """);
+
+        // ── 14. Reinterpret blit ──────────────────────────────────────────────
+
+        yield return new FimMatrixCase("reinterpret_blit", """
+            using DwarfMapper;
+            namespace Fim;
+            public struct Vec3Src { public float X; public float Y; public float Z; }
+            public struct Vec3Dst { public float X; public float Y; public float Z; }
+            public class Src { public Vec3Src[] Verts { get; set; } = System.Array.Empty<Vec3Src>(); }
+            public class Dst { public Vec3Dst[] Verts { get; set; } = System.Array.Empty<Vec3Dst>(); }
+            [DwarfMapper] public partial class M {
+                [Reinterpret("Verts")]
+                public partial Dst Map(Src s);
+            }
+            """);
+
+        // ── 15. Flatten (member-level flatten, distinct from FlattenGraph) ────
+
+        yield return new FimMatrixCase("flatten_member", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Address { public string Street { get; set; } = ""; public string City { get; set; } = ""; }
+            public class Person  { public string Name { get; set; } = ""; public Address Home { get; set; } = new(); }
+            public class PersonDto { public string Name { get; set; } = ""; public string Street { get; set; } = ""; public string City { get; set; } = ""; }
+            [DwarfMapper] public partial class M {
+                [Flatten("Home")]
+                public partial PersonDto Map(Person p);
+            }
+            """);
     }
 
     // ── Theory data ──────────────────────────────────────────────────────────
