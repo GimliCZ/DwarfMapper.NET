@@ -261,6 +261,11 @@ internal static class MapEmitter
         var hasCtorArgs = method.ConstructorArguments.Count > 0;
         var hasInitMembers = method.Members.Count > 0;
         var hasAfter = method.AfterHooks.Count > 0;
+        // Unflatten members (dotted target like "Address.City") are assigned AFTER construction (the
+        // intermediate is instantiated first), so they force the local-variable form.
+        var hasUnflatten = false;
+        foreach (var m in method.Members) { if (m.UnflattenIntermediateFqn is not null) { hasUnflatten = true; break; } }
+        var useLocalForm = hasAfter || hasUnflatten;
 
         // ── Plan 19 C2: Register-before-populate (Preserve mode, recursion-capable) ──
         // Both synthesized recursion-capable methods AND public methods under Preserve mode
@@ -296,7 +301,7 @@ internal static class MapEmitter
         }
 
         // Begin construction expression: "var __dwarf_target = new T(...)" or "return new T(...)".
-        sb.Append(indent).Append("    ").Append(hasAfter ? "var __dwarf_target = new " : "return new ")
+        sb.Append(indent).Append("    ").Append(useLocalForm ? "var __dwarf_target = new " : "return new ")
           .Append(method.ReturnTypeFullName);
 
         if (hasCtorArgs)
@@ -321,6 +326,7 @@ internal static class MapEmitter
                 sb.Append(indent).AppendLine("    {");
                 foreach (var member in method.Members)
                 {
+                    if (member.UnflattenIntermediateFqn is not null) continue; // assigned post-construction
                     sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
                     AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
@@ -339,6 +345,7 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("    {");
             foreach (var member in method.Members)
             {
+                if (member.UnflattenIntermediateFqn is not null) continue; // assigned post-construction
                 sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
                 AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                 sb.AppendLine(",");
@@ -346,7 +353,28 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("    };");
         }
 
-        if (hasAfter)
+        // Unflatten assignments: instantiate each intermediate root once, then assign the leaf path.
+        if (hasUnflatten)
+        {
+            var __emittedRoots = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+            foreach (var member in method.Members)
+            {
+                if (member.UnflattenIntermediateFqn is null) continue;
+                var dot = member.TargetName.IndexOf('.');
+                var root = member.TargetName.Substring(0, dot);
+                if (__emittedRoots.Add(root))
+                {
+                    sb.Append(indent).Append("    if (__dwarf_target.").Append(root)
+                      .Append(" is null) __dwarf_target.").Append(root)
+                      .Append(" = new ").Append(member.UnflattenIntermediateFqn).Append("();").AppendLine();
+                }
+                sb.Append(indent).Append("    __dwarf_target.").Append(member.TargetName).Append(" = ");
+                AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
+                sb.AppendLine(";");
+            }
+        }
+
+        if (useLocalForm)
         {
             foreach (var after in method.AfterHooks)
             {

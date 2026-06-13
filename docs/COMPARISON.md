@@ -50,6 +50,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Source-member coverage (unused-source check)** | ✅ `RequiredMapping=Both` → `DWARF039` (opt-in); `[MapIgnoreSource]` | ✅ `RMG020` | ❌ | ✅ (validates) |
 | **Constant / computed value (`[MapValue]`)** | ✅ `[MapValue]` const + `Use=` (type-checked, `DWARF040–042`) | ✅ | ✅ | ✅ |
 | **Deep source paths (`[MapProperty("A.B.C", …)]`)** | ✅ dotted path (`DWARF043` unknown, `DWARF044` nullable-hop) | ✅ | ✅ | ✅ (flatten) |
+| **Unflattening (dotted target `→ Address.City`)** | ✅ single-level (`DWARF045/046`) | ~ | ✅ | ✅ (`ReverseMap`) |
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` suggestion, or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 

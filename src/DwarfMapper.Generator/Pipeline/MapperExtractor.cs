@@ -1716,6 +1716,9 @@ internal static class MapperExtractor
 
         var result = new List<MemberMap>();
         var handledTargets = new HashSet<string>(System.StringComparer.Ordinal);
+        // Intermediate roots already opened by an unflatten leaf — additional leaves into the same root
+        // are allowed (City + Street → Address); only a DIRECT mapping of the root conflicts (DWARF046).
+        var unflattenRoots = new HashSet<string>(System.StringComparer.Ordinal);
 
         var comparerForLeaves = comparer; // same comparer used for member matching
         var flattenInfos = new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)>();
@@ -1755,6 +1758,19 @@ internal static class MapperExtractor
             {
                 // More than one [MapProperty] for the same destination.
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DuplicateMapProperty, location, tgtName));
+                continue;
+            }
+
+            // Unflatten: a dotted TARGET path (e.g. "Address.City") assigns the leaf through a synthesized
+            // intermediate (single level). The intermediate must be a writable class with a public
+            // parameterless constructor; it is instantiated post-construction by the emitter.
+            if (tgtName.IndexOf('.') >= 0)
+            {
+                ResolveUnflattenTarget(
+                    sourceType, targetType, srcName, tgtName, useMethod, compilation, location, diagnostics,
+                    handledTargets, unflattenRoots, writableByName, allMethods, autoCandidates, enumStrategy, synthesized,
+                    nullStrategy, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull, implicitConversions,
+                    result);
                 continue;
             }
 
@@ -3363,6 +3379,101 @@ internal static class MapperExtractor
         }
         leafType = current;
         return true;
+    }
+
+    /// <summary>
+    /// Resolves an unflatten target path (single level, e.g. <c>"Address.City"</c>): the intermediate root
+    /// must be a writable destination member whose type is a class with a public parameterless constructor;
+    /// the leaf must be a writable member of that type. On success appends a <see cref="MemberMap"/> whose
+    /// <see cref="MemberMap.UnflattenIntermediateFqn"/> drives post-construction instantiation, and marks
+    /// the root handled (suppressing DWARF001 and blocking auto-match). Emits DWARF045 (invalid path /
+    /// non-constructible intermediate / deeper-than-one-level) or DWARF046 (root already mapped directly).
+    /// </summary>
+    private static void ResolveUnflattenTarget(
+        ITypeSymbol sourceType, INamedTypeSymbol targetType, string srcName, string tgtName, string? useMethod,
+        Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
+        HashSet<string> handledTargets, HashSet<string> unflattenRoots, Dictionary<string, ITypeSymbol> writableByName,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+        EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized, NullStrategy nullStrategy,
+        bool autoNest, NestedMappingRegistry? nestedRegistry, bool nullAsNull, bool isPreserve, bool isSetNull,
+        bool implicitConversions, List<MemberMap> result)
+    {
+        // Resolve the source (simple or dotted) to its leaf type.
+        ITypeSymbol? uSrc;
+        if (srcName.IndexOf('.') >= 0)
+        {
+            if (!TryResolveSourcePath(sourceType, srcName, out uSrc, out _, out var uBad))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathSegmentNotFound, location,
+                    $"[MapProperty] source path '{srcName}' has no member '{uBad}'"));
+                return;
+            }
+        }
+        else
+        {
+            uSrc = ReadableMembers(sourceType)
+                .Where(m => System.StringComparer.Ordinal.Equals(m.Name, srcName))
+                .Select(m => (ITypeSymbol?)m.Type)
+                .FirstOrDefault();
+            if (uSrc is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
+                return;
+            }
+        }
+
+        var segs = tgtName.Split('.');
+        if (segs.Length != 2)
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid, location,
+                $"unflatten target '{tgtName}' must have exactly one intermediate (e.g. \"Address.City\"); deeper paths are not yet supported"));
+            return;
+        }
+        var rootName = segs[0];
+        var leafName = segs[1];
+
+        // Conflict only when the root is mapped DIRECTLY; a prior unflatten leaf into the same root is fine.
+        if (handledTargets.Contains(rootName) && !unflattenRoots.Contains(rootName))
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenConflict, location,
+                $"unflatten target '{tgtName}' conflicts with a direct mapping of intermediate '{rootName}'"));
+            return;
+        }
+        if (!writableByName.TryGetValue(rootName, out var rootType))
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid, location,
+                $"unflatten intermediate '{rootName}' is not a writable destination member"));
+            return;
+        }
+        if (rootType is not INamedTypeSymbol rootNamed || !rootType.IsReferenceType || rootType.TypeKind != TypeKind.Class
+            || !rootNamed.InstanceConstructors.Any(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length == 0))
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid, location,
+                $"unflatten intermediate '{rootName}' (type '{rootType.ToDisplayString()}') must be a class with a public parameterless constructor"));
+            return;
+        }
+        var leafType = WritableMembers(rootType)
+            .Where(m => System.StringComparer.Ordinal.Equals(m.Name, leafName))
+            .Select(m => (ITypeSymbol?)m.Type)
+            .FirstOrDefault();
+        if (leafType is null)
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid, location,
+                $"unflatten intermediate '{rootName}' (type '{rootType.ToDisplayString()}') has no writable member '{leafName}'"));
+            return;
+        }
+
+        if (TryResolveConversion(compilation, uSrc!, leafType!, useMethod, allMethods, autoCandidates, enumStrategy,
+                synthesized, nullStrategy, location, tgtName, diagnostics, out var uConv, out var uNullH, out var uNeedsCtx,
+                autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
+        {
+            var rootFqn = rootType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            result.Add(new MemberMap(tgtName, srcName, uConv, uNullH, ConverterNeedsDepthCtx: uNeedsCtx,
+                SourceIsNullableRef: SourceMayBeNullRef(uSrc!), UnflattenIntermediateFqn: rootFqn));
+            handledTargets.Add(rootName);
+            unflattenRoots.Add(rootName);
+        }
     }
 
     private static List<string> ReadFlattenRoots(ISymbol method)

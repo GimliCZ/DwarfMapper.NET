@@ -440,6 +440,20 @@ public class FeatureInteractionCompileMatrixTests
             }
             """);
 
+        // ── 11c. MapProperty unflatten (dotted target) ───────────────────────
+        yield return new FimMatrixCase("mapproperty_unflatten", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Addr { public string City { get; set; } = ""; public string Zip { get; set; } = ""; }
+            public class Src { public string City { get; set; } = ""; public string Zip { get; set; } = ""; }
+            public class Dst { public Addr Address { get; set; } = new(); }
+            [DwarfMapper] public partial class M {
+                [MapProperty(nameof(Src.City), "Address.City")]
+                [MapProperty(nameof(Src.Zip), "Address.Zip")]
+                public partial Dst Map(Src s);
+            }
+            """);
+
         // ── 12. BeforeMap hook ────────────────────────────────────────────────
 
         yield return new FimMatrixCase("beforemap_hook", """

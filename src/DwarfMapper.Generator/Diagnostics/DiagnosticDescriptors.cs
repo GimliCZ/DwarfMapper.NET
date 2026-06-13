@@ -271,4 +271,16 @@ public static class DiagnosticDescriptors
         "[MapProperty] source path traverses a nullable member",
         "{0}",
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor UnflattenInvalid = new(
+        "DWARF045",
+        "Invalid [MapProperty] unflatten target path",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor UnflattenConflict = new(
+        "DWARF046",
+        "Conflicting [MapProperty] unflatten target",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

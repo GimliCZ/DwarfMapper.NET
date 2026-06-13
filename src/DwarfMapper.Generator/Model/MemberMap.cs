@@ -31,4 +31,12 @@ public sealed record MemberMap(
     /// literals (e.g. <c>"api-v2"</c>) and computed providers (e.g. <c>Now()</c>). <see cref="SourceName"/>
     /// is empty in this case.
     /// </summary>
-    string? ValueExpression = null) : System.IEquatable<MemberMap>;
+    string? ValueExpression = null,
+    /// <summary>
+    /// When non-null, this member is an <b>unflatten</b> assignment whose <see cref="TargetName"/> is a
+    /// single-level dotted path (e.g. <c>"Address.City"</c>); this is the fully-qualified type of the
+    /// intermediate root member (<c>Address</c>), which the emitter instantiates if null
+    /// (<c>if (t.Address is null) t.Address = new …();</c>) before assigning the leaf. Single intermediate
+    /// only.
+    /// </summary>
+    string? UnflattenIntermediateFqn = null) : System.IEquatable<MemberMap>;
