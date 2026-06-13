@@ -18,9 +18,5 @@
     <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
     <PackageVersion Include="Mapster" Version="10.0.8" />
     <PackageVersion Include="AutoMapper" Version="14.0.0" />
-    <!-- AgileMapper: MIT, runtime expression-trees (not AOT-safe), netstandard → adds a second
-         runtime-tier data point. (TinyMapper / ExpressMapper evaluated but dropped: net10-incompatible
-         TFMs / abandoned.) -->
-    <PackageVersion Include="AgileObjects.AgileMapper" Version="1.8.1" />
   </ItemGroup>
 </Project>

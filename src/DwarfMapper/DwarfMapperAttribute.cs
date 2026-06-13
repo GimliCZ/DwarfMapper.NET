@@ -85,6 +85,23 @@ public sealed class DwarfMapperAttribute : Attribute
     public OnCycleStrategy OnCycle { get; set; } = OnCycleStrategy.Throw;
 
     /// <summary>
+    /// Controls whether non-lossless implicit type conversions between differently-typed members are
+    /// allowed automatically. Defaults to <c>true</c> (permissive — today's behavior).
+    /// <para>
+    /// When <c>true</c>: lossless same-category widening (<c>int→long</c>, <c>float→double</c>) is silent;
+    /// narrowing (<c>long→int</c>), cross-category (<c>int→double</c>, <c>int→string</c>) and parse
+    /// (<c>string→int</c>) conversions are still applied but surface a <c>DWARF038</c> suggestion (Info)
+    /// so they are never silent.
+    /// </para>
+    /// <para>
+    /// When <c>false</c> (strict, Mapperly-style): those same non-lossless conversions become a
+    /// <c>DWARF038</c> <b>build error</b> — you must opt in per member with
+    /// <c>[MapProperty(..., Use = nameof(Method))]</c>. Lossless widening and identity still map freely.
+    /// </para>
+    /// </summary>
+    public bool ImplicitConversions { get; set; } = true;
+
+    /// <summary>
     /// Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64).
     /// When a mapping reaches this depth, a <see cref="DwarfMappingDepthException"/> is thrown
     /// instead of a silent (uncatchable) <see cref="System.StackOverflowException"/>.

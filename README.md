@@ -161,6 +161,8 @@ public partial class OrderMapper
 
 All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/instance invocations — no reflection, no `Activator`, trim/NativeAOT-safe.
 
+**Conversion policy (`ImplicitConversions`, no silent surprises).** Lossless same-category widening (`int→long`, `float→double`) and identity always map silently. Every **non-lossless** auto-conversion — narrowing (`long→int`), parse/format (`string↔int`), and cross-category numeric (`int→double`, `int→float`) — instead surfaces a **`DWARF038` suggestion (Info)** so it is visible in the IDE, never silent, while still being applied. Set `[DwarfMapper(ImplicitConversions = false)]` to flip those suggestions into **build errors** (Mapperly-style strict) — then each such conversion must be made explicit with `[MapProperty(Use = nameof(...))]`. Default is `true` (permissive), so this is opt-in and non-breaking.
+
 **Enums.** Enum members map automatically:
 
 - **enum ↔ enum** by name (default) — a source member with no same-named destination member is `DWARF015`. Opt into value-based casting with `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]`.

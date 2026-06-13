@@ -13,10 +13,18 @@ public sealed record DiagnosticInfo(
     // causing the generator to re-run unnecessarily or produce stale output.
     DiagnosticDescriptor Descriptor,
     LocationInfo? Location,
-    string MessageArg)
+    string MessageArg,
+    // Optional per-instance severity override. Used by DWARF038 (implicit-conversion suggestion):
+    // Info by default, escalated to Error when [DwarfMapper(ImplicitConversions = false)] is set.
+    // Null → use the descriptor's DefaultSeverity. Part of value equality (so the incremental cache
+    // distinguishes a suggestion from an error for the same descriptor).
+    DiagnosticSeverity? SeverityOverride = null)
 {
     public Diagnostic ToDiagnostic() =>
-        Diagnostic.Create(Descriptor, Location?.ToLocation() ?? Microsoft.CodeAnalysis.Location.None, MessageArg);
+        SeverityOverride is { } sev
+            ? Diagnostic.Create(Descriptor, Location?.ToLocation() ?? Microsoft.CodeAnalysis.Location.None,
+                sev, additionalLocations: null, properties: null, MessageArg)
+            : Diagnostic.Create(Descriptor, Location?.ToLocation() ?? Microsoft.CodeAnalysis.Location.None, MessageArg);
 
-    public bool IsError => Descriptor.DefaultSeverity == DiagnosticSeverity.Error;
+    public bool IsError => (SeverityOverride ?? Descriptor.DefaultSeverity) == DiagnosticSeverity.Error;
 }

@@ -22,7 +22,6 @@
     <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Mapster" />
     <PackageReference Include="AutoMapper" />
-    <PackageReference Include="AgileObjects.AgileMapper" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />

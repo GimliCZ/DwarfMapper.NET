@@ -49,7 +49,6 @@ public partial class MapperlyM
     public partial WidenDst MapWiden(WidenSrc s);
 }
 
-// ── Benchmarks: DwarfMapper vs hand-written vs Mapperly vs Mapster vs AutoMapper 14 vs AgileMapper ─
 [MemoryDiagnoser]
 [GroupBenchmarksBy(BenchmarkDotNet.Configs.BenchmarkLogicalGroupRule.ByCategory)]
 [CategoriesColumn]
@@ -58,7 +57,6 @@ public class MapperBenchmarks
     private readonly DwarfM _dwarf = new();
     private readonly MapperlyM _mapperly = new();
     private IMapper _auto = null!;
-    private readonly AgileObjects.AgileMapper.IMapper _agile = AgileObjects.AgileMapper.Mapper.CreateNew();
 
     private FlatSrc _flat = null!;
     private NestedSrc _nested = null!;
@@ -97,7 +95,6 @@ public class MapperBenchmarks
             c.CreateMap<WidenSrc, WidenDst>();
         });
         _auto = cfg.CreateMapper();
-        // Mapster + AgileMapper need no setup (zero-config).
     }
 
     // ── Flat ──────────────────────────────────────────────────────────────────
@@ -106,33 +103,28 @@ public class MapperBenchmarks
     [Benchmark, BenchmarkCategory("Flat")] public FlatDst Flat_Mapperly() => _mapperly.MapFlat(_flat);
     [Benchmark, BenchmarkCategory("Flat")] public FlatDst Flat_Mapster() => _flat.Adapt<FlatDst>();
     [Benchmark, BenchmarkCategory("Flat")] public FlatDst Flat_AutoMapper() => _auto.Map<FlatDst>(_flat);
-    [Benchmark, BenchmarkCategory("Flat")] public FlatDst Flat_AgileMapper() => _agile.Map(_flat).ToANew<FlatDst>();
 
     // ── Nested ────────────────────────────────────────────────────────────────
     [Benchmark, BenchmarkCategory("Nested")] public NestedDst Nested_Dwarf() => _dwarf.MapNested(_nested);
     [Benchmark, BenchmarkCategory("Nested")] public NestedDst Nested_Mapperly() => _mapperly.MapNested(_nested);
     [Benchmark, BenchmarkCategory("Nested")] public NestedDst Nested_Mapster() => _nested.Adapt<NestedDst>();
     [Benchmark, BenchmarkCategory("Nested")] public NestedDst Nested_AutoMapper() => _auto.Map<NestedDst>(_nested);
-    [Benchmark, BenchmarkCategory("Nested")] public NestedDst Nested_AgileMapper() => _agile.Map(_nested).ToANew<NestedDst>();
 
     // ── Collection (N objects) ──────────────────────────────────────────────────
     [Benchmark, BenchmarkCategory("Array")] public ArrayDst Array_Dwarf() => _dwarf.MapArray(_array);
     [Benchmark, BenchmarkCategory("Array")] public ArrayDst Array_Mapperly() => _mapperly.MapArray(_array);
     [Benchmark, BenchmarkCategory("Array")] public ArrayDst Array_Mapster() => _array.Adapt<ArrayDst>();
     [Benchmark, BenchmarkCategory("Array")] public ArrayDst Array_AutoMapper() => _auto.Map<ArrayDst>(_array);
-    [Benchmark, BenchmarkCategory("Array")] public ArrayDst Array_AgileMapper() => _agile.Map(_array).ToANew<ArrayDst>();
 
     // ── Blittable struct array (DwarfMapper's SIMD reinterpret vs element copy) ──
     [Benchmark, BenchmarkCategory("Blit")] public BlitDst Blit_Dwarf() => _dwarf.MapBlit(_blit);
     [Benchmark, BenchmarkCategory("Blit")] public BlitDst Blit_Mapperly() => _mapperly.MapBlit(_blit);
     [Benchmark, BenchmarkCategory("Blit")] public BlitDst Blit_Mapster() => _blit.Adapt<BlitDst>();
     [Benchmark, BenchmarkCategory("Blit")] public BlitDst Blit_AutoMapper() => _auto.Map<BlitDst>(_blit);
-    [Benchmark, BenchmarkCategory("Blit")] public BlitDst Blit_AgileMapper() => _agile.Map(_blit).ToANew<BlitDst>();
 
     // ── Primitive widening array (DwarfMapper's Vector.Widen vs element loop) ────
     [Benchmark, BenchmarkCategory("Widen")] public WidenDst Widen_Dwarf() => _dwarf.MapWiden(_widen);
     [Benchmark, BenchmarkCategory("Widen")] public WidenDst Widen_Mapperly() => _mapperly.MapWiden(_widen);
     [Benchmark, BenchmarkCategory("Widen")] public WidenDst Widen_Mapster() => _widen.Adapt<WidenDst>();
     [Benchmark, BenchmarkCategory("Widen")] public WidenDst Widen_AutoMapper() => _auto.Map<WidenDst>(_widen);
-    [Benchmark, BenchmarkCategory("Widen")] public WidenDst Widen_AgileMapper() => _agile.Map(_widen).ToANew<WidenDst>();
 }

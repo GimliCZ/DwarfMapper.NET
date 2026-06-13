@@ -50,6 +50,7 @@ internal static class MapperExtractor
         var referenceHandling = ReadReferenceHandling(ctx.Attributes);
         var isPreserveMode = referenceHandling == 1; // 1 = ReferenceHandlingStrategy.Preserve
         var onCycle = ReadOnCycle(ctx.Attributes);   // 0 = Throw, 1 = SetNull
+        var implicitConversions = ReadImplicitConversions(ctx.Attributes); // default true (permissive)
         // SetNull is only meaningful in None mode; under Preserve, cycles are reconstructed and
         // OnCycle is ignored → DWARF037 (loud, not a silent no-op).
         var isSetNullMode = onCycle == 1 && !isPreserveMode;
@@ -385,7 +386,7 @@ internal static class MapperExtractor
                         out var armConverter, out _, out var armNeedsCtx,
                         methodAutoNest, nestedRegistry,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
-                        allowInterfaceSrc: true, isSetNull: isSetNullMode);
+                        allowInterfaceSrc: true, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
 
                     if (!resolved || armConverter is null)
                     {
@@ -492,7 +493,7 @@ internal static class MapperExtractor
                     out var tlConverter, out _, out var tlNeedsCtx,
                     methodAutoNest, nestedRegistry,
                     nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
-                    isSetNull: isSetNullMode);
+                    isSetNull: isSetNullMode, implicitConversions: implicitConversions);
 
                 if (!tlResolved || tlConverter is null)
                 {
@@ -592,7 +593,7 @@ internal static class MapperExtractor
                 if (!ResolveConstructorArguments(ctor, sourceType, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                     enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs, out consumedParams,
-                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode))
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions))
                 {
                     // At least one parameter was unmappable → DWARF024 already reported; skip emit.
                     continue;
@@ -608,7 +609,7 @@ internal static class MapperExtractor
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -713,7 +714,7 @@ internal static class MapperExtractor
                 if (!ResolveConstructorArguments(genCtor, genSrc, genComp, genLoc, diagnostics,
                         caseInsensitive, emptyExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
                         nullStrategy, classAutoNest, nestedRegistry, out genCtorArgs, out genConsumed,
-                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode))
+                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions))
                     continue;
                 genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgt, genConsumed);
             }
@@ -723,7 +724,7 @@ internal static class MapperExtractor
                 caseInsensitive, emptyExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
                 nullStrategy, System.Array.Empty<string>(), new List<string>(),
                 genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -819,7 +820,7 @@ internal static class MapperExtractor
                     nestedLocation, diagnostics, caseInsensitive, System.Array.Empty<(string, string, string?)>(),
                     allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                     pairAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
-                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode))
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions))
                 {
                     nestedRegistry.ClearCurrentPair();
                     continue;
@@ -838,7 +839,7 @@ internal static class MapperExtractor
                 new List<string>(), new List<string>(), // no flatten/reinterpret
                 nestedConsumed, nestedRequiredMustInit,
                 pairAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
 
             nestedRegistry.ClearCurrentPair();
 
@@ -1664,7 +1665,8 @@ internal static class MapperExtractor
         NestedMappingRegistry? nestedRegistry = null,
         bool nullAsNull = false,
         bool isPreserve = false,
-        bool isSetNull = false)
+        bool isSetNull = false,
+        bool implicitConversions = true)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -1756,7 +1758,7 @@ internal static class MapperExtractor
                 continue;
             }
 
-            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
                 result.Add(new MemberMap(tgtName, srcName, conv, nullH, ConverterNeedsDepthCtx: convNeedsCtx));
             }
@@ -1805,7 +1807,7 @@ internal static class MapperExtractor
                 if (flatMatches.Count == 1)
                 {
                     var fm = flatMatches[0];
-                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull))
+                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
                     {
                         result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, ConverterNeedsDepthCtx: fneedsCtx));
                     }
@@ -1837,7 +1839,7 @@ internal static class MapperExtractor
                 }
                 continue;
             }
-            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull))
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
                 result.Add(new MemberMap(target.Name, source.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx));
             }
@@ -1906,7 +1908,8 @@ internal static class MapperExtractor
         out HashSet<string> consumedParams,
         bool nullAsNull = false,
         bool isPreserve = false,
-        bool isSetNull = false)
+        bool isSetNull = false,
+        bool implicitConversions = true)
     {
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
 
@@ -1945,7 +1948,7 @@ internal static class MapperExtractor
                 if (TryResolveConversion(compilation, srcType, param.Type, explicitInfo.Use,
                     allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
                     location, param.Name, diagnostics, out var eConv, out var eNull,
-                    out var eNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull))
+                    out var eNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
                 {
                     args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull, ConverterNeedsDepthCtx: eNeedsCtx));
                     consumedParams.Add(param.Name);
@@ -1992,7 +1995,7 @@ internal static class MapperExtractor
             if (TryResolveConversion(compilation, srcMember.Type, param.Type, null,
                 allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
                 location, param.Name, diagnostics, out var conv, out var nullH,
-                out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull))
+                out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
                 args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx));
                 consumedParams.Add(param.Name);
@@ -2220,7 +2223,8 @@ internal static class MapperExtractor
         bool nullAsNull = false,
         bool isPreserve = false,
         bool allowInterfaceSrc = false,
-        bool isSetNull = false)
+        bool isSetNull = false,
+        bool implicitConversions = true)
     {
         converterMethod = null;
         nullHandling = Model.NullHandling.None;
@@ -2269,9 +2273,9 @@ internal static class MapperExtractor
             // A1: propagate nullAsNull to nested key/value converters so nullable elements
             // (e.g. the value type List<int>? in Dictionary<string, List<int>?>) generate
             // helpers that preserve null instead of silently mapping to empty.
-            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, out var keyNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull))
+            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, out var keyNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
                 return false;
-            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, out var valNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull))
+            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, out var valNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
                 return false;
             // Preserve OR SetNull: if the key/value converter is an auto-nested object mapper, force it RC
             // so it carries (ctx, depth) and the dict helper threads the shared context into it — this is
@@ -2357,7 +2361,7 @@ internal static class MapperExtractor
             // A1: propagate nullAsNull to the element converter so nullable elements
             // (e.g. element type List<int>? inside List<List<int>?>) generate helpers
             // that preserve null instead of silently mapping to empty.
-            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, out var elemNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull))
+            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, out var elemNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
                 return false; // element diagnostic already reported by the recursive call
 
             // Preserve OR SetNull: if the element converter is an auto-nested object mapper, force it
@@ -2410,6 +2414,11 @@ internal static class MapperExtractor
 
         if (HasImplicitConversion(compilation, srcType, tgtType))
         {
+            // Cross-category numeric (integer ↔ floating/decimal, e.g. int→double, int→float) is implicit
+            // in C# but crosses kinds (and int→float / long→double silently lose precision). Same-category
+            // widening (int→long, float→double) is NOT flagged. DWARF038: suggestion / strict-mode error.
+            if (IsCrossCategoryNumeric(srcType, tgtType))
+                EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "cross-category numeric", implicitConversions);
             return true; // direct assignment
         }
 
@@ -2542,6 +2551,11 @@ internal static class MapperExtractor
         if (numericMethod is not null)
         {
             converterMethod = numericMethod;
+            // DWARF038: a non-implicit numeric conversion (narrowing / sign-change, via CreateChecked) is
+            // a non-lossless basic-type conversion. Surface it as a suggestion (permissive) or a build
+            // error (ImplicitConversions = false). Lossless widening uses the implicit/direct path above
+            // and is never flagged.
+            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "numeric (narrowing/sign-change)", implicitConversions);
             return true;
         }
 
@@ -2553,6 +2567,8 @@ internal static class MapperExtractor
         if (parsableMethod is not null)
         {
             converterMethod = parsableMethod;
+            // DWARF038: string↔T parse/format is a non-lossless basic-type conversion → suggestion / error.
+            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "parse/format (string↔T)", implicitConversions);
             return true;
         }
 
@@ -4270,6 +4286,16 @@ internal static class MapperExtractor
         return 0; // Throw
     }
 
+    /// <summary>Reads <c>[DwarfMapper(ImplicitConversions = ...)]</c>; defaults to <c>true</c> (permissive).</summary>
+    private static bool ReadImplicitConversions(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+            foreach (var named in attr.NamedArguments)
+                if (named.Key == "ImplicitConversions" && named.Value.Value is bool b)
+                    return b;
+        return true;
+    }
+
     /// <summary>
     /// Reads the per-method <c>[AutoNest(bool)]</c> attribute override, falling back to
     /// <paramref name="classDefault"/> when the attribute is absent.
@@ -4922,6 +4948,48 @@ internal static class MapperExtractor
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Emits DWARF038 for a non-lossless implicit basic-type conversion: an Info-level suggestion when
+    /// <paramref name="implicitConversions"/> is true (permissive — the conversion is still applied), or a
+    /// build Error when false (strict — the user must opt in via <c>[MapProperty(Use = …)]</c>).
+    /// </summary>
+    /// <summary>
+    /// True when one type is integer-kind and the other is floating/decimal-kind (e.g. int↔double,
+    /// long↔float, int↔decimal) — a cross-category numeric conversion. Same-category pairs (int↔long,
+    /// float↔double) return false.
+    /// </summary>
+    private static bool IsCrossCategoryNumeric(ITypeSymbol src, ITypeSymbol tgt)
+    {
+        static int Cat(ITypeSymbol t) => t.SpecialType switch
+        {
+            SpecialType.System_SByte or SpecialType.System_Byte
+                or SpecialType.System_Int16 or SpecialType.System_UInt16
+                or SpecialType.System_Int32 or SpecialType.System_UInt32
+                or SpecialType.System_Int64 or SpecialType.System_UInt64
+                or SpecialType.System_Char => 1,                       // integer kind
+            SpecialType.System_Single or SpecialType.System_Double
+                or SpecialType.System_Decimal => 2,                    // floating / decimal kind
+            _ => 0,                                                     // not a numeric basic type
+        };
+        var a = Cat(src);
+        var b = Cat(tgt);
+        return a != 0 && b != 0 && a != b;
+    }
+
+    private static void EmitImplicitConversionDiag(
+        List<DiagnosticInfo> diagnostics, LocationInfo? location, string targetName,
+        ITypeSymbol srcType, ITypeSymbol tgtType, string kind, bool implicitConversions)
+    {
+        var src = srcType.ToDisplayString();
+        var tgt = tgtType.ToDisplayString();
+        var msg = implicitConversions
+            ? $"Member '{targetName}': implicit {kind} conversion {src} → {tgt} is applied. Make it explicit with [MapProperty(Use = nameof(...))], or set [DwarfMapper(ImplicitConversions = false)] to require explicit conversions."
+            : $"Member '{targetName}': implicit {kind} conversion {src} → {tgt} is disallowed ([DwarfMapper(ImplicitConversions = false)]). Map it explicitly with [MapProperty(Use = nameof(...))].";
+        diagnostics.Add(new DiagnosticInfo(
+            DiagnosticDescriptors.ImplicitConversionApplied, location, msg,
+            SeverityOverride: implicitConversions ? DiagnosticSeverity.Info : DiagnosticSeverity.Error));
     }
 
     private static string AccessibilityText(Accessibility a) => a switch

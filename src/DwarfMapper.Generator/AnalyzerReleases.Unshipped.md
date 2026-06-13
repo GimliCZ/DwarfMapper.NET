@@ -42,3 +42,4 @@ DWARF034 | DwarfMapper | Error | Invalid [FlattenGraph] configuration
 DWARF035 | DwarfMapper | Error | Invalid [MapDerivedType] configuration
 DWARF036 | DwarfMapper | Error | Ambiguous [MapDerivedType] dispatch arms
 DWARF037 | DwarfMapper | Warning | OnCycle is ignored under ReferenceHandling.Preserve
+DWARF038 | DwarfMapper | Info | Implicit type conversion applied (Error when ImplicitConversions = false)

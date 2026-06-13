@@ -222,4 +222,12 @@ public static class DiagnosticDescriptors
         "Mapper '{0}' sets OnCycle = SetNull together with ReferenceHandling = Preserve; "
             + "OnCycle only applies in None mode (Preserve reconstructs cycles faithfully), so the setting has no effect",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
+
+    // Severity is dynamic: Info (suggestion) by default; escalated to Error per-instance (via
+    // DiagnosticInfo.SeverityOverride) when [DwarfMapper(ImplicitConversions = false)] is set.
+    public static readonly DiagnosticDescriptor ImplicitConversionApplied = new(
+        "DWARF038",
+        "Implicit type conversion applied",
+        "{0}",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
 }
