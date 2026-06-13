@@ -457,6 +457,14 @@ internal static class MapEmitter
         var arms = method.DerivedTypeArms;
         var hasAfter = method.AfterHooks.Count > 0;
 
+        // Determine ctx var and depth arg for this dispatch method.
+        // isPublicWithCtx: public method that creates __dwarf_ctx.
+        // isSynthesizedRecursive: private recursion-capable (unlikely for a dispatch method but safe).
+        var isSynthesizedRecursive = !method.IsPartial && method.IsRecursionCapable;
+        var isPublicWithCtx = method.IsPartial && method.IsRecursionCapable;
+        var ctxVarName  = isPublicWithCtx ? "__dwarf_ctx" : "ctx";
+        var depthPassFwd = isSynthesizedRecursive ? "depth + 1" : "0";
+
         // Before hooks (if any)
         foreach (var before in method.BeforeHooks)
         {
@@ -473,7 +481,10 @@ internal static class MapEmitter
         foreach (var arm in arms)
         {
             sb.Append(indent).Append("        ")
-              .Append(arm.SrcFqn).Append(" __s => ").Append(arm.ConverterMethod).AppendLine("(__s),");
+              .Append(arm.SrcFqn).Append(" __s => ").Append(arm.ConverterMethod).Append("(__s");
+            if (arm.ConverterNeedsDepthCtx)
+                sb.Append(", ").Append(ctxVarName).Append(", ").Append(depthPassFwd);
+            sb.AppendLine("),");
         }
 
         // Wildcard arm: throw ArgumentException for unregistered runtime type

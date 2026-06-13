@@ -252,6 +252,22 @@ internal static class DictionaryConverter
         return true;
     }
 
+    /// <summary>
+    /// Returns <c>true</c> and sets <paramref name="valueType"/> if <paramref name="t"/> is a
+    /// dictionary-like type (IDictionary&lt;K,V&gt;, IReadOnlyDictionary&lt;K,V&gt;, or Dictionary&lt;K,V&gt;).
+    /// Used by the FlattenGraph edge-detection logic to identify dict-value graph edges (SF-F3).
+    /// </summary>
+    public static bool TryGetDictionaryValueType(ITypeSymbol t, out ITypeSymbol valueType)
+    {
+        valueType = t;
+        if (TryGetKeyValue(t, out _, out var val, out _))
+        {
+            valueType = val;
+            return true;
+        }
+        return false;
+    }
+
     private static IEnumerable<ITypeSymbol> Self(ITypeSymbol t)
     {
         yield return t;

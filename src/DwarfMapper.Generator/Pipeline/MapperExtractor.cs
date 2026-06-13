@@ -183,7 +183,7 @@ internal static class MapperExtractor
             var rawDerivedPairs = ReadDerivedTypeAttributes(method, ctx.SemanticModel.Compilation);
             if (rawDerivedPairs.Count > 0 && !isHeteroFlattenGraph)
             {
-                var resolvedArms = new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod)>();
+                var resolvedArms = new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>();
                 var seenSrcTypes = new HashSet<string>(System.StringComparer.Ordinal);
 
                 foreach (var (derivedSrc, derivedTgt) in rawDerivedPairs)
@@ -222,6 +222,10 @@ internal static class MapperExtractor
                     }
 
                     // 4. Resolve converter via TryResolveConversion.
+                    // SF-ORDER fix: pass allowInterfaceSrc=true so that [MapDerivedType] arms
+                    // with an interface source (e.g. [MapDerivedType(typeof(IFoo), typeof(FooDto))])
+                    // are synthesized correctly. The DWARF033 guard is suppressed here because the
+                    // user explicitly opted in via the attribute.
                     bool resolved = TryResolveConversion(
                         ctx.SemanticModel.Compilation,
                         derivedSrc, derivedTgt,
@@ -230,9 +234,10 @@ internal static class MapperExtractor
                         enumStrategy, synthesized,
                         nullStrategy,
                         methodLocation, srcFqn, diagnostics,
-                        out var armConverter, out _, out _,
+                        out var armConverter, out _, out var armNeedsCtx,
                         methodAutoNest, nestedRegistry,
-                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode);
+                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
+                        allowInterfaceSrc: true);
 
                     if (!resolved || armConverter is null)
                     {
@@ -243,7 +248,7 @@ internal static class MapperExtractor
                         continue;
                     }
 
-                    resolvedArms.Add((derivedSrc, derivedTgt, armConverter));
+                    resolvedArms.Add((derivedSrc, derivedTgt, armConverter, armNeedsCtx));
                 }
 
                 // Sort arms most-derived-first.
@@ -251,7 +256,8 @@ internal static class MapperExtractor
                 var armModels = sortedArms
                     .Select(a => new DerivedTypeArm(
                         a.Src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        a.ConverterMethod))
+                        a.ConverterMethod,
+                        a.NeedsCtx))
                     .ToArray();
 
                 // Collect applicable hooks.
@@ -1059,6 +1065,52 @@ internal static class MapperExtractor
             }
         }
 
+        // ── MF-A fix: [MapDerivedType] dispatch method arm ctx threading ────────────
+        // Now that recursion-capability is fully resolved, patch any dispatch method
+        // (DerivedTypeArms.Count > 0) whose arm converters are recursion-capable (i.e.
+        // need ctx+depth forwarding).  This includes Preserve-mode auto-nested pairs
+        // (__DwarfMap_Obj_*) which were force-marked recursion-capable in the block above.
+        for (var i = 0; i < methods.Count; i++)
+        {
+            var m = methods[i];
+            if (m.DerivedTypeArms.Count == 0) continue; // not a dispatch method
+
+            var patchedArms = m.DerivedTypeArms.ToArray();
+            var anyArmNeedsCtx = false;
+            for (var ai = 0; ai < patchedArms.Length; ai++)
+            {
+                var arm = patchedArms[ai];
+                if (arm.ConverterNeedsDepthCtx)
+                {
+                    // Already marked (e.g. captured from TryResolveConversion or previously patched).
+                    anyArmNeedsCtx = true;
+                }
+                else if (recursionCapableNames.Contains(arm.ConverterMethod))
+                {
+                    patchedArms[ai] = arm with { ConverterNeedsDepthCtx = true };
+                    anyArmNeedsCtx = true;
+                }
+                else if (selfRecursivePublicMethods.Contains(arm.ConverterMethod))
+                {
+                    // Declared public method on a recursion cycle — redirect to its companion.
+                    var companionName = "__DwarfMap_Depth_" + arm.ConverterMethod;
+                    patchedArms[ai] = arm with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
+                    anyArmNeedsCtx = true;
+                }
+            }
+
+            if (anyArmNeedsCtx)
+            {
+                methods[i] = m with
+                {
+                    IsRecursionCapable = true,
+                    MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth,
+                    DerivedTypeArms = EquatableArray.From(patchedArms),
+                };
+            }
+        }
+        // ── End MF-A fix ─────────────────────────────────────────────────────────
+
         // ── Plan 19 C2: Preserve mode post-processing ───────────────────────────
         // After recursion-capability is finalised, propagate IsPreserveMode and detect DWARF030.
         if (isPreserveMode)
@@ -1615,20 +1667,35 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// Sorts derived-type arms so that more-derived types appear before less-derived ones (most-derived-first).
-    /// Stable for unrelated types (preserves declaration order).
+    /// Sorts derived-type arms so that more-derived (more-specific) types appear before
+    /// less-derived ones (most-derived-first).  For class hierarchies, uses
+    /// <see cref="InheritanceDepth"/>.  For interface hierarchies (where all depths are 0),
+    /// uses pairwise <see cref="HasImplicitConversion"/> assignability:
+    /// if A is assignable to B (A is more derived / more specific than B), A comes first.
+    /// Stable for unrelated/equal pairs (preserves declaration order).
     /// </summary>
-    private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod)>
+    private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>
         SortArmsMostDerivedFirst(
-            List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod)> arms,
+            List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)> arms,
             Compilation compilation)
     {
-        return arms
-            .Select((arm, idx) => (arm, idx, depth: InheritanceDepth(arm.Src)))
-            .OrderByDescending(x => x.depth)
-            .ThenBy(x => x.idx)
-            .Select(x => x.arm)
-            .ToList();
+        // Assign a derived-order score per pair: a type that is pairwise more specific
+        // than every other type gets a higher score.  We use an O(n^2) insertion-sort-style
+        // comparison since arm lists are small (typically ≤ 10).
+        var indexed = arms.Select((arm, idx) => (arm, idx)).ToList();
+        indexed.Sort((a, b) =>
+        {
+            // Primary sort: pairwise assignability (A more derived than B → A before B)
+            var aToB = HasImplicitConversion(compilation, a.arm.Src, b.arm.Src); // A assignable to B
+            var bToA = HasImplicitConversion(compilation, b.arm.Src, a.arm.Src); // B assignable to A
+            if (aToB && !bToA) return -1; // A is more derived than B → A first
+            if (bToA && !aToB) return  1; // B is more derived than A → B first
+            // Neither or both assignable: fall back to class-hierarchy depth, then declaration order.
+            var depthDiff = InheritanceDepth(b.arm.Src) - InheritanceDepth(a.arm.Src);
+            if (depthDiff != 0) return depthDiff;
+            return a.idx - b.idx; // stable: preserve original declaration order
+        });
+        return indexed.Select(x => x.arm).ToList();
     }
 
     private static bool TryResolveConversion(
@@ -1643,7 +1710,8 @@ internal static class MapperExtractor
         bool autoNest = false,
         NestedMappingRegistry? nestedRegistry = null,
         bool nullAsNull = false,
-        bool isPreserve = false)
+        bool isPreserve = false,
+        bool allowInterfaceSrc = false)
     {
         converterMethod = null;
         nullHandling = Model.NullHandling.None;
@@ -1935,7 +2003,7 @@ internal static class MapperExtractor
         if (autoNest && nestedRegistry is not null
             && tgtType is INamedTypeSymbol namedTgt)
         {
-            if (IsMappableObjectPair(compilation, srcType, namedTgt))
+            if (IsMappableObjectPair(compilation, srcType, namedTgt, allowInterfaceSrc))
             {
                 // C1: pass the effective autoNest value so the drain loop uses it for the pair's body.
                 var synthName = nestedRegistry.GetOrReserve(srcType, namedTgt, location, autoNest);
@@ -1947,9 +2015,11 @@ internal static class MapperExtractor
                 // GetOrReserve returned null → cap exceeded; DWARF031 will be reported after drain.
                 // Fall through to DWARF005.
             }
-            else if (IsAbstractOrInterfaceAutoNestSource(compilation, srcType, namedTgt))
+            else if (!allowInterfaceSrc && IsAbstractOrInterfaceAutoNestSource(compilation, srcType, namedTgt))
             {
                 // C2: abstract/interface source — emit DWARF033 (loud, never silent).
+                // Suppressed when allowInterfaceSrc=true (e.g. [MapDerivedType] arms where the caller
+                // explicitly opted in to mapping an interface source to a concrete DTO).
                 var srcName = srcType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AbstractSourceAutoNest, location, srcName));
                 return false;
@@ -1965,18 +2035,32 @@ internal static class MapperExtractor
     /// suitable for auto-nested-mapper synthesis. Excludes: scalars, enums, string, collection/
     /// IEnumerable types, Nullable&lt;T&gt;, interfaces, abstract target types, and
     /// abstract/interface source types (C2: those would silently drop derived-only members).
+    /// When <paramref name="allowInterfaceSrc"/> is <see langword="true"/>, interface source types
+    /// are accepted (used by [MapDerivedType] arm resolution where the caller explicitly opts in).
     /// </summary>
-    private static bool IsMappableObjectPair(Compilation compilation, ITypeSymbol src, INamedTypeSymbol tgt)
+    private static bool IsMappableObjectPair(Compilation compilation, ITypeSymbol src, INamedTypeSymbol tgt,
+        bool allowInterfaceSrc = false)
     {
         // Source must be a named type (class or struct/record, not array/pointer/etc.)
         if (src is not INamedTypeSymbol namedSrc)
             return false;
 
-        // Both must be Class or Struct (records are Class or Struct).
-        // This also implicitly excludes enums (TypeKind.Enum), interfaces (TypeKind.Interface),
-        // delegates, arrays, etc. — no separate enum guard needed.
-        if (namedSrc.TypeKind != TypeKind.Class && namedSrc.TypeKind != TypeKind.Struct)
-            return false;
+        // Source must be Class, Struct, or (when allowed) Interface.
+        // Enums (TypeKind.Enum), delegates, arrays, etc. are always excluded.
+        if (allowInterfaceSrc)
+        {
+            if (namedSrc.TypeKind != TypeKind.Class && namedSrc.TypeKind != TypeKind.Struct
+                && namedSrc.TypeKind != TypeKind.Interface)
+                return false;
+        }
+        else
+        {
+            // Default: both must be Class or Struct (records are Class or Struct).
+            // This also implicitly excludes enums (TypeKind.Enum), interfaces (TypeKind.Interface),
+            // delegates, arrays, etc. — no separate enum guard needed.
+            if (namedSrc.TypeKind != TypeKind.Class && namedSrc.TypeKind != TypeKind.Struct)
+                return false;
+        }
         if (tgt.TypeKind != TypeKind.Class && tgt.TypeKind != TypeKind.Struct)
             return false;
 
@@ -1990,9 +2074,11 @@ internal static class MapperExtractor
         if (tgt.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
             return false;
 
-        // C2: abstract/interface SOURCE type — auto-nest would silently drop derived members.
+        // C2: abstract SOURCE type — auto-nest would silently drop derived members.
         // We return false here so the caller can emit DWARF033 when appropriate.
-        if (namedSrc.IsAbstract)
+        // Exception: interface sources are allowed when allowInterfaceSrc=true (caller explicitly
+        // opted in via [MapDerivedType] dispatch, which is safe because the user controls the arms).
+        if (!allowInterfaceSrc && namedSrc.IsAbstract)
             return false;
 
         // Not an interface target (can't construct an interface)
@@ -2219,6 +2305,36 @@ internal static class MapperExtractor
     private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type)
     {
         var seen = new HashSet<string>(System.StringComparer.Ordinal);
+
+        // Interface types: walk the interface itself plus all transitively inherited interfaces.
+        // Interfaces don't have a BaseType class chain, so the normal loop would only see
+        // the interface's own members and miss parent-interface properties.
+        if (type.TypeKind == TypeKind.Interface && type is INamedTypeSymbol ifaceType)
+        {
+            var ifacesToWalk = new ITypeSymbol[] { type }
+                .Concat(ifaceType.AllInterfaces.Cast<ITypeSymbol>());
+            foreach (var iface in ifacesToWalk)
+            {
+                foreach (var m in iface.GetMembers())
+                {
+                    if (m.IsStatic) continue;
+                    switch (m)
+                    {
+                        case IPropertySymbol p when !p.IsIndexer && p.GetMethod is not null:
+                            if (seen.Add(p.Name))
+                                yield return (p.Name, p.Type);
+                            break;
+                        case IFieldSymbol f when !f.IsImplicitlyDeclared:
+                            if (seen.Add(f.Name))
+                                yield return (f.Name, f.Type);
+                            break;
+                    }
+                }
+            }
+            yield break;
+        }
+
+        // Classes and structs: walk the inheritance chain.
         for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
         {
             foreach (var m in current.GetMembers())
@@ -2505,23 +2621,48 @@ internal static class MapperExtractor
             // 2. Determine TNode type: directly a named reference type, or element of a collection
             ITypeSymbol nodeType;
             bool srcNavIsCollection;
+            // MF-B: track whether the source nav is specifically an array so we can emit
+            // the correct traversal helper parameter type:
+            //   array      → TNode[]?          (T[] is both IEnumerable<T> and exact)
+            //   other coll → IEnumerable<TNode>? (handles List<T>, HashSet<T>, IReadOnlyList<T>, …)
+            //   dict        → use srcNavType directly, seed BFS from .Values
+            //   single ref  → TNode?
+            bool srcNavIsArray;
+            // SF-F3: when the source nav is a Dictionary<K,V> where V is a reference type, seed
+            // the BFS from the dictionary's values (.Values) rather than enumerating KeyValuePairs.
+            bool srcNavIsDict;
 
             if (srcNavType is IArrayTypeSymbol arrNav && arrNav.Rank == 1
                 && arrNav.ElementType.IsReferenceType)
             {
                 nodeType = arrNav.ElementType;
                 srcNavIsCollection = true;
+                srcNavIsArray = true;
+                srcNavIsDict = false;
+            }
+            else if (DictionaryConverter.TryGetDictionaryValueType(srcNavType, out var dictNavNodeType)
+                     && dictNavNodeType.IsReferenceType)
+            {
+                // SF-F3: Dictionary<K, Node> source nav — node type is V, seed from .Values.
+                nodeType = dictNavNodeType;
+                srcNavIsCollection = true;
+                srcNavIsArray = false;
+                srcNavIsDict = true;
             }
             else if (CollectionConverter.TryGetEnumerableElement(srcNavType, out var navElemType, out _)
                      && navElemType.IsReferenceType)
             {
                 nodeType = navElemType;
                 srcNavIsCollection = true;
+                srcNavIsArray = false;
+                srcNavIsDict = false;
             }
             else if (srcNavType.IsReferenceType && srcNavType.TypeKind != TypeKind.Array)
             {
                 nodeType = srcNavType;
                 srcNavIsCollection = false;
+                srcNavIsArray = false;
+                srcNavIsDict = false;
             }
             else
             {
@@ -2616,7 +2757,7 @@ internal static class MapperExtractor
                 // Validate arms and collect resolved arms
                 var heteroArms = new List<(INamedTypeSymbol NodeDerived, INamedTypeSymbol DtoDerived,
                     string FlatNodeHelperName,
-                    List<(string Name, bool IsCollection)> EdgeMembers,
+                    List<(string Name, bool IsCollection, bool IsDictValue)> EdgeMembers,
                     List<(string Name, ITypeSymbol Type)> LeafMembers)>();
                 var seenSrcFqns = new HashSet<string>(System.StringComparer.Ordinal);
                 var anyArmError = false;
@@ -2660,8 +2801,9 @@ internal static class MapperExtractor
                     // 4. Compute EDGE members for this concrete derived type.
                     // An EDGE member is any readable member whose type is assignable to nodeType, or a
                     // collection thereof (including inherited base edges).
+                    // SF-F3 fix: also detect Dictionary<K,V> where V is assignable to nodeType.
                     var nodeBaseNoAnnot = nodeType.WithNullableAnnotation(NullableAnnotation.None);
-                    var derivedEdgeMembers = new List<(string Name, bool IsCollection)>();
+                    var derivedEdgeMembers = new List<(string Name, bool IsCollection, bool IsDictValue)>();
                     var derivedLeafMembers = new List<(string Name, ITypeSymbol Type)>();
 
                     foreach (var nm in ReadableMembers(derivedSrc))
@@ -2671,7 +2813,7 @@ internal static class MapperExtractor
                         // Single-ref edge: type assignable to nodeBase (includes exact type and subtypes)
                         if (HasImplicitConversion(compilation, memberTypeNoAnnot, nodeType))
                         {
-                            derivedEdgeMembers.Add((nm.Name, false));
+                            derivedEdgeMembers.Add((nm.Name, false, false));
                             continue;
                         }
 
@@ -2680,7 +2822,15 @@ internal static class MapperExtractor
                             && nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
                             && HasImplicitConversion(compilation, nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None), nodeType))
                         {
-                            derivedEdgeMembers.Add((nm.Name, false));
+                            derivedEdgeMembers.Add((nm.Name, false, false));
+                            continue;
+                        }
+
+                        // SF-F3: Dictionary<K,V> where V is assignable to nodeBase → dict-value edge.
+                        if (DictionaryConverter.TryGetDictionaryValueType(nm.Type, out var dictValTypeD)
+                            && HasImplicitConversion(compilation, dictValTypeD.WithNullableAnnotation(NullableAnnotation.None), nodeType))
+                        {
+                            derivedEdgeMembers.Add((nm.Name, false, true));
                             continue;
                         }
 
@@ -2698,7 +2848,7 @@ internal static class MapperExtractor
                         }
 
                         if (isEdgeColl)
-                            derivedEdgeMembers.Add((nm.Name, true));
+                            derivedEdgeMembers.Add((nm.Name, true, false));
                         else
                             derivedLeafMembers.Add((nm.Name, nm.Type));
                     }
@@ -2727,21 +2877,36 @@ internal static class MapperExtractor
                         sbArm.Append("        return new ").Append(dtoFqDerived).AppendLine();
                         sbArm.AppendLine("        {");
 
-                        // Leaf members: map with conversion where available
+                        // Leaf members: map with conversion where available.
+                        // MF-D fix: use throw-away synth dict + skip complex synthesized converters.
+                        // SF-LEAFDIAG fix: propagate unmappable-leaf errors to real diagnostics.
                         foreach (var leaf in derivedLeafMembers)
                         {
                             if (!dtoWritableDerived.TryGetValue(leaf.Name, out var dtoMemberType))
                                 continue;
+                            var leafThrowAwaySynth = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
                             var leafTestDiags = new List<DiagnosticInfo>();
-                            if (TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
-                                    allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                            bool leafResolved = TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
+                                    allMethods, autoCandidates, enumStrategy, leafThrowAwaySynth, nullStrategy,
                                     location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
-                                    autoNest, nestedRegistry, nullAsNull: false, isPreserve: false))
+                                    autoNest, nestedRegistry, nullAsNull: false, isPreserve: false);
+                            if (!leafResolved)
                             {
-                                sbArm.Append("            ").Append(leaf.Name).Append(" = ");
-                                AppendFlatNodeMemberExpr(sbArm, "n", leaf.Name, leafConv, leafNull);
-                                sbArm.AppendLine(",");
+                                diagnostics.AddRange(leafTestDiags);
+                                continue;
                             }
+                            // MF-D: skip only COMPLEX helpers (Obj/Coll/Dict) that may become 3-param.
+                            // Numeric/enum/parsable helpers are always single-arg and are safe.
+                            if (leafConv is not null
+                                && (leafConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
+                                    || leafConv.StartsWith("__DwarfMap_Coll_", System.StringComparison.Ordinal)
+                                    || leafConv.StartsWith("__DwarfMap_Dict_", System.StringComparison.Ordinal)))
+                                continue; // complex synthesized helper — skip (topology degradation)
+                            foreach (var kv in leafThrowAwaySynth)
+                                if (!synthesized.ContainsKey(kv.Key)) synthesized[kv.Key] = kv.Value;
+                            sbArm.Append("            ").Append(leaf.Name).Append(" = ");
+                            AppendFlatNodeMemberExpr(sbArm, "n", leaf.Name, leafConv, leafNull);
+                            sbArm.AppendLine(",");
                         }
 
                         // Edge members on derived DTO: null them (topology degradation)
@@ -2816,12 +2981,29 @@ internal static class MapperExtractor
 
                     var sbBfs = new System.Text.StringBuilder();
                     sbBfs.Append("    private ").Append(listFqH).Append(' ').Append(traversalHelperNameH)
-                         .Append('(').Append(nodeBaseFq);
-                    sbBfs.AppendLine(srcNavIsCollection ? "[]? entry)" : "? entry)");
+                         .Append('(');
+                    // MF-B: use the correct parameter type for the entry parameter.
+                    if (srcNavIsArray)
+                        sbBfs.Append(nodeBaseFq).AppendLine("[]? entry)");
+                    else if (srcNavIsDict)
+                        sbBfs.Append(srcNavType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)).AppendLine("? entry)");
+                    else if (srcNavIsCollection)
+                        sbBfs.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeBaseFq).AppendLine(">? entry)");
+                    else
+                        sbBfs.Append(nodeBaseFq).AppendLine("? entry)");
                     sbBfs.AppendLine("    {");
                     sbBfs.Append("        var __result = new ").Append(listFqH).AppendLine("();");
 
-                    if (srcNavIsCollection)
+                    if (srcNavIsDict)
+                    {
+                        // SF-F3: dict source nav — seed BFS from dict values.
+                        sbBfs.AppendLine("        if (entry is null) return __result;");
+                        sbBfs.Append("        var __visited = new ").Append(hashSetFqH)
+                             .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                        sbBfs.Append("        var __queue = new ").Append(queueFqH).AppendLine("();");
+                        sbBfs.AppendLine("        foreach (var __kv in entry) if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
+                    }
+                    else if (srcNavIsCollection)
                     {
                         sbBfs.AppendLine("        if (entry is null) return __result;");
                         sbBfs.Append("        var __visited = new ").Append(hashSetFqH)
@@ -2857,7 +3039,15 @@ internal static class MapperExtractor
                         // Enqueue each edge member of this arm
                         foreach (var edge in arm.EdgeMembers)
                         {
-                            if (!edge.IsCollection)
+                            if (edge.IsDictValue)
+                            {
+                                // SF-F3: Dictionary<K,V> where V is a node — traverse values.
+                                sbBfs.Append("                    if (__t.").Append(edge.Name)
+                                     .Append(" is { } __d_").Append(edge.Name)
+                                     .Append(") foreach (var __kv in __d_").Append(edge.Name)
+                                     .AppendLine(") if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
+                            }
+                            else if (!edge.IsCollection)
                             {
                                 sbBfs.Append("                    if (__t.").Append(edge.Name)
                                      .Append(" is { } __e_").Append(edge.Name)
@@ -2894,8 +3084,14 @@ internal static class MapperExtractor
                     {
                         var sbWr = new System.Text.StringBuilder();
                         sbWr.Append("    private ").Append(dtoBaseFq).Append("[] ").Append(wrapperNameH)
-                            .Append('(').Append(nodeBaseFq);
-                        sbWr.AppendLine(srcNavIsCollection ? "[]? entry)" : "? entry)");
+                            .Append('(');
+                        // MF-B: match the traversal helper's parameter type.
+                        if (srcNavIsArray)
+                            sbWr.Append(nodeBaseFq).AppendLine("[]? entry)");
+                        else if (srcNavIsCollection)
+                            sbWr.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeBaseFq).AppendLine(">? entry)");
+                        else
+                            sbWr.Append(nodeBaseFq).AppendLine("? entry)");
                         sbWr.Append("        => ").Append(traversalHelperNameH).AppendLine("(entry).ToArray();");
                         synthesized[wrapperNameH] = new SynthesizedMethod(wrapperNameH, sbWr.ToString());
                     }
@@ -2960,8 +3156,15 @@ internal static class MapperExtractor
             }
 
             // 6. Partition TNode readable members into edge (same type as nodeType or collection thereof) vs leaf
+            // SF-F4 fix: use bidirectional assignability (HasImplicitConversion both ways) instead of exact
+            //   type equality so that interface-typed edges (e.g. "INode? Link" where node : INode) and
+            //   base-class-typed edges are traversed.  For edges typed as an ancestor/interface of nodeType,
+            //   the BFS enqueue must cast via `is TNode __var` (since the queue holds TNode, not the interface).
+            // SF-F3 fix: detect Dictionary<K,V> where V is assignable to nodeType as a dict-value edge.
             var nodeMembers = ReadableMembers(nodeType).ToList();
-            var edgeMembers = new List<(string Name, bool IsCollection)>();
+            // Edge tuple: (Name, IsCollection, IsDictValue, NeedsNodeCast)
+            // NeedsNodeCast=true: member type is an ancestor/interface of nodeType → enqueue via `is TNode` cast.
+            var edgeMembers = new List<(string Name, bool IsCollection, bool IsDictValue, bool NeedsNodeCast)>();
             var leafMembers = new List<(string Name, ITypeSymbol Type)>();
 
             var nodeTypeNoAnnotation = nodeType.WithNullableAnnotation(NullableAnnotation.None);
@@ -2970,44 +3173,67 @@ internal static class MapperExtractor
             {
                 var memberTypeNoAnnotation = nm.Type.WithNullableAnnotation(NullableAnnotation.None);
 
-                // Direct node reference: same type as TNode (ignoring nullability)
-                if (SymbolEqualityComparer.Default.Equals(memberTypeNoAnnotation, nodeTypeNoAnnotation))
+                // SF-F4 fix: Direct node reference — recognise as a graph edge if:
+                //   (a) memberType is assignable to nodeType (e.g. a derived subtype field), OR
+                //   (b) nodeType is assignable to memberType (e.g. edge typed as an interface/base
+                //       that the node implements/derives — "INode? Link" where node is a class : INode).
+                // Was: exact equality only — missed interface-typed and base-typed edges.
+                bool directToNode = HasImplicitConversion(compilation, memberTypeNoAnnotation, nodeType);
+                bool nodeToMember = !directToNode && HasImplicitConversion(compilation, nodeTypeNoAnnotation, memberTypeNoAnnotation);
+                if (directToNode || nodeToMember)
                 {
-                    edgeMembers.Add((nm.Name, false));
+                    // NeedsNodeCast: when the member type is a base/interface (reverse direction), we
+                    // must cast via `is TNode __var` before enqueuing so the Queue<TNode> accepts it.
+                    edgeMembers.Add((nm.Name, false, false, nodeToMember));
                     continue;
                 }
 
                 // Nullable<TNode> (for structs — unlikely but supported)
                 if (nm.Type is INamedTypeSymbol nmNamed
-                    && nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
-                    && SymbolEqualityComparer.Default.Equals(
-                        nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None),
-                        nodeTypeNoAnnotation))
+                    && nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
                 {
-                    edgeMembers.Add((nm.Name, false));
+                    var innerNoAnnot = nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None);
+                    bool innerToNode = HasImplicitConversion(compilation, innerNoAnnot, nodeType);
+                    bool nodeToInner = !innerToNode && HasImplicitConversion(compilation, nodeTypeNoAnnotation, innerNoAnnot);
+                    if (innerToNode || nodeToInner)
+                    {
+                        edgeMembers.Add((nm.Name, false, false, nodeToInner));
+                        continue;
+                    }
+                }
+
+                // SF-F3 fix: Dictionary<K,V> where V is assignable to nodeType → dict-value edge.
+                // Only V assignable to nodeType qualifies; keys are not traversed (v1: values only).
+                if (DictionaryConverter.TryGetDictionaryValueType(nm.Type, out var dictValType)
+                    && HasImplicitConversion(compilation, dictValType.WithNullableAnnotation(NullableAnnotation.None), nodeType))
+                {
+                    edgeMembers.Add((nm.Name, false, true, false)); // IsDictValue=true, no cast needed
                     continue;
                 }
 
-                // Collection of TNode
+                // Collection of TNode (SF-F4 fix: use bidirectional assignability for element type)
                 bool isEdgeColl = false;
-                if (nm.Type is IArrayTypeSymbol arrEdge && arrEdge.Rank == 1
-                    && SymbolEqualityComparer.Default.Equals(
-                        arrEdge.ElementType.WithNullableAnnotation(NullableAnnotation.None),
-                        nodeTypeNoAnnotation))
+                bool collNeedsCast = false;
+                if (nm.Type is IArrayTypeSymbol arrEdge && arrEdge.Rank == 1)
                 {
-                    isEdgeColl = true;
+                    var arrElemNoAnnot = arrEdge.ElementType.WithNullableAnnotation(NullableAnnotation.None);
+                    if (HasImplicitConversion(compilation, arrElemNoAnnot, nodeType))
+                        isEdgeColl = true;
+                    else if (HasImplicitConversion(compilation, nodeTypeNoAnnotation, arrElemNoAnnot))
+                    { isEdgeColl = true; collNeedsCast = true; }
                 }
-                else if (CollectionConverter.TryGetEnumerableElement(nm.Type, out var edgeElem, out _)
-                    && SymbolEqualityComparer.Default.Equals(
-                        edgeElem.WithNullableAnnotation(NullableAnnotation.None),
-                        nodeTypeNoAnnotation))
+                else if (CollectionConverter.TryGetEnumerableElement(nm.Type, out var edgeElem, out _))
                 {
-                    isEdgeColl = true;
+                    var edgeElemNoAnnot = edgeElem.WithNullableAnnotation(NullableAnnotation.None);
+                    if (HasImplicitConversion(compilation, edgeElemNoAnnot, nodeType))
+                        isEdgeColl = true;
+                    else if (HasImplicitConversion(compilation, nodeTypeNoAnnotation, edgeElemNoAnnot))
+                    { isEdgeColl = true; collNeedsCast = true; }
                 }
 
                 if (isEdgeColl)
                 {
-                    edgeMembers.Add((nm.Name, true));
+                    edgeMembers.Add((nm.Name, true, false, collNeedsCast));
                 }
                 else
                 {
@@ -3042,23 +3268,72 @@ internal static class MapperExtractor
                 sb.Append("        return new ").Append(dtoFq).AppendLine();
                 sb.AppendLine("        {");
 
-                // Leaf members: map with conversion where available
+                // Leaf members: map with conversion where available.
+                // MF-D fix: flat-node leaf synthesis must NEVER call a synthesized complex helper
+                // (one that starts with "__DwarfMap_") because those helpers may later be force-marked
+                // recursion-capable (3-param) by the Preserve force-marking loop, creating a
+                // signature mismatch when the flat-node helper calls them with 1 arg → CS7036.
+                // Strategy: use a THROW-AWAY synthesized dict for complex resolutions — this
+                // prevents polluting the main dict with a shared Obj/Dict/Coll helper that will
+                // later become 3-param.  Only emit the leaf if the resulting converter is either:
+                //   (a) null (direct assignment — primitive/same-type),
+                //   (b) a declared user method (doesn't start with "__DwarfMap_"), OR
+                //   (c) a synthesized PRIMITIVE helper (enum/numeric/parsable, which are never 3-param).
+                // If the resolved converter is a synthesized complex helper, skip the member
+                // (leave DTO default) — that's correct topology-degraded behaviour for flat-graph.
+                // SF-LEAFDIAG fix: propagate diagnostics for truly unmappable leaf members to the
+                // real diagnostics list so callers get a DWARF005/etc. error rather than silence.
                 foreach (var leaf in leafMembers)
                 {
                     if (!dtoWritable.TryGetValue(leaf.Name, out var dtoMemberType))
                         continue;
 
+                    // Use a throw-away synth dict so complex helpers (Obj/Dict/Coll) are NOT
+                    // registered in the main dict and cannot be force-marked 3-param later.
+                    var leafThrowAwaySynth = new Dictionary<string, SynthesizedMethod>(
+                        System.StringComparer.Ordinal);
                     var leafTestDiags = new List<DiagnosticInfo>();
-                    if (TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
-                            allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                    bool leafResolved = TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
+                            allMethods, autoCandidates, enumStrategy, leafThrowAwaySynth, nullStrategy,
                             location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
-                            autoNest, nestedRegistry, nullAsNull: false, isPreserve: false))
+                            autoNest, nestedRegistry, nullAsNull: false, isPreserve: false);
+
+                    if (!leafResolved)
                     {
-                        sb.Append("            ").Append(leaf.Name).Append(" = ");
-                        AppendFlatNodeMemberExpr(sb, "n", leaf.Name, leafConv, leafNull);
-                        sb.AppendLine(",");
+                        // SF-LEAFDIAG: propagate errors from unmappable leaf members (not silently dropped).
+                        diagnostics.AddRange(leafTestDiags);
+                        continue;
                     }
-                    // If not resolvable, leave the member unset (DTO default).
+
+                    // MF-D: if the converter is a synthesized COMPLEX helper (object mapper,
+                    // collection helper, or dict helper), skip this member (leave DTO default).
+                    // Complex helpers may be force-marked 3-param by the Preserve post-processing,
+                    // creating a signature mismatch when the flat-node helper calls them with 1 arg.
+                    // Safe helpers (numeric, enum, parsable, blit) are always single-arg and never
+                    // force-marked — they are allowed through.
+                    // Unsafe prefixes: __DwarfMap_Obj_, __DwarfMap_Coll_, __DwarfMap_Dict_
+                    // Safe prefixes:   __DwarfMap_Num_, __DwarfMap_Enum_, __DwarfMap_Pars_, __DwarfMap_Blit_
+                    if (leafConv is not null
+                        && (leafConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
+                            || leafConv.StartsWith("__DwarfMap_Coll_", System.StringComparison.Ordinal)
+                            || leafConv.StartsWith("__DwarfMap_Dict_", System.StringComparison.Ordinal)))
+                    {
+                        // Complex synthesized helper — skip to avoid future 3-param mismatch.
+                        // Don't register leafThrowAwaySynth entries in main dict.
+                        continue;
+                    }
+
+                    // Safe: emit the leaf member.  Merge any non-complex throw-away entries
+                    // (numeric, enum, parsable helpers that are never force-marked 3-param).
+                    foreach (var kv in leafThrowAwaySynth)
+                    {
+                        if (!synthesized.ContainsKey(kv.Key))
+                            synthesized[kv.Key] = kv.Value;
+                    }
+
+                    sb.Append("            ").Append(leaf.Name).Append(" = ");
+                    AppendFlatNodeMemberExpr(sb, "n", leaf.Name, leafConv, leafNull);
+                    sb.AppendLine(",");
                 }
 
                 // Edge members on DTO: null them out (topology degradation — the point of [FlattenGraph])
@@ -3085,14 +3360,33 @@ internal static class MapperExtractor
 
                 var sb = new System.Text.StringBuilder();
                 sb.Append("    private ").Append(listFq).Append(' ').Append(traversalHelperName)
-                  .Append('(').Append(nodeFq);
-
-                // When the source nav is a single reference (not a collection), entry can be null → nullable param.
-                sb.AppendLine(srcNavIsCollection ? "[]? entry)" : "? entry)");
+                  .Append('(');
+                // MF-B: use the correct parameter type for the entry parameter.
+                // Array nav    → TNode[]?  (exact array type, avoids CS1503 with T[])
+                // Dict nav     → DictType? (seed from .Values — SF-F3 dict source nav)
+                // Non-array coll nav → IEnumerable<TNode>? (accepts List<T>, HashSet<T>, IReadOnlyList<T>, …)
+                // Single-ref nav → TNode? (nullable reference)
+                if (srcNavIsArray)
+                    sb.Append(nodeFq).AppendLine("[]? entry)");
+                else if (srcNavIsDict)
+                    sb.Append(srcNavType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)).AppendLine("? entry)");
+                else if (srcNavIsCollection)
+                    sb.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeFq).AppendLine(">? entry)");
+                else
+                    sb.Append(nodeFq).AppendLine("? entry)");
                 sb.AppendLine("    {");
                 sb.Append("        var __result = new ").Append(listFq).AppendLine("();");
 
-                if (srcNavIsCollection)
+                if (srcNavIsDict)
+                {
+                    // SF-F3: dict source nav — seed BFS from dict values (not kvp pairs).
+                    sb.AppendLine("        if (entry is null) return __result;");
+                    sb.Append("        var __visited = new ").Append(hashSetFq)
+                      .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                    sb.Append("        var __queue = new ").Append(queueFq).AppendLine("();");
+                    sb.AppendLine("        foreach (var __kv in entry) if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
+                }
+                else if (srcNavIsCollection)
                 {
                     // Entry is a collection — seed the queue from all non-null elements
                     sb.AppendLine("        if (entry is null) return __result;");
@@ -3119,19 +3413,50 @@ internal static class MapperExtractor
                 // Enqueue reachable nodes via edge members of TNode
                 foreach (var edge in edgeMembers)
                 {
-                    if (!edge.IsCollection)
+                    if (edge.IsDictValue)
                     {
+                        // SF-F3: Dictionary<K,V> where V is a node — traverse values, not keys.
                         sb.Append("            if (__n.").Append(edge.Name)
-                          .Append(" is { } __e_").Append(edge.Name)
-                          .Append(" && __visited.Add(__e_").Append(edge.Name)
-                          .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
+                          .Append(" is { } __d_").Append(edge.Name)
+                          .Append(") foreach (var __kv in __d_").Append(edge.Name)
+                          .AppendLine(") if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
+                    }
+                    else if (!edge.IsCollection)
+                    {
+                        if (edge.NeedsNodeCast)
+                        {
+                            // SF-F4: edge typed as interface/base → use `is TNode` pattern to cast
+                            // and filter to only concrete TNode values (safe: we're BFS-ing a TNode graph).
+                            sb.Append("            if (__n.").Append(edge.Name)
+                              .Append(" is ").Append(nodeFq).Append(" __e_").Append(edge.Name)
+                              .Append(" && __visited.Add(__e_").Append(edge.Name)
+                              .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
+                        }
+                        else
+                        {
+                            sb.Append("            if (__n.").Append(edge.Name)
+                              .Append(" is { } __e_").Append(edge.Name)
+                              .Append(" && __visited.Add(__e_").Append(edge.Name)
+                              .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
+                        }
                     }
                     else
                     {
-                        sb.Append("            if (__n.").Append(edge.Name)
-                          .Append(" is { } __c_").Append(edge.Name)
-                          .Append(") foreach (var __x in __c_").Append(edge.Name)
-                          .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
+                        if (edge.NeedsNodeCast)
+                        {
+                            // SF-F4: collection of interface/base elements → cast each.
+                            sb.Append("            if (__n.").Append(edge.Name)
+                              .Append(" is { } __c_").Append(edge.Name)
+                              .Append(") foreach (var __xi in __c_").Append(edge.Name)
+                              .Append(") if (__xi is ").Append(nodeFq).AppendLine(" __x && __visited.Add(__x)) __queue.Enqueue(__x);");
+                        }
+                        else
+                        {
+                            sb.Append("            if (__n.").Append(edge.Name)
+                              .Append(" is { } __c_").Append(edge.Name)
+                              .Append(") foreach (var __x in __c_").Append(edge.Name)
+                              .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
+                        }
                     }
                 }
 
@@ -3152,8 +3477,14 @@ internal static class MapperExtractor
                 {
                     var sb = new System.Text.StringBuilder();
                     sb.Append("    private ").Append(dtoFq).Append("[] ").Append(wrapperName)
-                      .Append('(').Append(nodeFq);
-                    sb.AppendLine(srcNavIsCollection ? "[]? entry)" : "? entry)");
+                      .Append('(');
+                    // MF-B: match the traversal helper's parameter type.
+                    if (srcNavIsArray)
+                        sb.Append(nodeFq).AppendLine("[]? entry)");
+                    else if (srcNavIsCollection)
+                        sb.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeFq).AppendLine(">? entry)");
+                    else
+                        sb.Append(nodeFq).AppendLine("? entry)");
                     sb.Append("        => ").Append(traversalHelperName).AppendLine("(entry).ToArray();");
                     synthesized[wrapperName] = new SynthesizedMethod(wrapperName, sb.ToString());
                 }
