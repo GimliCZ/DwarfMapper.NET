@@ -207,8 +207,8 @@ public class FlattenGraphGeneratorTests
             """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Contains("Tag = ", generated, StringComparison.Ordinal);
-        Assert.Contains("Count = ", generated, StringComparison.Ordinal);
+        Assert.Contains("Tag = r.Tag", generated, StringComparison.Ordinal);
+        Assert.Contains("Count = r.Count", generated, StringComparison.Ordinal);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
 
@@ -263,7 +263,8 @@ public class FlattenGraphGeneratorTests
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         // BFS code must enumerate the Children collection edge
-        Assert.Contains("foreach", generated, StringComparison.Ordinal);
+        Assert.Contains("foreach (var __", generated, StringComparison.Ordinal);
+        Assert.Contains(".Children", generated, StringComparison.Ordinal);
     }
 
     // ── 11. BFS uses ReferenceEqualityComparer for cycle-safety ─────────────

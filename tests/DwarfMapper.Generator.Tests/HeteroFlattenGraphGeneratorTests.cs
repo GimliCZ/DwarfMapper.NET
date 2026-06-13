@@ -91,8 +91,6 @@ public class HeteroFlattenGraphGeneratorTests
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         // The traversal helper must switch on __n by type for edge enumeration
         Assert.Contains("switch (__n)", generated, StringComparison.Ordinal);
-        // The dispatch helper uses switch expression
-        Assert.Contains("switch", generated, StringComparison.Ordinal);
     }
 
     // ── 4. Hetero: dispatch helper throws for unregistered runtime type ───────
