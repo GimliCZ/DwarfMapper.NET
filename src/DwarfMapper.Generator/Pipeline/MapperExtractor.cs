@@ -80,6 +80,65 @@ internal static class MapperExtractor
 
             var methodLocation = LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None);
 
+            // ── Update-into-existing: void/T Map(S src, T dest) ─────────────────────
+            // Maps onto an EXISTING reference-type target instance (no construction; identity kept).
+            // Return is void OR the destination type. v1 is None-semantics (no Preserve/SetNull on the
+            // update method itself) and reference-type targets only (a struct dest by value can't
+            // observe mutations). Resolution reuses ResolveMembers; only the emission differs.
+            if (method.Parameters.Length == 2
+                && method.Parameters[1].Type is INamedTypeSymbol updTgt
+                && method.Parameters[1].Type.IsReferenceType
+                && (method.ReturnsVoid
+                    || SymbolEqualityComparer.Default.Equals(method.ReturnType, method.Parameters[1].Type)))
+            {
+                var updSrc = method.Parameters[0].Type;
+                var comp = ctx.SemanticModel.Compilation;
+                var updIgnores = new HashSet<string>(classIgnores);
+                foreach (var ig in ReadIgnores(method)) { updIgnores.Add(ig); }
+                var updExplicit = ReadExplicitMaps(method);
+                var updAutoNest = ReadMethodAutoNest(method, classAutoNest);
+
+                var updMembers = ResolveMembers(
+                    updSrc, updTgt, updIgnores, comp, methodLocation, diagnostics, caseInsensitive,
+                    updExplicit, allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
+                    System.Array.Empty<string>(), new List<string>(),
+                    consumedCtorParams: null, requiredMustInitialize: null, updAutoNest, nestedRegistry,
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserve: false, isSetNull: false);
+
+                var updBefore = new List<string>();
+                foreach (var h in beforeHookDefs)
+                    if (HasImplicitConversion(comp, updSrc, h.ParamType)) updBefore.Add(h.Name);
+
+                var updAfter = new List<HookCall>();
+                foreach (var h in afterHookDefs)
+                {
+                    bool applies; bool takesSource;
+                    if (h.P1 is null) { applies = HasImplicitConversion(comp, updTgt, h.P0); takesSource = false; }
+                    else { applies = HasImplicitConversion(comp, updSrc, h.P0) && HasImplicitConversion(comp, updTgt, h.P1); takesSource = true; }
+                    if (!applies) continue;
+                    // Target is a reference type → by-value is fine (mutations propagate); ref optional.
+                    updAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: h.TargetRefKind == RefKind.Ref));
+                }
+
+                methods.Add(new MapMethodModel(
+                    method.Name,
+                    AccessibilityText(method.DeclaredAccessibility),
+                    updTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    updSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Name,
+                    updSrc.IsReferenceType,
+                    EquatableArray.From(updMembers),
+                    EquatableArray.From(updBefore),
+                    EquatableArray.From(updAfter),
+                    false,
+                    "",
+                    IsUpdateInto: true,
+                    UpdateTargetParameterName: method.Parameters[1].Name,
+                    UpdateReturnsVoid: method.ReturnsVoid,
+                    MaxDepth: maxDepth));
+                continue;
+            }
+
             if (method.ReturnsVoid || method.Parameters.Length != 1)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod, methodLocation, method.Name));

@@ -330,6 +330,18 @@ catch (ArgumentException)
 
 Console.WriteLine("hetero-flatten [FlattenGraph]: all AOT checks passed.");
 
+// ── Update-into-existing: void/T Map(S src, T dest) (Planned → shipped) ───────
+// Maps onto an existing instance (no construction; identity preserved). AOT-safe — plain assignment.
+var updMapper = new AotUpdateMapper();
+var existing = new AotUpdDst { Id = 0, Label = "old", Score = -1 };
+var updated = updMapper.Update(new AotUpdSrc { Id = 9, Label = "new", Score = 7L }, existing);
+if (!ReferenceEquals(existing, updated) || updated.Id != 9 || updated.Label != "new" || updated.Score != 7)
+{
+    Console.WriteLine("ERROR: update-into mapping incorrect");
+    return 1;
+}
+Console.WriteLine($"update-into: same instance, Id={updated.Id} Label={updated.Label} Score={updated.Score} (AOT-safe)");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -390,6 +402,13 @@ public class AotCollNodeDto { public int V { get; set; } public System.Collectio
 
 [DwarfMapper(MaxDepth = 8)]
 public partial class AotCollDepthMapper { public partial AotCollNodeDto Map(AotCollNode n); }
+
+// Update-into-existing target types.
+public class AotUpdSrc { public int Id { get; set; } public string Label { get; set; } = ""; public long Score { get; set; } }
+public class AotUpdDst { public int Id { get; set; } public string Label { get; set; } = ""; public int Score { get; set; } }
+
+[DwarfMapper]
+public partial class AotUpdateMapper { public partial AotUpdDst Update(AotUpdSrc src, AotUpdDst dest); }
 
 // ── Preserve mode: 2-node cycle (Plan 19 Part C2) ────────────────────────────
 // ReferenceEqualityComparer + Dictionary<object,object> are reflection-free and AOT-safe.

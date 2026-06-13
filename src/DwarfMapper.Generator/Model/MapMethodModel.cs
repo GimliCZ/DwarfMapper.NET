@@ -96,4 +96,16 @@ public sealed record MapMethodModel(
     /// acyclic projection. The public entry creates <c>DwarfRefContext(maxDepth, setNull: true)</c>.
     /// Mutually exclusive with <see cref="IsPreserveMode"/> (Preserve ignores OnCycle).
     /// </summary>
-    bool IsSetNullMode = false) : IEquatable<MapMethodModel>;
+    bool IsSetNullMode = false,
+    /// <summary>
+    /// When <c>true</c>, this is an update-into-existing method <c>void/T Map(S src, T dest)</c>:
+    /// settable members of the existing <see cref="UpdateTargetParameterName"/> instance are assigned
+    /// from <see cref="ParameterName"/> (no construction; target identity preserved). The body emits
+    /// null-guards for both parameters, then <c>dest.Member = …;</c> per member.
+    /// </summary>
+    bool IsUpdateInto = false,
+    /// <summary>The name of the destination parameter for an <see cref="IsUpdateInto"/> method.</summary>
+    string UpdateTargetParameterName = "",
+    /// <summary>When <c>true</c>, the <see cref="IsUpdateInto"/> method returns <c>void</c>;
+    /// otherwise it returns the (same) destination instance.</summary>
+    bool UpdateReturnsVoid = false) : IEquatable<MapMethodModel>;

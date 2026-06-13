@@ -209,6 +209,19 @@ Obsolete constructors and the implicit record copy constructor (`R(R original)`)
 
 **Blittable fast-path (SIMD).** When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing, and the same ordered field names/types (including nested structs, recursively) — DwarfMapper skips the element loop and reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove, behind a JIT-folded runtime size guard. This is the one place DwarfMapper beats a hand-written name-based copy, and it is emitted **only when proven safe** — otherwise it falls back to the element loop. For layout-compatible types the proof can't confirm (differing field names you know are positionally correct, types from referenced assemblies), opt in with `[Reinterpret("Member")]` — still memory-safe (unmanaged + size guard), with the field correspondence as your assertion. A bad `[Reinterpret]` target is `DWARF022`.
 
+**Update-into-existing.** Declare a two-parameter partial method to map onto an **existing** target instead of constructing a new one — the target's identity is preserved (handy for updating tracked entities, pooled objects, or pre-allocated buffers):
+
+```csharp
+[DwarfMapper]
+public partial class CustomerMapper
+{
+    public partial void Update(CustomerDto src, Customer dest);   // void form, mutates dest
+    public partial Customer Update(CustomerDto src, Customer dest); // fluent form, returns dest
+}
+```
+
+Settable members are assigned from the source; the same completeness gate (`DWARF001`), conversions, `[MapProperty]`/`[MapIgnore]`, and hooks apply. Both parameters are null-guarded (loud `ArgumentNullException`). Nested members and collections are **replaced** (mapped fresh / assigned), not merged. The target must be a reference type (a struct passed by value couldn't observe the mutation). Recursion-capable nested members are depth-guarded as usual.
+
 **Reference handling & cycles.** Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recursive types) are detected at generator time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead. The behaviour for shared references and cycles is controlled per mapper:
 
 ```csharp
@@ -338,9 +351,10 @@ README.md
 - **Object-graph composition**: auto-synthesized nested mappers; full collection/dictionary taxonomy + nested compositions; deep auto-nesting
 - **Reference handling**: `ReferenceHandling = Preserve` (full topology reconstruction), `OnCycle = SetNull` (System.Text.Json-style cycle breaking), and `None` depth-guarding — all three handle cycles through **direct, collection, and dictionary edges** with no silent `StackOverflowException` (catchable `DwarfMappingDepthException` at `MaxDepth`)
 - **Polymorphic dispatch** (`[MapDerivedType]`) and graph degradation (`[FlattenGraph]`, homogeneous + heterogeneous)
+- **Update-into-existing**: `void Map(S src, T dest)` / `T Map(S src, T dest)` maps onto an existing instance (identity preserved); same completeness gate, conversions, hooks, `[MapProperty]`/`[MapIgnore]`
 
 ### Planned
-- `MapTo(src, ref dest)` and `Span<T>`/`ReadOnlySpan<T>` zero-alloc overloads
+- `Span<T>`/`ReadOnlySpan<T>` zero-alloc overloads
 - `async` mapping pipelines
 - In-repo BenchmarkDotNet suite (DwarfMapper vs. Mapperly/Mapster/AutoMapper)
 - NuGet publish

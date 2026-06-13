@@ -70,6 +70,13 @@ internal static class MapEmitter
         var willUseSetNullPath = method.IsSetNullMode && method.ParameterIsReferenceType
             && (isSynthesizedRecursive || isPublicWithCtx);
 
+        // Update-into-existing: void/T Map(S src, T dest) — assign onto an existing instance.
+        if (method.IsUpdateInto)
+        {
+            EmitUpdateIntoMethod(sb, method, indent);
+            return;
+        }
+
         // IsPartial=true → user-declared partial: emit "public partial T Name(S s)"
         // IsPartial=false → synthesized private: plain or depth-guarded
         if (method.IsPartial)
@@ -462,6 +469,65 @@ internal static class MapEmitter
 
         // Step 5: Return the fully-populated target.
         sb.Append(indent).AppendLine("    return __dwarf_t;");
+    }
+
+    /// <summary>
+    /// Emits an update-into-existing method <c>void/T Map(S src, T dest)</c>: null-guards both
+    /// parameters, then assigns each settable destination member from the source (no construction,
+    /// target identity preserved). Returns <c>dest</c> for the non-void form. Recursion-capable nested
+    /// members (e.g. a self-referential collection) get a fresh <c>DwarfRefContext</c> for the depth
+    /// guard, so deep/cyclic data throws <see cref="DwarfMapper.DwarfMappingDepthException"/> rather
+    /// than StackOverflowing.
+    /// </summary>
+    private static void EmitUpdateIntoMethod(StringBuilder sb, MapMethodModel method, string indent)
+    {
+        var src = method.ParameterName;
+        var dst = method.UpdateTargetParameterName;
+        var retType = method.UpdateReturnsVoid ? "void" : method.ReturnTypeFullName;
+
+        sb.Append(indent).Append(method.Accessibility).Append(" partial ").Append(retType).Append(' ')
+          .Append(method.MethodName).Append('(')
+          .Append(method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
+          .Append(method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
+        sb.Append(indent).AppendLine("{");
+
+        // Null guards (loud — mapping into/from null is a programming error).
+        if (method.ParameterIsReferenceType)
+            sb.Append(indent).Append("    if (").Append(src)
+              .Append(" is null) throw new global::System.ArgumentNullException(nameof(").Append(src).AppendLine("));");
+        sb.Append(indent).Append("    if (").Append(dst)
+          .Append(" is null) throw new global::System.ArgumentNullException(nameof(").Append(dst).AppendLine("));");
+
+        var anyCtx = false;
+        foreach (var m in method.Members) { if (m.ConverterNeedsDepthCtx) { anyCtx = true; break; } }
+        const string ctxVar = "__dwarf_ctx";
+        if (anyCtx)
+            sb.Append(indent).Append("    var ").Append(ctxVar)
+              .Append(" = new global::DwarfMapper.DwarfRefContext(")
+              .Append(method.MaxDepth.ToString(System.Globalization.CultureInfo.InvariantCulture)).AppendLine(");");
+
+        foreach (var before in method.BeforeHooks)
+            sb.Append(indent).Append("    ").Append(before).Append('(').Append(src).AppendLine(");");
+
+        foreach (var member in method.Members)
+        {
+            sb.Append(indent).Append("    ").Append(dst).Append('.').Append(member.TargetName).Append(" = ");
+            AppendValueExpression(sb, member, src, ctxVar, "0");
+            sb.AppendLine(";");
+        }
+
+        foreach (var after in method.AfterHooks)
+        {
+            sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+            if (after.TakesSource) sb.Append(src).Append(", ");
+            if (after.TargetByRef) sb.Append("ref ");
+            sb.Append(dst).AppendLine(");");
+        }
+
+        if (!method.UpdateReturnsVoid)
+            sb.Append(indent).Append("    return ").Append(dst).AppendLine(";");
+
+        sb.Append(indent).AppendLine("}");
     }
 
     /// <summary>
