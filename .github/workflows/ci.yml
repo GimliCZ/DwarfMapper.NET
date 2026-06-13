@@ -17,7 +17,71 @@ jobs:
           dotnet-version: '10.0.x'
       - run: dotnet restore DwarfMapper.NET.sln
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --collect:"XPlat Code Coverage"
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --collect:"XPlat Code Coverage" --results-directory TestResults
+
+      # ── Coverage gate for DwarfMapper.Generator ─────────────────────────────
+      # Thresholds: line ≥ 80% / branch ≥ 70% (achieved ≈84.5%/77.4%; gate is −5pp margin).
+      # Target-file requirements (EquatableArray / TypeInterfaces / BlittableProof /
+      # LocationInfo / FlattenGraphDirective each ≥ 90% line) are enforced here as well.
+      # IMPORTANT: pushing ci.yml changes requires the `workflow` OAuth scope.
+      - name: Check generator coverage thresholds
+        # Thresholds: overall line ≥ 80% / branch ≥ 70% (achieved ≈84.5%/77.4%; gate is −5pp margin).
+        # Per-file: EquatableArray/TypeInterfaces/BlittableProof/LocationInfo/FlattenGraphDirective ≥ 90% line.
+        # IMPORTANT: pushing ci.yml requires the `workflow` OAuth scope.
+        run: |
+          set -euo pipefail
+          COBERTURA=$(find TestResults -name "coverage.cobertura.xml" | head -1)
+          if [ -z "$COBERTURA" ]; then echo "No coverage.cobertura.xml found"; exit 1; fi
+          python3 - "$COBERTURA" <<'PYEOF'
+import sys
+import xml.etree.ElementTree as ET
+
+path = sys.argv[1]
+tree = ET.parse(path)
+root = tree.getroot()
+
+LINE_THRESHOLD      = 0.80
+BRANCH_THRESHOLD    = 0.70
+FILE_LINE_THRESHOLD = 0.90
+
+target_files = {
+    "EquatableArray.cs", "TypeInterfaces.cs", "BlittableProof.cs",
+    "LocationInfo.cs", "FlattenGraphDirective.cs",
+}
+
+overall_line   = float(root.attrib.get("line-rate",   "0"))
+overall_branch = float(root.attrib.get("branch-rate", "0"))
+
+failures = []
+
+if overall_line < LINE_THRESHOLD:
+    failures.append(f"Overall line coverage {overall_line*100:.1f}% < {LINE_THRESHOLD*100:.0f}%")
+if overall_branch < BRANCH_THRESHOLD:
+    failures.append(f"Overall branch coverage {overall_branch*100:.1f}% < {BRANCH_THRESHOLD*100:.0f}%")
+
+file_rates = {}
+for cls in root.iter("class"):
+    filename = cls.attrib.get("filename", "").replace("\\", "/").split("/")[-1]
+    if filename in target_files:
+        rate = float(cls.attrib.get("line-rate", "0"))
+        if filename not in file_rates or rate > file_rates[filename]:
+            file_rates[filename] = rate
+
+for fname in target_files:
+    rate = file_rates.get(fname, 0.0)
+    if rate < FILE_LINE_THRESHOLD:
+        failures.append(f"{fname} line coverage {rate*100:.1f}% < {FILE_LINE_THRESHOLD*100:.0f}%")
+
+if failures:
+    print("COVERAGE GATE FAILED:")
+    for msg in failures:
+        print(f"  - {msg}")
+    sys.exit(1)
+
+print(f"Coverage gate PASSED  overall line={overall_line*100:.1f}% branch={overall_branch*100:.1f}%")
+for fname, rate in sorted(file_rates.items()):
+    print(f"  {fname}: {rate*100:.1f}%")
+PYEOF
 
   aot-trim-gate:
     strategy:
