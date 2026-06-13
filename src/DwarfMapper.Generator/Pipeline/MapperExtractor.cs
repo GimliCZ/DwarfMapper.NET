@@ -80,6 +80,47 @@ internal static class MapperExtractor
 
             var methodLocation = LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None);
 
+            // ── Zero-alloc span map: void Map(ReadOnlySpan<S>/Span<S> src, Span<D> dst) ──
+            // Maps element-wise into a caller-provided destination buffer (no allocation). The
+            // destination must be a writable Span<D>; a too-small destination throws (never silent
+            // truncation). The element conversion reuses the full resolution pipeline.
+            if (method.ReturnsVoid && method.Parameters.Length == 2
+                && TryGetSpanElement(method.Parameters[0].Type, out var spanSrcElem, out _)
+                && TryGetSpanElement(method.Parameters[1].Type, out var spanDstElem, out var dstIsReadOnly)
+                && !dstIsReadOnly)
+            {
+                var spanComp = ctx.SemanticModel.Compilation;
+                var spanAutoNest = ReadMethodAutoNest(method, classAutoNest);
+                if (!TryResolveConversion(spanComp, spanSrcElem, spanDstElem, null, allMethods, mapperMethods,
+                        enumStrategy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
+                        out var spanConv, out var spanNull, out var spanNeedsCtx, spanAutoNest, nestedRegistry,
+                        nullAsNull: false, isPreserve: false))
+                {
+                    // Element pair not mappable → diagnostic (e.g. DWARF005) already added.
+                    continue;
+                }
+
+                var spanElemMember = new MemberMap(
+                    TargetName: "", SourceName: "", ConverterMethod: spanConv,
+                    NullHandling: spanNull, ConverterNeedsDepthCtx: spanNeedsCtx);
+
+                methods.Add(new MapMethodModel(
+                    method.Name,
+                    AccessibilityText(method.DeclaredAccessibility),
+                    method.Parameters[1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    method.Parameters[0].Name,
+                    false,
+                    EquatableArray.From(new[] { spanElemMember }),
+                    EquatableArray.From(System.Array.Empty<string>()),
+                    EquatableArray.From(System.Array.Empty<HookCall>()),
+                    false,
+                    "",
+                    IsSpanMap: true,
+                    SpanTargetParameterName: method.Parameters[1].Name));
+                continue;
+            }
+
             // ── Update-into-existing: void/T Map(S src, T dest) ─────────────────────
             // Maps onto an EXISTING reference-type target instance (no construction; identity kept).
             // Return is void OR the destination type. v1 is None-semantics (no Preserve/SetNull on the
@@ -4709,6 +4750,28 @@ internal static class MapperExtractor
                 foreach (var dep in deps)
                     stack.Push(dep);
             }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Recognises <c>System.Span&lt;T&gt;</c> / <c>System.ReadOnlySpan&lt;T&gt;</c>, returning the element
+    /// type and whether it is the read-only form. Used to detect zero-alloc span map methods.
+    /// </summary>
+    private static bool TryGetSpanElement(ITypeSymbol t, out ITypeSymbol element, out bool isReadOnly)
+    {
+        element = null!;
+        isReadOnly = false;
+        if (t is INamedTypeSymbol n
+            && n.TypeArguments.Length == 1
+            && n.ContainingNamespace is { Name: "System" } ns
+            && ns.ContainingNamespace?.IsGlobalNamespace == true
+            && (string.Equals(n.Name, "Span", System.StringComparison.Ordinal)
+                || string.Equals(n.Name, "ReadOnlySpan", System.StringComparison.Ordinal)))
+        {
+            element = n.TypeArguments[0];
+            isReadOnly = string.Equals(n.Name, "ReadOnlySpan", System.StringComparison.Ordinal);
+            return true;
         }
         return false;
     }

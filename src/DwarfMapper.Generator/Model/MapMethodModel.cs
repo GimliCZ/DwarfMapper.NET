@@ -108,4 +108,17 @@ public sealed record MapMethodModel(
     string UpdateTargetParameterName = "",
     /// <summary>When <c>true</c>, the <see cref="IsUpdateInto"/> method returns <c>void</c>;
     /// otherwise it returns the (same) destination instance.</summary>
-    bool UpdateReturnsVoid = false) : IEquatable<MapMethodModel>;
+    bool UpdateReturnsVoid = false,
+    /// <summary>
+    /// When <c>true</c>, this is a zero-alloc span map <c>void Map(ReadOnlySpan&lt;S&gt; src, Span&lt;D&gt; dst)</c>:
+    /// elements are mapped <c>dst[i] = conv(src[i])</c> into the caller buffer (no allocation), with a
+    /// defensive length check (destination too small → <c>ArgumentException</c>).
+    /// <see cref="ParameterTypeFullName"/> is the source span type, <see cref="ReturnTypeFullName"/> the
+    /// destination span type, <see cref="ParameterName"/> the source param, and
+    /// <see cref="SpanTargetParameterName"/> the destination param. The single element conversion is in
+    /// <see cref="Members"/>[0] (<see cref="MemberMap.ConverterMethod"/> = element converter or null for a
+    /// direct/implicit element assignment).
+    /// </summary>
+    bool IsSpanMap = false,
+    /// <summary>The destination span parameter name for an <see cref="IsSpanMap"/> method.</summary>
+    string SpanTargetParameterName = "") : IEquatable<MapMethodModel>;

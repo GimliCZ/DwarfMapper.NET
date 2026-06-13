@@ -37,4 +37,19 @@ public partial class SnapshotSuite
         var (_, generated) = GeneratorTestHarness.Run(src);
         return Verifier.Verify(generated);
     }
+
+    // ── Zero-alloc span map: void Map(ReadOnlySpan<S> src, Span<D> dst) ───────
+    [Fact]
+    public Task Snap_SpanMap_Scalar()
+    {
+        const string src = """
+            using System;
+            using DwarfMapper;
+            namespace Demo;
+            [DwarfMapper]
+            public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+            """;
+        var (_, generated) = GeneratorTestHarness.Run(src);
+        return Verifier.Verify(generated);
+    }
 }

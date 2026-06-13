@@ -342,6 +342,23 @@ if (!ReferenceEquals(existing, updated) || updated.Id != 9 || updated.Label != "
 }
 Console.WriteLine($"update-into: same instance, Id={updated.Id} Label={updated.Label} Score={updated.Score} (AOT-safe)");
 
+// ── Zero-alloc span map: void Map(ReadOnlySpan<S> src, Span<D> dst) (Planned → shipped) ─
+// Element-wise map into a stack-allocated buffer — no heap allocation, AOT-safe (no reflection).
+var spanMapper = new AotSpanMapper();
+Span<long> spanDst = stackalloc long[3];
+ReadOnlySpan<int> spanSrc = stackalloc int[] { 11, 22, 33 };
+spanMapper.Map(spanSrc, spanDst);
+if (spanDst[0] != 11L || spanDst[1] != 22L || spanDst[2] != 33L)
+{
+    Console.WriteLine("ERROR: span map values incorrect");
+    return 1;
+}
+var spanThrew = false;
+try { Span<long> tiny = stackalloc long[1]; spanMapper.Map(spanSrc, tiny); }
+catch (ArgumentException) { spanThrew = true; }
+if (!spanThrew) { Console.WriteLine("ERROR: span map should throw on too-small destination"); return 1; }
+Console.WriteLine("span map: mapped into stack buffer; too-small dest throws (AOT-safe, zero-alloc)");
+
 Console.WriteLine("AOT gate: all checks passed.");
 return 0;
 
@@ -409,6 +426,10 @@ public class AotUpdDst { public int Id { get; set; } public string Label { get; 
 
 [DwarfMapper]
 public partial class AotUpdateMapper { public partial AotUpdDst Update(AotUpdSrc src, AotUpdDst dest); }
+
+// Zero-alloc span map.
+[DwarfMapper]
+public partial class AotSpanMapper { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
 
 // ── Preserve mode: 2-node cycle (Plan 19 Part C2) ────────────────────────────
 // ReferenceEqualityComparer + Dictionary<object,object> are reflection-free and AOT-safe.

@@ -222,6 +222,15 @@ public partial class CustomerMapper
 
 Settable members are assigned from the source; the same completeness gate (`DWARF001`), conversions, `[MapProperty]`/`[MapIgnore]`, and hooks apply. Both parameters are null-guarded (loud `ArgumentNullException`). Nested members and collections are **replaced** (mapped fresh / assigned), not merged. The target must be a reference type (a struct passed by value couldn't observe the mutation). Recursion-capable nested members are depth-guarded as usual.
 
+**Zero-alloc span mapping.** Declare `void Map(ReadOnlySpan<S> src, Span<D> dst)` to map element-wise into a caller-provided buffer with no heap allocation — ideal for hot paths over `stackalloc`/pooled memory:
+
+```csharp
+[DwarfMapper]
+public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+```
+
+Each element runs through the full conversion pipeline (`dst[i] = convert(src[i])`). The destination must be a writable `Span<D>` (source may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws `ArgumentException` — never a silent truncation.
+
 **Reference handling & cycles.** Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recursive types) are detected at generator time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead. The behaviour for shared references and cycles is controlled per mapper:
 
 ```csharp
@@ -352,9 +361,9 @@ README.md
 - **Reference handling**: `ReferenceHandling = Preserve` (full topology reconstruction), `OnCycle = SetNull` (System.Text.Json-style cycle breaking), and `None` depth-guarding — all three handle cycles through **direct, collection, and dictionary edges** with no silent `StackOverflowException` (catchable `DwarfMappingDepthException` at `MaxDepth`)
 - **Polymorphic dispatch** (`[MapDerivedType]`) and graph degradation (`[FlattenGraph]`, homogeneous + heterogeneous)
 - **Update-into-existing**: `void Map(S src, T dest)` / `T Map(S src, T dest)` maps onto an existing instance (identity preserved); same completeness gate, conversions, hooks, `[MapProperty]`/`[MapIgnore]`
+- **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no allocation), with a defensive length guard (too-small destination throws, never silent truncation)
 
 ### Planned
-- `Span<T>`/`ReadOnlySpan<T>` zero-alloc overloads
 - `async` mapping pipelines
 - In-repo BenchmarkDotNet suite (DwarfMapper vs. Mapperly/Mapster/AutoMapper)
 - NuGet publish

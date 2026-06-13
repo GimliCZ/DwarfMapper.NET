@@ -70,6 +70,13 @@ internal static class MapEmitter
         var willUseSetNullPath = method.IsSetNullMode && method.ParameterIsReferenceType
             && (isSynthesizedRecursive || isPublicWithCtx);
 
+        // Zero-alloc span map: void Map(ReadOnlySpan<S> src, Span<D> dst).
+        if (method.IsSpanMap)
+        {
+            EmitSpanMapMethod(sb, method, indent);
+            return;
+        }
+
         // Update-into-existing: void/T Map(S src, T dest) — assign onto an existing instance.
         if (method.IsUpdateInto)
         {
@@ -469,6 +476,46 @@ internal static class MapEmitter
 
         // Step 5: Return the fully-populated target.
         sb.Append(indent).AppendLine("    return __dwarf_t;");
+    }
+
+    /// <summary>
+    /// Emits a zero-alloc span map <c>void Map(ReadOnlySpan&lt;S&gt; src, Span&lt;D&gt; dst)</c>: a defensive
+    /// length guard (destination too small → <c>ArgumentException</c>, never silent truncation) then an
+    /// element loop <c>dst[i] = conv(src[i])</c> (or a direct/implicit assignment when no converter is
+    /// needed). No allocation; the caller owns the destination buffer.
+    /// </summary>
+    private static void EmitSpanMapMethod(StringBuilder sb, MapMethodModel method, string indent)
+    {
+        var src = method.ParameterName;
+        var dst = method.SpanTargetParameterName;
+
+        sb.Append(indent).Append(method.Accessibility).Append(" partial void ").Append(method.MethodName)
+          .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src).Append(", ")
+          .Append(method.ReturnTypeFullName).Append(' ').Append(dst).AppendLine(")");
+        sb.Append(indent).AppendLine("{");
+
+        // Defensive length guard — never silently truncate.
+        sb.Append(indent).Append("    if (").Append(dst).Append(".Length < ").Append(src).AppendLine(".Length)");
+        sb.Append(indent).Append("        throw new global::System.ArgumentException(")
+          .Append("\"DwarfMapper: destination span (length \" + ").Append(dst).Append(".Length + \") is smaller than the source span (length \" + ")
+          .Append(src).Append(".Length + \").\", nameof(").Append(dst).AppendLine("));");
+
+        sb.Append(indent).Append("    for (int __i = 0; __i < ").Append(src).AppendLine(".Length; __i++)");
+        sb.Append(indent).Append("        ").Append(dst).Append("[__i] = ");
+
+        var elem = method.Members.Count > 0 ? method.Members[0] : null;
+        if (elem?.ConverterMethod is null)
+        {
+            // Direct/implicit element assignment (e.g. int → long widening).
+            sb.Append(src).Append("[__i]");
+        }
+        else
+        {
+            sb.Append(elem.ConverterMethod).Append('(').Append(src).Append("[__i])");
+        }
+        sb.AppendLine(";");
+
+        sb.Append(indent).AppendLine("}");
     }
 
     /// <summary>
