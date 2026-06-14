@@ -33,6 +33,22 @@ public sealed class BlitDst { public Vec3Dst[] Items { get; set; } = System.Arra
 public sealed class WidenSrc { public int[] V { get; set; } = System.Array.Empty<int>(); }
 public sealed class WidenDst { public long[] V { get; set; } = System.Array.Empty<long>(); }
 
+// ── Feature categories (corpus-derived) — every library supports these ─────────
+// Flatten: Order.Customer.Name → OrderDto.CustomerName (real-world Entity→DTO; eShopOnWeb-style).
+public sealed class FlCustomer { public string Name { get; set; } = ""; public string Email { get; set; } = ""; }
+public sealed class FlOrder { public int Id { get; set; } public FlCustomer Customer { get; set; } = new(); public decimal Amount { get; set; } }
+public sealed class FlOrderDto { public int Id { get; set; } public string CustomerName { get; set; } = ""; public decimal Amount { get; set; } }
+
+// Enum by-name (Status → StatusDto), different declaration order to force name (not value) matching.
+public enum BenchStatus { Pending, Active, Closed }
+public enum BenchStatusDto { Closed, Pending, Active }
+public sealed class EnumSrc { public int Id { get; set; } public BenchStatus Status { get; set; } }
+public sealed class EnumDst { public int Id { get; set; } public BenchStatusDto Status { get; set; } }
+
+// Dictionary copy (Dictionary<string,int> → Dictionary<string,int>).
+public sealed class DictSrc { public Dictionary<string, int> M { get; set; } = new(); }
+public sealed class DictDst { public Dictionary<string, int> M { get; set; } = new(); }
+
 // ── DwarfMapper (compile-time, reflection-free, AOT-safe) ─────────────────────
 [DwarfMapper]
 public partial class DwarfM
@@ -43,6 +59,10 @@ public partial class DwarfM
     public partial ListDst MapList(ListSrc s);       // List<T> → List<T> (pre-sized plain fill)
     public partial BlitDst MapBlit(BlitSrc s);       // Vec3[] → SIMD blit
     public partial WidenDst MapWiden(WidenSrc s);    // int[] → long[] → SIMD widen
+    [MapProperty("Customer.Name", nameof(FlOrderDto.CustomerName))]
+    public partial FlOrderDto MapFlatten(FlOrder s); // deep source path (explicit; others auto-flatten)
+    public partial EnumDst MapEnum(EnumSrc s);       // enum by-name
+    public partial DictDst MapDict(DictSrc s);       // dictionary copy
 }
 
 // ── Mapperly (compile-time source gen) ────────────────────────────────────────
@@ -55,6 +75,9 @@ public partial class MapperlyM
     public partial ListDst MapList(ListSrc s);
     public partial BlitDst MapBlit(BlitSrc s);
     public partial WidenDst MapWiden(WidenSrc s);
+    public partial FlOrderDto MapFlatten(FlOrder s); // Mapperly auto-flattens Customer.Name → CustomerName
+    public partial EnumDst MapEnum(EnumSrc s);
+    public partial DictDst MapDict(DictSrc s);
 }
 
 [MemoryDiagnoser]
@@ -72,6 +95,9 @@ public class MapperBenchmarks
     private ListSrc _list = null!;
     private BlitSrc _blit = null!;
     private WidenSrc _widen = null!;
+    private FlOrder _flOrder = null!;
+    private EnumSrc _enum = null!;
+    private DictSrc _dict = null!;
 
     [Params(1000)]
     public int N { get; set; }
@@ -95,6 +121,12 @@ public class MapperBenchmarks
         for (var i = 0; i < N; i++) ints[i] = i - N / 2;
         _widen = new WidenSrc { V = ints };
 
+        _flOrder = new FlOrder { Id = 9, Customer = new FlCustomer { Name = "Ada Lovelace", Email = "ada@x.io" }, Amount = 42.50m };
+        _enum = new EnumSrc { Id = 1, Status = BenchStatus.Active };
+        var dict = new Dictionary<string, int>();
+        for (var i = 0; i < N; i++) dict["k" + i] = i;
+        _dict = new DictSrc { M = dict };
+
         var cfg = new MapperConfiguration(c =>
         {
             c.CreateMap<FlatSrc, FlatDst>();
@@ -104,6 +136,9 @@ public class MapperBenchmarks
             c.CreateMap<Vec3Src, Vec3Dst>();
             c.CreateMap<BlitSrc, BlitDst>();
             c.CreateMap<WidenSrc, WidenDst>();
+            c.CreateMap<FlOrder, FlOrderDto>();   // AutoMapper auto-flattens Customer.Name → CustomerName
+            c.CreateMap<EnumSrc, EnumDst>();
+            c.CreateMap<DictSrc, DictDst>();
         });
         _auto = cfg.CreateMapper();
     }
@@ -144,4 +179,22 @@ public class MapperBenchmarks
     [Benchmark, BenchmarkCategory("Widen")] public WidenDst Widen_Mapperly() => _mapperly.MapWiden(_widen);
     [Benchmark, BenchmarkCategory("Widen")] public WidenDst Widen_Mapster() => _widen.Adapt<WidenDst>();
     [Benchmark, BenchmarkCategory("Widen")] public WidenDst Widen_AutoMapper() => _auto.Map<WidenDst>(_widen);
+
+    // ── Flatten (Order.Customer.Name → CustomerName) ────────────────────────────
+    [Benchmark, BenchmarkCategory("Flatten")] public FlOrderDto Flatten_Dwarf() => _dwarf.MapFlatten(_flOrder);
+    [Benchmark, BenchmarkCategory("Flatten")] public FlOrderDto Flatten_Mapperly() => _mapperly.MapFlatten(_flOrder);
+    [Benchmark, BenchmarkCategory("Flatten")] public FlOrderDto Flatten_Mapster() => _flOrder.Adapt<FlOrderDto>();
+    [Benchmark, BenchmarkCategory("Flatten")] public FlOrderDto Flatten_AutoMapper() => _auto.Map<FlOrderDto>(_flOrder);
+
+    // ── Enum by-name ────────────────────────────────────────────────────────────
+    [Benchmark, BenchmarkCategory("Enum")] public EnumDst Enum_Dwarf() => _dwarf.MapEnum(_enum);
+    [Benchmark, BenchmarkCategory("Enum")] public EnumDst Enum_Mapperly() => _mapperly.MapEnum(_enum);
+    [Benchmark, BenchmarkCategory("Enum")] public EnumDst Enum_Mapster() => _enum.Adapt<EnumDst>();
+    [Benchmark, BenchmarkCategory("Enum")] public EnumDst Enum_AutoMapper() => _auto.Map<EnumDst>(_enum);
+
+    // ── Dictionary copy (N entries) ─────────────────────────────────────────────
+    [Benchmark, BenchmarkCategory("Dict")] public DictDst Dict_Dwarf() => _dwarf.MapDict(_dict);
+    [Benchmark, BenchmarkCategory("Dict")] public DictDst Dict_Mapperly() => _mapperly.MapDict(_dict);
+    [Benchmark, BenchmarkCategory("Dict")] public DictDst Dict_Mapster() => _dict.Adapt<DictDst>();
+    [Benchmark, BenchmarkCategory("Dict")] public DictDst Dict_AutoMapper() => _auto.Map<DictDst>(_dict);
 }
