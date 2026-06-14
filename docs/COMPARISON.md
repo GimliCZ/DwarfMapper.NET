@@ -55,6 +55,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Naming conventions (snake/camel/UPPER)** | ✅ `NameConvention.Flexible` (`DWARF048` collision) | ~ | ✅ | ✅ |
 | **Per-member null substitution** | ✅ `NullSubstitute=` (type-checked, `DWARF049`) | ~ | ✅ | ✅ |
 | **Conditional member (`When=`)** | ✅ predicate `When=` (`DWARF050`) | ❌ | ✅ | ✅ |
+| **Reverse mapping (`[ReverseMap]`)** | ✅ inverts simple renames (`DWARF051/052`) | ~ | ✅ | ✅ |
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` suggestion, or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 

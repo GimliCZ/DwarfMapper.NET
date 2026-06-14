@@ -469,6 +469,20 @@ public class FeatureInteractionCompileMatrixTests
             }
             """);
 
+        // ── 11e. ReverseMap (inverted renames) ───────────────────────────────
+        yield return new FimMatrixCase("reversemap", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Entity { public int Id { get; set; } public string FullName { get; set; } = ""; }
+            public class Dto { public int Id { get; set; } public string Name { get; set; } = ""; }
+            [DwarfMapper] public partial class M {
+                [ReverseMap]
+                [MapProperty(nameof(Entity.FullName), nameof(Dto.Name))]
+                public partial Dto ToDto(Entity e);
+                public partial Entity FromDto(Dto d);
+            }
+            """);
+
         // ── 12. BeforeMap hook ────────────────────────────────────────────────
 
         yield return new FimMatrixCase("beforemap_hook", """

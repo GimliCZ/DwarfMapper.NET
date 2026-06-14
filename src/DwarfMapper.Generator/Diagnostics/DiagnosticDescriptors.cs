@@ -309,4 +309,18 @@ public static class DiagnosticDescriptors
         "Invalid [MapProperty(When=)] predicate",
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    // Warning: a forward [MapProperty] could not be auto-inverted for [ReverseMap]; declare the reverse
+    // rename explicitly. Suppress via dotnet_diagnostic.DWARF051.severity = none in .editorconfig.
+    public static readonly DiagnosticDescriptor ReverseMapNonInvertible = new(
+        "DWARF051",
+        "[ReverseMap] cannot auto-invert this configuration",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ReverseMapTargetMissing = new(
+        "DWARF052",
+        "[ReverseMap] has no inverse mapping method",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

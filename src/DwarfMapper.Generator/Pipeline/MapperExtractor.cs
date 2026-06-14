@@ -560,6 +560,26 @@ internal static class MapperExtractor
             }
 
             var explicitMaps = ReadExplicitMaps(method);
+            // [ReverseMap]: if this method is the inverse of a forward [ReverseMap] method, inherit the
+            // inverted simple renames (A→B becomes B→A). Non-invertible forward config → DWARF051.
+            var reverseAdds = CollectReverseRenames(classSymbol, method, sourceType, targetType, explicitMaps, diagnostics, methodLocation);
+            if (reverseAdds.Count > 0)
+            {
+                explicitMaps.AddRange(reverseAdds);
+            }
+            // A forward [ReverseMap] method with no inverse declared → DWARF052.
+            if (HasReverseMap(method))
+            {
+                var hasInverse = classSymbol.GetMembers().OfType<IMethodSymbol>().Any(m =>
+                    !SymbolEqualityComparer.Default.Equals(m, method) && m.Parameters.Length == 1
+                    && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, targetType)
+                    && SymbolEqualityComparer.Default.Equals(m.ReturnType, sourceType));
+                if (!hasInverse)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReverseMapTargetMissing, methodLocation,
+                        $"[ReverseMap] on '{method.Name}' has no inverse mapping method '{sourceType.ToDisplayString()} X({targetType.ToDisplayString()})'"));
+                }
+            }
             var mapPropExtras = ReadMapPropertyExtras(method);
             var mapValues = ReadMapValues(method);
             var flattenRoots = ReadFlattenRoots(method);
@@ -3630,6 +3650,59 @@ internal static class MapperExtractor
             }
         }
         return result;
+    }
+
+    private static bool HasReverseMap(IMethodSymbol m) =>
+        m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.ReverseMapAttribute");
+
+    /// <summary>
+    /// If <paramref name="method"/> is the inverse of some forward <c>[ReverseMap]</c> method
+    /// (forward source == this target, forward target == this source), returns the inverted simple renames
+    /// (<c>A→B</c> ⇒ <c>B→A</c>) to inherit. Forward renames that cannot be auto-inverted — a <c>Use=</c>
+    /// converter, a dotted path, or a <c>NullSubstitute</c>/<c>When</c> — are reported as DWARF051 and
+    /// skipped (declare those reverse renames explicitly). A rename whose inverse target the inverse method
+    /// already maps itself is also skipped (the explicit one wins).
+    /// </summary>
+    private static List<(string Source, string Target, string? Use)> CollectReverseRenames(
+        INamedTypeSymbol classSymbol, IMethodSymbol method, ITypeSymbol sourceType, ITypeSymbol targetType,
+        IReadOnlyList<(string Source, string Target, string? Use)> ownExplicit,
+        List<DiagnosticInfo> diagnostics, LocationInfo? location)
+    {
+        var added = new List<(string, string, string?)>();
+        IMethodSymbol? forward = null;
+        foreach (var f in classSymbol.GetMembers().OfType<IMethodSymbol>())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(f, method) && HasReverseMap(f)
+                && f.Parameters.Length == 1
+                && SymbolEqualityComparer.Default.Equals(f.Parameters[0].Type, targetType)
+                && SymbolEqualityComparer.Default.Equals(f.ReturnType, sourceType))
+            {
+                forward = f;
+                break;
+            }
+        }
+        if (forward is null)
+        {
+            return added;
+        }
+
+        var ownTargets = new HashSet<string>(ownExplicit.Select(e => e.Target), System.StringComparer.Ordinal);
+        var fwdExtraTargets = new HashSet<string>(ReadMapPropertyExtras(forward).Select(e => e.Target), System.StringComparer.Ordinal);
+        foreach (var (a, b, use) in ReadExplicitMaps(forward))
+        {
+            var invertible = use is null && a.IndexOf('.') < 0 && b.IndexOf('.') < 0 && !fwdExtraTargets.Contains(b);
+            if (!invertible)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReverseMapNonInvertible, location,
+                    $"[ReverseMap]: forward mapping '{a}' → '{b}' cannot be auto-inverted; declare the reverse on '{method.Name}' explicitly"));
+                continue;
+            }
+            if (!ownTargets.Contains(a))
+            {
+                added.Add((b, a, null));
+            }
+        }
+        return added;
     }
 
     private static List<string> ReadFlattenRoots(ISymbol method)

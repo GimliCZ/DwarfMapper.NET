@@ -55,3 +55,5 @@ DWARF047 | DwarfMapper | Info | Additional mapping parameter is unused
 DWARF048 | DwarfMapper | Error | Ambiguous member match under NameConvention.Flexible
 DWARF049 | DwarfMapper | Error | Invalid [MapProperty(NullSubstitute=)]
 DWARF050 | DwarfMapper | Error | Invalid [MapProperty(When=)] predicate
+DWARF051 | DwarfMapper | Warning | [ReverseMap] cannot auto-invert this configuration
+DWARF052 | DwarfMapper | Error | [ReverseMap] has no inverse mapping method
