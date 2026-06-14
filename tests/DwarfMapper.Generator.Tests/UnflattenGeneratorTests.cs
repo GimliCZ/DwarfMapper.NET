@@ -206,6 +206,30 @@ public class UnflattenGeneratorTests
         Assert.NotNull(Find(diags, "DWARF045"));
     }
 
+    [Theory]
+    [InlineData("When = nameof(Ok)", "private static bool Ok(S s) => true;")]
+    [InlineData("NullSubstitute = \"x\"", "")]
+    public void When_or_NullSubstitute_on_unflatten_target_reports_DWARF045(string extra, string helper)
+    {
+        // An invalid COMBINATION: When/NullSubstitute on a dotted (unflatten) target must be caught loudly,
+        // not silently ignored (the unflatten path doesn't read those extras).
+        var src = $$"""
+            using DwarfMapper;
+            namespace Demo;
+            public class Addr { public string City { get; set; } = ""; }
+            public class S { public string City { get; set; } = ""; public int Tier { get; set; } }
+            public class D { public Addr Address { get; set; } = new(); }
+            [DwarfMapper] public partial class M
+            {
+                [MapProperty(nameof(S.City), "Address.City", {{extra}})]
+                public partial D Map(S s);
+                {{helper}}
+            }
+            """;
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        Assert.NotNull(Find(diags, "DWARF045"));
+    }
+
     [Fact]
     public void Direct_mapping_of_root_then_unflatten_reports_DWARF046()
     {

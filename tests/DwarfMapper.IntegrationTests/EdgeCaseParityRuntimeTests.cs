@@ -142,14 +142,16 @@ public class EdgeCaseParityRuntimeTests
     }
 
     [Fact]
-    public void Dictionary_key_collision_collapses_last_wins()
+    public void Dictionary_key_collision_collapses_to_one_entry()
     {
-        // "1" and "01" both parse to the int key 1 → one entry (overwrite, not throw).
+        // "1" and "01" both parse to the int key 1 → the entries collapse to ONE (overwrite via indexer,
+        // not throw). Which value survives is enumeration-order dependent (not contractually guaranteed),
+        // so we pin the guaranteed behaviour — collapse to a single entry — not which value wins.
         var src = new Ec_DictKeySrc { M = new Dictionary<string, long> { ["1"] = 10, ["01"] = 20 } };
         var d = new Ec_DictKeyMapper().Map(src);
         Assert.Single(d.M);
         Assert.True(d.M.ContainsKey(1));
-        Assert.Contains(d.M[1], new[] { 10, 20 }); // last-wins (enumeration order); collapsed to one
+        Assert.Contains(d.M[1], new[] { 10, 20 });
     }
 
     [Fact]

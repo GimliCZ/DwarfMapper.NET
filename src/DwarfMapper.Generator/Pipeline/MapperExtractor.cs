@@ -570,8 +570,10 @@ internal static class MapperExtractor
             // A forward [ReverseMap] method with no inverse declared → DWARF052.
             if (HasReverseMap(method))
             {
+                // The inverse may declare additional (Phase 5) parameters after the source, so match on
+                // parameter[0] + return type, not an exact arity of 1.
                 var hasInverse = classSymbol.GetMembers().OfType<IMethodSymbol>().Any(m =>
-                    !SymbolEqualityComparer.Default.Equals(m, method) && m.Parameters.Length == 1
+                    !SymbolEqualityComparer.Default.Equals(m, method) && m.Parameters.Length >= 1
                     && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, targetType)
                     && SymbolEqualityComparer.Default.Equals(m.ReturnType, sourceType));
                 if (!hasInverse)
@@ -1821,6 +1823,15 @@ internal static class MapperExtractor
             // parameterless constructor; it is instantiated post-construction by the emitter.
             if (tgtName.IndexOf('.') >= 0)
             {
+                // When / NullSubstitute are not supported on an unflatten (dotted) target — the unflatten
+                // path does not read these extras, so catch the unsupported combination loudly rather than
+                // silently dropping the annotation.
+                if (extrasByTarget.TryGetValue(tgtName, out var uex) && (uex.When is not null || uex.HasNullSub))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid, location,
+                        $"[MapProperty(When/NullSubstitute)] is not supported on the unflatten target '{tgtName}'; apply it to a direct member"));
+                    continue;
+                }
                 ResolveUnflattenTarget(
                     sourceType, targetType, srcName, tgtName, useMethod, compilation, location, diagnostics,
                     handledTargets, unflattenRoots, writableByName, allMethods, autoCandidates, enumStrategy, synthesized,

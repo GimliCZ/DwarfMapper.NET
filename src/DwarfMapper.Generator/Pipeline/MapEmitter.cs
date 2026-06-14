@@ -361,40 +361,9 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("    };");
         }
 
-        // Unflatten assignments: instantiate each intermediate root once, then assign the leaf path.
-        if (hasUnflatten)
-        {
-            var __emittedRoots = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
-            foreach (var member in method.Members)
-            {
-                if (member.UnflattenIntermediateFqn is null) continue;
-                var dot = member.TargetName.IndexOf('.');
-                var root = member.TargetName.Substring(0, dot);
-                if (__emittedRoots.Add(root))
-                {
-                    sb.Append(indent).Append("    if (__dwarf_target.").Append(root)
-                      .Append(" is null) __dwarf_target.").Append(root)
-                      .Append(" = new ").Append(member.UnflattenIntermediateFqn).Append("();").AppendLine();
-                }
-                sb.Append(indent).Append("    __dwarf_target.").Append(member.TargetName).Append(" = ");
-                AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
-                sb.AppendLine(";");
-            }
-        }
-
-        // When-guarded assignments: emit `if (Predicate(src)) target = value;` (member keeps its default
-        // when the predicate is false). Unflatten members are handled above and excluded here.
-        if (hasWhen)
-        {
-            foreach (var member in method.Members)
-            {
-                if (member.WhenPredicate is null || member.UnflattenIntermediateFqn is not null) continue;
-                sb.Append(indent).Append("    if (").Append(member.WhenPredicate).Append('(')
-                  .Append(method.ParameterName).Append(")) __dwarf_target.").Append(member.TargetName).Append(" = ");
-                AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
-                sb.AppendLine(";");
-            }
-        }
+        // Deferred (post-construction) members: unflatten intermediates + When-guarded assignments.
+        if (hasUnflatten || hasWhen)
+            EmitDeferredAssignments(sb, method, "__dwarf_target", method.ParameterName, ctxVarName, depthPassFwd, indent + "    ");
 
         if (useLocalForm)
         {
@@ -519,10 +488,15 @@ internal static class MapEmitter
         // Safe because __dwarf_t is in the identity map before any member recursion.
         foreach (var member in method.Members)
         {
+            if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
             sb.Append(indent).Append("    __dwarf_t.").Append(member.TargetName).Append(" = ");
             AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
             sb.AppendLine(";");
         }
+
+        // Deferred members (unflatten / When) — same post-construction handling as the normal path.
+        if (HasDeferredMembers(method))
+            EmitDeferredAssignments(sb, method, "__dwarf_t", p, ctxVarName, depthPassFwd, indent + "    ");
 
         // After hooks (public methods only), then return.
         if (isPublicMethod && method.AfterHooks.Count > 0)
@@ -725,9 +699,14 @@ internal static class MapEmitter
         var hasCtorArgs = method.ConstructorArguments.Count > 0;
         var hasInitMembers = method.Members.Count > 0;
         var hasAfter = method.AfterHooks.Count > 0;
+        // Deferred members (unflatten/When) can't go in the object initializer (dotted target / guarded),
+        // so they force the local-variable form here too — otherwise the SetNull path would emit
+        // non-compiling C# (`new T { Address.City = … }`) for an unflatten target.
+        var hasDeferred = HasDeferredMembers(method);
+        var useLocal = hasAfter || hasDeferred;
 
         // Construction — identical shape to the normal None path, indented inside the try block.
-        sb.Append(indent).Append("        ").Append(hasAfter ? "var __dwarf_target = new " : "return new ")
+        sb.Append(indent).Append("        ").Append(useLocal ? "var __dwarf_target = new " : "return new ")
           .Append(method.ReturnTypeFullName);
 
         if (hasCtorArgs)
@@ -751,6 +730,7 @@ internal static class MapEmitter
                 sb.Append(indent).AppendLine("        {");
                 foreach (var member in method.Members)
                 {
+                    if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
                     sb.Append(indent).Append("            ").Append(member.TargetName).Append(" = ");
                     AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
@@ -768,6 +748,7 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("        {");
             foreach (var member in method.Members)
             {
+                if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
                 sb.Append(indent).Append("            ").Append(member.TargetName).Append(" = ");
                 AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
                 sb.AppendLine(",");
@@ -775,7 +756,10 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("        };");
         }
 
-        if (hasAfter)
+        if (hasDeferred)
+            EmitDeferredAssignments(sb, method, "__dwarf_target", p, ctxVarName, depthPassFwd, indent + "        ");
+
+        if (useLocal)
         {
             foreach (var after in method.AfterHooks)
             {
@@ -873,6 +857,52 @@ internal static class MapEmitter
     /// method, or <c>"0"</c> from the public entry point). Only used when
     /// <see cref="MemberMap.ConverterNeedsDepthCtx"/> is true.
     /// </param>
+    /// <summary>True when any member is deferred to post-construction (unflatten or When-guarded).</summary>
+    private static bool HasDeferredMembers(MapMethodModel method)
+    {
+        foreach (var m in method.Members)
+            if (m.UnflattenIntermediateFqn is not null || m.WhenPredicate is not null)
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Emits the deferred (post-construction) member assignments onto <paramref name="targetVar"/>:
+    /// unflatten members (instantiate each intermediate root once, then assign the dotted leaf) and
+    /// When-guarded members (<c>if (pred(src)) target.X = value;</c>). Shared by the normal, Preserve, and
+    /// SetNull emit paths so every path handles Phase-4 (unflatten) and Phase-8 (When) members identically.
+    /// <paramref name="indent"/> is the full leading whitespace for each emitted statement.
+    /// </summary>
+    private static void EmitDeferredAssignments(
+        StringBuilder sb, MapMethodModel method, string targetVar, string paramName,
+        string ctxVarName, string depthArg, string indent)
+    {
+        var emittedRoots = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+        foreach (var member in method.Members)
+        {
+            if (member.UnflattenIntermediateFqn is null) continue;
+            var dot = member.TargetName.IndexOf('.');
+            var root = member.TargetName.Substring(0, dot);
+            if (emittedRoots.Add(root))
+            {
+                sb.Append(indent).Append("if (").Append(targetVar).Append('.').Append(root)
+                  .Append(" is null) ").Append(targetVar).Append('.').Append(root)
+                  .Append(" = new ").Append(member.UnflattenIntermediateFqn).Append("();").AppendLine();
+            }
+            sb.Append(indent).Append(targetVar).Append('.').Append(member.TargetName).Append(" = ");
+            AppendValueExpression(sb, member, paramName, ctxVarName, depthArg);
+            sb.AppendLine(";");
+        }
+        foreach (var member in method.Members)
+        {
+            if (member.WhenPredicate is null || member.UnflattenIntermediateFqn is not null) continue;
+            sb.Append(indent).Append("if (").Append(member.WhenPredicate).Append('(').Append(paramName)
+              .Append(")) ").Append(targetVar).Append('.').Append(member.TargetName).Append(" = ");
+            AppendValueExpression(sb, member, paramName, ctxVarName, depthArg);
+            sb.AppendLine(";");
+        }
+    }
+
     private static void AppendValueExpression(
         StringBuilder sb, MemberMap member, string paramName,
         string ctxVarName = "ctx", string depthArg = "0")
