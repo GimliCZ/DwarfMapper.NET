@@ -142,14 +142,20 @@ internal static class MapperExtractor
                 var updIgnores = new HashSet<string>(classIgnores);
                 foreach (var ig in ReadIgnores(method)) { updIgnores.Add(ig); }
                 var updExplicit = ReadExplicitMaps(method);
+                var updMapValues = ReadMapValues(method);
+                var updMapPropExtras = ReadMapPropertyExtras(method);
+                var updFlatten = ReadFlattenRoots(method);
+                var updReinterpret = ReadReinterpretMembers(method);
                 var updAutoNest = ReadMethodAutoNest(method, classAutoNest);
 
                 var updMembers = ResolveMembers(
                     updSrc, updTgt, updIgnores, comp, methodLocation, diagnostics, caseInsensitive,
                     updExplicit, allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
-                    System.Array.Empty<string>(), new List<string>(),
+                    updFlatten, updReinterpret,
                     consumedCtorParams: null, requiredMustInitialize: null, updAutoNest, nestedRegistry,
-                    nullCollections == NullCollectionsBehavior.AsNull, isPreserve: false, isSetNull: false);
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserve: false, isSetNull: false,
+                    implicitConversions: implicitConversions, mapValues: updMapValues, valueProviders: valueProviders,
+                    nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras);
 
                 var updBefore = new List<string>();
                 foreach (var h in beforeHookDefs)

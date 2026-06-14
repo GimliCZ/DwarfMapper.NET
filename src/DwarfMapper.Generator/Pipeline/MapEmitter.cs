@@ -623,10 +623,15 @@ internal static class MapEmitter
 
         foreach (var member in method.Members)
         {
+            if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
             sb.Append(indent).Append("    ").Append(dst).Append('.').Append(member.TargetName).Append(" = ");
             AppendValueExpression(sb, member, src, ctxVar, "0");
             sb.AppendLine(";");
         }
+
+        // Deferred members (unflatten / When) — same post-construction handling as the construction paths.
+        if (HasDeferredMembers(method))
+            EmitDeferredAssignments(sb, method, dst, src, ctxVar, "0", indent + "    ");
 
         foreach (var after in method.AfterHooks)
         {

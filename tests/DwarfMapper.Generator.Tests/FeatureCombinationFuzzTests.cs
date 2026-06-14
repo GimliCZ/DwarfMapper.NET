@@ -22,7 +22,10 @@ namespace DwarfMapper.Generator.Tests;
 public class FeatureCombinationFuzzTests
 {
     // Each feature contributes self-consistent source members, target members, method attributes, and any
-    // helper methods. Member names are uniquely prefixed so features never collide when combined.
+    // helper methods. Member names are uniquely prefixed so features never collide when combined. The set
+    // spans every member-level EMITTER: direct/rename, constant value, unflatten, deep path, conditional,
+    // null-substitute, collection, dictionary, enum, nested object, narrowing/parse conversion, nullable,
+    // and ignore.
     private static readonly (string Name, string Src, string Tgt, string Attr, string Helper)[] Features =
     {
         ("rename",    "public int F1o { get; set; }",                          "public int F1 { get; set; }",                   "[MapProperty(\"F1o\", \"F1\")]",                            ""),
@@ -31,41 +34,76 @@ public class FeatureCombinationFuzzTests
         ("deeppath",  "public FzInner F4i { get; set; } = new();",             "public string F4 { get; set; } = \"\";",        "[MapProperty(\"F4i.Name\", \"F4\")]",                       ""),
         ("when",      "public int F5 { get; set; } public int F5t { get; set; }", "public int F5 { get; set; }",                "[MapProperty(\"F5\", \"F5\", When = nameof(FzWhen))]",      "private static bool FzWhen(FzSrc s) => s.F5t > 0;"),
         ("nullsubst", "public string? F6 { get; set; }",                       "public string F6 { get; set; } = \"\";",        "[MapProperty(\"F6\", \"F6\", NullSubstitute = \"n6\")]",    ""),
+        ("collection","public System.Collections.Generic.List<FzC> F7 { get; set; } = new();", "public System.Collections.Generic.List<FzCDto> F7 { get; set; } = new();", "", ""),
+        ("dictionary","public System.Collections.Generic.Dictionary<string,int> F8 { get; set; } = new();", "public System.Collections.Generic.Dictionary<string,int> F8 { get; set; } = new();", "", ""),
+        ("enum",      "public FzEnA F9 { get; set; }",                         "public FzEnB F9 { get; set; }",                 "", ""),
+        ("nested",    "public FzN F10 { get; set; } = new();",                 "public FzNDto F10 { get; set; } = new();",      "", ""),
+        ("narrow",    "public long F11 { get; set; }",                         "public int F11 { get; set; }",                  "", ""),
+        ("parse",     "public string F12 { get; set; } = \"0\";",             "public int F12 { get; set; }",                  "", ""),
+        ("nullable",  "public int? F13 { get; set; }",                         "public int? F13 { get; set; }",                 "", ""),
+        ("ignore",    "",                                                       "public int F14 { get; set; }",                  "[MapIgnore(\"F14\")]",                                      ""),
+        ("flatten",   "public FzFl F15 { get; set; } = new();",                 "public int F15x { get; set; }",                 "[Flatten(\"F15\")]",                                        ""),
+        ("aftermap",  "",                                                       "public int F16 { get; set; }",                  "[MapIgnore(\"F16\")]",                                      "[AfterMap] private static void FzAfter(FzDst d) => d.F16 = 1;"),
     };
 
-    private static readonly (string Name, string Attr)[] RefModes =
+    // Mode axis: a class attribute. Reference-handling modes (FullSubsets=true) cross with feature
+    // singles+pairs+all — that is the interaction surface the deferred-member bug hid in. Config modes
+    // (FullSubsets=false) cross with feature SINGLES — a lighter check that each config compiles with each
+    // feature. Modes whose invalid combinations SHOULD error (strict ImplicitConversions × lossy
+    // conversions; AsNull × non-nullable collection) are deliberately excluded here and covered by the
+    // dedicated ConversionPolicy / NullCollections tests.
+    private static readonly (string Name, string Attr, bool FullSubsets)[] Modes =
     {
-        ("none", "[DwarfMapper]"),
-        ("preserve", "[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]"),
-        ("setnull", "[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]"),
+        ("none",            "[DwarfMapper]", true),
+        ("preserve",        "[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]", true),
+        ("setnull",         "[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]", true),
+        ("caseinsensitive", "[DwarfMapper(CaseInsensitive = true)]", false),
+        ("flexible",        "[DwarfMapper(NameConvention = NameConvention.Flexible)]", false),
+        ("byvalue",         "[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]", false),
+        ("setdefault",      "[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]", false),
+        ("requireboth",     "[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]", false),
     };
+
+    // Method-kind axis: a construction mapper (T Map(S)) vs an update-into mapper (void Map(S, T dest)).
+    // Update-into is a SEPARATE emitter that also assigns members — it had the same deferred-member bug.
+    private static readonly string[] Kinds = { "construct", "update" };
 
     public static IEnumerable<object[]> Combos()
     {
         var n = Features.Length;
-        var subsets = new List<int[]>();
-        for (var i = 0; i < n; i++) subsets.Add(new[] { i });                              // singles
-        for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) subsets.Add(new[] { i, j }); // pairs
-        subsets.Add(Enumerable.Range(0, n).ToArray());                                      // all features at once
-        foreach (var (rn, _) in RefModes)
-            foreach (var sub in subsets)
-                yield return new object[] { rn + ":" + string.Join("+", sub.Select(i => Features[i].Name)), rn, sub };
+        var singles = new List<int[]>();
+        var full = new List<int[]>();
+        for (var i = 0; i < n; i++) { singles.Add(new[] { i }); full.Add(new[] { i }); }      // singles
+        for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) full.Add(new[] { i, j }); // pairs
+        full.Add(Enumerable.Range(0, n).ToArray());                                            // all features at once
+
+        foreach (var kind in Kinds)
+            foreach (var (mn, _, fullSubsets) in Modes)
+            {
+                // Update-into is None-semantics — only the default mode applies.
+                if (kind == "update" && mn != "none") continue;
+                foreach (var sub in (fullSubsets ? full : singles))
+                    yield return new object[]
+                    {
+                        kind + "/" + mn + ":" + string.Join("+", sub.Select(i => Features[i].Name)), kind, mn, sub,
+                    };
+            }
     }
 
     [Theory]
     [MemberData(nameof(Combos))]
-    public void Feature_combination_compiles_cleanly(string label, string refMode, int[] featureIdx)
+    public void Feature_combination_compiles_cleanly(string label, string kind, string refMode, int[] featureIdx)
     {
         _ = label;
-        var src = BuildSource(refMode, featureIdx);
+        var src = BuildSource(kind, refMode, featureIdx);
         var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
 
-    private static string BuildSource(string refMode, int[] featureIdx)
+    private static string BuildSource(string kind, string mode, int[] featureIdx)
     {
-        var refAttr = RefModes.First(r => r.Name == refMode).Attr;
+        var refAttr = Modes.First(r => r.Name == mode).Attr;
         var srcMembers = new StringBuilder();
         var tgtMembers = new StringBuilder();
         var attrs = new StringBuilder();
@@ -81,16 +119,25 @@ public class FeatureCombinationFuzzTests
 
         var sb = new StringBuilder();
         sb.Append("using DwarfMapper;\n#nullable enable\nnamespace Fz;\n");
-        // Self-referential child forces the Preserve/SetNull emit path to engage (isPublicWithCtx).
+        // Self-referential child forces the Preserve/SetNull (and update-into recursion) path to engage.
         sb.Append("public class FzNode { public int V { get; set; } public FzNode? Next { get; set; } }\n");
         sb.Append("public class FzNodeDto { public int V { get; set; } public FzNodeDto? Next { get; set; } }\n");
         sb.Append("public class FzAddr { public string City { get; set; } = \"\"; }\n");
         sb.Append("public class FzInner { public string Name { get; set; } = \"\"; }\n");
+        sb.Append("public class FzC { public int X { get; set; } }\n");
+        sb.Append("public class FzCDto { public int X { get; set; } }\n");
+        sb.Append("public class FzN { public int Y { get; set; } }\n");
+        sb.Append("public class FzNDto { public int Y { get; set; } }\n");
+        sb.Append("public enum FzEnA { A, B }\n");
+        sb.Append("public enum FzEnB { A, B }\n");
+        sb.Append("public class FzFl { public int F15x { get; set; } }\n");
         sb.Append("public class FzSrc { public FzNode Child { get; set; } = new();").Append(srcMembers).Append(" }\n");
         sb.Append("public class FzDst { public FzNodeDto Child { get; set; } = new();").Append(tgtMembers).Append(" }\n");
         sb.Append(refAttr).Append("\npublic partial class FzM\n{\n");
         sb.Append(attrs);
-        sb.Append("    public partial FzDst Map(FzSrc s);\n");
+        sb.Append(kind == "update"
+            ? "    public partial void Map(FzSrc s, FzDst dest);\n"
+            : "    public partial FzDst Map(FzSrc s);\n");
         sb.Append(helpers);
         sb.Append("}\n");
         return sb.ToString();
