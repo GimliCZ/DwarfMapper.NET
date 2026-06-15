@@ -82,17 +82,26 @@ internal static class GeneratorTestHarness
         return CSharpCompilation.Create(
             assemblyName,
             new[] { syntaxTree },
-            BuildReferences(),
+            References.Value,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: nullable));
     }
 
-    private static System.Collections.Generic.IEnumerable<MetadataReference> BuildReferences() =>
+    /// <summary>
+    /// The metadata reference set, built ONCE and reused across every compilation. Each
+    /// <see cref="MetadataReference.CreateFromFile(string)"/> reads assembly metadata from disk under a
+    /// lock — rebuilding it per call (~50 references) serialised parallel compilations on metadata I/O and
+    /// dominated wall-clock (the full power-set fuzz was contention-bound, not CPU-bound). MetadataReference
+    /// instances are immutable and thread-safe to share, so a single cached array is both correct and far
+    /// faster for the whole generator-test suite.
+    /// </summary>
+    private static readonly Lazy<MetadataReference[]> References = new(() =>
         AppDomain.CurrentDomain.GetAssemblies()
             .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
             .Select(a => MetadataReference.CreateFromFile(a.Location))
             .Cast<MetadataReference>()
             .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location))
             .Append(MetadataReference.CreateFromFile(typeof(global::DwarfMapper.Testing.RoundTrip).Assembly.Location))
-            .Append(MetadataReference.CreateFromFile(typeof(System.Linq.Queryable).Assembly.Location));
+            .Append(MetadataReference.CreateFromFile(typeof(System.Linq.Queryable).Assembly.Location))
+            .ToArray());
 }

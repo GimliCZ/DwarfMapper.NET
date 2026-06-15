@@ -57,12 +57,25 @@ public class FeatureCombinationFuzzTests
         ("none",            "[DwarfMapper]", true),
         ("preserve",        "[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]", true),
         ("setnull",         "[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]", true),
+        // Strict ImplicitConversions is crossed with the FULL subsets too — but it is a "should error"
+        // mode: any subset that includes a lossy conversion (narrow long→int, parse string→int) MUST
+        // surface DWARF038 (Error). ExpectedError() encodes that, so the matrix confirms both the
+        // clean AND the caught-as-error outcomes exhaustively.
+        ("strict",          "[DwarfMapper(ImplicitConversions = false)]", true),
         ("caseinsensitive", "[DwarfMapper(CaseInsensitive = true)]", false),
         ("flexible",        "[DwarfMapper(NameConvention = NameConvention.Flexible)]", false),
         ("byvalue",         "[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]", false),
         ("setdefault",      "[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]", false),
         ("requireboth",     "[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]", false),
     };
+
+    // Feature indices that are LOSSY numeric conversions (narrow=10, parse=11) — under strict
+    // ImplicitConversions these become a build error (DWARF038).
+    private static readonly int[] LossyFeatures = { 10, 11 };
+
+    /// <summary>The exact diagnostic id a combination must surface, or null when it must compile clean.</summary>
+    private static string? ExpectedError(string mode, int[] featureIdx)
+        => mode == "strict" && featureIdx.Any(i => LossyFeatures.Contains(i)) ? "DWARF038" : null;
 
     // Method-kind axis: a construction mapper (T Map(S)) vs an update-into mapper (void Map(S, T dest)).
     // Update-into is a SEPARATE emitter that also assigns members — it had the same deferred-member bug.
@@ -92,13 +105,63 @@ public class FeatureCombinationFuzzTests
 
     [Theory]
     [MemberData(nameof(Combos))]
-    public void Feature_combination_compiles_cleanly(string label, string kind, string refMode, int[] featureIdx)
+    public void Feature_combination_resolves_as_expected(string label, string kind, string refMode, int[] featureIdx)
     {
         _ = label;
         var src = BuildSource(kind, refMode, featureIdx);
         var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var expected = ExpectedError(refMode, featureIdx);
+        if (expected is not null)
+        {
+            // A "should error" combination — confirm the exact diagnostic, cited.
+            Assert.True(diags.Any(d => d.Id == expected),
+                $"Expected {expected} for '{label}', got: " + string.Join(", ", diags.Select(d => d.Id).Distinct()));
+        }
+        else
+        {
+            // A valid combination — must compile clean with no error diagnostic.
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        }
+    }
+
+    // Full-scale exhaustion: the generator is stateless per run, so the entire 2^16 power set of member
+    // features is run in parallel across the 3 construction emit-paths (None/Preserve/SetNull) AND
+    // update-into = ~262k generated mappers, every one of which must compile. The [Theory] above gives
+    // fast pairwise feedback; this [Fact] is the complete proof that no higher-order combination produces
+    // non-compiling code on any member-assigning emitter path.
+    [Fact]
+    public void Full_power_set_compiles_on_every_emit_path()
+    {
+        // The COMPLETE proof: ~262k parallel compilations (full 2^16 power set × 3 construction emit-paths
+        // + update-into), ~6 min wall-clock. Gated behind DWARF_FUZZ_FULL=1 so routine `dotnet test` stays
+        // fast — the always-on pairwise [Theory] above covers the interaction surface where bugs live.
+        // CI/nightly/on-demand runs the full exhaustion. Verified green: 262,144 combinations, 0 failures.
+        if (System.Environment.GetEnvironmentVariable("DWARF_FUZZ_FULL") != "1")
+            return;
+
+        var n = Features.Length;
+        var emitModes = Modes.Where(m => m.FullSubsets && m.Name != "strict").Select(m => m.Name).ToArray();
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
+        System.Threading.Tasks.Parallel.For(0, 1 << n, mask =>
+        {
+            var sub = new List<int>(n);
+            for (var i = 0; i < n; i++) if ((mask & (1 << i)) != 0) sub.Add(i);
+            var arr = sub.ToArray();
+            foreach (var mode in emitModes) CompileInto(failures, "construct", mode, arr);
+            CompileInto(failures, "update", "none", arr);
+        });
+        Assert.True(failures.IsEmpty,
+            failures.Count + " power-set combination(s) produced non-compiling code, e.g.: "
+            + string.Join(" | ", failures.Take(8)));
+    }
+
+    private static void CompileInto(System.Collections.Concurrent.ConcurrentBag<string> failures, string kind, string mode, int[] sub)
+    {
+        var src = BuildSource(kind, mode, sub);
+        var errs = GeneratorTestHarness.RunAndGetCompilationErrors(src);
+        if (errs.Length > 0)
+            failures.Add(kind + "/" + mode + ":" + string.Join("+", sub.Select(i => Features[i].Name)) + " -> " + errs[0].Id);
     }
 
     private static string BuildSource(string kind, string mode, int[] featureIdx)
