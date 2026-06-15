@@ -1978,6 +1978,12 @@ internal static class MapperExtractor
                     $"[MapValue] cannot target constructor parameter '{mvTgt}' yet (object-initialized members only)"));
                 continue;
             }
+            if (mvTgt.IndexOf('.') >= 0)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                    $"[MapValue] does not support a dotted target path '{mvTgt}'; assign the leaf member directly or use [MapProperty] for unflattening"));
+                continue;
+            }
             if (!writableByName.TryGetValue(mvTgt, out var mvTgtType))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,

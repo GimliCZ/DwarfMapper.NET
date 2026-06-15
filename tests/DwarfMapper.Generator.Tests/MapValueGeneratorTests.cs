@@ -255,6 +255,47 @@ public class MapValueGeneratorTests
         Assert.NotNull(Find(diags, "DWARF042"));
     }
 
+    [Fact]
+    public void Constant_on_a_public_field_target_compiles()
+    {
+        // [MapValue] targets a public FIELD, not only a property (both are mapped destinations).
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public int Id { get; set; } }
+            public class D { public int Id; public string Source = ""; }
+            [DwarfMapper] public partial class M
+            {
+                [MapValue(nameof(D.Source), "api-v2")]
+                public partial D Map(S s);
+            }
+            """;
+        var (diags, gen) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        Assert.Contains("Source = \"api-v2\"", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Dotted_target_path_reports_DWARF042()
+    {
+        // MapValue does not support unflatten/dotted target paths — caught with a clear message.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Addr { public string City { get; set; } = ""; }
+            public class S { public int Id { get; set; } }
+            public class D { public int Id { get; set; } public Addr Address { get; set; } = new(); }
+            [DwarfMapper] public partial class M
+            {
+                [MapValue("Address.City", "x")]
+                public partial D Map(S s);
+            }
+            """;
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        Assert.NotNull(Find(diags, "DWARF042"));
+    }
+
     // ── Combinatorial fuzz: valid (type, literal) pairs all compile cleanly ─────
 
     [Theory]
