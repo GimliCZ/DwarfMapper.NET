@@ -86,6 +86,11 @@ test/runtime via `AssertConfigurationIsValid()` and Mapster/Mapster offer no equ
 
 ## Migration ease (the critical concern)
 
+> **Full feature-by-feature conversion guide:** [`MIGRATION.md`](MIGRATION.md) maps *every* AutoMapper 14 /
+> Mapster / Mapperly feature and mechanic to its DwarfMapper equivalent (with before→after and honest
+> divergence/non-goal notes). Each "YES" row is proven at runtime by the parity suite
+> [`LibraryParityRuntimeTests.cs`](../tests/DwarfMapper.IntegrationTests/LibraryParityRuntimeTests.cs).
+
 The goal: moving an existing codebase to DwarfMapper should be **near single-line / mechanical**, never
 "add `partial` everywhere" or "attribute every DTO class". DwarfMapper already requires **zero attributes
 on the source/target POCOs** — only the mapper class is annotated. With **`[GenerateMap<S,T>]`** (added
