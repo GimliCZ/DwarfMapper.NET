@@ -23,13 +23,14 @@ planned diagnostics below: **DWARF055–DWARF059**. Reserved/unused historical: 
   (repeatable across two runs + the committed artifact). Not a code regression — the 0.39 µs was a
   best-case figure; steady-state is ~0.50 µs and the SIMD lead is ~2.0–2.3× (was stated 2.5×).
   `docs/COMPARISON.md` corrected.
-- **Array (1000 objects): confirmed code regression — fix [DONE], perf re-verify pending.** DwarfMapper
-  trailed Mapperly ~1.5× (and even AutoMapper) on `FlatSrc[]`→`FlatDst[]`. Root cause: the non-recursive
-  array fill used `foreach` + a separate running write-index, leaving the destination store not
-  provably in-bounds (bounds check survives). Fixed by emitting an index `for` over `src[__i]` in the
-  None-mode array path only (`CollectionConverter.cs`), so both source-read and dest-write bounds checks
-  elide. Preserve/SetNull/ctx-threaded/non-array paths are unchanged. A secondary cost (the per-element
-  call into the public `MapFlat` with its `ThrowIfNull`, which is not inlined) is captured as item 22.
+- **Array (1000 objects): confirmed code regression — fix [DONE] and VERIFIED.** DwarfMapper trailed
+  Mapperly ~1.5× (and even AutoMapper) on `FlatSrc[]`→`FlatDst[]`. Root cause: the non-recursive array
+  fill used `foreach` + a separate running write-index, leaving the destination store not provably
+  in-bounds (bounds check survives). Fixed by emitting an index `for` over `src[__i]` in the None-mode
+  array path only (`CollectionConverter.cs`), so both source-read and dest-write bounds checks elide.
+  Preserve/SetNull/ctx-threaded/non-array paths are unchanged. **Re-measured: 7.73 µs → 5.21 µs (~33%),
+  now the FASTEST of the four** (Mapperly 5.30, AutoMapper 5.76, Mapster 6.17 µs). The secondary cost
+  (per-element non-inlined `MapFlat` + `ThrowIfNull`, item 22) is therefore moot — no further work needed.
 
 ## Ranked plan
 
