@@ -335,4 +335,13 @@ public static class DiagnosticDescriptors
         "[DwarfMapper] is not supported on generic classes",
         "[DwarfMapper] is not supported on generic classes: '{0}' is generic; declare the mapper on a non-generic class",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    // Info: a single mapper resolving a very large number of members. All extraction runs in the syntax
+    // transform, so an enormous mapper can add IDE/compile latency. High threshold → fires only for genuine
+    // god-mappers; suppressible via dotnet_diagnostic.DWARF055.severity = none.
+    public static readonly DiagnosticDescriptor MapperTooLarge = new(
+        "DWARF055",
+        "Mapper is very large; consider splitting it",
+        "{0}",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true);
 }

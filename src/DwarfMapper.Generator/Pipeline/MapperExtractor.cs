@@ -1753,6 +1753,21 @@ internal static class MapperExtractor
         // CollectRoundTrips must be called before capturing diagnostics so that DWARF020/021 are included.
         var roundTrips = CollectRoundTrips(classSymbol, ctx.SemanticModel.Compilation, diagnostics);
 
+        // DWARF055 (Info): a single mapper resolving a very large number of members. All extraction runs in
+        // the syntax transform, so an enormous mapper can add IDE/compile latency. High threshold → only
+        // genuine god-mappers trip it; suppressible. Heads-up, never a build break.
+        const int LargeMapperMemberThreshold = 300;
+        var mappedMemberCount = methods.Sum(m => m.Members.Count + m.ConstructorArguments.Count);
+        if (mappedMemberCount > LargeMapperMemberThreshold)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.MapperTooLarge,
+                LocationInfo.From(classSyntax.Identifier.GetLocation()),
+                $"mapper '{classSymbol.Name}' resolves {mappedMemberCount} mapped members across its methods " +
+                $"(> {LargeMapperMemberThreshold}); a mapper this large can add IDE/compile latency — " +
+                "consider splitting it into smaller mappers"));
+        }
+
         return new MapperClassModel(
             classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
             classSymbol.Name,
