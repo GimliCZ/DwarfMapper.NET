@@ -17,12 +17,14 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Include="Verify.Xunit" />
     <PackageReference Include="Verify.SourceGenerators" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
     <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj" />
+    <ProjectReference Include="..\..\src\DwarfMapper.CodeFixes\DwarfMapper.CodeFixes.csproj" />
     <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
