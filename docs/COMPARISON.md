@@ -4,6 +4,12 @@
 A capability, testing, performance, and **migration-ease** comparison against the three most common
 .NET mappers. Benchmarks live in [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/).
 
+> **The real differentiator is correctness, not speed** (the source-generator peers tie us on throughput).
+> See [`CORRECTNESS.md`](CORRECTNESS.md): completeness is a build error (a **DTO-drift contract gate**), the
+> resolved mapping is documented on every method, round-trips are verified, codegen is provably
+> deterministic + incrementally cached, and the output is provably reflection-free (NativeAOT/trim/regulated
+> targets) — each clause backed by a named test or diagnostic the runtime mappers can't structurally match.
+
 > **Licensing note.** AutoMapper is referenced as **14.0.0 only** — the last **MIT** release. v15+ is
 > RPL-1.5 + commercial (GPL-incompatible); we deliberately use nothing from it. Mapperly (4.3.1) and
 > Mapster (10.0.8) are MIT. Both are benchmark-only and never referenced by the shipped library.
