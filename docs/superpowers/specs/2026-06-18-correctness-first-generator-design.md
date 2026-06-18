@@ -1,7 +1,24 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # Design — Correctness-first generator hardening & DX
 
-**Status:** draft for review · **Date:** 2026-06-18
+**Status:** Phases A, B, E **landed** (2026-06-18) · C & D remaining (see status note below) · **Date:** 2026-06-18
+
+## Status (2026-06-18)
+
+- **Phase A — DONE.** `ModelCacheSafetyTests` (structural cache-safety) + `DWARF055` build-budget Info.
+- **Phase B — DONE.** XML-doc mapping plan on every public generated method (`MapEmitter.EmitMappingPlanDoc`);
+  55 snapshots updated (verified additive-only).
+- **Phase E — DONE.** `ReflectionFreeMetaTests` (E3), `docs/CORRECTNESS.md` (E1), COMPARISON/README framing (E2).
+- **Phase C — NOT STARTED (deliberate).** The `DwarfMapper.CodeFixes` package is a net-new netstandard2.0
+  project + `Microsoft.CodeAnalysis.*.Workspaces` dependency + analyzer-nupkg packaging wiring + a new
+  code-fix-testing harness. That is a restore-fragile, packaging-heavy lift whose failure mode is a broken
+  solution build. It deserves its own focused session rather than a rushed tail-end attempt that risks the
+  green build maintained through A/B/E. Recommended first slice when picked up: the `DWARF052` "insert the
+  missing [ReverseMap] inverse method" fix (highest delight, smallest surface), then `DWARF001`.
+- **Phase D — DEFERRED (optional perf).** Per-method extraction granularity; revisit only if a large-mapper
+  user reports IDE latency or the `DWARF055` signal starts firing in real projects.
+
+All landed work: full suite 2970 green, 0 warnings, nothing pushed.
 
 ## Goal & framing
 

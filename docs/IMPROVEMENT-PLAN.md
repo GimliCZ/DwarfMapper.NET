@@ -9,8 +9,17 @@ open-generics non-goal) were dropped during synthesis and are listed at the end 
 
 ## Diagnostic ID allocation
 
-Used: **DWARF053** (generic mapper method), **DWARF054** (generic mapper class). Free slots for the
-planned diagnostics below: **DWARF055–DWARF059**. Reserved/unused historical: 004, 006, 029.
+Used: **DWARF053** (generic mapper method), **DWARF054** (generic mapper class), **DWARF055** (mapper
+too large / build-budget Info — landed). Free slots for the planned diagnostics below: **DWARF056–DWARF059**.
+Reserved/unused historical: 004, 006, 029.
+
+> **Landed since this plan was written (2026-06-18, correctness-first design):** structural cache-safety
+> meta-test (`ModelCacheSafetyTests`), incremental-caching test (`IncrementalCachingTests` — closes item 4's
+> caching leg), generator-determinism test (item 4), DWARF055 build-budget, XML-doc mapping plan on
+> generated methods, **the reflection-free half of item 16** (`ReflectionFreeMetaTests`), and
+> `docs/CORRECTNESS.md`. Remaining from item 16: the allocation-bound (`GC.GetAllocatedBytesForCurrentThread`)
+> invariants. See `docs/superpowers/specs/2026-06-18-correctness-first-generator-design.md` for the phased
+> design (Phases A/B/E done; C = CodeFixes package, D = per-method granularity remain).
 
 ## Benchmark regression scrutiny (capstone)
 
