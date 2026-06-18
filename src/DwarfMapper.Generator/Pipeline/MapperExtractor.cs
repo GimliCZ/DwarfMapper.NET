@@ -40,6 +40,26 @@ internal static class MapperExtractor
                 classSymbol.Name));
         }
 
+        // A generic mapper class would get a generated `partial class Foo` with no `<T>` — which is NOT a
+        // partial of the user's `Foo<T>` and does not compile. Refuse loudly (DWARF054) and skip generation
+        // entirely rather than emitting a broken, type-parameter-less partial.
+        if (classSymbol.IsGenericType || classSymbol.TypeParameters.Length > 0)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.GenericMapperClassUnsupported,
+                LocationInfo.From(classSyntax.Identifier.GetLocation()),
+                classSymbol.Name));
+
+            return new MapperClassModel(
+                classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
+                classSymbol.Name,
+                AccessibilityText(classSymbol.DeclaredAccessibility),
+                EquatableArray.From(new List<MapMethodModel>()),
+                EquatableArray.From(diagnostics),
+                EquatableArray.From(new List<SynthesizedMethod>()),
+                EquatableArray.From(new List<RoundTripPair>()));
+        }
+
         var classIgnores = ReadIgnores(classSymbol).ToList();
         var classIgnoreSources = ReadIgnoreSources(classSymbol).ToList();
         var requiredMapping = ReadRequiredMapping(ctx.Attributes); // 0 = Target (default), 1 = Both
@@ -80,6 +100,19 @@ internal static class MapperExtractor
 
             if (method.MethodKind != MethodKind.Ordinary || !method.IsPartialDefinition)
             {
+                continue;
+            }
+
+            // A generic mapping method (arity > 0) cannot be implemented: the generator emits a
+            // type-parameter-less body that fails to satisfy the generic partial declaration, producing
+            // a confusing downstream C# error with no DwarfMapper signal. Refuse loudly (DWARF053) and
+            // skip the method so no broken implementation is emitted.
+            if (method.Arity > 0 || method.TypeParameters.Length > 0)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.GenericMapperMethodUnsupported,
+                    LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None),
+                    method.Name));
                 continue;
             }
 
@@ -1809,6 +1842,14 @@ internal static class MapperExtractor
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
                 continue;
+            }
+            // A [Flatten] over a nullable-reference root emits unguarded `src.Root.Leaf` accesses that NRE
+            // at runtime if the root is null. The dotted [MapProperty] path warns DWARF044 for the same
+            // hazard; the [Flatten] path must be consistent (loud, never silent).
+            if (SourceMayBeNullRef(rootType))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
+                    $"[Flatten] source '{root}' is a nullable reference; a null value throws at runtime when its flattened members are read"));
             }
             flattenInfos.Add((match.Value.Name, leaves));
         }

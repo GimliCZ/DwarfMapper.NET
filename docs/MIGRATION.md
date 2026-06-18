@@ -241,6 +241,7 @@ which Mapperly offers. See [`COMPARISON.md`](COMPARISON.md#capability-matrix).
 | Inline lambdas in config | attributes can't carry closures | named methods (`Use=`, `When=`, hooks) |
 | Ambient per-call context (`Items`, `State`) | reflection/dynamic-bag | extra typed method parameter (by-name to a dest member) |
 | Open generics / assembly scanning | needs concrete types & reflection (breaks AOT) | one `[GenerateMap<closed>]` per used instantiation |
+| Generic mapper **methods** (`Map<T>(…)`) or a generic mapper **class** (`partial class M<T>`) | a source generator cannot emit a body for an unbound type parameter (would not compile) | diagnosed loudly — `DWARF053` (generic method) / `DWARF054` (generic class); declare a closed `[GenerateMap<A,B>]` on a non-generic class |
 | Implicit deep flattening by name-splitting | "magic" mislinking risk | explicit `[Flatten]` / dotted `[MapProperty]` |
 | Per-call before/after, `SetMappingOrder` | runtime-only | declared `[BeforeMap]`/`[AfterMap]`; deterministic order |
 | Deep merge into existing nested objects | ambiguous identity semantics | update **replaces** nested; merge by hand if truly needed |

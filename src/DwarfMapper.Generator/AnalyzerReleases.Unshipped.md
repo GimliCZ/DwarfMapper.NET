@@ -57,3 +57,5 @@ DWARF049 | DwarfMapper | Error | Invalid [MapProperty(NullSubstitute=)]
 DWARF050 | DwarfMapper | Error | Invalid [MapProperty(When=)] predicate
 DWARF051 | DwarfMapper | Warning | [ReverseMap] cannot auto-invert this configuration
 DWARF052 | DwarfMapper | Error | [ReverseMap] has no inverse mapping method
+DWARF053 | DwarfMapper | Error | Generic mapping methods are not supported
+DWARF054 | DwarfMapper | Error | [DwarfMapper] is not supported on generic classes

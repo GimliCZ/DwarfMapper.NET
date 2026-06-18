@@ -428,8 +428,22 @@ internal static class CollectionConverter
             {
                 sb.Append("        ctx.SetReference(src, __r);\n");
             }
-            sb.Append("        var __i = 0;\n");
-            sb.Append("        foreach (var __item in src) { __r[__i++] = ").Append(item).Append("; }\n");
+            if (shape.SourceIsArray && !registerBeforeFill && !threadCtx)
+            {
+                // Non-recursive array→array (None mode): index with a single length-bounded counter over
+                // src[__i] so the JIT proves BOTH the source read and the destination store in-bounds and
+                // elides both bounds checks. The foreach + separate post-incremented write-index form (below)
+                // leaves the store index not-provably-in-bounds, so its bounds check survives — measurably
+                // slower in a hot 1000-element loop. Preserve (register-before-fill), ctx-threaded, and
+                // non-array (no indexer) sources keep the foreach form unchanged.
+                sb.Append("        for (int __i = 0; __i < ").Append(countExpr).Append("; __i++) { __r[__i] = ")
+                  .Append(item.Replace("__item", "src[__i]")).Append("; }\n");
+            }
+            else
+            {
+                sb.Append("        var __i = 0;\n");
+                sb.Append("        foreach (var __item in src) { __r[__i++] = ").Append(item).Append("; }\n");
+            }
             sb.Append("        return __r;\n");
         }
         else

@@ -323,4 +323,16 @@ public static class DiagnosticDescriptors
         "[ReverseMap] has no inverse mapping method",
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor GenericMapperMethodUnsupported = new(
+        "DWARF053",
+        "Generic mapping methods are not supported",
+        "Generic mapping methods are not supported: '{0}' declares type parameter(s); use a closed [GenerateMap<,>] or a non-generic partial method",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor GenericMapperClassUnsupported = new(
+        "DWARF054",
+        "[DwarfMapper] is not supported on generic classes",
+        "[DwarfMapper] is not supported on generic classes: '{0}' is generic; declare the mapper on a non-generic class",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

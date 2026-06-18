@@ -154,8 +154,8 @@ hardware; relative ordering is the point — run locally for your own):
 | Flat (1 object) | 4.8–7.6 ns* | 4.4 ns | 13.1 ns | 53.3 ns | 4.6 ns |
 | Nested | 12.4 ns | 10.7 ns | 22.2 ns | 59.5 ns | — |
 | Array (1000 objects) | 5.75 µs | 5.04 µs | 6.15 µs | 5.29 µs | — |
-| **Blit (1000 structs)** | **0.39 µs** | 0.98 µs | 0.98 µs | 1.03 µs | — |
-| **Widen (1000 int→long)** | **0.42 µs** | 0.47 µs | 1.04 µs | 1.11 µs | — |
+| **Blit (1000 structs)** | **0.50 µs** | 1.04 µs | 1.11 µs | 1.17 µs | — |
+| **Widen (1000 int→long)** | **0.36 µs** | 0.46 µs | 0.73 µs | 0.78 µs | — |
 | Allocations (all scenarios) | = hand-written | = | = | = | baseline |
 
 `*` Flat_Dwarf measured 4.8 ns and 7.6 ns across two full runs — nanosecond-scale noise on a
@@ -166,13 +166,15 @@ AutoMapper ~11×) trails.
 **Takeaways:**
 - DwarfMapper **matches hand-written** (tied with Mapperly, the other source generator) with **zero
   allocation overhead** — the destination object is the only allocation.
-- On the **blittable struct array it is ~2.5× faster than every competitor** — the `MemoryMarshal.Cast`
+- On the **blittable struct array it is ~2× faster than every competitor** — the `MemoryMarshal.Cast`
   SIMD reinterpret path that none of Mapperly / Mapster / AutoMapper have (they copy field-by-field).
-- On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2.5× faster than the
+  (Earlier docs cited ~2.5× off a best-case 0.39 µs; the repeatable steady-state on this machine is
+  ~0.50 µs, a ~2.0–2.3× lead — still decisive, with allocations identical across all four libraries.)
+- On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2× faster than the
   runtime mappers (Mapster/AutoMapper) and a hair ahead of Mapperly's scalar codegen loop — at this size
   the work is memory-bound (writing the 8 KB output), so SIMD mainly separates it from the reflection/
   expression tier; the gap widens for smaller element types or cache-resident data.
-- It is **~12× faster than AutoMapper** and **~3× faster than Mapster** on flat maps, which pay
+- It is **~9× faster than AutoMapper** and **~2.4× faster than Mapster** on flat maps, which pay
   runtime expression-tree / reflection overhead (and are not NativeAOT-safe). Mapster's first-call
   expression compilation is amortized here (steady state), yet still trails the codegen mappers.
 
