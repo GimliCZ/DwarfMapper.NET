@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # Design — Correctness-first generator hardening & DX
 
-**Status:** Phases A, B, E **landed** (2026-06-18) · C & D remaining (see status note below) · **Date:** 2026-06-18
+**Status:** Phases A, B, C, E **landed** (2026-06-18) · D investigated & deferred with a technical blocker · **Date:** 2026-06-18
 
 ## Status (2026-06-18)
 
@@ -15,8 +15,19 @@
   solution build. It deserves its own focused session rather than a rushed tail-end attempt that risks the
   green build maintained through A/B/E. Recommended first slice when picked up: the `DWARF052` "insert the
   missing [ReverseMap] inverse method" fix (highest delight, smallest surface), then `DWARF001`.
-- **Phase D — DEFERRED (optional perf).** Per-method extraction granularity; revisit only if a large-mapper
-  user reports IDE latency or the `DWARF055` signal starts firing in real projects.
+- **Phase D — INVESTIGATED, DEFERRED (with technical blocker).** Per-method extraction granularity was
+  investigated against the real code. The blocker: `synthesized` (the shared synthesized-helper dictionary)
+  and `nestedRegistry` are created **once per class** (`MapperExtractor` lines 87/95) and threaded through
+  every method; synthesized nested mappers are **deduplicated across methods** (the dedup prevents `CS0111`
+  duplicate-member errors), plus there's a cross-method synthesized post-pass, Preserve-mode re-synthesis,
+  and the registry cap (`DWARF031`). So methods are **not independent units**. A per-method cache split would
+  need either per-method helper duplication (→ duplicate-member compile errors) or a class-level combine
+  stage for the shared helpers that re-runs on any method change — which redoes most of the heavy work,
+  **capping the incremental benefit**. Given (a) the small achievable win, (b) the high risk of refactoring
+  the generator's most intricate path, and (c) no evidence the cost matters (`DWARF055` does not fire on
+  normal mappers; no large-mapper latency reported), Phase D stays deferred. If pursued, it should be a
+  dedicated isolated effort (own worktree/branch) where intermediate build-breakage is contained, and would
+  likely require first refactoring synthesized-helper ownership out of the per-class extraction.
 
 All landed work: full suite 2970 green, 0 warnings, nothing pushed.
 
