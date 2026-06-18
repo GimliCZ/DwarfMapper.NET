@@ -64,6 +64,13 @@ mappers structurally cannot go.
   `MakeGenericType`, `dynamic`, …) across 64 fuzz seeds + every advanced feature.
 - *Evidence (end to end):* the CI AOT gate publishes `samples/DwarfMapper.AotSample` with **zero**
   IL2xxx/IL3xxx warnings and runs a behavioural gate over the published native binary.
+- *Evidence (stability under AOT):* `samples/DwarfMapper.AotBench` is published with NativeAOT and run as
+  a native binary — SIMD widen/blit are bit-exact at every vector-boundary size, Preserve topology is
+  deterministic over 100 000 runs, and the depth/SetNull guards hold over tens of thousands of runs. Timing
+  is *steadier* than the JIT (no tiering jitter). The one AOT usage caveat — default baseline SIMD width
+  (`Vector<int>.Count == 4` vs the JIT's 8), restored with `<IlcInstructionSet>native</IlcInstructionSet>`
+  — is documented in [`COMPARISON.md`](COMPARISON.md#nativeaot-benchmarking--stability); it is a perf knob,
+  not a correctness issue (output is bit-identical either way).
 
 ## 6. No silent `StackOverflowException`
 

@@ -207,3 +207,41 @@ DwarfMapper has **two** SIMD fast-paths that no competitor offers:
 
 Both are emitted only when provably safe; everything else falls back to the element loop (with
 `CreateChecked` for narrowing). See the `Blit` and `Widen` benchmark categories.
+
+### NativeAOT benchmarking & stability
+
+The BenchmarkDotNet suite above measures the JIT. `samples/DwarfMapper.AotBench` is a separate harness
+that is **published with NativeAOT and run as a native binary** — it both times the hot paths under real
+AOT codegen and stress-tests for instabilities the JIT can't reveal: SIMD widen/blit bit-exactness at
+every size around the vector boundary, Preserve-topology determinism over 100 000 runs, catchable
+depth-guard over 20 000 runs, and `OnCycle=SetNull` acyclicity over 50 000 runs.
+
+Results (10.0.1 ILC, win-x64, this machine):
+
+- **No instabilities.** Every correctness/determinism check passes (exit 0); the default `dotnet publish`
+  emits **zero** IL2xxx/IL3xxx trim/AOT warnings. SIMD output is **bit-for-bit identical** to the scalar
+  reference at all boundary sizes, including negatives (sign extension).
+- **AOT timing is *steadier* than the JIT** — no tiered-compilation jitter, so per-op min/max spreads are
+  tighter (a stability *positive*).
+- **One AOT usage caveat worth knowing (not an instability).** NativeAOT defaults to a **baseline
+  instruction set** (x86-64-v1 / SSE2) for portability, so `Vector<int>.Count == 4` under default AOT vs
+  `8` under the AVX2-detecting JIT — the `Vector.Widen` path runs half-width. It stays **correct** (the
+  scalar tail + narrower body produce identical results), just not maximally fast. To get full-width SIMD
+  under AOT, opt into a higher ISA, e.g.:
+
+  ```xml
+  <PropertyGroup>
+    <IlcInstructionSet>native</IlcInstructionSet>  <!-- build-machine ISA; or a specific list, e.g. avx2 -->
+  </PropertyGroup>
+  ```
+
+  Verified: with `IlcInstructionSet=native` the AOT binary reports `Vector<int>.Count == 8` and all checks
+  still pass. (`x86-x64-v3` is rejected by ILC 10.0.1 — use `native` or an explicit ISA list.)
+
+Run it yourself:
+
+```bash
+dotnet publish samples/DwarfMapper.AotBench -c Release -r win-x64        # default baseline SIMD
+dotnet publish samples/DwarfMapper.AotBench -c Release -r win-x64 -p:IlcInstructionSet=native   # full-width
+./samples/DwarfMapper.AotBench/bin/Release/net10.0/win-x64/publish/DwarfMapper.AotBench.exe
+```

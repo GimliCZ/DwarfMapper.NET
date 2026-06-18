@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <PublishAot>true</PublishAot>
+    <IsPackable>false</IsPackable>
+    <Optimize>true</Optimize>
+    <!-- Single-file sample: top-level types outside a namespace (CA1050) and public types in an exe
+         with no public API (CA1515); fixed UI strings (CA1303); intentional perf-loop shapes. -->
+    <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA1819;CA1812;CA1815</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
+    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>
