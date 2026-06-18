@@ -16,13 +16,21 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 {
     internal const string MarkerAttributeFullName = "DwarfMapper.DwarfMapperAttribute";
 
+    /// <summary>
+    /// Tracking name for the per-mapper extraction step. Labels the pipeline node so incremental-caching
+    /// tests can assert (via <c>GeneratorDriverOptions.TrackIncrementalGeneratorSteps</c>) that an unrelated
+    /// edit leaves this step <c>Cached</c>/<c>Unchanged</c>. Has no effect on generated output.
+    /// </summary>
+    internal const string ExtractStepName = "DwarfMapperExtract";
+
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var mappers = context.SyntaxProvider.ForAttributeWithMetadataName(
             MarkerAttributeFullName,
             predicate: static (node, _) => node is ClassDeclarationSyntax,
-            transform: static (ctx, ct) => MapperExtractor.Extract(ctx, ct));
+            transform: static (ctx, ct) => MapperExtractor.Extract(ctx, ct))
+            .WithTrackingName(ExtractStepName);
 
         context.RegisterSourceOutput(mappers, static (spc, model) => Execute(spc, model));
     }
