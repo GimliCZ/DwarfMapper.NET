@@ -373,7 +373,7 @@ public class ProjectionDeepTests
 
     // ── Regression: non-assignable flat member ──
     [Fact]
-    public void Projection_non_assignable_flat_member_reports_DWARF028_or_DWARF019()
+    public void Projection_non_assignable_flat_member_reports_DWARF028()
     {
         const string s = """
             using DwarfMapper; using System.Linq;
@@ -383,9 +383,8 @@ public class ProjectionDeepTests
             [DwarfMapper] public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
             """;
         var (diag, _) = GeneratorTestHarness.Run(s);
-        // string→int triggers parsable converter → DWARF028 with parse reason
-        // Accept either DWARF019 or DWARF028 — there MUST be an error
-        Assert.Contains(diag, d => d.Id == "DWARF028" || d.Id == "DWARF019");
+        // string→int triggers the parsable converter, which is not provider-translatable → DWARF028.
+        Assert.Contains(diag, d => d.Id == "DWARF028");
     }
 
     // ── Defensive: no __DwarfMap_ in any SAFE projection output ──

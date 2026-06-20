@@ -23,6 +23,7 @@ Unlocks polymorphic hierarchies and (later) heterogeneous `[FlattenGraph]`.
 
 ## Diagnostics
 - **DWARF035 (InvalidMapDerivedType):** a `TSource` not assignable to the method source; a `TTarget` not assignable to the method return; a derived pair `(TSource,TTarget)` not mappable (no declared mapper + not auto-nestable); duplicate `TSource` registration; `[MapDerivedType]` on a method whose source is sealed/has no derived types (warn-or-error — error, with hint). Add to `DiagnosticDescriptors` + `AnalyzerReleases.Unshipped.md` (DWARF034 used; 035 next; 004/029 reserved).
+- **DWARF036 (AmbiguousMapDerivedType):** *(added during implementation)* two `[MapDerivedType]` arms whose source types cannot be ordered most-derived-first because neither is assignable to the other (overlapping/ambiguous dispatch) — the runtime `switch` could not deterministically pick an arm. Distinct from the duplicate-`TSource` case folded into DWARF035.
 
 ## Tasks (TDD)
 1. `MapDerivedTypeAttribute` (generic + non-generic) in `src/DwarfMapper/`. SPDX + XML doc.

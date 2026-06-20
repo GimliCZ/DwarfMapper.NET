@@ -127,10 +127,13 @@ Canonical object-graph-copy rules (System.Text.Json `ReferenceHandler`, BinaryFo
 - `[DwarfMapper(MaxDepth = N)]` (default 64, hard cap 1000): universal runtime bound on recursion-capable pairs.
 - `[DwarfMapper(OnCycle = Throw | SetNull)]` — the **degraded** knob when `ReferenceHandling = None`: `Throw` (default — depth cap) or `SetNull` (≡ System.Text.Json `IgnoreCycles`: the re-entrant back-edge is set to null, yielding a finite acyclic projection of a cyclic source — useful for display/DTO). Ignored under `Preserve` (cycles are reconstructed).
 
-**Public API.** `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.None | Preserve | PreserveDegraded)]` (default `None`).
+**Public API.** `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.None | Preserve)]` (default `None`).
+
+> **Status note (post-implementation):** the third member `PreserveDegraded` described below was **not shipped** — the shipped `ReferenceHandlingStrategy` has only `None` and `Preserve`. The "bounded fidelity" need is met instead by the orthogonal `MaxDepth` cap (which throws a catchable `DwarfMappingDepthException` rather than silently truncating) and by `OnCycle = SetNull` under `None`. The `PreserveDegraded` paragraph is retained for design-history context only.
+
 - **`None`** (default): no tracking, zero overhead. Acyclic deep graphs fine. Cyclic *data* → runtime `StackOverflowException` (documented; same as Mapperly default). Recursive *types* still compile.
 - **`Preserve` (full reconstruction):** thread an identity context; reconstruct the complete topology (shared identity + all cycles). One small dict allocation per top-level `Map` call.
-- **`PreserveDegraded` (degraded reconstruction):** identity-preserving **up to `MaxDepth`** (configurable, e.g. `[DwarfMapper(ReferenceHandling = PreserveDegraded, MaxDepth = 8)]`); beyond the limit, references are **truncated** (set null / default), yielding a bounded partial graph. For huge or untrusted graphs where full reconstruction is undesirable. (Degraded = "as the user wants": bounded fidelity.)
+- **`PreserveDegraded` (degraded reconstruction) — _NOT SHIPPED; see status note above_:** identity-preserving **up to `MaxDepth`** (configurable, e.g. `[DwarfMapper(ReferenceHandling = PreserveDegraded, MaxDepth = 8)]`); beyond the limit, references are **truncated** (set null / default), yielding a bounded partial graph. For huge or untrusted graphs where full reconstruction is undesirable. (Degraded = "as the user wants": bounded fidelity.)
 
 **Generator-time scoping optimization ("watch recursion properties," owner).** Detect which `(src,tgt)` pairs are **recursion-capable** — a member/element/param type that can reach back to an ancestor type in the graph (Tarjan-style SCC / back-edge detection over the type graph). Only those synthesized methods get the `TryGet/Set` wrapper + ctx parameter; acyclic pairs stay zero-overhead even when `ReferenceHandling = Preserve`. This minimizes the "magic" and cost to exactly where a cycle is possible.
 

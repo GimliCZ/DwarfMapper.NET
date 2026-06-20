@@ -2,15 +2,23 @@
 # DwarfMapper.Benchmarks
 
 In-repo [BenchmarkDotNet](https://benchmarkdotnet.org/) suite measuring DwarfMapper's
-compile-time-generated mappers against a hand-written baseline across the core scenarios:
+compile-time-generated mappers against a hand-written baseline **and** against Mapperly,
+Mapster, and AutoMapper. Each scenario below is a `[BenchmarkCategory]` with four methods —
+`<Scenario>_Dwarf`, `_Mapperly`, `_Mapster`, `_AutoMapper` — plus the `Flat_Hand` baseline:
 
-| Benchmark | Scenario |
+| Category | Scenario |
 |---|---|
-| `Flat_HandWritten` (baseline) | hand-written flat object copy |
-| `Flat_DwarfMapper` | generated flat mapper — should match hand-written |
-| `Nested_DwarfMapper` | nested object graph (auto-synthesized sub-mapper) |
-| `Array_DwarfMapper` | `FlatSrc[]` → `FlatDst[]` element-loop mapping |
-| `Blit_DwarfMapper` | `Vec3Src[]` → `Vec3Dst[]` — the SIMD reinterpret blit fast-path |
+| `Flat` | flat object copy (`Flat_Hand` is the hand-written baseline) |
+| `Nested` | nested object graph (auto-synthesized sub-mapper) |
+| `Array` | `FlatSrc[]` → `FlatDst[]` element-loop mapping |
+| `List` | `List<FlatSrc>` → `List<FlatDst>` mapping |
+| `Blit` | `Vec3Src[]` → `Vec3Dst[]` — the SIMD reinterpret blit fast-path |
+| `Widen` | same-category numeric widening conversion |
+| `Flatten` | `[Flatten]` sub-member pull-up |
+| `Enum` | enum-to-enum mapping |
+| `Dict` | `Dictionary<K,V>` → `Dictionary<K2,V2>` mapping |
+
+Filter a single category with its name, e.g. `--filter "*Blit*"` or `--filter "*Flat_*"`.
 
 ## Running
 

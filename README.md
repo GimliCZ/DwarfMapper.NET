@@ -54,7 +54,7 @@ Members of the source and destination are sorted into a canonical order keyed by
 Pairing walks the two sorted member lists ordinally. The result is a deterministic, stable mapping plan.
 
 ### 3. Prove (the completeness gate + blit proof)
-- **Completeness:** every destination member must be paired or carry `[MapIgnore]`. Otherwise → **build error** (configurable to warning). Every source member must be consumed or explicitly marked source-ignored. *"I forgot to map it" stops compiling.*
+- **Completeness:** every destination member must be paired or carry `[MapIgnore]`. Otherwise → **build error** (always — there is no per-mapper severity override; see *Completeness diagnostics* below). Every source member must be consumed or explicitly marked source-ignored. *"I forgot to map it" stops compiling.*
 - **Blit proof:** for each contiguous run, the generator asks: are these segments unmanaged, identically sized, layout-compatible, and transform-free? If yes, it plans a bulk copy (`MemoryMarshal.Cast` / `Unsafe.CopyBlock` / SIMD; whole-span for collections). If no, it plans direct assignments.
 
 ### 4. Emit
@@ -99,6 +99,22 @@ public partial class CustomerMapper
 
 If `CustomerDto` gains a `Region` property and you don't map or ignore it, **the build fails** with a diagnostic pointing at the unmapped member.
 
+### Declaring maps without a method per pair (`[GenerateMap]`)
+
+For low-ceremony migration — e.g. replacing AutoMapper's `CreateMap<A, B>()` — annotate the mapper **class** with `[GenerateMap<TSource, TTarget>]` instead of writing a `partial` method for every pair. The generator emits a `public TTarget Map(TSource src)` overload per declared pair, with the **same** completeness gate, conversions, nested/collection handling, and hooks as a declared method. The source/target types stay plain POCOs (no attributes on them):
+
+```csharp
+[DwarfMapper]
+[GenerateMap<Order, OrderDto>]
+[GenerateMap<Customer, CustomerDto>]
+public partial class Mappers { }
+
+// usage — overload resolved by the source type:
+OrderDto dto = new Mappers().Map(order);
+```
+
+Overloads are distinguished by source type; declaring two pairs with the same source type but different targets is an ambiguous-overload compile error — declare those as named `partial` methods instead.
+
 ### Configuring mapping
 
 ```csharp
@@ -134,7 +150,7 @@ public partial class OrderMapper
 }
 ```
 
-- **Nested objects** map automatically when you declare a mapping method for the nested type pair; it is found by signature and called (`Home = ToDto(o.Home)`).
+- **Nested objects** map automatically when you declare a mapping method for the nested type pair; it is found by signature and called (`Home = ToDto(o.Home)`). When no such method is declared, **auto-nesting** synthesizes one for the nested pair (on by default; class-level `[DwarfMapper(AutoNest = false)]` turns it off, and the per-method `[AutoNest(false)]` attribute disables it for a single mapping method even when the class enables it). An abstract/interface source type under auto-nesting is `DWARF033` — declare an explicit method or `[MapDerivedType]` instead.
 - **Custom conversions** use `[MapProperty(src, tgt, Use = nameof(Method))]`, where `Method` takes the source member type and returns the destination type.
 - **Null substitution & conditions**: `[MapProperty(src, tgt, NullSubstitute = "(none)")]` emits `src ?? "(none)"` for a nullable source (direct members; the value is type-checked → `DWARF049`). `[MapProperty(src, tgt, When = nameof(Predicate))]` guards the assignment — `if (Predicate(s)) dst.X = …;` — where `Predicate` is a `bool` method taking the source (the member keeps its default when false; an invalid predicate is `DWARF050`).
 - **Deep source paths**: the source may be a **dotted path** that reads through the object graph — `[MapProperty("Customer.Name", nameof(Dto.CustomerName))]` emits `s.Customer.Name` (member names never contain dots, so the path is unambiguous). The leaf type goes through the same conversion rules (`Use=` works too). An unresolvable segment is `DWARF043`; a **nullable interior hop** (which can throw `NullReferenceException` at runtime) is the `DWARF044` suggestion.
@@ -185,7 +201,7 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 
 **Nullable values.** A nullable value-type source mapped to a non-nullable destination (`int? → int`) is unwrapped per `NullStrategy`: **throw on null** (default) or `[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]` to use the destination default. A non-nullable source mapped to a nullable-value-type destination (`long → int?`, `string → int?`) is handled automatically — the inner conversion (e.g. `CreateChecked`, `Parse`) runs, and the result is implicitly lifted to `T?`; overflow and format errors still propagate. Nullable-source + nullable-target (`long?→int?`) is not yet auto-handled (DWARF005; a documented follow-up).
 
-**Collections.** `T[]`, `List<T>`, and `HashSet<T>` members map element-by-element, applying the same conversion rules per element (nested objects, converters, enums, nullable unwrap, even nested collections). When the element type is unchanged, the whole collection is bulk-copied (`T[]` → `T[]` clone, `→ List<T>`/`HashSet<T>` bulk constructor). Read-only source shapes (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlySet<T>`, …) are accepted as sources.
+**Collections.** `T[]`, `List<T>`, and `HashSet<T>` members map element-by-element, applying the same conversion rules per element (nested objects, converters, enums, nullable unwrap, even nested collections). When the element type is unchanged, the whole collection is bulk-copied (`T[]` → `T[]` clone, `→ List<T>`/`HashSet<T>` bulk constructor). Read-only source shapes (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlySet<T>`, …) are accepted as sources. A **null source collection** never throws: by default (`[DwarfMapper(NullCollections = NullCollectionStrategy.AsEmpty)]`) it produces an empty target collection; set `NullCollections = NullCollectionStrategy.AsNull` to propagate null instead (the target member must then be a nullable reference type). An unsupported collection/dictionary target type is `DWARF027`.
 
 **Flattening.** `[Flatten("Address")]` pulls a complex source member's sub-members up to top-level destination members of the same name (`Address.City → City`). The flattened leaf goes through the same conversion rules (converters, enums, nullable). One level deep; a null flatten root throws at runtime. Unknown root → `DWARF016`; a name flattened from two roots → `DWARF017`.
 
@@ -226,7 +242,7 @@ Obsolete constructors and the implicit record copy constructor (`R(R original)`)
 
 **Emitted code is AOT-safe.** Named-argument constructor calls are concrete, non-reflective invocations — no `Activator.CreateInstance`, no expression trees.
 
-**Projection (IQueryable).** A partial method `IQueryable<TDto> Project(IQueryable<T> src)` generates `src.Select(s => new TDto { … })` — an expression tree your ORM translates to SQL. **Projection is deliberately simple:** only directly-assignable members (plus `[MapProperty]` renames and `[MapIgnore]`) are projected — no method calls, no inline nested-projection "magic" (a known antipattern). A member needing a real conversion is `DWARF019`; do that mapping with a runtime mapper instead.
+**Projection (IQueryable).** A partial method `IQueryable<TDto> Project(IQueryable<T> src)` generates `src.Select(s => new TDto { … })` — an expression tree your ORM translates to SQL. **Projection is deliberately simple:** only directly-assignable members (plus `[MapProperty]` renames and `[MapIgnore]`) are projected — no method calls, no inline nested-projection "magic" (a known antipattern). A member needing a real conversion is `DWARF028` (with a reason); do that mapping with a runtime mapper instead.
 
 **Blittable fast-path (SIMD).** When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing, and the same ordered field names/types (including nested structs, recursively) — DwarfMapper skips the element loop and reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove, behind a JIT-folded runtime size guard. This is the one place DwarfMapper beats a hand-written name-based copy, and it is emitted **only when proven safe** — otherwise it falls back to the element loop. For layout-compatible types the proof can't confirm (differing field names you know are positionally correct, types from referenced assemblies), opt in with `[Reinterpret("Member")]` — still memory-safe (unmanaged + size guard), with the field correspondence as your assertion. A bad `[Reinterpret]` target is `DWARF022`.
 
@@ -365,8 +381,12 @@ tests/
   DwarfMapper.Generator.Tests/   # generator snapshot + behavior tests
   DwarfMapper.IntegrationTests/  # end-to-end mapping integration tests
   DwarfMapper.Testing.Tests/     # DwarfMapper.Testing library unit tests
+  DwarfMapper.CorpusTests/       # real-world mapping parity corpus
+benchmarks/
+  DwarfMapper.Benchmarks/    # BenchmarkDotNet suite (vs hand-written + Mapperly/Mapster/AutoMapper)
 samples/
   DwarfMapper.AotSample/     # NativeAOT + trimming gate sample
+docs/                        # COMPARISON.md, SECURITY.md, design specs + plans
 README.md
 ```
 
@@ -396,7 +416,6 @@ README.md
 - **Async streaming**: `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` lazily transforms an async sequence element-by-element (emitted as an `async` iterator; streaming/back-pressure preserved)
 
 ### Planned
-- Competitor benchmark comparisons (Mapperly / Mapster / AutoMapper)
 - NuGet publish
 
 ---

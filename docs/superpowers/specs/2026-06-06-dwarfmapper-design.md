@@ -19,7 +19,7 @@ A compile-time mapper where mislinking is structurally hard, maps are round-trip
 3. **Security — all four interpretations:** zero reflection / AOT- & trim-safe (CI-gated); over-posting protection (only resolved members written; ambiguity = error); provably-safe blit (analyzer-gated, falls back to assignments if unprovable); compile-time completeness diagnostics (no silent data loss).
 4. **Testing toolkit — separate package + analyzer hooks.** `DwarfMapper.Testing` (fixtures, seeded property-based fuzzer, round-trip verifier, informed dumps) plus generator-emitted metadata/hooks.
 5. **Authoring model — declarative only.** Partial classes + partial methods (Mapperly mechanics) with attribute config (`[MapProperty]`, `[MapIgnore]`, `[MapProperty(Use=...)]`, `[Flatten]`, `[RoundTrip]`, `[BeforeMap]`, `[AfterMap]`). No runtime fluent config (AutoMapper-style ergonomics expressed declaratively to stay AOT-safe). Note: `[MapWith]` does NOT exist; custom per-member conversion is `[MapProperty(source, target, Use = nameof(Method))]`.
-6. **Scope — v1 shipped.** All features documented in the README (flat/nested/collection mapping, enums, null handling, flattening, hooks, IQueryable projection, blittable fast-path, RoundTrip, DwarfMapper.Testing) are built and covered by tests. Remaining planned items: `MapTo`/span zero-alloc overloads, async mapping, in-repo benchmarks, NuGet publish.
+6. **Scope — v1 shipped.** All features documented in the README (flat/nested/collection mapping, enums, null handling, flattening, hooks, IQueryable projection, blittable fast-path, RoundTrip, DwarfMapper.Testing) are built and covered by tests. Span zero-alloc overloads, async streaming, update-into-existing (`Map(src, dest)`), constructor/record mapping, reference handling, `[MapDerivedType]`/`[FlattenGraph]`, and the in-repo BenchmarkDotNet suite have **since shipped** as well. The originally-named `MapTo(src, ref dest)` overload was never built — the two-parameter `Map(src, dest)` update-into form supersedes it. Remaining planned item: NuGet publish.
 7. **License — GPL-2.0-only** (`SPDX: GPL-2.0-only`), no commercial tier. Strong copyleft chosen deliberately: because DwarfMapper is a source generator that emits into the consumer's assembly, GPLv2 makes downstream distributed apps GPLv2 too — the intended "free, and profit happens in the open" stance. Known trade-offs accepted: SaaS/hosted use is not distribution so it does not trigger disclosure (AGPL was explicitly declined); GPLv2-only is incompatible with Apache-2.0/GPLv3 (non-issue given zero dependencies). LICENSE file + per-file SPDX headers required.
 
 ## Architecture
@@ -27,7 +27,7 @@ A compile-time mapper where mislinking is structurally hard, maps are round-trip
 - **`DwarfMapper`** (`net10.0`) — attributes + abstractions, zero deps. (Project is .NET 10 only.)
 - **`DwarfMapper.Generator`** (`netstandard2.0`) — Roslyn incremental generator + analyzers/diagnostics.
 - **`DwarfMapper.Testing`** (`net10.0`) — fixtures, fuzzer, round-trip, informed dumps, xUnit/NUnit theory sources.
-- Repo: `src/` (DwarfMapper, DwarfMapper.Generator, DwarfMapper.Testing), `tests/` (DwarfMapper.Generator.Tests, DwarfMapper.IntegrationTests, DwarfMapper.Testing.Tests), `samples/` (DwarfMapper.AotSample). No BenchmarkDotNet project exists in-repo (benchmarks are planned).
+- Repo: `src/` (DwarfMapper, DwarfMapper.Generator, DwarfMapper.Testing), `tests/` (DwarfMapper.Generator.Tests, DwarfMapper.IntegrationTests, DwarfMapper.Testing.Tests, DwarfMapper.CorpusTests), `benchmarks/` (DwarfMapper.Benchmarks), `samples/` (DwarfMapper.AotSample), `docs/`.
 
 ## Pipeline
 
@@ -35,18 +35,18 @@ A compile-time mapper where mislinking is structurally hard, maps are round-trip
 
 ## Anti-mislinking features
 
-- Completeness diagnostics — unmapped destination members error by default (configurable severity).
+- Completeness diagnostics — unmapped destination members are always a build error (no per-mapper severity override; enforced at compile time by design).
 - `[RoundTrip]` — generator emits a fuzz-driven `Back(Forward(x)) ≡ x` harness consumed by `DwarfMapper.Testing`.
 - Informed dumps — mapping-graph-aware diff: diverging member, src/dest values, resolved path, repro seed.
 
 ## Performance guarantees
 
-0 allocation in the mapper; bulk/SIMD on blittable collections. `MapTo(src, ref dest)` and span overloads for zero-alloc into caller memory are **planned** (not yet implemented). In-repo BenchmarkDotNet suite is **planned** (not yet implemented).
+0 allocation in the mapper; bulk/SIMD on blittable collections. Span overloads for zero-alloc into caller memory (`void Map(ReadOnlySpan<S>, Span<D>)`) and the in-repo BenchmarkDotNet suite have **shipped**. The originally-named `MapTo(src, ref dest)` overload was never built; the two-parameter `Map(src, dest)` update-into form covers that need instead.
 
 ## Implementation status notes
 
-- Diagnostic ID scheme and default severities: **shipped** (DWARF001–DWARF023 defined in DiagnosticDescriptors.cs; all errors by default; no per-mapper severity configuration — completeness is always a build error by design).
-- Attribute surface and conflict rules: **shipped** (`[MapProperty]`, `[MapIgnore]`, `[Flatten]`, `[BeforeMap]`, `[AfterMap]`, `[RoundTrip]`, `[Reinterpret]`).
+- Diagnostic ID scheme and default severities: **shipped** (DWARF001–DWARF052 defined in DiagnosticDescriptors.cs, with 004/006/029 reserved/retired; most are errors, but DWARF037 is a Warning and DWARF038/039/044/047 are Info-by-default suggestions escalatable via `.editorconfig`; no per-mapper severity configuration — completeness is always a build error by design).
+- Attribute surface and conflict rules: **shipped** (`[MapProperty]`, `[MapValue]`, `[MapIgnore]`, `[MapIgnoreSource]`, `[Flatten]`, `[FlattenGraph]`, `[MapDerivedType]`, `[GenerateMap<,>]`, `[ReverseMap]`, `[BeforeMap]`, `[AfterMap]`, `[RoundTrip]`, `[Reinterpret]`, `[AutoNest]`, `[DwarfMapperConstructor]`; plus `[DwarfMapper]` knobs `CaseInsensitive`, `NameConvention`, `RequiredMapping`, `ImplicitConversions`, `EnumStrategy`, `NullStrategy`, `NullCollections`, `ReferenceHandling`, `OnCycle`, `MaxDepth`, `AutoNest`).
 - Structural-equality float tolerance: **shipped** — `StructuralComparer` uses `FloatEpsilon = 1e-9` for `float`/`double` comparisons (see `src/DwarfMapper.Testing/StructuralComparer.cs`).
 - Fixture generation strategy: **shipped** (seeded `ObjectFactory.Create<T>` + `Fuzzer.Generate<T>` in DwarfMapper.Testing).
 - Blit-proof rules matrix: **shipped** (unmanaged + Sequential + same Pack + matching ordered field names/types, recursive; `[Reinterpret]` escape hatch with size guard).

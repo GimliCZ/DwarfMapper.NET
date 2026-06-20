@@ -5048,12 +5048,12 @@ internal static class MapperExtractor
     /// New (Plan 19D) recursive projection resolver. Produces a list of
     /// <see cref="ProjectionMemberMap"/> with inline expression fragments (no helper calls).
     ///
-    /// DWARF019 vs. DWARF028 decision:
-    ///   DWARF019 (NotProjectable) is kept ONLY for attribute-conflict cases in explicit maps
-    ///   ([MapProperty(Use=)] on a projection method — that is an attribute usage error).
-    ///   DWARF028 (ProjectionNotTranslatable) is used for all type-conversion unsafety:
-    ///   narrowing numeric, parsable string↔T, enum by-name, non-translatable collections,
-    ///   reference handling, and "no translatable conversion found" fallback.
+    /// Projection translatability: every non-translatable projection member is reported as
+    ///   DWARF028 (ProjectionNotTranslatable) with a specific reason — including the
+    ///   [MapProperty(Use=)] attribute-conflict case and all type-conversion unsafety
+    ///   (narrowing numeric, parsable string↔T, enum by-name, non-translatable collections,
+    ///   reference handling, and the "no translatable conversion found" fallback).
+    ///   (DWARF019/NotProjectable was retired in favour of DWARF028's reason-carrying messages.)
     /// </summary>
     private static List<ProjectionMemberMap> ResolveProjectionMembers(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
@@ -5092,7 +5092,7 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownTarget, location, tgtName));
                 continue;
             }
-            // DWARF019 for Use= (attribute conflict, not a type error)
+            // A custom converter (Use=) cannot run inside a provider-translated projection.
             if (use is not null)
             {
                 EmitDWARF028(diagnostics, location, tgtName,

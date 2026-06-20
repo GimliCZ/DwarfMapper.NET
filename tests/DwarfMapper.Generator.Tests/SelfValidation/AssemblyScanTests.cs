@@ -36,6 +36,7 @@ file static class ReservedIds
     {
         "DWARF004",
         "DWARF006",
+        "DWARF019", // retired; superseded by DWARF028 (ProjectionNotTranslatable)
         "DWARF029",
     };
 }

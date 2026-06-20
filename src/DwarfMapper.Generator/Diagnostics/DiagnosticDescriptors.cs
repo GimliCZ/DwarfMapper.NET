@@ -105,11 +105,8 @@ public static class DiagnosticDescriptors
         "Hook method '{0}' must be void; [BeforeMap] takes one parameter, [AfterMap] takes one or two",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor NotProjectable = new(
-        "DWARF019",
-        "Member is not projectable",
-        "Projection member '{0}' is not directly assignable; IQueryable projections allow only direct member assignment (map it with a runtime mapper)",
-        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+    // DWARF019 (NotProjectable) — retired; superseded by DWARF028 (ProjectionNotTranslatable),
+    // which carries a specific reason for every non-translatable projection member. Do not reuse.
 
     public static readonly DiagnosticDescriptor RoundTripNoInverse = new(
         "DWARF020",

@@ -31,10 +31,11 @@ jobs:
         run: |
           set -euo pipefail
           # A solution-wide `dotnet test --collect` emits ONE cobertura per test
-          # project (Generator.Tests, IntegrationTests, Testing.Tests). Only one of
-          # them contains the <package name="DwarfMapper.Generator"> node — so we
-          # scan ALL reports and key the gate off that package directly, rather than
-          # the file-level root rate (which is diluted by, or missing, the generator).
+          # project (Generator.Tests, IntegrationTests, Testing.Tests, CorpusTests —
+          # every test project in the solution). Only one of them contains the
+          # <package name="DwarfMapper.Generator"> node — so we scan ALL reports and
+          # key the gate off that package directly, rather than the file-level root
+          # rate (which is diluted by, or missing, the generator).
           mapfile -t COBERTURA < <(find TestResults -name "coverage.cobertura.xml")
           if [ ${#COBERTURA[@]} -eq 0 ]; then echo "No coverage.cobertura.xml found"; exit 1; fi
           python3 - "${COBERTURA[@]}" <<'PYEOF'
