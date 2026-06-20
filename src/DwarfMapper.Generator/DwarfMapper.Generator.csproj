@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
@@ -5,6 +6,11 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <DevelopmentDependency>true</DevelopmentDependency>
+    <Description>DwarfMapper Roslyn incremental source generator and analyzers/diagnostics. Emits the compile-time mapping code for types annotated with DwarfMapper attributes. Reference alongside the DwarfMapper package.</Description>
+    <!-- Analyzer-only package: ships no lib/ assembly and no runtime dependencies
+         (all PackageReferences are PrivateAssets=all). Suppress the empty dependency
+         group so the package validates (NU5128). -->
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />

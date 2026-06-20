@@ -1,8 +1,10 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>DwarfMapper attributes and abstractions — a compile-time object mapper for .NET that makes mislinking a build error, verifies maps with zero-maintenance round-trip tests, and falls back to SIMD/blittable bulk copy. Zero reflection, NativeAOT- and trim-safe. Pair with the DwarfMapper.Generator package.</Description>
   </PropertyGroup>
 </Project>

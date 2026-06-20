@@ -346,6 +346,17 @@ DwarfMapper treats mapping as an attack surface and a correctness surface at onc
 - **Provably-safe blit.** The unsafe fast-path is emitted only behind analyzer-verified proofs; otherwise it degrades to safe assignments.
 - **Completeness diagnostics.** No silent data loss in either direction.
 
+### Supply chain (CRA-aligned)
+
+Releases are built and published to be independently verifiable:
+
+- **Deterministic, reproducible builds** (`Deterministic` + `ContinuousIntegrationBuild`) with SourceLink and embedded untracked sources.
+- **Machine-readable SBOM** (CycloneDX) generated in CI and attached to every release.
+- **Keyless signing — no private key stored anywhere.** Releases are signed via GitHub's OIDC identity through Sigstore (`actions/attest-build-provenance`) and recorded in a public transparency log; authenticity = each artifact's **SHA-256 fingerprint** (`SHA256SUMS`) + the **git identity** that built it (verify with `gh attestation verify`).
+- **Hardened CI**: all GitHub Actions pinned to commit SHAs; CodeQL, NativeAOT/trim gate, and coverage gate.
+
+See [`docs/RELEASING.md`](docs/RELEASING.md) for step-by-step verification (fingerprint, provenance/identity, SBOM).
+
 ---
 
 ## Performance
@@ -366,6 +377,8 @@ DwarfMapper is **.NET 10 only**. The one exception is the generator assembly its
 | `DwarfMapper.Testing` | Fixture builders, seeded property-based fuzzer, round-trip verifier, informed dumps. xUnit/NUnit theory sources. | `net10.0` |
 
 \* The generator assembly targets `netstandard2.0` because Roslyn loads analyzers/source generators *into the compiler host*, which only accepts `netstandard2.0` components. This is a hard requirement of the Roslyn toolchain, not a runtime-support choice — the code it **generates** targets .NET 10 like everything else.
+
+Reference both `DwarfMapper` and `DwarfMapper.Generator` (the generator is a `DevelopmentDependency`). Released packages ship with a CycloneDX SBOM, `SHA256SUMS`, and a keyless GitHub-identity provenance signature (no stored key) — see [`docs/RELEASING.md`](docs/RELEASING.md) to verify.
 
 ---
 
@@ -439,7 +452,7 @@ The full license text lives in [`LICENSE`](LICENSE). Every source file carries a
 
 ## Status
 
-**Feature-complete v1 — pre-release / not yet published to NuGet.** The generator, all documented attributes, and the testing toolkit are built and covered by tests. APIs are stabilising. Not yet on NuGet; use via source or direct project reference. Feedback on rough edges welcome.
+**Feature-complete v1 — pre-release (`1.0.0-rc.1`), not yet published to NuGet.** The generator, all documented attributes, and the testing toolkit are built and covered by tests. APIs are stabilising. The packages build, keyless-sign (GitHub identity), and release through a tag-triggered pipeline ([`docs/RELEASING.md`](docs/RELEASING.md)) but are not yet pushed to nuget.org; use via source or direct project reference for now. Feedback on rough edges welcome.
 
 ## Name
 

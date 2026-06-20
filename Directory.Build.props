@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project>
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
@@ -19,9 +20,17 @@
 
     <!-- Package metadata (license is unambiguous in every artifact) -->
     <Authors>DwarfMapper contributors</Authors>
+    <Company>DwarfMapper contributors</Company>
+    <Copyright>Copyright (c) DwarfMapper contributors</Copyright>
     <PackageLicenseExpression>GPL-2.0-only</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/GimliCZ/DwarfMapper.NET</PackageProjectUrl>
     <RepositoryUrl>https://github.com/GimliCZ/DwarfMapper.NET</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>mapper;mapping;source-generator;roslyn;aot;dto;blittable;simd</PackageTags>
+
+    <!-- Version: overridable by CI from the release tag (-p:Version=x.y.z).
+         Keep in sync with the README 'Status' section. -->
+    <Version Condition="'$(Version)' == ''">1.0.0-rc.1</Version>
   </PropertyGroup>
 </Project>

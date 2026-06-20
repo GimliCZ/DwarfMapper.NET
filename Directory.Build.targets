@@ -1,0 +1,24 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<!--
+  Packaging defaults applied ONLY to shippable (packable) projects.
+  This file is imported after each project body, so $(IsPackable) is already
+  resolved — test/benchmark/sample projects set IsPackable=false and are skipped.
+-->
+<Project>
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <!-- SourceLink (built into the .NET SDK): deterministic, debuggable packages -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+
+    <!-- Symbol package as modern .snupkg (skipped for analyzer-only packages
+         that opt out via IncludeBuildOutput=false). -->
+    <IncludeSymbols Condition="'$(IncludeBuildOutput)' != 'false'">true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <!-- Bundle the repo-root README into every shipped package (fixes NU5039).
+       $(MSBuildThisFileDirectory) is the repo root where this file lives. -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+</Project>

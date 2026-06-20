@@ -39,59 +39,59 @@ jobs:
           mapfile -t COBERTURA < <(find TestResults -name "coverage.cobertura.xml")
           if [ ${#COBERTURA[@]} -eq 0 ]; then echo "No coverage.cobertura.xml found"; exit 1; fi
           python3 - "${COBERTURA[@]}" <<'PYEOF'
-import sys
-import xml.etree.ElementTree as ET
+          import sys
+          import xml.etree.ElementTree as ET
 
-GENERATOR_PACKAGE   = "DwarfMapper.Generator"
-LINE_THRESHOLD      = 0.80
-BRANCH_THRESHOLD    = 0.70
-FILE_LINE_THRESHOLD = 0.90
+          GENERATOR_PACKAGE   = "DwarfMapper.Generator"
+          LINE_THRESHOLD      = 0.80
+          BRANCH_THRESHOLD    = 0.70
+          FILE_LINE_THRESHOLD = 0.90
 
-target_files = {
-    "EquatableArray.cs", "TypeInterfaces.cs", "BlittableProof.cs",
-    "LocationInfo.cs", "FlattenGraphDirective.cs",
-}
+          target_files = {
+              "EquatableArray.cs", "TypeInterfaces.cs", "BlittableProof.cs",
+              "LocationInfo.cs", "FlattenGraphDirective.cs",
+          }
 
-# Locate the generator package across every report. If split across multiple
-# reports, keep the best line-rate per file and the best package-level rates.
-gen_line = gen_branch = -1.0
-file_rates = {}
-for path in sys.argv[1:]:
-    root = ET.parse(path).getroot()
-    for pkg in root.iter("package"):
-        if pkg.attrib.get("name") != GENERATOR_PACKAGE:
-            continue
-        gen_line   = max(gen_line,   float(pkg.attrib.get("line-rate",   "0")))
-        gen_branch = max(gen_branch, float(pkg.attrib.get("branch-rate", "0")))
-        for cls in pkg.iter("class"):
-            filename = cls.attrib.get("filename", "").replace("\\", "/").split("/")[-1]
-            if filename in target_files:
-                rate = float(cls.attrib.get("line-rate", "0"))
-                file_rates[filename] = max(file_rates.get(filename, 0.0), rate)
+          # Locate the generator package across every report. If split across multiple
+          # reports, keep the best line-rate per file and the best package-level rates.
+          gen_line = gen_branch = -1.0
+          file_rates = {}
+          for path in sys.argv[1:]:
+              root = ET.parse(path).getroot()
+              for pkg in root.iter("package"):
+                  if pkg.attrib.get("name") != GENERATOR_PACKAGE:
+                      continue
+                  gen_line   = max(gen_line,   float(pkg.attrib.get("line-rate",   "0")))
+                  gen_branch = max(gen_branch, float(pkg.attrib.get("branch-rate", "0")))
+                  for cls in pkg.iter("class"):
+                      filename = cls.attrib.get("filename", "").replace("\\", "/").split("/")[-1]
+                      if filename in target_files:
+                          rate = float(cls.attrib.get("line-rate", "0"))
+                          file_rates[filename] = max(file_rates.get(filename, 0.0), rate)
 
-failures = []
-if gen_line < 0:
-    failures.append(f"No '{GENERATOR_PACKAGE}' package found in any coverage report")
-else:
-    if gen_line < LINE_THRESHOLD:
-        failures.append(f"Generator line coverage {gen_line*100:.1f}% < {LINE_THRESHOLD*100:.0f}%")
-    if gen_branch < BRANCH_THRESHOLD:
-        failures.append(f"Generator branch coverage {gen_branch*100:.1f}% < {BRANCH_THRESHOLD*100:.0f}%")
-    for fname in target_files:
-        rate = file_rates.get(fname, 0.0)
-        if rate < FILE_LINE_THRESHOLD:
-            failures.append(f"{fname} line coverage {rate*100:.1f}% < {FILE_LINE_THRESHOLD*100:.0f}%")
+          failures = []
+          if gen_line < 0:
+              failures.append(f"No '{GENERATOR_PACKAGE}' package found in any coverage report")
+          else:
+              if gen_line < LINE_THRESHOLD:
+                  failures.append(f"Generator line coverage {gen_line*100:.1f}% < {LINE_THRESHOLD*100:.0f}%")
+              if gen_branch < BRANCH_THRESHOLD:
+                  failures.append(f"Generator branch coverage {gen_branch*100:.1f}% < {BRANCH_THRESHOLD*100:.0f}%")
+              for fname in target_files:
+                  rate = file_rates.get(fname, 0.0)
+                  if rate < FILE_LINE_THRESHOLD:
+                      failures.append(f"{fname} line coverage {rate*100:.1f}% < {FILE_LINE_THRESHOLD*100:.0f}%")
 
-if failures:
-    print("COVERAGE GATE FAILED:")
-    for msg in failures:
-        print(f"  - {msg}")
-    sys.exit(1)
+          if failures:
+              print("COVERAGE GATE FAILED:")
+              for msg in failures:
+                  print(f"  - {msg}")
+              sys.exit(1)
 
-print(f"Coverage gate PASSED  generator line={gen_line*100:.1f}% branch={gen_branch*100:.1f}%")
-for fname, rate in sorted(file_rates.items()):
-    print(f"  {fname}: {rate*100:.1f}%")
-PYEOF
+          print(f"Coverage gate PASSED  generator line={gen_line*100:.1f}% branch={gen_branch*100:.1f}%")
+          for fname, rate in sorted(file_rates.items()):
+              print(f"  {fname}: {rate*100:.1f}%")
+          PYEOF
 
   aot-trim-gate:
     strategy:

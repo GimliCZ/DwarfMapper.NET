@@ -14,3 +14,18 @@ coverage.cobertura.xml
 
 # BenchmarkDotNet output
 **/BenchmarkDotNet.Artifacts/
+
+# Signing material — NEVER commit private keys / PFX / base64-encoded certs
+*.pfx
+*.snk
+*.p12
+*.pem
+*.b64
+# Release/pack output
+artifacts/
+*.nupkg
+*.snupkg
+# SBOM output
+/sbom/
+**/bom.xml
+**/bom.json
