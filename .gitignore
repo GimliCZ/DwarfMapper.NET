@@ -29,3 +29,6 @@ artifacts/
 /sbom/
 **/bom.xml
 **/bom.json
+
+# Deep-research intermediate dump (curated digest/report committed instead)
+docs/research/_raw-harvest.jsonl
