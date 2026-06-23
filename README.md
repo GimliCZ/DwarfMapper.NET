@@ -64,30 +64,56 @@ The generator writes direct assignments, inline converters, and null guards for 
 
 ## Quick start
 
+Start with two plain classes — your domain type and the shape you want to map it to. Here the members line up by name:
+
+```csharp
+public class Person
+{
+    public string Name { get; set; }
+    public int Age { get; set; }
+}
+
+public class PersonDto
+{
+    public string Name { get; set; }
+    public int Age { get; set; }
+}
+```
+
+To map between them, write a `partial` class marked `[DwarfMapper]` with one **empty `partial` method** — source in, target out. The generator writes the body for you:
+
 ```csharp
 using DwarfMapper;
 
 [DwarfMapper]
-public partial class OrderMapper
+public partial class PersonMapper
 {
-    // Filled in by the generator.
-    public partial OrderDto ToDto(Order src);
-
-    // A forward/back pair — round-trip verified automatically.
-    [RoundTrip]
-    public partial Order FromDto(OrderDto dto);
+    public partial PersonDto ToDto(Person person);
 }
 ```
 
-Customize with attributes (all compile-time, all AOT-safe):
+Then call it like any ordinary class — nothing to register, no configuration, no reflection:
+
+```csharp
+var mapper = new PersonMapper();
+PersonDto dto = mapper.ToDto(person);
+```
+
+That's the whole loop: **two plain classes, one attribute, one `partial` method.** The generated body is exactly what you'd write by hand — `new PersonDto { Name = person.Name, Age = person.Age }`.
+
+**The payoff:** add an `Email` property to `PersonDto` and forget to map it, and **the build fails** with an error pointing straight at the unmapped member — you cannot silently ship an incomplete map. Don't want a member mapped? Say so out loud with `[MapIgnore]`.
+
+### Next step: renames, conversions, flattening
+
+Differently-named members, custom conversions, and pulling up nested values are one attribute each — and your source/target classes stay plain POCOs (the attributes live only on the mapper):
 
 ```csharp
 [DwarfMapper]
 public partial class CustomerMapper
 {
-    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]
+    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]                            // rename
     [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))]  // custom conversion
-    [Flatten(nameof(Customer.Address))]          // Address.City -> City
+    [Flatten(nameof(Customer.Address))]                                                          // Address.City -> City
     public partial CustomerDto ToDto(Customer src);
 
     [MapIgnore(nameof(Customer.PasswordHash))]   // explicit, intentional, audited
@@ -97,7 +123,7 @@ public partial class CustomerMapper
 }
 ```
 
-If `CustomerDto` gains a `Region` property and you don't map or ignore it, **the build fails** with a diagnostic pointing at the unmapped member.
+Everything beyond this — records/constructors, collections, enums, projections, reference cycles, round-trip verification — builds on the same shape: a `partial` method whose body the generator fills in. The rest of this page is the reference for those; reach for it when you need it.
 
 ### Declaring maps without a method per pair (`[GenerateMap]`)
 
