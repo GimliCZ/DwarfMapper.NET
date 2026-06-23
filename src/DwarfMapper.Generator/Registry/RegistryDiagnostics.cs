@@ -40,4 +40,16 @@ internal static class RegistryDiagnostics
         "[MapProperty] value count does not match the targets",
         "[MapProperty] on {0} must have either one value (all targets) or exactly one value per [MapTo] target, in order",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor NoConversion = new(
+        "DWARFR05",
+        "No conversion between mapped members",
+        "No built-in conversion for {0}; the source and destination member types are incompatible (use the [DwarfMapper] class model for a custom converter)",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor RecursiveNesting = new(
+        "DWARFR06",
+        "Recursive nested mapping is not supported by the registry",
+        "Nested mapping for {0} is recursive; the registry front door does not thread a reference context — use the [DwarfMapper] class model (ReferenceHandling/OnCycle) for cyclic graphs",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true);
 }

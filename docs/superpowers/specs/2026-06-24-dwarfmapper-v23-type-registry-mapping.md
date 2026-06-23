@@ -1,8 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # v23 — Type-registry mapping (`[MapTo]`, no user `partial`)
 
-**Status:** spec + prototype slice (this commit). The prototype implements the no-config happy path;
-items marked _(spec-only)_ are designed here but not yet built.
+**Status:** spec + **full-scale** implementation. Conversions (numeric / parse / enum), nested objects,
+and List/array collections all work, reusing the core converter engine. Items marked _(spec-only)_ are
+designed here but not yet built (see Boundary).
 
 ## Motivation
 
@@ -115,14 +116,23 @@ OrderSummary summary = order.ToOrderSummary();
 4. **Emit** — one `internal static class` per source type with `MapTo<T>(this Src)` (typeof-dispatch) and
    `To{Target}(this Src)` workers doing direct member assignment.
 
-### Degradation to the class model _(spec-only)_
-Custom converters (`Use=`), hooks (`[BeforeMap]`/`[AfterMap]`), nested/collection/enum conversion, and
-projections do **not** fit cleanly on source-member attributes (a converter needs a method to point at,
-and putting it on the domain type couples model→DTO). The registry front door covers the **simple,
-config-light majority**; anything needing those keeps using the `[DwarfMapper]` class. Long-term the
-registry resolver should call the **same** `MapperExtractor` pipeline so nested/collection/converter
-support comes for free; the prototype uses a minimal standalone resolver (identity/implicit member
-assignment only) to prove ergonomics.
+### Conversion support (full scale)
+The registry's `Resolver` reuses the **core conversion engine** and adds self-contained graph mapping:
+- **Scalars** — reuses `NumericConverter` (checked narrowing), `ParsableConverter` (string↔T parse/format),
+  `EnumConverter` (enum↔enum/string/int) directly; identity/implicit go straight to assignment. The
+  synthesized helper methods are emitted into the generated static class.
+- **Nested objects** — `Resolver.SynthNested` recursively synthesizes a `__DwarfMapObj_*` mapper for an
+  object→object member pair (by-name, full conversion per member), with a cycle guard: a recursive pair is
+  **DWARFR06** (the registry threads no reference context — use the `[DwarfMapper]` class for cyclic graphs).
+- **Collections** — `T[]`/`List<T>` (and read-only/enumerable sources) → `U[]`/`List<U>`, each element run
+  through the same `Resolver` (so collections-of-nested and element conversions work); null source → empty.
+
+### Boundary (stays on the `[DwarfMapper]` class model)
+Custom converters (`Use=`), hooks, projections, `[MapDerivedType]`/`[FlattenGraph]`, reference-cycle
+preservation, `Dictionary<,>`, and nullable-unwrap with a `NullStrategy` decision are **not** in the
+registry — a converter needs a method to point at (awkward on a domain type), and cycle/null-policy are
+class-level concerns. The registry covers the config-light majority; reach for the class model otherwise.
+A future unification could route the registry through the full `MapperExtractor` pipeline.
 
 ## Diagnostics (separate `RegistryDiagnostics`, prefix `DWARFR` so the DWARF0xx self-validation ignores them)
 
@@ -131,7 +141,9 @@ assignment only) to prove ergonomics.
   also what catches a positional swap when the swapped name isn't a member of that target.
 - **DWARFR03** — two source members map to the same destination member (give them distinct positional names).
 - **DWARFR04** — a member's directive count (stacked `[MapProperty]`/`[MapIgnore]`) is neither 1 nor the `[MapTo]` target count.
-- **DWARFR05** _(spec-only)_ — swap-hint: a positional value is not a member of its target but IS a member
+- **DWARFR05** — no built-in conversion between the mapped source/destination member types (use the class model for a custom converter).
+- **DWARFR06** — a nested object pair is recursive (cyclic); the registry threads no reference context.
+- **DWARFR07** _(spec-only)_ — swap-hint: a positional value is not a member of its target but IS a member
   of a *different* target (likely a reordering mistake even when names overlap).
 - Final IDs fold into the DWARF0xx scheme if/when this graduates from prototype to product.
 
@@ -139,8 +151,9 @@ assignment only) to prove ergonomics.
 - [x] Attributes in `DwarfMapper.Registry`.
 - [x] `MapToGenerator` + `RegistryDiagnostics` + minimal emitter (identity/implicit members, ref-type targets).
 - [x] Stacked `[MapProperty]`/`[MapIgnore]` directives, source-ordered, positional per target (1 = broadcast) + arity check (DWARFR04).
-- [x] Runtime test: single + multi-target, positional rename, and per-target map/ignore mixing (order-sensitive).
-- [ ] _(spec-only)_ generic `[MapTo<T>]`; DWARFR05 swap-hint; struct-target zero-box path; converters/hooks/nested via the shared pipeline; generated-source snapshot + incremental-cacheability test (see `docs/research/testing-conformance-REPORT.md`).
+- [x] **Full-scale conversions:** numeric / parse / enum (reuse core converters), nested objects (cycle-guarded, DWARFR06), List/array collections incl. collections-of-nested; DWARFR05 no-conversion gate.
+- [x] Runtime tests: positional rename, order-sensitive map/ignore mixing, and the full conversion matrix (scalars + nested + collections + overflow).
+- [ ] _(spec-only)_ generic `[MapTo<T>]`; DWARFR07 swap-hint; struct-target zero-box path; nullable-unwrap (NullStrategy), `Use=`/hooks/`Dictionary` via the shared pipeline; generated-source snapshot + incremental-cacheability test (see `docs/research/testing-conformance-REPORT.md`).
 
 ## Open questions
 - Unify with the existing attributes (one `[MapProperty]` valid on both method and member) vs. keep the
