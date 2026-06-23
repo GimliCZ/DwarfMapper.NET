@@ -141,6 +141,41 @@ OrderDto dto = new Mappers().Map(order);
 
 Overloads are distinguished by source type; declaring two pairs with the same source type but different targets is an ambiguous-overload compile error — declare those as named `partial` methods instead.
 
+### No mapper class at all — `[MapTo]` (experimental)
+
+If you'd rather not write *any* `partial` class, put the mapping intent on the **source type** and call the result as an extension method — there's nothing to declare and nothing to instantiate:
+
+```csharp
+using DwarfMapper.Registry;
+
+[MapTo(typeof(PersonDto))]
+public class Person
+{
+    public string Name { get; set; }
+    public int Age { get; set; }
+}
+
+PersonDto dto = person.MapTo<PersonDto>();   // or person.ToPersonDto()
+```
+
+One source can target several DTOs, and per-member directives are **stacked and read in source order, each aligned to the matching `[MapTo]` target** — so a member can be renamed differently per target, or mapped in some and ignored in others:
+
+```csharp
+[MapTo(typeof(OrderDto), typeof(OrderSummary))]
+public class Order
+{
+    [MapProperty("Name"), MapProperty("FullName")]  // OrderDto.Name ; OrderSummary.FullName
+    public string FullName { get; set; }
+
+    [MapProperty("Total"), MapIgnore]               // mapped into OrderDto ; ignored for OrderSummary
+    public decimal Total { get; set; }
+}
+```
+
+The same completeness gate applies (every destination member must be satisfied, or it's a build error), and the **full conversion engine** is reused — numeric widening/narrowing, `string`↔`T` parse/format, enums, nested objects, and `T[]`/`List<T>` collections (including collections of nested objects) all work, generating the same helpers as the class model.
+
+What stays on the `[DwarfMapper]` class model (the registry emits a diagnostic pointing you there): `Use=` custom converters, hooks, projections, `[MapDerivedType]`/`[FlattenGraph]`, reference cycles, `Dictionary<,>`, and nullable-unwrap. **`[MapTo]` is experimental** — see [`docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md`](docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md).
+
 ### Configuring mapping
 
 ```csharp
@@ -453,6 +488,9 @@ README.md
 - **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no allocation), with a defensive length guard (too-small destination throws, never silent truncation)
 - **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written **and vs. Mapperly / Mapster / AutoMapper 14** across flat / nested / collection / blit scenarios (see [`docs/COMPARISON.md`](docs/COMPARISON.md) for the full capability/testing/migration comparison); builds in CI, run locally for numbers
 - **Async streaming**: `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` lazily transforms an async sequence element-by-element (emitted as an `async` iterator; streaming/back-pressure preserved)
+
+### Experimental
+- **`[MapTo]` type-registry mapping** — no `partial` class; intent on the source type, called as an extension (`x.MapTo<Dto>()`). Full conversion support (scalars / nested / collections). API may change.
 
 ### Planned
 - NuGet publish
