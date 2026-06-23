@@ -4,10 +4,10 @@ using Microsoft.CodeAnalysis;
 namespace DwarfMapper.Generator.Registry;
 
 /// <summary>
-/// EXPERIMENTAL (v23 prototype). Diagnostics for the <c>[MapTo]</c> type-registry generator. Kept in a
-/// SEPARATE class from <c>DiagnosticDescriptors</c> on purpose: the DWARF0xx self-validation scans reflect
-/// only over that class, so these prototype descriptors (prefix <c>DWARFR</c>) are intentionally invisible
-/// to them. If the registry model graduates from prototype, fold these into the DWARF0xx scheme.
+/// Diagnostics for the <c>[MapTo]</c> registry generator. Kept in a SEPARATE class from
+/// <c>DiagnosticDescriptors</c> on purpose: the DWARF0xx self-validation scans reflect only over that
+/// class, so these <c>DWARFR</c>-prefixed descriptors are intentionally invisible to them. A later
+/// unification could fold them into the DWARF0xx scheme.
 /// </summary>
 // Prototype diagnostics are deliberately NOT release-tracked (kept out of AnalyzerReleases.*.md and the
 // DWARF0xx self-validation scans). Suppress the release-tracking analyzer for this experimental file.

@@ -64,9 +64,12 @@ The generator writes direct assignments, inline converters, and null guards for 
 
 ## Quick start
 
-Start with two plain classes — your domain type and the shape you want to map it to. Here the members line up by name:
+Start with two plain classes — your domain type and the shape you want to map it to. Mark the **source** with `[MapTo]` and the generator gives you an extension method. No mapper class, nothing to register, no reflection:
 
 ```csharp
+using DwarfMapper;
+
+[MapTo(typeof(PersonDto))]
 public class Person
 {
     public string Name { get; set; }
@@ -80,32 +83,19 @@ public class PersonDto
 }
 ```
 
-To map between them, write a `partial` class marked `[DwarfMapper]` with one **empty `partial` method** — source in, target out. The generator writes the body for you:
-
 ```csharp
-using DwarfMapper;
-
-[DwarfMapper]
-public partial class PersonMapper
-{
-    public partial PersonDto ToDto(Person person);
-}
+PersonDto dto = person.MapTo<PersonDto>();   // or person.ToPersonDto()
 ```
 
-Then call it like any ordinary class — nothing to register, no configuration, no reflection:
+That's the whole loop: **two plain classes, one attribute, one call.** The generated body is exactly what you'd write by hand — `new PersonDto { Name = person.Name, Age = person.Age }`.
 
-```csharp
-var mapper = new PersonMapper();
-PersonDto dto = mapper.ToDto(person);
-```
+**The payoff:** add an `Email` property to `PersonDto` and forget to map it, and **the build fails** with an error pointing straight at the unmapped member — you cannot silently ship an incomplete map. Don't want a member mapped? Put `[MapIgnore]` on it.
 
-That's the whole loop: **two plain classes, one attribute, one `partial` method.** The generated body is exactly what you'd write by hand — `new PersonDto { Name = person.Name, Age = person.Age }`.
+`[MapTo]` carries the full conversion engine — numeric widening/narrowing, `string`↔`T` parse/format, enums, nested objects, and `T[]`/`List<T>` collections — and one source can target several DTOs with per-member control (see [No mapper class — `[MapTo]`](#no-mapper-class--mapto) below).
 
-**The payoff:** add an `Email` property to `PersonDto` and forget to map it, and **the build fails** with an error pointing straight at the unmapped member — you cannot silently ship an incomplete map. Don't want a member mapped? Say so out loud with `[MapIgnore]`.
+### When you need a mapper class
 
-### Next step: renames, conversions, flattening
-
-Differently-named members, custom conversions, and pulling up nested values are one attribute each — and your source/target classes stay plain POCOs (the attributes live only on the mapper):
+For custom converters (`Use=`), before/after hooks, reference-cycle handling, projections, or `[RoundTrip]` verification, declare a `partial` class marked `[DwarfMapper]` with empty `partial` methods — the generator fills in the bodies, and your source/target types stay plain POCOs:
 
 ```csharp
 [DwarfMapper]
@@ -123,7 +113,7 @@ public partial class CustomerMapper
 }
 ```
 
-Everything beyond this — records/constructors, collections, enums, projections, reference cycles, round-trip verification — builds on the same shape: a `partial` method whose body the generator fills in. The rest of this page is the reference for those; reach for it when you need it.
+Both forms run the same **sort → pair → prove → emit** engine and the same completeness gate — reach for `[MapTo]` on ordinary DTOs and the mapper class when you need the advanced features. The rest of this page is the reference.
 
 ### Declaring maps without a method per pair (`[GenerateMap]`)
 
@@ -141,26 +131,13 @@ OrderDto dto = new Mappers().Map(order);
 
 Overloads are distinguished by source type; declaring two pairs with the same source type but different targets is an ambiguous-overload compile error — declare those as named `partial` methods instead.
 
-### No mapper class at all — `[MapTo]` (experimental)
+### No mapper class — `[MapTo]`
 
-If you'd rather not write *any* `partial` class, put the mapping intent on the **source type** and call the result as an extension method — there's nothing to declare and nothing to instantiate:
-
-```csharp
-using DwarfMapper.Registry;
-
-[MapTo(typeof(PersonDto))]
-public class Person
-{
-    public string Name { get; set; }
-    public int Age { get; set; }
-}
-
-PersonDto dto = person.MapTo<PersonDto>();   // or person.ToPersonDto()
-```
-
-One source can target several DTOs, and per-member directives are **stacked and read in source order, each aligned to the matching `[MapTo]` target** — so a member can be renamed differently per target, or mapped in some and ignored in others:
+The default, lowest-ceremony form (introduced in the Quick start): put `[MapTo]` on the **source type** and call the generated extension — no `partial` class, nothing to instantiate. One source can target **several DTOs**, and per-member directives are **stacked and read in source order, each aligned to the matching `[MapTo]` target** — so a member can be renamed differently per target, or mapped in some and ignored in others:
 
 ```csharp
+using DwarfMapper;
+
 [MapTo(typeof(OrderDto), typeof(OrderSummary))]
 public class Order
 {
@@ -170,11 +147,14 @@ public class Order
     [MapProperty("Total"), MapIgnore]               // mapped into OrderDto ; ignored for OrderSummary
     public decimal Total { get; set; }
 }
+
+OrderDto    a = order.MapTo<OrderDto>();
+OrderSummary b = order.ToOrderSummary();
 ```
 
-The same completeness gate applies (every destination member must be satisfied, or it's a build error), and the **full conversion engine** is reused — numeric widening/narrowing, `string`↔`T` parse/format, enums, nested objects, and `T[]`/`List<T>` collections (including collections of nested objects) all work, generating the same helpers as the class model.
+The same completeness gate applies (every destination member must be satisfied, or it's a build error), and the **full conversion engine** is reused — numeric widening/narrowing, `string`↔`T` parse/format, enums, nested objects, and `T[]`/`List<T>` collections (including collections of nested objects) all work, generating the same helpers as the class model. `[MapProperty]` and `[MapIgnore]` are the same attributes the mapper class uses — on a source member they take the destination-name (member) form.
 
-What stays on the `[DwarfMapper]` class model (the registry emits a diagnostic pointing you there): `Use=` custom converters, hooks, projections, `[MapDerivedType]`/`[FlattenGraph]`, reference cycles, `Dictionary<,>`, and nullable-unwrap. **`[MapTo]` is experimental** — see [`docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md`](docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md).
+What stays on the `[DwarfMapper]` class model (`[MapTo]` emits a diagnostic pointing you there): `Use=` custom converters, hooks, projections, `[MapDerivedType]`/`[FlattenGraph]`, reference cycles, `Dictionary<,>`, and nullable-unwrap. Full design: [`docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md`](docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md).
 
 ### Configuring mapping
 
@@ -469,6 +449,7 @@ README.md
 ## Roadmap
 
 ### v1 — shipped (feature-complete, pre-release)
+- **`[MapTo]` registry mapping** — the default low-ceremony form: no `partial` class, intent on the source type, called as an extension (`x.MapTo<Dto>()`); full conversion engine (scalars / nested / `T[]`·`List<T>`), multi-target with stacked `[MapProperty]`/`[MapIgnore]`
 - Flat, nested, and collection (`T[]` / `List<T>` / `HashSet<T>` / `Dictionary<K,V>`) mapping
 - Enums and null handling
 - Custom per-member conversion: `[MapProperty(src, tgt, Use = nameof(Method))]`
@@ -488,9 +469,6 @@ README.md
 - **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no allocation), with a defensive length guard (too-small destination throws, never silent truncation)
 - **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written **and vs. Mapperly / Mapster / AutoMapper 14** across flat / nested / collection / blit scenarios (see [`docs/COMPARISON.md`](docs/COMPARISON.md) for the full capability/testing/migration comparison); builds in CI, run locally for numbers
 - **Async streaming**: `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` lazily transforms an async sequence element-by-element (emitted as an `async` iterator; streaming/back-pressure preserved)
-
-### Experimental
-- **`[MapTo]` type-registry mapping** — no `partial` class; intent on the source type, called as an extension (`x.MapTo<Dto>()`). Full conversion support (scalars / nested / collections). API may change.
 
 ### Planned
 - NuGet publish

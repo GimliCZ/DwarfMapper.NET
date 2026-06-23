@@ -4,16 +4,25 @@ using System;
 namespace DwarfMapper;
 
 /// <summary>
-/// Explicitly excludes a destination member from completeness checking and
-/// mapping. Required to silence DWARF001 for an intentionally unmapped member.
+/// Excludes a member from mapping. Two placements:
+/// <list type="bullet">
+/// <item>On a <b>mapping method or class</b> (class model): <c>[MapIgnore(destinationMember)]</c> excludes
+/// that destination from completeness checking (silences <c>DWARF001</c>).</item>
+/// <item>On a <b>source member</b> (the <c>[MapTo]</c> registry): <c>[MapIgnore]</c> never reads the
+/// annotated member. Stack with <see cref="MapPropertyAttribute"/> for per-target map/ignore (positional).</item>
+/// </list>
 /// </summary>
-[AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field,
+    AllowMultiple = true, Inherited = false)]
 public sealed class MapIgnoreAttribute : Attribute
 {
-    /// <summary>Initialises a new instance of <see cref="MapIgnoreAttribute"/>.</summary>
+    /// <summary>Member-placement form (the <c>[MapTo]</c> registry): never read the annotated member.</summary>
+    public MapIgnoreAttribute() => TargetMember = null;
+
+    /// <summary>Method/class-placement form (class model): ignore the destination member named <paramref name="targetMember"/>.</summary>
     /// <param name="targetMember">Name of the destination member to ignore.</param>
     public MapIgnoreAttribute(string targetMember) => TargetMember = targetMember;
 
-    /// <summary>Name of the destination member to ignore.</summary>
-    public string TargetMember { get; }
+    /// <summary>Name of the destination member to ignore (method/class form); <c>null</c> for the member form.</summary>
+    public string? TargetMember { get; }
 }

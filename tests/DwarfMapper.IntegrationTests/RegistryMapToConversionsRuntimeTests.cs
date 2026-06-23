@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using System.Collections.Generic;
-using DwarfMapper.Registry;
+using DwarfMapper;
 using Xunit;
 
-// EXPERIMENTAL (v23). Full-scale conversion coverage for the [MapTo] registry: numeric narrowing,
-// string parse/format, enum, nested objects, and List/array collections (incl. collections of nested).
-// Not under DwarfMapper.* (see the shadowing note in the prototype test file).
+// Full conversion coverage for [MapTo]: numeric narrowing, string parse/format, enum, nested objects,
+// and List/array collections (incl. collections of nested).
 namespace RegistryProto.Conv;
 
 public enum Color { Red, Green, Blue }

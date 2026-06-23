@@ -4,18 +4,36 @@ using System;
 namespace DwarfMapper;
 
 /// <summary>
-/// Explicitly maps a source member to a differently-named destination member,
-/// overriding name-based matching for that destination. Apply to a mapping method.
+/// Explicitly maps a source member to a differently-named destination member, overriding name-based
+/// matching for that destination. Two placements:
+/// <list type="bullet">
+/// <item>On a <b>mapping method</b> (class model): <c>[MapProperty(sourceName, targetName)]</c>.</item>
+/// <item>On a <b>source member</b> (the <c>[MapTo]</c> registry): <c>[MapProperty(destinationMember)]</c> —
+/// the annotated member supplies that destination. Stack the attribute to bind across multiple
+/// <c>[MapTo]</c> targets (positional, in source order).</item>
+/// </list>
 /// </summary>
-[AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field,
+    AllowMultiple = true, Inherited = false)]
 public sealed class MapPropertyAttribute : Attribute
 {
-    /// <summary>Creates an explicit member mapping.</summary>
+    /// <summary>Method-placement form: maps source member <paramref name="source"/> to <paramref name="target"/>.</summary>
     /// <param name="source">Name of the source member to read from.</param>
     /// <param name="target">Name of the destination member to assign.</param>
     public MapPropertyAttribute(string source, string target)
     {
         Source = source;
+        Target = target;
+    }
+
+    /// <summary>
+    /// Member-placement form (the <c>[MapTo]</c> registry): the annotated member supplies the destination
+    /// member <paramref name="target"/>.
+    /// </summary>
+    /// <param name="target">Name of the destination member this source member supplies.</param>
+    public MapPropertyAttribute(string target)
+    {
+        Source = target;
         Target = target;
     }
 

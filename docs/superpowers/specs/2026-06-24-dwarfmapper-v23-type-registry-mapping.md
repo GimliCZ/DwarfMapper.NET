@@ -49,11 +49,13 @@ that already catches unmapped members — fanned out per target.
 6. **Same gate, same guarantees.** Per (source,target): completeness is a build error; emitted code is
    direct assignment; reflection-free; AOT-safe. Equatable extraction model (no `ISymbol`/`SyntaxNode`
    in the pipeline) so the incremental generator caches correctly.
-7. **Isolation.** New attributes live in namespace `DwarfMapper.Registry`; the generator and its
-   diagnostics are separate from the existing `[DwarfMapper]` pipeline. The two front doors share design
-   DNA but not code paths (yet); a later refactor can unify the resolver.
+7. **Unified attribute surface (default `using DwarfMapper;`).** `[MapTo]` and the member-placement forms
+   of `[MapProperty]`/`[MapIgnore]` live in the **`DwarfMapper`** namespace — the same `[MapProperty]`/
+   `[MapIgnore]` the class model uses, extended to also target members. The generator (`MapToGenerator`)
+   and its `DWARFR` diagnostics are separate from the `[DwarfMapper]` pipeline, but the user-facing
+   attributes are one set, so no extra `using` and no name shadowing.
 
-## Public API (namespace `DwarfMapper.Registry`)
+## Public API (namespace `DwarfMapper`)
 
 ```csharp
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = true)]
@@ -63,22 +65,16 @@ public sealed class MapToAttribute : Attribute
     public Type[] Targets { get; }
 }
 
-// Stack these on a member; read in source order, the i-th directive applies to the i-th [MapTo] target.
-[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true)]
-public sealed class MapPropertyAttribute : Attribute
-{
-    public MapPropertyAttribute(string destinationMember);
-    public string DestinationMember { get; }
-}
-
-[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true)]
-public sealed class MapIgnoreAttribute : Attribute { }
+// MapProperty / MapIgnore are the existing class-model attributes, widened to target members.
+// Method form: [MapProperty(source, target)] / [MapIgnore(destination)] (class model).
+// Member form: [MapProperty(destination)] / [MapIgnore] (the [MapTo] registry) — stack them; read in
+// source order, the i-th directive applies to the i-th [MapTo] target.
 ```
 
-Usage (the user's example, expanded to multi-target):
+Usage (multi-target):
 
 ```csharp
-using DwarfMapper.Registry;
+using DwarfMapper;
 
 [MapTo(typeof(OrderDto), typeof(OrderSummary))]
 public class Order
@@ -105,7 +101,7 @@ OrderSummary summary = order.ToOrderSummary();
 
 ## Mechanism
 
-1. **Discover** — `ForAttributeWithMetadataName("DwarfMapper.Registry.MapToAttribute", …)`; predicate on
+1. **Discover** — `ForAttributeWithMetadataName("DwarfMapper.MapToAttribute", …)`; predicate on
    `TypeDeclarationSyntax`.
 2. **Extract (equatable model)** — for the source type: its readable members (name, type-FQN), the target
    type FQNs, and member configs (renames keyed by optional target, ignores keyed by optional target).
@@ -145,17 +141,19 @@ A future unification could route the registry through the full `MapperExtractor`
 - **DWARFR06** — a nested object pair is recursive (cyclic); the registry threads no reference context.
 - **DWARFR07** _(spec-only)_ — swap-hint: a positional value is not a member of its target but IS a member
   of a *different* target (likely a reordering mistake even when names overlap).
-- Final IDs fold into the DWARF0xx scheme if/when this graduates from prototype to product.
+- The `DWARFR` IDs could later fold into the DWARF0xx scheme (kept separate for now to avoid coupling the registry diagnostics to the class-model self-validation scans).
 
 ## Tasks
-- [x] Attributes in `DwarfMapper.Registry`.
-- [x] `MapToGenerator` + `RegistryDiagnostics` + minimal emitter (identity/implicit members, ref-type targets).
+- [x] Attributes unified into `DwarfMapper` (`MapTo` new; `MapProperty`/`MapIgnore` widened to members).
+- [x] `MapToGenerator` + `RegistryDiagnostics` + emitter.
 - [x] Stacked `[MapProperty]`/`[MapIgnore]` directives, source-ordered, positional per target (1 = broadcast) + arity check (DWARFR04).
 - [x] **Full-scale conversions:** numeric / parse / enum (reuse core converters), nested objects (cycle-guarded, DWARFR06), List/array collections incl. collections-of-nested; DWARFR05 no-conversion gate.
 - [x] Runtime tests: positional rename, order-sensitive map/ignore mixing, and the full conversion matrix (scalars + nested + collections + overflow).
 - [ ] _(spec-only)_ generic `[MapTo<T>]`; DWARFR07 swap-hint; struct-target zero-box path; nullable-unwrap (NullStrategy), `Use=`/hooks/`Dictionary` via the shared pipeline; generated-source snapshot + incremental-cacheability test (see `docs/research/testing-conformance-REPORT.md`).
 
-## Open questions
-- Unify with the existing attributes (one `[MapProperty]` valid on both method and member) vs. keep the
-  registry attributes separate? (Separate for now to protect the existing suite / contract tests.)
-- Should `[MapIgnore]` on a source member also drive a source-coverage gate (RequiredMapping.Both analogue)?
+## Resolved / open
+- **Resolved: unified.** `[MapProperty]`/`[MapIgnore]` are one attribute each, valid on both the mapping
+  method (class model) and the source member (registry) — `[MapTo]` joins them in `DwarfMapper`. The
+  class-model attribute reads were already arity-guarded, so widening was safe; `AttributeContractTests`
+  updated. This also removes the namespace-shadowing issue.
+- Open: should `[MapIgnore]` on a source member also drive a source-coverage gate (RequiredMapping.Both analogue)?

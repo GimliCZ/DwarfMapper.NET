@@ -54,10 +54,9 @@ file static class MatrixExemptAttributes
         {
             "RoundTrip",
             "DwarfMapperConstructor",
-            // EXPERIMENTAL v23 registry prototype (DwarfMapper.Registry.MapToAttribute): a SECOND front
-            // door handled by MapToGenerator, not the [DwarfMapper] partial-class pipeline the FIM matrix
-            // covers. Has its own coverage (RegistryMapToPrototypeRuntimeTests). Remove this exemption if
-            // the registry model graduates and folds into the main pipeline/matrix.
+            // DwarfMapper.MapToAttribute: the [MapTo] front door handled by MapToGenerator, not the
+            // [DwarfMapper] partial-class pipeline the FIM matrix covers. Has its own coverage
+            // (RegistryMapTo*RuntimeTests). Remove if [MapTo] folds into the main pipeline/matrix.
             "MapTo",
         };
 }

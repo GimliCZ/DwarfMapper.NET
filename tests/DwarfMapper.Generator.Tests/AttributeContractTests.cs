@@ -31,12 +31,16 @@ public class AttributeContractTests
     }
 
     [Fact]
-    public void MapPropertyAttribute_allows_multiple_on_methods()
+    public void MapPropertyAttribute_allows_multiple_on_methods_and_members()
     {
+        // Unified attribute: method form ([MapProperty(src, tgt)] for the class model) + member form
+        // ([MapProperty(dest)] for the [MapTo] registry).
         var usage = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
             typeof(MapPropertyAttribute), typeof(System.AttributeUsageAttribute))!;
         Assert.True(usage.AllowMultiple);
-        Assert.Equal(System.AttributeTargets.Method, usage.ValidOn);
+        Assert.Equal(
+            System.AttributeTargets.Method | System.AttributeTargets.Property | System.AttributeTargets.Field,
+            usage.ValidOn);
     }
 
     [Fact]

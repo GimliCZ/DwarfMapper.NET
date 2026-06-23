@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper.Registry;
+using DwarfMapper;
 using Xunit;
 
-// NOTE: deliberately NOT under the DwarfMapper.* namespace. The Registry attributes intentionally reuse
-// the names MapProperty/MapIgnore; inside a DwarfMapper.* namespace the root DwarfMapper attributes shadow
-// the `using DwarfMapper.Registry;` import. A real consumer outside DwarfMapper.* is unaffected. (Spec
-// open question: unify the attributes vs. keep them separate.)
 namespace RegistryProto;
 
-// EXPERIMENTAL (v23 prototype). Proves the [MapTo] registry front door end-to-end: no user `partial`,
-// called as an extension. Member directives are stacked and read in source order, each aligned to the
-// [MapTo] target at the same index.
+// Proves the [MapTo] front door end-to-end: no user `partial`, called as an extension. Member directives
+// are stacked and read in source order, each aligned to the [MapTo] target at the same index.
 
 public class OrderDto
 {

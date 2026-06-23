@@ -13,8 +13,8 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace DwarfMapper.Generator.Registry;
 
 /// <summary>
-/// EXPERIMENTAL (v23). Second front door: scans the assembly for <c>[MapTo]</c> on plain types and emits
-/// static extension methods (<c>src.MapTo&lt;TTarget&gt;()</c> / <c>src.To{Target}()</c>) — no user
+/// The <c>[MapTo]</c> front door: scans the assembly for <c>[MapTo]</c> on plain types and emits static
+/// extension methods (<c>src.MapTo&lt;TTarget&gt;()</c> / <c>src.To{Target}()</c>) — no user
 /// <c>partial</c>. A multi-target map is N independent single-target resolutions, each running the
 /// completeness gate. Conversions reuse the core engine (numeric / parse / enum), plus self-contained
 /// nested-object mapping and List/array collections. Cyclic graphs are rejected (DWARFR06) — use the
@@ -23,9 +23,9 @@ namespace DwarfMapper.Generator.Registry;
 [Generator(LanguageNames.CSharp)]
 public sealed class MapToGenerator : IIncrementalGenerator
 {
-    private const string MapToAttr = "DwarfMapper.Registry.MapToAttribute";
-    private const string MapPropAttr = "DwarfMapper.Registry.MapPropertyAttribute";
-    private const string MapIgnoreAttr = "DwarfMapper.Registry.MapIgnoreAttribute";
+    private const string MapToAttr = "DwarfMapper.MapToAttribute";
+    private const string MapPropAttr = "DwarfMapper.MapPropertyAttribute";
+    private const string MapIgnoreAttr = "DwarfMapper.MapIgnoreAttribute";
 
     // ── equatable, symbol-free model (cache-safe) ───────────────────────────────
     internal sealed record Assignment(string DestMember, string Expr) : System.IEquatable<Assignment>;
