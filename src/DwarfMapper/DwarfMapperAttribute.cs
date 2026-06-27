@@ -134,4 +134,18 @@ public sealed class DwarfMapperAttribute : Attribute
     /// collision is the build error <c>DWARF048</c>.
     /// </summary>
     public NameConvention NameConvention { get; set; } = NameConvention.Exact;
+
+    /// <summary>
+    /// When <c>true</c> (the default), the generator also emits convenience extension methods for this
+    /// mapper's simple <c>TTarget Map(TSource)</c> methods — e.g. <c>order.ToOrderDto()</c> instead of
+    /// <c>new OrderMapper().ToDto(order)</c>. They live in the <c>DwarfMapper.Extensions</c> namespace
+    /// (add <c>using DwarfMapper.Extensions;</c> to use them), are backed by a cached, stateless mapper
+    /// instance, and are assembly-internal. Set to <c>false</c> to suppress them for this mapper.
+    /// <para>
+    /// Only plain single-argument maps get an extension. Update-into, span, async-streaming, projection,
+    /// derived-type dispatch, and methods with extra parameters are skipped, as are pairs whose generated
+    /// name would collide.
+    /// </para>
+    /// </summary>
+    public bool GenerateExtensions { get; set; } = true;
 }

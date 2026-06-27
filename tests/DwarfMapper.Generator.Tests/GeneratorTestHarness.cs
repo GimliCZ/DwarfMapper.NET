@@ -22,10 +22,33 @@ internal static class GeneratorTestHarness
 
         var generated = output.SyntaxTrees
             .Where(t => t.FilePath.EndsWith(".g.cs", System.StringComparison.Ordinal))
+            // Exclude the assembly-wide aggregate outputs (convenience facade + DI registration) so single-
+            // mapper snapshot tests keep selecting the per-mapper file regardless of emit order.
+            .Where(t => !t.FilePath.EndsWith("DwarfMapper.Extensions.g.cs", System.StringComparison.Ordinal)
+                     && !t.FilePath.EndsWith("DwarfMapper.ServiceCollectionExtensions.g.cs", System.StringComparison.Ordinal))
             .Select(t => t.ToString())
             .FirstOrDefault() ?? string.Empty;
 
         return (genDiagnostics, generated);
+    }
+
+    /// <summary>
+    /// Runs the generator and returns the text of the single generated file whose hint name ends with
+    /// <paramref name="hintNameSuffix"/> (e.g. <c>"DwarfMapper.Extensions.g.cs"</c>), or an empty string if
+    /// no such file was produced. Used to assert on the assembly-wide aggregate outputs.
+    /// </summary>
+    public static string RunAndGetSource(string source, string hintNameSuffix,
+        NullableContextOptions nullable = NullableContextOptions.Disable)
+    {
+        var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
+
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
+
+        return output.SyntaxTrees
+            .Where(t => t.FilePath.EndsWith(hintNameSuffix, System.StringComparison.Ordinal))
+            .Select(t => t.ToString())
+            .FirstOrDefault() ?? string.Empty;
     }
 
     /// <summary>
