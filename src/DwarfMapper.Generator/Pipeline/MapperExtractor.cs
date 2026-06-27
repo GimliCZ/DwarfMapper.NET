@@ -882,7 +882,9 @@ internal static class MapperExtractor
                 "",
                 EquatableArray.From(ctorArgs),
                 FlattenGraphDirectives: EquatableArray.From(resolvedFgDirectives.ToArray()),
-                ExtraParameters: EquatableArray.From(extraParamSig.ToArray())));
+                ExtraParameters: EquatableArray.From(extraParamSig.ToArray()),
+                ParameterIsPublicType: IsEffectivelyPublic(sourceType),
+                ReturnIsPublicType: IsEffectivelyPublic(targetType)));
         }
 
         // ── [GenerateMap<TSrc, TTgt>] — low-ceremony attribute-declared mappers ──────
@@ -968,7 +970,9 @@ internal static class MapperExtractor
                 ConstructorArguments: EquatableArray.From(genCtorArgs),
                 IsPartial: true,
                 ReturnIsReferenceType: genTgt.IsReferenceType,
-                EmitAsNonPartial: true));
+                EmitAsNonPartial: true,
+                ParameterIsPublicType: IsEffectivelyPublic(genSrc),
+                ReturnIsPublicType: IsEffectivelyPublic(genTgt)));
         }
 
         // ── Drain the NestedMappingRegistry queue ────────────────────────────────
@@ -5243,6 +5247,23 @@ internal static class MapperExtractor
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// True when <paramref name="t"/> and every type that contains it are declared <c>public</c> — i.e. it is
+    /// reachable from another assembly. Used to gate <c>public</c> facade extensions (a public extension over a
+    /// non-public type is CS0051). Tuples/arrays/etc. are treated as their element/definition accessibility.
+    /// </summary>
+    private static bool IsEffectivelyPublic(ITypeSymbol t)
+    {
+        for (ISymbol? s = t; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
+        {
+            if (s.DeclaredAccessibility != Accessibility.Public)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>

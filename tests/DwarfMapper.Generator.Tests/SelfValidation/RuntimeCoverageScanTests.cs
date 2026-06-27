@@ -22,11 +22,15 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 ///             inverse and the generator proves the pairing (DWARF020/021). Its runtime behaviour is
 ///             identical to an ordinary map (no distinct runtime semantics), so a dedicated runtime test
 ///             would add no behavioural signal. Covered by RoundTripGenTests + ReverseMap runtime tests.
+///
+/// DwarfMapperOptions — an assembly-level compile-time option (generated-extension visibility). Its only
+///             observable effect is cross-assembly accessibility, which a single integration assembly cannot
+///             exercise behaviourally; a runtime test would be hollow. Covered by FacadeExtensionsGeneratorTests.
 /// </summary>
 file static class RuntimeCoverageExempt
 {
     public static readonly IReadOnlySet<string> AttributeUsageNames =
-        new HashSet<string>(StringComparer.Ordinal) { "RoundTrip" };
+        new HashSet<string>(StringComparer.Ordinal) { "RoundTrip", "DwarfMapperOptions" };
 
     public static readonly IReadOnlySet<string> EnumTypeNames =
         new HashSet<string>(StringComparer.Ordinal);

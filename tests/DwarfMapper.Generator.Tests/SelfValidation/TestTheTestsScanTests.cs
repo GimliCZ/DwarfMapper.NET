@@ -46,6 +46,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 /// DwarfMapperConstructor — constructor-selection marker; must live on the constructor,
 ///                     not on the mapping method, so it's structurally incompatible with
 ///                     the method-level matrix format.  Covered by ConstructorMappingTests.
+///
+/// DwarfMapperOptions — an ASSEMBLY-level compile-time option (controls generated-extension
+///                     visibility); it is not a per-mapping feature and has no method-level
+///                     matrix form.  Covered by FacadeExtensionsGeneratorTests.
 /// </summary>
 file static class MatrixExemptAttributes
 {
@@ -54,6 +58,7 @@ file static class MatrixExemptAttributes
         {
             "RoundTrip",
             "DwarfMapperConstructor",
+            "DwarfMapperOptions",
         };
 }
 
