@@ -11,9 +11,10 @@ namespace DwarfMapper;
 public sealed class MapIgnoreAttribute : Attribute
 {
     /// <summary>Initialises a new instance of <see cref="MapIgnoreAttribute"/>.</summary>
-    /// <param name="targetMember">Name of the destination member to ignore.</param>
-    public MapIgnoreAttribute(string targetMember) => TargetMember = targetMember;
+    /// <param name="target">Name of the destination member to ignore.</param>
+    public MapIgnoreAttribute(string target) => Target = target;
 
-    /// <summary>Name of the destination member to ignore.</summary>
-    public string TargetMember { get; }
+    /// <summary>Name of the destination member to ignore. (Was <c>TargetMember</c> before 1.0; renamed for
+    /// consistency with <see cref="MapPropertyAttribute"/>/<see cref="MapValueAttribute"/>.)</summary>
+    public string Target { get; }
 }

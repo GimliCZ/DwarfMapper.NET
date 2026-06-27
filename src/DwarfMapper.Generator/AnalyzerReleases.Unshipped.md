@@ -62,3 +62,4 @@ DWARF054 | DwarfMapper | Error | Mapping is not supported on a generic class
 DWARF055 | DwarfMapper | Info | Mapper is very large; consider splitting it
 DWARF056 | DwarfMapper | Warning | Pair-scoped attribute matches no mapped pair
 DWARF057 | DwarfMapper | Error | Generated mapper name collides with an existing type
+DWARF058 | DwarfMapper | Info | Convenience extension method was not generated (ambiguous)

@@ -429,4 +429,13 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf057");
+
+    // Info: two or more mappers would produce the same convenience extension signature, so it was NOT
+    // generated for either (the instance methods still work). Surfaced rather than silently dropped.
+    public static readonly DiagnosticDescriptor DuplicateFacadeExtension = new(
+        "DWARF058",
+        "Convenience extension method was not generated (ambiguous)",
+        "{0}",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf058");
 }

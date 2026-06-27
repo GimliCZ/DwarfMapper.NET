@@ -21,6 +21,12 @@ mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe,
 | `RequiredMapping` | `RequiredMappingStrategy` | `Target` | `Target`: every destination member must be mapped. `Both`: also require every source member to be read (`DWARF039`). |
 | `GenerateExtensions` | `bool` | `true` | Emit `source.ToTarget()` convenience extension methods (namespace `DwarfMapper.Extensions`). `false` suppresses them for this mapper. |
 
+> **`CaseInsensitive` and `NameConvention` interact** — they both govern how member names are matched, so set
+> one or the other. `NameConvention.Exact` honours `CaseInsensitive` (`Exact` + `CaseInsensitive=true` =
+> ordinal-ignore-case). `NameConvention.Flexible` already normalizes case for auto-matching, so `CaseInsensitive`
+> is largely redundant under it (it still applies to `[Flatten]` leaves). Prefer `Exact` (optionally with
+> `CaseInsensitive`) **or** `Flexible`, not surprising combinations of both.
+
 ### Strategy enum values
 
 | Enum | Values |

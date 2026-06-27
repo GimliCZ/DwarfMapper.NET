@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using System.Collections.Immutable;
 using System.Linq;
+using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
@@ -84,10 +85,19 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             return;
         }
 
-        var facade = AggregateEmitter.EmitExtensions(usable);
+        var (facade, facadeCollisions) = AggregateEmitter.EmitExtensions(usable);
         if (facade is not null)
         {
             spc.AddSource("DwarfMapper.Extensions.g.cs", facade);
+        }
+        foreach (var (sourceType, extName) in facadeCollisions)
+        {
+            // DWARF058 (Info): two mappers would produce the same x.ToTarget() extension, so it was dropped.
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.DuplicateFacadeExtension, Location.None,
+                $"more than one mapper maps from '{sourceType}', so the '{extName}(this {sourceType})' convenience "
+                + "extension was not generated (it would be ambiguous) — call the mapper instance method, or "
+                + "disable one mapper's extensions with [DwarfMapper(GenerateExtensions = false)]"));
         }
 
         if (diAvailable)
