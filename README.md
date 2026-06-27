@@ -151,7 +151,7 @@ services.AddDwarfMappers();             // registers every [DwarfMapper] in the 
 ```
 
 - **Extension methods** are generated for every simple `TTarget Map(TSource)` method, named `To<TargetType>()`, backed by a cached stateless instance. They live in the `DwarfMapper.Extensions` namespace (one `using` to surface them). Opt a mapper out with `[DwarfMapper(GenerateExtensions = false)]`. Update-into, span, async-streaming, projection, and derived-dispatch methods, and any pair whose generated name would collide, are skipped.
-  > **Cross-assembly note:** the generated extensions are **assembly-internal**, so `order.ToOrderDto()` resolves only inside the assembly that declares the mapper. If your mappers/DTOs live in a separate library, call the mapper **instance** or use **DI** (`AddDwarfMappers()`) from the consuming project — those work across assemblies.
+  > **Cross-assembly note:** the generated extensions are **assembly-internal by default**, so `order.ToOrderDto()` resolves only inside the assembly that declares the mapper. To call them from another project, set `[assembly: DwarfMapperOptions(PublicExtensions = true)]` — extensions then become `public` for pairs whose source **and** target types are both public (pairs involving a non-public type stay internal, for accessibility safety). Or call the mapper **instance** / use **DI** (`AddDwarfMappers()`), which always work across assemblies.
 - **`AddDwarfMappers()`** is generated only when your project references `Microsoft.Extensions.DependencyInjection.Abstractions`. It registers each mapper as a singleton (no reflection, no assembly scan) — AOT-safe like everything else.
 
 ### Configuring mapping

@@ -42,6 +42,12 @@ mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe,
 All of these live in the single `DwarfMapper` namespace — one `using DwarfMapper;` brings in every attribute,
 enum, and `DwarfMappingDepthException`.
 
+## Assembly-level options — `[assembly: DwarfMapperOptions(...)]`
+
+| Option | Type | Default | What it does |
+|---|---|---|---|
+| `PublicExtensions` | `bool` | `false` | Emit the generated convenience extensions (`DwarfMapper.Extensions`) as **`public`** (cross-assembly) for pairs whose source and target types are both public — pairs involving a non-public type stay assembly-internal for safety. The opt-in for the layered "mappers in a library, consumed elsewhere" layout. |
+
 ## Per-member / per-method attributes
 
 Put these on the mapping method (or the class, where noted).

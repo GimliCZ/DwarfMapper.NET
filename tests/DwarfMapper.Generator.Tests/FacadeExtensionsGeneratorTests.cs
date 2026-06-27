@@ -157,4 +157,61 @@ public sealed class FacadeExtensionsGeneratorTests
         Assert.Contains("ToADto(this global::Demo.A", facade, StringComparison.Ordinal);
         Assert.DoesNotContain("ToBDto", facade, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Facade_extensions_are_assembly_internal_by_default()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Order { public int Id { get; set; } }
+            public class OrderDto { public int Id { get; set; } }
+            [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class M { }
+            """;
+
+        var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
+        Assert.Contains("internal static class DwarfMapperGeneratedExtensions", facade, StringComparison.Ordinal);
+        Assert.Contains("internal static global::Demo.OrderDto ToOrderDto", facade, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DwarfMapperOptions_PublicExtensions_makes_extensions_public_for_public_types()
+    {
+        const string s = """
+            using DwarfMapper;
+            [assembly: DwarfMapperOptions(PublicExtensions = true)]
+            namespace Demo;
+            public class Order { public int Id { get; set; } }
+            public class OrderDto { public int Id { get; set; } }
+            [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class M { }
+            """;
+
+        var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
+        Assert.Contains("public static class DwarfMapperGeneratedExtensions", facade, StringComparison.Ordinal);
+        Assert.Contains("public static global::Demo.OrderDto ToOrderDto", facade, StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s)); // no CS0051
+    }
+
+    [Fact]
+    public void PublicExtensions_keeps_a_non_public_typed_extension_internal_for_safety()
+    {
+        const string s = """
+            using DwarfMapper;
+            [assembly: DwarfMapperOptions(PublicExtensions = true)]
+            namespace Demo;
+            public class Order { public int Id { get; set; } }
+            internal class OrderView { public int Id { get; set; } }
+            [DwarfMapper]
+            internal partial class M
+            {
+                internal partial OrderView ToView(Order o);
+            }
+            """;
+
+        var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
+        // The facade class is public, but THIS extension stays internal because OrderView is internal (a public
+        // extension over an internal type would be CS0051).
+        Assert.Contains("internal static global::Demo.OrderView ToOrderView", facade, StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
 }

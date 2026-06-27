@@ -66,16 +66,38 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         // facade (always) and the DI registration (only when Microsoft.Extensions.DependencyInjection is
         // referenced). Collect()'d so cross-mapper name collisions can be de-duplicated in one place; the DI
         // availability is projected to a bool so threading it through Combine() does not defeat incremental caching.
-        var diAvailable = context.CompilationProvider.Select(static (compilation, _) =>
-            compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null);
+        // Assembly-wide options projected to value-equatable bools (keeps incremental caching): whether DI is
+        // referenced, and whether [assembly: DwarfMapperOptions(PublicExtensions = true)] opts the facade public.
+        var aggregateOptions = context.CompilationProvider.Select(static (compilation, _) =>
+        {
+            var di = compilation.GetTypeByMetadataName(
+                "Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null;
+            var publicExtensions = false;
+            foreach (var a in compilation.Assembly.GetAttributes())
+            {
+                if (a.AttributeClass?.ToDisplayString() != "DwarfMapper.DwarfMapperOptionsAttribute")
+                {
+                    continue;
+                }
+                foreach (var na in a.NamedArguments)
+                {
+                    if (na.Key == "PublicExtensions" && na.Value.Value is bool b)
+                    {
+                        publicExtensions = b;
+                    }
+                }
+            }
+            return (Di: di, PublicExtensions: publicExtensions);
+        });
 
         context.RegisterSourceOutput(
-            mappers.Collect().Combine(coLocated.Collect()).Combine(diAvailable),
-            static (spc, pair) => EmitAggregates(spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right));
+            mappers.Collect().Combine(coLocated.Collect()).Combine(aggregateOptions),
+            static (spc, pair) => EmitAggregates(
+                spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right.Di, pair.Right.PublicExtensions));
     }
 
     private static void EmitAggregates(
-        SourceProductionContext spc, ImmutableArray<MapperClassModel> models, bool diAvailable)
+        SourceProductionContext spc, ImmutableArray<MapperClassModel> models, bool diAvailable, bool publicExtensions)
     {
         // Mirror Execute: a mapper with a blocking error emits no body, so it must not be referenced by the
         // facade/DI either.
@@ -85,7 +107,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             return;
         }
 
-        var (facade, facadeCollisions) = AggregateEmitter.EmitExtensions(usable);
+        var (facade, facadeCollisions) = AggregateEmitter.EmitExtensions(usable, publicExtensions);
         if (facade is not null)
         {
             spc.AddSource("DwarfMapper.Extensions.g.cs", facade);

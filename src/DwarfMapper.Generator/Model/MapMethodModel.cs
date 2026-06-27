@@ -144,4 +144,12 @@ public sealed record MapMethodModel(
     /// are matched to destination members by name (precedence: explicit &gt; extra parameter &gt; by-name
     /// member) and are deliberately NOT propagated into nested mappings.
     /// </summary>
-    EquatableArray<string> ExtraParameters = default) : IEquatable<MapMethodModel>;
+    EquatableArray<string> ExtraParameters = default,
+    /// <summary>
+    /// Whether the source (parameter) type is effectively public (itself and every containing type). Used only
+    /// by the convenience facade to decide whether a generated <c>To&lt;T&gt;()</c> extension may be emitted
+    /// <c>public</c> (cross-assembly) without an inconsistent-accessibility error. Defaults to <c>false</c>.
+    /// </summary>
+    bool ParameterIsPublicType = false,
+    /// <summary>Whether the destination (return) type is effectively public — see <see cref="ParameterIsPublicType"/>.</summary>
+    bool ReturnIsPublicType = false) : IEquatable<MapMethodModel>;

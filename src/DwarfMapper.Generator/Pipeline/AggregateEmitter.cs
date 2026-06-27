@@ -23,13 +23,15 @@ internal static class AggregateEmitter
     /// <summary>One candidate convenience extension: <c>{ExtName}(this {Source}) => {Mapper}.{Method}(...)</c>.</summary>
     private readonly struct ExtCandidate
     {
-        public ExtCandidate(string sourceType, string targetType, string extName, string mapperFullName, string mapperMethod)
+        public ExtCandidate(string sourceType, string targetType, string extName, string mapperFullName, string mapperMethod, bool sourceIsPublic, bool targetIsPublic)
         {
             SourceType = sourceType;
             TargetType = targetType;
             ExtName = extName;
             MapperFullName = mapperFullName;
             MapperMethod = mapperMethod;
+            SourceIsPublic = sourceIsPublic;
+            TargetIsPublic = targetIsPublic;
         }
 
         public string SourceType { get; }
@@ -37,13 +39,15 @@ internal static class AggregateEmitter
         public string ExtName { get; }
         public string MapperFullName { get; }
         public string MapperMethod { get; }
+        public bool SourceIsPublic { get; }
+        public bool TargetIsPublic { get; }
     }
 
     /// <summary>
     /// Builds the extension facade for all eligible mappers, or <c>null</c> when there is nothing to emit.
     /// </summary>
     public static (string? Source, IReadOnlyList<(string SourceType, string ExtName)> Collisions)
-        EmitExtensions(IReadOnlyList<MapperClassModel> models)
+        EmitExtensions(IReadOnlyList<MapperClassModel> models, bool publicExtensions)
     {
         var candidates = new List<ExtCandidate>();
 
@@ -67,7 +71,8 @@ internal static class AggregateEmitter
 
                 var extName = "To" + ShortName(method.ReturnTypeFullName);
                 candidates.Add(new ExtCandidate(
-                    method.ParameterTypeFullName, method.ReturnTypeFullName, extName, mapperFullName, method.MethodName));
+                    method.ParameterTypeFullName, method.ReturnTypeFullName, extName, mapperFullName, method.MethodName,
+                    method.ParameterIsPublicType, method.ReturnIsPublicType));
             }
         }
 
@@ -110,7 +115,7 @@ internal static class AggregateEmitter
         sb.AppendLine("/// mapper instance — e.g. <c>order.ToOrderDto()</c>. Add <c>using DwarfMapper.Extensions;</c> to use them.");
         sb.AppendLine("/// Disable for a mapper with <c>[DwarfMapper(GenerateExtensions = false)]</c>.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("internal static class DwarfMapperGeneratedExtensions");
+        sb.Append(publicExtensions ? "public" : "internal").AppendLine(" static class DwarfMapperGeneratedExtensions");
         sb.AppendLine("{");
 
         foreach (var mapper in fields)
@@ -124,7 +129,8 @@ internal static class AggregateEmitter
             sb.AppendLine();
             sb.Append("    /// <summary>Maps <c>").Append(c.SourceType).Append("</c> to <c>")
               .Append(c.TargetType).Append("</c>.</summary>").Append('\n');
-            sb.Append("    public static ").Append(c.TargetType).Append(' ').Append(c.ExtName)
+            sb.Append("    ").Append(publicExtensions && c.SourceIsPublic && c.TargetIsPublic ? "public" : "internal")
+              .Append(" static ").Append(c.TargetType).Append(' ').Append(c.ExtName)
               .Append("(this ").Append(c.SourceType).Append(" source)").Append('\n');
             sb.Append("        => ").Append(FieldName(c.MapperFullName)).Append('.')
               .Append(c.MapperMethod).Append("(source);").Append('\n');
