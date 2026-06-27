@@ -407,4 +407,14 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf055");
+
+    // Warning (not Error): the configuration compiles, but a pair-scoped member attribute
+    // ([MapProperty<S,T>] / [MapIgnore<T>]) matched no mapped pair, so it silently does nothing — almost
+    // always a typo'd type argument or a missing [GenerateMap]. Surfaced rather than ignored.
+    public static readonly DiagnosticDescriptor PairScopedNoMatch = new(
+        "DWARF056",
+        "Pair-scoped attribute matches no mapped pair",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf056");
 }

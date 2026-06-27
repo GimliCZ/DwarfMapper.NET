@@ -338,3 +338,13 @@ The mapper class is generic. **Fix:** declare the mapper on a non-generic class.
 
 A single mapper resolves a very large number of members, which can add IDE/compile latency. **Fix (optional):**
 split it into several mappers, or suppress via `.editorconfig`.
+
+## dwarf056
+**Pair-scoped attribute matches no mapped pair** · Warning
+
+A class-level pair-scoped attribute — `[MapProperty<TSource, TTarget>(…)]` or `[MapIgnore<TTarget>(…)]` —
+matched no mapped pair, so it silently does nothing (usually a typo'd type argument or a missing
+`[GenerateMap]`). A pair-scoped linkage applies wherever its `(TSource → TTarget)` pair is actually mapped —
+a top-level `[GenerateMap]` pair or an auto-synthesized nested/collection-element pair. **Fix:** add the
+`[GenerateMap<TSource, TTarget>]` (or the mapping that nests it), correct the type arguments, or remove the
+attribute.
