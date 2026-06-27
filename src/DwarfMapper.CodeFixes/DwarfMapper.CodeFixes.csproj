@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- Code-fix providers run in the IDE host (which HAS Workspaces), not in csc. They are therefore
+         NOT extended-analyzer components: we deliberately do NOT reference Microsoft.CodeAnalysis.Analyzers
+         or set EnforceExtendedAnalyzerRules, because the RS* rules forbid the Workspaces dependency that
+         every code-fix legitimately requires. -->
+    <!-- CA1303: code-action titles are short fixed UI strings, not localized resources. -->
+    <NoWarn>$(NoWarn);CA1303</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Ship alongside the generator in the analyzer slot of the NuGet package. -->
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+</Project>

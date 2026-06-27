@@ -75,7 +75,7 @@ internal static class GeneratorTestHarness
 
     // ── Shared compilation builder ────────────────────────────────────────────
 
-    private static CSharpCompilation BuildCompilation(string assemblyName, string source,
+    public static CSharpCompilation BuildCompilation(string assemblyName, string source,
         NullableContextOptions nullable = NullableContextOptions.Disable)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);

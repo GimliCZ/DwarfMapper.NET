@@ -21,7 +21,7 @@ namespace DwarfMapper;
 /// Conflicts with <c>[MapProperty]</c>/<c>[MapIgnore]</c> on the same target, an unknown target, or a
 /// missing value/<see cref="Use"/> are reported as <c>DWARF042</c>.
 /// </summary>
-[AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapValueAttribute : Attribute
 {
     /// <summary>Assigns a constant <paramref name="value"/> to <paramref name="target"/>.</summary>

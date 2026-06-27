@@ -17,7 +17,7 @@ public class ReverseMapGeneratorTests
         => diags.FirstOrDefault(d => d.Id == id);
 
     [Fact]
-    public void Reverse_inverts_simple_rename_and_round_trips()
+    public void Reverse_inverts_simple_rename_in_generated_code() // runtime round-trip: NewFeaturesRuntimeTests
     {
         const string src = """
             using DwarfMapper;

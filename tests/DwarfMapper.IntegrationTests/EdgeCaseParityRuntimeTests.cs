@@ -34,10 +34,15 @@ public class Ec_DictLongSrc { public Dictionary<string, long> M { get; set; } = 
 public class Ec_DictIntDst { public Dictionary<string, int> M { get; set; } = new(); }
 [DwarfMapper] public partial class Ec_DictNarrowMapper { public partial Ec_DictIntDst Map(Ec_DictLongSrc s); }
 
-// ── Widening boundary values survive exactly ─────────────────────────────────
-public class Ec_BoundSrc { public int I { get; set; } public byte B { get; set; } }
-public class Ec_BoundDst { public long I { get; set; } public int B { get; set; } }
+// ── Boundary values: widening exact + in-range narrowing succeeds ─────────────
+public class Ec_BoundSrc { public int I { get; set; } public byte B { get; set; } public long N { get; set; } }
+public class Ec_BoundDst { public long I { get; set; } public int B { get; set; } public int N { get; set; } }
 [DwarfMapper] public partial class Ec_BoundMapper { public partial Ec_BoundDst Map(Ec_BoundSrc s); }
+
+// ── Additional parameter that needs a (narrowing) conversion to its destination ─
+public class Ec_ApcSrc { public int Id { get; set; } }
+public class Ec_ApcDst { public int Id { get; set; } public int Seq { get; set; } }
+[DwarfMapper] public partial class Ec_ApcMapper { public partial Ec_ApcDst Map(Ec_ApcSrc s, long seq); }
 
 // ── Null source collections → empty (default AsEmpty) ────────────────────────
 public class Ec_NullCollSrc
@@ -120,15 +125,27 @@ public class EdgeCaseParityRuntimeTests
     }
 
     [Fact]
-    public void In_range_narrowing_and_boundary_widening_survive()
+    public void Boundary_widening_exact_and_in_range_narrowing_succeeds()
     {
-        var d = new Ec_BoundMapper().Map(new Ec_BoundSrc { I = int.MaxValue, B = byte.MaxValue });
+        var d = new Ec_BoundMapper().Map(new Ec_BoundSrc { I = int.MaxValue, B = byte.MaxValue, N = 100 });
         Assert.Equal(int.MaxValue, d.I);  // int → long widening, exact
         Assert.Equal(255, d.B);           // byte → int widening, exact
+        Assert.Equal(100, d.N);           // long → int NARROWING, in range → succeeds (no overflow)
 
-        var min = new Ec_BoundMapper().Map(new Ec_BoundSrc { I = int.MinValue, B = 0 });
+        var min = new Ec_BoundMapper().Map(new Ec_BoundSrc { I = int.MinValue, B = 0, N = int.MinValue });
         Assert.Equal(int.MinValue, min.I);
         Assert.Equal(0, min.B);
+        Assert.Equal(int.MinValue, min.N); // long → int at the narrowing boundary, still in range
+    }
+
+    [Fact]
+    public void Additional_parameter_with_conversion_applies_at_runtime()
+    {
+        // The extra `long seq` is narrowed (CreateChecked) to the int destination — in range succeeds...
+        var d = new Ec_ApcMapper().Map(new Ec_ApcSrc { Id = 1 }, 42L);
+        Assert.Equal(42, d.Seq);
+        // ...and overflow throws, just like any other narrowing.
+        Assert.Throws<OverflowException>(() => new Ec_ApcMapper().Map(new Ec_ApcSrc { Id = 1 }, (long)int.MaxValue + 1));
     }
 
     [Fact]
