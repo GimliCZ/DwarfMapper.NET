@@ -42,7 +42,8 @@ internal static class AggregateEmitter
     /// <summary>
     /// Builds the extension facade for all eligible mappers, or <c>null</c> when there is nothing to emit.
     /// </summary>
-    public static string? EmitExtensions(IReadOnlyList<MapperClassModel> models)
+    public static (string? Source, IReadOnlyList<(string SourceType, string ExtName)> Collisions)
+        EmitExtensions(IReadOnlyList<MapperClassModel> models)
     {
         var candidates = new List<ExtCandidate>();
 
@@ -70,10 +71,19 @@ internal static class AggregateEmitter
             }
         }
 
-        // Drop any (source-type, extension-name) signature that more than one candidate would emit — that
-        // would be a duplicate/ambiguous extension method. The instance method still works for those.
-        var kept = candidates
+        // Group by (source-type, extension-name). A group with >1 candidate is an ambiguous signature: it is
+        // dropped (the instance methods still work) and surfaced as DWARF058 by the caller rather than silently
+        // vanishing.
+        var groups = candidates
             .GroupBy(c => c.SourceType + " " + c.ExtName, System.StringComparer.Ordinal)
+            .ToList();
+        var collisions = groups
+            .Where(g => g.Count() > 1)
+            .Select(g => (g.First().SourceType, g.First().ExtName))
+            .OrderBy(c => c.ExtName, System.StringComparer.Ordinal)
+            .ThenBy(c => c.SourceType, System.StringComparer.Ordinal)
+            .ToList();
+        var kept = groups
             .Where(g => g.Count() == 1)
             .Select(g => g.First())
             .OrderBy(c => c.ExtName, System.StringComparer.Ordinal)
@@ -82,7 +92,7 @@ internal static class AggregateEmitter
 
         if (kept.Count == 0)
         {
-            return null;
+            return (null, collisions);
         }
 
         var fields = kept
@@ -121,7 +131,7 @@ internal static class AggregateEmitter
         }
 
         sb.AppendLine("}");
-        return sb.ToString();
+        return (sb.ToString(), collisions);
     }
 
     /// <summary>

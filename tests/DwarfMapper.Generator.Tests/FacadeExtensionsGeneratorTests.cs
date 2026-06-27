@@ -121,4 +121,40 @@ public sealed class FacadeExtensionsGeneratorTests
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(s);
         Assert.Empty(errors);
     }
+
+    [Fact]
+    public void Duplicate_facade_signature_reports_DWARF058_not_a_silent_drop()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Order { public int Id { get; set; } }
+            public class OrderDto { public int Id { get; set; } }
+            [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class MapperA { }
+            [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class MapperB { }
+            """;
+
+        var (diags, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diags, d => d.Id == "DWARF058");
+        Assert.DoesNotContain("ToOrderDto", GeneratorTestHarness.RunAndGetSource(s, FacadeHint), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Facade_mixed_opt_out_emits_only_the_opted_in_mapper()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class A { public int V { get; set; } }
+            public class ADto { public int V { get; set; } }
+            public class B { public int V { get; set; } }
+            public class BDto { public int V { get; set; } }
+            [DwarfMapper] [GenerateMap<A, ADto>] public partial class MA { }
+            [DwarfMapper(GenerateExtensions = false)] [GenerateMap<B, BDto>] public partial class MB { }
+            """;
+
+        var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
+        Assert.Contains("ToADto(this global::Demo.A", facade, StringComparison.Ordinal);
+        Assert.DoesNotContain("ToBDto", facade, StringComparison.Ordinal);
+    }
 }

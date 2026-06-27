@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF057`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF058`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 
 ## How severities and suppression work
@@ -349,6 +349,11 @@ a top-level `[GenerateMap]` pair or an auto-synthesized nested/collection-elemen
 `[GenerateMap<TSource, TTarget>]` (or the mapping that nests it), correct the type arguments, or remove the
 attribute.
 
+> **Note — a host with *no* trigger is inert.** Pair-scoped attributes only take effect on a class that also
+> declares a mapping: a `[GenerateMap<>]` pair (or a `[DwarfMapper]` mapper). On a class carrying *only*
+> pair-scoped attributes (no `[GenerateMap]`, no `[DwarfMapper]`) they currently do nothing and raise no
+> diagnostic — make sure the host carries a `[GenerateMap<>]`.
+
 ## dwarf057
 **Generated mapper name collides with an existing type** · Error
 
@@ -357,3 +362,11 @@ name already exists (a hand-written mapper, or a `[DwarfMapper]` class of the sa
 this rather than emitting the colliding type (which would be a raw C# error against generated code, a silent
 partial-merge, or — if it clashed with another generated mapper's file — abort all generation). **Fix:** rename
 the existing type, or declare the mapping on a `[DwarfMapper]` mapper class instead of co-locating it.
+
+## dwarf058
+**Convenience extension method was not generated (ambiguous)** · Info
+
+Two or more mappers would produce the same `source.ToTarget()` convenience extension (same source type, same
+target-derived name), so it was **not** generated for either — the mapping still works through the instance
+methods. **Fix (optional):** call the mapper instance method (`new XMapper().Map(x)`), or disable one mapper's
+extensions with `[DwarfMapper(GenerateExtensions = false)]`. Suppress via `.editorconfig` if intentional.

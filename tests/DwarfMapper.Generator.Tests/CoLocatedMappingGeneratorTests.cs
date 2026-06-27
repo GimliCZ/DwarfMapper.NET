@@ -135,4 +135,23 @@ public sealed class CoLocatedMappingGeneratorTests
         var (diags, _) = GeneratorTestHarness.Run(s);
         Assert.Contains(diags, d => d.Id == "DWARF001"); // Extra has no source — completeness still enforced
     }
+
+    [Fact]
+    public void Co_located_GenerateMap_where_neither_arg_is_the_host_emits_a_target_named_extension()
+    {
+        // A legitimate "declaration site" pattern: the host C just hosts a [GenerateMap<A,B>]; the extension is
+        // named after the TARGET (ToB), not the host. (Documents the contract — not a misuse.)
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class A { public int V { get; set; } }
+            public class B { public int V { get; set; } }
+            [GenerateMap<A, B>]
+            public sealed class C { public int W { get; set; } }
+            """;
+
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        Assert.Contains("Map(global::Demo.A", GeneratorTestHarness.RunAndGetSource(s, "CMapper.g.cs"), StringComparison.Ordinal);
+        Assert.Contains("ToB(this global::Demo.A", GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Extensions.g.cs"), StringComparison.Ordinal);
+    }
 }

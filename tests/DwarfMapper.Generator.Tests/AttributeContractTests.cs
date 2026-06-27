@@ -19,7 +19,7 @@ public class AttributeContractTests
     public void MapIgnoreAttribute_exposes_target_member()
     {
         var attr = new MapIgnoreAttribute("Secret");
-        Assert.Equal("Secret", attr.TargetMember);
+        Assert.Equal("Secret", attr.Target);
     }
 
     [Fact]

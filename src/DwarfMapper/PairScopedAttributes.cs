@@ -65,11 +65,11 @@ public sealed class MapPropertyAttribute<TSource, TTarget> : Attribute
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapIgnoreAttribute<TTarget> : Attribute
 {
-    /// <summary>Ignores the destination member named <paramref name="member"/> on <typeparamref name="TTarget"/>.</summary>
-    public MapIgnoreAttribute(string member) => Member = member;
+    /// <summary>Ignores the destination member named <paramref name="target"/> on <typeparamref name="TTarget"/>.</summary>
+    public MapIgnoreAttribute(string target) => Target = target;
 
     /// <summary>Name of the destination member to leave unmapped.</summary>
-    public string Member { get; }
+    public string Target { get; }
 }
 
 /// <summary>
