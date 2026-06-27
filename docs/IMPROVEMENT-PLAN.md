@@ -10,8 +10,9 @@ open-generics non-goal) were dropped during synthesis and are listed at the end 
 ## Diagnostic ID allocation
 
 Used: **DWARF053** (generic mapper method), **DWARF054** (generic mapper class), **DWARF055** (mapper
-too large / build-budget Info — landed). Free slots for the planned diagnostics below: **DWARF056–DWARF059**.
-Reserved/unused historical: 004, 006, 029.
+too large / build-budget Info — landed), **DWARF056** (pair-scoped attribute matches no pair — landed),
+**DWARF057** (generated co-located mapper name collision — landed). Free slots for the planned diagnostics
+below: **DWARF058–DWARF059**. Reserved/unused historical: 004, 006, 019, 029.
 
 > **Landed since this plan was written (2026-06-18, correctness-first design):** structural cache-safety
 > meta-test (`ModelCacheSafetyTests`), incremental-caching test (`IncrementalCachingTests` — closes item 4's

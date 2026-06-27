@@ -19,15 +19,26 @@ public sealed class DwarfGenerator : IIncrementalGenerator
     internal const string MarkerAttributeFullName = "DwarfMapper.DwarfMapperAttribute";
 
     /// <summary>
+    /// Metadata name (with generic arity) of <see cref="DwarfMapper.GenerateMapAttribute{TSource,TTarget}"/>,
+    /// used to drive the co-located pipeline: a class bearing this attribute but no <c>[DwarfMapper]</c> gets a
+    /// separate generated <c>&lt;Host&gt;Mapper</c>.
+    /// </summary>
+    internal const string GenerateMapAttributeFullName = "DwarfMapper.GenerateMapAttribute`2";
+
+    /// <summary>
     /// Tracking name for the per-mapper extraction step. Labels the pipeline node so incremental-caching
     /// tests can assert (via <c>GeneratorDriverOptions.TrackIncrementalGeneratorSteps</c>) that an unrelated
     /// edit leaves this step <c>Cached</c>/<c>Unchanged</c>. Has no effect on generated output.
     /// </summary>
     internal const string ExtractStepName = "DwarfMapperExtract";
 
+    /// <summary>Tracking name for the co-located ([GenerateMap]-on-plain-class) extraction step.</summary>
+    internal const string CoLocatedExtractStepName = "DwarfMapperCoLocatedExtract";
+
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
+        // Primary pipeline: classes marked [DwarfMapper]. The mapping is emitted into the marked partial class.
         var mappers = context.SyntaxProvider.ForAttributeWithMetadataName(
             MarkerAttributeFullName,
             predicate: static (node, _) => node is ClassDeclarationSyntax,
@@ -36,16 +47,30 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
         context.RegisterSourceOutput(mappers, static (spc, model) => Execute(spc, model));
 
-        // Assembly-wide convenience outputs aggregated across every mapper: the extension-method facade
-        // (always) and the DI registration (only when Microsoft.Extensions.DependencyInjection is referenced).
-        // Collect()'d so cross-mapper name collisions can be de-duplicated in one place; the DI availability
-        // is projected to a bool so threading it through Combine() does not defeat incremental caching.
+        // Co-located pipeline: a class that carries [GenerateMap<>] but is NOT a [DwarfMapper] (e.g. a DTO that
+        // declares its own mapping). The mapping is emitted into a SEPARATE generated `<Host>Mapper` type, so the
+        // host needs neither `partial` nor [DwarfMapper]. ExtractGenerateMapHost returns null for [DwarfMapper]
+        // classes (handled above) and generic hosts, so those are filtered out before emit/aggregation.
+        var coLocated = context.SyntaxProvider.ForAttributeWithMetadataName(
+            GenerateMapAttributeFullName,
+            predicate: static (node, _) => node is ClassDeclarationSyntax,
+            transform: static (ctx, ct) => MapperExtractor.ExtractGenerateMapHost(ctx, ct))
+            .WithTrackingName(CoLocatedExtractStepName)
+            .Where(static m => m is not null)
+            .Select(static (m, _) => m!);
+
+        context.RegisterSourceOutput(coLocated, static (spc, model) => Execute(spc, model));
+
+        // Assembly-wide convenience outputs aggregated across EVERY mapper (both pipelines): the extension-method
+        // facade (always) and the DI registration (only when Microsoft.Extensions.DependencyInjection is
+        // referenced). Collect()'d so cross-mapper name collisions can be de-duplicated in one place; the DI
+        // availability is projected to a bool so threading it through Combine() does not defeat incremental caching.
         var diAvailable = context.CompilationProvider.Select(static (compilation, _) =>
             compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null);
 
         context.RegisterSourceOutput(
-            mappers.Collect().Combine(diAvailable),
-            static (spc, pair) => EmitAggregates(spc, pair.Left, pair.Right));
+            mappers.Collect().Combine(coLocated.Collect()).Combine(diAvailable),
+            static (spc, pair) => EmitAggregates(spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right));
     }
 
     private static void EmitAggregates(

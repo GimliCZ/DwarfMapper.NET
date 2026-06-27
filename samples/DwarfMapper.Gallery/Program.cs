@@ -22,6 +22,7 @@ DwarfMapper.Gallery.Ex11.Example.Run();   // IQueryable projection (generated Se
 DwarfMapper.Gallery.Ex12.Example.Run();   // extension method + DI
 DwarfMapper.Gallery.Ex13.Example.Run();   // nested/collection-element config on the class
 DwarfMapper.Gallery.Ex14.Example.Run();   // same, low-ceremony: [GenerateMap] + extension method
+DwarfMapper.Gallery.Ex15.Example.Run();   // co-located: the mapping lives ON the DTO class, no central mapper
 
 Console.WriteLine();
 Console.WriteLine("=== done — open each NN_*.cs file for the annotated source ===");

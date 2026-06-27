@@ -26,13 +26,42 @@ internal enum NullCollectionsBehavior
 internal static class MapperExtractor
 {
     public static MapperClassModel Extract(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
+        => ExtractCore(ctx, separateEmit: false, ct);
+
+    /// <summary>
+    /// Entry for a class that carries <c>[GenerateMap&lt;&gt;]</c> but is NOT a <c>[DwarfMapper]</c> mapper —
+    /// the host (e.g. a DTO) declares its mapping co-located. The mapping is emitted into a SEPARATE generated
+    /// mapper type (<c>&lt;Host&gt;Mapper</c>), so the host needs neither <c>partial</c> nor <c>[DwarfMapper]</c>;
+    /// it is consumed via the generated extension methods / DI like any other mapper. Returns <c>null</c> when
+    /// the class is also a <c>[DwarfMapper]</c> (the primary pipeline owns it). Generic hosts and
+    /// <c>&lt;Host&gt;Mapper</c> name collisions are surfaced as diagnostics (DWARF054/DWARF057) by ExtractCore.
+    /// </summary>
+    public static MapperClassModel? ExtractGenerateMapHost(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
+    {
+        var classSymbol = (INamedTypeSymbol)ctx.TargetSymbol;
+        if (classSymbol.GetAttributes().Any(a =>
+                a.AttributeClass?.ToDisplayString() == "DwarfMapper.DwarfMapperAttribute"))
+        {
+            return null; // a [DwarfMapper] class — the primary pipeline emits into it directly
+        }
+        // Generic hosts (DWARF054) and <Host>Mapper name collisions (DWARF057) are reported loudly inside
+        // ExtractCore rather than silently skipped here — see the never-silent design tenet.
+        return ExtractCore(ctx, separateEmit: true, ct);
+    }
+
+    private static MapperClassModel ExtractCore(GeneratorAttributeSyntaxContext ctx, bool separateEmit, CancellationToken ct)
     {
         var classSymbol = (INamedTypeSymbol)ctx.TargetSymbol;
         var classSyntax = (ClassDeclarationSyntax)ctx.TargetNode;
         var diagnostics = new List<DiagnosticInfo>();
 
+        // separateEmit: the mapping goes to a standalone generated `<Host>Mapper` (the host needs no partial /
+        // [DwarfMapper]). Otherwise it is emitted into the [DwarfMapper] partial class itself.
+        var emitClassName = separateEmit ? classSymbol.Name + "Mapper" : classSymbol.Name;
+        var emitAccessibility = separateEmit ? "internal" : AccessibilityText(classSymbol.DeclaredAccessibility);
+
         var isPartial = classSyntax.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword));
-        if (!isPartial)
+        if (!isPartial && !separateEmit)
         {
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.MapperNotPartial,
@@ -40,9 +69,13 @@ internal static class MapperExtractor
                 classSymbol.Name));
         }
 
+        var mapperNamespace = classSymbol.ContainingNamespace.IsGlobalNamespace
+            ? "" : classSymbol.ContainingNamespace.ToDisplayString();
+
         // A generic mapper class would get a generated `partial class Foo` with no `<T>` — which is NOT a
         // partial of the user's `Foo<T>` and does not compile. Refuse loudly (DWARF054) and skip generation
-        // entirely rather than emitting a broken, type-parameter-less partial.
+        // entirely rather than emitting a broken, type-parameter-less partial. (Covers a generic [DwarfMapper]
+        // class AND a generic co-located [GenerateMap<>] host.)
         if (classSymbol.IsGenericType || classSymbol.TypeParameters.Length > 0)
         {
             diagnostics.Add(new DiagnosticInfo(
@@ -50,14 +83,33 @@ internal static class MapperExtractor
                 LocationInfo.From(classSyntax.Identifier.GetLocation()),
                 classSymbol.Name));
 
-            return new MapperClassModel(
-                classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
-                classSymbol.Name,
-                AccessibilityText(classSymbol.DeclaredAccessibility),
+            return new MapperClassModel(mapperNamespace, emitClassName, emitAccessibility,
                 EquatableArray.From(new List<MapMethodModel>()),
                 EquatableArray.From(diagnostics),
                 EquatableArray.From(new List<SynthesizedMethod>()),
                 EquatableArray.From(new List<RoundTripPair>()));
+        }
+
+        // Co-located emit (separateEmit) is the ONLY path that introduces a new type name. If a type named
+        // <Host>Mapper already exists — a hand-written mapper, or a same-named [DwarfMapper] class whose
+        // generated hint name would clash and abort ALL generation — report DWARF057 (blocking) and emit nothing
+        // rather than producing an opaque downstream failure.
+        if (separateEmit)
+        {
+            var fqMapper = mapperNamespace.Length == 0 ? emitClassName : mapperNamespace + "." + emitClassName;
+            if (ctx.SemanticModel.Compilation.GetTypeByMetadataName(fqMapper) is not null)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.CoLocatedMapperNameCollision,
+                    LocationInfo.From(classSyntax.Identifier.GetLocation()),
+                    $"the co-located mapping on '{classSymbol.Name}' would generate a mapper named '{fqMapper}', but a type with that name already exists — rename the existing type, or declare a [DwarfMapper] mapper class instead"));
+
+                return new MapperClassModel(mapperNamespace, emitClassName, emitAccessibility,
+                    EquatableArray.From(new List<MapMethodModel>()),
+                    EquatableArray.From(diagnostics),
+                    EquatableArray.From(new List<SynthesizedMethod>()),
+                    EquatableArray.From(new List<RoundTripPair>()));
+            }
         }
 
         var classIgnores = ReadIgnores(classSymbol).ToList();
@@ -68,7 +120,9 @@ internal static class MapperExtractor
         var generateExtensions = ReadGenerateExtensions(ctx.Attributes); // default true (opt-out)
         // The convenience facade caches a `new()` mapper singleton, so it can only be emitted for a mapper
         // that has an accessible parameterless constructor (the implicit one counts).
-        var hasParameterlessCtor = classSymbol.InstanceConstructors.Any(c =>
+        // For separateEmit the cached facade singleton is `new <Host>Mapper()` — the generated mapper always
+        // has an implicit parameterless constructor, regardless of the host type's own constructors.
+        var hasParameterlessCtor = separateEmit || classSymbol.InstanceConstructors.Any(c =>
             !c.IsStatic && c.Parameters.Length == 0 &&
             c.DeclaredAccessibility != Accessibility.Private &&
             c.DeclaredAccessibility != Accessibility.Protected &&
@@ -78,6 +132,7 @@ internal static class MapperExtractor
         // partial method. The mutable Consumed flags drive the DWARF056 "matched nothing" check at the end.
         var pairProps = ReadPairMapProperties(classSymbol);
         var pairIgnores = ReadPairIgnores(classSymbol);
+        var pairValues = ReadPairMapValues(classSymbol);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);
@@ -636,6 +691,32 @@ internal static class MapperExtractor
             }
             var mapPropExtras = ReadMapPropertyExtras(method);
             var mapValues = ReadMapValues(method);
+
+            // Pair-scoped class-level config ([MapProperty<S,T>] / [MapIgnore<T>]) also applies to a DECLARED
+            // partial method for the same pair: method-level config wins, the pair-scoped attrs fill the gaps,
+            // and — crucially — MatchPairProps marks them consumed so DWARF056 does not fire its "matches no
+            // mapped pair; add [GenerateMap]" advice for a pair this partial method already maps.
+            var (pairExplicit, pairExtras) = MatchPairProps(pairProps, sourceType, targetType);
+            var methodExplicitTargets = new HashSet<string>(explicitMaps.Select(m => m.Target), System.StringComparer.Ordinal);
+            foreach (var pe in pairExplicit)
+            {
+                if (methodExplicitTargets.Add(pe.Target)) explicitMaps.Add(pe);
+            }
+            var methodExtraTargets = new HashSet<string>(mapPropExtras.Select(e => e.Target), System.StringComparer.Ordinal);
+            foreach (var pe in pairExtras)
+            {
+                if (methodExtraTargets.Add(pe.Target)) mapPropExtras.Add(pe);
+            }
+            foreach (var pim in MatchPairIgnores(pairIgnores, targetType))
+            {
+                ignores.Add(pim);
+            }
+            var methodValueTargets = new HashSet<string>(mapValues.Select(v => v.Target), System.StringComparer.Ordinal);
+            foreach (var pv in MatchPairValues(pairValues, targetType))
+            {
+                if (methodValueTargets.Add(pv.Target)) mapValues.Add(pv);
+            }
+
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
 
@@ -854,6 +935,7 @@ internal static class MapperExtractor
                 nullStrategy, System.Array.Empty<string>(), new List<string>(),
                 genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
+                mapValues: MatchPairValues(pairValues, genTgt), valueProviders: valueProviders,
                 mapPropertyExtras: genExtras);
 
             var genBefore = new List<string>();
@@ -975,6 +1057,7 @@ internal static class MapperExtractor
                 nestedConsumed, nestedRequiredMustInit,
                 pairAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
+                mapValues: MatchPairValues(pairValues, nestedTgt), valueProviders: valueProviders,
                 mapPropertyExtras: nestedExtras);
 
             nestedRegistry.ClearCurrentPair();
@@ -1802,11 +1885,15 @@ internal static class MapperExtractor
             if (!pi.Consumed)
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PairScopedNoMatch, pi.Loc,
                     $"[MapIgnore<{pi.Target.ToDisplayString()}>(\"{pi.Member}\")] matches no mapped pair targeting {pi.Target.ToDisplayString()}"));
+        foreach (var pv in pairValues)
+            if (!pv.Consumed)
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PairScopedNoMatch, pv.Loc,
+                    $"[MapValue<{pv.Target.ToDisplayString()}>(\"{pv.Member}\")] matches no mapped pair targeting {pv.Target.ToDisplayString()}"));
 
         return new MapperClassModel(
             classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
-            classSymbol.Name,
-            AccessibilityText(classSymbol.DeclaredAccessibility),
+            emitClassName,
+            emitAccessibility,
             EquatableArray.From(methods),
             EquatableArray.From(diagnostics),
             EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, System.StringComparer.Ordinal)),
@@ -5094,6 +5181,68 @@ internal static class MapperExtractor
             }
         }
         return set;
+    }
+
+    private sealed class PairValue
+    {
+        public ITypeSymbol Target = null!;
+        public string Member = "";
+        public bool IsConstant;
+        public TypedConstant Value;
+        public string? Use;
+        public LocationInfo? Loc;
+        public bool Consumed;
+    }
+
+    private static List<PairValue> ReadPairMapValues(INamedTypeSymbol classSymbol)
+    {
+        var result = new List<PairValue>();
+        foreach (var attr in classSymbol.GetAttributes())
+        {
+            var ac = attr.AttributeClass;
+            if (ac is null || ac.Name != "MapValueAttribute" || ac.TypeArguments.Length != 1
+                || ac.ContainingNamespace?.Name != "DwarfMapper")
+            {
+                continue;
+            }
+            if (attr.ConstructorArguments.Length == 0 || attr.ConstructorArguments[0].Value is not string target)
+            {
+                continue;
+            }
+            string? use = null;
+            foreach (var na in attr.NamedArguments)
+            {
+                if (na.Key == "Use" && na.Value.Value is string u) { use = u; }
+            }
+            // Two-arg ctor → constant value in [1]; one-arg ctor → Use-driven (mirrors ReadMapValues).
+            var isConstant = attr.ConstructorArguments.Length == 2 && use is null;
+            var value = attr.ConstructorArguments.Length == 2 ? attr.ConstructorArguments[1] : default;
+            result.Add(new PairValue
+            {
+                Target = ac.TypeArguments[0],
+                Member = target,
+                IsConstant = isConstant,
+                Value = value,
+                Use = use,
+                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None),
+            });
+        }
+        return result;
+    }
+
+    private static List<(string Target, bool IsConstant, TypedConstant Value, string? Use)>
+        MatchPairValues(List<PairValue> all, ITypeSymbol tgt)
+    {
+        var result = new List<(string Target, bool IsConstant, TypedConstant Value, string? Use)>();
+        foreach (var v in all)
+        {
+            if (SymbolEqualityComparer.Default.Equals(v.Target, tgt))
+            {
+                v.Consumed = true;
+                result.Add((v.Member, v.IsConstant, v.Value, v.Use));
+            }
+        }
+        return result;
     }
 
     /// <summary>

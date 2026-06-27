@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF055`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF057`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 
 ## How severities and suppression work
@@ -348,3 +348,12 @@ matched no mapped pair, so it silently does nothing (usually a typo'd type argum
 a top-level `[GenerateMap]` pair or an auto-synthesized nested/collection-element pair. **Fix:** add the
 `[GenerateMap<TSource, TTarget>]` (or the mapping that nests it), correct the type arguments, or remove the
 attribute.
+
+## dwarf057
+**Generated mapper name collides with an existing type** · Error
+
+A co-located `[GenerateMap<>]` host would emit a generated mapper named `<Host>Mapper`, but a type with that
+name already exists (a hand-written mapper, or a `[DwarfMapper]` class of the same name). DwarfMapper reports
+this rather than emitting the colliding type (which would be a raw C# error against generated code, a silent
+partial-merge, or — if it clashed with another generated mapper's file — abort all generation). **Fix:** rename
+the existing type, or declare the mapping on a `[DwarfMapper]` mapper class instead of co-locating it.

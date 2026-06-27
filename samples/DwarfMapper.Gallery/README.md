@@ -24,6 +24,20 @@ dotnet run --project samples/DwarfMapper.Gallery
 | 12 | [`12_Ergonomics.cs`](12_Ergonomics.cs) | The generated `x.ToGemDto()` extension and `AddDwarfMappers()` DI. |
 | 13 | [`13_NestedListConfig.cs`](13_NestedListConfig.cs) | **Configuring a nested/collection-element map** on the class — rename `Person.Name → PersonDto.FullName` inside a `List<Person>`. |
 | 14 | [`14_NestedListConfigErgonomic.cs`](14_NestedListConfigErgonomic.cs) | Same scenario with **zero partial methods**: pair-scoped `[MapProperty<Person, PersonDto>]` on the class carries the nested rename; `[GenerateMap]` + `moria.ToPlaceDto()` do the rest. |
+| 15 | [`ex15/`](ex15/) | **Co-located mapping, no `partial`/`[DwarfMapper]`** — `[GenerateMap]` + `[MapProperty<,>]` live on a plain `sealed` DTO (`dtos/PersonDto.cs`); the generator emits a separate `PersonDtoMapper`. Delete the DTO and its mapping goes too. |
+
+## Which declaration style should I use?
+
+There are four ways to declare a mapping. They share one engine; pick by what the pair needs:
+
+| Style | Use it when | Trade-off |
+|---|---|---|
+| **Partial method** — `[DwarfMapper] partial class` + `partial TTarget ToX(TSource)` (ex 02–11) | you need a specific method name, **`[RoundTrip]`**, **projection**, **span**, **async streaming**, or **extra parameters** (these are signature-driven) | most ceremony; a signature-only method reads as a "data holder" when the pair needs no config |
+| **`[GenerateMap<A,B>]`** on a `[DwarfMapper]` class (ex 01, 12) | low-ceremony bulk declaration (AutoMapper `CreateMap` migration) | one `Map` overload per **source** type — you can't map one source to two targets on the same class |
+| **Pair-scoped** `[MapProperty<,>]` / `[MapIgnore<,>]` / `[MapValue<,>]` (ex 14) | configure a `[GenerateMap]` pair (including a **nested/collection element**) with **no method** | config lives on the mapper class, not next to the method |
+| **Co-located** on a plain DTO — no `[DwarfMapper]`, no `partial` (ex 15) | you want the mapping to **live with the type** and disappear when you delete it | the DTO takes a compile-time dependency on the source type; the generated mapper + `x.ToDto()` extensions are **assembly-internal** (cross-assembly, call the mapper instance or use DI) |
+
+**Recommended default for a new project:** `[GenerateMap<A,B>]` + the generated `a.ToBDto()` extension (ex 14/15) — the lowest ceremony. Reach for a partial method only when you need one of the signature-driven features above. The call name is `Map(source)` for a `[GenerateMap]` pair, your chosen method name for a declared partial, or `source.ToTarget()` for the generated extension.
 
 ## The "lambda" note
 
