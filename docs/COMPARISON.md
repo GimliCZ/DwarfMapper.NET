@@ -217,13 +217,16 @@ AOT codegen and stress-tests for instabilities the JIT can't reveal: SIMD widen/
 every size around the vector boundary, Preserve-topology determinism over 100 000 runs, catchable
 depth-guard over 20 000 runs, and `OnCycle=SetNull` acyclicity over 50 000 runs.
 
-Results (10.0.1 ILC, win-x64, this machine):
+Results (ILC 10.0.1, win-x64, AMD Ryzen 5 5600; **1.16 MB** self-contained native exe):
 
-- **No instabilities.** Every correctness/determinism check passes (exit 0); the default `dotnet publish`
+- **No instabilities.** Every correctness/determinism check passes (exit 0) across 170 000 stress
+  iterations (100 000 Preserve-cycle + 20 000 depth-guard + 50 000 SetNull); the default `dotnet publish`
   emits **zero** IL2xxx/IL3xxx trim/AOT warnings. SIMD output is **bit-for-bit identical** to the scalar
   reference at all boundary sizes, including negatives (sign extension).
 - **AOT timing is *steadier* than the JIT** — no tiered-compilation jitter, so per-op min/max spreads are
-  tighter (a stability *positive*).
+  tighter (a stability *positive*). Indicative ns/op at baseline SSE2 width: Flat ≈ 8 ns, Array (1000)
+  ≈ 8.8 µs, **Blit (1000) ≈ 0.39 µs** (identical to the JIT — the reinterpret is width-independent),
+  Widen (1000) ≈ 0.47 µs (half-width; see the caveat below).
 - **One AOT usage caveat worth knowing (not an instability).** NativeAOT defaults to a **baseline
   instruction set** (x86-64-v1 / SSE2) for portability, so `Vector<int>.Count == 4` under default AOT vs
   `8` under the AVX2-detecting JIT — the `Vector.Widen` path runs half-width. It stays **correct** (the
@@ -236,8 +239,9 @@ Results (10.0.1 ILC, win-x64, this machine):
   </PropertyGroup>
   ```
 
-  Verified: with `IlcInstructionSet=native` the AOT binary reports `Vector<int>.Count == 8` and all checks
-  still pass. (`x86-x64-v3` is rejected by ILC 10.0.1 — use `native` or an explicit ISA list.)
+  Re-verified this run: with `IlcInstructionSet=native` the AOT binary reports `Vector<int>.Count == 8`
+  (vs `4` at baseline) and all correctness/determinism checks still pass (exit 0). (`x86-64-v3` is rejected
+  by ILC 10.0.1 — use `native` or an explicit ISA list.)
 
 Run it yourself:
 
