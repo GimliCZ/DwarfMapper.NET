@@ -73,6 +73,11 @@ internal static class MapperExtractor
             c.DeclaredAccessibility != Accessibility.Private &&
             c.DeclaredAccessibility != Accessibility.Protected &&
             c.DeclaredAccessibility != Accessibility.ProtectedAndInternal);
+        // Pair-scoped member config declared on the class ([MapProperty<S,T>] / [MapIgnore<T>]). It is applied
+        // to [GenerateMap] pairs AND auto-synthesized nested pairs alike, so a pair can be configured without a
+        // partial method. The mutable Consumed flags drive the DWARF056 "matched nothing" check at the end.
+        var pairProps = ReadPairMapProperties(classSymbol);
+        var pairIgnores = ReadPairIgnores(classSymbol);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);
@@ -807,7 +812,6 @@ internal static class MapperExtractor
         // e.g. AutoMapper's CreateMap<A,B>() is a near-mechanical 1:1 replace with [GenerateMap<A,B>].
         var genComp = ctx.SemanticModel.Compilation;
         var genLoc = LocationInfo.From(classSyntax.Identifier.GetLocation());
-        var emptyExplicit = System.Array.Empty<(string Source, string Target, string? Use)>();
         foreach (var attr in classSymbol.GetAttributes())
         {
             if (attr.AttributeClass is not { Name: "GenerateMapAttribute" } ac
@@ -816,6 +820,11 @@ internal static class MapperExtractor
                 continue;
             if (ac.TypeArguments[1] is not INamedTypeSymbol genTgt) continue;
             var genSrc = ac.TypeArguments[0];
+
+            // Pair-scoped [MapProperty<S,T>] / [MapIgnore<T>] config for this declared pair.
+            var (genExplicit, genExtras) = MatchPairProps(pairProps, genSrc, genTgt);
+            var genIgnores = new HashSet<string>(classIgnores);
+            foreach (var im in MatchPairIgnores(pairIgnores, genTgt)) genIgnores.Add(im);
 
             var genCtor = ConstructorSelector.Select(genTgt, diagnostics, genLoc, out var genObjInitOnly);
             if (genCtor is null) continue;
@@ -832,7 +841,7 @@ internal static class MapperExtractor
             else
             {
                 if (!ResolveConstructorArguments(genCtor, genSrc, genComp, genLoc, diagnostics,
-                        caseInsensitive, emptyExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
+                        caseInsensitive, genExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
                         nullStrategy, classAutoNest, nestedRegistry, out genCtorArgs, out genConsumed,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions))
                     continue;
@@ -840,11 +849,12 @@ internal static class MapperExtractor
             }
 
             var genMembers = ResolveMembers(
-                genSrc, genTgt, new HashSet<string>(classIgnores), genComp, genLoc, diagnostics,
-                caseInsensitive, emptyExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
+                genSrc, genTgt, genIgnores, genComp, genLoc, diagnostics,
+                caseInsensitive, genExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
                 nullStrategy, System.Array.Empty<string>(), new List<string>(),
                 genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
+                mapPropertyExtras: genExtras);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -895,6 +905,11 @@ internal static class MapperExtractor
 
             var (nestedSrc, nestedTgt, nestedName, pairAutoNest) = nestedRegistry.Dequeue();
 
+            // Pair-scoped member config for this synthesized pair (empty when none declared on the class), so a
+            // [MapProperty<S,T>] rename applies even when S -> T is mapped as a nested/collection element.
+            var (nestedExplicit, nestedExtras) = MatchPairProps(pairProps, nestedSrc, nestedTgt);
+            var nestedIgnores = MatchPairIgnores(pairIgnores, nestedTgt);
+
             // Inform the registry that we are now building this pair's body,
             // so subsequent GetOrReserve calls record edges in the dependency graph.
             nestedRegistry.SetCurrentPair(nestedName);
@@ -937,7 +952,7 @@ internal static class MapperExtractor
             {
                 // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
                 if (!ResolveConstructorArguments(nestedCtor, nestedSrc, ctx.SemanticModel.Compilation,
-                    nestedLocation, diagnostics, caseInsensitive, System.Array.Empty<(string, string, string?)>(),
+                    nestedLocation, diagnostics, caseInsensitive, nestedExplicit,
                     allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                     pairAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
                     nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions))
@@ -951,15 +966,16 @@ internal static class MapperExtractor
             // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
             var nestedMembers = ResolveMembers(
                 nestedSrc, nestedTgt,
-                new HashSet<string>(System.StringComparer.Ordinal), // no ignores for synthesized
+                nestedIgnores, // pair-scoped [MapIgnore<T>] (empty when none declared)
                 ctx.SemanticModel.Compilation,
                 nestedLocation, diagnostics, caseInsensitive,
-                System.Array.Empty<(string, string, string?)>(), // no explicit maps
+                nestedExplicit, // pair-scoped [MapProperty<S,T>] (empty when none declared)
                 allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                 new List<string>(), new List<string>(), // no flatten/reinterpret
                 nestedConsumed, nestedRequiredMustInit,
                 pairAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
+                mapPropertyExtras: nestedExtras);
 
             nestedRegistry.ClearCurrentPair();
 
@@ -1775,6 +1791,17 @@ internal static class MapperExtractor
                 $"(> {LargeMapperMemberThreshold}); a mapper this large can add IDE/compile latency — " +
                 "consider splitting it into smaller mappers"));
         }
+
+        // DWARF056: a pair-scoped attribute that matched no mapped pair (top-level or nested) silently does
+        // nothing — surface it (usually a typo'd type argument or a missing [GenerateMap]).
+        foreach (var pp in pairProps)
+            if (!pp.Consumed)
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PairScopedNoMatch, pp.Loc,
+                    $"[MapProperty<{pp.Source.ToDisplayString()}, {pp.Target.ToDisplayString()}>(\"{pp.SrcMember}\", \"{pp.TgtMember}\")] matches no mapped pair; add [GenerateMap<{pp.Source.ToDisplayString()}, {pp.Target.ToDisplayString()}>] (or a mapping that nests it), or fix the type arguments"));
+        foreach (var pi in pairIgnores)
+            if (!pi.Consumed)
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PairScopedNoMatch, pi.Loc,
+                    $"[MapIgnore<{pi.Target.ToDisplayString()}>(\"{pi.Member}\")] matches no mapped pair targeting {pi.Target.ToDisplayString()}"));
 
         return new MapperClassModel(
             classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
@@ -4931,6 +4958,142 @@ internal static class MapperExtractor
             }
         }
         return true;
+    }
+
+    // ── Pair-scoped member config: [MapProperty<S,T>] / [MapIgnore<T>] declared on the class ──────────────
+    // These give a [GenerateMap] pair (or an auto-synthesized nested pair) member config without a partial
+    // method. The non-generic readers above match on the exact display string "DwarfMapper.MapPropertyAttribute"
+    // etc., so they never pick up these generic variants; these readers match by name + type-argument arity.
+
+    private sealed class PairProp
+    {
+        public ITypeSymbol Source = null!;
+        public ITypeSymbol Target = null!;
+        public string SrcMember = "";
+        public string TgtMember = "";
+        public string? Use;
+        public bool HasNullSub;
+        public TypedConstant NullSub;
+        public string? When;
+        public LocationInfo? Loc;
+        public bool Consumed;
+    }
+
+    private sealed class PairIgnore
+    {
+        public ITypeSymbol Target = null!;
+        public string Member = "";
+        public LocationInfo? Loc;
+        public bool Consumed;
+    }
+
+    private static List<PairProp> ReadPairMapProperties(INamedTypeSymbol classSymbol)
+    {
+        var result = new List<PairProp>();
+        foreach (var attr in classSymbol.GetAttributes())
+        {
+            var ac = attr.AttributeClass;
+            if (ac is null || ac.Name != "MapPropertyAttribute" || ac.TypeArguments.Length != 2
+                || ac.ContainingNamespace?.Name != "DwarfMapper")
+            {
+                continue;
+            }
+            if (attr.ConstructorArguments.Length != 2
+                || attr.ConstructorArguments[0].Value is not string src
+                || attr.ConstructorArguments[1].Value is not string tgt)
+            {
+                continue;
+            }
+            string? use = null;
+            var hasNull = false;
+            TypedConstant nullSub = default;
+            string? when = null;
+            foreach (var na in attr.NamedArguments)
+            {
+                if (na.Key == "Use" && na.Value.Value is string u) { use = u; }
+                else if (na.Key == "NullSubstitute") { hasNull = true; nullSub = na.Value; }
+                else if (na.Key == "When" && na.Value.Value is string w) { when = w; }
+            }
+            result.Add(new PairProp
+            {
+                Source = ac.TypeArguments[0],
+                Target = ac.TypeArguments[1],
+                SrcMember = src,
+                TgtMember = tgt,
+                Use = use,
+                HasNullSub = hasNull,
+                NullSub = nullSub,
+                When = when,
+                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None),
+            });
+        }
+        return result;
+    }
+
+    private static List<PairIgnore> ReadPairIgnores(INamedTypeSymbol classSymbol)
+    {
+        var result = new List<PairIgnore>();
+        foreach (var attr in classSymbol.GetAttributes())
+        {
+            var ac = attr.AttributeClass;
+            if (ac is null || ac.Name != "MapIgnoreAttribute" || ac.TypeArguments.Length != 1
+                || ac.ContainingNamespace?.Name != "DwarfMapper")
+            {
+                continue;
+            }
+            if (attr.ConstructorArguments.Length != 1 || attr.ConstructorArguments[0].Value is not string member)
+            {
+                continue;
+            }
+            result.Add(new PairIgnore
+            {
+                Target = ac.TypeArguments[0],
+                Member = member,
+                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None),
+            });
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Returns the pair-scoped explicit renames and NullSubstitute/When extras for the <c>(src → tgt)</c> pair,
+    /// marking each matching attribute as consumed (for the DWARF056 "matched nothing" check).
+    /// </summary>
+    private static (List<(string Source, string Target, string? Use)> Explicit,
+                    List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)> Extras)
+        MatchPairProps(List<PairProp> all, ITypeSymbol src, ITypeSymbol tgt)
+    {
+        var ex = new List<(string Source, string Target, string? Use)>();
+        var extras = new List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)>();
+        foreach (var p in all)
+        {
+            if (!SymbolEqualityComparer.Default.Equals(p.Source, src)
+                || !SymbolEqualityComparer.Default.Equals(p.Target, tgt))
+            {
+                continue;
+            }
+            p.Consumed = true;
+            ex.Add((p.SrcMember, p.TgtMember, p.Use));
+            if (p.HasNullSub || p.When is not null)
+            {
+                extras.Add((p.TgtMember, p.HasNullSub, p.NullSub, p.When));
+            }
+        }
+        return (ex, extras);
+    }
+
+    private static HashSet<string> MatchPairIgnores(List<PairIgnore> all, ITypeSymbol tgt)
+    {
+        var set = new HashSet<string>(System.StringComparer.Ordinal);
+        foreach (var ig in all)
+        {
+            if (SymbolEqualityComparer.Default.Equals(ig.Target, tgt))
+            {
+                ig.Consumed = true;
+                set.Add(ig.Member);
+            }
+        }
+        return set;
     }
 
     /// <summary>

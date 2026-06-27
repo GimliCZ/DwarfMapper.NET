@@ -470,9 +470,22 @@ README.md
 - **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no allocation), with a defensive length guard (too-small destination throws, never silent truncation)
 - **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written **and vs. Mapperly / Mapster / AutoMapper 14** across flat / nested / collection / blit scenarios (see [`docs/COMPARISON.md`](docs/COMPARISON.md) for the full capability/testing/migration comparison, [`docs/MIGRATION.md`](docs/MIGRATION.md) for the feature-by-feature conversion guide from AutoMapper 14 / Mapster / Mapperly, and [`docs/CORRECTNESS.md`](docs/CORRECTNESS.md) for the proves-your-mappings-are-right guarantees); builds in CI, run locally for numbers
 - **Async streaming**: `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` lazily transforms an async sequence element-by-element (emitted as an `async` iterator; streaming/back-pressure preserved)
+- **Pair-scoped member configuration (no `partial` method)**: `[MapProperty<TSource, TTarget>(...)]` and `[MapIgnore<TTarget>(...)]` declared on the class configure a `[GenerateMap]` pair — or an auto-synthesized nested / collection-element pair — so a fully-configured mapper (including nested renames) can be declared with **zero partial methods**. The linkage applies wherever that pair is mapped; an attribute matching no mapped pair is `DWARF056`. Consume via the generated extension methods or `AddDwarfMappers()` DI:
+  ```csharp
+  [DwarfMapper]
+  [GenerateMap<Place, PlaceDto>]
+  [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]  // nested-element rename
+  public partial class Mappers { }   // no methods; place.ToPlaceDto() / services.AddDwarfMappers()
+  ```
 
 ### Planned
 - NuGet publish
+- **`[MapValue<TTarget>]` (pair-scoped constant/computed value)** — the source-less-member counterpart of the
+  shipped pair-scoped `[MapProperty<,>]` / `[MapIgnore<>]`, so a `[GenerateMap]` pair with a member that has no
+  source can be completed attribute-only too.
+- **Fully `partial`-free declaration** (follow-on): declare pairs on a non-`partial` marker (or via
+  assembly-level attributes) and emit a *separate* generated linker type, so even the `partial class` keyword is
+  unnecessary. Pair-scoped member config (shipped, above) already removes every partial **method**.
 
 ---
 

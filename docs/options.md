@@ -53,6 +53,8 @@ Put these on the mapping method (or the class, where noted).
 | `[MapValue(tgt, "const")]` / `[MapValue(tgt, Use = nameof(M))]` | Constant or computed (parameterless `M`) value for a source-less member. |
 | `[MapIgnore("Member")]` | Intentionally drop a destination member (suppresses `DWARF001`). Class- or method-level. |
 | `[MapIgnoreSource("Member")]` | Source-side mirror (under `RequiredMapping = Both`). |
+| `[MapProperty<TSource, TTarget>(src, tgt)]` | **Class-level, pair-scoped** rename/convert (`Use`/`NullSubstitute`/`When` too). Configures a `[GenerateMap]` pair — or an auto-synthesized nested/collection-element pair — with **no partial method**. Matches nothing → `DWARF056`. |
+| `[MapIgnore<TTarget>("Member")]` | **Class-level, pair-scoped** ignore (suppresses `DWARF001`) for any pair targeting `TTarget`. Matches nothing → `DWARF056`. |
 | `[Flatten("Root")]` | Pull a complex member's sub-members up to same-named destination members. |
 | `[FlattenGraph(...)]` | Collapse an object graph to a flat collection. |
 | `[MapDerivedType<TDerivedSrc, TDerivedDst>]` | Polymorphic dispatch arm on a base-type method. |
