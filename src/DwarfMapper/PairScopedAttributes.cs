@@ -71,3 +71,34 @@ public sealed class MapIgnoreAttribute<TTarget> : Attribute
     /// <summary>Name of the destination member to leave unmapped.</summary>
     public string Member { get; }
 }
+
+/// <summary>
+/// Assigns a <b>constant</b> or <b>computed</b> value to a source-less member of <typeparamref name="TTarget"/>
+/// <b>from the class</b> — the pair-scoped counterpart of the method-level <see cref="MapValueAttribute"/>. It
+/// counts the member as mapped (suppressing <c>DWARF001</c>), so a <c>[GenerateMap]</c> pair whose target has a
+/// member with no source can be completed with no <c>partial</c> method. A pair-scoped attribute that matches no
+/// mapped pair is <c>DWARF056</c>.
+/// </summary>
+/// <typeparam name="TTarget">The destination type whose member is assigned.</typeparam>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public sealed class MapValueAttribute<TTarget> : Attribute
+{
+    /// <summary>Assigns a constant <paramref name="value"/> to <paramref name="target"/> on <typeparamref name="TTarget"/>.</summary>
+    public MapValueAttribute(string target, object? value)
+    {
+        Target = target;
+        Value = value;
+    }
+
+    /// <summary>Declares a <paramref name="target"/> whose value comes from the <see cref="Use"/> method.</summary>
+    public MapValueAttribute(string target) => Target = target;
+
+    /// <summary>Name of the destination member to assign.</summary>
+    public string Target { get; }
+
+    /// <summary>The constant value (when the two-argument constructor is used).</summary>
+    public object? Value { get; }
+
+    /// <summary>Name of a parameterless method on the mapper that produces the value.</summary>
+    public string? Use { get; set; }
+}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-// Scan4 coverage: exercises MapPropertyAttribute<,> and MapIgnoreAttribute<> (the pair-scoped generic variants).
+// Scan4 coverage: exercises MapPropertyAttribute<,>, MapIgnoreAttribute<>, and MapValueAttribute<> (the pair-scoped generic variants).
 using System.Linq;
 
 namespace DwarfMapper.Generator.Tests;
@@ -102,6 +102,86 @@ public sealed class PairScopedConfigGeneratorTests
             [DwarfMapper]
             [GenerateMap<A, B>]
             [MapProperty<X, Y>("P", "Q")]
+            public partial class M { }
+            """;
+
+        var (diags, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diags, d => d.Id == "DWARF056");
+    }
+
+    [Fact]
+    public void PairScoped_attribute_consumed_by_a_declared_partial_method_does_not_report_DWARF056()
+    {
+        // The pair-scoped rename matches a DECLARED partial method's pair — it must apply there and stay quiet,
+        // not advise "add [GenerateMap]" (which would create a colliding second map).
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Person { public string Name { get; set; } }
+            public class PersonDto { public string FullName { get; set; } }
+            [DwarfMapper]
+            [MapProperty<Person, PersonDto>("Name", "FullName")]
+            public partial class M
+            {
+                public partial PersonDto ToDto(Person p);
+            }
+            """;
+        var (diags, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF056");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s)); // rename applied → FullName mapped
+    }
+
+    [Fact]
+    public void PairScoped_attribute_matching_only_a_nested_pair_does_not_report_DWARF056()
+    {
+        const string s = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace Demo;
+            public class Person { public string Name { get; set; } }
+            public class PersonDto { public string FullName { get; set; } }
+            public class Place { public List<Person> People { get; set; } }
+            public class PlaceDto { public List<PersonDto> People { get; set; } }
+            [DwarfMapper]
+            [GenerateMap<Place, PlaceDto>]
+            [MapProperty<Person, PersonDto>("Name", "FullName")]
+            public partial class M { }
+            """;
+        var (diags, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF056"); // consumed by the synthesized nested pair
+    }
+
+    [Fact]
+    public void PairScoped_value_completes_a_source_less_member_with_no_method()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Person { public string Name { get; set; } }
+            public class PersonDto { public string Name { get; set; } public string Source { get; set; } }
+            [DwarfMapper]
+            [GenerateMap<Person, PersonDto>]
+            [MapValue<PersonDto>("Source", "api")]
+            public partial class M { }
+            """;
+
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s)); // Source has no source member, but MapValue completes it
+        var gen = GeneratorTestHarness.RunAndGetSource(s, "M.g.cs");
+        Assert.Contains("Source = ", gen, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PairScoped_value_matching_no_pair_reports_DWARF056()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class A { public int Id { get; set; } }
+            public class B { public int Id { get; set; } }
+            public class Z { public string W { get; set; } }
+            [DwarfMapper]
+            [GenerateMap<A, B>]
+            [MapValue<Z>("W", "x")]
             public partial class M { }
             """;
 

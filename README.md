@@ -150,7 +150,8 @@ services.AddDwarfMappers();             // registers every [DwarfMapper] in the 
 // ...then inject OrderMapper directly.
 ```
 
-- **Extension methods** are generated for every simple `TTarget Map(TSource)` method, named `To<TargetType>()`, backed by a cached stateless instance. They live in the `DwarfMapper.Extensions` namespace (one `using` to surface them) and are assembly-internal. Opt a mapper out with `[DwarfMapper(GenerateExtensions = false)]`. Update-into, span, async-streaming, projection, and derived-dispatch methods, and any pair whose generated name would collide, are skipped.
+- **Extension methods** are generated for every simple `TTarget Map(TSource)` method, named `To<TargetType>()`, backed by a cached stateless instance. They live in the `DwarfMapper.Extensions` namespace (one `using` to surface them). Opt a mapper out with `[DwarfMapper(GenerateExtensions = false)]`. Update-into, span, async-streaming, projection, and derived-dispatch methods, and any pair whose generated name would collide, are skipped.
+  > **Cross-assembly note:** the generated extensions are **assembly-internal**, so `order.ToOrderDto()` resolves only inside the assembly that declares the mapper. If your mappers/DTOs live in a separate library, call the mapper **instance** or use **DI** (`AddDwarfMappers()`) from the consuming project — those work across assemblies.
 - **`AddDwarfMappers()`** is generated only when your project references `Microsoft.Extensions.DependencyInjection.Abstractions`. It registers each mapper as a singleton (no reflection, no assembly scan) — AOT-safe like everything else.
 
 ### Configuring mapping
@@ -470,22 +471,23 @@ README.md
 - **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no allocation), with a defensive length guard (too-small destination throws, never silent truncation)
 - **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written **and vs. Mapperly / Mapster / AutoMapper 14** across flat / nested / collection / blit scenarios (see [`docs/COMPARISON.md`](docs/COMPARISON.md) for the full capability/testing/migration comparison, [`docs/MIGRATION.md`](docs/MIGRATION.md) for the feature-by-feature conversion guide from AutoMapper 14 / Mapster / Mapperly, and [`docs/CORRECTNESS.md`](docs/CORRECTNESS.md) for the proves-your-mappings-are-right guarantees); builds in CI, run locally for numbers
 - **Async streaming**: `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` lazily transforms an async sequence element-by-element (emitted as an `async` iterator; streaming/back-pressure preserved)
-- **Pair-scoped member configuration (no `partial` method)**: `[MapProperty<TSource, TTarget>(...)]` and `[MapIgnore<TTarget>(...)]` declared on the class configure a `[GenerateMap]` pair — or an auto-synthesized nested / collection-element pair — so a fully-configured mapper (including nested renames) can be declared with **zero partial methods**. The linkage applies wherever that pair is mapped; an attribute matching no mapped pair is `DWARF056`. Consume via the generated extension methods or `AddDwarfMappers()` DI:
+- **Pair-scoped member configuration (no `partial` method)**: `[MapProperty<TSource, TTarget>(...)]`, `[MapIgnore<TTarget>(...)]`, and `[MapValue<TTarget>(...)]` declared on the class configure a `[GenerateMap]` pair — or an auto-synthesized nested / collection-element pair — so a fully-configured mapper (including nested renames) can be declared with **zero partial methods**. The linkage applies wherever that pair is mapped; an attribute matching no mapped pair is `DWARF056`. Consume via the generated extension methods or `AddDwarfMappers()` DI:
   ```csharp
   [DwarfMapper]
   [GenerateMap<Place, PlaceDto>]
   [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]  // nested-element rename
   public partial class Mappers { }   // no methods; place.ToPlaceDto() / services.AddDwarfMappers()
   ```
+- **Co-located mapping (no `partial`, no `[DwarfMapper]` on the type)**: a class that carries `[GenerateMap<S,T>]` (plus pair-scoped `[MapProperty<,>]`/`[MapIgnore<,>]`) but is **not** a `[DwarfMapper]` mapper gets its mapping emitted into a *separate* generated `<Host>Mapper` type. So a DTO can declare its own mapping inline, stay a plain (even `sealed`, non-`partial`) data class, and be consumed via the generated extension / `AddDwarfMappers()` DI. Delete the type and its mapping goes with it. (Trade-off: the host takes a compile-time dependency on the other type.)
+  ```csharp
+  [GenerateMap<Person, PersonDto>]
+  [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]
+  public sealed class PersonDto { public string FullName { get; set; } public int Age { get; set; } }
+  // no [DwarfMapper], no partial — person.ToPersonDto() works; the generated PersonDtoMapper is the DI singleton
+  ```
 
 ### Planned
 - NuGet publish
-- **`[MapValue<TTarget>]` (pair-scoped constant/computed value)** — the source-less-member counterpart of the
-  shipped pair-scoped `[MapProperty<,>]` / `[MapIgnore<>]`, so a `[GenerateMap]` pair with a member that has no
-  source can be completed attribute-only too.
-- **Fully `partial`-free declaration** (follow-on): declare pairs on a non-`partial` marker (or via
-  assembly-level attributes) and emit a *separate* generated linker type, so even the `partial class` keyword is
-  unnecessary. Pair-scoped member config (shipped, above) already removes every partial **method**.
 
 ---
 

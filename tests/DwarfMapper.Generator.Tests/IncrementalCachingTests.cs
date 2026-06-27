@@ -72,6 +72,35 @@ public class IncrementalCachingTests
                 $"SourceOutput expected Cached/Unchanged after an unrelated edit, but was {output.Reason}.")));
     }
 
+    private const string CoLocatedSource = """
+        using DwarfMapper;
+        namespace Demo;
+        public class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
+        [GenerateMap<Src, Dst>]
+        [MapProperty<Src, Dst>("Name", "FullName")]
+        public sealed class Dst { public int Id { get; set; } public string FullName { get; set; } = ""; }
+        """;
+
+    [Fact]
+    public void Unrelated_edit_leaves_the_co_located_pipeline_cached()
+    {
+        var compilation = GeneratorTestHarness.BuildCompilation("IncCacheCoLoc", CoLocatedSource);
+        GeneratorDriver driver = NewDriver();
+        driver = driver.RunGenerators(compilation);
+
+        var modified = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Other { public class Unrelated { public int Z; } }"));
+        driver = driver.RunGenerators(modified);
+
+        var result = driver.GetRunResult().Results[0];
+        var steps = result.TrackedSteps[DwarfGenerator.CoLocatedExtractStepName];
+        Assert.NotEmpty(steps);
+        Assert.All(steps, step => Assert.All(step.Outputs, output =>
+            Assert.True(
+                output.Reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged,
+                $"Co-located extract step expected Cached/Unchanged after an unrelated edit, but was {output.Reason}.")));
+    }
+
     [Fact]
     public void Identical_compilation_run_twice_is_fully_cached()
     {

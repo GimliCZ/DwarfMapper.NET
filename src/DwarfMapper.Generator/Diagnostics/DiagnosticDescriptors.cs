@@ -391,10 +391,11 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf053");
 
+    // Pathway-neutral: covers both a generic [DwarfMapper] class and a generic co-located [GenerateMap<>] host.
     public static readonly DiagnosticDescriptor GenericMapperClassUnsupported = new(
         "DWARF054",
-        "[DwarfMapper] is not supported on generic classes",
-        "[DwarfMapper] is not supported on generic classes: '{0}' is generic; declare the mapper on a non-generic class",
+        "Mapping is not supported on a generic class",
+        "Mapping generation is not supported on a generic class: '{0}' is generic; declare it on a non-generic class",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf054");
 
@@ -417,4 +418,15 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf056");
+
+    // Error: a co-located [GenerateMap<>] host would emit a generated mapper named '<Host>Mapper', but a type
+    // with that name already exists. Emitting it would either collide (CS0260/CS0101) or silently merge into the
+    // user's partial; if it matched another generated mapper's hint name it would abort all generation. Reported
+    // instead of emitted, so the user gets a clear message rather than an opaque downstream failure.
+    public static readonly DiagnosticDescriptor CoLocatedMapperNameCollision = new(
+        "DWARF057",
+        "Generated mapper name collides with an existing type",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf057");
 }

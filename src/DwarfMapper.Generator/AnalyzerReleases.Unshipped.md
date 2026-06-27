@@ -32,7 +32,7 @@ DWARF024 | DwarfMapper | Error | Constructor parameter has no mappable source me
 DWARF025 | DwarfMapper | Error | Ambiguous constructor
 DWARF026 | DwarfMapper | Error | No mappable constructor
 DWARF027 | DwarfMapper | Error | Unsupported collection/dictionary target type
-DWARF028 | DwarfMapper | Error | Projection mapping not translatable
+DWARF028 | DwarfMapper | Error | Projection member cannot be translated to a database query
 ; DWARF029 — reserved; do not reuse
 DWARF030 | DwarfMapper | Error | Constructor parameter participates in a reference cycle
 DWARF031 | DwarfMapper | Error | Generator nesting depth limit exceeded
@@ -58,6 +58,7 @@ DWARF050 | DwarfMapper | Error | Invalid [MapProperty(When=)] predicate
 DWARF051 | DwarfMapper | Warning | [ReverseMap] cannot auto-invert this configuration
 DWARF052 | DwarfMapper | Error | [ReverseMap] has no inverse mapping method
 DWARF053 | DwarfMapper | Error | Generic mapping methods are not supported
-DWARF054 | DwarfMapper | Error | [DwarfMapper] is not supported on generic classes
+DWARF054 | DwarfMapper | Error | Mapping is not supported on a generic class
 DWARF055 | DwarfMapper | Info | Mapper is very large; consider splitting it
 DWARF056 | DwarfMapper | Warning | Pair-scoped attribute matches no mapped pair
+DWARF057 | DwarfMapper | Error | Generated mapper name collides with an existing type
