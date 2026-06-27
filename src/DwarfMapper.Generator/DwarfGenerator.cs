@@ -13,6 +13,9 @@ namespace DwarfMapper.Generator;
 /// Incremental source generator for DwarfMapper. Resolves each [DwarfMapper]
 /// partial class via sort -> pair -> prove -> emit, reporting completeness and
 /// conversion-safety diagnostics, and emitting direct-assignment mapping bodies.
+/// A second pipeline handles co-located [GenerateMap]-on-plain-class hosts, emitting their mapping into
+/// a separate generated &lt;Host&gt;Mapper type. Both pipelines also feed the assembly-wide aggregate
+/// outputs: the convenience extension facade and the AddDwarfMappers() DI registration.
 /// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class DwarfGenerator : IIncrementalGenerator
@@ -64,8 +67,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
         // Assembly-wide convenience outputs aggregated across EVERY mapper (both pipelines): the extension-method
         // facade (always) and the DI registration (only when Microsoft.Extensions.DependencyInjection is
-        // referenced). Collect()'d so cross-mapper name collisions can be de-duplicated in one place; the DI
-        // availability is projected to a bool so threading it through Combine() does not defeat incremental caching.
+        // referenced). Collect()'d so cross-mapper name collisions can be de-duplicated in one place.
         // Assembly-wide options projected to value-equatable bools (keeps incremental caching): whether DI is
         // referenced, and whether [assembly: DwarfMapperOptions(PublicExtensions = true)] opts the facade public.
         var aggregateOptions = context.CompilationProvider.Select(static (compilation, _) =>

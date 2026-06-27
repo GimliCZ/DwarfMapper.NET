@@ -239,7 +239,7 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 - **enum ↔ enum** by name (default) — a source member with no same-named destination member is `DWARF015`. Opt into value-based casting with `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]`.
 - **enum ↔ string** and **enum ↔ integral** are handled via generated `switch`/cast helpers (no reflection, AOT-safe).
 
-**Nullable values.** A nullable value-type source mapped to a non-nullable destination (`int? → int`) is unwrapped per `NullStrategy`: **throw on null** (default) or `[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]` to use the destination default. A non-nullable source mapped to a nullable-value-type destination (`long → int?`, `string → int?`) is handled automatically — the inner conversion (e.g. `CreateChecked`, `Parse`) runs, and the result is implicitly lifted to `T?`; overflow and format errors still propagate. Nullable-source + nullable-target (`long?→int?`) is not yet auto-handled (DWARF005; a documented follow-up).
+**Nullable values.** A nullable value-type source mapped to a non-nullable destination (`int? → int`) is unwrapped per `NullStrategy`: **throw on null** (default) or `[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]` to use the destination default. A non-nullable source mapped to a nullable-value-type destination (`long → int?`, `string → int?`) is handled automatically — the inner conversion (e.g. `CreateChecked`, `Parse`) runs, and the result is implicitly lifted to `T?`; overflow and format errors still propagate. Nullable-source + nullable-target (`long?→int?`, `E1?→E2?`) is also handled automatically and is null-preserving: a null source maps to a null target, and a non-null value runs the inner conversion (out-of-range still throws, e.g. `OverflowException`) — see the `T? → U?` row in the conversion table above.
 
 **Collections.** `T[]`, `List<T>`, and `HashSet<T>` members map element-by-element, applying the same conversion rules per element (nested objects, converters, enums, nullable unwrap, even nested collections). When the element type is unchanged, the whole collection is bulk-copied (`T[]` → `T[]` clone, `→ List<T>`/`HashSet<T>` bulk constructor). Read-only source shapes (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlySet<T>`, …) are accepted as sources. A **null source collection** never throws: by default (`[DwarfMapper(NullCollections = NullCollectionStrategy.AsEmpty)]`) it produces an empty target collection; set `NullCollections = NullCollectionStrategy.AsNull` to propagate null instead (the target member must then be a nullable reference type). An unsupported collection/dictionary target type is `DWARF027`.
 
@@ -443,6 +443,8 @@ benchmarks/
   DwarfMapper.Benchmarks/    # BenchmarkDotNet suite (vs hand-written + Mapperly/Mapster/AutoMapper)
 samples/
   DwarfMapper.AotSample/     # NativeAOT + trimming gate sample
+  DwarfMapper.AotBench/      # NativeAOT benchmarking & stability harness
+  DwarfMapper.Gallery/       # runnable simple→advanced mapping examples
 docs/                        # COMPARISON.md, SECURITY.md, design specs + plans
 README.md
 ```

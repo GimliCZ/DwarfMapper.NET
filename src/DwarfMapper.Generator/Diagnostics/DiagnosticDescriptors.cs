@@ -172,7 +172,7 @@ public static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor AmbiguousConstructor = new(
         "DWARF025",
         "Ambiguous constructor",
-        "Destination type '{0}' has multiple constructors with the same maximum parameter count; annotate the intended constructor with [DwarfMapperConstructor]",
+        "Destination type '{0}' has an ambiguous constructor selection: either multiple constructors tie on the maximum parameter count, or more than one constructor is annotated with [DwarfMapperConstructor]. Annotate exactly one constructor with [DwarfMapperConstructor] (and remove any duplicate annotation).",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf025");
 
@@ -410,8 +410,8 @@ public static class DiagnosticDescriptors
         helpLinkUri: HelpBase + "dwarf055");
 
     // Warning (not Error): the configuration compiles, but a pair-scoped member attribute
-    // ([MapProperty<S,T>] / [MapIgnore<T>]) matched no mapped pair, so it silently does nothing — almost
-    // always a typo'd type argument or a missing [GenerateMap]. Surfaced rather than ignored.
+    // ([MapProperty<S,T>] / [MapIgnore<T>] / [MapValue<T>]) matched no mapped pair, so it silently does
+    // nothing — almost always a typo'd type argument or a missing [GenerateMap]. Surfaced rather than ignored.
     public static readonly DiagnosticDescriptor PairScopedNoMatch = new(
         "DWARF056",
         "Pair-scoped attribute matches no mapped pair",

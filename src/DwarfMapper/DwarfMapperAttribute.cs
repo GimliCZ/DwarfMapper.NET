@@ -32,7 +32,7 @@ public sealed class DwarfMapperAttribute : Attribute
     /// When <c>true</c> (the default), a member whose type is a mappable object pair
     /// <c>(S, T)</c> with no declared mapper is automatically resolved by synthesizing
     /// a private nested mapper. Set to <c>false</c> to require explicit declarations
-    /// for every nested type (today's behavior).
+    /// for every nested type (the legacy opt-out behaviour, before auto-nesting became the default).
     /// </summary>
     public bool AutoNest { get; set; } = true;
 

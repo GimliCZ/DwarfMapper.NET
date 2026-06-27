@@ -11,8 +11,9 @@ open-generics non-goal) were dropped during synthesis and are listed at the end 
 
 Used: **DWARF053** (generic mapper method), **DWARF054** (generic mapper class), **DWARF055** (mapper
 too large / build-budget Info — landed), **DWARF056** (pair-scoped attribute matches no pair — landed),
-**DWARF057** (generated co-located mapper name collision — landed). Free slots for the planned diagnostics
-below: **DWARF058–DWARF059**. Reserved/unused historical: 004, 006, 019, 029.
+**DWARF057** (generated co-located mapper name collision — landed), **DWARF058** (ambiguous convenience
+facade extension not generated — landed). Free slots for the planned diagnostics below:
+**DWARF059–DWARF062**. Reserved/unused historical: 004, 006, 019, 029.
 
 > **Landed since this plan was written (2026-06-18, correctness-first design):** structural cache-safety
 > meta-test (`ModelCacheSafetyTests`), incremental-caching test (`IncrementalCachingTests` — closes item 4's
@@ -76,7 +77,7 @@ below: **DWARF058–DWARF059**. Reserved/unused historical: 004, 006, 019, 029.
    the anti-mislinking core property from ~5 hand-built shapes to the whole graph space.
 
 ### Planned — diagnostics (mostly S; one has a breaking-change caveat)
-7. **[PLANNED·S] DWARF055 (Info) — nullable value-type unwrap (`T?`→`T`) under `NullStrategy.Throw`.**
+7. **[PLANNED·S] DWARF059 (Info) — nullable value-type unwrap (`T?`→`T`) under `NullStrategy.Throw`.**
    Default Throw emits `?? throw new InvalidOperationException` with no compile-time signal. Emit only when
    the strategy is Throw; keep Info (suppressible) to control noise. Makes the runtime throw a visible
    choice, consistent with DWARF044.
@@ -86,13 +87,13 @@ below: **DWARF058–DWARF059**. Reserved/unused historical: 004, 006, 019, 029.
    `EmitImplicitConversionDiag` already takes a severity arg (SeverityOverride-only change). **Caveat:**
    Warning can break `-warnaserror` builds — keep enabled-by-default and document the `.editorconfig`
    downgrade before shipping.
-12. **[PLANNED·S] DWARF056 (Info) — `[MapValue]` shadows an auto-matchable source member.** A leftover
+12. **[PLANNED·S] DWARF060 (Info) — `[MapValue]` shadows an auto-matchable source member.** A leftover
    `[MapValue]` stub silently masks newly-added real source data (DWARF039 does not fire here). Emit only
    when a same-name readable source member exists. Additive, suppressible; catches a refactor hazard.
-13. **[PLANNED·M] DWARF057 — update-into nested-member replacement, and fix the overstated XML doc.** The
+13. **[PLANNED·M] DWARF061 — update-into nested-member replacement, and fix the overstated XML doc.** The
    update-into doc claims "identity preserved" while nested members are silently *replaced*; surface this
    so callers expecting a deep merge are warned. Pairs with a doc correction.
-14. **[PLANNED·M, FP-risk] DWARF058 — `[MapProperty(When=)]` false leaves a non-nullable member at default.**
+14. **[PLANNED·M, FP-risk] DWARF062 — `[MapProperty(When=)]` false leaves a non-nullable member at default.**
    Many legitimate uses want exactly that; restrict to non-nullable targets and keep Info to limit
    false positives.
 15. **[PLANNED·S] Enrich the DWARF038 parse/format message** to name `FormatException`/`OverflowException`.

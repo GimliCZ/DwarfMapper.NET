@@ -47,10 +47,16 @@ public sealed class MapPropertyAttribute<TSource, TTarget> : Attribute
     /// </summary>
     public string? Use { get; set; }
 
-    /// <summary>Optional constant coalesced onto a nullable source — emitted as <c>source ?? value</c>.</summary>
+    /// <summary>
+    /// Optional constant coalesced onto a nullable source — emitted as <c>source ?? value</c>. The value must
+    /// be assignable to the destination type, else <c>DWARF049</c> (same validation as the method-level twin).
+    /// </summary>
     public object? NullSubstitute { get; set; }
 
-    /// <summary>Optional <c>bool</c>-returning predicate method (takes the source) that guards the assignment.</summary>
+    /// <summary>
+    /// Optional <c>bool</c>-returning predicate method (takes the source) that guards the assignment. An
+    /// invalid predicate is <c>DWARF050</c> (same validation as the method-level twin).
+    /// </summary>
     public string? When { get; set; }
 }
 
@@ -78,6 +84,12 @@ public sealed class MapIgnoreAttribute<TTarget> : Attribute
 /// counts the member as mapped (suppressing <c>DWARF001</c>), so a <c>[GenerateMap]</c> pair whose target has a
 /// member with no source can be completed with no <c>partial</c> method. A pair-scoped attribute that matches no
 /// mapped pair is <c>DWARF056</c>.
+/// <para>
+/// The same value/<see cref="Use"/> validation as the method-level twin applies: a constant that is not
+/// attribute-legal/assignable to the destination is <c>DWARF040</c>, a <see cref="Use"/> method that is not
+/// parameterless or whose return type is not assignable is <c>DWARF041</c>, and an unknown target or a missing
+/// value/<see cref="Use"/> is <c>DWARF042</c>.
+/// </para>
 /// </summary>
 /// <typeparam name="TTarget">The destination type whose member is assigned.</typeparam>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]

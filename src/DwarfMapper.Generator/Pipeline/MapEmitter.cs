@@ -894,19 +894,6 @@ internal static class MapEmitter
         }
     }
 
-    /// <summary>
-    /// Append the value expression for a single mapping (ctor arg or object-initializer member)
-    /// to <paramref name="sb"/>. Does NOT append a trailing comma or newline.
-    /// </summary>
-    /// <param name="ctxVarName">
-    /// Name of the <c>DwarfRefContext</c> variable in scope (e.g. <c>"ctx"</c> or
-    /// <c>"__dwarf_ctx"</c>). Only used when <see cref="MemberMap.ConverterNeedsDepthCtx"/> is true.
-    /// </param>
-    /// <param name="depthArg">
-    /// The depth argument to forward (e.g. <c>"depth + 1"</c> from a recursion-capable synthesized
-    /// method, or <c>"0"</c> from the public entry point). Only used when
-    /// <see cref="MemberMap.ConverterNeedsDepthCtx"/> is true.
-    /// </param>
     /// <summary>True when any member is deferred to post-construction (unflatten or When-guarded).</summary>
     private static bool HasDeferredMembers(MapMethodModel method)
     {
@@ -953,6 +940,19 @@ internal static class MapEmitter
         }
     }
 
+    /// <summary>
+    /// Append the value expression for a single mapping (ctor arg or object-initializer member)
+    /// to <paramref name="sb"/>. Does NOT append a trailing comma or newline.
+    /// </summary>
+    /// <param name="ctxVarName">
+    /// Name of the <c>DwarfRefContext</c> variable in scope (e.g. <c>"ctx"</c> or
+    /// <c>"__dwarf_ctx"</c>). Only used when <see cref="MemberMap.ConverterNeedsDepthCtx"/> is true.
+    /// </param>
+    /// <param name="depthArg">
+    /// The depth argument to forward (e.g. <c>"depth + 1"</c> from a recursion-capable synthesized
+    /// method, or <c>"0"</c> from the public entry point). Only used when
+    /// <see cref="MemberMap.ConverterNeedsDepthCtx"/> is true.
+    /// </param>
     private static void AppendValueExpression(
         StringBuilder sb, MemberMap member, string paramName,
         string ctxVarName = "ctx", string depthArg = "0")

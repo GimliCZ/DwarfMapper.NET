@@ -6,17 +6,17 @@ namespace DwarfMapper;
 /// Lightweight context object threaded through recursion-capable auto-synthesized mappers.
 /// Carries the <see cref="MaxDepth"/> limit used by depth-guarded private methods and,
 /// when preserve mode is active, a reference-identity dictionary for full object-graph
-/// reconstruction (Plan 19 C2).
+/// reconstruction.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Design (depth-safety, C1):</b> depth is tracked as an immutable <c>int depth</c>
+/// <b>Design (depth-safety):</b> depth is tracked as an immutable <c>int depth</c>
 /// parameter incremented on each recursive call. No shared mutable state is needed, so there
 /// is no finally-pairing bug: siblings at the same level all see the same <c>depth</c> argument
 /// and do not accumulate each other's depth into a shared counter.
 /// </para>
 /// <para>
-/// <b>Reference-identity map (C2 — Preserve mode):</b> when <c>preserve: true</c> is passed
+/// <b>Reference-identity map (Preserve mode):</b> when <c>preserve: true</c> is passed
 /// to the constructor, a <see cref="System.Collections.Generic.Dictionary{TKey,TValue}"/> keyed
 /// by <c>System.Collections.Generic.ReferenceEqualityComparer.Instance</c> (NOT the default
 /// comparer — CRITICAL to prevent value-equal records from collapsing into one target instance)
@@ -86,7 +86,8 @@ public sealed class DwarfRefContext
                  : maxDepth;
         _preserve = preserve;
         // In Preserve mode, allocate the identity map upfront so it is ready on first use.
-        // Using a ternary avoids a branch in TryGetReference/SetReference.
+        // Allocating eagerly here lets TryGetReference/SetReference do a single null check
+        // instead of a lazy-init branch.
         if (preserve)
         {
             _identity = new System.Collections.Generic.Dictionary<object, object>(
