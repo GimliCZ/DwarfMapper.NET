@@ -63,7 +63,7 @@ AVX2-detecting JIT). It stays **correct** — the scalar tail and narrower body 
 ```
 
 This affects only the throughput of the blit/widen fast-paths; correctness and the zero-warning AOT
-guarantee are unchanged either way. (`x86-x64-v3` is rejected by ILC 10.0.1 — use `native` or an explicit
+guarantee are unchanged either way. (`x86-64-v3` is rejected by ILC 10.0.1 — use `native` or an explicit
 ISA list.) Full detail and the stability-harness results: [`../COMPARISON.md`](../COMPARISON.md#nativeaot-benchmarking--stability).
 
 ---

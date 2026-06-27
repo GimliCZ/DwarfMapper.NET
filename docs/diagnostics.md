@@ -329,9 +329,10 @@ A mapping method declares type parameters; a generator can't emit a body for an 
 closed `[GenerateMap<A,B>]` or a non-generic partial method.
 
 ## dwarf054
-**[DwarfMapper] is not supported on generic classes** · Error
+**Mapping is not supported on a generic class** · Error
 
-The mapper class is generic. **Fix:** declare the mapper on a non-generic class.
+The class carrying the mapping (a [DwarfMapper] class or a co-located [GenerateMap<>] host) is generic.
+**Fix:** declare the mapping on a non-generic class.
 
 ## dwarf055
 **Mapper is very large; consider splitting it** · Info

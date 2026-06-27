@@ -7,7 +7,8 @@ using DwarfMapper.Generator.Model;
 namespace DwarfMapper.Generator.Pipeline;
 
 /// <summary>
-/// Emits the two assembly-wide convenience outputs that aggregate across every <c>[DwarfMapper]</c> class:
+/// Emits the two assembly-wide convenience outputs that aggregate across every generated mapper in this
+/// assembly (both <c>[DwarfMapper]</c> classes and co-located <c>[GenerateMap]</c> hosts):
 /// <list type="number">
 /// <item><description>the extension-method facade (<c>order.ToOrderDto()</c>), in <c>DwarfMapper.Extensions</c>;</description></item>
 /// <item><description>the <c>IServiceCollection.AddDwarfMappers()</c> DI registration (only when DI is referenced).</description></item>
@@ -161,7 +162,7 @@ internal static class AggregateEmitter
         sb.Append(Header).Append('\n');
         sb.AppendLine("namespace Microsoft.Extensions.DependencyInjection;");
         sb.AppendLine();
-        sb.AppendLine("/// <summary>DI registration for every <c>[DwarfMapper]</c> mapper in this assembly.</summary>");
+        sb.AppendLine("/// <summary>DI registration for every generated mapper in this assembly (both <c>[DwarfMapper]</c> classes and co-located <c>[GenerateMap]</c> hosts).</summary>");
         sb.AppendLine("public static class DwarfMapperServiceCollectionExtensions");
         sb.AppendLine("{");
         sb.AppendLine("    /// <summary>");

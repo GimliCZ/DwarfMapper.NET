@@ -1,8 +1,13 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- Not packed as a standalone NuGet package: the code-fix DLL ships bundled inside the DwarfMapper
+         package's analyzer slot (see DwarfMapper.csproj's <None Pack> items). Keeping it unpackable avoids
+         emitting an undocumented, metadata-less DwarfMapper.CodeFixes.nupkg during `dotnet pack`. -->
+    <IsPackable>false</IsPackable>
     <!-- Code-fix providers run in the IDE host (which HAS Workspaces), not in csc. They are therefore
          NOT extended-analyzer components: we deliberately do NOT reference Microsoft.CodeAnalysis.Analyzers
          or set EnforceExtendedAnalyzerRules, because the RS* rules forbid the Workspaces dependency that
@@ -12,9 +17,5 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
-  </ItemGroup>
-  <ItemGroup>
-    <!-- Ship alongside the generator in the analyzer slot of the NuGet package. -->
-    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 </Project>

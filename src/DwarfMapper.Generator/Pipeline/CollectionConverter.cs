@@ -619,14 +619,9 @@ internal static class CollectionConverter
         sb.Append("    private ").Append(retTypeFq).Append(' ').Append(name)
           .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
-        if (identity && shape.Count != CountKind.None && !elemNeedsCtx)
+        if (identity && !elemNeedsCtx)
         {
-            // Known-count identity without ctx threading: use CreateRange directly.
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(").Append(srcExpr).Append(");\n");
-        }
-        else if (identity && !elemNeedsCtx)
-        {
+            // Identity elements without ctx threading: copy straight into the ImmutableArray via CreateRange.
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
             sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(").Append(srcExpr).Append(");\n");
         }

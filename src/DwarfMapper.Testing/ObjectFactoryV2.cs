@@ -12,10 +12,10 @@ namespace DwarfMapper.Testing;
 /// Extended deterministic object factory (Plan 19 Part E self-materializer).
 /// Constructs instances of ANY supported DwarfMapper type from a seed:
 /// - every basic scalar type
-/// - every supported collection / dictionary / immutable / interface target (populated, not empty)
+/// - every supported collection / dictionary / immutable / interface target (populated up to a bounded
+///   depth; empty at the depth cap to terminate recursion)
 /// - nested objects and records (bounded depth)
-/// - reference-graph fixtures: self-loop, 2-node cycle, diamond, owner graph A→B/B⇄C/C⇄D/B⇄D,
-///   shared list, list-cycle.
+/// - reference-graph fixtures: self-loop, 2-node cycle, diamond, owner graph A→B/B⇄C/C⇄D/B⇄D.
 /// Deterministic and replayable: same seed always produces the same value.
 /// </summary>
 public static class ObjectFactoryV2

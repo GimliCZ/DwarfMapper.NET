@@ -11,7 +11,7 @@ per-library guide builds on them, so read this once first.
 
 ---
 
-## Change 1 — Reference the package, target net10
+## Change 1 — Reference the packages, target net10
 
 DwarfMapper ships as **one** package (it bundles the attributes, the source generator, and the IDE code
 fixes), plus an optional **testing** package for `[RoundTrip]`.
@@ -43,7 +43,7 @@ for you, so wire it as an **analyzer** explicitly (this is the line people miss)
 ```
 
 The consuming project must target **`net10.0`** (DwarfMapper is .NET 10 only; only the bundled generator/code-fix
-assemblies are `netstandard2.0`, because Roslyn loads generators into the compiler host — see [deploy-and-optimize.md](deploy-and-optimize.md#net-10-only-and-why-the-generator-is-netstandard20)).
+assemblies are `netstandard2.0`, because Roslyn loads generators into the compiler host — see [deploy-and-optimize.md](deploy-and-optimize.md#net-10-only--and-why-the-generator-is-netstandard20)).
 
 ---
 

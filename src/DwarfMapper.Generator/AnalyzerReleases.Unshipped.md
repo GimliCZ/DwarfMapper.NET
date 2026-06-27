@@ -34,9 +34,9 @@ DWARF026 | DwarfMapper | Error | No mappable constructor
 DWARF027 | DwarfMapper | Error | Unsupported collection/dictionary target type
 DWARF028 | DwarfMapper | Error | Projection member cannot be translated to a database query
 ; DWARF029 — reserved; do not reuse
-DWARF030 | DwarfMapper | Error | Constructor parameter participates in a reference cycle
-DWARF031 | DwarfMapper | Error | Generator nesting depth limit exceeded
-DWARF032 | DwarfMapper | Error | [MapProperty(Use=)] converter cannot participate in reference-identity tracking
+DWARF030 | DwarfMapper | Error | Constructor parameter is part of a reference cycle
+DWARF031 | DwarfMapper | Error | Mapping nests too deeply
+DWARF032 | DwarfMapper | Error | Custom converter can't preserve reference identity
 DWARF033 | DwarfMapper | Error | Abstract or interface source type in auto-nested mapping
 DWARF034 | DwarfMapper | Error | Invalid [FlattenGraph] configuration
 DWARF035 | DwarfMapper | Error | Invalid [MapDerivedType] configuration

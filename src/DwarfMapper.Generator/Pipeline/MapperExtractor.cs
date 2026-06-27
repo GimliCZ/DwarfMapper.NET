@@ -127,8 +127,8 @@ internal static class MapperExtractor
             c.DeclaredAccessibility != Accessibility.Private &&
             c.DeclaredAccessibility != Accessibility.Protected &&
             c.DeclaredAccessibility != Accessibility.ProtectedAndInternal);
-        // Pair-scoped member config declared on the class ([MapProperty<S,T>] / [MapIgnore<T>]). It is applied
-        // to [GenerateMap] pairs AND auto-synthesized nested pairs alike, so a pair can be configured without a
+        // Pair-scoped member config declared on the class ([MapProperty<S,T>] / [MapIgnore<T>] / [MapValue<T>]).
+        // It is applied to [GenerateMap] pairs AND auto-synthesized nested pairs alike, so a pair can be configured without a
         // partial method. The mutable Consumed flags drive the DWARF056 "matched nothing" check at the end.
         var pairProps = ReadPairMapProperties(classSymbol);
         var pairIgnores = ReadPairIgnores(classSymbol);
@@ -5252,7 +5252,10 @@ internal static class MapperExtractor
     /// <summary>
     /// True when <paramref name="t"/> and every type that contains it are declared <c>public</c> — i.e. it is
     /// reachable from another assembly. Used to gate <c>public</c> facade extensions (a public extension over a
-    /// non-public type is CS0051). Tuples/arrays/etc. are treated as their element/definition accessibility.
+    /// non-public type is CS0051). It inspects the type symbol and its containing-type chain's declared
+    /// accessibility; arrays and other constructed shapes are judged by their own symbol's accessibility, not
+    /// unwrapped to their element/definition (e.g. an array symbol has no <c>public</c> accessibility, so an
+    /// array-typed member is treated as non-public).
     /// </summary>
     private static bool IsEffectivelyPublic(ITypeSymbol t)
     {
@@ -5266,10 +5269,6 @@ internal static class MapperExtractor
         return true;
     }
 
-    /// <summary>
-    /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoNest"/> value
-    /// from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c>.
-    /// </summary>
     /// <summary>
     /// Reads <c>[DwarfMapper(MaxDepth = N)]</c>; defaults to 64; clamps to [1, 1000].
     /// </summary>
@@ -5291,6 +5290,10 @@ internal static class MapperExtractor
         return 64; // default
     }
 
+    /// <summary>
+    /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoNest"/> value
+    /// from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c>.
+    /// </summary>
     private static bool ReadAutoNest(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)

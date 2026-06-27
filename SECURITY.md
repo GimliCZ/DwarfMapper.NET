@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Supported versions
-DwarfMapper is pre-1.0. Security fixes are applied to `main` and the latest tagged release.
+DwarfMapper is pre-1.0. Security fixes are applied to the default branch (`master`) and the latest tagged release.
 
 ## Reporting a vulnerability
 Please report security issues privately via GitHub Security Advisories
