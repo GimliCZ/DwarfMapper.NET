@@ -65,6 +65,14 @@ internal static class MapperExtractor
         var requiredMapping = ReadRequiredMapping(ctx.Attributes); // 0 = Target (default), 1 = Both
         var nameConvention = ReadNameConvention(ctx.Attributes);   // 0 = Exact (default), 1 = Flexible
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
+        var generateExtensions = ReadGenerateExtensions(ctx.Attributes); // default true (opt-out)
+        // The convenience facade caches a `new()` mapper singleton, so it can only be emitted for a mapper
+        // that has an accessible parameterless constructor (the implicit one counts).
+        var hasParameterlessCtor = classSymbol.InstanceConstructors.Any(c =>
+            !c.IsStatic && c.Parameters.Length == 0 &&
+            c.DeclaredAccessibility != Accessibility.Private &&
+            c.DeclaredAccessibility != Accessibility.Protected &&
+            c.DeclaredAccessibility != Accessibility.ProtectedAndInternal);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);
@@ -1775,7 +1783,9 @@ internal static class MapperExtractor
             EquatableArray.From(methods),
             EquatableArray.From(diagnostics),
             EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, System.StringComparer.Ordinal)),
-            EquatableArray.From(roundTrips));
+            EquatableArray.From(roundTrips),
+            generateExtensions,
+            hasParameterlessCtor);
     }
 
     private static List<MemberMap> ResolveMembers(
@@ -4902,6 +4912,25 @@ internal static class MapperExtractor
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.GenerateExtensions"/> value
+    /// from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c> (the convenience facade is opt-out).
+    /// </summary>
+    private static bool ReadGenerateExtensions(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "GenerateExtensions" && named.Value.Value is bool b)
+                {
+                    return b;
+                }
+            }
+        }
+        return true;
     }
 
     /// <summary>

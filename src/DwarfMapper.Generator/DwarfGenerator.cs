@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
+using System.Collections.Immutable;
+using System.Linq;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
@@ -33,6 +35,44 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             .WithTrackingName(ExtractStepName);
 
         context.RegisterSourceOutput(mappers, static (spc, model) => Execute(spc, model));
+
+        // Assembly-wide convenience outputs aggregated across every mapper: the extension-method facade
+        // (always) and the DI registration (only when Microsoft.Extensions.DependencyInjection is referenced).
+        // Collect()'d so cross-mapper name collisions can be de-duplicated in one place; the DI availability
+        // is projected to a bool so threading it through Combine() does not defeat incremental caching.
+        var diAvailable = context.CompilationProvider.Select(static (compilation, _) =>
+            compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null);
+
+        context.RegisterSourceOutput(
+            mappers.Collect().Combine(diAvailable),
+            static (spc, pair) => EmitAggregates(spc, pair.Left, pair.Right));
+    }
+
+    private static void EmitAggregates(
+        SourceProductionContext spc, ImmutableArray<MapperClassModel> models, bool diAvailable)
+    {
+        // Mirror Execute: a mapper with a blocking error emits no body, so it must not be referenced by the
+        // facade/DI either.
+        var usable = models.Where(static m => !m.HasBlockingError).ToList();
+        if (usable.Count == 0)
+        {
+            return;
+        }
+
+        var facade = AggregateEmitter.EmitExtensions(usable);
+        if (facade is not null)
+        {
+            spc.AddSource("DwarfMapper.Extensions.g.cs", facade);
+        }
+
+        if (diAvailable)
+        {
+            var di = AggregateEmitter.EmitServiceCollection(usable);
+            if (di is not null)
+            {
+                spc.AddSource("DwarfMapper.ServiceCollectionExtensions.g.cs", di);
+            }
+        }
     }
 
     private static void Execute(SourceProductionContext spc, MapperClassModel model)
