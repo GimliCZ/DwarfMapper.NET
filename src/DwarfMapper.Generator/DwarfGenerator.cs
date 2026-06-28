@@ -89,17 +89,48 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                     }
                 }
             }
-            return (Di: di, PublicExtensions: publicExtensions);
+            return (Di: di, PublicExtensions: publicExtensions, AsmNs: SanitizeNamespace(compilation.AssemblyName));
         });
 
         context.RegisterSourceOutput(
             mappers.Collect().Combine(coLocated.Collect()).Combine(aggregateOptions),
             static (spc, pair) => EmitAggregates(
-                spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right.Di, pair.Right.PublicExtensions));
+                spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right.Di, pair.Right.PublicExtensions, pair.Right.AsmNs));
+    }
+
+    /// <summary>
+    /// Turns an assembly name into a valid C# namespace for the generated <c>AddDwarfMappers()</c> DI class.
+    /// Emitting it in the assembly's own namespace (rather than the universally-imported
+    /// <c>Microsoft.Extensions.DependencyInjection</c>) stops the extension method colliding across assemblies
+    /// when one assembly references several mapper-bearing assemblies (CS0121). An in-assembly DI extension
+    /// still calls <c>services.AddDwarfMappers()</c> with no <c>using</c> via enclosing-namespace lookup.
+    /// </summary>
+    private static string SanitizeNamespace(string? assemblyName)
+    {
+        if (string.IsNullOrWhiteSpace(assemblyName))
+        {
+            return "DwarfMapperGenerated";
+        }
+
+        var segments = assemblyName!.Split('.');
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var sb = new System.Text.StringBuilder(segments[i].Length);
+            foreach (var ch in segments[i])
+            {
+                sb.Append(char.IsLetterOrDigit(ch) || ch == '_' ? ch : '_');
+            }
+
+            var s = sb.Length == 0 ? "_" : sb.ToString();
+            segments[i] = char.IsDigit(s[0]) ? "_" + s : s;
+        }
+
+        return string.Join(".", segments);
     }
 
     private static void EmitAggregates(
-        SourceProductionContext spc, ImmutableArray<MapperClassModel> models, bool diAvailable, bool publicExtensions)
+        SourceProductionContext spc, ImmutableArray<MapperClassModel> models, bool diAvailable, bool publicExtensions,
+        string assemblyNamespace)
     {
         // Mirror Execute: a mapper with a blocking error emits no body, so it must not be referenced by the
         // facade/DI either.
@@ -126,7 +157,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
         if (diAvailable)
         {
-            var di = AggregateEmitter.EmitServiceCollection(usable);
+            var di = AggregateEmitter.EmitServiceCollection(usable, assemblyNamespace);
             if (di is not null)
             {
                 spc.AddSource("DwarfMapper.ServiceCollectionExtensions.g.cs", di);
