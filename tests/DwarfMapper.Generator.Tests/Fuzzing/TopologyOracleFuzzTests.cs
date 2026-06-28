@@ -237,6 +237,130 @@ public class TopologyOracleFuzzTests
             GraphOracleComparer.RenderTopologyDiff(topo));
     }
 
+    // ── Item 6: SetNull yields a DAG + Preserve preserves distinct-node count ──────
+
+    private const string NodeGraphSetNullSource = """
+        using DwarfMapper;
+        using System.Collections.Generic;
+        namespace Topo;
+
+        public class Node {
+            public int V { get; set; }
+            public Node? Left  { get; set; }
+            public Node? Right { get; set; }
+            public Node? Back  { get; set; }
+        }
+        public class NodeDto {
+            public int V { get; set; }
+            public NodeDto? Left  { get; set; }
+            public NodeDto? Right { get; set; }
+            public NodeDto? Back  { get; set; }
+        }
+        [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+        public partial class TopoMapper { public partial NodeDto Map(Node n); }
+        """;
+
+    private static readonly string[] EdgeProps = { "Left", "Right", "Back" };
+
+    [Theory]
+    [MemberData(nameof(GraphSeeds))]
+    public void SetNull_random_cyclic_graph_yields_acyclic_result(int seed)
+    {
+        var (asm, errors) = GeneratorTestHarness.EmitAssembly(NodeGraphSetNullSource);
+        Assert.True(asm is not null,
+            $"seed={seed} SetNull source failed to emit: {string.Join(", ", errors.Select(e => e.Id))}");
+
+        var nodeType = asm!.GetType("Topo.Node")!;
+        var mapperType = asm.GetType("Topo.TopoMapper")!;
+        var mapMethod = mapperType.GetMethod("Map")!;
+        var mapper = Activator.CreateInstance(mapperType)!;
+
+        // Build a random graph that very likely CONTAINS cycles (every node points somewhere).
+        var rng = new Random(seed);
+        var nodes = Enumerable.Range(0, rng.Next(2, 6)).Select(i => CreateNode(nodeType, i)).ToArray();
+        foreach (var n in nodes)
+            foreach (var prop in EdgeProps)
+                if (rng.Next(2) == 1)
+                    SetProp(n, prop, nodes[rng.Next(nodes.Length)]);
+        // Guarantee at least one back-edge cycle exists so we actually exercise SetNull.
+        SetProp(nodes[^1], "Back", nodes[0]);
+        SetProp(nodes[0], "Left", nodes[^1]);
+
+        var dst = mapMethod.Invoke(mapper, new[] { nodes[0] })!;
+
+        // The destination graph must be acyclic: an emitter that breaks only SOME back-edges would leave a
+        // residual cycle that StackOverflows on consumption. DFS with an on-path set catches it.
+        AssertAcyclic(dst);
+    }
+
+    [Theory]
+    [MemberData(nameof(GraphSeeds))]
+    public void Preserve_preserves_distinct_node_count(int seed)
+    {
+        var (asm, errors) = GeneratorTestHarness.EmitAssembly(NodeGraphSource);
+        Assert.True(asm is not null,
+            $"seed={seed} NodeGraphSource failed to emit: {string.Join(", ", errors.Select(e => e.Id))}");
+
+        var nodeType = asm!.GetType("Topo.Node")!;
+        var mapperType = asm.GetType("Topo.TopoMapper")!;
+        var mapMethod = mapperType.GetMethod("Map")!;
+        var mapper = Activator.CreateInstance(mapperType)!;
+
+        var rng = new Random(seed);
+        var nodes = Enumerable.Range(0, rng.Next(2, 6)).Select(i => CreateNode(nodeType, i)).ToArray();
+        foreach (var n in nodes)
+            foreach (var prop in EdgeProps)
+                if (rng.Next(2) == 1)
+                    SetProp(n, prop, nodes[rng.Next(nodes.Length)]);
+
+        var root = nodes[0];
+        var dst = mapMethod.Invoke(mapper, new[] { root })!;
+
+        // Preserve must reconstruct EXACTLY as many distinct objects as are reachable in the source. A silent
+        // de-dup failure (mapping a shared node to two copies) inflates the destination count past value/
+        // edge-sampled topology checks; an over-merge deflates it.
+        var srcCount = CountDistinctNodes(root);
+        var dstCount = CountDistinctNodes(dst);
+        Assert.True(srcCount == dstCount,
+            $"seed={seed} Preserve distinct-node count mismatch: source has {srcCount}, destination has {dstCount}.");
+    }
+
+    /// <summary>DFS asserting the reference graph reachable from <paramref name="root"/> via Left/Right/Back
+    /// contains no cycle (back-edge to a node already on the active path).</summary>
+    private static void AssertAcyclic(object root)
+    {
+        var onPath = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        var done = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        Visit(root);
+
+        void Visit(object? node)
+        {
+            if (node is null) return;
+            Assert.True(onPath.Add(node), "SetNull result contains a cycle (a back-edge was not nulled).");
+            if (done.Add(node))
+                foreach (var prop in EdgeProps)
+                    Visit(node.GetType().GetProperty(prop)!.GetValue(node));
+            onPath.Remove(node);
+        }
+    }
+
+    /// <summary>Counts distinct reference objects reachable via Left/Right/Back.</summary>
+    private static int CountDistinctNodes(object root)
+    {
+        var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        var stack = new Stack<object>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var node = stack.Pop();
+            if (!seen.Add(node)) continue;
+            foreach (var prop in EdgeProps)
+                if (node.GetType().GetProperty(prop)!.GetValue(node) is { } next)
+                    stack.Push(next);
+        }
+        return seen.Count;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Reflection helpers
     // ─────────────────────────────────────────────────────────────────────────────
