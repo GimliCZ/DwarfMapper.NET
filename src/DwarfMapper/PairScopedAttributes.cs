@@ -79,6 +79,40 @@ public sealed class MapIgnoreAttribute<TTarget> : Attribute
 }
 
 /// <summary>
+/// Overrides how the <c>(TSource → TTarget)</c> destination is <b>constructed</b> <b>from the class</b>:
+/// instead of letting the generator pick a constructor, it calls the named <b>factory function</b> on the
+/// mapper, then populates the remaining writable members from the source — the compile-time equivalent of
+/// AutoMapper's <c>ConstructUsing</c>. Apply it next to a <c>[GenerateMap&lt;TSource, TTarget&gt;]</c>.
+/// <code>
+/// [GenerateMap&lt;CommandDto, AliasCommand&gt;]
+/// [MapConstructor&lt;CommandDto, AliasCommand&gt;(nameof(MakeAlias))]
+/// public partial class Mapper
+/// {
+///     private static AliasCommand MakeAlias(CommandDto s) => new(s.CommandFormat, s.Alias!);
+/// }
+/// </code>
+/// <para>
+/// The factory is any method on the mapper taking a value assignable from <typeparamref name="TSource"/> and
+/// returning a value assignable to <typeparamref name="TTarget"/>; it may invoke any constructor or logic. After
+/// it runs, the generator assigns every <b>settable</b> (non-<c>init</c>, non-read-only) destination member from
+/// the source, exactly as a normal map would; <c>init</c>-only, <c>required</c> and get-only members are the
+/// factory's responsibility and are not reassigned. An invalid factory name/signature is <c>DWARF059</c>; an
+/// attribute that matches no mapped pair is <c>DWARF056</c>.
+/// </para>
+/// </summary>
+/// <typeparam name="TSource">The source type of the pair whose construction this overrides.</typeparam>
+/// <typeparam name="TTarget">The destination type the factory produces.</typeparam>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public sealed class MapConstructorAttribute<TSource, TTarget> : Attribute
+{
+    /// <summary>Names the factory method on the mapper that constructs the destination from the source.</summary>
+    public MapConstructorAttribute(string method) => Method = method;
+
+    /// <summary>Name of the factory method: takes <typeparamref name="TSource"/>, returns <typeparamref name="TTarget"/>.</summary>
+    public string Method { get; }
+}
+
+/// <summary>
 /// Assigns a <b>constant</b> or <b>computed</b> value to a source-less member of <typeparamref name="TTarget"/>
 /// <b>from the class</b> — the pair-scoped counterpart of the method-level <see cref="MapValueAttribute"/>. It
 /// counts the member as mapped (suppressing <c>DWARF001</c>), so a <c>[GenerateMap]</c> pair whose target has a

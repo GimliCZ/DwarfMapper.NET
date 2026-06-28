@@ -126,5 +126,6 @@ internal static class GeneratorTestHarness
             .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location))
             .Append(MetadataReference.CreateFromFile(typeof(global::DwarfMapper.Testing.RoundTrip).Assembly.Location))
             .Append(MetadataReference.CreateFromFile(typeof(System.Linq.Queryable).Assembly.Location))
+            .Append(MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location))
             .ToArray());
 }

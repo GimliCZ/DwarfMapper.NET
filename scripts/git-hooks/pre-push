@@ -1,0 +1,14 @@
+#!/bin/sh
+# DwarfMapper local pre-push gate — runs the full self-test suite before a push is allowed.
+# Install once (from repo root):   git config core.hooksPath scripts/git-hooks
+# Override a single push:          git push --no-verify
+#
+# The heavier checks (AOT execute, full 262k exhaustion, mutation) are intentionally NOT here — they are
+# too slow for every push. Run them before a release:   pwsh scripts/housekeeping.ps1
+echo "[pre-push] running DwarfMapper self-test suite (Release)..."
+if ! dotnet test DwarfMapper.NET.sln -c Release --nologo; then
+    echo "[pre-push] self-test suite FAILED — push aborted (use 'git push --no-verify' to override)."
+    exit 1
+fi
+echo "[pre-push] suite green."
+exit 0

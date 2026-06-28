@@ -355,6 +355,43 @@ internal static class MapEmitter
             return;
         }
 
+        // ── [MapConstructor]: construction delegated to a user factory ──────────────
+        // var __dwarf_target = Factory(src);  then assign each settable member as a statement.
+        if (method.FactoryMethod is not null)
+        {
+            sb.Append(indent).Append("    var __dwarf_target = ").Append(method.FactoryMethod)
+              .Append('(').Append(method.ParameterName).AppendLine(");");
+            foreach (var member in method.Members)
+            {
+                if (member.WhenPredicate is not null)
+                {
+                    sb.Append(indent).Append("    if (").Append(member.WhenPredicate).Append('(')
+                      .Append(method.ParameterName).Append(")) __dwarf_target.").Append(member.TargetName).Append(" = ");
+                }
+                else if (member.SkipIfSourceNull)
+                {
+                    sb.Append(indent).Append("    if (").Append(method.ParameterName).Append('.').Append(member.SourceName)
+                      .Append(" is not null) __dwarf_target.").Append(member.TargetName).Append(" = ");
+                }
+                else
+                {
+                    sb.Append(indent).Append("    __dwarf_target.").Append(member.TargetName).Append(" = ");
+                }
+                AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
+                sb.AppendLine(";");
+            }
+            foreach (var after in method.AfterHooks)
+            {
+                sb.Append(indent).Append("    ").Append(after.Name).Append('(');
+                if (after.TakesSource) sb.Append(method.ParameterName).Append(", ");
+                if (after.TargetByRef) sb.Append("ref ");
+                sb.Append("__dwarf_target").AppendLine(");");
+            }
+            sb.Append(indent).AppendLine("    return __dwarf_target;");
+            sb.Append(indent).AppendLine("}");
+            return;
+        }
+
         // Begin construction expression: "var __dwarf_target = new T(...)" or "return new T(...)".
         sb.Append(indent).Append("    ").Append(useLocalForm ? "var __dwarf_target = new " : "return new ")
           .Append(method.ReturnTypeFullName);

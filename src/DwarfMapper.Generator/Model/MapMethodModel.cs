@@ -153,4 +153,13 @@ public sealed record MapMethodModel(
     /// </summary>
     bool ParameterIsPublicType = false,
     /// <summary>Whether the destination (return) type is effectively public — see <see cref="ParameterIsPublicType"/>.</summary>
-    bool ReturnIsPublicType = false) : IEquatable<MapMethodModel>;
+    bool ReturnIsPublicType = false,
+    /// <summary>
+    /// When non-null, names a factory method on the mapper that constructs the destination from the source
+    /// (pair-scoped <c>[MapConstructor&lt;S,T&gt;]</c> / AutoMapper <c>ConstructUsing</c>). The body becomes
+    /// <c>var __dwarf_target = Factory(src); __dwarf_target.M = …; return __dwarf_target;</c> — construction is
+    /// delegated to the factory and only settable members in <see cref="Members"/> are assigned afterward
+    /// (<see cref="ConstructorArguments"/> is empty; <c>init</c>/<c>required</c>/get-only members are the
+    /// factory's responsibility).
+    /// </summary>
+    string? FactoryMethod = null) : IEquatable<MapMethodModel>;

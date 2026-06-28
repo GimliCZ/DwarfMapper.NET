@@ -90,6 +90,52 @@ public sealed class PairScopedConfigGeneratorTests
     }
 
     [Fact]
+    public void MapConstructor_factory_constructs_and_compiles_clean()
+    {
+        // [MapConstructor<S,T>] delegates construction to a factory (ConstructUsing); the get-only
+        // Parsed member is populated only by the ctor, settable Cost afterward — no diagnostics.
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Src { public string Format { get; set; } = ""; public int Cost { get; set; } }
+            public class Dst {
+                public Dst() { }
+                public Dst(string format) { Format = format; Parsed = format.ToUpperInvariant(); }
+                public string Format { get; } = "";
+                public string Parsed { get; } = "";
+                public int Cost { get; set; }
+            }
+            [DwarfMapper]
+            [GenerateMap<Src, Dst>]
+            [MapConstructor<Src, Dst>(nameof(Make))]
+            public partial class M {
+                private static Dst Make(Src s) => new(s.Format);
+            }
+            """;
+
+        var (diags, _) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diags, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void MapConstructor_with_unknown_factory_reports_DWARF059()
+    {
+        const string s = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Src { public int X { get; set; } }
+            public class Dst { public Dst(int x) { X = x; } public int X { get; } }
+            [DwarfMapper]
+            [GenerateMap<Src, Dst>]
+            [MapConstructor<Src, Dst>("DoesNotExist")]
+            public partial class M { }
+            """;
+
+        var (diags, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diags, d => d.Id == "DWARF059");
+    }
+
+    [Fact]
     public void PairScoped_attribute_matching_no_pair_reports_DWARF056()
     {
         const string s = """
