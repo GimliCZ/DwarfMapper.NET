@@ -3096,6 +3096,21 @@ internal static class MapperExtractor
             }
         }
 
+        // ── User-defined conversion operators (e.g. a strong-type's `implicit operator int`) ──────────
+        // The built-in classifier above excludes user-defined conversions; honor them here, LAST, so nothing
+        // else is overridden. Implicit operators convert silently (the author declared them safe); explicit
+        // operators are potentially lossy → DWARF038 (or a build error under ImplicitConversions = false).
+        var userConv = UserConversionConverter.TryCreate(compilation, srcType, tgtType, synthesized, out var userConvExplicit);
+        if (userConv is not null)
+        {
+            converterMethod = userConv;
+            if (userConvExplicit)
+            {
+                EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "user-defined explicit conversion operator", implicitConversions);
+            }
+            return true;
+        }
+
         diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, targetName));
         return false;
     }

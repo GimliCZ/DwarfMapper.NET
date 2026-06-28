@@ -144,8 +144,11 @@ internal static class AggregateEmitter
     /// <summary>
     /// Builds the <c>AddDwarfMappers()</c> DI registration extension, or <c>null</c> when there are no mappers.
     /// Emitted only when the compilation references <c>Microsoft.Extensions.DependencyInjection.Abstractions</c>.
+    /// The class is emitted in the assembly's own namespace (<paramref name="assemblyNamespace"/>), not the
+    /// universally-imported <c>Microsoft.Extensions.DependencyInjection</c>, so the extension method does not
+    /// collide across assemblies when one references several mapper-bearing assemblies (CS0121).
     /// </summary>
-    public static string? EmitServiceCollection(IReadOnlyList<MapperClassModel> models)
+    public static string? EmitServiceCollection(IReadOnlyList<MapperClassModel> models, string assemblyNamespace)
     {
         var mapperTypes = models
             .Select(m => "global::" + (string.IsNullOrEmpty(m.Namespace) ? m.ClassName : m.Namespace + "." + m.ClassName))
@@ -160,9 +163,9 @@ internal static class AggregateEmitter
 
         var sb = new StringBuilder();
         sb.Append(Header).Append('\n');
-        sb.AppendLine("namespace Microsoft.Extensions.DependencyInjection;");
+        sb.Append("namespace ").Append(assemblyNamespace).AppendLine(";");
         sb.AppendLine();
-        sb.AppendLine("/// <summary>DI registration for every generated mapper in this assembly (both <c>[DwarfMapper]</c> classes and co-located <c>[GenerateMap]</c> hosts).</summary>");
+        sb.AppendLine("/// <summary>DI registration for every generated mapper in this assembly (both <c>[DwarfMapper]</c> classes and co-located <c>[GenerateMap]</c> hosts). Call <c>services.AddDwarfMappers()</c> (this class lives in the assembly's own namespace to avoid cross-assembly collisions).</summary>");
         sb.AppendLine("public static class DwarfMapperServiceCollectionExtensions");
         sb.AppendLine("{");
         sb.AppendLine("    /// <summary>");
