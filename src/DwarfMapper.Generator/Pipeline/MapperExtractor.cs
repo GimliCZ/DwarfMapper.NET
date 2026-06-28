@@ -265,6 +265,36 @@ internal static class MapperExtractor
                     implicitConversions: implicitConversions, mapValues: updMapValues, valueProviders: valueProviders,
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
 
+                // Update-into assigns members post-construction, so init-only targets cannot be written
+                // (they would emit CS8852). Treat them as read-only here: drop them and surface DWARF007
+                // so the user adds [MapIgnore], consistent with get-only members. In a CREATE map init-only
+                // is writable via the object initializer, so this is update-into-specific.
+                var updInitOnly = new HashSet<string>(System.StringComparer.Ordinal);
+                for (INamedTypeSymbol? t = updTgt; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+                {
+                    foreach (var tm in t.GetMembers())
+                    {
+                        if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: true })
+                            updInitOnly.Add(p.Name);
+                    }
+                }
+                if (updInitOnly.Count > 0)
+                {
+                    var keptUpd = new List<MemberMap>(updMembers.Count);
+                    foreach (var mm in updMembers)
+                    {
+                        if (updInitOnly.Contains(mm.TargetName) && !updIgnores.Contains(mm.TargetName))
+                        {
+                            // A matching source value would be lost — loud, actionable (suggests [MapIgnore]).
+                            diagnostics.Add(new DiagnosticInfo(
+                                DiagnosticDescriptors.ReadOnlyDestinationMember, methodLocation, mm.TargetName));
+                            continue; // cannot assign an init-only property post-construction
+                        }
+                        keptUpd.Add(mm);
+                    }
+                    updMembers = keptUpd;
+                }
+
                 var updBefore = new List<string>();
                 foreach (var h in beforeHookDefs)
                     if (HasImplicitConversion(comp, updSrc, h.ParamType)) updBefore.Add(h.Name);

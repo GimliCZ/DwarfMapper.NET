@@ -183,4 +183,45 @@ public class DiagnosticTests
         Assert.Contains("Age = p.Age", generated, System.StringComparison.Ordinal);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
+
+    [Fact]
+    public void UpdateInto_initOnly_target_reports_DWARF007_not_CS8852()
+    {
+        // An init-only target is writable in a CREATE map (object initializer) but NOT in update-into
+        // (assignment post-construction). The generator must surface DWARF007, not emit an invalid
+        // assignment that the C# compiler rejects with CS8852.
+        const string src = """
+            using DwarfMapper;
+            public class S { public int Id { get; init; } public string Name { get; set; } = ""; }
+            public class D { public int Id { get; init; } public string Name { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M
+            {
+                public partial void Map(S s, D d);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF007"
+            && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Id", System.StringComparison.Ordinal));
+        Assert.DoesNotContain(GeneratorTestHarness.RunAndGetCompilationErrors(src), e => e.Id == "CS8852");
+    }
+
+    [Fact]
+    public void UpdateInto_initOnly_silenced_with_MapIgnore_compiles_clean()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class S { public int Id { get; init; } public string Name { get; set; } = ""; }
+            public class D { public int Id { get; init; } public string Name { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapIgnore("Id")]
+                public partial void Map(S s, D d);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+    }
 }
