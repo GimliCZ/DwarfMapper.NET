@@ -2604,7 +2604,13 @@ internal static class MapperExtractor
         bool isSetNull = false,
         bool implicitConversions = true)
     {
-        var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+        // Constructor parameters are matched case-insensitively by default. C# convention is camelCase
+        // parameters (`name`) binding PascalCase source/target members (`Name`) — the dominant record /
+        // primary-constructor shape — so case-sensitive binding would fail the most common ctor mapping.
+        // The class-level CaseInsensitive flag governs property-to-property matching; ctor binding is always
+        // insensitive (a genuine case-only collision still surfaces as DWARF010 AmbiguousMatch below).
+        _ = caseInsensitive;
+        var comparer = System.StringComparer.OrdinalIgnoreCase;
 
         // Build explicit-maps index: target (param) name → source name (exact match).
         var explicitForParams = new Dictionary<string, (string Source, string? Use)>(System.StringComparer.Ordinal);

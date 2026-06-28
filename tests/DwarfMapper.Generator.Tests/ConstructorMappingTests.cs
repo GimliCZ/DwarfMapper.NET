@@ -284,7 +284,7 @@ public class ConstructorMappingTests
     }
 
     [Fact]
-    public void CaseSensitive_does_not_match_ctor_param_different_case()
+    public void Ctor_param_matches_source_member_case_insensitively_by_default()
     {
         const string src = """
             using DwarfMapper;
@@ -299,8 +299,11 @@ public class ConstructorMappingTests
             public partial class M { public partial D Map(S s); }
             """;
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        // Without CaseInsensitive, "myValue" source ≠ "MyValue" param → DWARF024
-        Assert.Contains(diagnostics, d => d.Id == "DWARF024");
+        // Constructor parameters bind case-insensitively by default (C# camelCase-param convention):
+        // source "myValue" -> ctor param "MyValue". No CaseInsensitive flag required.
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF024");
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
 
     // ── Completeness still holds: unmapped settable non-ctor member → error ───
