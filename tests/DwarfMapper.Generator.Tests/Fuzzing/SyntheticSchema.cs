@@ -256,10 +256,23 @@ internal static class SyntheticSchema
     /// (items 5, 11).</summary>
     public enum EmitMode { None, Preserve, SetNull, UpdateInto, RoundTrip }
 
+    /// <summary>Item 18: the same behavioural Src/Dst shape with an explicit [DwarfMapper(...)] argument
+    /// string and emit mode. Because Src/Dst have identical member types no conversion diagnostic can fire,
+    /// so any combination of config options must compile cleanly and stay value-preserving on acyclic input.</summary>
+    public static string GenerateBehavioralWithConfig(int seed, string attrArgs, EmitMode mode)
+    {
+        var rng = new Random(seed);
+        int memberCount = rng.Next(1, 11);
+        var members = new (string Name, string Type)[memberCount];
+        for (int i = 0; i < memberCount; i++)
+            members[i] = ($"Member{i}", PickTypeBehavioral(rng));
+        return BuildSource(members, mode, attrArgs);
+    }
+
     private static string BuildSource((string Name, string Type)[] members)
         => BuildSource(members, EmitMode.None);
 
-    private static string BuildSource((string Name, string Type)[] members, EmitMode mode)
+    private static string BuildSource((string Name, string Type)[] members, EmitMode mode, string? attrArgs = null)
     {
         var sb = new StringBuilder();
 
@@ -299,12 +312,14 @@ internal static class SyntheticSchema
         sb.AppendLine();
 
         // ── Mapper (mode-parameterized for item 5) ──────────────────────
-        var attr = mode switch
-        {
-            EmitMode.Preserve => "[global::DwarfMapper.DwarfMapper(ReferenceHandling = global::DwarfMapper.ReferenceHandlingStrategy.Preserve)]",
-            EmitMode.SetNull  => "[global::DwarfMapper.DwarfMapper(OnCycle = global::DwarfMapper.OnCycleStrategy.SetNull)]",
-            _                  => "[global::DwarfMapper.DwarfMapper]",
-        };
+        var attr = attrArgs is not null
+            ? $"[global::DwarfMapper.DwarfMapper({attrArgs})]"
+            : mode switch
+            {
+                EmitMode.Preserve => "[global::DwarfMapper.DwarfMapper(ReferenceHandling = global::DwarfMapper.ReferenceHandlingStrategy.Preserve)]",
+                EmitMode.SetNull  => "[global::DwarfMapper.DwarfMapper(OnCycle = global::DwarfMapper.OnCycleStrategy.SetNull)]",
+                _                  => "[global::DwarfMapper.DwarfMapper]",
+            };
         sb.AppendLine(attr);
         sb.AppendLine("public partial class FuzzMapper");
         sb.AppendLine("{");
