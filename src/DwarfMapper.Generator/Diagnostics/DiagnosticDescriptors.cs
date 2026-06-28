@@ -493,4 +493,34 @@ public static class DiagnosticDescriptors
         "More than one assembly provides an ambient map '{0}' -> '{1}'. The ambient registry keeps the first registration and ignores the others; ensure the duplicate definitions are intentional, or remove all but one.",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf063");
+
+    // Item 12: a [MapValue] supplies a constant/provider for a target that ALSO has a same-name readable
+    // source member. The constant silently shadows the real source data — typically a leftover stub from
+    // before the source member existed. Info (suppressible); only emitted when the shadow actually exists.
+    public static readonly DiagnosticDescriptor MapValueShadowsSource = new(
+        "DWARF064",
+        "[MapValue] shadows an auto-matchable source member",
+        "[MapValue] for '{0}' overrides the same-named source member '{0}', so the real source value is never read. Remove the [MapValue] to map the source member, or [MapIgnoreSource(\"{0}\")] if the shadow is intentional.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf064");
+
+    // Item 13: an update-into Map(S src, T dest) maps a nested reference member by REPLACING it with a
+    // freshly-mapped instance, not by recursively updating dest's existing instance. Callers expecting a
+    // deep merge (identity of the nested object preserved) are warned. Info (suppressible).
+    public static readonly DiagnosticDescriptor UpdateIntoNestedReplaced = new(
+        "DWARF065",
+        "Update-into replaces a nested member instead of merging it",
+        "Update-into maps nested member '{0}' by replacing it with a new instance; the destination's existing '{0}' object (and its identity) is discarded, not deep-merged. Map the leaf members directly, or accept the replacement.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf065");
+
+    // Item 14: a [MapProperty(When=)] guards a NON-nullable target member. When the predicate is false the
+    // member keeps its (possibly type-default) value, which for a non-nullable reference can be a latent
+    // null. Restricted to non-nullable targets; Info (suppressible) to limit false positives.
+    public static readonly DiagnosticDescriptor WhenLeavesNonNullableDefault = new(
+        "DWARF066",
+        "[MapProperty(When=)] can leave a non-nullable member at its default",
+        "[MapProperty(When=)] guards non-nullable target member '{0}': when the predicate is false the member is not assigned and keeps its default (a non-nullable reference default is null). Give the member a default initializer, make it nullable, or confirm the unset default is intended.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf066");
 }

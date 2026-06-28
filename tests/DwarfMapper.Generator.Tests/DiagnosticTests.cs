@@ -224,4 +224,99 @@ public class DiagnosticTests
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
+
+    // ── Item 12: DWARF064 — [MapValue] shadows a same-named source member ──────────
+    [Fact]
+    public void MapValue_shadowing_source_member_reports_DWARF064()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class S { public int A { get; set; } public string Name { get; set; } = ""; }
+            public class D { public int A { get; set; } public string Name { get; set; } = ""; }
+            [DwarfMapper]
+            [MapValue<D>("Name", "fixed")]   // shadows source S.Name
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF064"
+            && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Name", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MapValue_with_no_matching_source_member_does_not_report_DWARF064()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class S { public int A { get; set; } }
+            public class D { public int A { get; set; } public string Stamp { get; set; } = ""; }
+            [DwarfMapper]
+            [MapValue<D>("Stamp", "fixed")]  // no source member named Stamp → not a shadow
+            public partial class M { public partial D Map(S s); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF064");
+    }
+
+    // ── Item 13: DWARF065 — update-into replaces a nested member ───────────────────
+    [Fact]
+    public void UpdateInto_nested_member_reports_DWARF065()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class Inner { public int V { get; set; } }
+            public class InnerDto { public int V { get; set; } }
+            public class S { public Inner Child { get; set; } = new(); public int Top { get; set; } }
+            public class D { public InnerDto Child { get; set; } = new(); public int Top { get; set; } }
+            [DwarfMapper]
+            public partial class M { public partial void Update(S s, D d); }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF065"
+            && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Child", System.StringComparison.Ordinal));
+        // A scalar member is a direct copy, not a replacement → no DWARF065 for it.
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF065"
+            && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Top", System.StringComparison.Ordinal));
+    }
+
+    // ── Item 14: DWARF066 — [MapProperty(When=)] leaves a non-nullable member at default ──
+    [Fact]
+    public void When_guard_on_non_nullable_reference_reports_DWARF066()
+    {
+        const string src = """
+            using DwarfMapper;
+            #nullable enable
+            public class S { public string Note { get; set; } = ""; }
+            public class D { public string Note { get; set; } = ""; }
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapProperty(nameof(S.Note), nameof(D.Note), When = nameof(Keep))]
+                public partial D Map(S s);
+                private static bool Keep(S s) => s.Note.Length > 0;
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src, Microsoft.CodeAnalysis.NullableContextOptions.Enable);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF066"
+            && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Note", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void When_guard_on_nullable_reference_does_not_report_DWARF066()
+    {
+        const string src = """
+            using DwarfMapper;
+            #nullable enable
+            public class S { public string? Note { get; set; } }
+            public class D { public string? Note { get; set; } }
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapProperty(nameof(S.Note), nameof(D.Note), When = nameof(Keep))]
+                public partial D Map(S s);
+                private static bool Keep(S s) => s.Note is not null;
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src, Microsoft.CodeAnalysis.NullableContextOptions.Enable);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF066");
+    }
 }

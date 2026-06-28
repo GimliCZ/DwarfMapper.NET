@@ -244,7 +244,9 @@ operator stays **Info** (you defined it deliberately). **Fix (optional):** make 
 `[MapProperty(Use = nameof(...))]`. Set `[DwarfMapper(ImplicitConversions = false)]` to turn all such
 conversions into build errors. To silence a specific instance, downgrade in `.editorconfig`:
 `dotnet_diagnostic.DWARF038.severity = suggestion` (a `-warnaserror` build treats the Warning as an error
-until downgraded).
+until downgraded). A conversion on a nested/collection element may be reported without a file location; for a
+blanket downgrade across a project use `<WarningsNotAsErrors>DWARF038</WarningsNotAsErrors>` (keep the warning,
+don't fail the build) or `<NoWarn>DWARF038</NoWarn>` (suppress) in the `.csproj`.
 
 ## dwarf039
 **Source member is read by no destination member** · Info
@@ -424,3 +426,24 @@ concrete mapper directly, or give it a parameterless constructor. (Informational
 Two assemblies in the graph both provide an ambient map for the same `(source, destination)`. The registry
 keeps the first registration and ignores the rest. **Fix:** ensure the duplication is intentional, or remove
 all but one definition. Reported at the validation root.
+
+## dwarf064
+**[MapValue] shadows an auto-matchable source member** · Info
+
+A `[MapValue]` supplies a constant/provider for a target that *also* has a same-named readable source member,
+so the real source value is never read — usually a leftover stub from before the source member existed. **Fix:**
+remove the `[MapValue]` to map the source member, or `[MapIgnoreSource("{member}")]` if the shadow is intended.
+
+## dwarf065
+**Update-into replaces a nested member instead of merging it** · Info
+
+An update-into `Map(S src, T dest)` maps a nested object member by replacing `dest`'s existing instance with a
+freshly-mapped one (its identity discarded), not by deep-merging into it. **Fix:** map the leaf members directly
+if you need to preserve the nested instance, or accept the replacement. (Collections are always rebuilt.)
+
+## dwarf066
+**[MapProperty(When=)] can leave a non-nullable member at its default** · Info
+
+A `[MapProperty(When=)]` guards a non-nullable reference target: when the predicate is false the member is not
+assigned and keeps its default (which for a non-nullable reference is `null`). **Fix:** give the member a default
+initializer, make it nullable, or confirm the unset default is intended.

@@ -68,3 +68,6 @@ DWARF060 | DwarfMapper | Error | Conflicting map methods from the same source ty
 DWARF061 | DwarfMapper | Error | Required ambient map is not provided
 DWARF062 | DwarfMapper | Info | Mapper not added to the ambient registry
 DWARF063 | DwarfMapper | Warning | Ambiguous ambient map provider
+DWARF064 | DwarfMapper | Info | [MapValue] shadows an auto-matchable source member
+DWARF065 | DwarfMapper | Info | Update-into replaces a nested member instead of merging it
+DWARF066 | DwarfMapper | Info | [MapProperty(When=)] can leave a non-nullable member at its default

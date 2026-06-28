@@ -295,6 +295,21 @@ internal static class MapperExtractor
                     updMembers = keptUpd;
                 }
 
+                // Item 13 (DWARF065): update-into maps a nested object member by REPLACING dest's existing
+                // instance with a freshly-mapped one (the auto-nested __DwarfMap_Obj_* converter constructs a
+                // new object), NOT by recursively merging into it. Callers expecting a deep merge / preserved
+                // identity are warned. Info; only for synthesized object sub-maps (collections/dicts are
+                // expected to be rebuilt, and a direct scalar copy preserves nothing to merge).
+                foreach (var mm in updMembers)
+                {
+                    if (mm.ConverterMethod is { } cmName
+                        && cmName.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.UpdateIntoNestedReplaced, methodLocation, mm.TargetName));
+                    }
+                }
+
                 var updBefore = new List<string>();
                 foreach (var h in beforeHookDefs)
                     if (HasImplicitConversion(comp, updSrc, h.ParamType)) updBefore.Add(h.Name);
@@ -2341,6 +2356,15 @@ internal static class MapperExtractor
                         else
                         {
                             whenPred = ex.When;
+                            // Item 14 (DWARF066): a When guard on a non-nullable reference target leaves it at
+                            // its default (null) when the predicate is false — a latent null in a non-null
+                            // contract. Restricted to non-nullable reference targets; Info to limit false
+                            // positives (a member with its own default initializer is fine).
+                            if (tgtType.IsReferenceType && tgtType.NullableAnnotation != NullableAnnotation.Annotated)
+                            {
+                                diagnostics.Add(new DiagnosticInfo(
+                                    DiagnosticDescriptors.WhenLeavesNonNullableDefault, location, tgtName));
+                            }
                         }
                     }
                 }
@@ -2384,6 +2408,15 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
                     $"[MapValue] target '{mvTgt}' is not a writable destination member"));
                 continue;
+            }
+
+            // Item 12 (DWARF064): the [MapValue] shadows a real same-named source member that would have
+            // auto-matched. The constant/provider silently masks the source data — usually a leftover stub
+            // from before the source member existed (DWARF039 source-coverage does not fire here).
+            if (sourceGroups.ContainsKey(flexible ? NormalizeName(mvTgt) : mvTgt))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.MapValueShadowsSource, location, mvTgt));
             }
 
             if (mv.IsConstant)
