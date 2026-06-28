@@ -14,7 +14,15 @@ public sealed class AmbientDst { public int V { get; set; } }
 
 [DwarfMapper]
 [GenerateMap<AmbientSrc, AmbientDst>]
-public partial class AmbientSampleMapper { }
+public partial class AmbientSampleMapper
+{
+    // A collection-conversion map (List<Src> -> IReadOnlyList<Dst>) — uses the library's internal collection
+    // handling. The ambient registry registers it just like the plain map, so it resolves cross-assembly too.
+    public partial System.Collections.Generic.IReadOnlyList<AmbientDst> Map(System.Collections.Generic.List<AmbientSrc> source);
+
+    // An async-stream map — IAsyncEnumerable boxes to object, so it is ambient-registerable as well.
+    public partial System.Collections.Generic.IAsyncEnumerable<AmbientDst> Map(System.Collections.Generic.IAsyncEnumerable<AmbientSrc> source);
+}
 
 public sealed class AmbientRegistrationRuntimeTests
 {
@@ -34,6 +42,28 @@ public sealed class AmbientRegistrationRuntimeTests
         // ...and the direct concrete mapper still works (in-assembly path is unchanged).
         var direct = new AmbientSampleMapper().Map(new AmbientSrc { V = 9 });
         Assert.Equal(9, direct.V);
+    }
+
+    [Fact]
+    public void Collection_conversion_map_resolves_through_the_ambient_facade()
+    {
+        // Broadened ambient registry: a List<Src> -> IReadOnlyList<Dst> map self-registers and resolves via
+        // the facade, using the library's internal collection handling.
+        Assert.True(DwarfMapperRegistry.IsProvided(typeof(System.Collections.Generic.List<AmbientSrc>),
+            typeof(System.Collections.Generic.IReadOnlyList<AmbientDst>)));
+
+        var result = DwarfMapperFacade.Instance.Map<System.Collections.Generic.IReadOnlyList<AmbientDst>>(
+            new System.Collections.Generic.List<AmbientSrc> { new() { V = 1 }, new() { V = 2 } });
+
+        Assert.Equal(new[] { 1, 2 }, result.Select(x => x.V));
+    }
+
+    [Fact]
+    public void Async_stream_map_is_ambient_registered()
+    {
+        Assert.True(DwarfMapperRegistry.IsProvided(
+            typeof(System.Collections.Generic.IAsyncEnumerable<AmbientSrc>),
+            typeof(System.Collections.Generic.IAsyncEnumerable<AmbientDst>)));
     }
 
     [Fact]

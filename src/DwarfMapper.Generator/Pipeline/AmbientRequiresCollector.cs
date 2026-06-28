@@ -104,12 +104,13 @@ internal static class AmbientRequiresCollector
     {
         if (source is null || destination is null)
             return null;
-        if (source.TypeKind == TypeKind.TypeParameter || destination.TypeKind == TypeKind.TypeParameter)
+        if (source.TypeKind is TypeKind.TypeParameter or TypeKind.Pointer or TypeKind.FunctionPointer or TypeKind.Dynamic ||
+            destination.TypeKind is TypeKind.TypeParameter or TypeKind.Pointer or TypeKind.FunctionPointer or TypeKind.Dynamic)
             return null;
         if (source.SpecialType == SpecialType.System_Object)
             return null;
-        if (source is not INamedTypeSymbol || destination is not INamedTypeSymbol)
-            return null;
+        // Named types and arrays (of public elements) are valid ambient keys — matching the breadth the
+        // registration side covers; reject only unnameable/ref-struct-ish shapes above.
         // Only effectively-public pairs are ambient (cross-assembly) — and only such types can appear in the
         // generated [assembly: DwarfRequiresMap(typeof(...))] without an accessibility error. Internal/nested
         // consumption is in-assembly; use the concrete mapper there.
@@ -121,11 +122,20 @@ internal static class AmbientRequiresCollector
 
     private static bool IsEffectivelyPublic(ITypeSymbol type)
     {
-        for (ISymbol? s = type; s is INamedTypeSymbol; s = s.ContainingType)
+        if (type is IArrayTypeSymbol arr)
+            return IsEffectivelyPublic(arr.ElementType);
+
+        for (ISymbol? s = type; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
         {
             if (s.DeclaredAccessibility != Accessibility.Public)
                 return false;
         }
+
+        if (type is INamedTypeSymbol named)
+            foreach (var typeArgument in named.TypeArguments)
+                if (!IsEffectivelyPublic(typeArgument))
+                    return false;
+
         return true;
     }
 }

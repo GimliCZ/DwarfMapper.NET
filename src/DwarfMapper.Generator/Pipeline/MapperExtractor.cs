@@ -332,7 +332,9 @@ internal static class MapperExtractor
                     EquatableArray.From(System.Array.Empty<HookCall>()),
                     false,
                     "",
-                    IsAsyncStreamMap: true));
+                    IsAsyncStreamMap: true,
+                    ParameterIsPublicType: IsEffectivelyPublic(method.Parameters[0].Type),
+                    ReturnIsPublicType: IsEffectivelyPublic(method.ReturnType)));
                 continue;
             }
 
@@ -655,7 +657,9 @@ internal static class MapperExtractor
                     ConstructorArguments: EquatableArray.From(System.Array.Empty<MemberMap>()),
                     IsPartial: true,
                     ReturnIsReferenceType: targetType.IsReferenceType,
-                    IsTopLevelCollectionConversion: true));
+                    IsTopLevelCollectionConversion: true,
+                    ParameterIsPublicType: IsEffectivelyPublic(sourceType),
+                    ReturnIsPublicType: IsEffectivelyPublic(targetType)));
                 continue;
             }
             // ── End Fix 1 ────────────────────────────────────────────────────────────────
@@ -1110,6 +1114,43 @@ internal static class MapperExtractor
 
             nestedRegistry.ClearCurrentPair();
 
+            // Hooks ([BeforeMap]/[AfterMap]) bound to THIS pair must also run when the pair is mapped as a
+            // nested member or collection element — otherwise a target produced via the private helper silently
+            // skips its post-processing (e.g. an AfterMap that rebuilds a dictionary), a data-loss bug.
+            // Match by the same implicit-conversion rule the public pairs use (see ~line 835).
+            var nestedBefore = new List<string>();
+            foreach (var h in beforeHookDefs)
+            {
+                if (HasImplicitConversion(ctx.SemanticModel.Compilation, nestedSrc, h.ParamType))
+                    nestedBefore.Add(h.Name);
+            }
+            var nestedAfter = new List<HookCall>();
+            foreach (var h in afterHookDefs)
+            {
+                bool applies;
+                bool takesSource;
+                if (h.P1 is null)
+                {
+                    applies = HasImplicitConversion(ctx.SemanticModel.Compilation, nestedTgt, h.P0);
+                    takesSource = false;
+                }
+                else
+                {
+                    applies = HasImplicitConversion(ctx.SemanticModel.Compilation, nestedSrc, h.P0)
+                        && HasImplicitConversion(ctx.SemanticModel.Compilation, nestedTgt, h.P1);
+                    takesSource = true;
+                }
+
+                if (!applies) continue;
+
+                var nestedTargetIsRef = h.TargetRefKind == RefKind.Ref;
+                // Struct target passed by value would lose the hook's mutations; skip it here (the public /
+                // update-into path for the same pair surfaces the AfterMapValueTargetByValue diagnostic).
+                if (nestedTgt.IsValueType && !nestedTargetIsRef) continue;
+
+                nestedAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: nestedTargetIsRef));
+            }
+
             // Build a private (non-partial) MapMethodModel for this synthesized pair.
             // IsRecursionCapable is set to false here and patched below after ComputeRecursionCapability().
             var nestedModel = new MapMethodModel(
@@ -1120,8 +1161,8 @@ internal static class MapperExtractor
                 ParameterName: "s",
                 ParameterIsReferenceType: nestedSrc.IsReferenceType,
                 Members: EquatableArray.From(nestedMembers),
-                BeforeHooks: EquatableArray.From(System.Array.Empty<string>()),
-                AfterHooks: EquatableArray.From(System.Array.Empty<HookCall>()),
+                BeforeHooks: EquatableArray.From(nestedBefore),
+                AfterHooks: EquatableArray.From(nestedAfter),
                 IsProjection: false,
                 ElementTargetTypeFullName: "",
                 ConstructorArguments: EquatableArray.From(nestedCtorArgs),
@@ -5493,13 +5534,18 @@ internal static class MapperExtractor
     /// <summary>
     /// True when <paramref name="t"/> and every type that contains it are declared <c>public</c> — i.e. it is
     /// reachable from another assembly. Used to gate <c>public</c> facade extensions (a public extension over a
-    /// non-public type is CS0051). It inspects the type symbol and its containing-type chain's declared
-    /// accessibility; arrays and other constructed shapes are judged by their own symbol's accessibility, not
-    /// unwrapped to their element/definition (e.g. an array symbol has no <c>public</c> accessibility, so an
-    /// array-typed member is treated as non-public).
+    /// non-public type is CS0051) and ambient-registry registration (a cross-assembly map must name both types).
+    /// It inspects the type and its containing-type chain, unwraps arrays to their element type, and recurses
+    /// into generic type arguments — so e.g. <c>ICollection&lt;Internal&gt;</c> / <c>Internal[]</c> are NOT
+    /// effectively public, while <c>ICollection&lt;PublicDto&gt;</c> is.
     /// </summary>
     private static bool IsEffectivelyPublic(ITypeSymbol t)
     {
+        if (t is IArrayTypeSymbol arr)
+        {
+            return IsEffectivelyPublic(arr.ElementType);
+        }
+
         for (ISymbol? s = t; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
         {
             if (s.DeclaredAccessibility != Accessibility.Public)
@@ -5507,6 +5553,18 @@ internal static class MapperExtractor
                 return false;
             }
         }
+
+        if (t is INamedTypeSymbol named)
+        {
+            foreach (var typeArgument in named.TypeArguments)
+            {
+                if (!IsEffectivelyPublic(typeArgument))
+                {
+                    return false;
+                }
+            }
+        }
+
         return true;
     }
 

@@ -284,13 +284,38 @@ internal static class AggregateEmitter
     }
 
     /// <summary>
-    /// A map is placed in the ambient registry iff it is an eligible plain <c>T Map(S)</c> entry whose source
-    /// AND destination are effectively public (internal types have no cross-assembly meaning). Shared by the
-    /// registration emitter and <see cref="CollectProvidedPairs"/> so the emitted <c>Provides</c> manifest and
-    /// the root-validation view never drift.
+    /// A map is placed in the ambient registry iff it is a public entry that maps ONE source value to a
+    /// RETURNED value — so it can be boxed through the registry's <c>Func&lt;object,object&gt;</c> and called as
+    /// <c>Map&lt;TDest&gt;(src)</c>. This deliberately covers the FULL breadth the internal mapper supports as a
+    /// single <c>TDest Map(TSource)</c> shape: plain object maps, top-level collection/dictionary conversions,
+    /// nested generics, and async-stream (<c>IAsyncEnumerable</c>) maps. Both source and destination must be
+    /// effectively public (incl. generic type arguments — internal types cannot be named cross-assembly).
+    /// <para>Excluded by nature: IQueryable projections (expression trees, not runtime delegates); update-into
+    /// (two parameters; mutates an existing instance); span maps (<c>Span&lt;T&gt;</c> is a ref struct and cannot
+    /// be boxed); derived-type dispatch and extra-parameter maps (no single (source)-&gt;(dest) shape).</para>
+    /// Shared by the registration emitter and <see cref="CollectProvidedPairs"/> so the emitted <c>Provides</c>
+    /// manifest and the root-validation view never drift.
     /// </summary>
     private static bool IsAmbientRegisterable(MapMethodModel m)
-        => IsEligible(m) && m.ParameterIsPublicType && m.ReturnIsPublicType;
+    {
+        if (!(m.IsPartial || m.EmitAsNonPartial))
+        {
+            return false;
+        }
+        if (m.Accessibility != "public" && m.Accessibility != "internal")
+        {
+            return false;
+        }
+        if (m.IsProjection || m.IsUpdateInto || m.IsSpanMap)
+        {
+            return false;
+        }
+        if (m.DerivedTypeArms.Count > 0 || m.ExtraParameters.Count > 0)
+        {
+            return false;
+        }
+        return m.ParameterIsPublicType && m.ReturnIsPublicType;
+    }
 
     /// <summary>
     /// The (source, destination) pairs this assembly self-registers into the ambient registry — i.e. the
