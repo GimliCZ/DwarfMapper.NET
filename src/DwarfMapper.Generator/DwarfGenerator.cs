@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;
@@ -96,6 +98,115 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             mappers.Collect().Combine(coLocated.Collect()).Combine(aggregateOptions),
             static (spc, pair) => EmitAggregates(
                 spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right.Di, pair.Right.PublicExtensions, pair.Right.AsmNs));
+
+        // Ambient REQUIRES manifest: the cross-assembly maps this assembly consumes through IDwarfMapper —
+        // auto-detected from Map<TDest>(src) call sites + declared via [UsesMap] — emitted as
+        // [assembly: DwarfRequiresMap(...)] for the validation root to cross-check against the Provides set.
+        var facadeRequires = context.SyntaxProvider
+            .CreateSyntaxProvider(AmbientRequiresCollector.IsFacadeMapCall, AmbientRequiresCollector.ExtractFacadeRequire)
+            .Where(static r => r is not null)
+            .Select(static (r, _) => r!.Value);
+
+        var assemblyUsesMap = context.CompilationProvider
+            .Select(static (compilation, ct) => AmbientRequiresCollector.ReadAssemblyUsesMap(compilation, ct));
+
+        var classUsesMap = context.SyntaxProvider.ForAttributeWithMetadataName(
+            "DwarfMapper.UsesMapAttribute",
+            predicate: static (node, _) => node is ClassDeclarationSyntax,
+            transform: static (ctx, ct) => AmbientRequiresCollector.ReadClassUsesMap(ctx, ct));
+
+        var classUsesMapGeneric = context.SyntaxProvider.ForAttributeWithMetadataName(
+            "DwarfMapper.UsesMapAttribute`2",
+            predicate: static (node, _) => node is ClassDeclarationSyntax,
+            transform: static (ctx, ct) => AmbientRequiresCollector.ReadClassUsesMap(ctx, ct));
+
+        // This assembly's own consumed (required) ambient pairs — sorted + distinct. Reused by both the
+        // Requires manifest emit and the root validation.
+        var ownRequired = facadeRequires.Collect()
+            .Combine(assemblyUsesMap)
+            .Combine(classUsesMap.Collect())
+            .Combine(classUsesMapGeneric.Collect())
+            .Select(static (data, _) =>
+            {
+                var (((facade, assembly), classLevel), classLevelGeneric) = data;
+                var all = new SortedSet<(string, string)>();
+                foreach (var p in facade) all.Add(p);
+                foreach (var p in assembly) all.Add(p);
+                foreach (var list in classLevel) foreach (var p in list) all.Add(p);
+                foreach (var list in classLevelGeneric) foreach (var p in list) all.Add(p);
+                return ImmutableArray.CreateRange(all);
+            });
+
+        context.RegisterSourceOutput(ownRequired, static (spc, pairs) => EmitRequiresManifest(spc, pairs));
+
+        // This assembly's own provided (registered) ambient pairs — exactly what its module initializer registers.
+        var ownProvided = mappers.Collect().Combine(coLocated.Collect())
+            .Select(static (pair, _) =>
+            {
+                var usable = pair.Left.AddRange(pair.Right).Where(static m => !m.HasBlockingError).ToList();
+                return ImmutableArray.CreateRange(AggregateEmitter.CollectProvidedPairs(usable));
+            });
+
+        // Root-only whole-graph view: is this the validation root, and the Provides/Requires of referenced assemblies.
+        var rootInfo = context.CompilationProvider.Select(static (compilation, _) =>
+        {
+            if (!AmbientValidator.IsValidationRoot(compilation))
+            {
+                return (IsRoot: false, Provided: ImmutableArray<(string, string)>.Empty, Required: ImmutableArray<(string, string)>.Empty);
+            }
+            var (provided, required) = AmbientValidator.ReadReferenced(compilation);
+            return (IsRoot: true, Provided: provided, Required: required);
+        });
+
+        context.RegisterSourceOutput(
+            ownProvided.Combine(ownRequired).Combine(rootInfo),
+            static (spc, data) =>
+            {
+                var ((own, req), root) = data;
+                if (!root.IsRoot)
+                {
+                    return;
+                }
+
+                // DWARF061: a consumed ambient map that nothing in the graph provides.
+                foreach (var (source, destination) in AmbientValidator.MissingRequires(own, req, root.Provided, root.Required))
+                {
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.RequiredMapNotProvided, Location.None, source, destination));
+                }
+
+                // DWARF063: a pair provided by more than one assembly (first registration wins).
+                foreach (var (source, destination) in AmbientValidator.AmbiguousProviders(own, root.Provided))
+                {
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.AmbiguousAmbientProvider, Location.None, source, destination));
+                }
+
+                // Runtime fail-fast fallback: DwarfMap.Validate() over every consumed pair (own + referenced).
+                var validate = AmbientValidator.EmitValidateMethod(req.Concat(root.Required));
+                if (validate.Length != 0)
+                {
+                    spc.AddSource("DwarfMapper.Validate.g.cs", validate);
+                }
+            });
+    }
+
+    private static void EmitRequiresManifest(SourceProductionContext spc, ImmutableArray<(string Source, string Destination)> pairs)
+    {
+        if (pairs.Length == 0)
+        {
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.Append("// <auto-generated/>\n// SPDX-License-Identifier: GPL-2.0-only\n#nullable enable\n\n");
+        foreach (var (source, destination) in pairs)
+        {
+            sb.Append("[assembly: global::DwarfMapper.DwarfRequiresMap(typeof(")
+              .Append(source).Append("), typeof(").Append(destination).Append("))]\n");
+        }
+
+        spc.AddSource("DwarfMapper.AmbientRequires.g.cs", sb.ToString());
     }
 
     /// <summary>
@@ -162,6 +273,19 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             {
                 spc.AddSource("DwarfMapper.ServiceCollectionExtensions.g.cs", di);
             }
+        }
+
+        // Ambient cross-assembly registry: a module initializer self-registers this assembly's stateless,
+        // public-typed create-maps into DwarfMapperRegistry, plus the [assembly: DwarfProvidesMap] manifest.
+        var (ambient, unregisterable) = AggregateEmitter.EmitAmbientRegistration(usable);
+        if (ambient is not null)
+        {
+            spc.AddSource("DwarfMapper.AmbientRegistration.g.cs", ambient);
+        }
+        foreach (var mapper in unregisterable)
+        {
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.AmbientMapperNotRegistered, Location.None, mapper));
         }
     }
 

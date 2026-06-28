@@ -29,8 +29,21 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 /// </summary>
 file static class RuntimeCoverageExempt
 {
+    // RoundTrip / DwarfMapperOptions — verification/assembly-option markers, not per-mapping execution.
+    // DwarfProvidesMap / DwarfRequiresMap / UsesMap / DwarfMapperValidationRoot — ambient cross-assembly
+    //   registry infrastructure (manifests / consumption marker / validation-root marker). You cannot
+    //   "execute a mapping" using them; they are covered by AmbientRegistryTests (runtime registry +
+    //   facade) and AmbientManifestAttributesTests, plus the ambient-registry generator/validation tests.
     public static readonly IReadOnlySet<string> AttributeUsageNames =
-        new HashSet<string>(StringComparer.Ordinal) { "RoundTrip", "DwarfMapperOptions" };
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "RoundTrip",
+            "DwarfMapperOptions",
+            "DwarfProvidesMap",
+            "DwarfRequiresMap",
+            "UsesMap",
+            "DwarfMapperValidationRoot",
+        };
 
     public static readonly IReadOnlySet<string> EnumTypeNames =
         new HashSet<string>(StringComparer.Ordinal);

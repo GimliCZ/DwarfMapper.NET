@@ -459,4 +459,36 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         description: "DwarfMapper names a generated mapping method `Map` and overloads it by the SOURCE (parameter) type. Two pairs that share a source type but target different destinations therefore collide on the same signature `Map(Source)` and would differ only by return type, which the C# compiler rejects. Declare one of them as a distinctly-named partial method (`public partial Target Name(Source s);`) — its pair-scoped [MapProperty]/[MapIgnore] attributes still apply.",
         helpLinkUri: HelpBase + "dwarf060");
+
+    // Whole-graph linkage check at the validation root: a map consumed through IDwarfMapper that no
+    // referenced assembly (nor this one) provides. Turns the otherwise-runtime DwarfMapMissingException into a
+    // compile-time error. Args: {0}=source, {1}=destination.
+    public static readonly DiagnosticDescriptor RequiredMapNotProvided = new(
+        "DWARF061",
+        "Required ambient map is not provided",
+        "Map '{0}' -> '{1}' is consumed through IDwarfMapper but no referenced assembly provides it. Declare [GenerateMap<{0}, {1}>] in a referenced assembly (it self-registers into the ambient registry), or reference the assembly that already declares it.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        description: "The assembly marked [assembly: DwarfMapperValidationRoot] sees the whole reference graph, so DwarfMapper verifies there that every ambient map consumed through IDwarfMapper (auto-detected from Map<TDest>(src) call sites or declared with [UsesMap]) is provided by some assembly in the graph. A pair with no provider would otherwise throw DwarfMapMissingException at runtime; this reports it at build time instead.",
+        helpLinkUri: HelpBase + "dwarf061");
+
+    // A mapper with constructor dependencies cannot be instantiated by the parameterless module-initializer
+    // self-registration, so its (public-typed) maps are NOT placed in the ambient cross-assembly registry.
+    // Info severity: this is a heads-up, not an error — the mapper still works via direct injection.
+    public static readonly DiagnosticDescriptor AmbientMapperNotRegistered = new(
+        "DWARF062",
+        "Mapper not added to the ambient registry",
+        "Mapper '{0}' has constructor dependencies, so its maps are not self-registered in the ambient DwarfMapper registry. Inject it directly, or give it a parameterless constructor to make its maps resolvable through IDwarfMapper.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        description: "The ambient registry is populated by generated module initializers, which run with no dependency-injection context and can only construct mappers that have an accessible parameterless constructor. A mapper that takes constructor dependencies (e.g. an object factory) is therefore left out of the ambient IDwarfMapper resolution; use the concrete mapper through DI instead.",
+        helpLinkUri: HelpBase + "dwarf062");
+
+    // Two assemblies in the graph provide an ambient map for the same (source, destination). The registry
+    // keeps the first registration; the rest are ignored. Reported at the validation root. Args: {0}=source,
+    // {1}=destination.
+    public static readonly DiagnosticDescriptor AmbiguousAmbientProvider = new(
+        "DWARF063",
+        "Ambiguous ambient map provider",
+        "More than one assembly provides an ambient map '{0}' -> '{1}'. The ambient registry keeps the first registration and ignores the others; ensure the duplicate definitions are intentional, or remove all but one.",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf063");
 }

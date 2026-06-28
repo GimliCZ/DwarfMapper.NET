@@ -25,7 +25,10 @@ internal static class GeneratorTestHarness
             // Exclude the assembly-wide aggregate outputs (convenience facade + DI registration) so single-
             // mapper snapshot tests keep selecting the per-mapper file regardless of emit order.
             .Where(t => !t.FilePath.EndsWith("DwarfMapper.Extensions.g.cs", System.StringComparison.Ordinal)
-                     && !t.FilePath.EndsWith("DwarfMapper.ServiceCollectionExtensions.g.cs", System.StringComparison.Ordinal))
+                     && !t.FilePath.EndsWith("DwarfMapper.ServiceCollectionExtensions.g.cs", System.StringComparison.Ordinal)
+                     && !t.FilePath.EndsWith("DwarfMapper.AmbientRegistration.g.cs", System.StringComparison.Ordinal)
+                     && !t.FilePath.EndsWith("DwarfMapper.AmbientRequires.g.cs", System.StringComparison.Ordinal)
+                     && !t.FilePath.EndsWith("DwarfMapper.Validate.g.cs", System.StringComparison.Ordinal))
             .Select(t => t.ToString())
             .FirstOrDefault() ?? string.Empty;
 
