@@ -3065,6 +3065,23 @@ internal static class MapperExtractor
             if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, out var elemNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
                 return false; // element diagnostic already reported by the recursive call
 
+            // #100: a nullable-annotated REFERENCE element whose target element is non-nullable needs the
+            // same per-element null handling as a nullable VALUE element (int?→int). SymbolEqualityComparer
+            // ignores nullable annotations, so without this the identity fast-path emits a direct collection
+            // copy the compiler rejects (List<string?>→List<string> = CS8620) or an array clone that smuggles
+            // nulls past the annotation. A non-null target element cannot hold null, so throw on a null
+            // element — loud and never-silent (there is no valid non-null reference "default" to substitute).
+            if (elemConv is null && elemNull == Model.NullHandling.None
+                && srcElem.IsReferenceType
+                && srcElem.NullableAnnotation == NullableAnnotation.Annotated
+                && tgtElem.NullableAnnotation != NullableAnnotation.Annotated
+                && SymbolEqualityComparer.Default.Equals(
+                    srcElem.WithNullableAnnotation(NullableAnnotation.None),
+                    tgtElem.WithNullableAnnotation(NullableAnnotation.None)))
+            {
+                elemNull = Model.NullHandling.ThrowIfNull;
+            }
+
             // Preserve OR SetNull: if the element converter is an auto-nested object mapper, force it
             // recursion-capable so it gets the (ctx, depth) signature — the collection helper will call it
             // with (elem, ctx, depth + 1), threading ONE shared context across the collection edge. This
