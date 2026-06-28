@@ -14,6 +14,7 @@ mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe,
 | `NullStrategy` | `NullStrategy` | `Throw` | Nullable-value source → non-nullable target when null: `Throw`, or `SetDefault` (use the destination default). |
 | `NullCollections` | `NullCollectionStrategy` | `AsEmpty` | Null source collection → `AsEmpty` (never throws) or `AsNull` (target must be a nullable reference). |
 | `AutoNest` | `bool` | `true` | Auto-synthesize a private mapper for a nested `(S,T)` pair with no declared method. `false` requires explicit declarations. |
+| `SkipNullSourceMembers` | `bool` | `false` | A null source member never overwrites the destination's default: emits `if (src.X is not null) dst.X = …;` for nullable-source, post-construction-settable members. The equivalent of AutoMapper's `ForAllMembers(o => o.Condition((_,_,src) => src != null))`. Non-nullable value-type sources and `required`/`init`-only targets are unaffected. |
 | `ReferenceHandling` | `ReferenceHandlingStrategy` | `None` | `None` (depth-guarded, zero alloc) or `Preserve` (full topology reconstruction). |
 | `OnCycle` | `OnCycleStrategy` | `Throw` | In `None` mode: `Throw` (catchable depth exception) or `SetNull` (break cycles ≡ `System.Text.Json` IgnoreCycles). Ignored under `Preserve` → `DWARF037`. |
 | `MaxDepth` | `int` | `64` | Depth bound for recursion-capable pairs; throws `DwarfMappingDepthException` instead of a silent `StackOverflowException`. Hard cap `1000`. |

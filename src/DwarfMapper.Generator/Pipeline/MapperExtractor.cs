@@ -136,6 +136,7 @@ internal static class MapperExtractor
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);
+        var skipNullSrc = ReadSkipNullSourceMembers(ctx.Attributes);
         var nullCollections = ReadNullCollections(ctx.Attributes);
         var maxDepth = ReadMaxDepth(ctx.Attributes);
         var referenceHandling = ReadReferenceHandling(ctx.Attributes);
@@ -256,7 +257,7 @@ internal static class MapperExtractor
                     consumedCtorParams: null, requiredMustInitialize: null, updAutoNest, nestedRegistry,
                     nullCollections == NullCollectionsBehavior.AsNull, isPreserve: false, isSetNull: false,
                     implicitConversions: implicitConversions, mapValues: updMapValues, valueProviders: valueProviders,
-                    nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras);
+                    nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras, skipNullSourceMembers: skipNullSrc);
 
                 var updBefore = new List<string>();
                 foreach (var h in beforeHookDefs)
@@ -787,7 +788,7 @@ internal static class MapperExtractor
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
                 mapValues: mapValues, valueProviders: valueProviders, extraParams: extraParams,
-                nameConvention: nameConvention, mapPropertyExtras: mapPropExtras);
+                nameConvention: nameConvention, mapPropertyExtras: mapPropExtras, skipNullSourceMembers: skipNullSrc);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -938,7 +939,7 @@ internal static class MapperExtractor
                 genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
                 mapValues: MatchPairValues(pairValues, genTgt), valueProviders: valueProviders,
-                mapPropertyExtras: genExtras);
+                mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -1062,7 +1063,7 @@ internal static class MapperExtractor
                 pairAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
                 mapValues: MatchPairValues(pairValues, nestedTgt), valueProviders: valueProviders,
-                mapPropertyExtras: nestedExtras);
+                mapPropertyExtras: nestedExtras, skipNullSourceMembers: skipNullSrc);
 
             nestedRegistry.ClearCurrentPair();
 
@@ -1926,7 +1927,8 @@ internal static class MapperExtractor
         IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
         IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
         int nameConvention = 0,
-        IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)>? mapPropertyExtras = null)
+        IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)>? mapPropertyExtras = null,
+        bool skipNullSourceMembers = false)
     {
         var extrasByTarget = new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When)>(System.StringComparer.Ordinal);
         if (mapPropertyExtras is not null)
@@ -2364,6 +2366,49 @@ internal static class MapperExtractor
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnusedMappingParameter, location,
                         $"mapping parameter '{ep.Name}' matched no destination member"));
+                }
+            }
+        }
+
+        // [DwarfMapper(SkipNullSourceMembers = true)]: a null source member must keep the destination's
+        // default rather than overwrite it. Mark each simple, nullable-source, post-construction-settable
+        // member so the emitter guards it with `if (src.X is not null) dst.X = …;`. Non-nullable value-type
+        // sources (never null) and required/init-only/read-only targets (cannot be deferred) are left as-is.
+        if (skipNullSourceMembers && result.Count > 0)
+        {
+            var srcTypeByName = new Dictionary<string, ITypeSymbol>(comparer);
+            foreach (var (sName, sType) in ReadableMembers(sourceType))
+            {
+                srcTypeByName[sName] = sType;
+            }
+
+            var deferrableTargets = new HashSet<string>(System.StringComparer.Ordinal);
+            for (INamedTypeSymbol? t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            {
+                foreach (var tm in t.GetMembers())
+                {
+                    if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: false } && !p.IsRequired)
+                        deferrableTargets.Add(p.Name);
+                    else if (tm is IFieldSymbol f && !f.IsReadOnly && !f.IsConst && !f.IsRequired)
+                        deferrableTargets.Add(f.Name);
+                }
+            }
+
+            for (var i = 0; i < result.Count; i++)
+            {
+                var m = result[i];
+                if (string.IsNullOrEmpty(m.SourceName) || m.SourceName.IndexOf('.') >= 0
+                    || m.ValueExpression is not null || m.UnflattenIntermediateFqn is not null
+                    || m.WhenPredicate is not null || m.SkipIfSourceNull
+                    || !deferrableTargets.Contains(m.TargetName))
+                {
+                    continue;
+                }
+
+                if (srcTypeByName.TryGetValue(m.SourceName, out var st)
+                    && (st.IsReferenceType || IsNullableValue(st, out _)))
+                {
+                    result[i] = m with { SkipIfSourceNull = true };
                 }
             }
         }
@@ -5322,6 +5367,25 @@ internal static class MapperExtractor
             }
         }
         return true; // default: auto-nesting enabled
+    }
+
+    /// <summary>
+    /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.SkipNullSourceMembers"/> value.
+    /// Defaults to <c>false</c>.
+    /// </summary>
+    private static bool ReadSkipNullSourceMembers(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "SkipNullSourceMembers" && named.Value.Value is bool b)
+                {
+                    return b;
+                }
+            }
+        }
+        return false;
     }
 
     /// <summary>
