@@ -252,8 +252,9 @@ internal static class SyntheticSchema
 
     // ── Shared source builder ─────────────────────────────────────────────
 
-    /// <summary>Reference-handling / update-into mode for <see cref="GenerateBehavioralForMode"/> (item 5).</summary>
-    public enum EmitMode { None, Preserve, SetNull, UpdateInto }
+    /// <summary>Reference-handling / update-into / round-trip mode for <see cref="GenerateBehavioralForMode"/>
+    /// (items 5, 11).</summary>
+    public enum EmitMode { None, Preserve, SetNull, UpdateInto, RoundTrip }
 
     private static string BuildSource((string Name, string Type)[] members)
         => BuildSource(members, EmitMode.None);
@@ -310,6 +311,13 @@ internal static class SyntheticSchema
         if (mode == EmitMode.UpdateInto)
             // Update-into: map onto an EXISTING Dst. The oracle constructs the dest then calls Update.
             sb.AppendLine("    public partial void Update(Src s, Dst d);");
+        else if (mode == EmitMode.RoundTrip)
+        {
+            // Forward + inverse for round-trip idempotence (item 11). Src/Dst have identical member types,
+            // so the round trip is lossless.
+            sb.AppendLine("    public partial Dst Forward(Src s);");
+            sb.AppendLine("    public partial Src Backward(Dst d);");
+        }
         else
             sb.AppendLine("    public partial Dst Map(Src s);");
         sb.AppendLine("}");
