@@ -15,7 +15,8 @@
          (narrowing, parse/format) and nullable-path traversals, which became Warnings in item 8. Suppress them
          here so the repo-wide TreatWarningsAsErrors does not turn intentional feature coverage into build errors
          (consumers downgrade per-instance via .editorconfig; see docs/diagnostics.md). -->
-    <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;DWARF038;DWARF044</NoWarn>
+    <!-- CA5394: tests generate pseudo-random DATA (not security-sensitive) with System.Random by design -->
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;CA5394;DWARF038;DWARF044</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
