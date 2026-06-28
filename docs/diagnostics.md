@@ -447,3 +447,11 @@ if you need to preserve the nested instance, or accept the replacement. (Collect
 A `[MapProperty(When=)]` guards a non-nullable reference target: when the predicate is false the member is not
 assigned and keeps its default (which for a non-nullable reference is `null`). **Fix:** give the member a default
 initializer, make it nullable, or confirm the unset default is intended.
+
+## dwarf067
+**[GenerateWrapperMap] wrapper is not a single-payload generic** · Error
+
+`[GenerateWrapperMap(typeof(W<>))]` requires `W` to be a generic type with exactly one type parameter and exactly
+one member of that parameter's type (a `List<T>` payload is not a single non-collection payload). **Fix:** point
+the attribute at a single-payload envelope (`Result<T>`/`Page<T>`/`Envelope<T>`), or declare the wrapper pairs
+explicitly with `[GenerateMap<W<A>, W<B>>]`.

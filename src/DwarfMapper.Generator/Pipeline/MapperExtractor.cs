@@ -952,15 +952,23 @@ internal static class MapperExtractor
         // e.g. AutoMapper's CreateMap<A,B>() is a near-mechanical 1:1 replace with [GenerateMap<A,B>].
         var genComp = ctx.SemanticModel.Compilation;
         var genLoc = LocationInfo.From(classSyntax.Identifier.GetLocation());
+
+        // Collect every (source, target) pair to emit: the [GenerateMap<S,T>] attributes, then — for each
+        // [GenerateWrapperMap(typeof(W<>))] — the closed wrapper instantiation W<S> -> W<T> per declared pair
+        // (item 20). Open generics are never emitted; only the closed instantiations actually declared.
+        var genPairs = new List<(ITypeSymbol Src, INamedTypeSymbol Tgt)>();
         foreach (var attr in classSymbol.GetAttributes())
         {
-            if (attr.AttributeClass is not { Name: "GenerateMapAttribute" } ac
-                || ac.TypeArguments.Length != 2
-                || ac.ContainingNamespace?.Name != "DwarfMapper")
-                continue;
-            if (ac.TypeArguments[1] is not INamedTypeSymbol genTgt) continue;
-            var genSrc = ac.TypeArguments[0];
+            if (attr.AttributeClass is { Name: "GenerateMapAttribute" } ac
+                && ac.TypeArguments.Length == 2
+                && ac.ContainingNamespace?.Name == "DwarfMapper"
+                && ac.TypeArguments[1] is INamedTypeSymbol gt)
+                genPairs.Add((ac.TypeArguments[0], gt));
+        }
+        ExpandWrapperMaps(classSymbol, genComp, genPairs, diagnostics, genLoc);
 
+        foreach (var (genSrc, genTgt) in genPairs)
+        {
             // Pair-scoped [MapProperty<S,T>] / [MapIgnore<T>] config for this declared pair.
             var (genExplicit, genExtras) = MatchPairProps(pairProps, genSrc, genTgt);
             var genIgnores = new HashSet<string>(classIgnores);
@@ -6567,6 +6575,65 @@ internal static class MapperExtractor
         var a = Cat(src);
         var b = Cat(tgt);
         return a != 0 && b != 0 && a != b;
+    }
+
+    /// <summary>
+    /// Item 20: for each <c>[GenerateWrapperMap(typeof(W&lt;&gt;))]</c>, append the closed wrapper instantiation
+    /// <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> to <paramref name="genPairs"/> for every already-declared
+    /// <c>[GenerateMap&lt;A, B&gt;]</c> pair. The wrapper must be a single-payload generic (one type parameter,
+    /// one member of that parameter's type) or a DWARF067 is reported and the attribute is skipped. Only closed
+    /// instantiations are produced — open generics are never emitted (AOT-safe).
+    /// </summary>
+    private static void ExpandWrapperMaps(
+        INamedTypeSymbol classSymbol, Compilation comp,
+        List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+        List<DiagnosticInfo> diagnostics, LocationInfo? loc)
+    {
+        // Snapshot the explicitly-declared pairs; expansion applies only to those, so a wrapper is never
+        // wrapped around another wrapper's synthesized pair (no W<W<A>>).
+        var declared = genPairs.ToArray();
+        if (declared.Length == 0) return;
+
+        foreach (var attr in classSymbol.GetAttributes())
+        {
+            if (attr.AttributeClass is not { Name: "GenerateWrapperMapAttribute" }
+                || attr.AttributeClass.ContainingNamespace?.Name != "DwarfMapper"
+                || attr.ConstructorArguments.Length != 1
+                || attr.ConstructorArguments[0].Value is not INamedTypeSymbol wrapperArg)
+                continue;
+
+            var wrapper = wrapperArg.OriginalDefinition;
+            if (wrapper.TypeParameters.Length != 1)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.WrapperMapInvalid, loc,
+                    $"[GenerateWrapperMap(typeof({wrapper.Name}<>))]: the wrapper must be a generic type with exactly one type parameter."));
+                continue;
+            }
+
+            var typeParam = wrapper.TypeParameters[0];
+            // Single (non-collection) payload: exactly one instance property/field whose type IS the type
+            // parameter. A List<T> payload is excluded (its type is List<T>, not T).
+            var payloadCount = wrapper.GetMembers().Count(m =>
+                (m is IPropertySymbol p && !p.IsStatic && SymbolEqualityComparer.Default.Equals(p.Type, typeParam))
+                // Exclude compiler-generated auto-property backing fields (also typed T) to avoid double-counting.
+                || (m is IFieldSymbol f && !f.IsStatic && !f.IsImplicitlyDeclared && SymbolEqualityComparer.Default.Equals(f.Type, typeParam)));
+            if (payloadCount != 1)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.WrapperMapInvalid, loc,
+                    $"[GenerateWrapperMap(typeof({wrapper.Name}<>))]: the wrapper must have exactly one single (non-collection) payload member of type '{typeParam.Name}', but found {payloadCount}."));
+                continue;
+            }
+
+            foreach (var (src, tgt) in declared)
+            {
+                var closedSrc = wrapper.Construct(src);
+                var closedTgt = wrapper.Construct(tgt);
+                if (genPairs.Any(pp => SymbolEqualityComparer.Default.Equals(pp.Src, closedSrc)
+                                    && SymbolEqualityComparer.Default.Equals(pp.Tgt, closedTgt)))
+                    continue; // user declared this closed wrapper pair explicitly
+                genPairs.Add((closedSrc, closedTgt));
+            }
+        }
     }
 
     private static void EmitImplicitConversionDiag(

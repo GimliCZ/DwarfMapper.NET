@@ -319,4 +319,61 @@ public class DiagnosticTests
         var (diagnostics, _) = GeneratorTestHarness.Run(src, Microsoft.CodeAnalysis.NullableContextOptions.Enable);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF066");
     }
+
+    // ── Item 20: DWARF067 — [GenerateWrapperMap] wrapper must be a single-payload generic ──
+    [Fact]
+    public void GenerateWrapperMap_with_two_payload_members_reports_DWARF067()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class A { public int X { get; set; } }
+            public class B { public int X { get; set; } }
+            public class Multi<T> { public T One { get; set; } = default!; public T Two { get; set; } = default!; }
+            [DwarfMapper]
+            [GenerateMap<A, B>]
+            [GenerateWrapperMap(typeof(Multi<>))]
+            public partial class M { }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF067");
+    }
+
+    [Fact]
+    public void GenerateWrapperMap_with_two_type_parameters_reports_DWARF067()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class A { public int X { get; set; } }
+            public class B { public int X { get; set; } }
+            public class TwoParam<T, U> { public T Payload { get; set; } = default!; public U Meta { get; set; } = default!; }
+            [DwarfMapper]
+            [GenerateMap<A, B>]
+            [GenerateWrapperMap(typeof(TwoParam<,>))]
+            public partial class M { }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF067");
+    }
+
+    [Fact]
+    public void GenerateWrapperMap_single_payload_synthesizes_closed_map_without_DWARF067()
+    {
+        const string src = """
+            using DwarfMapper;
+            public class A { public int X { get; set; } }
+            public class B { public int X { get; set; } }
+            public class Env<T> { public T Payload { get; set; } = default!; public int Status { get; set; } }
+            [DwarfMapper]
+            [GenerateMap<A, B>]
+            [GenerateWrapperMap(typeof(Env<>))]
+            public partial class M { }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF067");
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        // The closed wrapper instantiation Env<A> -> Env<B> is emitted.
+        Assert.Contains("Env<global::A>", generated, System.StringComparison.Ordinal);
+        Assert.Contains("Env<global::B>", generated, System.StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+    }
 }

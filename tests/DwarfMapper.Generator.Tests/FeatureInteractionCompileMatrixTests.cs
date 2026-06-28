@@ -58,6 +58,18 @@ public class FeatureInteractionCompileMatrixTests
             [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
             """);
 
+        yield return new FimMatrixCase("generate_wrapper_map", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public int X { get; set; } }
+            public class Dst { public int X { get; set; } }
+            public class Env<T> { public T Payload { get; set; } = default!; public int Status { get; set; } }
+            [DwarfMapper]
+            [GenerateMap<Src, Dst>]
+            [GenerateWrapperMap(typeof(Env<>))]
+            public partial class M { }
+            """);
+
         // ── 2. Nested auto-nest ───────────────────────────────────────────────
 
         yield return new FimMatrixCase("autonest_class", """

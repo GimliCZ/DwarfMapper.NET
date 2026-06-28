@@ -523,4 +523,15 @@ public static class DiagnosticDescriptors
         "[MapProperty(When=)] guards non-nullable target member '{0}': when the predicate is false the member is not assigned and keeps its default (a non-nullable reference default is null). Give the member a default initializer, make it nullable, or confirm the unset default is intended.",
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf066");
+
+    // Item 20: [GenerateWrapperMap(typeof(W<>))] requires a single-payload generic wrapper — a generic type
+    // with exactly one type parameter and exactly one member of that parameter's type. A wrapper that is not
+    // generic (arity != 1) or has zero / multiple payload members (e.g. a List<T> payload, which is not a
+    // single non-collection payload) cannot be expanded; the attribute is skipped. Error (the opt-in is unusable).
+    public static readonly DiagnosticDescriptor WrapperMapInvalid = new(
+        "DWARF067",
+        "[GenerateWrapperMap] wrapper is not a single-payload generic",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf067");
 }
