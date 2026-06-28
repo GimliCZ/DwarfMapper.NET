@@ -107,6 +107,82 @@ public sealed class AssemblyScanTests
     private static readonly Lazy<string> AllTestSourceText = new(() =>
         string.Concat(TestSources().Select(File.ReadAllText)));
 
+    // ── Self-validation: every [DwarfMapper] option must be exercised by a test ──
+    // This is the guard that would have caught a new option (e.g. AllowNonPublic) shipping with no test:
+    // every public settable property on DwarfMapperAttribute must be named somewhere in the test sources.
+    [Fact]
+    public void Scan5_Every_DwarfMapper_option_has_a_test_reference()
+    {
+        var testText = AllTestSourceText.Value;
+
+        var untested = typeof(DwarfMapperAttribute)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanWrite)
+            .Select(p => p.Name)
+            .Where(name => !testText.Contains(name, StringComparison.Ordinal))
+            .ToList();
+
+        Assert.True(untested.Count == 0,
+            "[DwarfMapper] option(s) with no test reference (add a test exercising the option):\n" +
+            string.Join("\n", untested));
+    }
+
+    // ── Self-validation: no orphan Verify snapshots ──
+    // Every `<Class>.<Method>.verified.txt` must correspond to a test method still present in the source.
+    // A stale snapshot (method renamed/deleted) is otherwise invisible — it just sits unused forever.
+    [Fact]
+    public void Scan6_Every_snapshot_has_a_live_test_method()
+    {
+        var testText = AllTestSourceText.Value;
+
+        const string suffix = ".verified.txt";
+        var orphans = Directory
+            .EnumerateFiles(Path.Combine(RepoRoot, "tests"), "*" + suffix, SearchOption.AllDirectories)
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            .Select(f => Path.GetFileName(f)!)
+            .Select(name => name[..^suffix.Length])           // strip ".verified.txt"
+            .Select(stem => stem.Split('.').Last())            // "Class.Method" → "Method"
+            .Select(method => method.Split('_')[0] == method ? method : method) // keep full method name
+            .Where(method => !testText.Contains(method, StringComparison.Ordinal))
+            .Distinct()
+            .OrderBy(m => m, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(orphans.Count == 0,
+            "Orphan snapshot(s) — a .verified.txt exists with no matching test method (delete the snapshot or restore the test):\n" +
+            string.Join("\n", orphans));
+    }
+
+    // ── Self-HEAL (heal-or-fail): AnalyzerReleases rows stay in sync with the descriptors ──
+    // Normally asserts the invariant (every descriptor has a release row). Run with DWARF_SELF_HEAL=1 to
+    // instead APPEND a row for every descriptor that lacks one (the common drift when a new DWARF diagnostic
+    // is added) and then pass — turning the validator into a one-command fixer.
+    [Fact]
+    public void SelfHeal_AnalyzerReleases_rows_are_in_sync()
+    {
+        var path = Path.Combine(RepoRoot, "src", "DwarfMapper.Generator", "AnalyzerReleases.Unshipped.md");
+        var existing = ParseAnalyzerReleases();
+
+        var missing = GetAllDescriptors()
+            .Select(d => d.Descriptor)
+            .Where(d => !existing.ContainsKey(d.Id))
+            .OrderBy(d => d.Id, StringComparer.Ordinal)
+            .ToList();
+
+        if (missing.Count > 0 && Environment.GetEnvironmentVariable("DWARF_SELF_HEAL") == "1")
+        {
+            var lines = File.ReadAllLines(path).ToList();
+            lines.AddRange(missing.Select(d => $"{d.Id} | {d.Category} | {d.DefaultSeverity} | {d.Title}"));
+            File.WriteAllLines(path, lines);
+            missing = new List<Microsoft.CodeAnalysis.DiagnosticDescriptor>(); // healed
+        }
+
+        Assert.True(missing.Count == 0,
+            "AnalyzerReleases.Unshipped.md is missing a row for: " +
+            string.Join(", ", missing.Select(d => d.Id)) +
+            " — re-run with DWARF_SELF_HEAL=1 to auto-append them.");
+    }
+
     // ── Helpers: reflection over DiagnosticDescriptors ────────────────────────
 
     private static List<(string FieldName, DiagnosticDescriptor Descriptor)>

@@ -103,4 +103,15 @@ public class AttributeContractTests
         Assert.True(u.AllowMultiple);
         Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
     }
+
+    [Fact]
+    public void MapConstructorAttribute_exposes_method_and_allows_multiple_on_classes()
+    {
+        var attr = new MapConstructorAttribute<int, string>("Make");
+        Assert.Equal("Make", attr.Method);
+        var u = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
+            typeof(MapConstructorAttribute<,>), typeof(System.AttributeUsageAttribute))!;
+        Assert.True(u.AllowMultiple);
+        Assert.Equal(System.AttributeTargets.Class, u.ValidOn);
+    }
 }

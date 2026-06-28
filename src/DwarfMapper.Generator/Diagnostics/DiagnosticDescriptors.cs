@@ -438,4 +438,25 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf058");
+
+    // Error: [MapConstructor<S,T>(method)] names a factory that does not exist or whose signature is
+    // incompatible (it must take a value assignable from the source and return one assignable to the target).
+    public static readonly DiagnosticDescriptor MapConstructorInvalid = new(
+        "DWARF059",
+        "Constructor factory method not found",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf059");
+
+    // Two maps from the SAME source type to DIFFERENT targets would both emit `T Map(S)` — methods that
+    // differ only by return type, which C# forbids (CS0111). Without this the consumer sees a raw CS0111
+    // inside generated code with no DwarfMapper guidance. The full, formatted message is built at the call
+    // site ({0}); the mechanism (overloading is by parameter type) lives in the description.
+    public static readonly DiagnosticDescriptor ConflictingMapSignature = new(
+        "DWARF060",
+        "Conflicting map methods from the same source type",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        description: "DwarfMapper names a generated mapping method `Map` and overloads it by the SOURCE (parameter) type. Two pairs that share a source type but target different destinations therefore collide on the same signature `Map(Source)` and would differ only by return type, which the C# compiler rejects. Declare one of them as a distinctly-named partial method (`public partial Target Name(Source s);`) — its pair-scoped [MapProperty]/[MapIgnore] attributes still apply.",
+        helpLinkUri: HelpBase + "dwarf060");
 }

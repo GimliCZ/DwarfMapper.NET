@@ -60,4 +60,20 @@ public class DeterminismFuzzTests
         var (_, g2) = GeneratorTestHarness.Run(src);
         Assert.Equal(g1, g2);
     }
+
+    // Broad-loop determinism: the same byte-identical double-run check across a wide contiguous seed range
+    // (not just the hand-picked seeds above), so output stability is verified over the same broad surface the
+    // compile/behavioural fuzz covers — not a thin sample.
+    public static System.Collections.Generic.IEnumerable<object[]> BroadSeeds =>
+        System.Linq.Enumerable.Range(0, 120).Select(i => new object[] { i });
+
+    [Theory]
+    [MemberData(nameof(BroadSeeds))]
+    public void Behavioral_schema_is_byte_identical_across_a_broad_seed_range(int seed)
+    {
+        var src = SyntheticSchema.GenerateBehavioral(seed);
+        var (_, g1) = GeneratorTestHarness.Run(src);
+        var (_, g2) = GeneratorTestHarness.Run(src);
+        Assert.Equal(g1, g2);
+    }
 }

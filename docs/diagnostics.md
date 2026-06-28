@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF058`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF060`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 
 ## How severities and suppression work
@@ -371,3 +371,22 @@ Two or more mappers would produce the same `source.ToTarget()` convenience exten
 target-derived name), so it was **not** generated for either — the mapping still works through the instance
 methods. **Fix (optional):** call the mapper instance method (`new XMapper().Map(x)`), or disable one mapper's
 extensions with `[DwarfMapper(GenerateExtensions = false)]`. Suppress via `.editorconfig` if intentional.
+
+## dwarf059
+**Constructor factory method not found** · Error
+
+`[MapConstructor<TSource, TTarget>("Method")]` names a factory that does not exist on the mapper or whose
+signature is incompatible. The factory must take a value assignable from `TSource` and return one assignable to
+`TTarget` (it may invoke any constructor or logic). **Fix:** add the method, correct its name, or fix its
+parameter/return types — e.g. `private static AliasCommand MakeAlias(CommandDto s) => new(s.CommandFormat, s.Alias!);`.
+
+## dwarf060
+**Conflicting map methods from the same source type** · Error
+
+Two maps from the **same** source type to **different** targets — e.g. `[GenerateMap<Order, OrderDto>]` and
+`[GenerateMap<Order, OrderSummary>]`, or a `[GenerateMap]` plus a partial `OrderSummary Map(Order o)` — would
+both generate a method named `Map` taking `Order`, differing only by return type. C# cannot overload by return
+type (CS0111). DwarfMapper reports this instead of emitting opaque generated-code errors, and suppresses the
+duplicate so this is the only diagnostic. **Fix:** give one a distinct name with a partial method —
+`public partial OrderSummary ToSummary(Order o);`. Its pair-scoped `[MapProperty]`/`[MapIgnore]` attributes still
+apply. (Update-into `void Map(S, T)`, span, and async-stream maps take distinct parameter lists and never collide.)

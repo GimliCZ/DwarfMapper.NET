@@ -414,6 +414,26 @@ public class FeatureInteractionCompileMatrixTests
             }
             """);
 
+        // ── 10d. MapConstructor (factory / ConstructUsing) ───────────────────
+        yield return new FimMatrixCase("mapconstructor_factory", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public string Format { get; set; } = ""; public int Cost { get; set; } }
+            public class Dst {
+                public Dst() { }
+                public Dst(string format) { Format = format; Parsed = format.ToUpperInvariant(); }
+                public string Format { get; } = "";
+                public string Parsed { get; } = "";
+                public int Cost { get; set; }
+            }
+            [DwarfMapper]
+            [GenerateMap<Src, Dst>]
+            [MapConstructor<Src, Dst>(nameof(Make))]
+            public partial class M {
+                private static Dst Make(Src s) => new(s.Format);
+            }
+            """);
+
         // ── 11. MapProperty rename ────────────────────────────────────────────
 
         yield return new FimMatrixCase("mapproperty_rename", """

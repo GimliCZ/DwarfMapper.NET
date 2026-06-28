@@ -52,6 +52,21 @@ public sealed class DwarfMapperAttribute : Attribute
     public bool SkipNullSourceMembers { get; set; }
 
     /// <summary>
+    /// When <c>true</c>, the generator may use <b>non-public but reachable</b> constructors AND members —
+    /// an <c>internal</c> / <c>protected internal</c> constructor, getter, or setter that the generated
+    /// mapper's assembly can see, either because it is the same assembly or because the target's assembly
+    /// grants access via <c>[InternalsVisibleTo]</c>. Defaults to <c>false</c>.
+    /// <para>
+    /// This is opt-in by design: an <c>internal</c> constructor or accessor is non-public on purpose (a
+    /// factory pattern, an invariant enforced elsewhere), so reaching it from a mapper is a deliberate
+    /// choice that must be stated, never assumed. <c>private</c> and <c>protected</c> constructors/accessors
+    /// are <b>never</b> usable regardless of this flag — the generated code could not compile. <c>public</c>
+    /// constructors and members are always usable and need no flag.
+    /// </para>
+    /// </summary>
+    public bool AllowNonPublic { get; set; }
+
+    /// <summary>
     /// Controls how a null source collection or dictionary is mapped.
     /// <para>
     /// <see cref="NullCollectionStrategy.AsEmpty"/> (default): a null source
