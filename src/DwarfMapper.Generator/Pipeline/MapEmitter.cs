@@ -313,12 +313,14 @@ internal static class MapEmitter
         // members ([MapProperty(When=)] — emitted inside an `if`).
         var hasUnflatten = false;
         var hasWhen = false;
+        var hasSkipNull = false;
         foreach (var m in method.Members)
         {
             if (m.UnflattenIntermediateFqn is not null) hasUnflatten = true;
             if (m.WhenPredicate is not null) hasWhen = true;
+            if (m.SkipIfSourceNull) hasSkipNull = true;
         }
-        var useLocalForm = hasAfter || hasUnflatten || hasWhen;
+        var useLocalForm = hasAfter || hasUnflatten || hasWhen || hasSkipNull;
 
         // ── Plan 19 C2: Register-before-populate (Preserve mode, recursion-capable) ──
         // Both synthesized recursion-capable methods AND public methods under Preserve mode
@@ -379,7 +381,7 @@ internal static class MapEmitter
                 sb.Append(indent).AppendLine("    {");
                 foreach (var member in method.Members)
                 {
-                    if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
+                    if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null || member.SkipIfSourceNull) continue; // deferred
                     sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
                     AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
@@ -398,7 +400,7 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("    {");
             foreach (var member in method.Members)
             {
-                if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
+                if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null || member.SkipIfSourceNull) continue; // deferred
                 sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
                 AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                 sb.AppendLine(",");
@@ -406,8 +408,8 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("    };");
         }
 
-        // Deferred (post-construction) members: unflatten intermediates + When-guarded assignments.
-        if (hasUnflatten || hasWhen)
+        // Deferred (post-construction) members: unflatten intermediates + When-guarded + skip-null assignments.
+        if (hasUnflatten || hasWhen || hasSkipNull)
             EmitDeferredAssignments(sb, method, "__dwarf_target", method.ParameterName, ctxVarName, depthPassFwd, indent + "    ");
 
         if (useLocalForm)
@@ -533,7 +535,7 @@ internal static class MapEmitter
         // Safe because __dwarf_t is in the identity map before any member recursion.
         foreach (var member in method.Members)
         {
-            if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
+            if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null || member.SkipIfSourceNull) continue; // deferred
             sb.Append(indent).Append("    __dwarf_t.").Append(member.TargetName).Append(" = ");
             AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
             sb.AppendLine(";");
@@ -668,7 +670,7 @@ internal static class MapEmitter
 
         foreach (var member in method.Members)
         {
-            if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
+            if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null || member.SkipIfSourceNull) continue; // deferred
             sb.Append(indent).Append("    ").Append(dst).Append('.').Append(member.TargetName).Append(" = ");
             AppendValueExpression(sb, member, src, ctxVar, "0");
             sb.AppendLine(";");
@@ -780,7 +782,7 @@ internal static class MapEmitter
                 sb.Append(indent).AppendLine("        {");
                 foreach (var member in method.Members)
                 {
-                    if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
+                    if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null || member.SkipIfSourceNull) continue; // deferred
                     sb.Append(indent).Append("            ").Append(member.TargetName).Append(" = ");
                     AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
@@ -798,7 +800,7 @@ internal static class MapEmitter
             sb.Append(indent).AppendLine("        {");
             foreach (var member in method.Members)
             {
-                if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null) continue; // deferred
+                if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null || member.SkipIfSourceNull) continue; // deferred
                 sb.Append(indent).Append("            ").Append(member.TargetName).Append(" = ");
                 AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
                 sb.AppendLine(",");
@@ -898,7 +900,7 @@ internal static class MapEmitter
     private static bool HasDeferredMembers(MapMethodModel method)
     {
         foreach (var m in method.Members)
-            if (m.UnflattenIntermediateFqn is not null || m.WhenPredicate is not null)
+            if (m.UnflattenIntermediateFqn is not null || m.WhenPredicate is not null || m.SkipIfSourceNull)
                 return true;
         return false;
     }
@@ -935,6 +937,15 @@ internal static class MapEmitter
             if (member.WhenPredicate is null || member.UnflattenIntermediateFqn is not null) continue;
             sb.Append(indent).Append("if (").Append(member.WhenPredicate).Append('(').Append(paramName)
               .Append(")) ").Append(targetVar).Append('.').Append(member.TargetName).Append(" = ");
+            AppendValueExpression(sb, member, paramName, ctxVarName, depthArg);
+            sb.AppendLine(";");
+        }
+        foreach (var member in method.Members)
+        {
+            // [DwarfMapper(SkipNullSourceMembers = true)]: keep the destination default when the source is null.
+            if (!member.SkipIfSourceNull || member.WhenPredicate is not null || member.UnflattenIntermediateFqn is not null) continue;
+            sb.Append(indent).Append("if (").Append(paramName).Append('.').Append(member.SourceName)
+              .Append(" is not null) ").Append(targetVar).Append('.').Append(member.TargetName).Append(" = ");
             AppendValueExpression(sb, member, paramName, ctxVarName, depthArg);
             sb.AppendLine(";");
         }

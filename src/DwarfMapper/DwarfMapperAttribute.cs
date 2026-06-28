@@ -37,6 +37,21 @@ public sealed class DwarfMapperAttribute : Attribute
     public bool AutoNest { get; set; } = true;
 
     /// <summary>
+    /// When <c>true</c>, a <b>null source member never overwrites the destination's default</b>: for every
+    /// nullable-source, post-construction-settable member the generator emits
+    /// <c>if (src.Member is not null) dest.Member = …;</c>, so a default set in the destination's field
+    /// initializer or constructor survives a null source. Defaults to <c>false</c>.
+    /// <para>
+    /// This is the equivalent of AutoMapper's
+    /// <c>ForAllMembers(o =&gt; o.Condition((_, _, srcMember) =&gt; srcMember != null))</c> — the common
+    /// "don't clobber data with nulls" guard when sanitizing/merging. Non-nullable value-type members
+    /// (which can never be null) are unaffected; <c>required</c> and <c>init</c>-only members are always
+    /// assigned (they cannot be deferred) and so are unaffected too.
+    /// </para>
+    /// </summary>
+    public bool SkipNullSourceMembers { get; set; }
+
+    /// <summary>
     /// Controls how a null source collection or dictionary is mapped.
     /// <para>
     /// <see cref="NullCollectionStrategy.AsEmpty"/> (default): a null source
