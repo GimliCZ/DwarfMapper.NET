@@ -237,6 +237,127 @@ public class TopologyOracleFuzzTests
             GraphOracleComparer.RenderTopologyDiff(topo));
     }
 
+    // ── Item 17: topology preserved through dict / array / struct-wrapper edge carriers ──
+
+    private const string ArrayCarrierSource = """
+        using DwarfMapper;
+        namespace Topo;
+        public class Node { public int V { get; set; } public Node?[] Edges { get; set; } = System.Array.Empty<Node?>(); }
+        public class NodeDto { public int V { get; set; } public NodeDto?[] Edges { get; set; } = System.Array.Empty<NodeDto?>(); }
+        [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+        public partial class ArrMapper { public partial NodeDto Map(Node n); }
+        """;
+
+    private const string DictCarrierSource = """
+        using DwarfMapper;
+        using System.Collections.Generic;
+        namespace Topo;
+        public class Node { public int V { get; set; } public Dictionary<int, Node> Edges { get; set; } = new(); }
+        public class NodeDto { public int V { get; set; } public Dictionary<int, NodeDto> Edges { get; set; } = new(); }
+        [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+        public partial class DictMapper { public partial NodeDto Map(Node n); }
+        """;
+
+    private const string StructWrapperCarrierSource = """
+        using DwarfMapper;
+        namespace Topo;
+        public struct Wrap { public Node? Node { get; set; } }
+        public struct WrapDto { public NodeDto? Node { get; set; } }
+        public class Node { public int V { get; set; } public Wrap Edge { get; set; } }
+        public class NodeDto { public int V { get; set; } public WrapDto Edge { get; set; } }
+        [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+        public partial class WrapMapper { public partial NodeDto Map(Node n); }
+        """;
+
+    [Fact]
+    public void Topology_shared_node_through_array_edge_preserved()
+    {
+        var (asm, errors) = GeneratorTestHarness.EmitAssembly(ArrayCarrierSource);
+        Assert.True(asm is not null, $"array carrier failed to emit: {string.Join(", ", errors.Select(e => e.Id))}");
+        var nodeType = asm!.GetType("Topo.Node")!;
+        var mapper = Activator.CreateInstance(asm.GetType("Topo.ArrMapper")!)!;
+        var map = asm.GetType("Topo.ArrMapper")!.GetMethod("Map")!;
+
+        // Diamond + back-edge routed through the array: root.Edges = [shared, another]; another.Edges =
+        // [shared]; shared.Edges = [root].
+        var root = CreateNode(nodeType, 1);
+        var another = CreateNode(nodeType, 2);
+        var shared = CreateNode(nodeType, 99);
+        SetArrayEdges(nodeType, root, new[] { shared, another });
+        SetArrayEdges(nodeType, another, new[] { shared });
+        SetArrayEdges(nodeType, shared, new[] { root });
+
+        var dst = map.Invoke(mapper, new[] { root })!;
+        var topo = GraphOracleComparer.TopologyDiff(root, dst);
+        Assert.True(topo.Count == 0, "Array-edge topology violated:\n" + GraphOracleComparer.RenderTopologyDiff(topo));
+    }
+
+    [Fact]
+    public void Topology_shared_node_through_dictionary_edge_preserved()
+    {
+        var (asm, errors) = GeneratorTestHarness.EmitAssembly(DictCarrierSource);
+        Assert.True(asm is not null, $"dict carrier failed to emit: {string.Join(", ", errors.Select(e => e.Id))}");
+        var nodeType = asm!.GetType("Topo.Node")!;
+        var mapper = Activator.CreateInstance(asm.GetType("Topo.DictMapper")!)!;
+        var map = asm.GetType("Topo.DictMapper")!.GetMethod("Map")!;
+
+        var root = CreateNode(nodeType, 1);
+        var another = CreateNode(nodeType, 2);
+        var shared = CreateNode(nodeType, 99);
+        AddDictEdge(nodeType, root, 0, shared);
+        AddDictEdge(nodeType, root, 1, another);
+        AddDictEdge(nodeType, another, 0, shared);
+        AddDictEdge(nodeType, shared, 0, root); // back-edge through the dictionary
+
+        var dst = map.Invoke(mapper, new[] { root })!;
+        var topo = GraphOracleComparer.TopologyDiff(root, dst);
+        Assert.True(topo.Count == 0, "Dictionary-edge topology violated:\n" + GraphOracleComparer.RenderTopologyDiff(topo));
+    }
+
+    [Fact]
+    public void Topology_shared_node_through_struct_wrapper_edge_preserved()
+    {
+        var (asm, errors) = GeneratorTestHarness.EmitAssembly(StructWrapperCarrierSource);
+        Assert.True(asm is not null, $"struct wrapper carrier failed to emit: {string.Join(", ", errors.Select(e => e.Id))}");
+        var nodeType = asm!.GetType("Topo.Node")!;
+        var wrapType = asm.GetType("Topo.Wrap")!;
+        var mapper = Activator.CreateInstance(asm.GetType("Topo.WrapMapper")!)!;
+        var map = asm.GetType("Topo.WrapMapper")!.GetMethod("Map")!;
+
+        // root.Edge wraps shared; another.Edge wraps shared → shared is reached through two struct-wrapped
+        // edges and must reconstruct to ONE instance.
+        var root = CreateNode(nodeType, 1);
+        var another = CreateNode(nodeType, 2);
+        var shared = CreateNode(nodeType, 99);
+        SetWrapEdge(nodeType, wrapType, root, shared);
+        SetWrapEdge(nodeType, wrapType, another, shared);
+        SetWrapEdge(nodeType, wrapType, shared, another);
+
+        var dst = map.Invoke(mapper, new[] { root })!;
+        var topo = GraphOracleComparer.TopologyDiff(root, dst);
+        Assert.True(topo.Count == 0, "Struct-wrapper-edge topology violated:\n" + GraphOracleComparer.RenderTopologyDiff(topo));
+    }
+
+    private static void SetArrayEdges(Type nodeType, object node, object[] edges)
+    {
+        var arr = Array.CreateInstance(nodeType, edges.Length);
+        for (var i = 0; i < edges.Length; i++) arr.SetValue(edges[i], i);
+        nodeType.GetProperty("Edges")!.SetValue(node, arr);
+    }
+
+    private static void AddDictEdge(Type nodeType, object node, int key, object target)
+    {
+        var dict = nodeType.GetProperty("Edges")!.GetValue(node)!;
+        dict.GetType().GetMethod("Add")!.Invoke(dict, new object[] { key, target });
+    }
+
+    private static void SetWrapEdge(Type nodeType, Type wrapType, object node, object target)
+    {
+        var wrap = Activator.CreateInstance(wrapType)!; // boxed struct
+        wrapType.GetProperty("Node")!.SetValue(wrap, target);
+        nodeType.GetProperty("Edge")!.SetValue(node, wrap);
+    }
+
     // ── Item 6: SetNull yields a DAG + Preserve preserves distinct-node count ──────
 
     private const string NodeGraphSetNullSource = """

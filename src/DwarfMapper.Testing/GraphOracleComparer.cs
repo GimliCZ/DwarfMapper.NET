@@ -359,8 +359,18 @@ public static class GraphOracleComparer
 
         var srcType = src.GetType();
 
-        // Only reference types participate in topology tracking
-        if (srcType.IsValueType || IsScalar(srcType)) return;
+        // Scalars carry no topology.
+        if (IsScalar(srcType)) return;
+
+        // Value-type structs are not reference-identity tracked (they have value identity), but they can
+        // CARRY reference edges — a user struct wrapper around a node, or the KeyValuePair<,> yielded when a
+        // dictionary edge is enumerated below. Recurse into their members so cycles/sharing routed through a
+        // struct or a dictionary value are still verified (item 17), WITHOUT registering the struct.
+        if (srcType.IsValueType)
+        {
+            TopologyWalkMembers(path, src, srcType, tgt, srcToTgt, violations, depth);
+            return;
+        }
 
         // Have we seen this source object before?
         if (srcToTgt.TryGetValue(src, out var registeredTgt))
@@ -380,7 +390,8 @@ public static class GraphOracleComparer
         // First encounter: register and recurse
         srcToTgt[src] = tgt;
 
-        // Walk IEnumerable members
+        // Walk IEnumerable members (lists, arrays, sets, and dictionaries — a dictionary yields KeyValuePair
+        // structs whose Value edge is reached by the value-type recursion above).
         if (src is IEnumerable se && tgt is IEnumerable te)
         {
             var sl = ToOrderedList(se);
@@ -393,12 +404,19 @@ public static class GraphOracleComparer
             return;
         }
 
-        // Walk properties + fields (using src type to discover members)
+        TopologyWalkMembers(path, src, srcType, tgt, srcToTgt, violations, depth);
+    }
+
+    /// <summary>Walks the public properties + fields of <paramref name="src"/>, recursing into each via the
+    /// same-named member on <paramref name="tgt"/>. Shared by the reference-node and value-type-struct paths.</summary>
+    private static void TopologyWalkMembers(
+        string path, object src, Type srcType, object tgt,
+        Dictionary<object, object> srcToTgt, List<string> violations, int depth)
+    {
         foreach (var p in srcType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
             if (!p.CanRead || p.GetIndexParameters().Length != 0) continue;
             var sv = p.GetValue(src);
-            // Find matching property on target (may be different type)
             var tp = tgt.GetType().GetProperty(p.Name, BindingFlags.Public | BindingFlags.Instance);
             var tv = tp is not null && tp.CanRead ? tp.GetValue(tgt) : null;
             TopologyCompare(path + "." + p.Name, sv, tv, srcToTgt, violations, depth + 1);
