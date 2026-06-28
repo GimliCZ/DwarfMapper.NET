@@ -82,6 +82,19 @@ internal static class SyntheticSchema
         return BuildSource(members);
     }
 
+    /// <summary>Item 5: the same behavioural Src/Dst shape emitted under a chosen reference-handling /
+    /// update-into mode. Member SELECTION is identical for a given seed across modes, so an instance built
+    /// from the same seed is structurally identical and the four modes' outputs can be compared directly.</summary>
+    public static string GenerateBehavioralForMode(int seed, EmitMode mode)
+    {
+        var rng = new Random(seed);
+        int memberCount = rng.Next(1, 11);
+        var members = new (string Name, string Type)[memberCount];
+        for (int i = 0; i < memberCount; i++)
+            members[i] = ($"Member{i}", PickTypeBehavioral(rng));
+        return BuildSource(members, mode);
+    }
+
     /// <summary>
     /// Generates a schema that sometimes emits advanced features:
     /// [MapDerivedType] dispatch, [FlattenGraph] homo, or top-level collection method.
@@ -239,7 +252,13 @@ internal static class SyntheticSchema
 
     // ── Shared source builder ─────────────────────────────────────────────
 
+    /// <summary>Reference-handling / update-into mode for <see cref="GenerateBehavioralForMode"/> (item 5).</summary>
+    public enum EmitMode { None, Preserve, SetNull, UpdateInto }
+
     private static string BuildSource((string Name, string Type)[] members)
+        => BuildSource(members, EmitMode.None);
+
+    private static string BuildSource((string Name, string Type)[] members, EmitMode mode)
     {
         var sb = new StringBuilder();
 
@@ -278,11 +297,21 @@ internal static class SyntheticSchema
         sb.AppendLine("}");
         sb.AppendLine();
 
-        // ── Mapper ──────────────────────────────────────────────────────
-        sb.AppendLine("[global::DwarfMapper.DwarfMapper]");
+        // ── Mapper (mode-parameterized for item 5) ──────────────────────
+        var attr = mode switch
+        {
+            EmitMode.Preserve => "[global::DwarfMapper.DwarfMapper(ReferenceHandling = global::DwarfMapper.ReferenceHandlingStrategy.Preserve)]",
+            EmitMode.SetNull  => "[global::DwarfMapper.DwarfMapper(OnCycle = global::DwarfMapper.OnCycleStrategy.SetNull)]",
+            _                  => "[global::DwarfMapper.DwarfMapper]",
+        };
+        sb.AppendLine(attr);
         sb.AppendLine("public partial class FuzzMapper");
         sb.AppendLine("{");
-        sb.AppendLine("    public partial Dst Map(Src s);");
+        if (mode == EmitMode.UpdateInto)
+            // Update-into: map onto an EXISTING Dst. The oracle constructs the dest then calls Update.
+            sb.AppendLine("    public partial void Update(Src s, Dst d);");
+        else
+            sb.AppendLine("    public partial Dst Map(Src s);");
         sb.AppendLine("}");
 
         return sb.ToString();
