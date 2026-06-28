@@ -138,7 +138,7 @@ public class DeepSourcePathGeneratorTests
     }
 
     [Fact]
-    public void Nullable_interior_hop_reports_DWARF044_info()
+    public void Nullable_interior_hop_reports_DWARF044_warning()
     {
         const string src = """
             using DwarfMapper;
@@ -156,7 +156,8 @@ public class DeepSourcePathGeneratorTests
         var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
         var d = Find(diags, "DWARF044");
         Assert.NotNull(d);
-        Assert.Equal(DiagnosticSeverity.Info, d!.Severity);
+        // Item 8: a nullable interior hop can NRE at runtime → Warning, not a mere suggestion.
+        Assert.Equal(DiagnosticSeverity.Warning, d!.Severity);
     }
 
     [Fact]

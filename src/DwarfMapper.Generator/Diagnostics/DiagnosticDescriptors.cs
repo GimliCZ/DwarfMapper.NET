@@ -315,13 +315,15 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf043");
 
-    // Info: a nullable reference on the interior of a source path can throw NullReferenceException at
-    // runtime when dereferenced. Suppress via dotnet_diagnostic.DWARF044.severity = none in .editorconfig.
+    // Warning (item 8): a nullable reference on the interior of a source path can throw
+    // NullReferenceException at runtime when dereferenced — a data-integrity hazard, so it is a Warning
+    // (consistent with the other runtime-throwing diagnostics), not a mere suggestion. Downgrade via
+    // dotnet_diagnostic.DWARF044.severity = suggestion (or none) in .editorconfig if intentional.
     public static readonly DiagnosticDescriptor PathNullableHop = new(
         "DWARF044",
         "[MapProperty] source path traverses a nullable member",
         "{0}",
-        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf044");
 
     public static readonly DiagnosticDescriptor UnflattenInvalid = new(

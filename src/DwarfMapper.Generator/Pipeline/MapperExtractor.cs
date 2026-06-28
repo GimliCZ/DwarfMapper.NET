@@ -3183,7 +3183,7 @@ internal static class MapperExtractor
             // in C# but crosses kinds (and int→float / long→double silently lose precision). Same-category
             // widening (int→long, float→double) is NOT flagged. DWARF038: suggestion / strict-mode error.
             if (IsCrossCategoryNumeric(srcType, tgtType))
-                EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "cross-category numeric", implicitConversions);
+                EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "cross-category numeric", implicitConversions, lossy: true);
             return true; // direct assignment
         }
 
@@ -3320,7 +3320,7 @@ internal static class MapperExtractor
             // a non-lossless basic-type conversion. Surface it as a suggestion (permissive) or a build
             // error (ImplicitConversions = false). Lossless widening uses the implicit/direct path above
             // and is never flagged.
-            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "numeric (narrowing/sign-change)", implicitConversions);
+            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "numeric (narrowing/sign-change)", implicitConversions, lossy: true);
             return true;
         }
 
@@ -3333,7 +3333,7 @@ internal static class MapperExtractor
         {
             converterMethod = parsableMethod;
             // DWARF038: string↔T parse/format is a non-lossless basic-type conversion → suggestion / error.
-            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "parse/format (string↔T)", implicitConversions);
+            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "parse/format (string↔T)", implicitConversions, lossy: true);
             return true;
         }
 
@@ -6538,16 +6538,26 @@ internal static class MapperExtractor
 
     private static void EmitImplicitConversionDiag(
         List<DiagnosticInfo> diagnostics, LocationInfo? location, string targetName,
-        ITypeSymbol srcType, ITypeSymbol tgtType, string kind, bool implicitConversions)
+        ITypeSymbol srcType, ITypeSymbol tgtType, string kind, bool implicitConversions, bool lossy = false)
     {
         var src = srcType.ToDisplayString();
         var tgt = tgtType.ToDisplayString();
+        // Item 15: name the runtime exceptions for a parse/format conversion so the risk is concrete.
+        var risk = kind.StartsWith("parse/format", System.StringComparison.Ordinal)
+            ? " (a malformed or out-of-range value throws FormatException / OverflowException at runtime)"
+            : "";
         var msg = implicitConversions
-            ? $"Member '{targetName}': implicit {kind} conversion {src} → {tgt} is applied. Make it explicit with [MapProperty(Use = nameof(...))], or set [DwarfMapper(ImplicitConversions = false)] to require explicit conversions."
+            ? $"Member '{targetName}': implicit {kind} conversion {src} → {tgt} is applied{risk}. Make it explicit with [MapProperty(Use = nameof(...))], or set [DwarfMapper(ImplicitConversions = false)] to require explicit conversions."
             : $"Member '{targetName}': implicit {kind} conversion {src} → {tgt} is disallowed ([DwarfMapper(ImplicitConversions = false)]). Map it explicitly with [MapProperty(Use = nameof(...))].";
+        // Item 8: lossy sub-cases (numeric narrowing/sign-change, parse/format, cross-category numeric) describe
+        // data-losing / runtime-throwing behaviour, so they warn by default; widening stays unflagged and a
+        // user-defined explicit operator stays Info (the user opted into it). Disallowed remains Error.
+        var severity = !implicitConversions ? DiagnosticSeverity.Error
+                     : lossy ? DiagnosticSeverity.Warning
+                     : DiagnosticSeverity.Info;
         diagnostics.Add(new DiagnosticInfo(
             DiagnosticDescriptors.ImplicitConversionApplied, location, msg,
-            SeverityOverride: implicitConversions ? DiagnosticSeverity.Info : DiagnosticSeverity.Error));
+            SeverityOverride: severity));
     }
 
     private static string AccessibilityText(Accessibility a) => a switch

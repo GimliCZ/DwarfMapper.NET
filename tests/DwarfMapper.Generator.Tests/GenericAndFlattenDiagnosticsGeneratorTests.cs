@@ -88,8 +88,9 @@ public class GenericAndFlattenDiagnosticsGeneratorTests
         var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
         var d044 = Find(diags, "DWARF044");
         Assert.NotNull(d044);
-        // It is an Info suggestion (loud-but-not-build-breaking), matching the dotted-path behavior.
-        Assert.Equal(DiagnosticSeverity.Info, d044!.Severity);
+        // Item 8: a nullable interior hop can NRE at runtime → Warning (still not build-breaking unless
+        // -warnaserror), matching the dotted-path behavior.
+        Assert.Equal(DiagnosticSeverity.Warning, d044!.Severity);
     }
 
     [Fact]

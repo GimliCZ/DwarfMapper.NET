@@ -235,11 +235,16 @@ specific type wins).
 you wanted cycle-breaking.
 
 ## dwarf038
-**Implicit type conversion applied** · Info (escalates to Error)
+**Implicit type conversion applied** · Warning for lossy conversions, Info otherwise (escalates to Error)
 
-A non-lossless conversion (narrowing, parse/format, cross-category numeric) is being applied. It's visible, not
-silent. **Fix (optional):** make it explicit with `[MapProperty(Use = nameof(...))]`. Set
-`[DwarfMapper(ImplicitConversions = false)]` to turn all such conversions into build errors.
+A non-lossless conversion is being applied. It's visible, not silent. **Lossy** sub-cases — numeric
+narrowing/sign-change, parse/format (`string ↔ T`, which can throw `FormatException` / `OverflowException` at
+runtime), and cross-category numeric (precision loss) — are **Warnings**. A user-defined explicit conversion
+operator stays **Info** (you defined it deliberately). **Fix (optional):** make it explicit with
+`[MapProperty(Use = nameof(...))]`. Set `[DwarfMapper(ImplicitConversions = false)]` to turn all such
+conversions into build errors. To silence a specific instance, downgrade in `.editorconfig`:
+`dotnet_diagnostic.DWARF038.severity = suggestion` (a `-warnaserror` build treats the Warning as an error
+until downgraded).
 
 ## dwarf039
 **Source member is read by no destination member** · Info
@@ -272,10 +277,13 @@ A dotted source path has a segment that doesn't resolve. **Fix:** correct the pa
 dots, so each segment must be a real member.
 
 ## dwarf044
-**[MapProperty] source path traverses a nullable member** · Info
+**[MapProperty] source path traverses a nullable member** · Warning
 
-A dotted source path passes through a nullable member, which can throw `NullReferenceException` at runtime.
-**Fix (optional):** guard the value, or suppress with `.editorconfig` if you know it's non-null here.
+A dotted source path passes through a nullable member, which can throw `NullReferenceException` at runtime — a
+data-integrity hazard, so it is a **Warning** (item 8), consistent with the other runtime-throwing diagnostics.
+**Fix (optional):** guard the value, or downgrade in `.editorconfig` if you know it's non-null here:
+`dotnet_diagnostic.DWARF044.severity = suggestion` (or `none`). A `-warnaserror` build treats the Warning as an
+error until downgraded.
 
 ## dwarf045
 **Invalid [MapProperty] unflatten target path** · Error
