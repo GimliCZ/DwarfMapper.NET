@@ -65,3 +65,6 @@ DWARF057 | DwarfMapper | Error | Generated mapper name collides with an existing
 DWARF058 | DwarfMapper | Info | Convenience extension method was not generated (ambiguous)
 DWARF059 | DwarfMapper | Error | Constructor factory method not found
 DWARF060 | DwarfMapper | Error | Conflicting map methods from the same source type
+DWARF061 | DwarfMapper | Error | Required ambient map is not provided
+DWARF062 | DwarfMapper | Info | Mapper not added to the ambient registry
+DWARF063 | DwarfMapper | Warning | Ambiguous ambient map provider

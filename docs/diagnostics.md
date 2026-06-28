@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF060`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF063`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 
 ## How severities and suppression work
@@ -390,3 +390,29 @@ type (CS0111). DwarfMapper reports this instead of emitting opaque generated-cod
 duplicate so this is the only diagnostic. **Fix:** give one a distinct name with a partial method —
 `public partial OrderSummary ToSummary(Order o);`. Its pair-scoped `[MapProperty]`/`[MapIgnore]` attributes still
 apply. (Update-into `void Map(S, T)`, span, and async-stream maps take distinct parameter lists and never collide.)
+
+## dwarf061
+**Required ambient map is not provided** · Error
+
+In the assembly marked `[assembly: DwarfMapperValidationRoot]` (the composition root, which references the
+whole graph), DwarfMapper checks that every ambient map consumed through `IDwarfMapper` — auto-detected from
+`Map<TDest>(src)` call sites or declared with `[UsesMap<S,T>]` — is provided by *some* assembly in the graph.
+A pair with no provider would otherwise throw `DwarfMapMissingException` at runtime; this reports it at build
+time. **Fix:** declare `[GenerateMap<S,T>]` in a referenced assembly (it self-registers into the ambient
+registry via a module initializer), or reference the assembly that already declares it. Only effectively-public
+types participate (internal types have no cross-assembly meaning).
+
+## dwarf062
+**Mapper not added to the ambient registry** · Info
+
+The ambient registry is populated by generated module initializers, which run with no DI context and can only
+construct mappers that have an accessible parameterless constructor. A mapper with constructor dependencies
+(e.g. an object factory) is therefore left out of ambient `IDwarfMapper` resolution. **Fix:** inject the
+concrete mapper directly, or give it a parameterless constructor. (Informational — the mapper still works.)
+
+## dwarf063
+**Ambiguous ambient map provider** · Warning
+
+Two assemblies in the graph both provide an ambient map for the same `(source, destination)`. The registry
+keeps the first registration and ignores the rest. **Fix:** ensure the duplication is intentional, or remove
+all but one definition. Reported at the validation root.

@@ -180,10 +180,146 @@ internal static class AggregateEmitter
             sb.Append("        global::Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<")
               .Append(t).Append(">(services);").Append('\n');
         }
+        // Also register the ambient IDwarfMapper facade (stateless; resolves from the process-wide registry),
+        // so consumers can inject it for cross-assembly maps. TryAdd: harmless if several assemblies do it.
+        sb.AppendLine("        global::Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<global::DwarfMapper.IDwarfMapper>(services, global::DwarfMapper.DwarfMapperFacade.Instance);");
         sb.AppendLine("        return services;");
         sb.AppendLine("    }");
         sb.AppendLine("}");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds the ambient cross-assembly self-registration: a <c>[ModuleInitializer]</c> that registers
+    /// every eligible stateless, PUBLIC-typed create-map (<c>T Map(S)</c>) into
+    /// <see cref="global::DwarfMapper.DwarfMapperRegistry"/> at load (zero reflection, AOT-safe), plus the
+    /// matching <c>[assembly: DwarfProvidesMap(...)]</c> manifest read by the validation root. Only maps
+    /// whose source AND destination are effectively public are registered — internal types cannot be named
+    /// by another assembly, so they have no cross-assembly (ambient) meaning. Returns the source (or
+    /// <c>null</c> when nothing to register) and the full names of mappers that have eligible public maps but
+    /// no parameterless constructor (reported as DWARF062 — they cannot self-register without DI).
+    /// </summary>
+    public static (string? Source, IReadOnlyList<string> Unregisterable) EmitAmbientRegistration(
+        IReadOnlyList<MapperClassModel> models)
+    {
+        var regs = new List<(string Source, string Dest, string Field, string Method)>();
+        var fields = new SortedSet<string>(System.StringComparer.Ordinal);
+        var unregisterable = new List<string>();
+        var seenPairs = new HashSet<string>(System.StringComparer.Ordinal);
+
+        foreach (var model in models.OrderBy(m => m.HintName, System.StringComparer.Ordinal))
+        {
+            var eligible = model.Methods
+                .Where(IsAmbientRegisterable)
+                .ToList();
+            if (eligible.Count == 0)
+            {
+                continue;
+            }
+
+            var mapperFullName = "global::" + (string.IsNullOrEmpty(model.Namespace)
+                ? model.ClassName
+                : model.Namespace + "." + model.ClassName);
+
+            if (!model.HasParameterlessCtor)
+            {
+                unregisterable.Add(mapperFullName);
+                continue;
+            }
+
+            foreach (var method in eligible
+                .OrderBy(m => m.ParameterTypeFullName, System.StringComparer.Ordinal)
+                .ThenBy(m => m.ReturnTypeFullName, System.StringComparer.Ordinal))
+            {
+                // First provider of a (source, dest) pair in this assembly wins; a second same-assembly
+                // provider is dropped here (cross-assembly ambiguity is tracked by the registry at runtime).
+                if (!seenPairs.Add(method.ParameterTypeFullName + " " + method.ReturnTypeFullName))
+                {
+                    continue;
+                }
+
+                fields.Add(mapperFullName);
+                regs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName, FieldName(mapperFullName), method.MethodName));
+            }
+        }
+
+        if (regs.Count == 0)
+        {
+            return (null, unregisterable);
+        }
+
+        var sb = new StringBuilder();
+        sb.Append(Header).Append('\n');
+        foreach (var r in regs)
+        {
+            sb.Append("[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(")
+              .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("))]").Append('\n');
+        }
+        sb.AppendLine();
+        sb.AppendLine("namespace DwarfMapper.Generated;");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>Self-registers this assembly's stateless, public-typed create-maps into the ambient");
+        sb.AppendLine("/// <c>DwarfMapperRegistry</c> at module load (zero reflection, AOT-safe), so any assembly can resolve");
+        sb.AppendLine("/// them through <c>IDwarfMapper</c> without referencing this one.</summary>");
+        sb.AppendLine("internal static class __DwarfMapperAmbientRegistration");
+        sb.AppendLine("{");
+        foreach (var field in fields)
+        {
+            sb.Append("    private static readonly ").Append(field).Append(' ')
+              .Append(FieldName(field)).Append(" = new();").Append('\n');
+        }
+        sb.AppendLine();
+        sb.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
+        sb.AppendLine("    internal static void __Register()");
+        sb.AppendLine("    {");
+        foreach (var r in regs)
+        {
+            sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(")
+              .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("), static __s => ")
+              .Append(r.Field).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s));").Append('\n');
+        }
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+        return (sb.ToString(), unregisterable);
+    }
+
+    /// <summary>
+    /// A map is placed in the ambient registry iff it is an eligible plain <c>T Map(S)</c> entry whose source
+    /// AND destination are effectively public (internal types have no cross-assembly meaning). Shared by the
+    /// registration emitter and <see cref="CollectProvidedPairs"/> so the emitted <c>Provides</c> manifest and
+    /// the root-validation view never drift.
+    /// </summary>
+    private static bool IsAmbientRegisterable(MapMethodModel m)
+        => IsEligible(m) && m.ParameterIsPublicType && m.ReturnIsPublicType;
+
+    /// <summary>
+    /// The (source, destination) pairs this assembly self-registers into the ambient registry — i.e. the
+    /// <c>Provides</c> set the validation root treats as available from this compilation. Mirrors exactly what
+    /// <see cref="EmitAmbientRegistration"/> registers (public-typed maps on parameterless-ctor mappers, first
+    /// provider per pair).
+    /// </summary>
+    public static IReadOnlyList<(string Source, string Destination)> CollectProvidedPairs(IReadOnlyList<MapperClassModel> models)
+    {
+        var pairs = new List<(string, string)>();
+        var seen = new HashSet<string>(System.StringComparer.Ordinal);
+        foreach (var model in models.OrderBy(m => m.HintName, System.StringComparer.Ordinal))
+        {
+            if (!model.HasParameterlessCtor)
+            {
+                continue;
+            }
+            foreach (var method in model.Methods
+                .Where(IsAmbientRegisterable)
+                .OrderBy(m => m.ParameterTypeFullName, System.StringComparer.Ordinal)
+                .ThenBy(m => m.ReturnTypeFullName, System.StringComparer.Ordinal))
+            {
+                if (seen.Add(method.ParameterTypeFullName + " " + method.ReturnTypeFullName))
+                {
+                    pairs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName));
+                }
+            }
+        }
+        return pairs;
     }
 
     /// <summary>

@@ -84,6 +84,25 @@ for (var r = 0; r < 50_000; r++)
     if (t.V != 7 || t.Next != null) { Fail($"setnull back-edge not nulled at run {r}"); break; }
 }
 
+// ── 5b. Ambient registry: module-init self-registration + IDwarfMapper facade under NativeAOT ──
+// The whole point of the ambient registry is "zero reflection, AOT-safe": a generated [ModuleInitializer]
+// registers FlatSrc->FlatDst into the static registry at load, and the facade resolves it via a typed
+// delegate + dictionary lookup (no reflection). This proves that path survives NativeAOT.
+Console.WriteLine("[5b] Ambient registry (module-init + IDwarfMapper) under NativeAOT");
+if (!global::DwarfMapper.DwarfMapperRegistry.IsProvided(typeof(FlatSrc), typeof(FlatDst)))
+{
+    Fail("FlatSrc->FlatDst was not self-registered in the ambient registry");
+}
+else
+{
+    var ambSrc = new FlatSrc { Id = 7, Name = "amb", Score = 99, Active = true };
+    var ambDst = global::DwarfMapper.DwarfMapperFacade.Instance.Map<FlatDst>(ambSrc);
+    if (ambDst.Id != 7 || ambDst.Name != "amb" || ambDst.Score != 99 || !ambDst.Active)
+    {
+        Fail("ambient IDwarfMapper produced an incorrect FlatDst");
+    }
+}
+
 // ── 6. Timing under AOT (median ns/op + min/max → variance signal) ────────────────────────────
 Console.WriteLine("[6] Timing under NativeAOT (ns/op: median [min..max])");
 var flat = new FlatSrc { Id = 7, Name = "vein", Score = 42, Active = true };
