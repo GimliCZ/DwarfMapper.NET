@@ -951,6 +951,53 @@ internal static class MapperExtractor
             var genIgnores = new HashSet<string>(classIgnores);
             foreach (var im in MatchPairIgnores(pairIgnores, genTgt)) genIgnores.Add(im);
 
+            // Top-level collection/dictionary [GenerateMap<Coll, Coll>]: route through the collection/dict
+            // converter (as a declared partial method does, see "Fix 1" above) instead of object-mapping the
+            // target's members — which would e.g. flag List<T>.Capacity via DWARF001. The source may be ANY
+            // IEnumerable<T> (custom user collections like a ConcurrentList<T> included), matching the
+            // member-level collection handling.
+            var genIsColl = CollectionConverter.TryResolve(genTgt, genTgt, out _, out _, out _, false);
+            var genIsDict = !genIsColl && DictionaryConverter.TryResolve(genTgt, genTgt, out _, out _, out _, out _, out _);
+            if (genIsColl || genIsDict)
+            {
+                bool gResolved = TryResolveConversion(
+                    genComp, genSrc, genTgt, null, allMethods, mapperMethods, enumStrategy, synthesized,
+                    nullStrategy, genLoc, "Map", diagnostics, out var gConv, out _, out var gNeedsCtx,
+                    classAutoNest, nestedRegistry, nullCollections == NullCollectionsBehavior.AsNull,
+                    isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
+
+                if (!gResolved || gConv is null)
+                    continue; // element/shape diagnostic already reported by the recursive call
+
+                var gMember = new MemberMap(
+                    TargetName: "",
+                    SourceName: "", // sentinel: emit helper(param), not helper(param.Member)
+                    ConverterMethod: gConv,
+                    ConverterNeedsDepthCtx: gNeedsCtx);
+
+                methods.Add(new MapMethodModel(
+                    "Map",
+                    "public",
+                    genTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    genSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    "src",
+                    genSrc.IsReferenceType,
+                    EquatableArray.From(new[] { gMember }),
+                    EquatableArray.From(System.Array.Empty<string>()),
+                    EquatableArray.From(System.Array.Empty<HookCall>()),
+                    IsProjection: false,
+                    ElementTargetTypeFullName: "",
+                    ConstructorArguments: EquatableArray.From(System.Array.Empty<MemberMap>()),
+                    IsPartial: true,
+                    ReturnIsReferenceType: genTgt.IsReferenceType,
+                    IsTopLevelCollectionConversion: true,
+                    EmitAsNonPartial: true,
+                    ParameterIsPublicType: IsEffectivelyPublic(genSrc),
+                    ReturnIsPublicType: IsEffectivelyPublic(genTgt)));
+                publicMethodLocs[methods.Count - 1] = genLoc;
+                continue;
+            }
+
             // Pair-scoped [MapConstructor<S,T>(factory)] override: delegate construction to a user factory
             // method and only populate settable members afterward (AutoMapper ConstructUsing semantics).
             string? genFactory = null;
