@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 using System.Collections.Generic;
 using System.Linq;
 using DwarfMapper.Generator.Diagnostics;
@@ -11,7 +11,7 @@ namespace DwarfMapper.Generator.Pipeline;
 /// </summary>
 internal static class ConstructorSelector
 {
-    private const string DwarfMapperConstructorAttribute = "DwarfMapper.DwarfMapperConstructorAttribute";
+    private const string DwarfMapperConstructorAttribute = KnownNames.DwarfMapperConstructorFqn;
     private const string ObsoleteAttribute = "System.ObsoleteAttribute";
 
     /// <summary>
@@ -22,7 +22,7 @@ internal static class ConstructorSelector
     /// <param name="location">Location for diagnostic reporting.</param>
     /// <param name="useObjectInitializerOnly">
     /// Set to <see langword="true"/> when a parameterless constructor was chosen
-    /// (i.e. the existing object-initializer path — no ctor args needed).
+    /// (i.e. the existing object-initializer path â€” no ctor args needed).
     /// </param>
     /// <returns>
     /// The selected <see cref="IMethodSymbol"/>, or <see langword="null"/> when a blocking
@@ -38,14 +38,14 @@ internal static class ConstructorSelector
     {
         useObjectInitializerOnly = false;
 
-        // ── Policy 0 (pre-filter): accessible parameterless ctor exists → object-initializer path.
+        // â”€â”€ Policy 0 (pre-filter): accessible parameterless ctor exists â†’ object-initializer path.
         // We include implicitly-declared parameterless ctors here so that plain classes (which have
         // an implicit public parameterless ctor) continue to use the existing object-initializer path.
-        // EXCEPTION: structs with explicit non-parameterless ctors — the implicit struct parameterless ctor
+        // EXCEPTION: structs with explicit non-parameterless ctors â€” the implicit struct parameterless ctor
         // is a no-op (zero-init) and we should prefer the explicit ctor for proper initialization.
         // Detect this case: target is a value type AND has at least one explicit (non-implicitly-declared)
         // non-parameterless ctor AND there is no explicit parameterless ctor.
-        // NOTE: this deliberately does NOT use IsUsableCandidate — it asks "does the struct declare an
+        // NOTE: this deliberately does NOT use IsUsableCandidate â€” it asks "does the struct declare an
         // explicit non-parameterless ctor at all?" so we can avoid silently using the implicit zero-init
         // parameterless ctor. An explicit ctor that is itself unusable (ref/out) must still suppress the
         // implicit fallback, so the unusable case surfaces DWARF026 rather than a wrong zero-init result.
@@ -57,7 +57,7 @@ internal static class ConstructorSelector
             && !IsObsolete(c));
 
         // For value types (structs) with explicit non-parameterless ctors, don't use the implicit
-        // parameterless ctor — prefer the explicit ctor instead.
+        // parameterless ctor â€” prefer the explicit ctor instead.
         var skipImplicitParameterlessCtor = target.IsValueType && hasExplicitNonParameterlessCtor;
 
         var anyParameterless = target.InstanceConstructors.FirstOrDefault(c =>
@@ -71,8 +71,8 @@ internal static class ConstructorSelector
         {
             // Check whether any annotated constructor wins over the parameterless one.
             // If so, fall through to explicit-annotation handling below.
-            // Count all annotated candidates so that >1 → DWARF025 (same policy as the no-parameterless path).
-            // An annotated ctor must also be a USABLE candidate (no ref/out, not a copy ctor, etc.) — otherwise
+            // Count all annotated candidates so that >1 â†’ DWARF025 (same policy as the no-parameterless path).
+            // An annotated ctor must also be a USABLE candidate (no ref/out, not a copy ctor, etc.) â€” otherwise
             // selecting it would emit CS1620/CS-invalid code. An unusable annotated ctor falls back to the
             // (safe) parameterless object-initializer path rather than producing broken output.
             var annotatedOverrides = target.InstanceConstructors
@@ -83,14 +83,14 @@ internal static class ConstructorSelector
 
             if (annotatedOverrides.Count == 0)
             {
-                // Parameterless ctor wins → object-initializer path.
+                // Parameterless ctor wins â†’ object-initializer path.
                 useObjectInitializerOnly = true;
                 return anyParameterless;
             }
 
             if (annotatedOverrides.Count > 1)
             {
-                // Multiple [DwarfMapperConstructor] annotations — ambiguous regardless of parameterless ctor.
+                // Multiple [DwarfMapperConstructor] annotations â€” ambiguous regardless of parameterless ctor.
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConstructor, location, target.Name));
                 return null;
             }
@@ -101,7 +101,7 @@ internal static class ConstructorSelector
 
         // Build the candidate list: public, non-static, non-implicitly-declared, non-copy, non-obsolete,
         // and no ref/out parameters (ref/out args cannot be emitted with plain named-argument syntax).
-        // `in` parameters (RefKind.In / ref-readonly) are fine — callable with plain named args.
+        // `in` parameters (RefKind.In / ref-readonly) are fine â€” callable with plain named args.
         var candidates = new List<IMethodSymbol>();
         foreach (var ctor in target.InstanceConstructors)
         {
@@ -109,7 +109,7 @@ internal static class ConstructorSelector
                 candidates.Add(ctor);
         }
 
-        // ── Policy 1: [DwarfMapperConstructor] annotation ────────────────────
+        // â”€â”€ Policy 1: [DwarfMapperConstructor] annotation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var annotated = candidates
             .Where(c => c.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
             .ToList();
@@ -125,22 +125,22 @@ internal static class ConstructorSelector
             return annotated[0];
         }
 
-        // ── Policy 2 (already handled above — no parameterless ctor at this point) ─
+        // â”€â”€ Policy 2 (already handled above â€” no parameterless ctor at this point) â”€
 
-        // ── Policy 3: no candidates at all → DWARF026 ────────────────────────
+        // â”€â”€ Policy 3: no candidates at all â†’ DWARF026 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (candidates.Count == 0)
         {
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoMappableConstructor, location, target.Name));
             return null;
         }
 
-        // ── Policy 4: exactly one non-parameterless candidate ─────────────────
+        // â”€â”€ Policy 4: exactly one non-parameterless candidate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (candidates.Count == 1)
         {
             return candidates[0];
         }
 
-        // ── Policy 5: multiple candidates → most params; tie → DWARF025 ───────
+        // â”€â”€ Policy 5: multiple candidates â†’ most params; tie â†’ DWARF025 â”€â”€â”€â”€â”€â”€â”€
         var maxParams = candidates.Max(c => c.Parameters.Length);
         var withMax = candidates.Where(c => c.Parameters.Length == maxParams).ToList();
 
@@ -155,7 +155,7 @@ internal static class ConstructorSelector
 
     // Public ctors are always usable. A non-public ctor is usable only when the mapper opted in via
     // [DwarfMapper(AllowNonPublicConstructors = true)] AND code in the mapper's own assembly can reach
-    // it — i.e. an internal/protected-internal ctor in the same assembly or one exposed via
+    // it â€” i.e. an internal/protected-internal ctor in the same assembly or one exposed via
     // [InternalsVisibleTo]. private / protected ctors (no derivation here) are never reachable, so
     // IsSymbolAccessibleWithin filters them out even when the flag is set.
     private static bool IsAccessible(IMethodSymbol ctor, Compilation compilation, bool allowNonPublic) =>
@@ -165,7 +165,7 @@ internal static class ConstructorSelector
     /// <summary>
     /// A constructor the generator can actually emit a call to: accessible, instance, explicitly declared,
     /// not the record copy ctor, not <c>[Obsolete]</c>, and free of <c>ref</c>/<c>out</c> parameters (which
-    /// cannot be passed as named args — CS1620). Shared by every selection path so an annotated or
+    /// cannot be passed as named args â€” CS1620). Shared by every selection path so an annotated or
     /// most-params pick can never resolve to a ctor that would emit broken code.
     /// </summary>
     private static bool IsUsableCandidate(IMethodSymbol ctor, INamedTypeSymbol target, Compilation compilation, bool allowNonPublic)
