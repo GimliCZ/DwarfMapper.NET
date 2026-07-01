@@ -197,6 +197,11 @@ internal static partial class MapperExtractor
                         continue;
                     }
                     var vt = model.GetTypeInfo(args[2].Expression).Type;
+                    // `vt` (the constant's OWN type) is reused as BOTH valueType and targetType here — safe because
+                    // MapOr's generic TMember forces the constant to be implicitly convertible to the member type,
+                    // and RenderConstantLiteral only adds a cast for a float/double/decimal TARGET, which only
+                    // arises when the constant's own type already is float/double/decimal; any other divergence
+                    // (e.g. an int literal into a float member) is a widening C# accepts with no cast needed.
                     var literal = RenderConstantLiteral(cv.Value, vt, vt!, compilation);
                     result.Props.Add(new PairProp { Source = src, Target = tgt, SrcMember = srcPath, TgtMember = tgtPath,
                         HasNullSub = true, NullSubLiteral = literal, Loc = loc });
@@ -225,6 +230,10 @@ internal static partial class MapperExtractor
                             continue;
                         }
                         var vt = model.GetTypeInfo(args[1].Expression).Type;
+                        // Same target-type reuse as the MapOr call above — safe for the same reason (the
+                        // `TMember` generic constraint on `.Value` guarantees implicit convertibility; a
+                        // cast is only ever emitted when the constant's own type is already float/double/
+                        // decimal, so no int->float style widening is ever missing its needed cast).
                         result.Values.Add(new PairValue { Target = tgt, Member = tgtPath, IsConstant = true,
                             ConstLiteral = RenderConstantLiteral(cv.Value, vt, vt!, compilation), Loc = loc });
                     }

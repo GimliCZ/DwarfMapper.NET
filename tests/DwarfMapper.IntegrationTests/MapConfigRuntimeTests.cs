@@ -215,6 +215,288 @@ public partial class VcComputeAttrMapper
     private static int Make() => 7;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Combination matrix (plan Task 14): every one of the 9 MapConfig ops proven in THREE modes —
+// attribute-only, config-only, and MIXED (the op via config on one member while a second member
+// on the SAME mapper class uses the attribute form) — with all three shown to agree. Each op gets
+// its own small type pair (prefixed "Mx" + a short op tag) with TWO members so the mixed mapper
+// has somewhere to put the config-form and the attribute-form side by side. Reuses the Batch A/B
+// single-member Config/Attr fixtures above for ops 0-2/7/8 is not straightforward (those pairs only
+// carry one relevant member each), so a self-contained two-member pair is used per op below —
+// this also directly proves attribute-form == config-form for the SAME op on fresh fixtures,
+// independent of the Batch A/B parity tests.
+
+// Op: rename (`.Map` 2-arg) — MxRnX via config, MxRnY via attribute, in the same MixedMapper.
+public sealed class MxRnS { public int A { get; set; } public int B { get; set; } }
+public sealed class MxRnT { public int X { get; set; } public int Y { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MxRnS, MxRnT>]
+public partial class MxRnConfigMapper
+{
+    private static void Cfg(MapConfig<MxRnS, MxRnT> c) => c.Map(t => t.X, s => s.A).Map(t => t.Y, s => s.B);
+}
+
+[DwarfMapper]
+[GenerateMap<MxRnS, MxRnT>]
+[MapProperty<MxRnS, MxRnT>("A", "X")]
+[MapProperty<MxRnS, MxRnT>("B", "Y")]
+public partial class MxRnAttrMapper { }
+
+[DwarfMapper]
+[GenerateMap<MxRnS, MxRnT>]
+[MapProperty<MxRnS, MxRnT>("B", "Y")]
+public partial class MxRnMixedMapper
+{
+    private static void Cfg(MapConfig<MxRnS, MxRnT> c) => c.Map(t => t.X, s => s.A);
+}
+
+// Op: flatten (`.Map` dotted source selector) — MxFlAName via config, MxFlBNick via attribute.
+public sealed class MxFlA { public string? Name { get; set; } }
+public sealed class MxFlB { public string? Nick { get; set; } }
+public sealed class MxFlS { public MxFlA A { get; set; } = new(); public MxFlB B { get; set; } = new(); }
+public sealed class MxFlT { public string? AName { get; set; } public string? BNick { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MxFlS, MxFlT>]
+public partial class MxFlConfigMapper
+{
+    private static void Cfg(MapConfig<MxFlS, MxFlT> c) => c.Map(t => t.AName, s => s.A.Name).Map(t => t.BNick, s => s.B.Nick);
+}
+
+[DwarfMapper]
+[GenerateMap<MxFlS, MxFlT>]
+[MapProperty<MxFlS, MxFlT>("A.Name", "AName")]
+[MapProperty<MxFlS, MxFlT>("B.Nick", "BNick")]
+public partial class MxFlAttrMapper { }
+
+[DwarfMapper]
+[GenerateMap<MxFlS, MxFlT>]
+[MapProperty<MxFlS, MxFlT>("B.Nick", "BNick")]
+public partial class MxFlMixedMapper
+{
+    private static void Cfg(MapConfig<MxFlS, MxFlT> c) => c.Map(t => t.AName, s => s.A.Name);
+}
+
+// Op: convert (`.Map` 3-arg converter method group) — Clean1 via config, Clean2 via attribute.
+public sealed class MxCvS { public string? Raw1 { get; set; } public string? Raw2 { get; set; } }
+public sealed class MxCvT { public string? Clean1 { get; set; } public string? Clean2 { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MxCvS, MxCvT>]
+public partial class MxCvConfigMapper
+{
+    private static void Cfg(MapConfig<MxCvS, MxCvT> c) => c.Map(t => t.Clean1, s => s.Raw1, Norm).Map(t => t.Clean2, s => s.Raw2, Norm);
+    private static string? Norm(string? v) => v?.Trim();
+}
+
+[DwarfMapper]
+[GenerateMap<MxCvS, MxCvT>]
+[MapProperty<MxCvS, MxCvT>("Raw1", "Clean1", Use = nameof(Norm))]
+[MapProperty<MxCvS, MxCvT>("Raw2", "Clean2", Use = nameof(Norm))]
+public partial class MxCvAttrMapper
+{
+    private static string? Norm(string? v) => v?.Trim();
+}
+
+[DwarfMapper]
+[GenerateMap<MxCvS, MxCvT>]
+[MapProperty<MxCvS, MxCvT>("Raw2", "Clean2", Use = nameof(Norm))]
+public partial class MxCvMixedMapper
+{
+    private static void Cfg(MapConfig<MxCvS, MxCvT> c) => c.Map(t => t.Clean1, s => s.Raw1, Norm);
+    private static string? Norm(string? v) => v?.Trim();
+}
+
+// Op: when (`.MapWhen`) — V1 gated via config, V2 gated via attribute.
+public sealed class MxWhS { public int V1 { get; set; } public bool Ok1 { get; set; } public int V2 { get; set; } public bool Ok2 { get; set; } }
+public sealed class MxWhT { public int V1 { get; set; } public int V2 { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MxWhS, MxWhT>]
+public partial class MxWhConfigMapper
+{
+    private static void Cfg(MapConfig<MxWhS, MxWhT> c) => c.MapWhen(t => t.V1, s => s.V1, Gate1).MapWhen(t => t.V2, s => s.V2, Gate2);
+    private static bool Gate1(MxWhS s) => s.Ok1;
+    private static bool Gate2(MxWhS s) => s.Ok2;
+}
+
+[DwarfMapper]
+[GenerateMap<MxWhS, MxWhT>]
+[MapProperty<MxWhS, MxWhT>("V1", "V1", When = nameof(Gate1))]
+[MapProperty<MxWhS, MxWhT>("V2", "V2", When = nameof(Gate2))]
+public partial class MxWhAttrMapper
+{
+    private static bool Gate1(MxWhS s) => s.Ok1;
+    private static bool Gate2(MxWhS s) => s.Ok2;
+}
+
+[DwarfMapper]
+[GenerateMap<MxWhS, MxWhT>]
+[MapProperty<MxWhS, MxWhT>("V2", "V2", When = nameof(Gate2))]
+public partial class MxWhMixedMapper
+{
+    private static void Cfg(MapConfig<MxWhS, MxWhT> c) => c.MapWhen(t => t.V1, s => s.V1, Gate1);
+    private static bool Gate1(MxWhS s) => s.Ok1;
+    private static bool Gate2(MxWhS s) => s.Ok2;
+}
+
+// Op: ignore (`.Ignore`) — Extra1 ignored via config, Extra2 ignored via attribute.
+public sealed class MxIgS { public int A { get; set; } }
+public sealed class MxIgT { public int A { get; set; } public int Extra1 { get; set; } public int Extra2 { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MxIgS, MxIgT>]
+public partial class MxIgConfigMapper
+{
+    private static void Cfg(MapConfig<MxIgS, MxIgT> c) => c.Ignore(t => t.Extra1).Ignore(t => t.Extra2);
+}
+
+[DwarfMapper]
+[GenerateMap<MxIgS, MxIgT>]
+[MapIgnore<MxIgT>("Extra1")]
+[MapIgnore<MxIgT>("Extra2")]
+public partial class MxIgAttrMapper { }
+
+[DwarfMapper]
+[GenerateMap<MxIgS, MxIgT>]
+[MapIgnore<MxIgT>("Extra2")]
+public partial class MxIgMixedMapper
+{
+    private static void Cfg(MapConfig<MxIgS, MxIgT> c) => c.Ignore(t => t.Extra1);
+}
+
+// Op: ignoresource (`.IgnoreSource`) — Unused1 silenced via config, Unused2 via attribute. Needs the
+// explicit-partial-method front end (RequiredMapping=Both source-coverage only runs there — see the
+// IgnoreSource_on_config_method_silences_DWARF039 generator test's note above).
+public sealed class MxIsS { public int A { get; set; } public int Unused1 { get; set; } public int Unused2 { get; set; } }
+public sealed class MxIsT { public int A { get; set; } }
+
+[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]
+public partial class MxIsConfigMapper
+{
+    private static void Cfg(MapConfig<MxIsS, MxIsT> c) => c.IgnoreSource(s => s.Unused1).IgnoreSource(s => s.Unused2);
+    public partial MxIsT Map(MxIsS s);
+}
+
+[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]
+public partial class MxIsAttrMapper
+{
+    [MapIgnoreSource(nameof(MxIsS.Unused1))]
+    [MapIgnoreSource(nameof(MxIsS.Unused2))]
+    public partial MxIsT Map(MxIsS s);
+}
+
+[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]
+public partial class MxIsMixedMapper
+{
+    private static void Cfg(MapConfig<MxIsS, MxIsT> c) => c.IgnoreSource(s => s.Unused1);
+    [MapIgnoreSource(nameof(MxIsS.Unused2))]
+    public partial MxIsT Map(MxIsS s);
+}
+
+// Op: value (`.Value` constant) — Tag1 via config, Tag2 via attribute.
+public sealed class MxVcS { public int A { get; set; } }
+public sealed class MxVcT { public int A { get; set; } public int Tag1 { get; set; } public int Tag2 { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MxVcS, MxVcT>]
+public partial class MxVcConfigMapper
+{
+    private static void Cfg(MapConfig<MxVcS, MxVcT> c) => c.Value(t => t.Tag1, 99).Value(t => t.Tag2, 77);
+}
+
+[DwarfMapper]
+[GenerateMap<MxVcS, MxVcT>]
+[MapValue<MxVcT>("Tag1", 99)]
+[MapValue<MxVcT>("Tag2", 77)]
+public partial class MxVcAttrMapper { }
+
+[DwarfMapper]
+[GenerateMap<MxVcS, MxVcT>]
+[MapValue<MxVcT>("Tag2", 77)]
+public partial class MxVcMixedMapper
+{
+    private static void Cfg(MapConfig<MxVcS, MxVcT> c) => c.Value(t => t.Tag1, 99);
+}
+
+// Op: construct (`.Construct`) — a type-level (not per-member) op: the "mixed" mapper carries TWO
+// GenerateMap pairs in one class (a supported pattern — see AsyncSpanQueryablePropertyTests' Item19Mapper),
+// one built via config, the other via [MapConstructor<,>], proving the two mechanisms coexist without
+// interference in a single mapper. Reuses CnS/CnAlias/CnConfigMapper/CnAttrMapper (config-form / attribute-
+// form comparators) declared earlier in this file; adds a second attribute-only pair (CnS2/CnAlias2) plus
+// the combined MixedMapper.
+public sealed class CnS2 { public string Fmt { get; set; } = ""; public string Name { get; set; } = ""; }
+public sealed class CnAlias2 : System.IEquatable<CnAlias2>
+{
+    public CnAlias2(string display) { Display = display; }
+    public string Display { get; }
+    public bool Equals(CnAlias2? other) => other is not null && Display == other.Display;
+    public override bool Equals(object? obj) => Equals(obj as CnAlias2);
+    public override int GetHashCode() => Display.GetHashCode(System.StringComparison.Ordinal);
+}
+
+[DwarfMapper]
+[GenerateMap<CnS2, CnAlias2>]
+[MapConstructor<CnS2, CnAlias2>(nameof(Make2))]
+public partial class MxCnAttrMapper2
+{
+    private static CnAlias2 Make2(CnS2 s) => new($"{s.Fmt}:{s.Name}");
+}
+
+[DwarfMapper]
+[GenerateMap<CnS, CnAlias>]
+[GenerateMap<CnS2, CnAlias2>]
+[MapConstructor<CnS2, CnAlias2>(nameof(Make2))]
+public partial class MxCnMixedMapper
+{
+    private static void Cfg(MapConfig<CnS, CnAlias> c) => c.Construct(Make);
+    private static CnAlias Make(CnS s) => new($"{s.Fmt}:{s.Name}");
+    private static CnAlias2 Make2(CnS2 s) => new($"{s.Fmt}:{s.Name}");
+}
+
+// Op: nullsub (`.MapOr`) — V1 (value-type overload) via config, V2 (reference-type overload) via attribute.
+public sealed class MxMoS { public int? V1 { get; set; } public string? V2 { get; set; } }
+public sealed class MxMoT { public int V1 { get; set; } public string? V2 { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MxMoS, MxMoT>]
+public partial class MxMoConfigMapper
+{
+    private static void Cfg(MapConfig<MxMoS, MxMoT> c) => c.MapOr(t => t.V1, s => s.V1, 5).MapOr(t => t.V2, s => s.V2, "none");
+}
+
+[DwarfMapper]
+[GenerateMap<MxMoS, MxMoT>]
+[MapProperty<MxMoS, MxMoT>("V1", "V1", NullSubstitute = 5)]
+[MapProperty<MxMoS, MxMoT>("V2", "V2", NullSubstitute = "none")]
+public partial class MxMoAttrMapper { }
+
+[DwarfMapper]
+[GenerateMap<MxMoS, MxMoT>]
+[MapProperty<MxMoS, MxMoT>("V2", "V2", NullSubstitute = "none")]
+public partial class MxMoMixedMapper
+{
+    private static void Cfg(MapConfig<MxMoS, MxMoT> c) => c.MapOr(t => t.V1, s => s.V1, 5);
+}
+
+// Step 4b fixtures: `.Value` int-literal-into-float-member — exercises RenderConstantLiteral's
+// float/double/decimal target cast path through the MapConfig collector (widening int -> float).
+public sealed class NwS { public int A { get; set; } }
+public sealed class NwT { public int A { get; set; } public float F { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<NwS, NwT>]
+public partial class NwConfigMapper
+{
+    private static void Cfg(MapConfig<NwS, NwT> c) => c.Value(t => t.F, 5);
+}
+
+[DwarfMapper]
+[GenerateMap<NwS, NwT>]
+[MapValue<NwT>(nameof(NwT.F), 5)]
+public partial class NwAttrMapper { }
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -376,5 +658,196 @@ public class MapConfigRuntimeTests
         var attrResult = new VcComputeAttrMapper().Map(new VcS { A = 1 });
         Assert.Equal(7, attrResult.Tag);
         Assert.Equal(attrResult.Tag, configResult.Tag);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // Combination matrix (plan Task 14): attribute-only, config-only, and MIXED must all agree,
+    // for every one of the 9 ops. See the Mx*-prefixed fixtures declared earlier in this file.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Matrix_rename_attribute_config_and_mixed_agree()
+    {
+        var src = new MxRnS { A = 11, B = 22 };
+        var cfg = new MxRnConfigMapper().Map(src);
+        var attr = new MxRnAttrMapper().Map(src);
+        var mixed = new MxRnMixedMapper().Map(src);
+
+        Assert.Equal(11, cfg.X);
+        Assert.Equal(22, cfg.Y);
+        Assert.Equal(cfg.X, attr.X);
+        Assert.Equal(cfg.Y, attr.Y);
+        Assert.Equal(cfg.X, mixed.X);
+        Assert.Equal(cfg.Y, mixed.Y);
+    }
+
+    [Fact]
+    public void Matrix_flatten_attribute_config_and_mixed_agree()
+    {
+        var src = new MxFlS { A = new MxFlA { Name = "dwarf" }, B = new MxFlB { Nick = "gimli" } };
+        var cfg = new MxFlConfigMapper().Map(src);
+        var attr = new MxFlAttrMapper().Map(src);
+        var mixed = new MxFlMixedMapper().Map(src);
+
+        Assert.Equal("dwarf", cfg.AName);
+        Assert.Equal("gimli", cfg.BNick);
+        Assert.Equal(cfg.AName, attr.AName);
+        Assert.Equal(cfg.BNick, attr.BNick);
+        Assert.Equal(cfg.AName, mixed.AName);
+        Assert.Equal(cfg.BNick, mixed.BNick);
+    }
+
+    [Fact]
+    public void Matrix_convert_attribute_config_and_mixed_agree()
+    {
+        var src = new MxCvS { Raw1 = "  x  ", Raw2 = "  y  " };
+        var cfg = new MxCvConfigMapper().Map(src);
+        var attr = new MxCvAttrMapper().Map(src);
+        var mixed = new MxCvMixedMapper().Map(src);
+
+        Assert.Equal("x", cfg.Clean1);
+        Assert.Equal("y", cfg.Clean2);
+        Assert.Equal(cfg.Clean1, attr.Clean1);
+        Assert.Equal(cfg.Clean2, attr.Clean2);
+        Assert.Equal(cfg.Clean1, mixed.Clean1);
+        Assert.Equal(cfg.Clean2, mixed.Clean2);
+    }
+
+    [Fact]
+    public void Matrix_when_attribute_config_and_mixed_agree()
+    {
+        var srcOn = new MxWhS { V1 = 9, Ok1 = true, V2 = 7, Ok2 = true };
+        var cfgOn = new MxWhConfigMapper().Map(srcOn);
+        var attrOn = new MxWhAttrMapper().Map(srcOn);
+        var mixedOn = new MxWhMixedMapper().Map(srcOn);
+        Assert.Equal(9, cfgOn.V1);
+        Assert.Equal(7, cfgOn.V2);
+        Assert.Equal(cfgOn.V1, attrOn.V1);
+        Assert.Equal(cfgOn.V2, attrOn.V2);
+        Assert.Equal(cfgOn.V1, mixedOn.V1);
+        Assert.Equal(cfgOn.V2, mixedOn.V2);
+
+        var srcOff = new MxWhS { V1 = 9, Ok1 = false, V2 = 7, Ok2 = false };
+        var cfgOff = new MxWhConfigMapper().Map(srcOff);
+        var attrOff = new MxWhAttrMapper().Map(srcOff);
+        var mixedOff = new MxWhMixedMapper().Map(srcOff);
+        Assert.Equal(0, cfgOff.V1);
+        Assert.Equal(0, cfgOff.V2);
+        Assert.Equal(cfgOff.V1, attrOff.V1);
+        Assert.Equal(cfgOff.V2, attrOff.V2);
+        Assert.Equal(cfgOff.V1, mixedOff.V1);
+        Assert.Equal(cfgOff.V2, mixedOff.V2);
+    }
+
+    // Ignore/IgnoreSource per the brief: the assertion is "all three compile with no DWARF001/DWARF039
+    // and the mapped members agree" — the very fact these fixtures build (no DWARF001/DWARF039 build
+    // failure) is the compile-time half of that assertion; the runtime half follows.
+    [Fact]
+    public void Matrix_ignore_attribute_config_and_mixed_agree()
+    {
+        var src = new MxIgS { A = 3 };
+        var cfg = new MxIgConfigMapper().Map(src);
+        var attr = new MxIgAttrMapper().Map(src);
+        var mixed = new MxIgMixedMapper().Map(src);
+
+        Assert.Equal(3, cfg.A);
+        Assert.Equal(cfg.A, attr.A);
+        Assert.Equal(cfg.A, mixed.A);
+        Assert.Equal(0, cfg.Extra1);
+        Assert.Equal(0, cfg.Extra2);
+        Assert.Equal(0, attr.Extra1);
+        Assert.Equal(0, attr.Extra2);
+        Assert.Equal(0, mixed.Extra1);
+        Assert.Equal(0, mixed.Extra2);
+    }
+
+    [Fact]
+    public void Matrix_ignoresource_attribute_config_and_mixed_agree()
+    {
+        var src = new MxIsS { A = 5, Unused1 = 1, Unused2 = 2 };
+        var cfg = new MxIsConfigMapper().Map(src);
+        var attr = new MxIsAttrMapper().Map(src);
+        var mixed = new MxIsMixedMapper().Map(src);
+
+        Assert.Equal(5, cfg.A);
+        Assert.Equal(cfg.A, attr.A);
+        Assert.Equal(cfg.A, mixed.A);
+    }
+
+    [Fact]
+    public void Matrix_value_attribute_config_and_mixed_agree()
+    {
+        var src = new MxVcS { A = 1 };
+        var cfg = new MxVcConfigMapper().Map(src);
+        var attr = new MxVcAttrMapper().Map(src);
+        var mixed = new MxVcMixedMapper().Map(src);
+
+        Assert.Equal(99, cfg.Tag1);
+        Assert.Equal(77, cfg.Tag2);
+        Assert.Equal(cfg.Tag1, attr.Tag1);
+        Assert.Equal(cfg.Tag2, attr.Tag2);
+        Assert.Equal(cfg.Tag1, mixed.Tag1);
+        Assert.Equal(cfg.Tag2, mixed.Tag2);
+    }
+
+    // Construct is type-level (the whole destination comes from the factory), so "mixed" here means the
+    // SAME mapper class carries one pair built via config and a second, distinct pair built via attribute
+    // — see the comment above MxCnMixedMapper's declaration.
+    [Fact]
+    public void Matrix_construct_attribute_config_and_mixed_agree()
+    {
+        var src = new CnS { Fmt = "F", Name = "N" };
+        var cfgOnly = new CnConfigMapper().Map(src);
+        var mixedFirstPair = new MxCnMixedMapper().Map(src);
+        Assert.Equal("F:N", cfgOnly.Display);
+        Assert.Equal(cfgOnly, mixedFirstPair);
+
+        var src2 = new CnS2 { Fmt = "G", Name = "M" };
+        var attrOnly = new MxCnAttrMapper2().Map(src2);
+        var mixedSecondPair = new MxCnMixedMapper().Map(src2);
+        Assert.Equal("G:M", attrOnly.Display);
+        Assert.Equal(attrOnly, mixedSecondPair);
+    }
+
+    [Fact]
+    public void Matrix_nullsub_attribute_config_and_mixed_agree()
+    {
+        var srcNull = new MxMoS { V1 = null, V2 = null };
+        var cfgNull = new MxMoConfigMapper().Map(srcNull);
+        var attrNull = new MxMoAttrMapper().Map(srcNull);
+        var mixedNull = new MxMoMixedMapper().Map(srcNull);
+        Assert.Equal(5, cfgNull.V1);
+        Assert.Equal("none", cfgNull.V2);
+        Assert.Equal(cfgNull.V1, attrNull.V1);
+        Assert.Equal(cfgNull.V2, attrNull.V2);
+        Assert.Equal(cfgNull.V1, mixedNull.V1);
+        Assert.Equal(cfgNull.V2, mixedNull.V2);
+
+        var srcVal = new MxMoS { V1 = 9, V2 = "x" };
+        var cfgVal = new MxMoConfigMapper().Map(srcVal);
+        var attrVal = new MxMoAttrMapper().Map(srcVal);
+        var mixedVal = new MxMoMixedMapper().Map(srcVal);
+        Assert.Equal(9, cfgVal.V1);
+        Assert.Equal("x", cfgVal.V2);
+        Assert.Equal(cfgVal.V1, attrVal.V1);
+        Assert.Equal(cfgVal.V2, attrVal.V2);
+        Assert.Equal(cfgVal.V1, mixedVal.V1);
+        Assert.Equal(cfgVal.V2, mixedVal.V2);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // Step 4b: numeric-widening parity for the renderer target-type reuse (RenderConstantLiteral
+    // called with the constant's OWN type reused as the destination member's type — see the comment
+    // at both `.MapOr`/`.Value` collector call sites in MapperExtractor.MapConfig.cs). An int literal
+    // (5) assigned into a `float` member exercises exactly the float-target cast path.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void MapConfig_Value_int_literal_into_float_member_matches_attribute_form()
+    {
+        var configResult = new NwConfigMapper().Map(new NwS { A = 1 });
+        var attrResult = new NwAttrMapper().Map(new NwS { A = 1 });
+        Assert.Equal(5f, attrResult.F);
+        Assert.Equal(attrResult.F, configResult.F);
     }
 }
