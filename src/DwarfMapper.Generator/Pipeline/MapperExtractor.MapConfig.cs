@@ -157,6 +157,17 @@ internal static partial class MapperExtractor
                     }
                     result.Ignores.Add(new PairIgnore { Target = tgt, Member = tgtPath, Loc = loc });
                 }
+                else if (op == "IgnoreSource" && args.Count == 1)
+                {
+                    var srcPath = TryReadMemberPath(args[0].Expression);
+                    if (srcPath is null)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                            $"MapConfig IgnoreSource: expected a member-access selector (s => s.X), but found '{args[0].Expression}'"));
+                        continue;
+                    }
+                    result.IgnoreSources.Add(srcPath);
+                }
             }
         }
         return result;
