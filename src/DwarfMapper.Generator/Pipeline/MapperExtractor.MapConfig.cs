@@ -34,9 +34,17 @@ internal static partial class MapperExtractor
     /// member-access chain rooted at the lambda's single parameter.</summary>
     private static string? TryReadMemberPath(ExpressionSyntax arg)
     {
-        if (arg is not SimpleLambdaExpressionSyntax { Body: ExpressionSyntax body } lambda)
-            return null;
-        var param = lambda.Parameter.Identifier.ValueText;
+        string param;
+        ExpressionSyntax body;
+        switch (arg)
+        {
+            case SimpleLambdaExpressionSyntax { Body: ExpressionSyntax b } sl:
+                param = sl.Parameter.Identifier.ValueText; body = b; break;
+            case ParenthesizedLambdaExpressionSyntax { ParameterList.Parameters: { Count: 1 } ps, Body: ExpressionSyntax b } pl:
+                param = ps[0].Identifier.ValueText; body = b; break;
+            default:
+                return null;
+        }
         var parts = new List<string>();
         var cur = body;
         while (cur is MemberAccessExpressionSyntax ma)
@@ -88,10 +96,14 @@ internal static partial class MapperExtractor
             var tgt = pt.TypeArguments[1];
             var syntaxRef = method.DeclaringSyntaxReferences.FirstOrDefault();
             if (syntaxRef?.GetSyntax() is not MethodDeclarationSyntax decl) continue;
+            var model = compilation.GetSemanticModel(decl.SyntaxTree);
 
             foreach (var inv in decl.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
                 if (inv.Expression is not MemberAccessExpressionSyntax ma) continue;
+                // Only fluent calls whose receiver IS the MapConfig<S,T> value — never an unrelated `.Map(...)`.
+                if (model.GetTypeInfo(ma.Expression).Type?.OriginalDefinition is not INamedTypeSymbol rt
+                    || !SymbolEqualityComparer.Default.Equals(rt, mapConfigDef)) continue;
                 var op = ma.Name.Identifier.ValueText;
                 var args = inv.ArgumentList.Arguments;
                 var loc = LocationInfo.From(inv.GetLocation());

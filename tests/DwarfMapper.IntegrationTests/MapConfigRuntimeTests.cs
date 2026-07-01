@@ -27,6 +27,23 @@ public partial class McConfigMapper
 [MapProperty<McS, McT>(nameof(McS.MessagesCount), nameof(McT.NumberOfMessages))]
 public partial class McAttrMapper { }
 
+// Op 0 fixtures: proves F2 (parenthesized single-parameter lambdas `(t) => t.X` are accepted, not just
+// `t => t.X`) using a fresh pair so it doesn't collide with McS/McT above (all fixtures share one compilation).
+public sealed class PmS { public int MessagesCount { get; set; } }
+public sealed class PmT { public int NumberOfMessages { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<PmS, PmT>]
+public partial class PmConfigMapper
+{
+    private static void Cfg(MapConfig<PmS, PmT> c) => c.Map((t) => t.NumberOfMessages, (s) => s.MessagesCount);
+}
+
+[DwarfMapper]
+[GenerateMap<PmS, PmT>]
+[MapProperty<PmS, PmT>(nameof(PmS.MessagesCount), nameof(PmT.NumberOfMessages))]
+public partial class PmAttrMapper { }
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -56,6 +73,19 @@ public class MapConfigRuntimeTests
     {
         var configResult = new McConfigMapper().Map(new McS { MessagesCount = 42 });
         var attrResult = new McAttrMapper().Map(new McS { MessagesCount = 42 });
+
+        Assert.Equal(42, attrResult.NumberOfMessages);
+        Assert.Equal(attrResult.NumberOfMessages, configResult.NumberOfMessages);
+    }
+
+    // Proves F2: a parenthesized single-parameter lambda `(t) => t.X` must be accepted by the collector,
+    // not just the bare-parameter form `t => t.X`. Also exercises F1's receiver-type gate on a real config
+    // method (the config body's `.Map(...)` receiver must resolve to MapConfig<PmS,PmT>).
+    [Fact]
+    public void MapConfig_parenthesized_lambda_matches_attribute_form()
+    {
+        var configResult = new PmConfigMapper().Map(new PmS { MessagesCount = 42 });
+        var attrResult = new PmAttrMapper().Map(new PmS { MessagesCount = 42 });
 
         Assert.Equal(42, attrResult.NumberOfMessages);
         Assert.Equal(attrResult.NumberOfMessages, configResult.NumberOfMessages);
