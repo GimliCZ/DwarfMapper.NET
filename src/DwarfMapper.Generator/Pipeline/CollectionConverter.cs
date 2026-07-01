@@ -275,7 +275,7 @@ internal static class CollectionConverter
             _                          => "IImmutableSet<"   + elemFq + ">",
         };
 
-        var name = "__DwarfMapColl_" + Hash(srcFq + "=>" + targetTag + nullTag + preserveTag);
+        var name = GeneratedNames.Collection + Hash(srcFq + "=>" + targetTag + nullTag + preserveTag);
         if (synth.ContainsKey(name))
             return name;
 

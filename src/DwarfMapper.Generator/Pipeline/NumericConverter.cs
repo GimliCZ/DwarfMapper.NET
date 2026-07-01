@@ -48,7 +48,7 @@ internal static class NumericConverter
         t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private static string MethodName(ITypeSymbol src, ITypeSymbol tgt) =>
-        "__DwarfMap_Num_" + Sanitize(src) + "__" + Sanitize(tgt)
+        GeneratedNames.Numeric + Sanitize(src) + "__" + Sanitize(tgt)
         + "_" + Hash("Num|" + Fq(src) + "|" + Fq(tgt));
 
     /// <summary>FNV-1a 32-bit hash — deterministic across processes.</summary>

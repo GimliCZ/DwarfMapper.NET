@@ -303,7 +303,7 @@ internal static class MapperExtractor
                 foreach (var mm in updMembers)
                 {
                     if (mm.ConverterMethod is { } cmName
-                        && cmName.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                        && GeneratedNames.IsObjectMap(cmName))
                     {
                         diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.UpdateIntoNestedReplaced, methodLocation, mm.TargetName));
@@ -1296,7 +1296,7 @@ internal static class MapperExtractor
                 // Only object-mapper pairs (__DwarfMap_Obj_* prefix). Collection helpers
                 // (__DwarfMapColl_*) and dict helpers (__DwarfMapDict_*) already receive
                 // the preserve treatment via isPreserve=true in CollectionConverter/DictionaryConverter.
-                if (name.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                if (GeneratedNames.IsObjectMap(name))
                     nestedRegistry.ForceRecursionCapable(name);
             }
             // Re-run to incorporate the newly forced entries.
@@ -1532,7 +1532,7 @@ internal static class MapperExtractor
             {
                 selfRecursivePublicMethods.Add(m.MethodName);
                 // Add the companion name so call-sites in synthesized methods can reference it.
-                var companionName = "__DwarfMap_Depth_" + m.MethodName;
+                var companionName = GeneratedNames.Depth + m.MethodName;
                 recursionCapableNames.Add(companionName);
             }
         }
@@ -1553,7 +1553,7 @@ internal static class MapperExtractor
                 && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1);
             if (!cand.ElemMethods.Any(Upgradeable))
                 continue;
-            cand.ReSynth(name => Upgradeable(name) ? "__DwarfMap_Depth_" + name : name);
+            cand.ReSynth(name => Upgradeable(name) ? GeneratedNames.Depth + name : name);
             recursionCapableNames.Add(cand.HelperName);
         }
 
@@ -1586,7 +1586,7 @@ internal static class MapperExtractor
             // For self-recursive declared methods: generate a companion and redirect.
             if (m.IsPartial && selfRecursivePublicMethods.Contains(m.MethodName))
             {
-                var companionName = "__DwarfMap_Depth_" + m.MethodName;
+                var companionName = GeneratedNames.Depth + m.MethodName;
 
                 // Patch the members/ctor-args of the declared method:
                 // (a) self-calls → redirect to companion with depth ctx
@@ -1611,7 +1611,7 @@ internal static class MapperExtractor
                     else if (selfRecursivePublicMethods.Contains(mem.ConverterMethod))
                     {
                         // Indirect recursive declared method: redirect to its companion.
-                        newMembers2[mi] = mem with { ConverterMethod = "__DwarfMap_Depth_" + mem.ConverterMethod, ConverterNeedsDepthCtx = true };
+                        newMembers2[mi] = mem with { ConverterMethod = GeneratedNames.Depth + mem.ConverterMethod, ConverterNeedsDepthCtx = true };
                     }
                     else if (recursionCapableNames.Contains(mem.ConverterMethod))
                     {
@@ -1635,7 +1635,7 @@ internal static class MapperExtractor
                     }
                     else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
                     {
-                        newCtorArgs2[ci] = arg with { ConverterMethod = "__DwarfMap_Depth_" + arg.ConverterMethod, ConverterNeedsDepthCtx = true };
+                        newCtorArgs2[ci] = arg with { ConverterMethod = GeneratedNames.Depth + arg.ConverterMethod, ConverterNeedsDepthCtx = true };
                     }
                     else if (recursionCapableNames.Contains(arg.ConverterMethod))
                     {
@@ -1691,7 +1691,7 @@ internal static class MapperExtractor
                 else if (selfRecursivePublicMethods.Contains(member.ConverterMethod))
                 {
                     // Redirect call from declared public method to its depth-guarded companion.
-                    var companionName = "__DwarfMap_Depth_" + member.ConverterMethod;
+                    var companionName = GeneratedNames.Depth + member.ConverterMethod;
                     newMembers[mi] = member with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
                     needsCtx = true;
                 }
@@ -1715,7 +1715,7 @@ internal static class MapperExtractor
                 }
                 else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
                 {
-                    var companionName = "__DwarfMap_Depth_" + arg.ConverterMethod;
+                    var companionName = GeneratedNames.Depth + arg.ConverterMethod;
                     newCtorArgs[ci] = arg with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
                     needsCtx = true;
                 }
@@ -1824,7 +1824,7 @@ internal static class MapperExtractor
                 else if (selfRecursivePublicMethods.Contains(arm.ConverterMethod))
                 {
                     // Declared public method on a recursion cycle — redirect to its companion.
-                    var companionName = "__DwarfMap_Depth_" + arm.ConverterMethod;
+                    var companionName = GeneratedNames.Depth + arm.ConverterMethod;
                     patchedArms[ai] = arm with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
                     anyArmNeedsCtx = true;
                 }
@@ -3071,9 +3071,9 @@ internal static class MapperExtractor
             // what lets a cycle routed through a dictionary value break (SetNull) or depth-cap.
             if ((isPreserve || isSetNull) && nestedRegistry is not null)
             {
-                if (keyConv is not null && keyConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                if (keyConv is not null && GeneratedNames.IsObjectMap(keyConv))
                 { nestedRegistry.ForceRecursionCapable(keyConv); keyNeedsCtx = true; }
-                if (valConv is not null && valConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                if (valConv is not null && GeneratedNames.IsObjectMap(valConv))
                 { nestedRegistry.ForceRecursionCapable(valConv); valNeedsCtx = true; }
             }
             converterMethod = DictionaryConverter.Synthesize(synthesized, srcType, tgtKey, tgtVal,
@@ -3176,7 +3176,7 @@ internal static class MapperExtractor
             // is what lets a cycle routed through a collection break (SetNull → back-edge null) or
             // depth-cap, instead of the element re-entering the public entry (fresh context → StackOverflow).
             if ((isPreserve || isSetNull) && elemConv is not null
-                && elemConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
+                && GeneratedNames.IsObjectMap(elemConv)
                 && nestedRegistry is not null)
             {
                 nestedRegistry.ForceRecursionCapable(elemConv);
@@ -4639,7 +4639,7 @@ internal static class MapperExtractor
                                   + "@FG";
                     var armHash = FlattenGraphHash(armHashKey);
                     var typeName = derivedSrc.Name;
-                    var perTypeHelperName = "__DwarfMap_FlatNode_" + typeName + "_" + armHash;
+                    var perTypeHelperName = GeneratedNames.FlatNode + typeName + "_" + armHash;
 
                     if (!synthesized.ContainsKey(perTypeHelperName))
                     {
@@ -4676,10 +4676,7 @@ internal static class MapperExtractor
                             }
                             // MF-D: skip only COMPLEX helpers (Obj/Coll/Dict) that may become 3-param.
                             // Numeric/enum/parsable helpers are always single-arg and are safe.
-                            if (leafConv is not null
-                                && (leafConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
-                                    || leafConv.StartsWith("__DwarfMap_Coll_", System.StringComparison.Ordinal)
-                                    || leafConv.StartsWith("__DwarfMap_Dict_", System.StringComparison.Ordinal)))
+                            if (GeneratedNames.IsComplexHelper(leafConv))
                                 continue; // complex synthesized helper — skip (topology degradation)
                             foreach (var kv in leafThrowAwaySynth)
                                 if (!synthesized.ContainsKey(kv.Key)) synthesized[kv.Key] = kv.Value;
@@ -4722,8 +4719,8 @@ internal static class MapperExtractor
                                   + "@Hetero";
                 var heteroHash = FlattenGraphHash(heteroHashKey);
 
-                var dispatchHelperName  = "__DwarfMap_FlatNodeDispatch_" + heteroHash;
-                var traversalHelperNameH = "__DwarfMap_FlattenGraph_" + heteroHash;
+                var dispatchHelperName  = GeneratedNames.FlatNodeDispatch + heteroHash;
+                var traversalHelperNameH = GeneratedNames.FlattenGraph + heteroHash;
 
                 // Synthesize __DwarfMap_FlatNodeDispatch_<hash>(TBase n) => n switch { ... }
                 if (!synthesized.ContainsKey(dispatchHelperName))
@@ -4858,7 +4855,7 @@ internal static class MapperExtractor
                 {
                     var nodeBaseFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     var dtoBaseFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    var wrapperNameH = "__DwarfMap_FlattenGraphArr_" + heteroHash;
+                    var wrapperNameH = GeneratedNames.FlattenGraphArr + heteroHash;
                     if (!synthesized.ContainsKey(wrapperNameH))
                     {
                         var sbWr = new System.Text.StringBuilder();
@@ -5031,8 +5028,8 @@ internal static class MapperExtractor
                         + nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var hash = FlattenGraphHash(hashKey);
 
-            var flatNodeHelperName    = "__DwarfMap_FlatNode_" + hash;
-            var traversalHelperName   = "__DwarfMap_FlattenGraph_" + hash;
+            var flatNodeHelperName    = GeneratedNames.FlatNode + hash;
+            var traversalHelperName   = GeneratedNames.FlattenGraph + hash;
 
             // 9. Synthesize __DwarfMap_FlatNode_HASH (maps one TNode leaf-only → TNodeDto)
             if (!synthesized.ContainsKey(flatNodeHelperName))
@@ -5092,10 +5089,7 @@ internal static class MapperExtractor
                     // force-marked — they are allowed through.
                     // Unsafe prefixes: __DwarfMap_Obj_, __DwarfMap_Coll_, __DwarfMap_Dict_
                     // Safe prefixes:   __DwarfMap_Num_, __DwarfMap_Enum_, __DwarfMap_Pars_, __DwarfMap_Blit_
-                    if (leafConv is not null
-                        && (leafConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
-                            || leafConv.StartsWith("__DwarfMap_Coll_", System.StringComparison.Ordinal)
-                            || leafConv.StartsWith("__DwarfMap_Dict_", System.StringComparison.Ordinal)))
+                    if (GeneratedNames.IsComplexHelper(leafConv))
                     {
                         // Complex synthesized helper — skip to avoid future 3-param mismatch.
                         // Don't register leafThrowAwaySynth entries in main dict.
@@ -5251,7 +5245,7 @@ internal static class MapperExtractor
             {
                 var nodeFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 var dtoFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                var wrapperName = "__DwarfMap_FlattenGraphArr_" + hash;
+                var wrapperName = GeneratedNames.FlattenGraphArr + hash;
                 if (!synthesized.ContainsKey(wrapperName))
                 {
                     var sb = new System.Text.StringBuilder();
@@ -5309,7 +5303,7 @@ internal static class MapperExtractor
         var access = paramName + "." + memberName;
         if (conv is not null)
         {
-            var needsBang = conv.StartsWith("__DwarfMap_", System.StringComparison.Ordinal);
+            var needsBang = GeneratedNames.IsSynthesized(conv);
             sb.Append(conv).Append('(').Append(access).Append(needsBang ? "!" : "").Append(')');
         }
         else

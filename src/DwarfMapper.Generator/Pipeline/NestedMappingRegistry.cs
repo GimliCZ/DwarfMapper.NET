@@ -266,7 +266,7 @@ internal sealed class NestedMappingRegistry
         var srcSan = Sanitize(srcFqn);
         var tgtSan = Sanitize(tgtFqn);
         var hash = Fnv1a32(srcFqn + "\x00" + tgtFqn);
-        return $"__DwarfMap_Obj_{srcSan}_{tgtSan}_{hash:X8}";
+        return $"{GeneratedNames.ObjectMap}{srcSan}_{tgtSan}_{hash:X8}";
     }
 
     /// <summary>
@@ -281,7 +281,7 @@ internal sealed class NestedMappingRegistry
         var srcSan = Sanitize(srcFqn);
         var tgtSan = Sanitize(tgtFqn);
         var hash = Fnv1a32(srcFqn + "\x00" + tgtFqn);
-        return $"__DwarfMap_Disp_{srcSan}_{tgtSan}_{hash:X8}";
+        return $"{GeneratedNames.Dispatch}{srcSan}_{tgtSan}_{hash:X8}";
     }
 
     /// <summary>Strips non-identifier characters, keeping only letters, digits, underscores.</summary>

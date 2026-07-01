@@ -62,7 +62,7 @@ internal static class UserConversionConverter
         t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private static string MethodName(ITypeSymbol src, ITypeSymbol tgt) =>
-        "__DwarfMap_UserConv_" + Short(src) + "_To_" + Short(tgt) + "_" + Hash(Fq(src) + "|" + Fq(tgt));
+        GeneratedNames.UserConv + Short(src) + "_To_" + Short(tgt) + "_" + Hash(Fq(src) + "|" + Fq(tgt));
 
     private static string Short(ITypeSymbol t)
     {

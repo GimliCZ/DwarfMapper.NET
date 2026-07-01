@@ -1085,8 +1085,7 @@ internal static class MapEmitter
                 // Recursion-capable converters always receive the source through a null-guarded
                 // helper, hence the ConverterNeedsDepthCtx clause forces '!' regardless.
                 var needsBang = member.ConverterNeedsDepthCtx
-                    || (member.SourceIsNullableRef
-                        && member.ConverterMethod!.StartsWith("__DwarfMap_", System.StringComparison.Ordinal));
+                    || (member.SourceIsNullableRef && GeneratedNames.IsSynthesized(member.ConverterMethod));
                 if (member.ConverterNeedsDepthCtx)
                     sb.Append(member.ConverterMethod).Append('(')
                       .Append(paramName).Append('.').Append(member.SourceName)

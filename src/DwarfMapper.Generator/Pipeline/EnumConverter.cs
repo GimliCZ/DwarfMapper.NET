@@ -177,7 +177,7 @@ internal static class EnumConverter
     private static string Fq(ITypeSymbol t) => t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private static string MethodName(string prefix, ITypeSymbol a, ITypeSymbol b)
-        => "__DwarfMap_" + prefix + "_" + Sanitize(a) + "__" + Sanitize(b) + "_" + Hash(prefix + "|" + Fq(a) + "|" + Fq(b));
+        => GeneratedNames.Base + prefix + "_" + Sanitize(a) + "__" + Sanitize(b) + "_" + Hash(prefix + "|" + Fq(a) + "|" + Fq(b));
 
     /// <summary>
     /// FNV-1a 32-bit hash — deterministic across processes (does NOT use string.GetHashCode).
@@ -209,7 +209,7 @@ internal static class EnumConverter
 
     private static string AddEnumToString(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol src)
     {
-        var name = "__DwarfMap_EnumStr_" + Sanitize(src) + "_" + Hash("EnumStr|" + Fq(src));
+        var name = GeneratedNames.EnumToStr + Sanitize(src) + "_" + Hash("EnumStr|" + Fq(src));
         if (!synth.ContainsKey(name))
         {
             var sb = new StringBuilder();
@@ -231,7 +231,7 @@ internal static class EnumConverter
 
     private static string AddStringToEnum(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol tgt)
     {
-        var name = "__DwarfMap_StrEnum_" + Sanitize(tgt) + "_" + Hash("StrEnum|" + Fq(tgt));
+        var name = GeneratedNames.StrToEnum + Sanitize(tgt) + "_" + Hash("StrEnum|" + Fq(tgt));
         if (!synth.ContainsKey(name))
         {
             var sb = new StringBuilder();

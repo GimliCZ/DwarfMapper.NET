@@ -97,7 +97,7 @@ internal static class DictionaryConverter
                 break;
         }
 
-        var name = "__DwarfMapDict_" + Hash(Fq(srcType) + "=>" + retTypeFq + nullTag + preserveTag);
+        var name = GeneratedNames.Dictionary + Hash(Fq(srcType) + "=>" + retTypeFq + nullTag + preserveTag);
         if (synth.ContainsKey(name))
             return name;
 

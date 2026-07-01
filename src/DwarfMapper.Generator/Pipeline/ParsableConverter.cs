@@ -179,7 +179,7 @@ internal static class ParsableConverter
         t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private static string MethodName(string prefix, ITypeSymbol t) =>
-        "__DwarfMap_" + prefix + "_" + Sanitize(t) + "_" + Hash(prefix + "|" + Fq(t));
+        GeneratedNames.Base + prefix + "_" + Sanitize(t) + "_" + Hash(prefix + "|" + Fq(t));
 
     /// <summary>FNV-1a 32-bit hash — deterministic across processes.</summary>
     private static string Hash(string s)
