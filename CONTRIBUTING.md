@@ -14,3 +14,20 @@ Sign your commits with `git commit -s`.
   integration test. A bug fix starts with a failing test.
 - The generator must remain reflection-free and AOT/trim-safe; the AOT sample
   must publish clean.
+
+## Optional: Roslyn semantic tooling for AI assistants
+
+This repo ships an `.mcp.json` that registers [**roslyn-lens**](https://github.com/jfmeyers/roslyn-lens)
+— a token-efficient, Roslyn-based MCP server for Claude Code (and compatible clients). It gives
+compiler-grade navigation (`find_references`, `find_callers`, `get_type_hierarchy`,
+`detect_antipatterns`, …) over this solution instead of reading whole `.cs` files, which is a large win
+on files like the ~6.6k-line `MapperExtractor.cs`.
+
+It's opt-in and requires the tool on your PATH:
+
+```
+dotnet tool install --global RoslynLens
+```
+
+The `.mcp.json` invokes the bare `roslyn-lens` command, so `~/.dotnet/tools` must be on your PATH
+(the .NET SDK installer adds it by default). Nothing in the build or CI depends on it.
