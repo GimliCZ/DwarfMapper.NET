@@ -13,8 +13,14 @@ namespace DwarfMapper.Generator.Pipeline;
 /// </summary>
 internal static class GeneratedNames
 {
-    /// <summary>Common base every synthesized helper name starts with.</summary>
-    public const string Base = "__DwarfMap_";
+    /// <summary>Root every synthesized helper name starts with — including the collection/dict helpers whose
+    /// names do NOT continue with an underscore (see <see cref="Collection"/>). Use this to tell a user method
+    /// from ANY synthesized helper.</summary>
+    public const string Root = "__DwarfMap";
+
+    /// <summary>The narrower base for object/scalar/enum/numeric/parsable helpers (Root + <c>_</c>). Collection
+    /// and dictionary helpers are deliberately EXCLUDED (they don't share it) — see <see cref="Collection"/>.</summary>
+    public const string Base = Root + "_";
 
     // ── Base-sharing category prefixes (IsSynthesized covers all of these) ──
     public const string ObjectMap   = Base + "Obj_";        // auto-nested object mapper
@@ -39,7 +45,13 @@ internal static class GeneratedNames
     public const string FlattenGraph      = Base + "FlattenGraph_";
     public const string FlattenGraphArr   = Base + "FlattenGraphArr_";
 
-    /// <summary>True when <paramref name="name"/> is any DwarfMapper-synthesized helper (not a user method).</summary>
+    /// <summary>True for ANY DwarfMapper-synthesized helper (object/scalar/enum AND collection/dict) — i.e.
+    /// <paramref name="name"/> is NOT a user-declared method. This is the widest classification.</summary>
+    public static bool IsAnySynthesized(string? name) =>
+        name is not null && name.StartsWith(Root, StringComparison.Ordinal);
+
+    /// <summary>True for object/scalar/enum/numeric/parsable synthesized helpers — but NOT collection/dict
+    /// (which manage their own null result and must not receive the caller's null-forgiving <c>!</c>).</summary>
     public static bool IsSynthesized(string? name) =>
         name is not null && name.StartsWith(Base, StringComparison.Ordinal);
 

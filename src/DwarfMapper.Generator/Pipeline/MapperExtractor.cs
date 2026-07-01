@@ -3089,9 +3089,9 @@ internal static class MapperExtractor
             // closure so the post-pass can upgrade this dict helper if that method is self-recursive.
             if (!isPreserve && !isSetNull && nestedRegistry is not null)
             {
-                bool KeyIsPublicObj = keyConv is not null && !keyNeedsCtx && !keyConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
+                bool KeyIsPublicObj = keyConv is not null && !keyNeedsCtx && !GeneratedNames.IsAnySynthesized(keyConv)
                     && tgtKey is INamedTypeSymbol tk && IsMappableObjectPair(compilation, srcKey, tk);
-                bool ValIsPublicObj = valConv is not null && !valNeedsCtx && !valConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
+                bool ValIsPublicObj = valConv is not null && !valNeedsCtx && !GeneratedNames.IsAnySynthesized(valConv)
                     && tgtVal is INamedTypeSymbol tv && IsMappableObjectPair(compilation, srcVal, tv);
                 if (KeyIsPublicObj || ValIsPublicObj)
                 {
@@ -3196,7 +3196,7 @@ internal static class MapperExtractor
             // Record a re-synthesis closure; if that method turns out self-recursive, the post-pass
             // upgrades this helper to thread ctx into the depth-guarded companion (no silent SO).
             if (!isPreserve && !isSetNull && !elemNeedsCtx && nestedRegistry is not null
-                && elemConv is not null && !elemConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
+                && elemConv is not null && !GeneratedNames.IsAnySynthesized(elemConv)
                 && tgtElem is INamedTypeSymbol tgtElemNamed
                 && IsMappableObjectPair(compilation, srcElem, tgtElemNamed))
             {
