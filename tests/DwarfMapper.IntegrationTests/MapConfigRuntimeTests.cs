@@ -62,6 +62,27 @@ public partial class FlConfigMapper
 [MapProperty<FlS, FlT>("Author.Name", "AuthorName")]
 public partial class FlAttrMapper { }
 
+// Op 2 fixtures: proves `.Map` 3-arg converter method group form — the 3rd arg is read as `Use`, already
+// handled by the existing 3-arg branch, with no collector change needed.
+public sealed class CvS { public string? Raw { get; set; } }
+public sealed class CvT { public string? Clean { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<CvS, CvT>]
+public partial class CvConfigMapper
+{
+    private static void Cfg(MapConfig<CvS, CvT> c) => c.Map(t => t.Clean, s => s.Raw, Norm);
+    private static string? Norm(string? v) => v?.Trim();
+}
+
+[DwarfMapper]
+[GenerateMap<CvS, CvT>]
+[MapProperty<CvS, CvT>("Raw", "Clean", Use = nameof(Norm))]
+public partial class CvAttrMapper
+{
+    private static string? Norm(string? v) => v?.Trim();
+}
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -120,5 +141,17 @@ public class MapConfigRuntimeTests
 
         Assert.Equal("dwarf", attrResult.AuthorName);
         Assert.Equal(attrResult.AuthorName, configResult.AuthorName);
+    }
+
+    // Parity proof for `.Map` converter method group: config-form 3-arg `.Map(t => .., s => .., Norm)` must
+    // produce the same converted output as [MapProperty<S,T>("Raw","Clean", Use = nameof(Norm))].
+    [Fact]
+    public void MapConfig_Map_converter_matches_attribute_form()
+    {
+        var configResult = new CvConfigMapper().Map(new CvS { Raw = "  x  " });
+        var attrResult = new CvAttrMapper().Map(new CvS { Raw = "  x  " });
+
+        Assert.Equal("x", attrResult.Clean);
+        Assert.Equal(attrResult.Clean, configResult.Clean);
     }
 }
