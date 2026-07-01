@@ -83,6 +83,26 @@ public partial class CvAttrMapper
     private static string? Norm(string? v) => v?.Trim();
 }
 
+// Op 3 fixtures: proves `.MapWhen` — conditional assignment gated by a predicate method group over the source.
+public sealed class WhS { public int V { get; set; } public bool Ok { get; set; } }
+public sealed class WhT { public int V { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<WhS, WhT>]
+public partial class WhConfigMapper
+{
+    private static void Cfg(MapConfig<WhS, WhT> c) => c.MapWhen(t => t.V, s => s.V, Gate);
+    private static bool Gate(WhS s) => s.Ok;
+}
+
+[DwarfMapper]
+[GenerateMap<WhS, WhT>]
+[MapProperty<WhS, WhT>("V", "V", When = nameof(Gate))]
+public partial class WhAttrMapper
+{
+    private static bool Gate(WhS s) => s.Ok;
+}
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -153,5 +173,21 @@ public class MapConfigRuntimeTests
 
         Assert.Equal("x", attrResult.Clean);
         Assert.Equal(attrResult.Clean, configResult.Clean);
+    }
+
+    // Parity proof for `.MapWhen`: config-form conditional assignment must match [MapProperty<S,T>("V","V",
+    // When = nameof(Gate))] in both the gated (false) and ungated (true) cases.
+    [Fact]
+    public void MapConfig_MapWhen_matches_attribute_form()
+    {
+        var configOff = new WhConfigMapper().Map(new WhS { V = 9, Ok = false });
+        var attrOff = new WhAttrMapper().Map(new WhS { V = 9, Ok = false });
+        Assert.Equal(0, attrOff.V);
+        Assert.Equal(attrOff.V, configOff.V);
+
+        var configOn = new WhConfigMapper().Map(new WhS { V = 9, Ok = true });
+        var attrOn = new WhAttrMapper().Map(new WhS { V = 9, Ok = true });
+        Assert.Equal(9, attrOn.V);
+        Assert.Equal(attrOn.V, configOn.V);
     }
 }

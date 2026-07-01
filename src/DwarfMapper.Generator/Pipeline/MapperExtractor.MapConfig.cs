@@ -133,6 +133,19 @@ internal static partial class MapperExtractor
                         Source = src, Target = tgt, SrcMember = srcPath, TgtMember = tgtPath, Use = use, Loc = loc,
                     });
                 }
+                else if (op == "MapWhen" && args.Count == 3)
+                {
+                    var tgtPath = TryReadMemberPath(args[0].Expression);
+                    var srcPath = TryReadMemberPath(args[1].Expression);
+                    var when = TryReadMethodGroup(args[2].Expression);
+                    if (tgtPath is null || srcPath is null || when is null)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                            $"MapConfig MapWhen: expected member-access selectors and a predicate method group, but found '{inv}'"));
+                        continue;
+                    }
+                    result.Props.Add(new PairProp { Source = src, Target = tgt, SrcMember = srcPath, TgtMember = tgtPath, When = when, Loc = loc });
+                }
             }
         }
         return result;
