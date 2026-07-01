@@ -23,7 +23,7 @@ internal enum NullCollectionsBehavior
     AsNull  = 1,
 }
 
-internal static class MapperExtractor
+internal static partial class MapperExtractor
 {
     public static MapperClassModel Extract(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
         => ExtractCore(ctx, separateEmit: false, ct);
@@ -134,6 +134,13 @@ internal static class MapperExtractor
         var pairIgnores = ReadPairIgnores(classSymbol);
         var pairValues = ReadPairMapValues(classSymbol);
         var pairConstructors = ReadPairConstructors(classSymbol);
+        // Type-safe alternative front-end: MapConfig<S,T> convention methods, read syntactically (never executed).
+        var mapConfig = ReadMapConfig(classSymbol, ctx.SemanticModel.Compilation, diagnostics);
+        pairProps.AddRange(mapConfig.Props);
+        pairIgnores.AddRange(mapConfig.Ignores);
+        pairValues.AddRange(mapConfig.Values);
+        pairConstructors.AddRange(mapConfig.Constructors);
+        classIgnoreSources.AddRange(mapConfig.IgnoreSources);
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);

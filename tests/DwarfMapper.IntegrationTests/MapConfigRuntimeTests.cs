@@ -4,6 +4,29 @@ using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
+// Differential-parity fixtures for MapConfig_Map_rename_matches_attribute_form (below): the SAME (S -> T) rename
+// is declared once via a MapConfig<S,T> convention method and once via the pair-scoped [MapProperty<S,T>]
+// attribute, on two separate mapper classes over the same domain types. Both are compiled for real by this
+// project's normal build (the generator runs as an analyzer, same as every other IntegrationTests file) — there
+// is no need for a separate dynamic-compilation/reflection harness (none exists in this test project; the
+// reflect-and-invoke `GeneratorTestHarness` lives in DwarfMapper.Generator.Tests as an `internal` type and isn't
+// reachable from here). Distinct class names avoid the collision a shared name like both being "M" would cause
+// within one compilation.
+public sealed class McS { public int MessagesCount { get; set; } }
+public sealed class McT { public int NumberOfMessages { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<McS, McT>]
+public partial class McConfigMapper
+{
+    private static void Cfg(MapConfig<McS, McT> c) => c.Map(t => t.NumberOfMessages, s => s.MessagesCount);
+}
+
+[DwarfMapper]
+[GenerateMap<McS, McT>]
+[MapProperty<McS, McT>(nameof(McS.MessagesCount), nameof(McT.NumberOfMessages))]
+public partial class McAttrMapper { }
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -24,5 +47,17 @@ public class MapConfigRuntimeTests
             .Value(t => t.Total, 7)
             .MapOr(t => t.Total, s => s.Count, 0);
         Assert.Same(c, back);
+    }
+
+    // Parity proof: a MapConfig<S,T> `.Map` rename must produce the same PairProp IR — and therefore the same
+    // generated behaviour — as the pair-scoped [MapProperty<S,T>] attribute form for the identical rename.
+    [Fact]
+    public void MapConfig_Map_rename_matches_attribute_form()
+    {
+        var configResult = new McConfigMapper().Map(new McS { MessagesCount = 42 });
+        var attrResult = new McAttrMapper().Map(new McS { MessagesCount = 42 });
+
+        Assert.Equal(42, attrResult.NumberOfMessages);
+        Assert.Equal(attrResult.NumberOfMessages, configResult.NumberOfMessages);
     }
 }

@@ -538,7 +538,9 @@ public static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor MapConfigUnsupportedExpression = new(
         id: "DWARF068",
         title: "Unsupported MapConfig expression",
-        messageFormat: "MapConfig {0}: expected a member-access selector (t => t.A.B) or a method group, but found '{1}'",
+        // Single placeholder (mirrors DWARF067's WrapperMapInvalid) — DiagnosticInfo carries one MessageArg,
+        // so the op-name and offending-expression text are combined by the caller into one formatted string.
+        messageFormat: "{0}",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
