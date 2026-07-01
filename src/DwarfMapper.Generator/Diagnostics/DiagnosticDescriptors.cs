@@ -549,7 +549,9 @@ public static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor MapConfigConflict = new(
         id: "DWARF069",
         title: "Conflicting member configuration",
-        messageFormat: "Destination member '{0}' of {1} is configured more than once (MapConfig and/or attribute); remove one",
+        // Single placeholder (mirrors DWARF068's MapConfigUnsupportedExpression) — DiagnosticInfo carries one
+        // MessageArg, so the caller builds the whole formatted string (member/type/reason all inline).
+        messageFormat: "{0}",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,

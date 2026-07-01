@@ -136,6 +136,7 @@ internal static partial class MapperExtractor
         var pairConstructors = ReadPairConstructors(classSymbol);
         // Type-safe alternative front-end: MapConfig<S,T> convention methods, read syntactically (never executed).
         var mapConfig = ReadMapConfig(classSymbol, ctx.SemanticModel.Compilation, diagnostics);
+        ReportMapConfigConflicts(pairProps, pairValues, mapConfig, diagnostics);
         pairProps.AddRange(mapConfig.Props);
         pairIgnores.AddRange(mapConfig.Ignores);
         pairValues.AddRange(mapConfig.Values);

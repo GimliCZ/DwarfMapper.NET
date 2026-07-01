@@ -238,4 +238,29 @@ internal static partial class MapperExtractor
         }
         return result;
     }
+
+    /// <summary>Flags a destination member configured more than once — by both an attribute and a MapConfig, or
+    /// twice within a MapConfig (DWARF069). <paramref name="attrProps"/>/<paramref name="attrValues"/> are the
+    /// attribute-origin lists BEFORE the config entries are merged in.</summary>
+    // Scope note: detection is within-IR-type (Prop-vs-Prop keyed by source+target+member; Value-vs-Value keyed
+    // by target+member). A cross-type collision (a `.Map` and a `.Value` on the same member) is not flagged in
+    // v1 — acceptable and consistent with the spec's same-member examples.
+    private static void ReportMapConfigConflicts(
+        List<PairProp> attrProps, List<PairValue> attrValues, MapConfigResult config, List<DiagnosticInfo> diagnostics)
+    {
+        static string PropKey(PairProp p) => p.Source.ToDisplayString() + "|" + p.Target.ToDisplayString() + "|" + p.TgtMember;
+        static string ValKey(PairValue v) => v.Target.ToDisplayString() + "|" + v.Member;
+
+        var propKeys = new HashSet<string>(attrProps.ConvertAll(PropKey));
+        foreach (var p in config.Props)
+            if (!propKeys.Add(PropKey(p)))
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigConflict, p.Loc,
+                    $"Destination member '{p.TgtMember}' of {p.Target.ToDisplayString()} is configured more than once (MapConfig and/or attribute); remove one"));
+
+        var valKeys = new HashSet<string>(attrValues.ConvertAll(ValKey));
+        foreach (var v in config.Values)
+            if (!valKeys.Add(ValKey(v)))
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigConflict, v.Loc,
+                    $"Destination member '{v.Member}' of {v.Target.ToDisplayString()} is configured more than once (MapConfig and/or attribute); remove one"));
+    }
 }
