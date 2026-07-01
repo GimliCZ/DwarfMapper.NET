@@ -4008,6 +4008,22 @@ internal static partial class MapperExtractor
     /// enum, null); arrays/typeof and non-assignable values fail (the caller emits DWARF040). Floating/
     /// decimal targets are cast to the target type so an un-suffixed literal (e.g. <c>1.5</c>) compiles.
     /// </summary>
+    /// <summary>Renders a non-failing constant as a C# literal. Callers that can fail on assignability must
+    /// validate BEFORE calling (the MapConfig path is pre-validated by the compiler via the generic member type).</summary>
+    private static string RenderConstantLiteral(object? value, ITypeSymbol? valueType, ITypeSymbol targetType, Compilation compilation)
+    {
+        if (value is null) return "null";
+        if (valueType is { TypeKind: TypeKind.Enum })
+        {
+            var enumFqn = valueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return $"({enumFqn})({SymbolDisplay.FormatPrimitive(value, quoteStrings: false, useHexadecimalNumbers: false)})";
+        }
+        var formatted = SymbolDisplay.FormatPrimitive(value, quoteStrings: true, useHexadecimalNumbers: false);
+        return targetType.SpecialType is SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal
+            ? $"({targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({formatted})"
+            : formatted;
+    }
+
     private static bool TryFormatConstant(
         TypedConstant tc, ITypeSymbol targetType, Compilation compilation, out string literal, out string why)
     {
@@ -4039,8 +4055,7 @@ internal static partial class MapperExtractor
                 why = $"[MapValue] enum constant of type '{tc.Type?.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
                 return false;
             }
-            var enumFqn = tc.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            literal = $"({enumFqn})({SymbolDisplay.FormatPrimitive(tc.Value!, quoteStrings: false, useHexadecimalNumbers: false)})";
+            literal = RenderConstantLiteral(tc.Value, tc.Type, targetType, compilation);
             return true;
         }
 
@@ -4050,12 +4065,9 @@ internal static partial class MapperExtractor
             why = $"[MapValue] constant of type '{tc.Type.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
             return false;
         }
-        var formatted = SymbolDisplay.FormatPrimitive(tc.Value!, quoteStrings: true, useHexadecimalNumbers: false);
         // Floating/decimal targets need an explicit cast â€” an un-suffixed literal like "1.5" is a double
         // and would not compile when assigned to float/decimal.
-        literal = targetType.SpecialType is SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal
-            ? $"({targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({formatted})"
-            : formatted;
+        literal = RenderConstantLiteral(tc.Value, tc.Type, targetType, compilation);
         return true;
     }
 
