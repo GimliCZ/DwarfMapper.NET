@@ -2161,18 +2161,18 @@ internal static partial class MapperExtractor
         bool isPreserve = false,
         bool isSetNull = false,
         bool implicitConversions = true,
-        IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use)>? mapValues = null,
+        IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>? mapValues = null,
         IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
         IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
         int nameConvention = 0,
-        IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)>? mapPropertyExtras = null,
+        IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
         bool skipNullSourceMembers = false,
         bool allowNonPublic = false)
     {
-        var extrasByTarget = new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When)>(System.StringComparer.Ordinal);
+        var extrasByTarget = new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>(System.StringComparer.Ordinal);
         if (mapPropertyExtras is not null)
             foreach (var e in mapPropertyExtras)
-                extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When);
+                extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When, e.NullSubLiteral);
         var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
         // NameConvention.Flexible: match on a normalized key (strip '_', lowercase) so PascalCase/camelCase/
         // snake_case/UPPER_CASE are interchangeable. Auto-match only; explicit/flatten paths stay exact.
@@ -2341,6 +2341,10 @@ internal static partial class MapperExtractor
                             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid, location,
                                 $"[MapProperty(NullSubstitute=)] for '{tgtName}' is not supported together with a converter (Use=)"));
                         }
+                        else if (ex.NullSubLiteral is not null)
+                        {
+                            nullSubLit = ex.NullSubLiteral;
+                        }
                         else if (!TryFormatConstant(ex.NullSub, tgtType, compilation, out var lit, out var why))
                         {
                             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid, location, why));
@@ -2391,7 +2395,7 @@ internal static partial class MapperExtractor
         // MAPVALUE: constant / computed values assigned to a destination member (no source). Processed
         // after [MapProperty] (so conflicts are caught) and before AUTO matching. A [MapValue]'d target
         // counts as mapped, suppressing DWARF001.
-        foreach (var mv in mapValues ?? System.Array.Empty<(string Target, bool IsConstant, TypedConstant Value, string? Use)>())
+        foreach (var mv in mapValues ?? System.Array.Empty<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>())
         {
             var mvTgt = mv.Target;
             if (!handledTargets.Add(mvTgt))
@@ -2436,7 +2440,12 @@ internal static partial class MapperExtractor
 
             if (mv.IsConstant)
             {
-                if (!TryFormatConstant(mv.Value, mvTgtType, compilation, out var literal, out var why))
+                string literal;
+                if (mv.ConstLiteral is not null)
+                {
+                    literal = mv.ConstLiteral;
+                }
+                else if (!TryFormatConstant(mv.Value, mvTgtType, compilation, out literal, out var why))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, location, why));
                     continue;
@@ -3972,9 +3981,9 @@ internal static partial class MapperExtractor
     /// constant <c>Value</c>; the one-argument form carries a <c>Use</c> provider-method name. The
     /// <c>Use</c> named argument is also honoured on the two-argument form (Use wins).
     /// </summary>
-    private static List<(string Target, bool IsConstant, TypedConstant Value, string? Use)> ReadMapValues(ISymbol method)
+    private static List<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)> ReadMapValues(ISymbol method)
     {
-        var result = new List<(string, bool, TypedConstant, string?)>();
+        var result = new List<(string, bool, TypedConstant, string?, string?)>();
         foreach (var attr in method.GetAttributes())
         {
             if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapValueFqn)
@@ -3997,7 +4006,7 @@ internal static partial class MapperExtractor
             // Two-arg ctor â†’ constant value in [1]; one-arg ctor â†’ Use-driven.
             var isConstant = attr.ConstructorArguments.Length == 2 && use is null;
             var value = attr.ConstructorArguments.Length == 2 ? attr.ConstructorArguments[1] : default;
-            result.Add((target, isConstant, value, use));
+            result.Add((target, isConstant, value, use, null));
         }
         return result;
     }
@@ -4210,9 +4219,9 @@ internal static partial class MapperExtractor
     /// (Phase 8), keyed by destination target. Separate from <see cref="ReadExplicitMaps"/> so the shared
     /// (Source, Target, Use) tuple â€” also consumed by constructor-argument resolution â€” is unchanged.
     /// </summary>
-    private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)> ReadMapPropertyExtras(ISymbol method)
+    private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)> ReadMapPropertyExtras(ISymbol method)
     {
-        var result = new List<(string, bool, TypedConstant, string?)>();
+        var result = new List<(string, bool, TypedConstant, string?, string?)>();
         foreach (var attr in method.GetAttributes())
         {
             if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapPropertyFqn
@@ -4231,7 +4240,7 @@ internal static partial class MapperExtractor
             }
             if (hasNullSub || when is not null)
             {
-                result.Add((target, hasNullSub, nullSub, when));
+                result.Add((target, hasNullSub, nullSub, when, null));
             }
         }
         return result;
@@ -5437,6 +5446,7 @@ internal static partial class MapperExtractor
         public string? Use;
         public bool HasNullSub;
         public TypedConstant NullSub;
+        public string? NullSubLiteral;   // pre-rendered literal when the null-substitute came from MapConfig
         public string? When;
         public LocationInfo? Loc;
         public bool Consumed;
@@ -5587,11 +5597,11 @@ internal static partial class MapperExtractor
     /// marking each matching attribute as consumed (for the DWARF056 "matched nothing" check).
     /// </summary>
     private static (List<(string Source, string Target, string? Use)> Explicit,
-                    List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)> Extras)
+                    List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)> Extras)
         MatchPairProps(List<PairProp> all, ITypeSymbol src, ITypeSymbol tgt)
     {
         var ex = new List<(string Source, string Target, string? Use)>();
-        var extras = new List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)>();
+        var extras = new List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>();
         foreach (var p in all)
         {
             if (!SymbolEqualityComparer.Default.Equals(p.Source, src)
@@ -5603,7 +5613,7 @@ internal static partial class MapperExtractor
             ex.Add((p.SrcMember, p.TgtMember, p.Use));
             if (p.HasNullSub || p.When is not null)
             {
-                extras.Add((p.TgtMember, p.HasNullSub, p.NullSub, p.When));
+                extras.Add((p.TgtMember, p.HasNullSub, p.NullSub, p.When, p.NullSubLiteral));
             }
         }
         return (ex, extras);
@@ -5629,6 +5639,7 @@ internal static partial class MapperExtractor
         public string Member = "";
         public bool IsConstant;
         public TypedConstant Value;
+        public string? ConstLiteral;      // pre-rendered literal when the value came from MapConfig
         public string? Use;
         public LocationInfo? Loc;
         public bool Consumed;
@@ -5670,16 +5681,16 @@ internal static partial class MapperExtractor
         return result;
     }
 
-    private static List<(string Target, bool IsConstant, TypedConstant Value, string? Use)>
+    private static List<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>
         MatchPairValues(List<PairValue> all, ITypeSymbol tgt)
     {
-        var result = new List<(string Target, bool IsConstant, TypedConstant Value, string? Use)>();
+        var result = new List<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>();
         foreach (var v in all)
         {
             if (SymbolEqualityComparer.Default.Equals(v.Target, tgt))
             {
                 v.Consumed = true;
-                result.Add((v.Member, v.IsConstant, v.Value, v.Use));
+                result.Add((v.Member, v.IsConstant, v.Value, v.Use, v.ConstLiteral));
             }
         }
         return result;
