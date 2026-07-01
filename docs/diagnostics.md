@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF063`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF069`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 
 ## How severities and suppression work
@@ -455,3 +455,18 @@ initializer, make it nullable, or confirm the unset default is intended.
 one member of that parameter's type (a `List<T>` payload is not a single non-collection payload). **Fix:** point
 the attribute at a single-payload envelope (`Result<T>`/`Page<T>`/`Envelope<T>`), or declare the wrapper pairs
 explicitly with `[GenerateMap<W<A>, W<B>>]`.
+
+## dwarf068
+**Unsupported MapConfig expression** · Error
+
+A `MapConfig<S,T>` convention method's fluent call uses a selector that isn't a member-access chain (e.g. a
+method call like `s => Identity(s.A)`), or a converter/factory/predicate argument that isn't a method group (e.g.
+an inline lambda `v => v`). **Fix:** extract a named method (a method group), or use a plain member selector
+(`t => t.A.B`).
+
+## dwarf069
+**Conflicting member configuration** · Error
+
+The same destination member is configured more than once — by both an attribute (`[MapProperty<,>]`/
+`[MapValue<>]`) and a `MapConfig<S,T>` `.Map`/`.Value` call, or twice within the same `MapConfig<S,T>` method.
+**Fix:** remove one of the two configurations for that member.
