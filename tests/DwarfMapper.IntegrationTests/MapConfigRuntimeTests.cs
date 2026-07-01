@@ -147,6 +147,74 @@ public partial class CnAttrMapper
     private static CnAlias Make(CnS s) => new($"{s.Fmt}:{s.Name}");
 }
 
+// Op 7 fixtures: proves `.MapOr` value-type (int?) null-substitute parity against [MapProperty(NullSubstitute=)].
+public sealed class MoS { public int? V { get; set; } }
+public sealed class MoT { public int V { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MoS, MoT>]
+public partial class MoConfigMapper
+{
+    private static void Cfg(MapConfig<MoS, MoT> c) => c.MapOr(t => t.V, s => s.V, 5);
+}
+
+[DwarfMapper]
+[GenerateMap<MoS, MoT>]
+[MapProperty<MoS, MoT>("V", "V", NullSubstitute = 5)]
+public partial class MoAttrMapper { }
+
+// Op 7 fixtures (reference-type overload): proves `.MapOr` string? null-substitute parity — closes the Task-1
+// gap where the class-constrained MapOr overload was untested.
+public sealed class MoRS { public string? Name { get; set; } }
+public sealed class MoRT { public string? Name { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<MoRS, MoRT>]
+public partial class MoRConfigMapper
+{
+    private static void Cfg(MapConfig<MoRS, MoRT> c) => c.MapOr(t => t.Name, s => s.Name, "none");
+}
+
+[DwarfMapper]
+[GenerateMap<MoRS, MoRT>]
+[MapProperty<MoRS, MoRT>("Name", "Name", NullSubstitute = "none")]
+public partial class MoRAttrMapper { }
+
+// Op 8 fixtures: proves `.Value` constant parity against [MapValue<T>(target, constant)].
+public sealed class VcS { public int A { get; set; } }
+public sealed class VcT { public int A { get; set; } public int Tag { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<VcS, VcT>]
+public partial class VcConfigMapper
+{
+    private static void Cfg(MapConfig<VcS, VcT> c) => c.Value(t => t.Tag, 99);
+}
+
+[DwarfMapper]
+[GenerateMap<VcS, VcT>]
+[MapValue<VcT>(nameof(VcT.Tag), 99)]
+public partial class VcAttrMapper { }
+
+// Op 8 fixtures (compute overload): proves `.Value` method-group parity against [MapValue<T>(target){ Use = }].
+public sealed class VcT2 { public int A { get; set; } public int Tag { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<VcS, VcT2>]
+public partial class VcComputeConfigMapper
+{
+    private static void Cfg(MapConfig<VcS, VcT2> c) => c.Value(t => t.Tag, Make);
+    private static int Make() => 7;
+}
+
+[DwarfMapper]
+[GenerateMap<VcS, VcT2>]
+[MapValue<VcT2>(nameof(VcT2.Tag), Use = nameof(Make))]
+public partial class VcComputeAttrMapper
+{
+    private static int Make() => 7;
+}
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -256,5 +324,57 @@ public class MapConfigRuntimeTests
 
         Assert.Equal("F:N", attrResult.Display);
         Assert.Equal(attrResult, configResult);
+    }
+
+    // Parity proof for `.MapOr` (value-type / struct-constrained overload): config-form null-substitute must
+    // match [MapProperty<S,T>("V","V", NullSubstitute = 5)] for both a null source and a present value.
+    [Fact]
+    public void MapConfig_MapOr_value_type_matches_attribute_form()
+    {
+        var configNull = new MoConfigMapper().Map(new MoS { V = null });
+        var attrNull = new MoAttrMapper().Map(new MoS { V = null });
+        Assert.Equal(5, attrNull.V);
+        Assert.Equal(attrNull.V, configNull.V);
+
+        var configVal = new MoConfigMapper().Map(new MoS { V = 9 });
+        var attrVal = new MoAttrMapper().Map(new MoS { V = 9 });
+        Assert.Equal(9, attrVal.V);
+        Assert.Equal(attrVal.V, configVal.V);
+    }
+
+    // Parity proof for `.MapOr` (reference-type / class-constrained overload) — closes the Task-1 gap where
+    // only the struct-constrained overload was exercised.
+    [Fact]
+    public void MapConfig_MapOr_reference_type_matches_attribute_form()
+    {
+        var configNull = new MoRConfigMapper().Map(new MoRS { Name = null });
+        var attrNull = new MoRAttrMapper().Map(new MoRS { Name = null });
+        Assert.Equal("none", attrNull.Name);
+        Assert.Equal(attrNull.Name, configNull.Name);
+
+        var configVal = new MoRConfigMapper().Map(new MoRS { Name = "x" });
+        var attrVal = new MoRAttrMapper().Map(new MoRS { Name = "x" });
+        Assert.Equal("x", attrVal.Name);
+        Assert.Equal(attrVal.Name, configVal.Name);
+    }
+
+    // Parity proof for `.Value` constant form: config-form constant must match [MapValue<T>(target, constant)].
+    [Fact]
+    public void MapConfig_Value_constant_matches_attribute_form()
+    {
+        var configResult = new VcConfigMapper().Map(new VcS { A = 1 });
+        var attrResult = new VcAttrMapper().Map(new VcS { A = 1 });
+        Assert.Equal(99, attrResult.Tag);
+        Assert.Equal(attrResult.Tag, configResult.Tag);
+    }
+
+    // Parity proof for `.Value` compute (method-group) form: config-form must match [MapValue<T>(target){ Use = }].
+    [Fact]
+    public void MapConfig_Value_compute_matches_attribute_form()
+    {
+        var configResult = new VcComputeConfigMapper().Map(new VcS { A = 1 });
+        var attrResult = new VcComputeAttrMapper().Map(new VcS { A = 1 });
+        Assert.Equal(7, attrResult.Tag);
+        Assert.Equal(attrResult.Tag, configResult.Tag);
     }
 }

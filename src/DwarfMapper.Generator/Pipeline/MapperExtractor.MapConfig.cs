@@ -179,6 +179,61 @@ internal static partial class MapperExtractor
                     }
                     result.Constructors.Add(new PairConstructor { Source = src, Target = tgt, Method = factory, Loc = loc });
                 }
+                else if (op == "MapOr" && args.Count == 3)
+                {
+                    var tgtPath = TryReadMemberPath(args[0].Expression);
+                    var srcPath = TryReadMemberPath(args[1].Expression);
+                    if (tgtPath is null || srcPath is null)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                            $"MapConfig MapOr: expected member-access selectors, but found '{inv}'"));
+                        continue;
+                    }
+                    var cv = model.GetConstantValue(args[2].Expression);
+                    if (!cv.HasValue)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                            $"MapConfig MapOr fallback must be a compile-time constant, but found '{args[2].Expression}'"));
+                        continue;
+                    }
+                    var vt = model.GetTypeInfo(args[2].Expression).Type;
+                    var literal = RenderConstantLiteral(cv.Value, vt, vt!, compilation);
+                    result.Props.Add(new PairProp { Source = src, Target = tgt, SrcMember = srcPath, TgtMember = tgtPath,
+                        HasNullSub = true, NullSubLiteral = literal, Loc = loc });
+                }
+                else if (op == "Value" && args.Count == 2)
+                {
+                    var tgtPath = TryReadMemberPath(args[0].Expression);
+                    if (tgtPath is null)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                            $"MapConfig Value: expected a member-access selector (t => t.X), but found '{args[0].Expression}'"));
+                        continue;
+                    }
+                    var compute = TryReadMethodGroup(args[1].Expression);
+                    if (compute is not null)
+                    {
+                        result.Values.Add(new PairValue { Target = tgt, Member = tgtPath, Use = compute, Loc = loc });
+                    }
+                    else
+                    {
+                        var cv = model.GetConstantValue(args[1].Expression);
+                        if (!cv.HasValue)
+                        {
+                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                                $"MapConfig Value: expected a constant or a method group, but found '{args[1].Expression}'"));
+                            continue;
+                        }
+                        var vt = model.GetTypeInfo(args[1].Expression).Type;
+                        result.Values.Add(new PairValue { Target = tgt, Member = tgtPath, IsConstant = true,
+                            ConstLiteral = RenderConstantLiteral(cv.Value, vt, vt!, compilation), Loc = loc });
+                    }
+                }
+                else
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                        $"MapConfig: unsupported configuration call '{op}' with {args.Count} argument(s)"));
+                }
             }
         }
         return result;
