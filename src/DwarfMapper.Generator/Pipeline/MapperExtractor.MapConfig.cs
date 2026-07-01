@@ -168,6 +168,17 @@ internal static partial class MapperExtractor
                     }
                     result.IgnoreSources.Add(srcPath);
                 }
+                else if (op == "Construct" && args.Count == 1)
+                {
+                    var factory = TryReadMethodGroup(args[0].Expression);
+                    if (factory is null)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                            $"MapConfig Construct: expected a factory method group, but found '{args[0].Expression}'"));
+                        continue;
+                    }
+                    result.Constructors.Add(new PairConstructor { Source = src, Target = tgt, Method = factory, Loc = loc });
+                }
             }
         }
         return result;

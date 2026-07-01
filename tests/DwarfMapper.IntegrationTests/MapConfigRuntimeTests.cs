@@ -116,6 +116,37 @@ public partial class IgConfigMapper
     private static void Cfg(MapConfig<IgS, IgT> c) => c.Ignore(t => t.Extra);
 }
 
+// Op 6 fixtures: proves `.Construct` — a factory method group builds the destination instead of the default
+// constructor-argument resolution. (Named CnAlias, not "Alias", to avoid CA1716's reserved-keyword rule.)
+// The ctor param "display" intentionally has no name/case match on CnS (ctor binding is always
+// case-insensitive by name, so e.g. a "fmt"/"Fmt" pair would already bind without any factory at all) —
+// only the factory method group can plausibly build a CnAlias, so this genuinely exercises `.Construct`.
+public sealed class CnS { public string Fmt { get; set; } = ""; public string Name { get; set; } = ""; }
+public sealed class CnAlias : System.IEquatable<CnAlias>
+{
+    public CnAlias(string display) { Display = display; }
+    public string Display { get; }
+    public bool Equals(CnAlias? other) => other is not null && Display == other.Display;
+    public override bool Equals(object? obj) => Equals(obj as CnAlias);
+    public override int GetHashCode() => Display.GetHashCode(System.StringComparison.Ordinal);
+}
+
+[DwarfMapper]
+[GenerateMap<CnS, CnAlias>]
+public partial class CnConfigMapper
+{
+    private static void Cfg(MapConfig<CnS, CnAlias> c) => c.Construct(Make);
+    private static CnAlias Make(CnS s) => new($"{s.Fmt}:{s.Name}");
+}
+
+[DwarfMapper]
+[GenerateMap<CnS, CnAlias>]
+[MapConstructor<CnS, CnAlias>(nameof(Make))]
+public partial class CnAttrMapper
+{
+    private static CnAlias Make(CnS s) => new($"{s.Fmt}:{s.Name}");
+}
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -212,5 +243,18 @@ public class MapConfigRuntimeTests
         var result = new IgConfigMapper().Map(new IgS { A = 3 });
         Assert.Equal(3, result.A);
         Assert.Equal(0, result.Extra);
+    }
+
+    // Parity proof for `.Construct`: config-form factory method group must build the same destination as
+    // [MapConstructor<S,T>(nameof(Make))].
+    [Fact]
+    public void MapConfig_Construct_matches_attribute_form()
+    {
+        var src = new CnS { Fmt = "F", Name = "N" };
+        var configResult = new CnConfigMapper().Map(src);
+        var attrResult = new CnAttrMapper().Map(src);
+
+        Assert.Equal("F:N", attrResult.Display);
+        Assert.Equal(attrResult, configResult);
     }
 }
