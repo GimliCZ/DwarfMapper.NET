@@ -72,3 +72,5 @@ DWARF064 | DwarfMapper | Info | [MapValue] shadows an auto-matchable source memb
 DWARF065 | DwarfMapper | Info | Update-into replaces a nested member instead of merging it
 DWARF066 | DwarfMapper | Info | [MapProperty(When=)] can leave a non-nullable member at its default
 DWARF067 | DwarfMapper | Error | [GenerateWrapperMap] wrapper is not a single-payload generic
+DWARF068 | DwarfMapper | Error | MapConfigUnsupportedExpression
+DWARF069 | DwarfMapper | Error | MapConfigConflict

@@ -534,4 +534,22 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf067");
+
+    public static readonly DiagnosticDescriptor MapConfigUnsupportedExpression = new(
+        id: "DWARF068",
+        title: "Unsupported MapConfig expression",
+        messageFormat: "MapConfig {0}: expected a member-access selector (t => t.A.B) or a method group, but found '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf068");
+
+    public static readonly DiagnosticDescriptor MapConfigConflict = new(
+        id: "DWARF069",
+        title: "Conflicting member configuration",
+        messageFormat: "Destination member '{0}' of {1} is configured more than once (MapConfig and/or attribute); remove one",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf069");
 }

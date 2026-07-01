@@ -39,6 +39,9 @@ internal static class KnownNames
     public const string ValidationRoot       = "DwarfMapperValidationRootAttribute";
     public const string DwarfProvidesMap     = "DwarfProvidesMapAttribute";
     public const string DwarfRequiresMap     = "DwarfRequiresMapAttribute";
+    public const string MapConfig            = "MapConfig";
+    // Generic arity-2 metadata name for compilation.GetTypeByMetadataName lookups.
+    public const string MapConfigMetadata    = "DwarfMapper.MapConfig`2";
 
     // ── Fully-qualified names (matched via AttributeClass.ToDisplayString()) ──
     public const string DwarfMapperFqn        = Ns + "." + DwarfMapper;
