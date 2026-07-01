@@ -44,6 +44,24 @@ public partial class PmConfigMapper
 [MapProperty<PmS, PmT>(nameof(PmS.MessagesCount), nameof(PmT.NumberOfMessages))]
 public partial class PmAttrMapper { }
 
+// Op 1 fixtures: proves `.Map` flatten — a dotted source selector (s => s.Author.Name) reaching into a nested
+// object — already works via TryReadMemberPath's chain-walk, with no collector change needed.
+public sealed class Author { public string? Name { get; set; } }
+public sealed class FlS { public Author Author { get; set; } = new(); }
+public sealed class FlT { public string? AuthorName { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<FlS, FlT>]
+public partial class FlConfigMapper
+{
+    private static void Cfg(MapConfig<FlS, FlT> c) => c.Map(t => t.AuthorName, s => s.Author.Name);
+}
+
+[DwarfMapper]
+[GenerateMap<FlS, FlT>]
+[MapProperty<FlS, FlT>("Author.Name", "AuthorName")]
+public partial class FlAttrMapper { }
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -89,5 +107,18 @@ public class MapConfigRuntimeTests
 
         Assert.Equal(42, attrResult.NumberOfMessages);
         Assert.Equal(attrResult.NumberOfMessages, configResult.NumberOfMessages);
+    }
+
+    // Parity proof for `.Map` flatten: a dotted source selector (s => s.Author.Name) must produce the same
+    // flattened PairProp IR as the pair-scoped [MapProperty<S,T>("Author.Name","AuthorName")] attribute form.
+    [Fact]
+    public void MapConfig_Map_flatten_matches_attribute_form()
+    {
+        var src = new FlS { Author = new Author { Name = "dwarf" } };
+        var configResult = new FlConfigMapper().Map(src);
+        var attrResult = new FlAttrMapper().Map(src);
+
+        Assert.Equal("dwarf", attrResult.AuthorName);
+        Assert.Equal(attrResult.AuthorName, configResult.AuthorName);
     }
 }
