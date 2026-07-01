@@ -29,3 +29,6 @@ artifacts/
 /sbom/
 **/bom.xml
 **/bom.json
+
+# project-rag / FastEmbed model cache — dropped in cwd when the RAG MCP server runs here; never commit it.
+.fastembed_cache/
