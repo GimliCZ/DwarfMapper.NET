@@ -146,6 +146,17 @@ internal static partial class MapperExtractor
                     }
                     result.Props.Add(new PairProp { Source = src, Target = tgt, SrcMember = srcPath, TgtMember = tgtPath, When = when, Loc = loc });
                 }
+                else if (op == "Ignore" && args.Count == 1)
+                {
+                    var tgtPath = TryReadMemberPath(args[0].Expression);
+                    if (tgtPath is null)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigUnsupportedExpression, loc,
+                            $"MapConfig Ignore: expected a member-access selector (t => t.X), but found '{args[0].Expression}'"));
+                        continue;
+                    }
+                    result.Ignores.Add(new PairIgnore { Target = tgt, Member = tgtPath, Loc = loc });
+                }
             }
         }
         return result;

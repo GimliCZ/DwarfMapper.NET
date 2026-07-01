@@ -103,6 +103,19 @@ public partial class WhAttrMapper
     private static bool Gate(WhS s) => s.Ok;
 }
 
+// Op 4 fixtures: proves `.Ignore` suppresses DWARF001 completeness for a destination member with no source
+// counterpart. Without the Ignore, IgT.Extra has no matching source member and the whole test project fails
+// to build with DWARF001 — that build failure IS the RED for this op.
+public sealed class IgS { public int A { get; set; } }
+public sealed class IgT { public int A { get; set; } public int Extra { get; set; } }
+
+[DwarfMapper]
+[GenerateMap<IgS, IgT>]
+public partial class IgConfigMapper
+{
+    private static void Cfg(MapConfig<IgS, IgT> c) => c.Ignore(t => t.Extra);
+}
+
 public class MapConfigRuntimeTests
 {
     private sealed class S { public string? Name { get; set; } public int Count { get; set; } }
@@ -189,5 +202,15 @@ public class MapConfigRuntimeTests
         var attrOn = new WhAttrMapper().Map(new WhS { V = 9, Ok = true });
         Assert.Equal(9, attrOn.V);
         Assert.Equal(attrOn.V, configOn.V);
+    }
+
+    // Proves `.Ignore`: without it, IgT.Extra has no matching source member and the project fails to build
+    // with DWARF001 (that is this op's RED). With the branch, the class compiles and Extra defaults to 0.
+    [Fact]
+    public void MapConfig_Ignore_suppresses_completeness_and_defaults_member()
+    {
+        var result = new IgConfigMapper().Map(new IgS { A = 3 });
+        Assert.Equal(3, result.A);
+        Assert.Equal(0, result.Extra);
     }
 }
