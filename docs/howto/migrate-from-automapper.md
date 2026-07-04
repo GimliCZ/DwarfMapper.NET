@@ -19,6 +19,16 @@ no `IMapper`, no `Profile`, no `AddAutoMapper(assembly)` scan. The generated `pa
 the configuration, resolved at compile time. So the migration is: take everything you expressed in a
 `Profile` and re-express it as attributes on one class — then delete the runtime plumbing.
 
+> **Migrating a large codebase with many `_mapper.Map<Dto>(src)` call sites?** You don't have to rewrite them
+> or write an aggregate mapper. DwarfMapper ships an ambient facade — **`IDwarfMapper`**, with
+> `Map<TDest>(object source)` — that is a near-verbatim drop-in for AutoMapper's `IMapper`. Swap the injected
+> `IMapper` for `IDwarfMapper` (registered for you by `AddDwarfMappers()`, or use `DwarfMapperFacade.Instance`),
+> declare each pair once with `[GenerateMap<Src, Dto>]` on a **public** class — it self-registers into a
+> process-wide registry at load time, **even across assemblies you don't reference** — and mark one assembly
+> `[assembly: DwarfMapperValidationRoot]` so the build fails (`DWARF062`) if any `Map<T>(src)` call site has no
+> provider (instead of a runtime `DwarfMapMissingException`). Call sites stay nearly verbatim. Full guide:
+> [ambient cross-assembly maps](ambient-cross-assembly-maps.md).
+
 ---
 
 ## Step 1 — Reference the packages

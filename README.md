@@ -166,7 +166,7 @@ The same completeness gate applies (every destination member must be satisfied, 
 
 What stays on the `[DwarfMapper]` class model (`[MapTo]` emits a diagnostic pointing you there): `Use=` custom converters, hooks, projections, `[MapDerivedType]`/`[FlattenGraph]`, reference cycles, `Dictionary<,>`, and nullable-unwrap. Full design: [`docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md`](docs/superpowers/specs/2026-06-24-dwarfmapper-v23-type-registry-mapping.md).
 
-### Three ways to call a mapper
+### Four ways to call a mapper
 
 The mapper is a stateless, allocation-free class, so use whichever style fits:
 
@@ -181,7 +181,13 @@ var dto = order.ToOrderDto();          // named after the target type; forwards 
 // 3. Dependency injection (when Microsoft.Extensions.DependencyInjection is referenced).
 services.AddDwarfMappers();             // registers every [DwarfMapper] in the assembly as a singleton
 // ...then inject OrderMapper directly.
+
+// 4. Ambient facade — the AutoMapper `IMapper.Map<T>` drop-in (DI or the static Instance).
+IDwarfMapper mapper = DwarfMapperFacade.Instance;   // AddDwarfMappers() also registers IDwarfMapper for DI
+var dto = mapper.Map<OrderDto>(order);              // resolves from the process-wide registry
 ```
+
+- **Ambient `IDwarfMapper.Map<TDest>(src)`** is a near-verbatim drop-in for AutoMapper's `IMapper.Map<TDest>(src)` — ideal for migrating many call sites without writing an aggregate mapper. It resolves from a process-wide registry that **public** `[GenerateMap<S,T>]` / `[DwarfMapper]` mappers self-register into at load time (via a `[ModuleInitializer]`), so it works **across assemblies you don't reference**. Mark one assembly `[assembly: DwarfMapperValidationRoot]` and the generator verifies at **build time** that every `Map<TDest>(src)` call site has a provider (`DWARF062`) — no runtime `DwarfMapMissingException` surprises. Collections project at the call site: `list.Select(mapper.Map<Dst>)`. Full guide: [ambient cross-assembly maps](docs/howto/ambient-cross-assembly-maps.md).
 
 - **Extension methods** are generated for every simple `TTarget Map(TSource)` method, named `To<TargetType>()`, backed by a cached stateless instance. They live in the `DwarfMapper.Extensions` namespace (one `using` to surface them). Opt a mapper out with `[DwarfMapper(GenerateExtensions = false)]`. Update-into, span, async-streaming, projection, and derived-dispatch methods, and any pair whose generated name would collide, are skipped.
   > **Cross-assembly note:** these `[DwarfMapper]`-class `To<Target>()` extensions are **assembly-internal by default**, so `order.ToOrderDto()` resolves only inside the assembly that declares the mapper. To call them from another project, set `[assembly: DwarfMapperOptions(PublicExtensions = true)]` — extensions then become `public` for pairs whose source **and** target types are both public (pairs involving a non-public type stay internal, for accessibility safety). Or call the mapper **instance** / use **DI** (`AddDwarfMappers()`), which always work across assemblies. *(The `[MapTo]`-registry extensions — `x.MapTo<Dto>()` — are a separate front door and are already `public` for public types, so they work cross-assembly with no opt-in.)*
