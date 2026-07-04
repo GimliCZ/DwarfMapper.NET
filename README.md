@@ -6,7 +6,7 @@
 > **Is DwarfMapper for you?** Three things to decide *before* you invest time:
 > - **License — GPL-2.0-only (strong copyleft).** Because DwarfMapper is a source generator, if you build on it and **distribute** the binary, your project must also be GPLv2 with source available. Running it inside a hosted service (SaaS) does **not** trigger that. **If you ship closed-source binaries, this is not the mapper for you.** ([why →](#license))
 > - **.NET 10 only.** The runtime package targets `net10.0` with no multi-targeting — net8/net9 projects can't reference it yet.
-> - **Pre-release.** `1.0.0-rc.1`, not yet on nuget.org — reference via source/project for now. ([status →](#status))
+> - **Pre-release.** `1.0.0-rc.1` is a release candidate — APIs are stabilising; install it with the `--prerelease` flag. ([status →](#status))
 >
 > If GPLv2, .NET 10, and pre-release all work for you, read on: completeness becomes a *build error*, maps are *round-trip-verified*, and blittable data goes through *SIMD*.
 
@@ -74,7 +74,7 @@ The generator writes direct assignments, inline converters, and null guards for 
 
 ## Quick start
 
-Start with two plain classes — your domain type and the shape you want to map it to. Mark the **source** with `[MapTo]` and the generator gives you an extension method — no mapper class, nothing to register, no reflection. (One `net10.0` package bundles the attributes, generator, and IDE code fixes; it's pre-release, so reference the project/source until it's on nuget.org — see [Status](#status).)
+Start with two plain classes — your domain type and the shape you want to map it to. Mark the **source** with `[MapTo]` and the generator gives you an extension method — no mapper class, nothing to register, no reflection. (One `net10.0` package bundles the attributes, generator, and IDE code fixes — reference `DwarfMapper`; it's a release candidate, so install with `--prerelease`. See [Status](#status).)
 
 ```csharp
 using DwarfMapper;
@@ -549,7 +549,7 @@ The full license text lives in [`LICENSE`](https://github.com/GimliCZ/DwarfMappe
 
 ## Status
 
-**Feature-complete v1 — pre-release (`1.0.0-rc.1`), not yet published to NuGet.** The generator, all documented attributes, and the testing toolkit are built and covered by tests. APIs are stabilising. The packages build, keyless-sign (GitHub identity), and release through a tag-triggered pipeline ([`docs/RELEASING.md`](docs/RELEASING.md)) but are not yet pushed to nuget.org; use via source or direct project reference for now. Feedback on rough edges welcome.
+**Feature-complete v1 — pre-release (`1.0.0-rc.1`).** The generator, all documented attributes, and the testing toolkit are built and covered by tests; APIs are stabilising. Packages build, keyless-sign (GitHub identity), and publish through a tag-triggered pipeline ([`docs/RELEASING.md`](docs/RELEASING.md)). Being a release candidate, install it with the `--prerelease` flag. Feedback on rough edges welcome.
 
 ## Name
 
