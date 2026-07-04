@@ -156,7 +156,7 @@ get the source.** Plan accordingly:
   you can combine with it.
 
 Every source file carries an SPDX header (`// SPDX-License-Identifier: GPL-2.0-only`); the full text is in
-[`LICENSE`](../../LICENSE), and the rationale is in the [README license section](../../README.md#license).
+[`LICENSE`](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/LICENSE), and the rationale is in the [README license section](../../README.md#license).
 
 > **Migration sequencing tip:** resolve the license question first. It's the only part of adopting
 > DwarfMapper that can't be undone with a code change later.

@@ -545,7 +545,7 @@ Caveats, stated honestly:
 - **GPLv2-only**, not "v2 or later" — the version is fixed.
 - GPLv2-only is incompatible with Apache-2.0 and GPLv3, which constrains what third-party code can be pulled in later. DwarfMapper has zero dependencies, so this is a non-issue today.
 
-The full license text lives in [`LICENSE`](LICENSE). Every source file carries an SPDX header (`// SPDX-License-Identifier: GPL-2.0-only`).
+The full license text lives in [`LICENSE`](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/LICENSE). Every source file carries an SPDX header (`// SPDX-License-Identifier: GPL-2.0-only`).
 
 ## Status
 

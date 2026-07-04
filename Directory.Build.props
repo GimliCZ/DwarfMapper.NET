@@ -23,6 +23,9 @@
     <Company>DwarfMapper contributors</Company>
     <Copyright>Copyright (c) DwarfMapper contributors</Copyright>
     <PackageLicenseExpression>GPL-2.0-only</PackageLicenseExpression>
+    <!-- Strong copyleft: require explicit license acceptance on install for every produced package
+         (DwarfMapper, DwarfMapper.Generator, DwarfMapper.Testing). -->
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <PackageProjectUrl>https://github.com/GimliCZ/DwarfMapper.NET</PackageProjectUrl>
     <RepositoryUrl>https://github.com/GimliCZ/DwarfMapper.NET</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
