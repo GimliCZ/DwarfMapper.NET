@@ -5964,10 +5964,10 @@ internal static class MapperExtractor
                 _ =>
                     $"global::System.Linq.Enumerable.ToList<{tgtElemFqn}>({selectCall})",
             };
-            // If the source collection expression is a reference type (could be null in projection),
-            // guard it with a null-conditional ternary so Enumerable.Select is never called on null.
-            // EF Core translates the ternary correctly. Array sources are also reference types.
-            if (srcType.IsReferenceType)
+            // Guard the source collection with a null-conditional ternary ONLY when it may actually be
+            // null (nullable-annotated or nullable-oblivious). A non-nullable source needs no guard —
+            // guarding it would assign null to a non-nullable target (CS8601). EF translates the ternary.
+            if (ProjectionSourceMayBeNull(srcType))
             {
                 return $"{srcExpr} == null ? null : {collectionExpr}";
             }
@@ -6125,6 +6125,16 @@ internal static class MapperExtractor
     }
 
     /// <summary>
+    /// Whether a projection source expression needs a null-navigation guard. A reference type needs one
+    /// only when it is nullable-annotated (<c>T?</c>) or nullable-oblivious (compiled with
+    /// <c>#nullable disable</c>). A NON-nullable-annotated reference is guaranteed non-null, so guarding it
+    /// would assign <c>null</c> to a (possibly non-nullable) target — a false CS8601/CS8603 in strict-
+    /// nullable hosts. This honours the consumer's own nullable annotations instead of guarding blindly.
+    /// </summary>
+    private static bool ProjectionSourceMayBeNull(ITypeSymbol type) =>
+        type.IsReferenceType && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
+
+    /// <summary>
     /// Build an inline member-init expression for a nested object target.
     /// For nullable reference source: emits null-navigation ternary.
     /// For non-null / value-type source: emits plain member-init.
@@ -6226,8 +6236,10 @@ internal static class MapperExtractor
             innerBodyExpr = $"new {tgtFqn} {{ {string.Join(", ", memberParts)} }}";
         }
 
-        // Wrap with null-navigation ternary if source is a reference type (could be null in projection)
-        if (srcType.IsReferenceType)
+        // Wrap with a null-navigation ternary ONLY when the source may actually be null (nullable-
+        // annotated or nullable-oblivious). A non-nullable source needs no guard (guarding it would
+        // assign null to a non-nullable target — CS8603).
+        if (ProjectionSourceMayBeNull(srcType))
         {
             return $"{srcExpr} == null ? null : {innerBodyExpr}";
         }

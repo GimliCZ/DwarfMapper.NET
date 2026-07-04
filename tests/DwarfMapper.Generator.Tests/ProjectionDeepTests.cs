@@ -137,6 +137,29 @@ public class ProjectionDeepTests
     }
 
     [Fact]
+    public void Projection_non_nullable_source_omits_null_guard()
+    {
+        // Honour the consumer's nullability: a NON-nullable reference source (nullable context enabled)
+        // must NOT emit a null-navigation guard — guarding it would assign null to a non-nullable target
+        // (false CS8601/CS8603 in strict-nullable hosts). Nullable sources still get the guard (see the
+        // *_null_nav_ternary_emitted_for_nullable_ref test).
+        const string s = """
+            #nullable enable
+            using DwarfMapper; using System.Linq; using System.Collections.Generic;
+            namespace D;
+            public class Item { public int V { get; set; } }
+            public class ItemDto { public int V { get; set; } }
+            public class Outer { public List<Item> Items { get; set; } = new(); public Item Lead { get; set; } = new(); }
+            public class OuterDto { public List<ItemDto> Items { get; set; } = new(); public ItemDto Lead { get; set; } = new(); }
+            [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> Prj(IQueryable<Outer> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(gen, "== null ? null :", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
     public void Projection_collection_array_to_array_inlines_Select_ToArray_no_DwarfMap_helper()
     {
         const string s = """
