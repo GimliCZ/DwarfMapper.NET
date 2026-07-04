@@ -408,6 +408,8 @@ RoundTrip.Verify<Order, OrderDto>(m.ToDto, m.FromDto);   // fuzzes inputs, asser
 
 On a mismatch it throws with a mapping-aware dump (member path, expected vs. actual, and the replay seed). `ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The package is reflection-based and test-only — it is never AOT-published and does not affect the core library's reflection-free guarantees. (Prefer `[RoundTrip]` above for the zero-boilerplate path; this direct call is for ad-hoc verification.)
 
+**Conformance sample.** On top of the ~3,200-test generator/integration suite, [`samples/DwarfMapper.Conformance`](samples/DwarfMapper.Conformance) is a single runnable app that exercises *every* feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies, `[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`, hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus adversarial "dirty paths" (null source → `ArgumentNullException`, narrowing overflow → `OverflowException` with no silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **47 runtime assertions**. It doubles as living documentation.
+
 ---
 
 ## Security model
@@ -478,6 +480,7 @@ samples/
   DwarfMapper.AotSample/     # NativeAOT + trimming gate sample
   DwarfMapper.AotBench/      # NativeAOT benchmarking & stability harness
   DwarfMapper.Gallery/       # runnable simple→advanced mapping examples
+  DwarfMapper.Conformance/   # one runnable app exercising every feature + adversarial paths (47 asserts)
 docs/                        # COMPARISON.md, SECURITY.md, design specs + plans
 README.md
 ```
