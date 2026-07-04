@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Release pipeline. On a version tag (e.g. v1.0.0-rc.1) this builds, tests, packs,
 # SBOMs, checksums, and signs the NuGet packages KEYLESSLY via GitHub's OIDC
-# identity (Sigstore build-provenance attestation), then publishes them all to a
-# GitHub Release. It does NOT push to nuget.org.
+# identity (Sigstore build-provenance attestation), then pushes them to nuget.org
+# (needs a NUGET_API_KEY repo secret) and publishes them all to a GitHub Release.
 #
 # Signing model: no private key is stored anywhere. Authenticity is proven by the
 # combination of each artifact's SHA-256 fingerprint and a provenance attestation
@@ -59,6 +59,18 @@ jobs:
             artifacts/*.nupkg
             artifacts/*.snupkg
 
+      # ── Publish to nuget.org (a pre-release version shows only with --prerelease) ─
+      #    Requires a NUGET_API_KEY repo secret. Pushing each .nupkg also pushes its
+      #    adjacent .snupkg symbols; --skip-duplicate makes re-runs idempotent.
+      - name: Push to nuget.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
       # ── Publish a GitHub Release with all artifacts ──────────────────────────
       - name: Create GitHub Release
         env:
@@ -68,4 +80,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             artifacts/*.nupkg artifacts/*.snupkg artifacts/SHA256SUMS artifacts/sbom/* \
             --title "$GITHUB_REF_NAME" \
-            --notes "Keyless-signed via GitHub OIDC (Sigstore build-provenance — verify with \`gh attestation verify <pkg> --repo GimliCZ/DwarfMapper.NET\`), with a CycloneDX SBOM and SHA256SUMS attached. Not pushed to nuget.org automatically."
+            --notes "Keyless-signed via GitHub OIDC (Sigstore build-provenance — verify with \`gh attestation verify <pkg> --repo GimliCZ/DwarfMapper.NET\`), with a CycloneDX SBOM and SHA256SUMS attached. Also published to nuget.org."

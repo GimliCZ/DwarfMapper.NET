@@ -535,7 +535,7 @@ README.md
   ```
 
 ### Planned
-- NuGet publish
+- Publishing is wired: tagging `v*` builds, signs (keyless GitHub OIDC), SBOMs, and **pushes to nuget.org** — the `v1.0.0-rc.1` tag is the first published release.
 
 ---
 
