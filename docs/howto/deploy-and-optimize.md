@@ -143,7 +143,8 @@ work and must itself be released under GPLv2, with corresponding source made ava
 distribute the binary to.
 
 In plain terms: **if you build on DwarfMapper and ship the binary, your project is GPLv2 too, and your users
-get the source.** Plan accordingly:
+get the source.** (This is the *conservative* reading — whether a source generator's emitted output makes your
+assembly a derivative work is legally unsettled; consult counsel for commercially sensitive use.) Plan accordingly:
 
 - **Distributing a binary product (desktop app, on-prem server, library on NuGet, mobile app)?** Your
   product must be GPLv2 with source available. If that's incompatible with your licensing, DwarfMapper is

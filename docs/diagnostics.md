@@ -26,6 +26,25 @@ dotnet_diagnostic.DWARF044.severity = none    # I accept the nullable-path risk 
 
 `DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
 
+The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR06` family — see
+[Registry diagnostics](#registry-diagnostics-mapto) just below.
+
+---
+
+## Registry diagnostics (`[MapTo]`)
+
+The `[MapTo]` registry front door (attribute-on-the-source, no mapper class) has its own `DWARFR##` codes,
+category `DwarfMapper.Registry`, distinct from the `[DwarfMapper]` class-model `DWARF###` codes below:
+
+| Code | Meaning & fix |
+|---|---|
+| `DWARFR01` | **Invalid `[MapTo]` target** — the target type isn't a mappable class/struct. |
+| `DWARFR02` | **Destination member is not mapped** — the registry's completeness gate (the `[MapTo]` counterpart of `DWARF001`). Add a source member, a `[MapProperty]` binding, or drop it. |
+| `DWARFR03` | **Conflicting sources for one destination member** — more than one source claims it; give them distinct positional `[MapProperty]` names. |
+| `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. |
+| `DWARFR05` | **No conversion between mapped members** — the member types are incompatible; use the `[DwarfMapper]` class model for a custom `Use=` converter. |
+| `DWARFR06` | **Recursive nested mapping is not supported by the registry** — the front door threads no reference context; use the `[DwarfMapper]` class model (`ReferenceHandling`/`OnCycle`) for cyclic graphs. |
+
 ---
 
 ## dwarf001

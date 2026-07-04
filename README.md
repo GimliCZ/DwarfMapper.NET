@@ -35,7 +35,7 @@ Speed is the supporting act: we match the fastest compile-time mappers on ordina
 | Library | Mechanism | Speed | Alloc (mapper) | AOT / trim | Completeness as a build error? | Built-in round-trip testing? |
 |---|---|---|---|---|---|---|
 | **AutoMapper** | Runtime, compiled expression trees | Moderate | Allocates | Poor | No | No |
-| **Mapster** | Runtime codegen **or** source gen | Fast | Low (codegen) | OK | No | No |
+| **Mapster** | Runtime codegen **or** source gen | Fast | Low (codegen) | Codegen mode only | No | No |
 | **Mapperly** | Pure Roslyn source generator | Fastest tier | Zero | Excellent | Opt-in warning | No |
 | **DwarfMapper** | Pure Roslyn source generator + blit/SIMD fast-path | Fastest tier; **faster on blittable collections** | Zero | Excellent (CI-verified) | **Yes, error by default** | **Yes** |
 
@@ -457,7 +457,7 @@ DwarfMapper is **.NET 10 only**. The one exception is the generator/code-fix ass
 | Reference | Purpose | TFM |
 |---|---|---|
 | **`DwarfMapper`** | **Everything you need in one package** — the attributes + tiny abstractions (`lib/net10.0`) **and** the Roslyn source generator + IDE code fixes bundled in the analyzer slot. Zero runtime dependencies. | `net10.0` |
-| `DwarfMapper.Testing` *(optional)* | Fixture builders, seeded property-based fuzzer, round-trip verifier, informed dumps. Add to **test** projects to enable `[RoundTrip]`. | `net10.0` |
+| `DwarfMapper.Testing` *(optional — **test projects only**)* | Fixture builders, seeded property-based fuzzer, round-trip verifier, informed dumps. Add to **test** projects to enable `[RoundTrip]`. **It is reflection-based — do not reference it from a shipped/AOT-published assembly** (there is no build-time guard; doing so reintroduces reflection and voids the AOT-safe guarantee). | `net10.0` |
 
 ```xml
 <!-- one reference enables compile-time mapping + the IDE quick-fixes; no analyzer wiring -->
@@ -550,6 +550,7 @@ DwarfMapper is free and open source, and it is **strong copyleft on purpose**. Y
 In plain terms: **if you build on DwarfMapper and ship it, your project is GPLv2 too, and your users get the source.** That is the point. The library stays free, and anyone who profits from it does so in the open, where its origin is visible.
 
 Caveats, stated honestly:
+- **The generated-output derivative-work question is legally unsettled.** The reading above — that code the generator *emits into your assembly* (which contains no DwarfMapper library code) makes your project a derivative work — is the **conservative** interpretation. Whether it actually holds for source-generator *output* is genuinely contested and untested in court. This is guidance, not legal advice; if your use is commercially sensitive, get your own counsel rather than relying on this summary.
 - **SaaS is not distribution.** A company running DwarfMapper inside a hosted service never ships binaries, so GPLv2 does not compel them to publish source. (Closing that loophole would require AGPL — a deliberate choice we did *not* make.)
 - **GPLv2-only**, not "v2 or later" — the version is fixed.
 - GPLv2-only is incompatible with Apache-2.0 and GPLv3, which constrains what third-party code can be pulled in later. DwarfMapper has zero dependencies, so this is a non-issue today.

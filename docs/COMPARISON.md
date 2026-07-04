@@ -152,8 +152,9 @@ See [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/)
 hand-written vs. the three competitors across **flat / nested / collection / blittable-struct** scenarios
 with `[MemoryDiagnoser]`.
 
-Confirmed full run — BenchmarkDotNet DefaultJob, **.NET 10.0.1, X64 RyuJIT AVX2** (AMD Ryzen 5 5600;
-absolute ns vary by hardware; relative ordering is the point — run locally for your own):
+A single local run — BenchmarkDotNet DefaultJob, **.NET 10.0.1, X64 RyuJIT AVX2** (AMD Ryzen 5 5600,
+non-dedicated machine; results are **not committed as artifacts** and are **not** produced in CI). Absolute ns
+vary by hardware; **relative ordering is the point — reproduce locally with the command below**:
 
 | Scenario | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.8 | AutoMapper 14.0.0 | hand-written |
 |---|---:|---:|---:|---:|---:|
@@ -170,8 +171,10 @@ mappers (DwarfMapper / Mapperly) cluster at hand-written speed; the runtime tier
 AutoMapper ~9–11×) trails.
 
 **Takeaways:**
-- DwarfMapper **matches hand-written** (tied with Mapperly, the other source generator) with **zero
-  allocation overhead** — the destination object is the only allocation. On the 1000-object array it and
+- DwarfMapper **sits with hand-written and Mapperly at the codegen floor** — on the flat map its median
+  ran a hair behind (6.4 vs 4.6–4.8 ns), within the run-to-run noise noted above (`*`) since the generated
+  code is the same direct-assignment shape — with **zero allocation overhead** (the destination object is the
+  only allocation). On the 1000-object array it and
   Mapperly co-lead (4.55 µs vs 4.47 µs — within run-to-run noise), both ahead of the runtime mappers.
 - On the **blittable struct array it is ~2.3–2.5× faster than every competitor** — the `MemoryMarshal.Cast`
   SIMD reinterpret path that none of Mapperly / Mapster / AutoMapper have (they copy field-by-field).
@@ -213,7 +216,9 @@ Both are emitted only when provably safe; everything else falls back to the elem
 
 The BenchmarkDotNet suite above measures the JIT. `samples/DwarfMapper.AotBench` is a separate harness
 that is **published with NativeAOT and run as a native binary** — it both times the hot paths under real
-AOT codegen and stress-tests for instabilities the JIT can't reveal: SIMD widen/blit bit-exactness at
+AOT codegen and stress-tests for instabilities the JIT can't reveal. (It is run **locally on demand**; CI
+runs the separate `AotSample` safety/trim gate, not this stress harness — the numbers below are a single
+local machine's.)  The checks: SIMD widen/blit bit-exactness at
 every size around the vector boundary, Preserve-topology determinism over 100 000 runs, catchable
 depth-guard over 20 000 runs, and `OnCycle=SetNull` acyclicity over 50 000 runs.
 
