@@ -3,6 +3,8 @@
 
 Every DwarfMapper diagnostic (`DWARF001`–`DWARF063`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
+These are **compile-time**; for what a generated mapper can throw **at runtime**, see
+[Runtime exceptions](#runtime-exceptions) at the bottom.
 
 ## How severities and suppression work
 
@@ -417,3 +419,30 @@ concrete mapper directly, or give it a parameterless constructor. (Informational
 Two assemblies in the graph both provide an ambient map for the same `(source, destination)`. The registry
 keeps the first registration and ignores the rest. **Fix:** ensure the duplication is intentional, or remove
 all but one definition. Reported at the validation root.
+
+---
+
+## Runtime exceptions
+
+The diagnostics above are **compile-time**. A generated mapper is also, by design, **strict at runtime**: rather
+than silently producing wrong data, out-of-range or malformed input **throws**. There is no lenient / non-throwing
+mode. **DwarfMapper is not an input-validation layer — validate untrusted input (request bodies, external data)
+before you map it.** The runtime throws you can encounter:
+
+| When | Exception | Notes |
+|---|---|---|
+| `null` passed to a generated map method | `ArgumentNullException` | every method opens with `ArgumentNullException.ThrowIfNull(source)` |
+| Numeric **narrowing** out of range (`long→int`, `enum`↔integral) | `OverflowException` | `CreateChecked` — never silent truncation |
+| `string → int/Guid/DateTime/…` on unparseable input | `FormatException` (or `OverflowException`) | `Parse(…, InvariantCulture)`; there is **no `TryParse`/lenient mode** |
+| `string → enum` unrecognized name, or out-of-range integral→enum | `ArgumentOutOfRangeException` | the generated `switch` has a throwing default — string→enum is **not total** (compile-time `DWARF015` covers only enum↔enum by-name) |
+| Nullable **interior hop** on a deep source path (`"Customer.Name"`, `Customer` null) | `NullReferenceException` | only `DWARF044` (Info) at build; a raw NRE at runtime |
+| `[Flatten]` root is `null` | `NullReferenceException` | no diagnostic — guard the root or accept the risk |
+| Span/destination too small (span overloads) | `ArgumentException` | |
+| Cycle under the default depth guard (no `ReferenceHandling`) | `DwarfMappingDepthException` | catchable; carries `MaxDepth`/`ActualDepth` (never a `StackOverflow`) |
+| Ambient `IDwarfMapper.Map<T>(src)` with no registered provider (e.g. provider assembly not yet loaded) | `DwarfMapMissingException` | `DWARF061` proves the reference **graph** at build, not runtime **load order** — see [ambient maps](howto/ambient-cross-assembly-maps.md) |
+| `DwarfMap.Validate()` / `[DwarfMapperValidationRoot(AutoValidate = true)]` finds an unregistered required pair | `DwarfMapValidationException` | reflection-free startup fail-fast listing the missing pairs |
+
+**Handling.** `DwarfMappingDepthException`, `DwarfMapMissingException`, and `DwarfMapValidationException` are the
+DwarfMapper-typed exceptions you catch by type; coercion failures are standard BCL types (`OverflowException`,
+`FormatException`, `ArgumentOutOfRangeException`). For untrusted input, validate before mapping (or map into a
+string-shaped DTO and validate after) — do not rely on the mapper to reject bad data gracefully.
