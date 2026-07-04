@@ -60,8 +60,8 @@ has a static, compile-checked replacement.
 | `.Ignore()` | `[MapIgnore(nameof(D.X))]` | **required** in DwarfMapper — unmapped = `DWARF001`, not silent |
 | `.MapFrom(_=>"const")` (constant) | `[MapValue(nameof(D.X), "const")]` | type-checked → `DWARF040` |
 | `.MapFrom(_=>Compute())` (no-source computed) | `[MapValue(nameof(D.X), Use=nameof(Compute))]` | `Compute` is **parameterless** → `DWARF041` |
-| `.NullSubstitute(v)` | `[MapProperty(src, tgt, NullSubstitute=v)]` | emits `src ?? v`; type-checked → `DWARF049` |
-| `.Condition(s=>p)` / `.PreCondition(s=>p)` | `[MapProperty(src, tgt, When=nameof(P))]` | `bool P(S)`; member keeps **default** when false → `DWARF050` |
+| `.NullSubstitute(v)` | `[MapProperty(src, tgt, NullSubstitute=v)]` | emits `src ?? v`; type-checked → `DWARF049`. **Not combinable with `Use=`** (direct-assignable members only); for substitute+convert use a `Use=` that handles null, or `[MapIgnore]`+`[AfterMap]` |
+| `.Condition(s=>p)` / `.PreCondition(s=>p)` | `[MapProperty(src, tgt, When=nameof(P))]` | `bool P(S)` — **source object only**; member keeps **default** when false → `DWARF050`. No destination/mapped-value inspection and no pre-/post-resolution timing — move those to `[AfterMap]` |
 | `.ForSourceMember(s=>s.X, o=>o.DoNotValidate())` | `[MapIgnoreSource("X")]` | only relevant under `RequiredMapping=Both` |
 | `.ForPath(d=>d.A.B, …)` | `[MapProperty(src, "A.B")]` | single-level unflatten; deeper → `DWARF045` |
 | `.SetMappingOrder(n)` | **non-goal** | deterministic canonical order; use `[AfterMap]` if order mattered |
@@ -80,7 +80,9 @@ has a static, compile-checked replacement.
 | AutoMapper 14 | DwarfMapper | Note |
 |---|---|---|
 | `.ConvertUsing(s=>…)` / `ITypeConverter<S,D>` (type pair) | a `D Convert(S s)` method on the mapper | user methods take precedence over synthesis; no `ResolutionContext` |
-| `IValueResolver` / `IMemberValueResolver` (per member) | `[MapProperty(src, tgt, Use=nameof(M))]` | `M` sees the **source member**, not whole source/dest/ctx |
+| `IMemberValueResolver` (**one** source member) | `[MapProperty(src, tgt, Use=nameof(M))]` | `M` takes the **source member**; a whole-source `Use=` is `DWARF014` |
+| `IValueResolver` (**whole source**) | `[MapIgnore(target)]` + `[AfterMap] void Fill(S,D)` | the hook sees the whole source + target (`Use=` cannot) |
+| resolver/converter needing **DI** | mapper **ctor** + instance `Use=`/`Convert` method | register the concrete type; such a mapper can't be `new`-ed argument-free and gets no `To<T>()` extension |
 | `IValueConverter<TSrc,TDst>` (reusable per member) | `Use=nameof(M)` | exact match |
 | `mapper.Map(src, o=>o.Items["k"]=v)` + `context.Items` | **extra method parameter**: `partial D Map(S s, T k)` | **DIVERGENT**: typed param matched to a dest member by name (`DWARF047`); no dynamic bag, not propagated to nested |
 | built-in scalar coercions (often needs config) | **richer & stricter, built-in** | `int↔long` checked, `string↔IParsable` (InvariantCulture), enum↔{enum,string,int}, nullable lift; lossy → `DWARF038` (or error under `ImplicitConversions=false`). **You can often delete explicit converters.** float/decimal→int still needs `Use=` (never silent truncation). |

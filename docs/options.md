@@ -82,7 +82,7 @@ Put these on the mapping method (or the class, where noted).
 
 ## See also
 
-- [`../README.md`](../README.md) — full prose reference for each option with examples.
+- [`../README.md`](../README.md) — prose reference with examples for most options (this table is the complete list).
 - [`diagnostics.md`](diagnostics.md) — every `DWARF…` diagnostic, what triggers it, and how to fix it.
 - [`MIGRATION.md`](MIGRATION.md) — how each AutoMapper / Mapster / Mapperly option maps to the above.
 - [`howto/`](howto/) — task-oriented migration walkthroughs.

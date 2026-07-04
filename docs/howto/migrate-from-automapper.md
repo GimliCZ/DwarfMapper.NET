@@ -25,7 +25,7 @@ the configuration, resolved at compile time. So the migration is: take everythin
 > `IMapper` for `IDwarfMapper` (registered for you by `AddDwarfMappers()`, or use `DwarfMapperFacade.Instance`),
 > declare each pair once with `[GenerateMap<Src, Dto>]` on a **public** class — it self-registers into a
 > process-wide registry at load time, **even across assemblies you don't reference** — and mark one assembly
-> `[assembly: DwarfMapperValidationRoot]` so the build fails (`DWARF062`) if any `Map<T>(src)` call site has no
+> `[assembly: DwarfMapperValidationRoot]` so the build fails (`DWARF061`) if any `Map<T>(src)` call site has no
 > provider (instead of a runtime `DwarfMapMissingException`). Call sites stay nearly verbatim. Full guide:
 > [ambient cross-assembly maps](ambient-cross-assembly-maps.md).
 
@@ -102,8 +102,8 @@ Every fluent member option maps to an attribute. The common ones:
 | `.Ignore()` | `[MapIgnore(nameof(D.X))]` — **required**, unmapped = `DWARF001` |
 | `.MapFrom(_ => "const")` | `[MapValue(nameof(D.X), "const")]` |
 | `.MapFrom(_ => Compute())` (no source) | `[MapValue(nameof(D.X), Use = nameof(Compute))]` (`Compute` is **parameterless**) |
-| `.NullSubstitute(v)` | `[MapProperty(src, tgt, NullSubstitute = v)]` (emits `src ?? v`) |
-| `.Condition(s => p)` / `.PreCondition(...)` | `[MapProperty(src, tgt, When = nameof(P))]` (`bool P(S)`; member keeps default when false) |
+| `.NullSubstitute(v)` | `[MapProperty(src, tgt, NullSubstitute = v)]` (emits `src ?? v`). **Direct-assignable members only — not combinable with `Use=`.** For substitute-**and**-convert, use a `Use=` method that handles null, or `[MapIgnore]` + `[AfterMap]`. |
+| `.Condition(s => p)` / `.PreCondition(...)` | `[MapProperty(src, tgt, When = nameof(P))]` (`bool P(S)`; member keeps default when false). **`When` sees the source object only** — no destination, no resolved-member value, no pre-/post-resolution timing distinction. Conditions that inspect the destination or the mapped value must move to `[AfterMap]`. |
 | `.ForCtorParam("p", o => o.MapFrom(s => s.Y))` | `[MapProperty(nameof(S.Y), "p")]` (targets the ctor param by name) |
 
 The mechanical rule: **lambdas become named methods.** A `MapFrom(s => Compute(s.Y))` becomes a private
@@ -129,12 +129,31 @@ public partial class CustomerMapper
 
 | AutoMapper | DwarfMapper |
 |---|---|
-| `IValueResolver` / `IMemberValueResolver` (per member) | `[MapProperty(src, tgt, Use = nameof(M))]` — `M` sees the **source member**, not whole-source/dest/context |
+| `IMemberValueResolver<S,D,TSrcMember,TDestMember>` (**one** source member) | `[MapProperty(src, tgt, Use = nameof(M))]` — `M` takes the **source member** and returns the destination member type. A whole-source `Use=` method is a build error (`DWARF014`). |
+| `IValueResolver<S,D,TMember>` (**whole source** — e.g. `FullName = s.First + " " + s.Last`) | `[MapIgnore(nameof(D.Member))]` on that member **+** `[AfterMap] void Fill(S s, D d) => d.Member = …;`. The hook receives the whole source and target. |
 | `.ConvertUsing(s => …)` / `ITypeConverter<S,D>` (type pair) | a non-partial `D Convert(S s)` method on the mapper — user methods win over synthesis |
 | built-in scalar coercions (often need config) | **built-in, richer, and stricter** — see Step 5 |
 
-There is **no `ResolutionContext`**. If a resolver needed extra data, pass it as an extra method parameter
-(`partial Dto Map(Entity e, string tenant)` matches `tenant` to a `Tenant` dest member by name).
+There is **no `ResolutionContext`**. If a resolver needed extra *external* data (not a second source member),
+pass it as an extra method parameter (`partial Dto Map(Entity e, string tenant)` matches `tenant` to a
+`Tenant` dest member by name).
+
+**Resolver / converter that needs DI.** A `[DwarfMapper]` mapper is a normal `partial class` — give it a
+constructor and reference the dependency from an **instance** `Use=`/`Convert` method:
+
+```csharp
+[DwarfMapper]
+public partial class OrderMapper(IRateService rates)   // primary constructor
+{
+    [MapProperty(nameof(Order.Amount), nameof(OrderDto.Amount), Use = nameof(ToLocal))]
+    public partial OrderDto ToDto(Order o);
+    private decimal ToLocal(decimal amount) => rates.Convert(amount);
+}
+```
+
+Register the concrete type in DI (`services.AddScoped<OrderMapper>()`). Note the trade-offs: such a mapper
+**can't be `new`-ed argument-free**, and it does **not** get the generated `To<Target>()` convenience
+extensions (those require a parameterless constructor) — call it via the instance or DI.
 
 ### Flattening — now explicit
 
