@@ -175,9 +175,10 @@ The collection/dictionary target type isn't supported. **Fix:** use a supported 
 **Projection member cannot be translated to a database query** · Error
 
 An `IQueryable` projection becomes an expression tree your database/ORM provider translates into a query. A
-member that needs a runtime conversion, a custom converter, a collection rebuild, or reference handling has no
-query equivalent. The build error names the specific reason (narrowing, parse, by-name, converter, collection,
-hook, reference handling, …). **Fix:** map those members with a runtime mapper (an ordinary `Map` method)
+member that needs a runtime conversion, a custom converter, a non-translatable collection/dictionary target
+(`HashSet`/`ISet`/immutable/`Dictionary` — `List<T>`/`T[]` targets *do* translate), or reference handling has no
+query equivalent. The build error names the specific reason (narrowing, parse, by-name, converter, collection
+kind, hook, reference handling, …). **Fix:** map those members with a runtime mapper (an ordinary `Map` method)
 rather than `Project`.
 
 ## dwarf030

@@ -129,7 +129,7 @@ has a static, compile-checked replacement.
 | `.MaxDepth(n)` (default 64→ here too) | `[DwarfMapper(MaxDepth=n)]` | throws catchable `DwarfMappingDepthException`, never silent SO; applies to direct/list/dict edges |
 | `.PreserveReferences()` | `[DwarfMapper(ReferenceHandling=Preserve)]` | full topology (shared/diamond/cycle) reconstructed |
 | *(no first-class equivalent)* | `[DwarfMapper(OnCycle=SetNull)]` | **DwarfMapper-only**: cycle→null ≡ `System.Text.Json` `IgnoreCycles` |
-| `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S>)` | **DIVERGENT (deliberately minimal)**: only direct members + renames + `[MapIgnore]`; a member needing conversion → `DWARF028` |
+| `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S>)` | **provably translatable**: direct members, renames, `[MapIgnore]`, enum→int casts, nested objects, collections, and dotted-path flattening; only non-translatable conversions (narrowing/parse/by-name/`Use=`/`HashSet`·dict/reference-handling) → `DWARF028` |
 | `.ExplicitExpansion()` / projection params | **non-goal** | define a narrower DTO/`Project` method; parameterize the source query |
 | `AssertConfigurationIsValid()` | **build error `DWARF001`** (always on) | `MemberList.Source` ≡ `RequiredMapping=Both`; `MemberList.None` ≡ has no analogue (use `[MapIgnore]`) |
 | naming conventions (`SourceMemberNamingConvention` …) | `[DwarfMapper(NameConvention=Flexible)]` | Pascal/camel/snake/UPPER interchangeable; collision → `DWARF048` |
@@ -180,7 +180,7 @@ to port for the convention path.
 | `.PreserveReference(true)` | `[DwarfMapper(ReferenceHandling=Preserve)]` | full topology |
 | unflattening | `[MapProperty(src, "A.B")]` | single-level dotted target |
 | enum mapping (by value default) | `[DwarfMapper(EnumStrategy=ByValue)]` for parity | DwarfMapper default is **by name** (`DWARF015` on mismatch) |
-| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S>)` | minimal/translatable only (`DWARF028`) |
+| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S>)` | translatable subset — nested/collection/enum-cast/dotted supported; non-translatable conversions → `DWARF028` |
 | `Mapster.Tool` source-gen | built-in (DwarfMapper is always source-gen) | no separate tool/codegen step |
 
 ---
@@ -221,7 +221,7 @@ and `partial Dst Map(Src)` methods. Migration is **nearly mechanical**, often le
 | strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions=false)]` | flips `DWARF038` suggestions into build errors (Mapperly-style strict) |
 | `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling=Preserve)]` | **DwarfMapper reconstructs full topology** (Mapperly's is partial) |
 | `[MapDerivedType<DS,DD>]` | `[MapDerivedType<DS,DD>]` | same attribute name |
-| `IQueryable` projection | `partial IQueryable<Dst> Project(…)` | minimal/translatable (`DWARF028`) |
+| `IQueryable` projection | `partial IQueryable<Dst> Project(…)` | translatable subset — nested/collection/enum-cast/dotted supported; non-translatable → `DWARF028` |
 | `[MapEnum]`/`[MapEnumValue]` per-value remap | **partial** | differing enum member sets are a build error to resolve explicitly |
 | `[UseMapper]`/`[UseStaticMapper]` (compose mappers) | call another mapper from a `Use=` method, or nest types | no first-class mapper-injection attribute |
 

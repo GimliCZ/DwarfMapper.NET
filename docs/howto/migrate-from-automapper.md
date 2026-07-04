@@ -164,7 +164,7 @@ Full conversion table: the [repository README, "Built-in scalar conversions"](..
 | `AllowNullCollections = true` | `[DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]` | DwarfMapper defaults to `AsEmpty`; this matches AM's default |
 | `.PreserveReferences()` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` | full topology reconstruction |
 | `.MaxDepth(n)` | `[DwarfMapper(MaxDepth = n)]` | throws catchable `DwarfMappingDepthException`, never a silent StackOverflow |
-| `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S> q)` | deliberately minimal — direct members + renames + ignores only; a member needing conversion is `DWARF028` |
+| `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S> q)` | direct members, renames, ignores, enum→int casts, nested objects, collections, and dotted-path flattening (`[MapProperty("A.B", …)]`) all translate; only non-translatable conversions (narrowing/parse/by-name/`Use=`/`HashSet`·dict) are `DWARF028` |
 
 `.ReverseMap()` example:
 
