@@ -4,6 +4,12 @@
 A capability, testing, performance, and **migration-ease** comparison against the three most common
 .NET mappers. Benchmarks live in [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/).
 
+> **The real differentiator is correctness, not speed** (the source-generator peers tie us on throughput).
+> See [`CORRECTNESS.md`](CORRECTNESS.md): completeness is a build error (a **DTO-drift contract gate**), the
+> resolved mapping is documented on every method, round-trips are verified, codegen is provably
+> deterministic + incrementally cached, and the output is provably reflection-free (NativeAOT/trim/regulated
+> targets) — each clause backed by a named test or diagnostic the runtime mappers can't structurally match.
+
 > **Licensing note.** AutoMapper is referenced as **14.0.0 only** — the last **MIT** release. v15+ is
 > RPL-1.5 + commercial (GPL-incompatible); we deliberately use nothing from it. Mapperly (4.3.1) and
 > Mapster (10.0.8) are MIT. Both are benchmark-only and never referenced by the shipped library.
@@ -82,9 +88,14 @@ DwarfMapper's test methodology is the most defensive of the four: beyond snapsho
 seeded fuzzing, adversarial/exhaustion matrices, determinism checks, and **self-validating meta-tests**
 (the test suite scans the assembly to prove every diagnostic/attribute/enum is covered). The completeness
 gate is a *compile error* — you cannot ship an incomplete mapping — whereas AutoMapper validates at
-test/runtime via `AssertConfigurationIsValid()` and Mapster/Mapster offer no equivalent.
+test/runtime via `AssertConfigurationIsValid()` and Mapster/Mapperly offer no equivalent.
 
 ## Migration ease (the critical concern)
+
+> **Full feature-by-feature conversion guide:** [`MIGRATION.md`](MIGRATION.md) maps *every* AutoMapper 14 /
+> Mapster / Mapperly feature and mechanic to its DwarfMapper equivalent (with before→after and honest
+> divergence/non-goal notes). Each "YES" row is proven at runtime by the parity suite
+> [`LibraryParityRuntimeTests.cs`](../tests/DwarfMapper.IntegrationTests/LibraryParityRuntimeTests.cs).
 
 The goal: moving an existing codebase to DwarfMapper should be **near single-line / mechanical**, never
 "add `partial` everywhere" or "attribute every DTO class". DwarfMapper already requires **zero attributes
@@ -141,33 +152,36 @@ See [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/)
 hand-written vs. the three competitors across **flat / nested / collection / blittable-struct** scenarios
 with `[MemoryDiagnoser]`.
 
-Confirmed full run — BenchmarkDotNet DefaultJob, **.NET 10.0.1, X64 RyuJIT AVX2** (absolute ns vary by
-hardware; relative ordering is the point — run locally for your own):
+Confirmed full run — BenchmarkDotNet DefaultJob, **.NET 10.0.1, X64 RyuJIT AVX2** (AMD Ryzen 5 5600;
+absolute ns vary by hardware; relative ordering is the point — run locally for your own):
 
 | Scenario | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.8 | AutoMapper 14.0.0 | hand-written |
 |---|---:|---:|---:|---:|---:|
-| Flat (1 object) | 4.8–7.6 ns* | 4.4 ns | 13.1 ns | 53.3 ns | 4.6 ns |
-| Nested | 12.4 ns | 10.7 ns | 22.2 ns | 59.5 ns | — |
-| Array (1000 objects) | 5.75 µs | 5.04 µs | 6.15 µs | 5.29 µs | — |
-| **Blit (1000 structs)** | **0.39 µs** | 0.98 µs | 0.98 µs | 1.03 µs | — |
-| **Widen (1000 int→long)** | **0.42 µs** | 0.47 µs | 1.04 µs | 1.11 µs | — |
+| Flat (1 object) | 6.4 ns* | 4.6 ns | 13.2 ns | 51.5 ns | 4.8 ns |
+| Nested | 11.5 ns | 10.3 ns | 20.5 ns | 58.4 ns | — |
+| Array (1000 objects) | 4.55 µs | 4.47 µs | 5.82 µs | 5.26 µs | — |
+| **Blit (1000 structs)** | **0.40 µs** | 0.93 µs | 0.97 µs | 1.02 µs | — |
+| **Widen (1000 int→long)** | **0.35 µs** | 0.43 µs | 0.69 µs | 0.72 µs | — |
 | Allocations (all scenarios) | = hand-written | = | = | = | baseline |
 
-`*` Flat_Dwarf measured 4.8 ns and 7.6 ns across two full runs — nanosecond-scale noise on a
+`*` Flat_Dwarf measured 4.8–7.6 ns across runs (6.4 ns this run) — nanosecond-scale noise on a
 non-dedicated machine; the generated code is the same direct-assignment shape as Mapperly. Codegen
-mappers (DwarfMapper / Mapperly) cluster at hand-written speed; the runtime tier (Mapster ~3×,
-AutoMapper ~11×) trails.
+mappers (DwarfMapper / Mapperly) cluster at hand-written speed; the runtime tier (Mapster ~2.4–3×,
+AutoMapper ~9–11×) trails.
 
 **Takeaways:**
 - DwarfMapper **matches hand-written** (tied with Mapperly, the other source generator) with **zero
-  allocation overhead** — the destination object is the only allocation.
-- On the **blittable struct array it is ~2.5× faster than every competitor** — the `MemoryMarshal.Cast`
+  allocation overhead** — the destination object is the only allocation. On the 1000-object array it and
+  Mapperly co-lead (4.55 µs vs 4.47 µs — within run-to-run noise), both ahead of the runtime mappers.
+- On the **blittable struct array it is ~2.3–2.5× faster than every competitor** — the `MemoryMarshal.Cast`
   SIMD reinterpret path that none of Mapperly / Mapster / AutoMapper have (they copy field-by-field).
-- On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2.5× faster than the
+  (Repeatable steady-state on this machine is ~0.40–0.50 µs vs ~0.9–1.0 µs for the others — decisive, with
+  allocations identical across all four libraries.)
+- On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2× faster than the
   runtime mappers (Mapster/AutoMapper) and a hair ahead of Mapperly's scalar codegen loop — at this size
   the work is memory-bound (writing the 8 KB output), so SIMD mainly separates it from the reflection/
   expression tier; the gap widens for smaller element types or cache-resident data.
-- It is **~12× faster than AutoMapper** and **~3× faster than Mapster** on flat maps, which pay
+- It is **~9–11× faster than AutoMapper** and **~2.4–3× faster than Mapster** on flat maps, which pay
   runtime expression-tree / reflection overhead (and are not NativeAOT-safe). Mapster's first-call
   expression compilation is amortized here (steady state), yet still trails the codegen mappers.
 
@@ -194,3 +208,45 @@ DwarfMapper has **two** SIMD fast-paths that no competitor offers:
 
 Both are emitted only when provably safe; everything else falls back to the element loop (with
 `CreateChecked` for narrowing). See the `Blit` and `Widen` benchmark categories.
+
+### NativeAOT benchmarking & stability
+
+The BenchmarkDotNet suite above measures the JIT. `samples/DwarfMapper.AotBench` is a separate harness
+that is **published with NativeAOT and run as a native binary** — it both times the hot paths under real
+AOT codegen and stress-tests for instabilities the JIT can't reveal: SIMD widen/blit bit-exactness at
+every size around the vector boundary, Preserve-topology determinism over 100 000 runs, catchable
+depth-guard over 20 000 runs, and `OnCycle=SetNull` acyclicity over 50 000 runs.
+
+Results (ILC 10.0.1, win-x64, AMD Ryzen 5 5600; **1.16 MB** self-contained native exe):
+
+- **No instabilities.** Every correctness/determinism check passes (exit 0) across 170 000 stress
+  iterations (100 000 Preserve-cycle + 20 000 depth-guard + 50 000 SetNull); the default `dotnet publish`
+  emits **zero** IL2xxx/IL3xxx trim/AOT warnings. SIMD output is **bit-for-bit identical** to the scalar
+  reference at all boundary sizes, including negatives (sign extension).
+- **AOT timing is *steadier* than the JIT** — no tiered-compilation jitter, so per-op min/max spreads are
+  tighter (a stability *positive*). Indicative ns/op at baseline SSE2 width: Flat ≈ 8 ns, Array (1000)
+  ≈ 8.8 µs, **Blit (1000) ≈ 0.39 µs** (identical to the JIT — the reinterpret is width-independent),
+  Widen (1000) ≈ 0.47 µs (half-width; see the caveat below).
+- **One AOT usage caveat worth knowing (not an instability).** NativeAOT defaults to a **baseline
+  instruction set** (x86-64-v1 / SSE2) for portability, so `Vector<int>.Count == 4` under default AOT vs
+  `8` under the AVX2-detecting JIT — the `Vector.Widen` path runs half-width. It stays **correct** (the
+  scalar tail + narrower body produce identical results), just not maximally fast. To get full-width SIMD
+  under AOT, opt into a higher ISA, e.g.:
+
+  ```xml
+  <PropertyGroup>
+    <IlcInstructionSet>native</IlcInstructionSet>  <!-- build-machine ISA; or a specific list, e.g. avx2 -->
+  </PropertyGroup>
+  ```
+
+  Re-verified this run: with `IlcInstructionSet=native` the AOT binary reports `Vector<int>.Count == 8`
+  (vs `4` at baseline) and all correctness/determinism checks still pass (exit 0). (`x86-64-v3` is rejected
+  by ILC 10.0.1 — use `native` or an explicit ISA list.)
+
+Run it yourself:
+
+```bash
+dotnet publish samples/DwarfMapper.AotBench -c Release -r win-x64        # default baseline SIMD
+dotnet publish samples/DwarfMapper.AotBench -c Release -r win-x64 -p:IlcInstructionSet=native   # full-width
+./samples/DwarfMapper.AotBench/bin/Release/net10.0/win-x64/publish/DwarfMapper.AotBench.exe
+```

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.Core/Stryker.Core/Schemas/stryker-config.json",
+  "stryker-config": {
+    "comment": "Local mutation testing — proves the high-coverage generator files are backed by KILLING assertions, not just executed lines. Run via scripts/housekeeping.ps1 -Mutation (needs: dotnet tool install -g dotnet-stryker). Scoped to the highest-value files to keep wall-clock sane.",
+    "project": "DwarfMapper.Generator.csproj",
+    "test-projects": [
+      "tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj"
+    ],
+    "mutate": [
+      "src/DwarfMapper.Generator/Collections/EquatableArray.cs",
+      "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
+      "src/DwarfMapper.Generator/Pipeline/ConstructorSelector.cs",
+      "src/DwarfMapper.Generator/Diagnostics/LocationInfo.cs"
+    ],
+    "thresholds": { "high": 90, "low": 80, "break": 70 },
+    "reporters": ["progress", "html"]
+  }
+}

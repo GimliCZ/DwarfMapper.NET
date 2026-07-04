@@ -12,7 +12,8 @@ namespace DwarfMapper.Testing;
 public static class StructuralComparer
 {
     private const int MaxDepth = 12;
-    private const double FloatEpsilon = 1e-9;
+    private const double FloatEpsilon = 1e-9;   // double tolerance
+    private const float FloatEpsilonF = 1e-6f;  // float tolerance — matches GraphOracleComparer (float ULP near ~1000 is ~6e-5)
 
     /// <summary>Compare two object graphs and return every difference with its member path.</summary>
     public static IReadOnlyList<MemberDiff> Diff(object? expected, object? actual)
@@ -104,7 +105,7 @@ public static class StructuralComparer
         }
         if (a is float fa && b is float fb)
         {
-            return Math.Abs(fa - fb) < FloatEpsilon;
+            return Math.Abs(fa - fb) < FloatEpsilonF;
         }
         return Equals(a, b);
     }

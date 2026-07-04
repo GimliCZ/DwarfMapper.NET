@@ -13,9 +13,9 @@ namespace DwarfMapper;
 public sealed class MapIgnoreSourceAttribute : Attribute
 {
     /// <summary>Initialises a new instance of <see cref="MapIgnoreSourceAttribute"/>.</summary>
-    /// <param name="sourceMember">Name of the source member to exclude from coverage checking.</param>
-    public MapIgnoreSourceAttribute(string sourceMember) => SourceMember = sourceMember;
+    /// <param name="source">Name of the source member to exclude from coverage checking.</param>
+    public MapIgnoreSourceAttribute(string source) => Source = source;
 
     /// <summary>Name of the source member to exclude from coverage checking.</summary>
-    public string SourceMember { get; }
+    public string Source { get; }
 }

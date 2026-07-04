@@ -51,4 +51,13 @@ public sealed record MemberMap(
     /// <c>if (Predicate(param)) target.Member = …;</c> post-construction. Set by
     /// <c>[MapProperty(When = nameof(...))]</c>; the member keeps its destination default when false.
     /// </summary>
-    string? WhenPredicate = null) : System.IEquatable<MemberMap>;
+    string? WhenPredicate = null,
+    /// <summary>
+    /// When <c>true</c>, this assignment is guarded by an inline source-not-null check emitted
+    /// post-construction: <c>if (param.Source is not null) target.Member = …;</c> — so a null source member
+    /// keeps the destination's default rather than overwriting it. Set by
+    /// <c>[DwarfMapper(SkipNullSourceMembers = true)]</c> for nullable-source, post-construction-settable
+    /// members (AutoMapper's <c>ForAllMembers(o =&gt; o.Condition((_,_,src) =&gt; src != null))</c>).
+    /// Mutually exclusive with <see cref="WhenPredicate"/>.
+    /// </summary>
+    bool SkipIfSourceNull = false) : System.IEquatable<MemberMap>;

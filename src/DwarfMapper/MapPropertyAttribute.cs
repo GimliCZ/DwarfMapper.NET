@@ -51,9 +51,10 @@ public sealed class MapPropertyAttribute : Attribute
     public string? Use { get; set; }
 
     /// <summary>
-    /// Optional constant substituted when the (nullable) source member is null — emitted as
-    /// <c>source ?? value</c>. The value must be assignable to the destination type (else <c>DWARF049</c>).
-    /// Direct-assignable members only (no <see cref="Use"/> converter).
+    /// Optional constant value coalesced onto the source — emitted verbatim as <c>source ?? value</c>
+    /// (so it takes effect when the source member is null; on a non-nullable source the <c>??</c> is simply
+    /// a harmless no-op). The value must be assignable to the destination type (else <c>DWARF049</c>).
+    /// Direct-assignable members only — not combinable with a <see cref="Use"/> converter.
     /// </summary>
     public object? NullSubstitute { get; set; }
 

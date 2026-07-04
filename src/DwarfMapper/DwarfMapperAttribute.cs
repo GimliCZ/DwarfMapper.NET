@@ -32,9 +32,39 @@ public sealed class DwarfMapperAttribute : Attribute
     /// When <c>true</c> (the default), a member whose type is a mappable object pair
     /// <c>(S, T)</c> with no declared mapper is automatically resolved by synthesizing
     /// a private nested mapper. Set to <c>false</c> to require explicit declarations
-    /// for every nested type (today's behavior).
+    /// for every nested type (the legacy opt-out behaviour, before auto-nesting became the default).
     /// </summary>
     public bool AutoNest { get; set; } = true;
+
+    /// <summary>
+    /// When <c>true</c>, a <b>null source member never overwrites the destination's default</b>: for every
+    /// nullable-source, post-construction-settable member the generator emits
+    /// <c>if (src.Member is not null) dest.Member = …;</c>, so a default set in the destination's field
+    /// initializer or constructor survives a null source. Defaults to <c>false</c>.
+    /// <para>
+    /// This is the equivalent of AutoMapper's
+    /// <c>ForAllMembers(o =&gt; o.Condition((_, _, srcMember) =&gt; srcMember != null))</c> — the common
+    /// "don't clobber data with nulls" guard when sanitizing/merging. Non-nullable value-type members
+    /// (which can never be null) are unaffected; <c>required</c> and <c>init</c>-only members are always
+    /// assigned (they cannot be deferred) and so are unaffected too.
+    /// </para>
+    /// </summary>
+    public bool SkipNullSourceMembers { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, the generator may use <b>non-public but reachable</b> constructors AND members —
+    /// an <c>internal</c> / <c>protected internal</c> constructor, getter, or setter that the generated
+    /// mapper's assembly can see, either because it is the same assembly or because the target's assembly
+    /// grants access via <c>[InternalsVisibleTo]</c>. Defaults to <c>false</c>.
+    /// <para>
+    /// This is opt-in by design: an <c>internal</c> constructor or accessor is non-public on purpose (a
+    /// factory pattern, an invariant enforced elsewhere), so reaching it from a mapper is a deliberate
+    /// choice that must be stated, never assumed. <c>private</c> and <c>protected</c> constructors/accessors
+    /// are <b>never</b> usable regardless of this flag — the generated code could not compile. <c>public</c>
+    /// constructors and members are always usable and need no flag.
+    /// </para>
+    /// </summary>
+    public bool AllowNonPublic { get; set; }
 
     /// <summary>
     /// Controls how a null source collection or dictionary is mapped.
@@ -134,4 +164,18 @@ public sealed class DwarfMapperAttribute : Attribute
     /// collision is the build error <c>DWARF048</c>.
     /// </summary>
     public NameConvention NameConvention { get; set; } = NameConvention.Exact;
+
+    /// <summary>
+    /// When <c>true</c> (the default), the generator also emits convenience extension methods for this
+    /// mapper's simple <c>TTarget Map(TSource)</c> methods — e.g. <c>order.ToOrderDto()</c> instead of
+    /// <c>new OrderMapper().ToDto(order)</c>. They live in the <c>DwarfMapper.Extensions</c> namespace
+    /// (add <c>using DwarfMapper.Extensions;</c> to use them), are backed by a cached, stateless mapper
+    /// instance, and are assembly-internal. Set to <c>false</c> to suppress them for this mapper.
+    /// <para>
+    /// Only plain single-argument maps get an extension. Update-into, span, async-streaming, projection,
+    /// derived-type dispatch, and methods with extra parameters are skipped, as are pairs whose generated
+    /// name would collide.
+    /// </para>
+    /// </summary>
+    public bool GenerateExtensions { get; set; } = true;
 }

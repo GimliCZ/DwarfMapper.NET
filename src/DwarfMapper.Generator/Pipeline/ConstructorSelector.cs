@@ -29,10 +29,12 @@ internal static class ConstructorSelector
     /// diagnostic was emitted and the method should be skipped.
     /// </returns>
     public static IMethodSymbol? Select(
+        Compilation compilation,
         INamedTypeSymbol target,
         List<DiagnosticInfo> diagnostics,
         LocationInfo? location,
-        out bool useObjectInitializerOnly)
+        out bool useObjectInitializerOnly,
+        bool allowNonPublicConstructors = false)
     {
         useObjectInitializerOnly = false;
 
@@ -43,9 +45,13 @@ internal static class ConstructorSelector
         // is a no-op (zero-init) and we should prefer the explicit ctor for proper initialization.
         // Detect this case: target is a value type AND has at least one explicit (non-implicitly-declared)
         // non-parameterless ctor AND there is no explicit parameterless ctor.
+        // NOTE: this deliberately does NOT use IsUsableCandidate — it asks "does the struct declare an
+        // explicit non-parameterless ctor at all?" so we can avoid silently using the implicit zero-init
+        // parameterless ctor. An explicit ctor that is itself unusable (ref/out) must still suppress the
+        // implicit fallback, so the unusable case surfaces DWARF026 rather than a wrong zero-init result.
         var hasExplicitNonParameterlessCtor = target.InstanceConstructors.Any(c =>
             !c.IsImplicitlyDeclared
-            && c.DeclaredAccessibility == Accessibility.Public
+            && IsAccessible(c, compilation, allowNonPublicConstructors)
             && !c.IsStatic
             && c.Parameters.Length > 0
             && !IsObsolete(c));
@@ -55,7 +61,7 @@ internal static class ConstructorSelector
         var skipImplicitParameterlessCtor = target.IsValueType && hasExplicitNonParameterlessCtor;
 
         var anyParameterless = target.InstanceConstructors.FirstOrDefault(c =>
-            c.DeclaredAccessibility == Accessibility.Public
+            IsAccessible(c, compilation, allowNonPublicConstructors)
             && !c.IsStatic
             && c.Parameters.Length == 0
             && !IsObsolete(c)
@@ -66,12 +72,12 @@ internal static class ConstructorSelector
             // Check whether any annotated constructor wins over the parameterless one.
             // If so, fall through to explicit-annotation handling below.
             // Count all annotated candidates so that >1 → DWARF025 (same policy as the no-parameterless path).
+            // An annotated ctor must also be a USABLE candidate (no ref/out, not a copy ctor, etc.) — otherwise
+            // selecting it would emit CS1620/CS-invalid code. An unusable annotated ctor falls back to the
+            // (safe) parameterless object-initializer path rather than producing broken output.
             var annotatedOverrides = target.InstanceConstructors
                 .Where(c =>
-                    c.DeclaredAccessibility == Accessibility.Public
-                    && !c.IsStatic
-                    && !c.IsImplicitlyDeclared
-                    && !IsObsolete(c)
+                    IsUsableCandidate(c, target, compilation, allowNonPublicConstructors)
                     && c.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
                 .ToList();
 
@@ -99,19 +105,8 @@ internal static class ConstructorSelector
         var candidates = new List<IMethodSymbol>();
         foreach (var ctor in target.InstanceConstructors)
         {
-            if (ctor.DeclaredAccessibility != Accessibility.Public) continue;
-            if (ctor.IsStatic) continue;
-            if (ctor.IsImplicitlyDeclared) continue;
-            // Exclude the record copy constructor: single parameter whose type == target.
-            if (ctor.Parameters.Length == 1
-                && SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, target))
-                continue;
-            if (IsObsolete(ctor)) continue;
-            // Exclude constructors with ref or out parameters — emitting them as plain named args
-            // would produce CS1620. `in` (RefKind.In) is fine and must NOT be excluded.
-            if (ctor.Parameters.Any(p => p.RefKind == RefKind.Ref || p.RefKind == RefKind.Out)) continue;
-
-            candidates.Add(ctor);
+            if (IsUsableCandidate(ctor, target, compilation, allowNonPublicConstructors))
+                candidates.Add(ctor);
         }
 
         // ── Policy 1: [DwarfMapperConstructor] annotation ────────────────────
@@ -156,6 +151,35 @@ internal static class ConstructorSelector
         }
 
         return withMax[0];
+    }
+
+    // Public ctors are always usable. A non-public ctor is usable only when the mapper opted in via
+    // [DwarfMapper(AllowNonPublicConstructors = true)] AND code in the mapper's own assembly can reach
+    // it — i.e. an internal/protected-internal ctor in the same assembly or one exposed via
+    // [InternalsVisibleTo]. private / protected ctors (no derivation here) are never reachable, so
+    // IsSymbolAccessibleWithin filters them out even when the flag is set.
+    private static bool IsAccessible(IMethodSymbol ctor, Compilation compilation, bool allowNonPublic) =>
+        ctor.DeclaredAccessibility == Accessibility.Public
+        || (allowNonPublic && compilation.IsSymbolAccessibleWithin(ctor, compilation.Assembly));
+
+    /// <summary>
+    /// A constructor the generator can actually emit a call to: accessible, instance, explicitly declared,
+    /// not the record copy ctor, not <c>[Obsolete]</c>, and free of <c>ref</c>/<c>out</c> parameters (which
+    /// cannot be passed as named args — CS1620). Shared by every selection path so an annotated or
+    /// most-params pick can never resolve to a ctor that would emit broken code.
+    /// </summary>
+    private static bool IsUsableCandidate(IMethodSymbol ctor, INamedTypeSymbol target, Compilation compilation, bool allowNonPublic)
+    {
+        if (!IsAccessible(ctor, compilation, allowNonPublic)) return false;
+        if (ctor.IsStatic) return false;
+        if (ctor.IsImplicitlyDeclared) return false;
+        // Record copy constructor: single parameter whose type == target.
+        if (ctor.Parameters.Length == 1 && SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, target))
+            return false;
+        if (IsObsolete(ctor)) return false;
+        // ref / out parameters cannot be emitted as plain named args (CS1620). `in` (RefKind.In) is fine.
+        if (ctor.Parameters.Any(p => p.RefKind == RefKind.Ref || p.RefKind == RefKind.Out)) return false;
+        return true;
     }
 
     private static bool IsObsolete(IMethodSymbol method) =>

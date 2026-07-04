@@ -14,7 +14,7 @@ namespace DwarfMapper;
 /// If you encounter this exception, consider one of:
 /// <list type="bullet">
 ///   <item>Increase <c>[DwarfMapper(MaxDepth = N)]</c> (hard cap: 1000).</item>
-///   <item>Use <c>ReferenceHandling = Preserve</c> (Plan 19 C2) to map graphs without recursion.</item>
+///   <item>Use <c>ReferenceHandling = Preserve</c> to map graphs without recursion.</item>
 ///   <item>Truncate the source chain before mapping to stay within the depth limit.</item>
 /// </list>
 /// </para>

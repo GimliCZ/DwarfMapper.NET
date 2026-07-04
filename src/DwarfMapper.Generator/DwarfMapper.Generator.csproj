@@ -6,7 +6,7 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <DevelopmentDependency>true</DevelopmentDependency>
-    <Description>DwarfMapper Roslyn incremental source generator and analyzers/diagnostics. Emits the compile-time mapping code for types annotated with DwarfMapper attributes. Reference alongside the DwarfMapper package.</Description>
+    <Description>DwarfMapper Roslyn incremental source generator and analyzers/diagnostics. Emits the compile-time mapping code for types annotated with DwarfMapper attributes. Normally consumed bundled inside the DwarfMapper package (just reference DwarfMapper); this standalone analyzer package is optional, for advanced setups that wire the generator explicitly.</Description>
     <!-- Analyzer-only package: ships no lib/ assembly and no runtime dependencies
          (all PackageReferences are PrivateAssets=all). Suppress the empty dependency
          group so the package validates (NU5128). -->

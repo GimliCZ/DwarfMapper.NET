@@ -18,12 +18,17 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Include="Verify.Xunit" />
     <PackageReference Include="Verify.SourceGenerators" />
+    <!-- Lets the harness reference Microsoft.Extensions.DependencyInjection so the generator emits the
+         AddDwarfMappers() DI registration (covers the per-assembly-namespace / CS0121 regression). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
     <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj" />
+    <ProjectReference Include="..\..\src\DwarfMapper.CodeFixes\DwarfMapper.CodeFixes.csproj" />
     <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
