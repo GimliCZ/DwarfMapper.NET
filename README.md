@@ -252,9 +252,9 @@ A constant must be an attribute-legal value (string, bool, char, numeric, enum, 
 | **bool / char → string** | `bool → string`, `char → string` | `v.ToString()` | No-arg overload (culture-invariant by nature); `bool` → "True"/"False"; `char` → single-char string |
 | **DateTime / DateTimeOffset → string** | `DateTime → string` | `v.ToString("o", InvariantCulture)` | ISO-8601 round-trip format ("o"); lossless including sub-second precision and `Kind`/offset |
 | **enum ↔ enum** (by name, default) | `Color.Red → Status.Red` | `switch` | Missing member → `DWARF015` |
-| **enum ↔ enum** (by value) | value cast | `CreateChecked` on underlying | Throws on overflow |
+| **enum ↔ enum** (by value) | `E1:short → E2:int` | `(E2)Int32.CreateChecked((short)v)` — via **both** enums' actual underlying types | Throws `OverflowException` on overflow |
 | **enum ↔ string** | `Color.Red ↔ "Red"` | `switch` | No reflection |
-| **enum ↔ integral** | `Color → int` | `CreateChecked` on underlying | Throws on overflow |
+| **enum ↔ integral** | `Color:byte → int`, `enum:uint → long`, `int → Status:short` | `Int32.CreateChecked((byte)v)` — cast through the enum's **actual declared underlying** type (`byte`/`short`/`uint`/`long`/…, never a fixed `int`), then checked | Runtime throws `OverflowException` on overflow. In a **projection**, a genuine widening (`short→int`) inlines a plain cast, but any narrowing — including a same-width unsigned→signed like `uint→int` — is `DWARF028` (SQL can't range-check) |
 | **T → T?** (target-nullable, non-nullable source) | `long → int?`, `string → int?`, `int → Color?` | inner conversion result implicitly lifted to `T?` | Overflow/format errors still propagate |
 | **T? → U?** (both nullable) | `long? → int?`, `E1? → E2?` | `src.HasValue ? Conv(src.Value) : null` | Null-preserving: null source → null target; non-null out-of-range still throws (e.g. `OverflowException`) |
 | **T? → U** (nullable source, non-nullable target) | `int? → short`, `E1? → E2` | `src ?? throw` (default strategy) or `src.GetValueOrDefault()` (`SetDefault`) | Follows mapper's `NullStrategy` setting |
