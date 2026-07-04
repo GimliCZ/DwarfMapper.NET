@@ -31,8 +31,11 @@ do **not** declare the map in the consuming assembly — it is declared once, an
   whole graph — DwarfMapper cross-checks every required pair against every provided pair and raises a
   **compile-time `DWARF061`** for anything unprovided. So a missing cross-assembly map fails the **build**, not
   a request at runtime.
-- Optionally call the generated `DwarfMap.Validate()` once at startup for a reflection-free runtime fail-fast
-  (defense against trimming / not-yet-loaded assemblies).
+- Optionally call the generated `DwarfMap.Validate()` once at startup for a reflection-free runtime fail-fast:
+  it throws **`DwarfMapValidationException`** listing every required ambient pair not registered in the process
+  (defense against trimming / not-yet-loaded assemblies). Prefer
+  `[assembly: DwarfMapperValidationRoot(AutoValidate = true)]` to run that check automatically from a module
+  initializer on assembly load, rather than calling `DwarfMap.Validate()` yourself.
 
 ## When to use which
 
