@@ -35,6 +35,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
         string SourceFqn,
         string? Namespace,
         string ExtClassName,
+        bool Public,
         EquatableArray<TargetPlan> Targets,
         EquatableArray<SynthesizedMethod> Helpers,
         EquatableArray<DiagnosticInfo> Diagnostics,
@@ -175,10 +176,15 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
         var ns = source.ContainingNamespace is { IsGlobalNamespace: false } n ? n.ToDisplayString() : null;
         var helpers = resolver.Synth.Values.OrderBy(h => h.Name, System.StringComparer.Ordinal).ToArray();
+        // Public extension class when the source and every target are effectively public, so callers in
+        // OTHER assemblies can use x.MapTo<T>(); otherwise internal (a public method on an internal type
+        // would not compile). Mirrors the class-model convenience-extension visibility policy.
+        var isPublic = IsAccessiblePublic(source) && targets.All(IsAccessiblePublic);
         return new Model(
             source.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             ns,
             "__DwarfRegistry_" + source.Name,
+            isPublic,
             new EquatableArray<TargetPlan>(plans.ToArray()),
             new EquatableArray<SynthesizedMethod>(helpers),
             new EquatableArray<DiagnosticInfo>(diags.ToArray()),
@@ -323,6 +329,15 @@ public sealed class MapToGenerator : IIncrementalGenerator
     }
 
     // ── member enumeration / helpers ─────────────────────────────────────────────
+    private static bool IsAccessiblePublic(INamedTypeSymbol t)
+    {
+        for (INamedTypeSymbol? cur = t; cur is not null; cur = cur.ContainingType)
+        {
+            if (cur.DeclaredAccessibility != Accessibility.Public) return false;
+        }
+        return true;
+    }
+
     private static bool IsMappableTarget(INamedTypeSymbol target, INamedTypeSymbol source) =>
         !SymbolEqualityComparer.Default.Equals(target, source)
         && (target.TypeKind == TypeKind.Class || target.TypeKind == TypeKind.Struct)
@@ -403,7 +418,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
             indent = "    ";
         }
 
-        sb.Append(indent).Append("internal static class ").AppendLine(model.ExtClassName);
+        sb.Append(indent).Append(model.Public ? "public static class " : "internal static class ").AppendLine(model.ExtClassName);
         sb.Append(indent).AppendLine("{");
         var i2 = indent + "    ";
         var i3 = i2 + "    ";
