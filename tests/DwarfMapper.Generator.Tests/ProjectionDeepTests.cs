@@ -114,6 +114,29 @@ public class ProjectionDeepTests
     }
 
     [Fact]
+    public void Projection_dotted_source_path_flattens_a_value_member()
+    {
+        // [MapProperty("Colour.Code", ...)] flattens a nested/value-object member into a scalar in
+        // projection — matching the class-model dotted-path feature. The emitted accessor is __s.Colour.Code.
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public class Colour { public string Code { get; set; } = ""; }
+            public class Src { public int Id { get; set; } public Colour Colour { get; set; } = new(); }
+            public class Dst { public int Id { get; set; } public string Colour { get; set; } = ""; }
+            [DwarfMapper] public partial class M {
+                [MapProperty("Colour.Code", nameof(Dst.Colour))]
+                public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+            }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("Colour.Code", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+    }
+
+    [Fact]
     public void Projection_collection_array_to_array_inlines_Select_ToArray_no_DwarfMap_helper()
     {
         const string s = """

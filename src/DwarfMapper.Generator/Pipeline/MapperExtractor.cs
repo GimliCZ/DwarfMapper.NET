@@ -5801,9 +5801,18 @@ internal static class MapperExtractor
                     "custom converter (Use=) is not translatable in projection; remove Use= or map at runtime");
                 continue;
             }
-            var sm = ReadableMembers(sourceType)
-                .Where(m => System.StringComparer.Ordinal.Equals(m.Name, srcName))
-                .Select(m => (ITypeSymbol?)m.Type).FirstOrDefault();
+            // Resolve the source, supporting a dotted path (e.g. "Colour.Code") for value-object /
+            // nested-scalar flattening — matching the class-model [MapProperty] dotted-path feature.
+            // The projection accessor "__s.Colour.Code" is built verbatim below; we walk the segments
+            // here only to find the leaf type and validate each hop is a readable member.
+            ITypeSymbol? sm = sourceType;
+            foreach (var seg in srcName.Split('.'))
+            {
+                sm = sm is null ? null : ReadableMembers(sm)
+                    .Where(m => System.StringComparer.Ordinal.Equals(m.Name, seg))
+                    .Select(m => (ITypeSymbol?)m.Type).FirstOrDefault();
+                if (sm is null) break;
+            }
             if (sm is null)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
