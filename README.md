@@ -534,8 +534,8 @@ README.md
   // no [DwarfMapper], no partial — person.ToPersonDto() works; the generated PersonDtoMapper is the DI singleton
   ```
 
-### Planned
-- Publishing is wired: tagging `v*` builds, signs (keyless GitHub OIDC), SBOMs, and **pushes to nuget.org** — the `v1.0.0-rc.1` tag is the first published release.
+### Releasing
+- Tagging `v*` builds, tests, signs (keyless GitHub OIDC), SBOMs, and cuts a **GitHub Release** with the signed packages; **nuget.org publishing is done manually by the maintainer** from those artifacts. `v1.0.0-rc.1` is the first published release.
 
 ---
 
