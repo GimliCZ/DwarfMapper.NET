@@ -6012,7 +6012,11 @@ internal static class MapperExtractor
                 var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 return $"({tgtFqn}){srcExpr}";
             }
-            // Narrowing cast (e.g. enum:long→int) — fall through to DWARF028.
+            // Narrowing / lossy (e.g. enum:long→int, or unsigned-underlying enum:uint→int) — the source
+            // underlying does not fit the target range and a projection can't do a checked cast.
+            EmitDWARF028(diagnostics, location, targetMemberName,
+                "enum→integral conversion is narrowing (the enum's underlying type does not fit the target integral type) and cannot be range-checked in a projection; map it at runtime");
+            return null;
         }
         else if (TypeInterfaces.IsIntegral(srcType) && tgtType.TypeKind == TypeKind.Enum)
         {
@@ -6023,7 +6027,11 @@ internal static class MapperExtractor
                 var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 return $"({tgtFqn}){srcExpr}";
             }
-            // Narrowing — fall through to DWARF028.
+            // Narrowing / lossy (e.g. long→enum:int, or int→enum:uint sign change) — the source does not
+            // fit the enum's underlying range and a projection can't do a checked cast.
+            EmitDWARF028(diagnostics, location, targetMemberName,
+                "integral→enum conversion is narrowing (the source does not fit the enum's underlying type) and cannot be range-checked in a projection; map it at runtime");
+            return null;
         }
 
         // ── UNSAFE: enum by-name (enumStrategy == ByName, different enum types) ──
@@ -6106,22 +6114,36 @@ internal static class MapperExtractor
     /// </summary>
     private static bool IsWideningOrSameWidth(ITypeSymbol src, ITypeSymbol tgt)
     {
-        // Return the bit-width rank of an integral type (0 = unknown/unsafe).
-        static int Rank(ITypeSymbol t) => t.SpecialType switch
+        // (bit width, isSigned) per integral type. Honours the enum's ACTUAL underlying type
+        // (byte/short/uint/long/…), not a fixed int assumption.
+        static bool IntegralInfo(ITypeSymbol t, out int width, out bool signed)
         {
-            SpecialType.System_Byte    => 1,
-            SpecialType.System_SByte   => 2,
-            SpecialType.System_UInt16  => 3,
-            SpecialType.System_Int16   => 4,
-            SpecialType.System_UInt32  => 5,
-            SpecialType.System_Int32   => 6,
-            SpecialType.System_UInt64  => 7,
-            SpecialType.System_Int64   => 8,
-            _ => 0,
-        };
-        var sr = Rank(src);
-        var tr = Rank(tgt);
-        return sr > 0 && tr > 0 && sr <= tr;
+            switch (t.SpecialType)
+            {
+                case SpecialType.System_Byte:   width = 8;  signed = false; return true;
+                case SpecialType.System_SByte:  width = 8;  signed = true;  return true;
+                case SpecialType.System_UInt16: width = 16; signed = false; return true;
+                case SpecialType.System_Int16:  width = 16; signed = true;  return true;
+                case SpecialType.System_UInt32: width = 32; signed = false; return true;
+                case SpecialType.System_Int32:  width = 32; signed = true;  return true;
+                case SpecialType.System_UInt64: width = 64; signed = false; return true;
+                case SpecialType.System_Int64:  width = 64; signed = true;  return true;
+                default: width = 0; signed = false; return false;
+            }
+        }
+
+        if (!IntegralInfo(src, out var sw, out var ss)) { return false; }
+        if (!IntegralInfo(tgt, out var tw, out var ts)) { return false; }
+
+        // A plain (unchecked) cast src→tgt is lossless — safe to inline in a projection that can't do a
+        // checked conversion — ONLY when the target's representable range fully contains the source's:
+        //   • same signedness    → target width must be ≥ source width  (short→int, uint→ulong)
+        //   • unsigned → signed  → target needs a strictly wider type for the sign bit  (byte→short, uint→long)
+        //   • signed → unsigned  → never lossless (source may be negative)
+        // Anything else (e.g. uint→int, ushort→short, long→int) is narrowing and falls through to DWARF028.
+        if (ss == ts) { return tw >= sw; }
+        if (!ss && ts) { return tw > sw; }
+        return false;
     }
 
     /// <summary>

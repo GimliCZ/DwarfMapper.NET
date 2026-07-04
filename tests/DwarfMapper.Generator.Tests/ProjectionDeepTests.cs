@@ -353,6 +353,43 @@ public class ProjectionDeepTests
     }
 
     [Fact]
+    public void Projection_enum_unsigned_underlying_to_signed_int_is_narrowing_DWARF028()
+    {
+        // enum : uint -> int is a lossy unsigned→signed narrowing (uint 3e9 wraps negative). A projection
+        // can't emit a checked cast, so it must be DWARF028 — NOT a silent (int) cast. Regression for the
+        // signedness-aware widening check (the old bit-rank check wrongly treated uint→int as widening).
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public enum EU : uint { A = 1 }
+            public class Src { public EU C { get; set; } }
+            public class Dst { public int C { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+        var d028 = diag.Where(d => d.Id == "DWARF028").ToList();
+        Assert.NotEmpty(d028);
+        Assert.Contains("narrowing", d028[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Projection_enum_short_underlying_to_int_is_safe_widening_plain_cast()
+    {
+        // enum : short -> int is genuine widening (same signedness, wider) → inline plain (int) cast, no error.
+        const string s = """
+            using DwarfMapper; using System.Linq;
+            namespace D;
+            public enum ES : short { A = 1 }
+            public class Src { public ES C { get; set; } }
+            public class Dst { public int C { get; set; } }
+            [DwarfMapper] public partial class M { public partial IQueryable<Dst> Prj(IQueryable<Src> q); }
+            """;
+        var (diag, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Contains("(int)", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Projection_HashSet_collection_target_reports_DWARF028_collection_reason()
     {
         const string s = """
