@@ -5,7 +5,7 @@
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Description>DwarfMapper — a compile-time object mapper for .NET that makes mislinking a build error, verifies maps with zero-maintenance round-trip tests, and falls back to SIMD/blittable bulk copy. Zero reflection, NativeAOT- and trim-safe. This single package bundles the attributes, the Roslyn source generator, and the IDE code fixes — just reference it.</Description>
+    <Description>DwarfMapper — a compile-time object mapper for .NET where an unmapped member is a build error, maps are round-trip-verifiable (opt in with [RoundTrip]), and blittable data falls back to SIMD/blittable bulk copy. The shipped runtime library uses zero reflection and is NativeAOT- and trim-safe. This single package bundles the attributes, the Roslyn source generator, and the IDE code fixes — just reference it.</Description>
     <!-- PackageRequireLicenseAcceptance is set for all packages in Directory.Build.props. -->
   </PropertyGroup>
 

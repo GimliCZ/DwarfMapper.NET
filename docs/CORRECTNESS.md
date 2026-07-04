@@ -21,8 +21,9 @@ silent either.
 > **This is a DTO-drift contract gate.** Because the map is resolved at compile time, a DTO or entity that
 > changes shape and breaks a mapping **fails the build** — your two types provably cannot drift apart
 > unnoticed. AutoMapper offers this only as a test-time `AssertConfigurationIsValid()`; Mapster offers no
-> equivalent. *Evidence:* the completeness gate is exercised throughout the generator suite and is
-> non-suppressible globally.
+> equivalent. *Evidence:* the completeness gate is exercised throughout the generator suite and is enforced
+> by construction — suppressing the diagnostic in `.editorconfig` doesn't help: the incomplete method body
+> isn't generated, so the build still fails (with a rawer compiler error).
 
 ## 2. The resolved mapping is visible, not inferred
 

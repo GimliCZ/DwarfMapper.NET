@@ -14,7 +14,7 @@ These are **compile-time**; for what a generated mapper can throw **at runtime**
 | **Warning** | The configuration compiles but something was skipped or won't behave as you might expect. | `dotnet_diagnostic.DWARFxxx.severity = none` in `.editorconfig`. |
 | **Info / suggestion** | Visible in the IDE, never build-breaking — surfaces a footgun without forcing a change. | Suppress with `.editorconfig`, or escalate to `error` there. |
 
-The headline rule, **`DWARF001` (completeness)**, is an **Error by design with no severity override** — see
+The headline rule, **`DWARF001` (completeness)**, is enforced **by construction**: you *can* set its severity in `.editorconfig`, but that doesn't ship an incomplete map — the method body isn't generated, so the build still fails (with a rawer compiler error instead of the helpful `DWARF001`). See
 [`CORRECTNESS.md`](CORRECTNESS.md). Everything else is suppressible or escalatable through `.editorconfig`,
 e.g.:
 
