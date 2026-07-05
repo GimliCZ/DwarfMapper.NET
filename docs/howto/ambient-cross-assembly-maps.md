@@ -22,7 +22,7 @@ do **not** declare the map in the consuming assembly — it is declared once, an
 
 ## How it works
 
-- Every assembly's generated code includes a `[ModuleInitializer]` that **self-registers** its stateless,
+- Each assembly that declares an eligible stateless, public-typed map emits a `[ModuleInitializer]` that **self-registers** its stateless,
   public-typed `T Map(S)` maps into the process-wide `DwarfMapperRegistry` at load (a typed delegate +
   dictionary — no reflection), plus a `[assembly: DwarfProvidesMap(typeof(S), typeof(T))]` manifest.
 - Consumption (`Map<TDest>(src)` call sites and `[UsesMap<S,T>]`) is recorded as

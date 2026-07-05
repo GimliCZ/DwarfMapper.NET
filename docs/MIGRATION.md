@@ -128,7 +128,7 @@ has a static, compile-checked replacement.
 
 | AutoMapper 14 | DwarfMapper | Note |
 |---|---|---|
-| `.MaxDepth(n)` (default 64→ here too) | `[DwarfMapper(MaxDepth=n)]` | throws catchable `DwarfMappingDepthException`, never silent SO; applies to direct/list/dict edges |
+| `.MaxDepth(n)` (no default limit) | `[DwarfMapper(MaxDepth=n)]` (**default 64**) | throws catchable `DwarfMappingDepthException`, never silent SO; applies to direct/list/dict edges |
 | `.PreserveReferences()` | `[DwarfMapper(ReferenceHandling=Preserve)]` | full topology (shared/diamond/cycle) reconstructed |
 | *(no first-class equivalent)* | `[DwarfMapper(OnCycle=SetNull)]` | **DwarfMapper-only**: cycle→null ≡ `System.Text.Json` `IgnoreCycles` |
 | `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S>)` | **provably translatable**: direct members, renames, `[MapIgnore]`, enum→int casts, nested objects, collections, and dotted-path flattening; only non-translatable conversions (narrowing/parse/by-name/`Use=`/`HashSet`·dict/reference-handling) → `DWARF028` |
@@ -182,7 +182,7 @@ to port for the convention path.
 | `.PreserveReference(true)` | `[DwarfMapper(ReferenceHandling=Preserve)]` | full topology |
 | unflattening | `[MapProperty(src, "A.B")]` | single-level dotted target |
 | enum mapping (by value default) | `[DwarfMapper(EnumStrategy=ByValue)]` for parity | DwarfMapper default is **by name** (`DWARF015` on mismatch) |
-| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S>)` | translatable subset — nested/collection/enum-cast/dotted supported; non-translatable conversions → `DWARF028` |
+| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S>)` | translatable subset — nested/collection/**enum→int casts**/dotted supported (enum→enum needs `EnumStrategy.ByValue`); non-translatable conversions → `DWARF028` |
 | `Mapster.Tool` source-gen | built-in (DwarfMapper is always source-gen) | no separate tool/codegen step |
 
 ---

@@ -28,11 +28,11 @@ default (not build-breaking) — escalate it with `dotnet_diagnostic.DWARF039.se
 
 ## 2. The resolved mapping is visible, not inferred
 
-Every generated public method carries an XML-doc **mapping plan**: `target ← source`, `via {converter}`,
+Every generated public **object-to-object** method carries an XML-doc **mapping plan**: `target <- source`, `via {converter}`,
 `= {constant}`, `(?? {substitute})`, `(when {predicate})`, `[ctor]`. It shows on IDE hover and at the top
 of the generated `.g.cs`, so a reviewer can see *what maps to what* without reading the body — the readable
-face of anti-mislinking. *Evidence:* `MapEmitter.EmitMappingPlanDoc`; rendered for every public method
-(snapshot-tested).
+face of anti-mislinking. *Evidence:* `MapEmitter.EmitMappingPlanDoc`; rendered for every public object-to-object method
+(snapshot-tested). Projection, span, and async-stream methods carry the `<summary>` but no per-member plan list.
 
 ## 3. Round-trips are verified, not hoped
 

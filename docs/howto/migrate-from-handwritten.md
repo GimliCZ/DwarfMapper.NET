@@ -28,7 +28,7 @@ the single `DwarfMapper` package, target `net10.0`.
 
 ## Step 2 — Replace each mapping method with a partial declaration
 
-Find a hand-written mapper and replace its body with a `partial` declaration (or a `[GenerateMap]` line):
+Find a hand-written mapper and replace its body with a `partial` declaration (the named form below keeps the `ToDto` call site). *Or* declare the pair with a class-level `[GenerateMap<Order, OrderDto>]` — that generates a `Map(order)` overload (not `ToDto`), so the call site becomes `new OrderMapper().Map(order)`:
 
 ```diff
 - public static class OrderMapping
@@ -81,7 +81,7 @@ public partial class OrderMapper
     [MapValue(nameof(OrderDto.Source), "api-v2")]
     public partial OrderDto ToDto(Order o);
 
-    private static string Format(decimal d) => d.ToString("C");
+    private static decimal Format(decimal d) => Math.Round(d, 2);   // OrderDto.Total stays decimal (as in Step 2)
 
     [AfterMap]                                   // imperative tail you couldn't express declaratively
     private static void Stamp(Order o, OrderDto d) => d.Checksum = Compute(o);

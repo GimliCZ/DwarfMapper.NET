@@ -20,7 +20,7 @@ e.g.:
 
 ```ini
 # .editorconfig — make an opt-in suggestion strict, or silence a known-safe one
-dotnet_diagnostic.DWARF039.severity = error   # require every source member to be consumed
+dotnet_diagnostic.DWARF039.severity = error   # only fires under [DwarfMapper(RequiredMapping = Both)]; escalates its Info to Error
 dotnet_diagnostic.DWARF044.severity = none    # I accept the nullable-path risk here
 ```
 
@@ -366,7 +366,7 @@ split it into several mappers, or suppress via `.editorconfig`.
 ## dwarf056
 **Pair-scoped attribute matches no mapped pair** · Warning
 
-A class-level pair-scoped attribute — `[MapProperty<TSource, TTarget>(…)]` or `[MapIgnore<TTarget>(…)]` —
+A class-level pair-scoped attribute — `[MapProperty<TSource, TTarget>(…)]`, `[MapIgnore<TTarget>(…)]`, `[MapValue<TTarget>(…)]`, or `[MapConstructor<TSource, TTarget>(…)]` —
 matched no mapped pair, so it silently does nothing (usually a typo'd type argument or a missing
 `[GenerateMap]`). A pair-scoped linkage applies wherever its `(TSource → TTarget)` pair is actually mapped —
 a top-level `[GenerateMap]` pair or an auto-synthesized nested/collection-element pair. **Fix:** add the

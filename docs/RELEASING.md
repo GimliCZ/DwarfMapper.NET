@@ -28,7 +28,7 @@ which attaches the following to a GitHub Release:
 
 | Artifact | Purpose |
 |---|---|
-| `DwarfMapper.X.Y.Z.nupkg` + `.snupkg` | attributes/abstractions package + symbols |
+| `DwarfMapper.X.Y.Z.nupkg` + `.snupkg` | **all-in-one** package (attributes + bundled generator + code fixes) — the only reference a normal consumer needs — plus symbols |
 | `DwarfMapper.Generator.X.Y.Z.nupkg` | Roslyn source generator (analyzer-only) |
 | `DwarfMapper.Testing.X.Y.Z.nupkg` + `.snupkg` | testing toolkit + symbols |
 | `bom.xml` (in `sbom/`) | CycloneDX SBOM for the whole solution |
@@ -71,8 +71,10 @@ GitHub mints automatically (the workflow already requests `id-token: write` + `a
 # 2. Tag and push — the pipeline does the rest.
 git tag v1.0.0-rc.1
 git push origin v1.0.0-rc.1
-# 3. (Manual, when ready) publish to nuget.org:
-#    dotnet nuget push artifacts/*.nupkg -s https://api.nuget.org/v3/index.json -k <API_KEY>
+# 3. (Manual, when ready) publish to nuget.org — push the SAME signed packages the Release carries
+#    (don't re-pack locally; a local build can differ byte-for-byte and fail attestation):
+#    gh release download v1.0.0-rc.1 -p '*.nupkg' -p '*.snupkg'
+#    dotnet nuget push '*.nupkg' -s https://api.nuget.org/v3/index.json -k <API_KEY>
 ```
 
 The version flows from the tag (`vX.Y.Z` → `X.Y.Z`) into `-p:Version=` for both build and pack.

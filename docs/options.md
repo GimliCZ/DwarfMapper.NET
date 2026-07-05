@@ -2,7 +2,7 @@
 # DwarfMapper options cheat-sheet
 
 Every knob in one place. Class-level options go on `[DwarfMapper(...)]`; per-member attributes go on the
-mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe, permissive one.
+mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe, strict one (completeness enforced, null/cycle throw by default).
 
 ## Class-level options — `[DwarfMapper(...)]`
 

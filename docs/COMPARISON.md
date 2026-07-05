@@ -50,7 +50,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | Update-into-existing | ✅ `void/T Map(s, dest)` | ✅ | ✅ `Adapt(s,dest)` | ✅ `Map(s,dest)` |
 | **Zero-alloc `Span<T>` mapping** | ✅ | ❌ | ❌ | ❌ |
 | **Async streaming `IAsyncEnumerable`** | ✅ | ❌ | ✅ | ❌ |
-| **Blittable / SIMD bulk-copy fast-path** | ✅ `MemoryMarshal.Cast` | ❌ | ❌ | ❌ |
+| **Blittable bulk-copy (reinterpret) fast-path** | ✅ `MemoryMarshal.Cast` memmove | ❌ | ❌ | ❌ |
 | **SIMD primitive-widening (`int[]`→`long[]`)** | ✅ `Vector.Widen` | ❌ | ❌ | ❌ |
 | **Completeness = build error** | ✅ `DWARF001` (always) | diagnostics | ❌ | `AssertConfigurationIsValid()` (test-time) |
 | **Source-member coverage (unused-source check)** | ✅ `RequiredMapping=Both` → `DWARF039` (opt-in); `[MapIgnoreSource]` | ✅ `RMG020` | ❌ | ✅ (validates) |
@@ -78,7 +78,7 @@ every reference mode.
 | Integration / behavioural | ✅ | ✅ | ✅ xUnit | ✅ |
 | **Fuzz / property-based** | ✅ seeded combinatorial + topology oracles | ❌ | ❌ | ❌ |
 | **Adversarial / exhaustion** | ✅ | ❌ | ❌ | ❌ |
-| **Determinism tests** | ✅ | ❌ | ❌ | ❌ |
+| **Determinism tests** (byte-identical re-emit) | ✅ dedicated | ~ (Verify snapshots pin output) | n/a | n/a |
 | **Assembly-scan self-validation / meta-tests** | ✅ (descriptor↔release sync, hollow-test detector, matrix completeness) | ❌ | ❌ | ❌ |
 | AOT / trim CI gate | ✅ sample + gate | ✅ | n/a | n/a |
 | Coverage gate | ✅ CI threshold | ~ | ~ | ~ |

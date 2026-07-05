@@ -98,7 +98,7 @@ Mapster's global `TypeAdapterConfig.GlobalSettings` knobs map to class-level `[D
 | `.MaxDepth(n)` | `[DwarfMapper(MaxDepth = n)]` (catchable depth exception, never silent SO) |
 | `.PreserveReference(true)` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` (full topology) |
 | enum mapping (by **value** default) | `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]` for parity (DwarfMapper defaults to **by name**) |
-| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S> q)` — translatable subset (nested/collection/enum-cast/dotted supported; non-translatable → `DWARF028`) |
+| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S> q)` — translatable subset (nested/collection/**enum→int casts**/dotted supported — enum→enum needs `EnumStrategy.ByValue`; non-translatable → `DWARF028`) |
 | `Mapster.Tool` codegen step | **not needed** — DwarfMapper is always source-gen, no separate tool/CLI |
 
 > **Watch the enum default.** Mapster maps enums by value; DwarfMapper maps by **name** by default. If you

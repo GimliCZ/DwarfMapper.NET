@@ -3,8 +3,9 @@
 // 11 — IQueryable projection (the one place a lambda is actually generated).
 // Declare `IQueryable<Dto> Project(IQueryable<Src>)` and the generator emits `src.Select(s => new Dto { ... })`
 // — an expression tree your ORM translates to SQL. You never write the lambda; the generator does. Projection
-// is deliberately minimal (direct members + renames + [MapIgnore]); a member needing a real conversion is
-// DWARF028, by design — do that with a runtime Map method instead.
+// translates direct members, renames, [MapIgnore], nested objects, List/array collections, enum→int casts
+// and dotted [MapProperty] flattening; a member needing a *runtime* conversion (narrowing, parse, enum-by-name,
+// custom Use=) is DWARF028, by design — do that with a runtime Map method instead.
 using System;
 using System.Collections.Generic;
 using System.Linq;

@@ -15,6 +15,8 @@ dotnet build DwarfMapper.NET.sln -c Release
 dotnet test  DwarfMapper.NET.sln -c Release
 ```
 
+Enable the local pre-push gate once: `git config core.hooksPath scripts/git-hooks` (heavier pre-release checks live in `scripts/housekeeping.ps1`).
+
 ## Ground rules
 - Every source file starts with `// SPDX-License-Identifier: GPL-2.0-only`.
 - Builds are warning-clean (`TreatWarningsAsErrors`). Fix analyzer findings;

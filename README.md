@@ -1,6 +1,6 @@
 # DwarfMapper.NET
 
-> A compile-time object mapper for .NET where **an unmapped member is a build error**, maps are **round-trip-verifiable with one attribute**, and blittable data falls back to **SIMD/blittable bulk copy** where the hardware allows it.
+> A compile-time object mapper for .NET where **an unmapped member is a build error**, maps are **round-trip-verifiable with one attribute**, and blittable data (unmanaged, fixed-layout structs) falls back to **SIMD/blittable bulk copy** where the hardware allows it.
 
 > [!IMPORTANT]
 > **Is DwarfMapper for you?** Three things to decide *before* you invest time:
@@ -12,7 +12,7 @@
 
 **Quick links:** [Quick start](#quick-start) · [Why another mapper?](#why-another-mapper) · [The landscape](#the-landscape-and-where-we-sit) · [Migration guides](docs/howto/) · [Diagnostics reference](docs/diagnostics.md) · [Options cheat-sheet](docs/options.md) · [Packages](#packages)
 
-DwarfMapper mines the mapping at compile time and forges direct field copies — no runtime engine, no reflection, no surprises. Its first job is not to be fast (though it is). Its first job is to make sure you **never silently fail to map a property again**.
+DwarfMapper mines the mapping at compile time and forges direct field copies — no reflection, no expression-tree engine, no surprises. Its first job is not to be fast (though it is). Its first job is to make sure you **never silently fail to map a property again**.
 
 ---
 
@@ -45,7 +45,7 @@ Speed is the supporting act: we match the fastest compile-time mappers on ordina
 
 ## Design principles
 
-- **0 reflection.** No `System.Reflection`, no `Reflection.Emit`, no runtime configuration. Everything is resolved by the source generator. NativeAOT- and trimming-safe, and verified so in CI.
+- **0 reflection.** No `System.Reflection` member access, no `Reflection.Emit`, no runtime configuration. In-assembly mapping is fully resolved by the source generator; the optional cross-assembly ambient facade does only a `Type`-keyed dictionary lookup (no member reflection). NativeAOT- and trimming-safe, and verified so in CI.
 - **0 hidden allocation.** The mapper itself allocates nothing. Mapping into a new reference type allocates only that target (unavoidable).
 - **0 silent data loss.** Completeness is enforced at compile time. Over-posting / mass-assignment-style bugs are designed out: only members the generator explicitly resolved are ever written.
 - **Provably-safe unsafe.** The blittable fast-path is gated by analyzer proofs (unmanaged types, matching size, no managed references, compatible layout). The **automatic** fast-path never emits a cast without that full layout+name proof — it falls back to plain assignments instead. (The opt-in `[Reinterpret]` override emits a memory-safe, size-guarded blit whose field correspondence *you* assert.)
@@ -183,7 +183,7 @@ using DwarfMapper.Extensions;
 var dto = order.ToOrderDto();          // named after the target type; forwards to a cached singleton
 
 // 3. Dependency injection (when Microsoft.Extensions.DependencyInjection is referenced).
-services.AddDwarfMappers();             // registers every [DwarfMapper] in the assembly as a singleton
+services.AddDwarfMappers();             // registers every [DwarfMapper] as a singleton (needs `using <YourAssemblyName>;` — the extension lives in your assembly's root namespace)
 // ...then inject OrderMapper directly.
 
 // 4. Ambient facade — the AutoMapper `IMapper.Map<T>` drop-in (DI or the static Instance).
@@ -264,7 +264,7 @@ A constant must be an attribute-legal value (string, bool, char, numeric, enum, 
 | **DateTime / DateTimeOffset → string** | `DateTime → string` | `v.ToString("o", InvariantCulture)` | ISO-8601 round-trip format ("o"); lossless including sub-second precision and `Kind`/offset |
 | **enum ↔ enum** (by name, default) | `Color.Red → Status.Red` | `switch` | Missing member → `DWARF015` |
 | **enum ↔ enum** (by value) | `E1:short → E2:int` | `(E2)Int32.CreateChecked((short)v)` — via **both** enums' actual underlying types | Throws `OverflowException` on overflow |
-| **enum ↔ string** | `Color.Red ↔ "Red"` | `switch` | No reflection |
+| **enum ↔ string** | `Color.Red ↔ "Red"` | `switch` | `string→enum` on an unknown name **throws `ArgumentOutOfRangeException`**; `enum→string` on an undefined value falls back to `ToString()` |
 | **enum ↔ integral** | `Color:byte → int`, `enum:uint → long`, `int → Status:short` | `Int32.CreateChecked((byte)v)` — cast through the enum's **actual declared underlying** type (`byte`/`short`/`uint`/`long`/…, never a fixed `int`), then checked | Runtime throws `OverflowException` on overflow. In a **projection**, a genuine widening (`short→int`) inlines a plain cast, but any narrowing — including a same-width unsigned→signed like `uint→int` — is `DWARF028` (SQL can't range-check) |
 | **T → T?** (target-nullable, non-nullable source) | `long → int?`, `string → int?`, `int → Color?` | inner conversion result implicitly lifted to `T?` | Overflow/format errors still propagate |
 | **T? → U?** (both nullable) | `long? → int?`, `E1? → E2?` | `src.HasValue ? Conv(src.Value) : null` | Null-preserving: null source → null target; non-null out-of-range still throws (e.g. `OverflowException`) |
@@ -314,7 +314,7 @@ public partial class PersonMapper
 Every **mandatory** constructor parameter must be satisfied — if DwarfMapper cannot find a matching source member for a non-optional, non-`params` parameter, it emits `DWARF024 ConstructorParameterUnmapped` (a build error). Optional parameters and `params` arrays with no matching source are omitted and take their declared default. Positional record members that are satisfied by a constructor parameter are not double-assigned in the object initializer.
 
 **Constructor selection policy** (deterministic, in order):
-1. A constructor annotated `[DwarfMapperConstructor]` is selected unconditionally. More than one annotated constructor → `DWARF025 AmbiguousConstructor`.
+1. A constructor annotated `[DwarfMapperConstructor]` is selected first — provided it's a usable candidate (no `ref`/`out` params, not the record copy-ctor, not `[Obsolete]`); an unusable annotated ctor is ignored and normal selection resumes. More than one annotated constructor → `DWARF025 AmbiguousConstructor`.
 2. An accessible parameterless constructor → object-initializer path (existing behavior, no ctor args emitted).
 3. Exactly one non-parameterless constructor → use it.
 4. Multiple non-parameterless constructors → pick the one with the most parameters; if there is a tie → `DWARF025`.
@@ -379,9 +379,10 @@ Ideal for mapping a streamed data source (DB cursor, network stream) to DTOs wit
 Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recursive types) are detected at generator time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead. The behaviour for shared references and cycles is controlled per mapper:
 
 ```csharp
+// Pick ONE [DwarfMapper(...)] per class — the attribute is AllowMultiple = false; these are alternatives, not a stack:
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]   // full topology
-[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]                        // break cycles with null
-[DwarfMapper(MaxDepth = 128)]                                          // depth bound (default 64)
+// [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]                     // ...or break cycles with null
+// [DwarfMapper(MaxDepth = 128)]                                       // ...or a custom depth bound (default 64)
 ```
 
 - **`ReferenceHandling = None`** (default): no identity tracking, zero allocation. Recursion-capable pairs carry a depth counter — a cycle (or an over-deep chain), whether through a **direct reference member or a `List<T>`/`Dictionary<K,V>` edge**, throws a loud, catchable `DwarfMappingDepthException` at `MaxDepth` (default 64, hard cap 1000) instead of a silent `StackOverflowException`. Non-recursive collections stay zero-overhead (no context threaded).
