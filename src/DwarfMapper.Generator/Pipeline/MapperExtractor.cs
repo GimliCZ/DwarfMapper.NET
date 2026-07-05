@@ -3549,16 +3549,6 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    ///     Returns true when <paramref name="type" /> carries a nullable annotation
-    ///     (either a nullable reference type or a nullable value type like <c>ImmutableArray&lt;T&gt;?</c>).
-    ///     Used for value-type struct nullable targets such as <c>ImmutableArray&lt;T&gt;?</c> (A2/A3).
-    /// </summary>
-    private static bool IsNullableAnnotated(ITypeSymbol type)
-    {
-        return type.NullableAnnotation == NullableAnnotation.Annotated;
-    }
-
-    /// <summary>
     ///     True when a source member of this type may be null from the compiler's point of view — a
     ///     reference type that is nullable-annotated OR oblivious (<c>#nullable disable</c> context).
     ///     Drives the null-forgiving <c>!</c> at synthesized-converter call sites: only such sources can
@@ -3685,12 +3675,6 @@ internal static class MapperExtractor
         var writable = new HashSet<string>(WritableMembers(type, compilation, allowNonPublic).Select(m => m.Name),
             StringComparer.Ordinal);
         return ReadableMembers(type, compilation, allowNonPublic).Where(m => !writable.Contains(m.Name));
-    }
-
-    private static bool HasAccessibleParameterlessCtor(INamedTypeSymbol type)
-    {
-        return type.InstanceConstructors.Any(c =>
-            c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
     }
 
     /// <summary>

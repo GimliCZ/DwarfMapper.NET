@@ -23,9 +23,6 @@ internal sealed class NestedMappingRegistry
 {
     private const int MaxPairs = 512;
 
-    // C1: per-pair autoNest value that triggered the enqueue.
-    private readonly Dictionary<string, bool> _autoNestByName = new(StringComparer.Ordinal);
-
     private readonly Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest)> _buildQueue = new();
 
     // ── None-mode collection/dict ctx-upgrade candidates ────────────────────────
@@ -151,22 +148,12 @@ internal sealed class NestedMappingRegistry
 
         methodName = BuildMethodName(srcFqn, tgtFqn);
         _reserved[key] = methodName;
-        _autoNestByName[methodName] = autoNest;
         _buildQueue.Enqueue((src, tgt, methodName, autoNest));
 
         // Record the dependency edge: current pair → new pair.
         RecordEdge(methodName);
 
         return methodName;
-    }
-
-    /// <summary>
-    ///     Returns the autoNest value that was stored when this pair was enqueued (C1 fix).
-    ///     Defaults to true when not found (should not happen during a well-formed drain).
-    /// </summary>
-    public bool GetAutoNest(string methodName)
-    {
-        return !_autoNestByName.TryGetValue(methodName, out var v) || v;
     }
 
     private void RecordEdge(string calleeName)

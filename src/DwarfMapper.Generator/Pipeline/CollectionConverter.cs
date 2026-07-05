@@ -365,14 +365,14 @@ internal static class CollectionConverter
 
             case TargetKind.ImmutableList:
             case TargetKind.IImmutableList:
-                EmitImmutableList(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull,
-                    threadCtx);
+                EmitImmutableCollection(sb, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
+                    threadCtx, "ImmutableList");
                 break;
 
             case TargetKind.ImmutableHashSet:
             case TargetKind.IImmutableSet:
-                EmitImmutableHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull,
-                    threadCtx);
+                EmitImmutableCollection(sb, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
+                    threadCtx, "ImmutableHashSet");
                 break;
         }
     }
@@ -637,63 +637,36 @@ internal static class CollectionConverter
         sb.Append("    }\n");
     }
 
-    private static void EmitImmutableList(
-        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
-        string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
+    /// <summary>
+    ///     Emits a synthesized mapper for an <c>ImmutableList&lt;T&gt;</c> or <c>ImmutableHashSet&lt;T&gt;</c>
+    ///     target (identical shapes bar the concrete immutable type). <paramref name="immutableType"/> is the
+    ///     unqualified type name (<c>"ImmutableList"</c> / <c>"ImmutableHashSet"</c>); both use the matching
+    ///     factory's <c>CreateRange</c> and <c>.Empty</c>.
+    /// </summary>
+    private static void EmitImmutableCollection(
+        StringBuilder sb, string name, string srcParamType, string elem, string item,
+        bool identity, bool nullAsNull, bool elemNeedsCtx, string immutableType)
     {
-        var tgtFq = "global::System.Collections.Immutable.ImmutableList<" + elem + ">";
+        var tgtFq = "global::System.Collections.Immutable." + immutableType + "<" + elem + ">";
         var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
-        var paramType = srcParamType; // nullable-aware; null guard inside handles it
-        var emptyExpr = nullAsNull
-            ? "null"
-            : "global::System.Collections.Immutable.ImmutableList<" + elem + ">.Empty";
+        var emptyExpr = nullAsNull ? "null" : tgtFq + ".Empty";
+        var createRange = "global::System.Collections.Immutable." + immutableType + ".CreateRange";
         var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
 
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+            .Append('(').Append(srcParamType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity && !elemNeedsCtx)
         {
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableList.CreateRange(src);\n");
+            sb.Append("        return ").Append(createRange).Append("(src);\n");
         }
         else
         {
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
             sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
             sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableList.CreateRange(__buf);\n");
-        }
-
-        sb.Append("    }\n");
-    }
-
-    private static void EmitImmutableHashSet(
-        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
-        string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
-    {
-        var tgtFq = "global::System.Collections.Immutable.ImmutableHashSet<" + elem + ">";
-        var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
-        var paramType = srcParamType; // nullable-aware; null guard inside handles it
-        var emptyExpr = nullAsNull
-            ? "null"
-            : "global::System.Collections.Immutable.ImmutableHashSet<" + elem + ">.Empty";
-        var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
-
-        sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
-
-        if (identity && !elemNeedsCtx)
-        {
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableHashSet.CreateRange(src);\n");
-        }
-        else
-        {
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
-            sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableHashSet.CreateRange(__buf);\n");
+            sb.Append("        return ").Append(createRange).Append("(__buf);\n");
         }
 
         sb.Append("    }\n");

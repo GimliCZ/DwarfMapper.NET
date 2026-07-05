@@ -156,16 +156,6 @@ internal static class DictionaryConverter
         return name;
     }
 
-    // Old overload (no targetKind, no nullAsNull) for existing call-sites.
-    public static string Synthesize(
-        Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcType,
-        ITypeSymbol tgtKey, ITypeSymbol tgtVal, bool srcHasCount,
-        string? keyConverter, NullHandling keyNull, string? valConverter, NullHandling valNull)
-    {
-        return Synthesize(synth, srcType, tgtKey, tgtVal, srcHasCount,
-            DictTargetKind.Dictionary, keyConverter, keyNull, valConverter, valNull);
-    }
-
     /// <summary>
     ///     Re-emits an EXISTING dictionary helper (keyed by <paramref name="existingName" />) so it threads
     ///     <c>(ctx, depth)</c> and routes the recursion-capable key/value through a ctx-accepting converter
