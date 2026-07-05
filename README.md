@@ -23,7 +23,7 @@ Every C# mapper today optimizes for ergonomics or raw speed. None of them treat 
 DwarfMapper is built around that pain:
 
 1. **You cannot ship an incomplete map.** Every destination member must be mapped, or *explicitly* ignored. Anything else is a build error.
-2. **Round-trips are verifiable in one line.** Tag a forward/back pair with `[RoundTrip]` (with a `DwarfMapper.Testing` reference) and the generator emits a fuzz harness you call from a test to prove `Back(Forward(x)) ≡ x`. No hand-written fixtures.
+2. **Round-trips are verifiable in one line.** Tag a forward/back pair with `[RoundTrip]` and the generator emits a fuzz harness you call from a test to prove `Back(Forward(x)) ≡ x`. No hand-written fixtures. (A **test-time** check: it uses the reflection-based `DwarfMapper.Testing` package — not for AOT/production, unlike the mapper itself.)
 3. **Failures explain themselves.** When a check fails you get a *structural, member-path* diff: which member diverged, its expected vs. actual value, and the replay seed — not a blind object dump.
 
 Speed is the supporting act: we match the fastest compile-time mappers on ordinary DTOs and beat them on blittable collections.
@@ -397,6 +397,10 @@ Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recurs
 Unmapped destination members are a `DWARF` build error — always. Completeness is enforced **by construction**, not merely by the diagnostic's severity: suppressing the diagnostic in `.editorconfig` doesn't ship an incomplete map — the method body isn't generated, so the build still fails (with a rawer compiler error instead of the helpful `DWARF001`). This is the compile-time replacement for the manual "did I wire everything up?" review.
 
 ### `[RoundTrip]` verification
+> **Test-time only — not AOT-safe.** `[RoundTrip]` calls the **reflection-based** `DwarfMapper.Testing`
+> package, so it runs in your **test** run, never in a shipped / AOT-published assembly, and is *not* part of
+> the reflection-free / AOT-safe mapper. Reference `DwarfMapper.Testing` from test projects only.
+
 Tag the forward method with `[RoundTrip]`; the generator finds the inverse mapping method and emits a `VerifyRoundTrip_<method>(seed, iterations)` that fuzzes inputs (seeded, reproducible), runs `Back(Forward(x))`, asserts structural equality, and on mismatch throws an **informed dump**. One attribute replaces the fixtures you used to maintain by hand — call it from a single test:
 
 ```csharp

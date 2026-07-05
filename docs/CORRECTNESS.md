@@ -41,6 +41,11 @@ Tag a forward/back pair `[RoundTrip]` and the generator emits a seeded fuzz harn
 One attribute replaces the fixtures you'd otherwise hand-maintain. *Evidence:* `DwarfMapper.Testing` +
 the `[RoundTrip]` generation path.
 
+> **This proof is test-time, not AOT-runtime.** The emitted verifier calls into `DwarfMapper.Testing`, which
+> is **reflection-based** — the one reflection-using piece, deliberately **not** part of the shipped mapper.
+> Reference `DwarfMapper.Testing` from **test projects only**; the round-trip check runs in your test run, not
+> in production. §5's reflection-free / AOT-safe guarantee covers the generated *mapping* code, not this verifier.
+
 ## 4. The codegen is deterministic and incrementally cached — proven
 
 - **Deterministic:** running the generator twice over the same input yields byte-identical output (and
