@@ -280,7 +280,7 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 
 **Nullable values.** A nullable value-type source mapped to a non-nullable destination (`int? → int`) is unwrapped per `NullStrategy`: **throw on null** (default) or `[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]` to use the destination default. A non-nullable source mapped to a nullable-value-type destination (`long → int?`, `string → int?`) is handled automatically — the inner conversion (e.g. `CreateChecked`, `Parse`) runs, and the result is implicitly lifted to `T?`; overflow and format errors still propagate. Nullable-source + nullable-target (`long?→int?`, `E1?→E2?`) is also handled automatically and is null-preserving: a null source maps to a null target, and a non-null value runs the inner conversion (out-of-range still throws, e.g. `OverflowException`) — see the `T? → U?` row in the conversion table above.
 
-**Collections.** `T[]`, `List<T>`, and `HashSet<T>` members map element-by-element, applying the same conversion rules per element (nested objects, converters, enums, nullable unwrap, even nested collections). When the element type is unchanged, the whole collection is bulk-copied (`T[]` → `T[]` clone, `→ List<T>`/`HashSet<T>` bulk constructor). Read-only source shapes (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlySet<T>`, …) are accepted as sources. A **null source collection** never throws: by default (`[DwarfMapper(NullCollections = NullCollectionStrategy.AsEmpty)]`) it produces an empty target collection; set `NullCollections = NullCollectionStrategy.AsNull` to propagate null instead (the target member must then be a nullable reference type). An unsupported collection/dictionary target type is `DWARF027`.
+**Collections.** `T[]`, `List<T>`, and `HashSet<T>` members map element-by-element, applying the same conversion rules per element (nested objects, converters, enums, nullable unwrap, even nested collections). When the element type is unchanged, the whole collection is bulk-copied (`T[]` → `T[]` clone, `→ List<T>`/`HashSet<T>` bulk constructor). Read-only / interface shapes (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `IReadOnlySet<T>`, `ICollection<T>`, …) are accepted as **both source and target**, and immutable collections are supported targets. A **null source collection** never throws: by default (`[DwarfMapper(NullCollections = NullCollectionStrategy.AsEmpty)]`) it produces an empty target collection; set `NullCollections = NullCollectionStrategy.AsNull` to propagate null instead (with a non-nullable target member you'll get a nullable-annotation warning). An unsupported collection/dictionary target type is `DWARF027`.
 
 **Flattening.** `[Flatten("Address")]` pulls a complex source member's sub-members up to top-level destination members of the same name (`Address.City → City`). The flattened leaf goes through the same conversion rules (converters, enums, nullable). One level deep; a null flatten root throws at runtime. Unknown root → `DWARF016`; a name flattened from two roots → `DWARF017`.
 
@@ -393,15 +393,7 @@ public void Order_roundtrips() => new OrderMapper().VerifyRoundTrip_ToDto();
 Requires a reference to `DwarfMapper.Testing`; without it, `[RoundTrip]` is a no-op (no verifier is generated). No inverse → `DWARF020`; ambiguous inverse → `DWARF021`.
 
 ### Informed dumps
-A mapping-aware diff renderer. Instead of "two objects differ somewhere," you get:
-
-```
-✗ Order.FromDto(ToDto(x)) mismatch  [seed: 0x8F3A21C7]
-  Discount         expected 0.15   actual 0.00    via  Order.Discount → OrderDto.Discount → (unmapped on return)
-  ShippedAtUtc     expected …Z     actual null    via  Order.ShippedAtUtc → OrderDto.ShippedAt  (Kind lost in converter)
-```
-
-The diff knows the mapping graph, so it tells you *where the wiring broke*, not just *that values differ*.
+When a round-trip check fails you get a **structural diff**, not "two objects differ somewhere": `RoundTrip.Verify` throws a `RoundTripException` that walks the two graphs and reports the **member path** that diverged with its **expected vs. actual** value, plus the replay **seed** so you can reproduce the exact failing input (`ObjectFactory.Create<T>(seed)` rebuilds it). See *Verifying maps today* below.
 
 ### Verifying maps today
 
