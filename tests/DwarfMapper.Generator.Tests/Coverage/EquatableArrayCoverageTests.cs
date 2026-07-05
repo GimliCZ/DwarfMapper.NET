@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
+
+using System.Collections;
 using DwarfMapper.Generator.Collections;
 
 // Coverage suite for DwarfMapper.Generator.Collections.EquatableArray<T>.
@@ -97,7 +96,7 @@ public class EquatableArrayCoverageTests
     [Fact]
     public void Not_equal_when_one_null_one_empty()
     {
-        var nullBacked  = new EquatableArray<int>(null);
+        var nullBacked = new EquatableArray<int>(null);
         var emptyBacked = new EquatableArray<int>(Array.Empty<int>());
         // null array vs empty array: both Count==0 but Equals follows the null-guard branch.
         // if (_array is null || other._array is null) → return _array is null && other._array is null
@@ -128,7 +127,7 @@ public class EquatableArrayCoverageTests
     public void Equals_object_with_null_returns_false()
     {
         var a = new EquatableArray<int>(new[] { 1 });
-        Assert.False(a.Equals((object?)null));
+        Assert.False(a.Equals(null));
     }
 
     [Fact]
@@ -209,7 +208,7 @@ public class EquatableArrayCoverageTests
     {
         var ea = new EquatableArray<int>(new[] { 1, 2 });
         // Exercise the IEnumerable.GetEnumerator() path
-        System.Collections.IEnumerable nonGeneric = ea;
+        IEnumerable nonGeneric = ea;
         var list = new List<object>();
         foreach (var x in nonGeneric)
             list.Add(x);

@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -25,7 +22,10 @@ public class CgnListOwnerDst
 }
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class CgnListMapper { public partial CgnListOwnerDst Map(CgnListOwnerSrc s); }
+public partial class CgnListMapper
+{
+    public partial CgnListOwnerDst Map(CgnListOwnerSrc s);
+}
 
 // ─── Cycle through a collection ──────────────────────────────────────────────
 
@@ -42,7 +42,10 @@ public class CgnTreeNodeDto
 }
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class CgnTreeMapper { public partial CgnTreeNodeDto Map(CgnTreeNode n); }
+public partial class CgnTreeMapper
+{
+    public partial CgnTreeNodeDto Map(CgnTreeNode n);
+}
 
 // ─── Shared Dictionary<string,int> between two parents ───────────────────────
 
@@ -61,11 +64,19 @@ public class CgnDictOwnerDst
 }
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class CgnDictMapper { public partial CgnDictOwnerDst Map(CgnDictOwnerSrc s); }
+public partial class CgnDictMapper
+{
+    public partial CgnDictOwnerDst Map(CgnDictOwnerSrc s);
+}
 
 // ─── Nested object inside a shared list preserves element identity ────────────
 
-public class CgnChildSrc { public string Name { get; set; } = ""; public CgnChildSrc? Ref { get; set; } }
+public class CgnChildSrc
+{
+    public string Name { get; set; } = "";
+    public CgnChildSrc? Ref { get; set; }
+}
+
 public class CgnParentSrc
 {
     public string Tag { get; set; } = "";
@@ -73,7 +84,12 @@ public class CgnParentSrc
     public List<CgnChildSrc> Kids { get; set; } = new();
 }
 
-public class CgnChildDst { public string Name { get; set; } = ""; public CgnChildDst? Ref { get; set; } }
+public class CgnChildDst
+{
+    public string Name { get; set; } = "";
+    public CgnChildDst? Ref { get; set; }
+}
+
 public class CgnParentDst
 {
     public string Tag { get; set; } = "";
@@ -82,7 +98,10 @@ public class CgnParentDst
 }
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class CgnParentMapper { public partial CgnParentDst Map(CgnParentSrc s); }
+public partial class CgnParentMapper
+{
+    public partial CgnParentDst Map(CgnParentSrc s);
+}
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -121,7 +140,7 @@ public class CollectionGraphNodeRuntimeTests
     [Fact]
     public void Deep_linear_tree_through_collection_eventually_depth_caps()
     {
-        var nodes = new System.Collections.Generic.List<CgnTreeNode>();
+        var nodes = new List<CgnTreeNode>();
         for (var i = 0; i < 200; i++)
             nodes.Add(new CgnTreeNode { Name = $"n{i}" });
         for (var i = 0; i < 199; i++)
@@ -197,7 +216,10 @@ public class NoneListOwnerDst
 
 // Default ReferenceHandling = None — no DwarfRefContext, no graph tracking.
 [DwarfMapper]
-public partial class NoneListMapper { public partial NoneListOwnerDst Map(NoneListOwnerSrc s); }
+public partial class NoneListMapper
+{
+    public partial NoneListOwnerDst Map(NoneListOwnerSrc s);
+}
 
 public class NoneModeCollectionRegressionTests
 {
@@ -229,6 +251,6 @@ public class NoneModeCollectionRegressionTests
         var dst = new NoneListMapper().Map(src);
         Assert.Equal("X", dst.Tag);
         Assert.Equal(new[] { 5, 6, 7 }, dst.Nums);
-        Assert.NotSame(src.Nums, dst.Nums);  // always a new list, even in None mode
+        Assert.NotSame(src.Nums, dst.Nums); // always a new list, even in None mode
     }
 }

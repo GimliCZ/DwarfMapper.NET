@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Linq;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
-public class PPerson { public int Age { get; set; } public string Name { get; set; } = ""; }
-public class PPersonDto { public int Age { get; set; } public string Name { get; set; } = ""; }
+public class PPerson
+{
+    public int Age { get; set; }
+    public string Name { get; set; } = "";
+}
+
+public class PPersonDto
+{
+    public int Age { get; set; }
+    public string Name { get; set; } = "";
+}
 
 [DwarfMapper]
 public partial class ProjMapper
@@ -21,7 +28,7 @@ public class ProjectionRuntimeTests
         var source = new[]
         {
             new PPerson { Age = 30, Name = "Thorin" },
-            new PPerson { Age = 40, Name = "Dwalin" },
+            new PPerson { Age = 40, Name = "Dwalin" }
         }.AsQueryable();
 
         var dtos = new ProjMapper().Project(source).ToList();

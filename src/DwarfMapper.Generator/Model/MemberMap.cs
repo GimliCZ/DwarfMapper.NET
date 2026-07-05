@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 namespace DwarfMapper.Generator.Model;
 
 /// <summary>
-/// One resolved destination&lt;-source member assignment. <see cref="ConverterMethod"/>,
-/// when set, transforms the value; otherwise <see cref="NullHandling"/> controls
-/// how a nullable value-type source is unwrapped.
+///     One resolved destination&lt;-source member assignment. <see cref="ConverterMethod" />,
+///     when set, transforms the value; otherwise <see cref="NullHandling" /> controls
+///     how a nullable value-type source is unwrapped.
 /// </summary>
 public sealed record MemberMap(
     string TargetName,
@@ -60,4 +61,4 @@ public sealed record MemberMap(
     /// members (AutoMapper's <c>ForAllMembers(o =&gt; o.Condition((_,_,src) =&gt; src != null))</c>).
     /// Mutually exclusive with <see cref="WhenPredicate"/>.
     /// </summary>
-    bool SkipIfSourceNull = false) : System.IEquatable<MemberMap>;
+    bool SkipIfSourceNull = false) : IEquatable<MemberMap>;

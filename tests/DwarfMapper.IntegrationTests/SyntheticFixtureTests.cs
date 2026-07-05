@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -21,7 +19,12 @@ public sealed class SynSrc
 /// <summary>Public parameterized ctor, get-only members.</summary>
 public sealed class SynPublicCtor
 {
-    public SynPublicCtor(int a, string b) { A = a; B = b; }
+    public SynPublicCtor(int a, string b)
+    {
+        A = a;
+        B = b;
+    }
+
     public int A { get; }
     public string B { get; }
 }
@@ -29,7 +32,12 @@ public sealed class SynPublicCtor
 /// <summary>Optional ctor parameter — the source has no 'note', so it is omitted and the default is used.</summary>
 public sealed class SynOptionalCtor
 {
-    public SynOptionalCtor(int a, string note = "fallback") { A = a; Note = note; }
+    public SynOptionalCtor(int a, string note = "fallback")
+    {
+        A = a;
+        Note = note;
+    }
+
     public int A { get; }
     public string Note { get; }
 }
@@ -37,7 +45,12 @@ public sealed class SynOptionalCtor
 /// <summary>params ctor tail — the source has no 'rest', so it is omitted (empty array).</summary>
 public sealed class SynParamsCtor
 {
-    public SynParamsCtor(int a, params int[] rest) { A = a; Rest = rest; }
+    public SynParamsCtor(int a, params int[] rest)
+    {
+        A = a;
+        Rest = rest;
+    }
+
     public int A { get; }
     public int[] Rest { get; }
 }
@@ -53,7 +66,12 @@ public sealed class SynRequiredCtor
 /// <summary>Internal parameterized ctor — reachable only with AllowNonPublic.</summary>
 public sealed class SynInternalCtor
 {
-    internal SynInternalCtor(int a, string b) { A = a; B = b; }
+    internal SynInternalCtor(int a, string b)
+    {
+        A = a;
+        B = b;
+    }
+
     public int A { get; }
     public string B { get; }
 }
@@ -65,12 +83,41 @@ public sealed class SynInternalMembers
     public string B { get; internal set; } = "";
 }
 
-[DwarfMapper(CaseInsensitive = true)] [GenerateMap<SynSrc, SynPublicCtor>] public partial class SynPublicCtorMapper { }
-[DwarfMapper(CaseInsensitive = true)] [GenerateMap<SynSrc, SynOptionalCtor>] public partial class SynOptionalCtorMapper { }
-[DwarfMapper(CaseInsensitive = true)] [GenerateMap<SynSrc, SynParamsCtor>] public partial class SynParamsCtorMapper { }
-[DwarfMapper(CaseInsensitive = true)] [GenerateMap<SynSrc, SynRequiredCtor>] public partial class SynRequiredCtorMapper { }
-[DwarfMapper(CaseInsensitive = true, AllowNonPublic = true)] [GenerateMap<SynSrc, SynInternalCtor>] public partial class SynInternalCtorMapper { }
-[DwarfMapper(CaseInsensitive = true, AllowNonPublic = true)] [GenerateMap<SynSrc, SynInternalMembers>] public partial class SynInternalMembersMapper { }
+[DwarfMapper(CaseInsensitive = true)]
+[GenerateMap<SynSrc, SynPublicCtor>]
+public partial class SynPublicCtorMapper
+{
+}
+
+[DwarfMapper(CaseInsensitive = true)]
+[GenerateMap<SynSrc, SynOptionalCtor>]
+public partial class SynOptionalCtorMapper
+{
+}
+
+[DwarfMapper(CaseInsensitive = true)]
+[GenerateMap<SynSrc, SynParamsCtor>]
+public partial class SynParamsCtorMapper
+{
+}
+
+[DwarfMapper(CaseInsensitive = true)]
+[GenerateMap<SynSrc, SynRequiredCtor>]
+public partial class SynRequiredCtorMapper
+{
+}
+
+[DwarfMapper(CaseInsensitive = true, AllowNonPublic = true)]
+[GenerateMap<SynSrc, SynInternalCtor>]
+public partial class SynInternalCtorMapper
+{
+}
+
+[DwarfMapper(CaseInsensitive = true, AllowNonPublic = true)]
+[GenerateMap<SynSrc, SynInternalMembers>]
+public partial class SynInternalMembersMapper
+{
+}
 
 // ── Synthetic functions of varying arity, referenced from a mapping ──
 public sealed class FnSrc
@@ -93,16 +140,40 @@ public sealed class FnTarget
 [MapProperty<FnSrc, FnTarget>(nameof(FnSrc.X), nameof(FnTarget.Summed), Use = nameof(Triple))]
 public partial class SynFunctionMapper
 {
-    private static string Upper(string s) => s.ToUpperInvariant();           // 1-arg converter
-    private static string Stamp() => "stamped";                              // 0-arg value provider
-    private static int Triple(int x) => Sum(x, x, x);                        // references a params helper
-    private static int Sum(params int[] xs) { var t = 0; foreach (var n in xs) t += n; return t; } // any-arity
+    private static string Upper(string s)
+    {
+        return s.ToUpperInvariant();
+        // 1-arg converter
+    }
+
+    private static string Stamp()
+    {
+        return "stamped";
+        // 0-arg value provider
+    }
+
+    private static int Triple(int x)
+    {
+        return Sum(x, x, x);
+        // references a params helper
+    }
+
+    private static int Sum(params int[] xs)
+    {
+        var t = 0;
+        foreach (var n in xs) t += n;
+        return t;
+    } // any-arity
 }
 
 /// <summary>Factory function referencing a params helper.</summary>
 public sealed class FacTarget
 {
-    public FacTarget(int seeded) { Seeded = seeded; }
+    public FacTarget(int seeded)
+    {
+        Seeded = seeded;
+    }
+
     public int Seeded { get; }
     public string Name { get; set; } = "";
 }
@@ -112,8 +183,17 @@ public sealed class FacTarget
 [MapConstructor<FnSrc, FacTarget>(nameof(MakeFac))]
 public partial class SynFactoryMapper
 {
-    private static FacTarget MakeFac(FnSrc s) => new(SumAll(s.X, 1, 2, 3, 4));
-    private static int SumAll(params int[] xs) { var t = 0; foreach (var n in xs) t += n; return t; }
+    private static FacTarget MakeFac(FnSrc s)
+    {
+        return new FacTarget(SumAll(s.X, 1, 2, 3, 4));
+    }
+
+    private static int SumAll(params int[] xs)
+    {
+        var t = 0;
+        foreach (var n in xs) t += n;
+        return t;
+    }
 }
 
 public sealed class SyntheticFixtureTests
@@ -171,15 +251,15 @@ public sealed class SyntheticFixtureTests
     public void Functions_of_varying_arity_are_referenced()
     {
         var d = new SynFunctionMapper().Map(new FnSrc());
-        Assert.Equal("ALICE", d.Name);   // 1-arg
-        Assert.Equal("stamped", d.Tag);  // 0-arg
-        Assert.Equal(15, d.Summed);      // Triple -> Sum(5,5,5)
+        Assert.Equal("ALICE", d.Name); // 1-arg
+        Assert.Equal("stamped", d.Tag); // 0-arg
+        Assert.Equal(15, d.Summed); // Triple -> Sum(5,5,5)
     }
 
     [Fact]
     public void Factory_referencing_a_params_helper()
     {
         var d = new SynFactoryMapper().Map(new FnSrc());
-        Assert.Equal(15, d.Seeded);      // SumAll(5,1,2,3,4)
+        Assert.Equal(15, d.Seeded); // SumAll(5,1,2,3,4)
     }
 }

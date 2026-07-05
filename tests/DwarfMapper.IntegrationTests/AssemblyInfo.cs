@@ -4,4 +4,5 @@
 // Parse/ToString stay invariant). That mutation is process-thread-wide, so running tests in parallel
 // could let the de-DE window bleed into a concurrently-running test. Disabling parallelization keeps the
 // suite deterministic; it costs little (the whole integration suite runs in well under a second).
-[assembly: Xunit.CollectionBehavior(DisableTestParallelization = true)]
+
+[assembly: CollectionBehavior(DisableTestParallelization = true)]

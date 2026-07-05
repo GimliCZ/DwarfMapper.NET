@@ -1,15 +1,32 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── Safe path 1: by-name across mismatched underlying width ──────────────────
 // ESrcByte : byte  →  EDstLong : long  (widening underlying, but mapped BY NAME)
-public enum ESrcByte : byte  { A, B, C }
-public enum EDstLong : long  { A, B, C }
+public enum ESrcByte : byte
+{
+    A,
+    B,
+    C
+}
 
-public class EnumSrcByteHolder { public ESrcByte V { get; set; } }
-public class EnumDstLongHolder { public EDstLong V { get; set; } }
+public enum EDstLong : long
+{
+    A,
+    B,
+    C
+}
+
+public class EnumSrcByteHolder
+{
+    public ESrcByte V { get; set; }
+}
+
+public class EnumDstLongHolder
+{
+    public EDstLong V { get; set; }
+}
 
 [DwarfMapper]
 public partial class EnumByteToLongMapper
@@ -18,8 +35,15 @@ public partial class EnumByteToLongMapper
 }
 
 // Reverse: long → byte by name (narrowing underlying, still safe via NAME switch)
-public class EnumSrcLongHolder { public EDstLong V { get; set; } }
-public class EnumDstByteHolder { public ESrcByte V { get; set; } }
+public class EnumSrcLongHolder
+{
+    public EDstLong V { get; set; }
+}
+
+public class EnumDstByteHolder
+{
+    public ESrcByte V { get; set; }
+}
 
 [DwarfMapper]
 public partial class EnumLongToByteMapper
@@ -28,9 +52,21 @@ public partial class EnumLongToByteMapper
 }
 
 // ── Safe path 2: by-name with :ulong including large value ───────────────────
-public enum BigULong : ulong { Lo = 0, Hi = 9223372036854775809 }  // Hi > ulong.MaxValue/2, non-power-of-2 (avoids CA1027 Flags hint)
-public class BigSrcHolder { public BigULong V { get; set; } }
-public class BigDstHolder { public BigULong V { get; set; } }
+public enum BigULong : ulong
+{
+    Lo = 0,
+    Hi = 9223372036854775809
+} // Hi > ulong.MaxValue/2, non-power-of-2 (avoids CA1027 Flags hint)
+
+public class BigSrcHolder
+{
+    public BigULong V { get; set; }
+}
+
+public class BigDstHolder
+{
+    public BigULong V { get; set; }
+}
 
 [DwarfMapper]
 public partial class BigULongMapper
@@ -39,50 +75,125 @@ public partial class BigULongMapper
 }
 
 // ── Safe path 3: enum → wider numeric (widening cast, value preserved) ────────
-public enum EByte : byte { X = 200 }
-public class EByteHolder   { public EByte V { get; set; } }
-public class IntHolder     { public int   V { get; set; } }
+public enum EByte : byte
+{
+    X = 200
+}
+
+public class EByteHolder
+{
+    public EByte V { get; set; }
+}
+
+public class IntHolder
+{
+    public int V { get; set; }
+}
 
 [DwarfMapper]
-public partial class EnumByteToIntMapper { public partial IntHolder Map(EByteHolder s); }
+public partial class EnumByteToIntMapper
+{
+    public partial IntHolder Map(EByteHolder s);
+}
 
-public enum EInt : int { Y = int.MaxValue }
-public class EIntHolder    { public EInt V { get; set; } }
-public class LongHolder    { public long V { get; set; } }
+public enum EInt
+{
+    Y = int.MaxValue
+}
+
+public class EIntHolder
+{
+    public EInt V { get; set; }
+}
+
+public class LongHolder
+{
+    public long V { get; set; }
+}
 
 [DwarfMapper]
-public partial class EnumIntToLongMapper { public partial LongHolder Map(EIntHolder s); }
+public partial class EnumIntToLongMapper
+{
+    public partial LongHolder Map(EIntHolder s);
+}
 
 // ── Narrowing path: enum → narrower numeric (now uses CreateChecked — loud on overflow) ──
 // ELongBig : long { Big = 4294967296L }  mapped to int target.
 // The generator now emits: global::System.Int32.CreateChecked((global::System.Int64)v)
 // which throws OverflowException for 4294967296L (does not fit int).
-public enum ELongBig : long { Big = 4294967296L }   // 2^32 — does NOT fit int
-public class ELongBigHolder { public ELongBig V { get; set; } }
-public class IntHolderNarrow { public int     V { get; set; } }
+public enum ELongBig : long
+{
+    Big = 4294967296L
+} // 2^32 — does NOT fit int
+
+public class ELongBigHolder
+{
+    public ELongBig V { get; set; }
+}
+
+public class IntHolderNarrow
+{
+    public int V { get; set; }
+}
 
 [DwarfMapper]
-public partial class EnumLongToIntMapper { public partial IntHolderNarrow Map(ELongBigHolder s); }
+public partial class EnumLongToIntMapper
+{
+    public partial IntHolderNarrow Map(ELongBigHolder s);
+}
 
 // Also test a small in-range value for enum→int narrowing (must still map correctly)
-public enum ELongSmall : long { Small = 100L }
-public class ELongSmallHolder { public ELongSmall V { get; set; } }
-public class IntHolderSmall   { public int        V { get; set; } }
+public enum ELongSmall : long
+{
+    Small = 100L
+}
+
+public class ELongSmallHolder
+{
+    public ELongSmall V { get; set; }
+}
+
+public class IntHolderSmall
+{
+    public int V { get; set; }
+}
 
 [DwarfMapper]
-public partial class EnumLongSmallToIntMapper { public partial IntHolderSmall Map(ELongSmallHolder s); }
+public partial class EnumLongSmallToIntMapper
+{
+    public partial IntHolderSmall Map(ELongSmallHolder s);
+}
 
 // ── ByValue: enum → enum narrowing (now uses CreateChecked — loud on overflow) ─
 // EnumStrategy.ByValue is user-reachable via [DwarfMapper(EnumStrategy = EnumStrategy.ByValue)].
 // Generator now emits: (BValEnum)global::System.Byte.CreateChecked((global::System.Int64)v)
 // which throws OverflowException for 256 (does not fit byte).
-public enum LValEnum : long  { X = 256, Y = 10 }
-public enum BValEnum : byte  { Y = 10 }   // Y=10 fits, X=256 does not
-public class LValHolder { public LValEnum V { get; set; } }
-public class BValHolder { public BValEnum V { get; set; } }
+public enum LValEnum : long
+{
+    X = 256,
+    Y = 10
+}
+
+public enum BValEnum : byte
+{
+    Y = 10
+} // Y=10 fits, X=256 does not
+
+public class LValHolder
+{
+    public LValEnum V { get; set; }
+}
+
+public class BValHolder
+{
+    public BValEnum V { get; set; }
+}
 
 [DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]
-public partial class EnumByValNarrowMapper { public partial BValHolder Map(LValHolder s); }
+public partial class EnumByValNarrowMapper
+{
+    public partial BValHolder Map(LValHolder s);
+}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -122,7 +233,7 @@ public class EnumUnderlyingRuntimeTests
     public void Enum_byte_to_int_widening_preserves_value()
     {
         var result = new EnumByteToIntMapper().Map(new EByteHolder { V = EByte.X });
-        Assert.Equal(200, result.V);  // (int)(byte)200 == 200
+        Assert.Equal(200, result.V); // (int)(byte)200 == 200
     }
 
     // Safe path 3b: enum : int → long (widening cast, value preserved)
@@ -130,7 +241,7 @@ public class EnumUnderlyingRuntimeTests
     public void Enum_int_to_long_widening_preserves_value()
     {
         var result = new EnumIntToLongMapper().Map(new EIntHolder { V = EInt.Y });
-        Assert.Equal((long)int.MaxValue, result.V);  // widening, no truncation
+        Assert.Equal(int.MaxValue, result.V); // widening, no truncation
     }
 
     // enum : long { Big = 4294967296L } → int now throws OverflowException (checked via CreateChecked).

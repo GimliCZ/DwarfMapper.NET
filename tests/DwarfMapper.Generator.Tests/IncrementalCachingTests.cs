@@ -1,41 +1,51 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.IO;
-using System.Linq;
+
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Xunit;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Incremental-CACHING property. The pipeline models are value-equatable and symbol-free (records +
-/// EquatableArray, no ISymbol/Compilation/SyntaxNode held), so an edit that does NOT touch a mapper class
-/// must leave the per-mapper extraction step (and therefore the source-output step) <c>Cached</c>/
-/// <c>Unchanged</c> — the generator must not recompute or re-emit. This is what actually makes the
-/// generator cheap in the IDE; it is invisible to every other test (they each run the generator once). A
-/// future regression that slips a non-equatable value (e.g. a raw <c>ImmutableArray</c> or a leaked symbol)
-/// into a model would silently disable caching and ONLY this test would catch it.
+///     Incremental-CACHING property. The pipeline models are value-equatable and symbol-free (records +
+///     EquatableArray, no ISymbol/Compilation/SyntaxNode held), so an edit that does NOT touch a mapper class
+///     must leave the per-mapper extraction step (and therefore the source-output step) <c>Cached</c>/
+///     <c>Unchanged</c> — the generator must not recompute or re-emit. This is what actually makes the
+///     generator cheap in the IDE; it is invisible to every other test (they each run the generator once). A
+///     future regression that slips a non-equatable value (e.g. a raw <c>ImmutableArray</c> or a leaked symbol)
+///     into a model would silently disable caching and ONLY this test would catch it.
 /// </summary>
 public class IncrementalCachingTests
 {
     private const string MapperSource = """
-        using DwarfMapper;
-        using System.Collections.Generic;
-        namespace Demo;
-        public class Addr { public string City { get; set; } = ""; public string Zip { get; set; } = ""; }
-        public class Src { public int Id { get; set; } public string Name { get; set; } = ""; public long N { get; set; } public Addr Address { get; set; } = new(); public List<int> Nums { get; set; } = new(); }
-        public class Dst { public int Id { get; set; } public string Name { get; set; } = ""; public int N { get; set; } public string City { get; set; } = ""; public List<long> Nums { get; set; } = new(); }
-        [DwarfMapper]
-        public partial class M
-        {
-            [Flatten(nameof(Src.Address))]
-            public partial Dst Map(Src s);
-        }
-        """;
+                                        using DwarfMapper;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public class Addr { public string City { get; set; } = ""; public string Zip { get; set; } = ""; }
+                                        public class Src { public int Id { get; set; } public string Name { get; set; } = ""; public long N { get; set; } public Addr Address { get; set; } = new(); public List<int> Nums { get; set; } = new(); }
+                                        public class Dst { public int Id { get; set; } public string Name { get; set; } = ""; public int N { get; set; } public string City { get; set; } = ""; public List<long> Nums { get; set; } = new(); }
+                                        [DwarfMapper]
+                                        public partial class M
+                                        {
+                                            [Flatten(nameof(Src.Address))]
+                                            public partial Dst Map(Src s);
+                                        }
+                                        """;
 
-    private static CSharpGeneratorDriver NewDriver() => CSharpGeneratorDriver.Create(
-        new[] { new DwarfGenerator().AsSourceGenerator() },
-        driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, trackIncrementalGeneratorSteps: true));
+    private const string CoLocatedSource = """
+                                           using DwarfMapper;
+                                           namespace Demo;
+                                           public class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
+                                           [GenerateMap<Src, Dst>]
+                                           [MapProperty<Src, Dst>("Name", "FullName")]
+                                           public sealed class Dst { public int Id { get; set; } public string FullName { get; set; } = ""; }
+                                           """;
+
+    private static CSharpGeneratorDriver NewDriver()
+    {
+        return CSharpGeneratorDriver.Create(
+            new[] { new DwarfGenerator().AsSourceGenerator() },
+            driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, true));
+    }
 
     [Fact]
     public void Unrelated_edit_leaves_the_mapper_pipeline_cached()
@@ -78,13 +88,13 @@ public class IncrementalCachingTests
     private static PortableExecutableReference CompileProviderRef(string ns)
     {
         var src = $$"""
-            namespace {{ns}};
-            public class Doc { public int V { get; set; } }
-            public class Model { public int V { get; set; } }
-            [global::DwarfMapper.DwarfMapper]
-            [global::DwarfMapper.GenerateMap<Doc, Model>]
-            public partial class Mapper { }
-            """;
+                    namespace {{ns}};
+                    public class Doc { public int V { get; set; } }
+                    public class Model { public int V { get; set; } }
+                    [global::DwarfMapper.DwarfMapper]
+                    [global::DwarfMapper.GenerateMap<Doc, Model>]
+                    public partial class Mapper { }
+                    """;
         var compilation = GeneratorTestHarness.BuildCompilation("Prov_" + ns, src);
         var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
@@ -102,14 +112,14 @@ public class IncrementalCachingTests
         // node re-emits on every unrelated edit. Regression guard for that (raw ImmutableArray -> ref equality).
         var provRef = CompileProviderRef("Prov1");
         const string rootSrc = """
-            [assembly: global::DwarfMapper.DwarfMapperValidationRoot]
-            namespace App;
-            public class Consumer
-            {
-                public global::Prov1.Model C(global::DwarfMapper.IDwarfMapper m, global::Prov1.Doc d)
-                    => m.Map<global::Prov1.Model>(d);
-            }
-            """;
+                               [assembly: global::DwarfMapper.DwarfMapperValidationRoot]
+                               namespace App;
+                               public class Consumer
+                               {
+                                   public global::Prov1.Model C(global::DwarfMapper.IDwarfMapper m, global::Prov1.Doc d)
+                                       => m.Map<global::Prov1.Model>(d);
+                               }
+                               """;
         var compilation = GeneratorTestHarness.BuildCompilation("RootIncCache", rootSrc).AddReferences(provRef);
         GeneratorDriver driver = NewDriver();
 
@@ -127,15 +137,6 @@ public class IncrementalCachingTests
                 $"{output.Reason}. The rootInfo tuple's Provided/Required must be value-equatable (EquatableArray), " +
                 "else the [DwarfMapperValidationRoot] node re-emits Validate.g.cs on every keystroke.")));
     }
-
-    private const string CoLocatedSource = """
-        using DwarfMapper;
-        namespace Demo;
-        public class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
-        [GenerateMap<Src, Dst>]
-        [MapProperty<Src, Dst>("Name", "FullName")]
-        public sealed class Dst { public int Id { get; set; } public string FullName { get; set; } = ""; }
-        """;
 
     [Fact]
     public void Unrelated_edit_leaves_the_co_located_pipeline_cached()
@@ -184,7 +185,9 @@ public class IncrementalCachingTests
 
         // Replace the mapper's syntax tree with a changed version (add a member to Dst + its source).
         var changed = MapperSource
-            .Replace("public int Id { get; set; } public string Name", "public int Id { get; set; } public int Extra { get; set; } public string Name", System.StringComparison.Ordinal);
+            .Replace("public int Id { get; set; } public string Name",
+                "public int Id { get; set; } public int Extra { get; set; } public string Name",
+                StringComparison.Ordinal);
         var oldTree = compilation.SyntaxTrees.First();
         var modified = compilation.ReplaceSyntaxTree(oldTree, CSharpSyntaxTree.ParseText(changed));
 

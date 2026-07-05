@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Linq;
+
 using Microsoft.CodeAnalysis;
-using Xunit;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// TDD: Plan 19 Part C1 — depth-safety for recursion-capable auto-synthesized mappers.
-/// All tests written BEFORE the implementation (Red phase).
+///     TDD: Plan 19 Part C1 — depth-safety for recursion-capable auto-synthesized mappers.
+///     All tests written BEFORE the implementation (Red phase).
 /// </summary>
 public class DepthSafetyGeneratorTests
 {
@@ -18,16 +16,16 @@ public class DepthSafetyGeneratorTests
     {
         // Node → NodeDto: Node.Next is of type Node → self-referential → recursion-capable
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Node    { public int V { get; set; } public Node? Next { get; set; } }
-            public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial NodeDto Map(Node n);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                           public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial NodeDto Map(Node n);
+                           }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -43,20 +41,20 @@ public class DepthSafetyGeneratorTests
     {
         // Order → Customer → Address: no type repeats → NOT recursion-capable → zero overhead
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Address  { public string Street { get; set; } = ""; }
-            public class Customer { public Address Home { get; set; } = new(); public string Name { get; set; } = ""; }
-            public class Order    { public Customer Buyer { get; set; } = new(); public int Total { get; set; } }
-            public class AddressDto  { public string Street { get; set; } = ""; }
-            public class CustomerDto { public AddressDto Home { get; set; } = new(); public string Name { get; set; } = ""; }
-            public class OrderDto    { public CustomerDto Buyer { get; set; } = new(); public int Total { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial OrderDto Map(Order o);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Address  { public string Street { get; set; } = ""; }
+                           public class Customer { public Address Home { get; set; } = new(); public string Name { get; set; } = ""; }
+                           public class Order    { public Customer Buyer { get; set; } = new(); public int Total { get; set; } }
+                           public class AddressDto  { public string Street { get; set; } = ""; }
+                           public class CustomerDto { public AddressDto Home { get; set; } = new(); public string Name { get; set; } = ""; }
+                           public class OrderDto    { public CustomerDto Buyer { get; set; } = new(); public int Total { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial OrderDto Map(Order o);
+                           }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -75,10 +73,7 @@ public class DepthSafetyGeneratorTests
              l.Contains("Demo.CustomerDto", StringComparison.Ordinal) ||
              l.Contains("Demo.AddressDto", StringComparison.Ordinal))
             && l.Contains('(', StringComparison.Ordinal)).ToList();
-        foreach (var decl in declarations)
-        {
-            Assert.DoesNotContain("DwarfRefContext", decl, StringComparison.Ordinal);
-        }
+        foreach (var decl in declarations) Assert.DoesNotContain("DwarfRefContext", decl, StringComparison.Ordinal);
     }
 
     // ── 3. Mutually-recursive pair (A↔B): both get ctx/depth ─────────────────────────────────────
@@ -87,18 +82,18 @@ public class DepthSafetyGeneratorTests
     {
         // A has B member, B has A member → mutual cycle → both recursion-capable
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class A { public int V { get; set; } public B? Child { get; set; } }
-            public class B { public int W { get; set; } public A? Parent { get; set; } }
-            public class ADto { public int V { get; set; } public BDto? Child { get; set; } }
-            public class BDto { public int W { get; set; } public ADto? Parent { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial ADto Map(A a);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class A { public int V { get; set; } public B? Child { get; set; } }
+                           public class B { public int W { get; set; } public A? Parent { get; set; } }
+                           public class ADto { public int V { get; set; } public BDto? Child { get; set; } }
+                           public class BDto { public int W { get; set; } public ADto? Parent { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial ADto Map(A a);
+                           }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -114,16 +109,16 @@ public class DepthSafetyGeneratorTests
     public void Public_Map_method_signature_is_unchanged_no_ctx_param()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Node    { public int V { get; set; } public Node? Next { get; set; } }
-            public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial NodeDto Map(Node n);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                           public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial NodeDto Map(Node n);
+                           }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
 
@@ -132,8 +127,8 @@ public class DepthSafetyGeneratorTests
         var publicMap = generated
             .Split('\n')
             .FirstOrDefault(l => l.Contains("public partial", StringComparison.Ordinal)
-                              && l.Contains("Map(", StringComparison.Ordinal)
-                              && l.Contains("NodeDto", StringComparison.Ordinal));
+                                 && l.Contains("Map(", StringComparison.Ordinal)
+                                 && l.Contains("NodeDto", StringComparison.Ordinal));
         Assert.NotNull(publicMap);
         Assert.DoesNotContain("DwarfRefContext", publicMap, StringComparison.Ordinal);
     }
@@ -143,16 +138,16 @@ public class DepthSafetyGeneratorTests
     public void Recursion_capable_method_has_depth_guard_before_construction()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Node    { public int V { get; set; } public Node? Next { get; set; } }
-            public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial NodeDto Map(Node n);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                           public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial NodeDto Map(Node n);
+                           }
+                           """;
         var (_, generated) = GeneratorTestHarness.Run(src);
 
         // The depth guard must be thrown BEFORE the object construction WITHIN the
@@ -175,16 +170,16 @@ public class DepthSafetyGeneratorTests
     public void MaxDepth_attribute_compiles_without_error()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Node    { public int V { get; set; } public Node? Next { get; set; } }
-            public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
-            [DwarfMapper(MaxDepth = 8)]
-            public partial class M
-            {
-                public partial NodeDto Map(Node n);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                           public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                           [DwarfMapper(MaxDepth = 8)]
+                           public partial class M
+                           {
+                               public partial NodeDto Map(Node n);
+                           }
+                           """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -195,16 +190,16 @@ public class DepthSafetyGeneratorTests
     public void Generated_depth_guard_references_ctx_MaxDepth()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Node    { public int V { get; set; } public Node? Next { get; set; } }
-            public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
-            [DwarfMapper(MaxDepth = 8)]
-            public partial class M
-            {
-                public partial NodeDto Map(Node n);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                           public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                           [DwarfMapper(MaxDepth = 8)]
+                           public partial class M
+                           {
+                               public partial NodeDto Map(Node n);
+                           }
+                           """;
         var (_, generated) = GeneratorTestHarness.Run(src);
 
         // The depth guard should compare depth > ctx.MaxDepth (or similar)
@@ -216,16 +211,16 @@ public class DepthSafetyGeneratorTests
     public void Recursive_call_passes_depth_plus_one()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Node    { public int V { get; set; } public Node? Next { get; set; } }
-            public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial NodeDto Map(Node n);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                           public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial NodeDto Map(Node n);
+                           }
+                           """;
         var (_, generated) = GeneratorTestHarness.Run(src);
 
         // Recursive calls must pass depth + 1 (not depth)
@@ -237,16 +232,16 @@ public class DepthSafetyGeneratorTests
     public void Public_method_creates_DwarfRefContext_for_recursion_capable_pair()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Node    { public int V { get; set; } public Node? Next { get; set; } }
-            public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial NodeDto Map(Node n);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Node    { public int V { get; set; } public Node? Next { get; set; } }
+                           public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial NodeDto Map(Node n);
+                           }
+                           """;
         var (_, generated) = GeneratorTestHarness.Run(src);
 
         // The public method must create a DwarfRefContext (new DwarfRefContext(...))
@@ -258,18 +253,18 @@ public class DepthSafetyGeneratorTests
     public void Non_recursive_synthesized_method_emits_no_ctx_or_depth()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Address  { public string Street { get; set; } = ""; public int Zip { get; set; } }
-            public class Customer { public Address Home { get; set; } = new(); }
-            public class AddressDto  { public string Street { get; set; } = ""; public int Zip { get; set; } }
-            public class CustomerDto { public AddressDto Home { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial CustomerDto Map(Customer c);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Address  { public string Street { get; set; } = ""; public int Zip { get; set; } }
+                           public class Customer { public Address Home { get; set; } = new(); }
+                           public class AddressDto  { public string Street { get; set; } = ""; public int Zip { get; set; } }
+                           public class CustomerDto { public AddressDto Home { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial CustomerDto Map(Customer c);
+                           }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));

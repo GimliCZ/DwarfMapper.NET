@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
+
 using System.Collections;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Reflection;
@@ -9,14 +8,14 @@ using System.Reflection;
 namespace DwarfMapper.Testing;
 
 /// <summary>
-/// Extended deterministic object factory (Plan 19 Part E self-materializer).
-/// Constructs instances of ANY supported DwarfMapper type from a seed:
-/// - every basic scalar type
-/// - every supported collection / dictionary / immutable / interface target (populated up to a bounded
-///   depth; empty at the depth cap to terminate recursion)
-/// - nested objects and records (bounded depth)
-/// - reference-graph fixtures: self-loop, 2-node cycle, diamond, owner graph A→B/B⇄C/C⇄D/B⇄D.
-/// Deterministic and replayable: same seed always produces the same value.
+///     Extended deterministic object factory (Plan 19 Part E self-materializer).
+///     Constructs instances of ANY supported DwarfMapper type from a seed:
+///     - every basic scalar type
+///     - every supported collection / dictionary / immutable / interface target (populated up to a bounded
+///     depth; empty at the depth cap to terminate recursion)
+///     - nested objects and records (bounded depth)
+///     - reference-graph fixtures: self-loop, 2-node cycle, diamond, owner graph A→B/B⇄C/C⇄D/B⇄D.
+///     Deterministic and replayable: same seed always produces the same value.
 /// </summary>
 public static class ObjectFactoryV2
 {
@@ -24,17 +23,19 @@ public static class ObjectFactoryV2
 
     // ── Public entry points ──────────────────────────────────────────────────────
 
-    /// <summary>Create a populated instance of <typeparamref name="T"/> for the given seed.</summary>
-    public static T Create<T>(int seed = 0) =>
-        (T)Create(typeof(T), new Random(seed), 0)!;
+    /// <summary>Create a populated instance of <typeparamref name="T" /> for the given seed.</summary>
+    public static T Create<T>(int seed = 0)
+    {
+        return (T)Create(typeof(T), new Random(seed), 0)!;
+    }
 
     /// <summary>
-    /// Create a populated instance of <paramref name="type"/> using <paramref name="rng"/>.
-    /// Supports every scalar, T?, array, List, HashSet, IReadOnlyList, IReadOnlyCollection,
-    /// ICollection, IList, ISet, IReadOnlySet, IEnumerable, ImmutableArray, ImmutableList,
-    /// IImmutableList, ImmutableHashSet, IImmutableSet, Dictionary, IDictionary,
-    /// IReadOnlyDictionary, ImmutableDictionary, IImmutableDictionary,
-    /// and arbitrary class/struct/record types.
+    ///     Create a populated instance of <paramref name="type" /> using <paramref name="rng" />.
+    ///     Supports every scalar, T?, array, List, HashSet, IReadOnlyList, IReadOnlyCollection,
+    ///     ICollection, IList, ISet, IReadOnlySet, IEnumerable, ImmutableArray, ImmutableList,
+    ///     IImmutableList, ImmutableHashSet, IImmutableSet, Dictionary, IDictionary,
+    ///     IReadOnlyDictionary, ImmutableDictionary, IImmutableDictionary,
+    ///     and arbitrary class/struct/record types.
     /// </summary>
     public static object? Create(Type type, Random rng, int depth)
     {
@@ -49,28 +50,31 @@ public static class ObjectFactoryV2
         // ── Scalars ──────────────────────────────────────────────────────────
         if (type == typeof(string))
             return "s" + rng.Next(0, 1_000_000).ToString(CultureInfo.InvariantCulture);
-        if (type == typeof(bool))   return rng.Next(0, 2) == 1;
-        if (type == typeof(byte))   return (byte)rng.Next(1, 256);
-        if (type == typeof(sbyte))  return (sbyte)rng.Next(1, 127);
-        if (type == typeof(short))  return (short)rng.Next(1, short.MaxValue);
+        if (type == typeof(bool)) return rng.Next(0, 2) == 1;
+        if (type == typeof(byte)) return (byte)rng.Next(1, 256);
+        if (type == typeof(sbyte)) return (sbyte)rng.Next(1, 127);
+        if (type == typeof(short)) return (short)rng.Next(1, short.MaxValue);
         if (type == typeof(ushort)) return (ushort)rng.Next(1, ushort.MaxValue);
-        if (type == typeof(int))    return rng.Next(1, int.MaxValue);
-        if (type == typeof(uint))   return (uint)rng.Next(1, int.MaxValue);
+        if (type == typeof(int)) return rng.Next(1, int.MaxValue);
+        if (type == typeof(uint)) return (uint)rng.Next(1, int.MaxValue);
         // C9: occasionally emit out-of-int-range long values so the long→int CreateChecked
         // overflow path is exercised. 1-in-4 chance.
         if (type == typeof(long))
             return rng.Next(0, 4) == 0
                 ? rng.NextInt64(long.MinValue, long.MaxValue)
-                : (long)rng.Next(1, int.MaxValue);
-        if (type == typeof(ulong))  return (ulong)rng.Next(1, int.MaxValue);
-        if (type == typeof(float))  return (float)(rng.NextDouble() * 1000);
+                : rng.Next(1, int.MaxValue);
+        if (type == typeof(ulong)) return (ulong)rng.Next(1, int.MaxValue);
+        if (type == typeof(float)) return (float)(rng.NextDouble() * 1000);
         if (type == typeof(double)) return rng.NextDouble() * 1000;
         if (type == typeof(decimal)) return (decimal)(rng.NextDouble() * 1000);
-        if (type == typeof(char))   return (char)rng.Next('A', 'Z' + 1);
+        if (type == typeof(char)) return (char)rng.Next('A', 'Z' + 1);
         if (type == typeof(Guid))
         {
-            var b = new byte[16]; rng.NextBytes(b); return new Guid(b);
+            var b = new byte[16];
+            rng.NextBytes(b);
+            return new Guid(b);
         }
+
         if (type == typeof(DateTime))
             return new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMinutes(rng.Next(0, 5_000_000));
         if (type == typeof(DateTimeOffset))
@@ -175,14 +179,14 @@ public static class ObjectFactoryV2
                 if (iimmutDictType.IsAssignableFrom(type) || gtd == typeof(ImmutableDictionary<,>))
                 {
                     var plainDict = (IDictionary)MakeDictionary(args[0], args[1], rng, depth)!;
-                    var builderMethod = typeof(ImmutableDictionary).GetMethods(BindingFlags.Public | BindingFlags.Static);
+                    var builderMethod =
+                        typeof(ImmutableDictionary).GetMethods(BindingFlags.Public | BindingFlags.Static);
                     // Use ImmutableDictionary.CreateRange(IEnumerable<KVP>)
                     var kvpType = typeof(KeyValuePair<,>).MakeGenericType(args[0], args[1]);
                     var enumerableKvpType = typeof(IEnumerable<>).MakeGenericType(kvpType);
                     foreach (var m in builderMethod)
-                    {
-                        if (m.Name == "CreateRange" && m.IsGenericMethodDefinition && m.GetGenericArguments().Length == 2)
-                        {
+                        if (m.Name == "CreateRange" && m.IsGenericMethodDefinition &&
+                            m.GetGenericArguments().Length == 2)
                             try
                             {
                                 var concrete = m.MakeGenericMethod(args[0], args[1]);
@@ -192,11 +196,19 @@ public static class ObjectFactoryV2
                                     kvpList.Add(Activator.CreateInstance(kvpType, entry.Key, entry.Value)!);
                                 return concrete.Invoke(null, new object[] { kvpList });
                             }
-                            catch (TargetInvocationException) { /* try next overload */ }
-                            catch (ArgumentException) { /* try next overload */ }
-                            catch (InvalidOperationException) { /* try next overload */ }
-                        }
-                    }
+                            catch (TargetInvocationException)
+                            {
+                                /* try next overload */
+                            }
+                            catch (ArgumentException)
+                            {
+                                /* try next overload */
+                            }
+                            catch (InvalidOperationException)
+                            {
+                                /* try next overload */
+                            }
+
                     // Fallback: return the plain Dictionary
                     return plainDict;
                 }
@@ -225,38 +237,34 @@ public static class ObjectFactoryV2
 
         var instance = ctor.Invoke(null);
         foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
             if (p.CanWrite && p.GetSetMethod() is not null && p.GetIndexParameters().Length == 0)
                 p.SetValue(instance, Create(p.PropertyType, rng, depth + 1));
-        }
         foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-        {
             if (!f.IsInitOnly)
                 f.SetValue(instance, Create(f.FieldType, rng, depth + 1));
-        }
         return instance;
     }
 
     // ── Graph fixture builders ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Build a self-loop graph fixture using reflection.
-    /// The returned type must have a settable property named <paramref name="selfPropName"/>
-    /// of the same type.
+    ///     Build a self-loop graph fixture using reflection.
+    ///     The returned type must have a settable property named <paramref name="selfPropName" />
+    ///     of the same type.
     /// </summary>
     public static object MakeSelfLoop(Type nodeType, string selfPropName, Random rng)
     {
         if (nodeType is null) throw new ArgumentNullException(nameof(nodeType));
         var node = Create(nodeType, rng, 0)!;
         var prop = nodeType.GetProperty(selfPropName, BindingFlags.Public | BindingFlags.Instance)
-            ?? throw new ArgumentException($"Property '{selfPropName}' not found on {nodeType.Name}");
+                   ?? throw new ArgumentException($"Property '{selfPropName}' not found on {nodeType.Name}");
         prop.SetValue(node, node);
         return node;
     }
 
     /// <summary>
-    /// Build a 2-node mutual cycle: a.Next=b, b.Next=a.
-    /// Returns (a, b).
+    ///     Build a 2-node mutual cycle: a.Next=b, b.Next=a.
+    ///     Returns (a, b).
     /// </summary>
     public static (object A, object B) MakeTwoNodeCycle(Type nodeType, string nextPropName, Random rng)
     {
@@ -264,16 +272,16 @@ public static class ObjectFactoryV2
         var a = Create(nodeType, rng, 0)!;
         var b = Create(nodeType, rng, 0)!;
         var prop = nodeType.GetProperty(nextPropName, BindingFlags.Public | BindingFlags.Instance)
-            ?? throw new ArgumentException($"Property '{nextPropName}' not found on {nodeType.Name}");
+                   ?? throw new ArgumentException($"Property '{nextPropName}' not found on {nodeType.Name}");
         prop.SetValue(a, b);
         prop.SetValue(b, a);
         return (a, b);
     }
 
     /// <summary>
-    /// Build the owner graph fixture A→B, B⇄C, C⇄D, B⇄D using four types.
-    /// Each type is constructed via <see cref="Create"/>; then back-edges are wired.
-    /// Returns (a, b, c, d).
+    ///     Build the owner graph fixture A→B, B⇄C, C⇄D, B⇄D using four types.
+    ///     Each type is constructed via <see cref="Create" />; then back-edges are wired.
+    ///     Returns (a, b, c, d).
     /// </summary>
     public static (object A, object B, object C, object D) MakeOwnerGraph(
         Type typeA, Type typeB, Type typeC, Type typeD,
@@ -291,7 +299,7 @@ public static class ObjectFactoryV2
         void Set(object target, string propName, object value)
         {
             var p = target.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance)
-                ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}");
+                    ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}");
             p.SetValue(target, value);
         }
 
@@ -306,7 +314,7 @@ public static class ObjectFactoryV2
     }
 
     /// <summary>
-    /// Build a diamond graph: root.Left = root.Right = sharedChild.
+    ///     Build a diamond graph: root.Left = root.Right = sharedChild.
     /// </summary>
     public static (object Root, object SharedChild) MakeDiamond(
         Type rootType, Type childType,
@@ -319,7 +327,7 @@ public static class ObjectFactoryV2
         void Set(object target, string propName, object? value)
         {
             var p = target.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance)
-                ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}");
+                    ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}");
             p.SetValue(target, value);
         }
 
@@ -365,6 +373,7 @@ public static class ObjectFactoryV2
             var val = Create(valType, rng, depth + 1);
             dict[key] = val;
         }
+
         // Guarantee at least one entry for non-depth-capped cases
         if (dict.Count == 0 && depth < DefaultMaxDepth)
         {
@@ -372,13 +381,14 @@ public static class ObjectFactoryV2
             if (key is not null)
                 dict[key] = Create(valType, rng, depth + 1);
         }
+
         return dict;
     }
 
     /// <summary>
-    /// Locate the single-arg <c>CreateRange&lt;T&gt;(IEnumerable&lt;T&gt;)</c> overload on
-    /// the given immutable factory class (ImmutableArray / ImmutableList / ImmutableHashSet).
-    /// Returns null if not found.
+    ///     Locate the single-arg <c>CreateRange&lt;T&gt;(IEnumerable&lt;T&gt;)</c> overload on
+    ///     the given immutable factory class (ImmutableArray / ImmutableList / ImmutableHashSet).
+    ///     Returns null if not found.
     /// </summary>
     private static MethodInfo? FindImmutableCreateRange(Type factoryType, Type elemType)
     {
@@ -395,6 +405,7 @@ public static class ObjectFactoryV2
             if (paramType.GetGenericTypeDefinition() != typeof(IEnumerable<>)) continue;
             return m.MakeGenericMethod(elemType);
         }
+
         return null;
     }
 }

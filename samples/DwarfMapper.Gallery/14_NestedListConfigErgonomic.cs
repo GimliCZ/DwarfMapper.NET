@@ -9,38 +9,56 @@
 // is an auto-synthesized List<Person> element, and the rename still applies. Call it through the generated
 // extension method, so there is no `new Mapper()` either.
 // (An attribute that matches no mapped pair is DWARF056 — a misconfigured linkage is never a silent no-op.)
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
-using DwarfMapper.Extensions;   // surfaces the generated moria.ToPlaceDto() extension
+
+using DwarfMapper.Extensions;
+
+// surfaces the generated moria.ToPlaceDto() extension
 
 namespace DwarfMapper.Gallery.Ex14;
 
-public sealed class Person { public string Name { get; set; } = ""; }
-public sealed class Place { public string Name { get; set; } = ""; public List<Person> People { get; set; } = new(); }
+public sealed class Person
+{
+    public string Name { get; set; } = "";
+}
 
-public sealed class PersonDto { public string FullName { get; set; } = ""; }
-public sealed class PlaceDto { public string Name { get; set; } = ""; public List<PersonDto> People { get; set; } = new(); }
+public sealed class Place
+{
+    public string Name { get; set; } = "";
+    public List<Person> People { get; set; } = new();
+}
+
+public sealed class PersonDto
+{
+    public string FullName { get; set; } = "";
+}
+
+public sealed class PlaceDto
+{
+    public string Name { get; set; } = "";
+    public List<PersonDto> People { get; set; } = new();
+}
 
 [DwarfMapper]
 [GenerateMap<Place, PlaceDto>]
 [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]
-public partial class Mapper { }   // no methods — the pair-scoped attribute carries the nested rename
+public partial class Mapper
+{
+} // no methods — the pair-scoped attribute carries the nested rename
 
 public static class Example
 {
     public static void Run()
     {
-        Place moria = new Place
+        var moria = new Place
         {
             Name = "Moria",
-            People = new List<Person> { new Person { Name = "Gimli" }, new Person { Name = "Balin" } },
+            People = new List<Person> { new() { Name = "Gimli" }, new() { Name = "Balin" } }
         };
 
         // No `new Mapper()`, no methods on the mapper at all — just the generated extension:
-        PlaceDto dto = moria.ToPlaceDto();
+        var dto = moria.ToPlaceDto();
 
-        Console.WriteLine($"14 Nested (ergonomic) -> {dto.Name}: [{string.Join(", ", dto.People.Select(p => p.FullName))}]");
+        Console.WriteLine(
+            $"14 Nested (ergonomic) -> {dto.Name}: [{string.Join(", ", dto.People.Select(p => p.FullName))}]");
     }
 }

@@ -1,15 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
+
 using System.Collections.Immutable;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ─── Record helpers ───────────────────────────────────────────────────────────
 
-public class TaxSrc  { public string Name { get; set; } = ""; public int Age { get; set; } }
-public class TaxDst  { public string Name { get; set; } = ""; public int Age { get; set; } }
+public class TaxSrc
+{
+    public string Name { get; set; } = "";
+    public int Age { get; set; }
+}
+
+public class TaxDst
+{
+    public string Name { get; set; } = "";
+    public int Age { get; set; }
+}
 
 // ─── Interface targets → concrete ────────────────────────────────────────────
 
@@ -51,12 +58,12 @@ public class TaxIReadOnlySetDst
 [DwarfMapper]
 public partial class TaxInterfaceMapper
 {
-    public partial TaxIListDst          ToIList(TaxInterfaceSrc s);
-    public partial TaxICollectionDst    ToICollection(TaxInterfaceSrc s);
-    public partial TaxIReadOnlyListDst  ToIReadOnlyList(TaxInterfaceSrc s);
+    public partial TaxIListDst ToIList(TaxInterfaceSrc s);
+    public partial TaxICollectionDst ToICollection(TaxInterfaceSrc s);
+    public partial TaxIReadOnlyListDst ToIReadOnlyList(TaxInterfaceSrc s);
     public partial TaxIReadOnlyCollectionDst ToIReadOnlyCollection(TaxInterfaceSrc s);
-    public partial TaxISetDst           ToISet(TaxInterfaceSrc s);
-    public partial TaxIReadOnlySetDst   ToIReadOnlySet(TaxInterfaceSrc s);
+    public partial TaxISetDst ToISet(TaxInterfaceSrc s);
+    public partial TaxIReadOnlySetDst ToIReadOnlySet(TaxInterfaceSrc s);
 }
 
 public class InterfaceCollectionRuntimeTests
@@ -64,12 +71,41 @@ public class InterfaceCollectionRuntimeTests
     private readonly TaxInterfaceMapper _m = new();
     private readonly TaxInterfaceSrc _src = new() { Nums = new List<int> { 1, 2, 3 } };
 
-    [Fact] public void IList_target_roundtrips()         => Assert.Equal(new[] { 1,2,3 }, _m.ToIList(_src).Nums);
-    [Fact] public void ICollection_target_roundtrips()   => Assert.Equal(3, _m.ToICollection(_src).Nums.Count);
-    [Fact] public void IReadOnlyList_target_roundtrips() => Assert.Equal(new[] { 1,2,3 }, _m.ToIReadOnlyList(_src).Nums);
-    [Fact] public void IReadOnlyCollection_roundtrips()  => Assert.Equal(3, _m.ToIReadOnlyCollection(_src).Nums.Count);
-    [Fact] public void ISet_target_roundtrips()          => Assert.Equal(new HashSet<int>{1,2,3}, _m.ToISet(_src).Nums);
-    [Fact] public void IReadOnlySet_roundtrips()         => Assert.Equal(new HashSet<int>{1,2,3}, _m.ToIReadOnlySet(_src).Nums);
+    [Fact]
+    public void IList_target_roundtrips()
+    {
+        Assert.Equal(new[] { 1, 2, 3 }, _m.ToIList(_src).Nums);
+    }
+
+    [Fact]
+    public void ICollection_target_roundtrips()
+    {
+        Assert.Equal(3, _m.ToICollection(_src).Nums.Count);
+    }
+
+    [Fact]
+    public void IReadOnlyList_target_roundtrips()
+    {
+        Assert.Equal(new[] { 1, 2, 3 }, _m.ToIReadOnlyList(_src).Nums);
+    }
+
+    [Fact]
+    public void IReadOnlyCollection_roundtrips()
+    {
+        Assert.Equal(3, _m.ToIReadOnlyCollection(_src).Nums.Count);
+    }
+
+    [Fact]
+    public void ISet_target_roundtrips()
+    {
+        Assert.Equal(new HashSet<int> { 1, 2, 3 }, _m.ToISet(_src).Nums);
+    }
+
+    [Fact]
+    public void IReadOnlySet_roundtrips()
+    {
+        Assert.Equal(new HashSet<int> { 1, 2, 3 }, _m.ToIReadOnlySet(_src).Nums);
+    }
 
     [Fact]
     public void IList_null_source_yields_empty()
@@ -115,11 +151,11 @@ public class TaxIImmutableSetDst
 [DwarfMapper]
 public partial class TaxImmutableMapper
 {
-    public partial TaxImmutableArrayDst    ToImmutableArray(TaxImmutableSrc s);
-    public partial TaxImmutableListDst     ToImmutableList(TaxImmutableSrc s);
-    public partial TaxIImmutableListDst    ToIImmutableList(TaxImmutableSrc s);
-    public partial TaxImmutableHashSetDst  ToImmutableHashSet(TaxImmutableSrc s);
-    public partial TaxIImmutableSetDst     ToIImmutableSet(TaxImmutableSrc s);
+    public partial TaxImmutableArrayDst ToImmutableArray(TaxImmutableSrc s);
+    public partial TaxImmutableListDst ToImmutableList(TaxImmutableSrc s);
+    public partial TaxIImmutableListDst ToIImmutableList(TaxImmutableSrc s);
+    public partial TaxImmutableHashSetDst ToImmutableHashSet(TaxImmutableSrc s);
+    public partial TaxIImmutableSetDst ToIImmutableSet(TaxImmutableSrc s);
 }
 
 public class ImmutableCollectionRuntimeTests
@@ -127,37 +163,43 @@ public class ImmutableCollectionRuntimeTests
     private readonly TaxImmutableMapper _m = new();
     private readonly TaxImmutableSrc _src = new() { Nums = new List<int> { 10, 20, 30 } };
 
-    [Fact] public void ImmutableArray_roundtrips()
+    [Fact]
+    public void ImmutableArray_roundtrips()
     {
         var r = _m.ToImmutableArray(_src);
         Assert.Equal(new[] { 10, 20, 30 }, r.Nums);
     }
 
-    [Fact] public void ImmutableList_roundtrips()
+    [Fact]
+    public void ImmutableList_roundtrips()
     {
         var r = _m.ToImmutableList(_src);
         Assert.Equal(new[] { 10, 20, 30 }, r.Nums);
     }
 
-    [Fact] public void IImmutableList_roundtrips()
+    [Fact]
+    public void IImmutableList_roundtrips()
     {
         var r = _m.ToIImmutableList(_src);
         Assert.Equal(new[] { 10, 20, 30 }, r.Nums);
     }
 
-    [Fact] public void ImmutableHashSet_roundtrips()
+    [Fact]
+    public void ImmutableHashSet_roundtrips()
     {
         var r = _m.ToImmutableHashSet(_src);
         Assert.True(r.Nums.SetEquals(new[] { 10, 20, 30 }));
     }
 
-    [Fact] public void IImmutableSet_roundtrips()
+    [Fact]
+    public void IImmutableSet_roundtrips()
     {
         var r = _m.ToIImmutableSet(_src);
         Assert.True(r.Nums.SetEquals(new[] { 10, 20, 30 }));
     }
 
-    [Fact] public void ImmutableArray_null_source_yields_empty()
+    [Fact]
+    public void ImmutableArray_null_source_yields_empty()
     {
         var r = _m.ToImmutableArray(new TaxImmutableSrc { Nums = null! });
         Assert.True(r.Nums.IsEmpty);
@@ -194,10 +236,10 @@ public class TaxIImmutableDictDst
 [DwarfMapper]
 public partial class TaxDictMapper
 {
-    public partial TaxIDictDst           ToIDictionary(TaxDictSrc s);
-    public partial TaxIReadOnlyDictDst   ToIReadOnlyDictionary(TaxDictSrc s);
-    public partial TaxImmutableDictDst   ToImmutableDictionary(TaxDictSrc s);
-    public partial TaxIImmutableDictDst  ToIImmutableDictionary(TaxDictSrc s);
+    public partial TaxIDictDst ToIDictionary(TaxDictSrc s);
+    public partial TaxIReadOnlyDictDst ToIReadOnlyDictionary(TaxDictSrc s);
+    public partial TaxImmutableDictDst ToImmutableDictionary(TaxDictSrc s);
+    public partial TaxIImmutableDictDst ToIImmutableDictionary(TaxDictSrc s);
 }
 
 public class DictionaryTaxonomyRuntimeTests
@@ -205,35 +247,40 @@ public class DictionaryTaxonomyRuntimeTests
     private readonly TaxDictMapper _m = new();
     private readonly TaxDictSrc _src = new() { D = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 } };
 
-    [Fact] public void IDictionary_roundtrips()
+    [Fact]
+    public void IDictionary_roundtrips()
     {
         var r = _m.ToIDictionary(_src);
         Assert.Equal(2, r.D.Count);
         Assert.Equal(1, r.D["a"]);
     }
 
-    [Fact] public void IReadOnlyDictionary_roundtrips()
+    [Fact]
+    public void IReadOnlyDictionary_roundtrips()
     {
         var r = _m.ToIReadOnlyDictionary(_src);
         Assert.Equal(2, r.D.Count);
         Assert.Equal(2, r.D["b"]);
     }
 
-    [Fact] public void ImmutableDictionary_roundtrips()
+    [Fact]
+    public void ImmutableDictionary_roundtrips()
     {
         var r = _m.ToImmutableDictionary(_src);
         Assert.Equal(2, r.D.Count);
         Assert.Equal(1, r.D["a"]);
     }
 
-    [Fact] public void IImmutableDictionary_roundtrips()
+    [Fact]
+    public void IImmutableDictionary_roundtrips()
     {
         var r = _m.ToIImmutableDictionary(_src);
         Assert.Equal(2, r.D.Count);
         Assert.Equal(2, r.D["b"]);
     }
 
-    [Fact] public void IDictionary_null_source_yields_empty()
+    [Fact]
+    public void IDictionary_null_source_yields_empty()
     {
         var r = _m.ToIDictionary(new TaxDictSrc { D = null! });
         Assert.NotNull(r.D);
@@ -267,7 +314,7 @@ public class TaxLazyEnumLongDst
 [DwarfMapper]
 public partial class TaxLazyMapper
 {
-    public partial TaxLazyEnumDst    ToLazyEnum(TaxLazyEnumSrc s);
+    public partial TaxLazyEnumDst ToLazyEnum(TaxLazyEnumSrc s);
     public partial TaxLazyEnumLongDst ToLazyEnumLong(TaxLazyEnumLongSrc s);
 }
 
@@ -288,7 +335,7 @@ public class LazyIEnumerableRuntimeTests
     {
         var src = new TaxLazyEnumLongSrc { Nums = new List<int> { 1, 2, 3 } };
         var dst = _m.ToLazyEnumLong(src);
-        Assert.Equal(new long[] { 1L, 2L, 3L }, dst.Nums);
+        Assert.Equal(new[] { 1L, 2L, 3L }, dst.Nums);
     }
 
     [Fact]
@@ -364,18 +411,18 @@ public class NullCollectionsRuntimeTests
 
 public class TaxNestedSrc
 {
-    public List<List<int>>    NestedList { get; set; } = new();
-    public int[][]            NestedArray { get; set; } = Array.Empty<int[]>();
+    public List<List<int>> NestedList { get; set; } = new();
+    public int[][] NestedArray { get; set; } = Array.Empty<int[]>();
     public Dictionary<string, List<int>> DictOfList { get; set; } = new();
-    public List<int[]>        ListOfArray { get; set; } = new();
+    public List<int[]> ListOfArray { get; set; } = new();
 }
 
 public class TaxNestedDst
 {
-    public List<List<int>>    NestedList { get; set; } = new();
-    public int[][]            NestedArray { get; set; } = Array.Empty<int[]>();
+    public List<List<int>> NestedList { get; set; } = new();
+    public int[][] NestedArray { get; set; } = Array.Empty<int[]>();
     public Dictionary<string, List<int>> DictOfList { get; set; } = new();
-    public List<int[]>        ListOfArray { get; set; } = new();
+    public List<int[]> ListOfArray { get; set; } = new();
 }
 
 [DwarfMapper]
@@ -441,14 +488,14 @@ public class NestedCollectionRuntimeTests
 
 public class TaxConvSrc
 {
-    public List<long>               LongNums   { get; set; } = new();
-    public Dictionary<string, long> LongDict   { get; set; } = new();
+    public List<long> LongNums { get; set; } = new();
+    public Dictionary<string, long> LongDict { get; set; } = new();
 }
 
 public class TaxConvDst
 {
-    public ImmutableArray<int>                LongNums   { get; set; }
-    public ImmutableDictionary<string, int>   LongDict   { get; set; } = ImmutableDictionary<string, int>.Empty;
+    public ImmutableArray<int> LongNums { get; set; }
+    public ImmutableDictionary<string, int> LongDict { get; set; } = ImmutableDictionary<string, int>.Empty;
 }
 
 [DwarfMapper]
@@ -486,11 +533,25 @@ public class CrossTypeConversionRuntimeTests
 
 // ─── Part A + Part B: List<SrcRec> → List<DstRec> via auto-nest ──────────────
 
-public class TaxSrcObjSrc  { public string City { get; set; } = ""; }
-public class TaxSrcObjDst  { public string City { get; set; } = ""; }
+public class TaxSrcObjSrc
+{
+    public string City { get; set; } = "";
+}
 
-public class TaxCompSrc { public List<TaxSrcObjSrc> Items { get; set; } = new(); }
-public class TaxCompDst { public List<TaxSrcObjDst> Items { get; set; } = new(); }
+public class TaxSrcObjDst
+{
+    public string City { get; set; } = "";
+}
+
+public class TaxCompSrc
+{
+    public List<TaxSrcObjSrc> Items { get; set; } = new();
+}
+
+public class TaxCompDst
+{
+    public List<TaxSrcObjDst> Items { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class TaxCompMapper
@@ -508,7 +569,7 @@ public class CollectionAutoNestRuntimeTests
             Items = new List<TaxSrcObjSrc>
             {
                 new() { City = "Erebor" },
-                new() { City = "Moria" },
+                new() { City = "Moria" }
             }
         };
         var dst = new TaxCompMapper().Map(src);

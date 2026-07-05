@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 using System.Globalization;
-using DwarfMapper.Conformance;
 using DwarfMapper;
-using DwarfMapper.Testing;
+using DwarfMapper.Conformance;
 
 Console.WriteLine("DwarfMapper — god project (every feature, one run)\n");
 
@@ -35,14 +35,16 @@ R.Check("F06 collections", d6.Nums.Count == 2 && d6.Tags.Length == 2 && d6.Tags[
 R.Check("F07 null-collection AsNull", new F07M().Map(new F07S { Nums = null }).Nums is null);
 
 // F08 dotted path
-R.Check("F08 dotted source path", new F08M().Map(new F08S { Address = new Addr8 { City = "Prague" } }).City == "Prague");
+R.Check("F08 dotted source path",
+    new F08M().Map(new F08S { Address = new Addr8 { City = "Prague" } }).City == "Prague");
 
 // F09 flatten
 var d9 = new F09M().Map(new F09S { Address = new Addr9 { City = "Brno", Zip = "60200" } });
 R.Check("F09 flatten", d9.City == "Brno" && d9.Zip == "60200");
 
 // F10 custom converter
-R.Check("F10 Use= converter", new F10M().Map(new F10S { Total = 9.5m }).Total == 9.5m.ToString("C", CultureInfo.GetCultureInfo("en-US")));
+R.Check("F10 Use= converter",
+    new F10M().Map(new F10S { Total = 9.5m }).Total == 9.5m.ToString("C", CultureInfo.GetCultureInfo("en-US")));
 
 // F11 null substitute
 R.Check("F11 NullSubstitute", new F11M().Map(new F11S { Nickname = null }).Nickname == "(none)");
@@ -83,7 +85,8 @@ R.Check("F20 IQueryable projection", d20 is { Id: 7, Name: "p" });
 // F21 reference handling / cycles (Preserve)
 var n1 = new Node21 { Id = 1 };
 var n2 = new Node21 { Id = 2 };
-n1.Next = n2; n2.Next = n1;                  // 2-node cycle
+n1.Next = n2;
+n2.Next = n1; // 2-node cycle
 var dtoN = new F21M().Map(n1);
 R.Check("F21 cycle identity (Preserve)", ReferenceEquals(dtoN.Next!.Next, dtoN));
 
@@ -103,26 +106,37 @@ R.Check("F25 source-required+ignore", new F25M().Map(new F25S { Id = 3, Internal
 var tree = new Tree
 {
     Label = "T",
-    Root = new Folder { Name = "root", Children = { new FileN { Name = "a", Size = 1 }, new Folder { Name = "sub", Children = { new FileN { Name = "b", Size = 2 } } } } }
+    Root = new Folder
+    {
+        Name = "root",
+        Children =
+        {
+            new FileN { Name = "a", Size = 1 },
+            new Folder { Name = "sub", Children = { new FileN { Name = "b", Size = 2 } } }
+        }
+    }
 };
 var td = new F26M().Map(tree);
-R.Check("F26 FlattenGraph", td.Label == "T" && td.Nodes.Count >= 3 && td.Nodes.OfType<FileNDto>().Any(n => n.Size == 2), $"nodes={td.Nodes.Count}");
+R.Check("F26 FlattenGraph", td.Label == "T" && td.Nodes.Count >= 3 && td.Nodes.OfType<FileNDto>().Any(n => n.Size == 2),
+    $"nodes={td.Nodes.Count}");
 
 // F27 Reinterpret array blit (Px[]->Qx[] by layout: A->X, B->Y)
 var rd = new F27M().Map(new ReSrc { V = new[] { new Px { A = 1, B = 2 }, new Px { A = 3, B = 4 } } });
 R.Check("F27 Reinterpret blit", rd.V.Length == 2 && rd.V[0].X == 1 && rd.V[0].Y == 2 && rd.V[1].X == 3);
 
 // F28 OnCycle=SetNull (self-loop -> back-ref nulled)
-var cn = new CnA { Id = 1 }; cn.Next = cn;
+var cn = new CnA { Id = 1 };
+cn.Next = cn;
 var cnb = new F28M().Map(cn);
-R.Check("F28 OnCycle=SetNull", cnb.Id == 1 && (cnb.Next is null || cnb.Next.Next is null), cnb.Next is null ? "next=null" : "next.next=null");
+R.Check("F28 OnCycle=SetNull", cnb.Id == 1 && (cnb.Next is null || cnb.Next.Next is null),
+    cnb.Next is null ? "next=null" : "next.next=null");
 
 // F29 ambient registry (public [GenerateMap] self-registered via ModuleInitializer)
 R.Check("F29 ambient IsProvided", DwarfMapperRegistry.IsProvided(typeof(AmbSrc), typeof(AmbDst)));
 R.Check("F29 ambient resolve+map", ((AmbDst)DwarfMapperRegistry.Map(new AmbSrc { V = 41 }, typeof(AmbDst))).V == 41);
 
 // F30 RoundTrip fuzz (backward(forward(x)) == x over 50 random seeds)
-R.Check("F30 RoundTrip verify", R.NoThrow(() => new F30M().VerifyRoundTrip_ToB(seed: 7, iterations: 50)));
+R.Check("F30 RoundTrip verify", R.NoThrow(() => new F30M().VerifyRoundTrip_ToB(7, 50)));
 
 Console.WriteLine("\n-- dirty / unexpected paths --");
 
@@ -136,7 +150,8 @@ R.Check("D2 narrowing overflow", R.Throws<OverflowException>(() => new DovM().Ma
 R.Check("D3 bad parse throws", R.Throws<FormatException>(() => new DpsM().Map(new PsS { V = "abc" })));
 
 // D4 cycle with OnCycle=Throw -> throws
-var ct = new CtA { Id = 1 }; ct.Next = ct;
+var ct = new CtA { Id = 1 };
+ct.Next = ct;
 R.Check("D4 cycle -> throw", R.Throws<Exception>(() => new DctM().Map(ct)));
 
 // D5 nested source null -> nested dest null

@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Linq;
+
+using System.Globalization;
 using System.Reflection;
 using DwarfMapper.Generator.Diagnostics;
+using DwarfMapper.Testing;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// TDD tests for Backlog C (auto-nest, projection, housekeeping) — C1 through C9.
-/// Written BEFORE implementation (red-first) per project convention.
+///     TDD tests for Backlog C (auto-nest, projection, housekeeping) — C1 through C9.
+///     Written BEFORE implementation (red-first) per project convention.
 /// </summary>
 public class BacklogCTests
 {
@@ -23,26 +24,26 @@ public class BacklogCTests
         // Class has AutoNest=false; one method overrides to AutoNest(true) with a 3-level graph.
         // Depth-2 and depth-3 members must be synthesized (no DWARF005).
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class City   { public string Name { get; set; } = ""; }
-            public class Addr   { public City   Location { get; set; } = new(); public int Zip { get; set; } }
-            public class Person { public Addr   Home { get; set; } = new(); public string FullName { get; set; } = ""; }
-            public record CityDto(string Name);
-            public record AddrDto(CityDto Location, int Zip);
-            public record PersonDto(AddrDto Home, string FullName);
-            [DwarfMapper(AutoNest = false)]
-            public partial class M
-            {
-                [AutoNest(true)]
-                public partial PersonDto Map(Person p);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class City   { public string Name { get; set; } = ""; }
+                           public class Addr   { public City   Location { get; set; } = new(); public int Zip { get; set; } }
+                           public class Person { public Addr   Home { get; set; } = new(); public string FullName { get; set; } = ""; }
+                           public record CityDto(string Name);
+                           public record AddrDto(CityDto Location, int Zip);
+                           public record PersonDto(AddrDto Home, string FullName);
+                           [DwarfMapper(AutoNest = false)]
+                           public partial class M
+                           {
+                               [AutoNest(true)]
+                               public partial PersonDto Map(Person p);
+                           }
+                           """;
         var (diag, generated) = GeneratorTestHarness.Run(src);
         // No errors: depth-2+ nested pairs must be synthesized.
         var errors = diag.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
         Assert.True(errors.Count == 0,
-            $"Expected no errors but got: {string.Join(", ", errors.Select(d => d.Id + " " + d.GetMessage(System.Globalization.CultureInfo.InvariantCulture)))}");
+            $"Expected no errors but got: {string.Join(", ", errors.Select(d => d.Id + " " + d.GetMessage(CultureInfo.InvariantCulture)))}");
         // Synthesized nested helpers must appear in generated code.
         Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
         // Must compile clean.
@@ -54,18 +55,18 @@ public class BacklogCTests
     {
         // The sibling method has no [AutoNest] override → uses class AutoNest=false → DWARF005.
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Inner { public int X { get; set; } }
-            public class Outer { public Inner Child { get; set; } = new(); }
-            public class InnerDto { public int X { get; set; } }
-            public class OuterDto { public InnerDto Child { get; set; } = new(); }
-            [DwarfMapper(AutoNest = false)]
-            public partial class M
-            {
-                public partial OuterDto Map(Outer o);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Inner { public int X { get; set; } }
+                           public class Outer { public Inner Child { get; set; } = new(); }
+                           public class InnerDto { public int X { get; set; } }
+                           public class OuterDto { public InnerDto Child { get; set; } = new(); }
+                           [DwarfMapper(AutoNest = false)]
+                           public partial class M
+                           {
+                               public partial OuterDto Map(Outer o);
+                           }
+                           """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         // Expects DWARF005 because AutoNest=false and no method override.
         Assert.Contains(diag, d => d.Id == "DWARF005");
@@ -79,18 +80,18 @@ public class BacklogCTests
     public void C2_abstract_source_member_emits_DWARF033()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public abstract class Animal { public string Name { get; set; } = ""; }
-            public class Root { public Animal Pet { get; set; } = null!; }
-            public class AnimalDto { public string Name { get; set; } = ""; }
-            public class RootDto { public AnimalDto Pet { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public abstract class Animal { public string Name { get; set; } = ""; }
+                           public class Root { public Animal Pet { get; set; } = null!; }
+                           public class AnimalDto { public string Name { get; set; } = ""; }
+                           public class RootDto { public AnimalDto Pet { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         Assert.Contains(diag, d => d.Id == "DWARF033");
     }
@@ -99,18 +100,18 @@ public class BacklogCTests
     public void C2_concrete_source_member_no_DWARF033()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Address { public string Street { get; set; } = ""; }
-            public class Person  { public Address Home { get; set; } = new(); }
-            public class AddressDto { public string Street { get; set; } = ""; }
-            public class PersonDto  { public AddressDto Home { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial PersonDto Map(Person p);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Address { public string Street { get; set; } = ""; }
+                           public class Person  { public Address Home { get; set; } = new(); }
+                           public class AddressDto { public string Street { get; set; } = ""; }
+                           public class PersonDto  { public AddressDto Home { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial PersonDto Map(Person p);
+                           }
+                           """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Id == "DWARF033");
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -120,18 +121,18 @@ public class BacklogCTests
     public void C2_interface_source_member_emits_DWARF033()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public interface IAnimal { string Name { get; } }
-            public class Root { public IAnimal? Pet { get; set; } }
-            public class AnimalDto { public string Name { get; set; } = ""; }
-            public class RootDto { public AnimalDto? Pet { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public interface IAnimal { string Name { get; } }
+                           public class Root { public IAnimal? Pet { get; set; } }
+                           public class AnimalDto { public string Name { get; set; } = ""; }
+                           public class RootDto { public AnimalDto? Pet { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         // IAnimal is an interface — TypeKind.Interface → IsAbstract is true for interfaces.
         // We expect either DWARF033 or DWARF005 depending on whether interface reaches IsMappableObjectPair
@@ -152,22 +153,22 @@ public class BacklogCTests
         // A nested target has an unmapped member — DWARF001 message must identify at least
         // the member name (dotted path is best-effort; at minimum the leaf must appear).
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Inner { public int X { get; set; } public int Y { get; set; } }
-            public class Outer { public Inner Child { get; set; } = new(); }
-            public class InnerDto { public int X { get; set; } public int Y { get; set; } public int Z { get; set; } }
-            public class OuterDto { public InnerDto Child { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial OuterDto Map(Outer o);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Inner { public int X { get; set; } public int Y { get; set; } }
+                           public class Outer { public Inner Child { get; set; } = new(); }
+                           public class InnerDto { public int X { get; set; } public int Y { get; set; } public int Z { get; set; } }
+                           public class OuterDto { public InnerDto Child { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial OuterDto Map(Outer o);
+                           }
+                           """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         var d001 = diag.Where(d => d.Id == "DWARF001").ToList();
         Assert.NotEmpty(d001);
-        var msg = d001[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        var msg = d001[0].GetMessage(CultureInfo.InvariantCulture);
         // The message must at minimum contain "Z" (the unmapped member name).
         Assert.Contains("Z", msg, StringComparison.Ordinal);
     }
@@ -181,23 +182,23 @@ public class BacklogCTests
     {
         // CaseInsensitive=true; nested projection object has case-differing member names.
         const string src = """
-            using DwarfMapper;
-            using System.Linq;
-            namespace Demo;
-            public class Inner { public string firstName { get; set; } = ""; }
-            public class Outer { public Inner child { get; set; } = new(); }
-            public class InnerDto { public string FirstName { get; set; } = ""; }
-            public class OuterDto { public InnerDto Child { get; set; } = new(); }
-            [DwarfMapper(CaseInsensitive = true)]
-            public partial class M
-            {
-                public partial IQueryable<OuterDto> Project(IQueryable<Outer> src);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Linq;
+                           namespace Demo;
+                           public class Inner { public string firstName { get; set; } = ""; }
+                           public class Outer { public Inner child { get; set; } = new(); }
+                           public class InnerDto { public string FirstName { get; set; } = ""; }
+                           public class OuterDto { public InnerDto Child { get; set; } = new(); }
+                           [DwarfMapper(CaseInsensitive = true)]
+                           public partial class M
+                           {
+                               public partial IQueryable<OuterDto> Project(IQueryable<Outer> src);
+                           }
+                           """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         var errors = diag.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
         Assert.True(errors.Count == 0,
-            $"Expected no errors with CaseInsensitive=true, got: {string.Join(", ", errors.Select(d => d.Id + " " + d.GetMessage(System.Globalization.CultureInfo.InvariantCulture)))}");
+            $"Expected no errors with CaseInsensitive=true, got: {string.Join(", ", errors.Select(d => d.Id + " " + d.GetMessage(CultureInfo.InvariantCulture)))}");
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
 
@@ -212,17 +213,17 @@ public class BacklogCTests
         // The implicit conversion handles this case naturally (no .Value needed).
         // Must compile cleanly, no DWARF028.
         const string src = """
-            using DwarfMapper;
-            using System.Linq;
-            namespace Demo;
-            public class Src { public int? X { get; set; } }
-            public class Dst { public long? X { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial IQueryable<Dst> Project(IQueryable<Src> src);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Linq;
+                           namespace Demo;
+                           public class Src { public int? X { get; set; } }
+                           public class Dst { public long? X { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial IQueryable<Dst> Project(IQueryable<Src> src);
+                           }
+                           """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -235,18 +236,18 @@ public class BacklogCTests
         // After C5 fix: emits HasValue ternary for the null-preserving path.
         // (Unlike int?→long? which is implicitly widened, int?→Status? needs explicit cast.)
         const string src = """
-            using DwarfMapper;
-            using System.Linq;
-            namespace Demo;
-            public enum Status { A = 0, B = 1, C = 2 }
-            public class Src { public int? X { get; set; } }
-            public class Dst { public Status? X { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial IQueryable<Dst> Project(IQueryable<Src> src);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Linq;
+                           namespace Demo;
+                           public enum Status { A = 0, B = 1, C = 2 }
+                           public class Src { public int? X { get; set; } }
+                           public class Dst { public Status? X { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial IQueryable<Dst> Project(IQueryable<Src> src);
+                           }
+                           """;
         var (diag, generated) = GeneratorTestHarness.Run(src);
         // Must not error.
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
@@ -260,17 +261,17 @@ public class BacklogCTests
     {
         // int?→long (non-nullable target): .Value is kept (user accepts that null throws).
         const string src = """
-            using DwarfMapper;
-            using System.Linq;
-            namespace Demo;
-            public class Src { public int? X { get; set; } }
-            public class Dst { public long X { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial IQueryable<Dst> Project(IQueryable<Src> src);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Linq;
+                           namespace Demo;
+                           public class Src { public int? X { get; set; } }
+                           public class Dst { public long X { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial IQueryable<Dst> Project(IQueryable<Src> src);
+                           }
+                           """;
         var (diag, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -286,18 +287,18 @@ public class BacklogCTests
     public void C6_enum_int_to_int_projection_compiles_no_DWARF028()
     {
         const string src = """
-            using DwarfMapper;
-            using System.Linq;
-            namespace Demo;
-            public enum Status { A, B, C }
-            public class Src { public Status S { get; set; } }
-            public class Dst { public int S { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial IQueryable<Dst> Project(IQueryable<Src> src);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Linq;
+                           namespace Demo;
+                           public enum Status { A, B, C }
+                           public class Src { public Status S { get; set; } }
+                           public class Dst { public int S { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial IQueryable<Dst> Project(IQueryable<Src> src);
+                           }
+                           """;
         var (diag, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Id == "DWARF028");
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -309,18 +310,18 @@ public class BacklogCTests
     public void C6_int_to_enum_int_projection_compiles_no_DWARF028()
     {
         const string src = """
-            using DwarfMapper;
-            using System.Linq;
-            namespace Demo;
-            public enum Status { A, B, C }
-            public class Src { public int S { get; set; } }
-            public class Dst { public Status S { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial IQueryable<Dst> Project(IQueryable<Src> src);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Linq;
+                           namespace Demo;
+                           public enum Status { A, B, C }
+                           public class Src { public int S { get; set; } }
+                           public class Dst { public Status S { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial IQueryable<Dst> Project(IQueryable<Src> src);
+                           }
+                           """;
         var (diag, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Id == "DWARF028");
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -332,18 +333,18 @@ public class BacklogCTests
     {
         // enum:long → int is narrowing — must still be DWARF028.
         const string src = """
-            using DwarfMapper;
-            using System.Linq;
-            namespace Demo;
-            public enum BigStatus : long { A = 0L, B = 1L }
-            public class Src { public BigStatus S { get; set; } }
-            public class Dst { public int S { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial IQueryable<Dst> Project(IQueryable<Src> src);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Linq;
+                           namespace Demo;
+                           public enum BigStatus : long { A = 0L, B = 1L }
+                           public class Src { public BigStatus S { get; set; } }
+                           public class Dst { public int S { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial IQueryable<Dst> Project(IQueryable<Src> src);
+                           }
+                           """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         Assert.Contains(diag, d => d.Id == "DWARF028");
     }
@@ -356,26 +357,34 @@ public class BacklogCTests
     public void C7_DWARF004_and_DWARF029_reserved_in_unshipped_release_notes()
     {
         // Read the unshipped release notes and verify reserved comment lines.
-        var generatorAsm = typeof(DwarfMapper.Generator.Diagnostics.DiagnosticDescriptors).Assembly;
+        var generatorAsm = typeof(DiagnosticDescriptors).Assembly;
         var asmLocation = generatorAsm.Location;
-        var projectDir = System.IO.Path.GetDirectoryName(asmLocation)!;
+        var projectDir = Path.GetDirectoryName(asmLocation)!;
         // Navigate up to find AnalyzerReleases.Unshipped.md
-        var dir = new System.IO.DirectoryInfo(projectDir);
+        var dir = new DirectoryInfo(projectDir);
         string? mdPath = null;
         for (var current = dir; current is not null; current = current.Parent)
         {
-            var candidate = System.IO.Path.Combine(current.FullName, "AnalyzerReleases.Unshipped.md");
-            if (System.IO.File.Exists(candidate)) { mdPath = candidate; break; }
+            var candidate = Path.Combine(current.FullName, "AnalyzerReleases.Unshipped.md");
+            if (File.Exists(candidate))
+            {
+                mdPath = candidate;
+                break;
+            }
+
             // Also check src/DwarfMapper.Generator subdirectory
-            var sub = System.IO.Path.Combine(current.FullName, "src", "DwarfMapper.Generator", "AnalyzerReleases.Unshipped.md");
-            if (System.IO.File.Exists(sub)) { mdPath = sub; break; }
+            var sub = Path.Combine(current.FullName, "src", "DwarfMapper.Generator", "AnalyzerReleases.Unshipped.md");
+            if (File.Exists(sub))
+            {
+                mdPath = sub;
+                break;
+            }
         }
+
         if (mdPath is null)
-        {
             // Skip if file not found in known locations (not a blocking test condition)
             return;
-        }
-        var content = System.IO.File.ReadAllText(mdPath);
+        var content = File.ReadAllText(mdPath);
         Assert.Contains("DWARF004", content, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("DWARF029", content, StringComparison.OrdinalIgnoreCase);
     }
@@ -394,17 +403,15 @@ public class BacklogCTests
         var type = typeof(DiagnosticDescriptors);
         var fields = type.GetFields(BindingFlags.Public | BindingFlags.Static);
         var descriptorFields = fields
-            .Where(f => f.FieldType == typeof(Microsoft.CodeAnalysis.DiagnosticDescriptor))
+            .Where(f => f.FieldType == typeof(DiagnosticDescriptor))
             .ToList();
 
         Assert.True(descriptorFields.Count > 0, "Expected at least one DiagnosticDescriptor field.");
 
         foreach (var field in descriptorFields)
-        {
             Assert.True(field.IsInitOnly,
                 $"Field DiagnosticDescriptors.{field.Name} must be readonly (IsInitOnly) but is not. " +
                 "Mutable static fields can return different instances per call, breaking incremental cache equality.");
-        }
     }
 
     [Fact]
@@ -413,7 +420,7 @@ public class BacklogCTests
         // Reference-stability: two reads of the same static field must be the same instance.
         var type = typeof(DiagnosticDescriptors);
         var fields = type.GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.FieldType == typeof(Microsoft.CodeAnalysis.DiagnosticDescriptor))
+            .Where(f => f.FieldType == typeof(DiagnosticDescriptor))
             .ToList();
 
         foreach (var field in fields)
@@ -451,11 +458,11 @@ public class BacklogCTests
         // Verify that the long factory occasionally produces values outside int range.
         var rng = new Random(42);
         var values = Enumerable.Range(0, 200)
-            .Select(_ => (long)DwarfMapper.Testing.ObjectFactory.Create(typeof(long), rng, 0)!)
+            .Select(_ => (long)ObjectFactory.Create(typeof(long), rng, 0)!)
             .ToList();
         // At least some values should be outside the original [1, int.MaxValue) range.
         // With 1-in-4 probability and 200 samples, the chance of all being in range is negligible.
-        Assert.True(values.Any(v => v < 1 || v >= (long)int.MaxValue),
+        Assert.True(values.Any(v => v < 1 || v >= int.MaxValue),
             "Expected some out-of-int-range long values from widened factory, but all were in range.");
     }
 
@@ -464,9 +471,9 @@ public class BacklogCTests
     {
         var rng = new Random(42);
         var values = Enumerable.Range(0, 200)
-            .Select(_ => (long)DwarfMapper.Testing.ObjectFactoryV2.Create(typeof(long), rng, 0)!)
+            .Select(_ => (long)ObjectFactoryV2.Create(typeof(long), rng, 0)!)
             .ToList();
-        Assert.True(values.Any(v => v < 1 || v >= (long)int.MaxValue),
+        Assert.True(values.Any(v => v < 1 || v >= int.MaxValue),
             "Expected some out-of-int-range long values from widened factory, but all were in range.");
     }
 

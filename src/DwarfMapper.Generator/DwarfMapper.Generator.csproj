@@ -1,26 +1,26 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <IsRoslynComponent>true</IsRoslynComponent>
-    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <IncludeBuildOutput>false</IncludeBuildOutput>
-    <DevelopmentDependency>true</DevelopmentDependency>
-    <Description>DwarfMapper Roslyn incremental source generator and analyzers/diagnostics. Emits the compile-time mapping code for types annotated with DwarfMapper attributes. Ships bundled inside the DwarfMapper package (just reference DwarfMapper).</Description>
-    <!-- Not packed as a standalone NuGet package: the generator DLL ships bundled inside the DwarfMapper
-         package's analyzer slot (see DwarfMapper.csproj's <None Pack> items), same as DwarfMapper.CodeFixes.
-         Keeping it unpackable avoids shipping a second auto-binding analyzer package that would load the
-         generator TWICE when referenced alongside DwarfMapper (duplicate DWARF diagnostics / double emission). -->
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
-  </ItemGroup>
-  <ItemGroup>
-    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
-    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
-  </ItemGroup>
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <IsRoslynComponent>true</IsRoslynComponent>
+        <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+        <DevelopmentDependency>true</DevelopmentDependency>
+        <Description>DwarfMapper Roslyn incremental source generator and analyzers/diagnostics. Emits the compile-time mapping code for types annotated with DwarfMapper attributes. Ships bundled inside the DwarfMapper package (just reference DwarfMapper).</Description>
+        <!-- Not packed as a standalone NuGet package: the generator DLL ships bundled inside the DwarfMapper
+             package's analyzer slot (see DwarfMapper.csproj's <None Pack> items), same as DwarfMapper.CodeFixes.
+             Keeping it unpackable avoids shipping a second auto-binding analyzer package that would load the
+             generator TWICE when referenced alongside DwarfMapper (duplicate DWARF diagnostics / double emission). -->
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+    <ItemGroup>
+        <AdditionalFiles Include="AnalyzerReleases.Shipped.md"/>
+        <AdditionalFiles Include="AnalyzerReleases.Unshipped.md"/>
+    </ItemGroup>
 </Project>

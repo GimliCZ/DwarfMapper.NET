@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using DwarfMapper;
-using Xunit;
+
+
 
 // CA5394: System.Random is used ONLY for deterministic, seeded test-data generation
 // (replayable counterexamples) — never for security. Suppressed for this fuzz file.
@@ -13,27 +11,75 @@ namespace DwarfMapper.IntegrationTests;
 // ── Adversarial / fuzz / defensive types for OnCycle = SetNull ───────────────
 
 // Mutual recursion across two distinct types: A→B→A
-public class SnMutA    { public int V { get; set; } public SnMutB? B { get; set; } }
-public class SnMutB    { public int V { get; set; } public SnMutA? A { get; set; } }
-public class SnMutADto { public int V { get; set; } public SnMutBDto? B { get; set; } }
-public class SnMutBDto { public int V { get; set; } public SnMutADto? A { get; set; } }
+public class SnMutA
+{
+    public int V { get; set; }
+    public SnMutB? B { get; set; }
+}
+
+public class SnMutB
+{
+    public int V { get; set; }
+    public SnMutA? A { get; set; }
+}
+
+public class SnMutADto
+{
+    public int V { get; set; }
+    public SnMutBDto? B { get; set; }
+}
+
+public class SnMutBDto
+{
+    public int V { get; set; }
+    public SnMutADto? A { get; set; }
+}
 
 [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
-public partial class SnMutMapper { public partial SnMutADto Map(SnMutA a); }
+public partial class SnMutMapper
+{
+    public partial SnMutADto Map(SnMutA a);
+}
 
 // Binary node with two reference edges — used for fuzzing arbitrary back-edge topologies.
-public class SnBin    { public int V { get; set; } public SnBin? L { get; set; } public SnBin? R { get; set; } }
-public class SnBinDto { public int V { get; set; } public SnBinDto? L { get; set; } public SnBinDto? R { get; set; } }
+public class SnBin
+{
+    public int V { get; set; }
+    public SnBin? L { get; set; }
+    public SnBin? R { get; set; }
+}
+
+public class SnBinDto
+{
+    public int V { get; set; }
+    public SnBinDto? L { get; set; }
+    public SnBinDto? R { get; set; }
+}
 
 [DwarfMapper(OnCycle = OnCycleStrategy.SetNull, MaxDepth = 1000)]
-public partial class SnBinMapper { public partial SnBinDto Map(SnBin n); }
+public partial class SnBinMapper
+{
+    public partial SnBinDto Map(SnBin n);
+}
 
 // Long chain (member cycle) — terminates under SetNull.
-public class SnLong    { public int V { get; set; } public SnLong? Next { get; set; } }
-public class SnLongDto { public int V { get; set; } public SnLongDto? Next { get; set; } }
+public class SnLong
+{
+    public int V { get; set; }
+    public SnLong? Next { get; set; }
+}
+
+public class SnLongDto
+{
+    public int V { get; set; }
+    public SnLongDto? Next { get; set; }
+}
 
 [DwarfMapper(OnCycle = OnCycleStrategy.SetNull, MaxDepth = 1000)]
-public partial class SnLongMapper { public partial SnLongDto Map(SnLong n); }
+public partial class SnLongMapper
+{
+    public partial SnLongDto Map(SnLong n);
+}
 
 public class SetNullAdversarialRuntimeTests
 {
@@ -58,14 +104,25 @@ public class SetNullAdversarialRuntimeTests
     {
         var head = new SnLong { V = 0 };
         var cur = head;
-        for (var i = 1; i < 100; i++) { cur.Next = new SnLong { V = i }; cur = cur.Next; }
+        for (var i = 1; i < 100; i++)
+        {
+            cur.Next = new SnLong { V = i };
+            cur = cur.Next;
+        }
+
         cur.Next = head; // close the cycle back to head
 
         var t = new SnLongMapper().Map(head);
         // Walk and count — must be exactly 100 and the last Next must be null (back-edge to head).
         var count = 0;
         var n = t;
-        while (n is not null) { count++; n = n.Next; if (count > 1000) break; }
+        while (n is not null)
+        {
+            count++;
+            n = n.Next;
+            if (count > 1000) break;
+        }
+
         Assert.Equal(100, count);
     }
 
@@ -141,6 +198,7 @@ public class SetNullAdversarialRuntimeTests
     {
         var onPath = new HashSet<SnBinDto>(ReferenceEqualityComparer.Instance);
         var total = 0;
+
         void Walk(SnBinDto? node)
         {
             if (node is null) return;
@@ -150,10 +208,13 @@ public class SetNullAdversarialRuntimeTests
             Walk(node.R);
             onPath.Remove(node);
         }
+
         Walk(root);
     }
 
     // Canonical string of the tree shape + values, for determinism comparison.
     private static string Shape(SnBinDto? node)
-        => node is null ? "." : $"({node.V} {Shape(node.L)} {Shape(node.R)})";
+    {
+        return node is null ? "." : $"({node.V} {Shape(node.L)} {Shape(node.R)})";
+    }
 }

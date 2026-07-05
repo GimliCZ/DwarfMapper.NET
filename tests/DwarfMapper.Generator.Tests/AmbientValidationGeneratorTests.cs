@@ -1,25 +1,32 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Linq;
+
+using System.Globalization;
 using Microsoft.CodeAnalysis;
-using Xunit;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Phase-5 tests for the ambient root validation (DWARF061): in the assembly marked
-/// <c>[assembly: DwarfMapperValidationRoot]</c>, every consumed ambient map must be provided by some
-/// assembly in the graph, else a compile-time error. Mid-tier assemblies (no root marker) do not validate.
+///     Phase-5 tests for the ambient root validation (DWARF061): in the assembly marked
+///     <c>[assembly: DwarfMapperValidationRoot]</c>, every consumed ambient map must be provided by some
+///     assembly in the graph, else a compile-time error. Mid-tier assemblies (no root marker) do not validate.
 /// </summary>
 public sealed class AmbientValidationGeneratorTests
 {
     private const string Consumer = """
-        public class Doc { public int V { get; set; } }
-        public class Model { public int V { get; set; } }
-        public class Consumer
-        {
-            public Model Convert(global::DwarfMapper.IDwarfMapper m, Doc d) => m.Map<Model>(d);
-        }
-        """;
+                                    public class Doc { public int V { get; set; } }
+                                    public class Model { public int V { get; set; } }
+                                    public class Consumer
+                                    {
+                                        public Model Convert(global::DwarfMapper.IDwarfMapper m, Doc d) => m.Map<Model>(d);
+                                    }
+                                    """;
+
+    private const string ProvidingRoot = "namespace Demo;\n" + Consumer + """
+
+                                                                          [global::DwarfMapper.DwarfMapper]
+                                                                          [global::DwarfMapper.GenerateMap<Doc, Model>]
+                                                                          public partial class M { }
+                                                                          """;
 
     [Fact]
     public void Root_with_unprovided_consumed_map_reports_DWARF061()
@@ -29,8 +36,10 @@ public sealed class AmbientValidationGeneratorTests
         var (diags, _) = GeneratorTestHarness.Run(s);
 
         Assert.Contains(diags, d => d.Id == "DWARF061" && d.Severity == DiagnosticSeverity.Error
-            && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Demo.Doc", System.StringComparison.Ordinal)
-            && d.GetMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("Demo.Model", System.StringComparison.Ordinal));
+                                                       && d.GetMessage(CultureInfo.InvariantCulture)
+                                                           .Contains("Demo.Doc", StringComparison.Ordinal)
+                                                       && d.GetMessage(CultureInfo.InvariantCulture)
+                                                           .Contains("Demo.Model", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -61,8 +70,9 @@ public sealed class AmbientValidationGeneratorTests
 
         var validate = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs");
 
-        Assert.Contains("public static void Validate()", validate, System.StringComparison.Ordinal);
-        Assert.Contains("IsProvided(typeof(global::Demo.Doc), typeof(global::Demo.Model))", validate, System.StringComparison.Ordinal);
+        Assert.Contains("public static void Validate()", validate, StringComparison.Ordinal);
+        Assert.Contains("IsProvided(typeof(global::Demo.Doc), typeof(global::Demo.Model))", validate,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -72,22 +82,17 @@ public sealed class AmbientValidationGeneratorTests
         Assert.Equal(string.Empty, GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs"));
     }
 
-    private const string ProvidingRoot = "namespace Demo;\n" + Consumer + """
-
-        [global::DwarfMapper.DwarfMapper]
-        [global::DwarfMapper.GenerateMap<Doc, Model>]
-        public partial class M { }
-        """;
-
     [Fact]
     public void AutoValidate_true_emits_a_module_initializer_calling_Validate()
     {
-        const string s = "[assembly: global::DwarfMapper.DwarfMapperValidationRoot(AutoValidate = true)]\n" + ProvidingRoot;
+        const string s = "[assembly: global::DwarfMapper.DwarfMapperValidationRoot(AutoValidate = true)]\n" +
+                         ProvidingRoot;
 
         var validate = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs");
 
-        Assert.Contains("[global::System.Runtime.CompilerServices.ModuleInitializer]", validate, System.StringComparison.Ordinal);
-        Assert.Contains("__DwarfAutoValidate() => Validate();", validate, System.StringComparison.Ordinal);
+        Assert.Contains("[global::System.Runtime.CompilerServices.ModuleInitializer]", validate,
+            StringComparison.Ordinal);
+        Assert.Contains("__DwarfAutoValidate() => Validate();", validate, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -97,8 +102,8 @@ public sealed class AmbientValidationGeneratorTests
 
         var validate = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs");
 
-        Assert.Contains("public static void Validate()", validate, System.StringComparison.Ordinal);
-        Assert.DoesNotContain("ModuleInitializer", validate, System.StringComparison.Ordinal);
+        Assert.Contains("public static void Validate()", validate, StringComparison.Ordinal);
+        Assert.DoesNotContain("ModuleInitializer", validate, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -106,11 +111,12 @@ public sealed class AmbientValidationGeneratorTests
     {
         // When the root also provides maps, Validate() invokes the own-assembly registration before checking,
         // so an AutoValidate module initializer can't race the registration initializer.
-        const string s = "[assembly: global::DwarfMapper.DwarfMapperValidationRoot(AutoValidate = true)]\n" + ProvidingRoot;
+        const string s = "[assembly: global::DwarfMapper.DwarfMapperValidationRoot(AutoValidate = true)]\n" +
+                         ProvidingRoot;
 
         var validate = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs");
 
-        Assert.Contains("__DwarfMapperAmbientRegistration.__Register();", validate, System.StringComparison.Ordinal);
+        Assert.Contains("__DwarfMapperAmbientRegistration.__Register();", validate, StringComparison.Ordinal);
     }
 
     [Fact]

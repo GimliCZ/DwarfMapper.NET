@@ -1,27 +1,85 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
 // DateTime ↔ string
-public class DateTimeSrc      { public DateTime       V { get; set; } }
-public class DateTimeOffsetSrc { public DateTimeOffset V { get; set; } }
-public class DateTimeDstT     { public DateTime        V { get; set; } }
-public class DateTimeOffsetDstT { public DateTimeOffset V { get; set; } }
-public class StringDstTemporal { public string         V { get; set; } = ""; }
-public class StringSrcTemporal { public string         V { get; set; } = ""; }
-public class TimeSpanSrc      { public TimeSpan        V { get; set; } }
-public class TimeSpanDstT     { public TimeSpan        V { get; set; } }
+public class DateTimeSrc
+{
+    public DateTime V { get; set; }
+}
 
-[DwarfMapper] public partial class DateTimeToStringMapper     { public partial StringDstTemporal Map(DateTimeSrc      s); }
-[DwarfMapper] public partial class DateTimeOffsetToStringMapper { public partial StringDstTemporal Map(DateTimeOffsetSrc s); }
-[DwarfMapper] public partial class StringToDateTimeMapperT    { public partial DateTimeDstT      Map(StringSrcTemporal s); }
-[DwarfMapper] public partial class StringToDateTimeOffsetMapper { public partial DateTimeOffsetDstT Map(StringSrcTemporal s); }
-[DwarfMapper] public partial class TimeSpanToStringMapper     { public partial StringDstTemporal Map(TimeSpanSrc       s); }
-[DwarfMapper] public partial class StringToTimeSpanMapperT    { public partial TimeSpanDstT      Map(StringSrcTemporal s); }
+public class DateTimeOffsetSrc
+{
+    public DateTimeOffset V { get; set; }
+}
+
+public class DateTimeDstT
+{
+    public DateTime V { get; set; }
+}
+
+public class DateTimeOffsetDstT
+{
+    public DateTimeOffset V { get; set; }
+}
+
+public class StringDstTemporal
+{
+    public string V { get; set; } = "";
+}
+
+public class StringSrcTemporal
+{
+    public string V { get; set; } = "";
+}
+
+public class TimeSpanSrc
+{
+    public TimeSpan V { get; set; }
+}
+
+public class TimeSpanDstT
+{
+    public TimeSpan V { get; set; }
+}
+
+[DwarfMapper]
+public partial class DateTimeToStringMapper
+{
+    public partial StringDstTemporal Map(DateTimeSrc s);
+}
+
+[DwarfMapper]
+public partial class DateTimeOffsetToStringMapper
+{
+    public partial StringDstTemporal Map(DateTimeOffsetSrc s);
+}
+
+[DwarfMapper]
+public partial class StringToDateTimeMapperT
+{
+    public partial DateTimeDstT Map(StringSrcTemporal s);
+}
+
+[DwarfMapper]
+public partial class StringToDateTimeOffsetMapper
+{
+    public partial DateTimeOffsetDstT Map(StringSrcTemporal s);
+}
+
+[DwarfMapper]
+public partial class TimeSpanToStringMapper
+{
+    public partial StringDstTemporal Map(TimeSpanSrc s);
+}
+
+[DwarfMapper]
+public partial class StringToTimeSpanMapperT
+{
+    public partial TimeSpanDstT Map(StringSrcTemporal s);
+}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -66,8 +124,10 @@ public class TemporalConversionRuntimeTests
 
     [Fact]
     public void String_to_DateTime_bad_input_throws()
-        => Assert.ThrowsAny<Exception>(() =>
+    {
+        Assert.ThrowsAny<Exception>(() =>
             new StringToDateTimeMapperT().Map(new StringSrcTemporal { V = "not-a-date" }));
+    }
 
     // ── DateTimeOffset round-trip ─────────────────────────────────────────────
 

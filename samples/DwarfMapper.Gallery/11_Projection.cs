@@ -6,15 +6,20 @@
 // translates direct members, renames, [MapIgnore], nested objects, List/array collections, enum→int casts
 // and dotted [MapProperty] flattening; a member needing a *runtime* conversion (narrowing, parse, enum-by-name,
 // custom Use=) is DWARF028, by design — do that with a runtime Map method instead.
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
 
 namespace DwarfMapper.Gallery.Ex11;
 
-public sealed class Order { public int Id { get; set; } public string Code { get; set; } = ""; }
-public sealed class OrderDto { public int Id { get; set; } public string Code { get; set; } = ""; }
+public sealed class Order
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = "";
+}
+
+public sealed class OrderDto
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = "";
+}
 
 [DwarfMapper]
 public partial class Mapper
@@ -26,13 +31,14 @@ public static class Example
 {
     public static void Run()
     {
-        IQueryable<Order> orders = new List<Order>
+        var orders = new List<Order>
         {
             new() { Id = 1, Code = "MITHRIL" },
-            new() { Id = 2, Code = "GOLD" },
+            new() { Id = 2, Code = "GOLD" }
         }.AsQueryable();
 
-        List<OrderDto> projected = new Mapper().Project(orders).ToList();
-        Console.WriteLine($"11 Projection         -> {projected.Count} rows: {string.Join(", ", projected.Select(o => o.Code))}");
+        var projected = new Mapper().Project(orders).ToList();
+        Console.WriteLine(
+            $"11 Projection         -> {projected.Count} rows: {string.Join(", ", projected.Select(o => o.Code))}");
     }
 }

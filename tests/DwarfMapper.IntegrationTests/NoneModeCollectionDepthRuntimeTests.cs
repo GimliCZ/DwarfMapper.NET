@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using DwarfMapper;
-using Xunit;
+
+
 
 // CA5394: System.Random is used ONLY for deterministic, seeded test-data generation. Not security.
 #pragma warning disable CA5394
@@ -16,40 +14,65 @@ namespace DwarfMapper.IntegrationTests;
 // element mapper for self-referential element types.
 
 // Self-map through a list (the common case: the public Map IS the element mapper).
-public class NmcTree    { public int V { get; set; } public List<NmcTree>? Kids { get; set; } }
-public class NmcTreeDto { public int V { get; set; } public List<NmcTreeDto>? Kids { get; set; } }
+public class NmcTree
+{
+    public int V { get; set; }
+    public List<NmcTree>? Kids { get; set; }
+}
+
+public class NmcTreeDto
+{
+    public int V { get; set; }
+    public List<NmcTreeDto>? Kids { get; set; }
+}
 
 [DwarfMapper(MaxDepth = 16)]
-public partial class NmcTreeMapper { public partial NmcTreeDto Map(NmcTree t); }
+public partial class NmcTreeMapper
+{
+    public partial NmcTreeDto Map(NmcTree t);
+}
 
 // Self-map through a dictionary value.
-public class NmcDict    { public int V { get; set; } public Dictionary<string, NmcDict>? E { get; set; } }
-public class NmcDictDto { public int V { get; set; } public Dictionary<string, NmcDictDto>? E { get; set; } }
+public class NmcDict
+{
+    public int V { get; set; }
+    public Dictionary<string, NmcDict>? E { get; set; }
+}
+
+public class NmcDictDto
+{
+    public int V { get; set; }
+    public Dictionary<string, NmcDictDto>? E { get; set; }
+}
 
 [DwarfMapper(MaxDepth = 16)]
-public partial class NmcDictMapper { public partial NmcDictDto Map(NmcDict n); }
+public partial class NmcDictMapper
+{
+    public partial NmcDictDto Map(NmcDict n);
+}
 
 public class NoneModeCollectionDepthRuntimeTests
 {
     [Fact]
     public void DeepCollectionChain_throws_DepthException_not_StackOverflow()
     {
-        var head = new NmcTree { V = 0, Kids = new() };
+        var head = new NmcTree { V = 0, Kids = new List<NmcTree>() };
         var cur = head;
         for (var i = 1; i < 50; i++) // 50 > MaxDepth(16)
         {
-            var next = new NmcTree { V = i, Kids = new() };
+            var next = new NmcTree { V = i, Kids = new List<NmcTree>() };
             cur.Kids!.Add(next);
             cur = next;
         }
+
         Assert.Throws<DwarfMappingDepthException>(() => new NmcTreeMapper().Map(head));
     }
 
     [Fact]
     public void CyclicCollection_throws_DepthException_not_StackOverflow()
     {
-        var a = new NmcTree { V = 1, Kids = new() };
-        var b = new NmcTree { V = 2, Kids = new() };
+        var a = new NmcTree { V = 1, Kids = new List<NmcTree>() };
+        var b = new NmcTree { V = 2, Kids = new List<NmcTree>() };
         a.Kids!.Add(b);
         b.Kids!.Add(a); // cycle through the list
         Assert.Throws<DwarfMappingDepthException>(() => new NmcTreeMapper().Map(a));
@@ -61,7 +84,8 @@ public class NoneModeCollectionDepthRuntimeTests
         var root = new NmcTree
         {
             V = 1,
-            Kids = new() { new NmcTree { V = 2, Kids = new() }, new NmcTree { V = 3, Kids = new() } },
+            Kids = new List<NmcTree>
+                { new() { V = 2, Kids = new List<NmcTree>() }, new() { V = 3, Kids = new List<NmcTree>() } }
         };
         var t = new NmcTreeMapper().Map(root);
         Assert.Equal(1, t.V);
@@ -73,8 +97,8 @@ public class NoneModeCollectionDepthRuntimeTests
     [Fact]
     public void CyclicDictionary_throws_DepthException_not_StackOverflow()
     {
-        var a = new NmcDict { V = 1, E = new() };
-        var b = new NmcDict { V = 2, E = new() };
+        var a = new NmcDict { V = 1, E = new Dictionary<string, NmcDict>() };
+        var b = new NmcDict { V = 2, E = new Dictionary<string, NmcDict>() };
         a.E!["b"] = b;
         b.E!["a"] = a; // cycle through dict values
         Assert.Throws<DwarfMappingDepthException>(() => new NmcDictMapper().Map(a));
@@ -83,7 +107,11 @@ public class NoneModeCollectionDepthRuntimeTests
     [Fact]
     public void ShallowDictionary_maps_correctly()
     {
-        var root = new NmcDict { V = 1, E = new() { ["x"] = new NmcDict { V = 2, E = new() } } };
+        var root = new NmcDict
+        {
+            V = 1,
+            E = new Dictionary<string, NmcDict> { ["x"] = new() { V = 2, E = new Dictionary<string, NmcDict>() } }
+        };
         var t = new NmcDictMapper().Map(root);
         Assert.Equal(1, t.V);
         Assert.Equal(2, t.E!["x"].V);
@@ -105,7 +133,7 @@ public class NoneModeCollectionDepthRuntimeTests
         {
             var n = rng.Next(1, 14);
             var nodes = new List<NmcTree>();
-            for (var i = 0; i < n; i++) nodes.Add(new NmcTree { V = i, Kids = new() });
+            for (var i = 0; i < n; i++) nodes.Add(new NmcTree { V = i, Kids = new List<NmcTree>() });
             foreach (var node in nodes)
             {
                 var edges = rng.Next(0, 4);

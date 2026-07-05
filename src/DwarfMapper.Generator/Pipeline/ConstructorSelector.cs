@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
-using System.Linq;
+
 using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Pipeline;
 
 /// <summary>
-/// Deterministic policy for choosing a destination constructor to use for mapping.
+///     Deterministic policy for choosing a destination constructor to use for mapping.
 /// </summary>
 internal static class ConstructorSelector
 {
@@ -15,18 +14,18 @@ internal static class ConstructorSelector
     private const string ObsoleteAttribute = "System.ObsoleteAttribute";
 
     /// <summary>
-    /// Select the best constructor for <paramref name="target"/> to use for mapping.
+    ///     Select the best constructor for <paramref name="target" /> to use for mapping.
     /// </summary>
     /// <param name="target">The destination type.</param>
     /// <param name="diagnostics">Diagnostic sink; DWARF025/026 appended on failure.</param>
     /// <param name="location">Location for diagnostic reporting.</param>
     /// <param name="useObjectInitializerOnly">
-    /// Set to <see langword="true"/> when a parameterless constructor was chosen
-    /// (i.e. the existing object-initializer path — no ctor args needed).
+    ///     Set to <see langword="true" /> when a parameterless constructor was chosen
+    ///     (i.e. the existing object-initializer path — no ctor args needed).
     /// </param>
     /// <returns>
-    /// The selected <see cref="IMethodSymbol"/>, or <see langword="null"/> when a blocking
-    /// diagnostic was emitted and the method should be skipped.
+    ///     The selected <see cref="IMethodSymbol" />, or <see langword="null" /> when a blocking
+    ///     diagnostic was emitted and the method should be skipped.
     /// </returns>
     public static IMethodSymbol? Select(
         Compilation compilation,
@@ -78,7 +77,8 @@ internal static class ConstructorSelector
             var annotatedOverrides = target.InstanceConstructors
                 .Where(c =>
                     IsUsableCandidate(c, target, compilation, allowNonPublicConstructors)
-                    && c.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
+                    && c.GetAttributes()
+                        .Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
                 .ToList();
 
             if (annotatedOverrides.Count == 0)
@@ -104,14 +104,13 @@ internal static class ConstructorSelector
         // `in` parameters (RefKind.In / ref-readonly) are fine — callable with plain named args.
         var candidates = new List<IMethodSymbol>();
         foreach (var ctor in target.InstanceConstructors)
-        {
             if (IsUsableCandidate(ctor, target, compilation, allowNonPublicConstructors))
                 candidates.Add(ctor);
-        }
 
         // ── Policy 1: [DwarfMapperConstructor] annotation ────────────────────
         var annotated = candidates
-            .Where(c => c.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
+            .Where(c => c.GetAttributes()
+                .Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
             .ToList();
 
         if (annotated.Count > 1)
@@ -120,10 +119,7 @@ internal static class ConstructorSelector
             return null;
         }
 
-        if (annotated.Count == 1)
-        {
-            return annotated[0];
-        }
+        if (annotated.Count == 1) return annotated[0];
 
         // ── Policy 2 (already handled above — no parameterless ctor at this point) ─
 
@@ -135,10 +131,7 @@ internal static class ConstructorSelector
         }
 
         // ── Policy 4: exactly one non-parameterless candidate ─────────────────
-        if (candidates.Count == 1)
-        {
-            return candidates[0];
-        }
+        if (candidates.Count == 1) return candidates[0];
 
         // ── Policy 5: multiple candidates → most params; tie → DWARF025 ───────
         var maxParams = candidates.Max(c => c.Parameters.Length);
@@ -158,17 +151,20 @@ internal static class ConstructorSelector
     // it — i.e. an internal/protected-internal ctor in the same assembly or one exposed via
     // [InternalsVisibleTo]. private / protected ctors (no derivation here) are never reachable, so
     // IsSymbolAccessibleWithin filters them out even when the flag is set.
-    private static bool IsAccessible(IMethodSymbol ctor, Compilation compilation, bool allowNonPublic) =>
-        ctor.DeclaredAccessibility == Accessibility.Public
-        || (allowNonPublic && compilation.IsSymbolAccessibleWithin(ctor, compilation.Assembly));
+    private static bool IsAccessible(IMethodSymbol ctor, Compilation compilation, bool allowNonPublic)
+    {
+        return ctor.DeclaredAccessibility == Accessibility.Public
+               || (allowNonPublic && compilation.IsSymbolAccessibleWithin(ctor, compilation.Assembly));
+    }
 
     /// <summary>
-    /// A constructor the generator can actually emit a call to: accessible, instance, explicitly declared,
-    /// not the record copy ctor, not <c>[Obsolete]</c>, and free of <c>ref</c>/<c>out</c> parameters (which
-    /// cannot be passed as named args — CS1620). Shared by every selection path so an annotated or
-    /// most-params pick can never resolve to a ctor that would emit broken code.
+    ///     A constructor the generator can actually emit a call to: accessible, instance, explicitly declared,
+    ///     not the record copy ctor, not <c>[Obsolete]</c>, and free of <c>ref</c>/<c>out</c> parameters (which
+    ///     cannot be passed as named args — CS1620). Shared by every selection path so an annotated or
+    ///     most-params pick can never resolve to a ctor that would emit broken code.
     /// </summary>
-    private static bool IsUsableCandidate(IMethodSymbol ctor, INamedTypeSymbol target, Compilation compilation, bool allowNonPublic)
+    private static bool IsUsableCandidate(IMethodSymbol ctor, INamedTypeSymbol target, Compilation compilation,
+        bool allowNonPublic)
     {
         if (!IsAccessible(ctor, compilation, allowNonPublic)) return false;
         if (ctor.IsStatic) return false;
@@ -182,6 +178,8 @@ internal static class ConstructorSelector
         return true;
     }
 
-    private static bool IsObsolete(IMethodSymbol method) =>
-        method.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == ObsoleteAttribute);
+    private static bool IsObsolete(IMethodSymbol method)
+    {
+        return method.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == ObsoleteAttribute);
+    }
 }

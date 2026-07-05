@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Linq;
+
 using Microsoft.CodeAnalysis;
-using Xunit;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Adversarial edge cases for Plan 19 Part A (auto-synthesized nested object mappers).
+///     Adversarial edge cases for Plan 19 Part A (auto-synthesized nested object mappers).
 /// </summary>
 public class NestedAutoMapEdgeTests
 {
@@ -17,14 +15,14 @@ public class NestedAutoMapEdgeTests
     public void Class_source_to_struct_target_nested_compiles_with_throw_guard()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class CInner { public int V { get; set; } }
-            public struct SInner { public int V { get; set; } }
-            public class Src { public CInner Inner { get; set; } = new(); }
-            public class Dst { public SInner Inner { get; set; } }
-            [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class CInner { public int V { get; set; } }
+                           public struct SInner { public int V { get; set; } }
+                           public class Src { public CInner Inner { get; set; } = new(); }
+                           public class Dst { public SInner Inner { get; set; } }
+                           [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -40,26 +38,26 @@ public class NestedAutoMapEdgeTests
     public void Struct_enumerable_is_not_object_field_mapped()
     {
         const string src = """
-            using DwarfMapper;
-            using System.Collections;
-            using System.Collections.Generic;
-            namespace Demo;
-            public struct SrcSeq : IEnumerable<int>
-            {
-                public int A { get; set; }
-                public IEnumerator<int> GetEnumerator() { yield break; }
-                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-            }
-            public struct DstSeq : IEnumerable<int>
-            {
-                public int A { get; set; }
-                public IEnumerator<int> GetEnumerator() { yield break; }
-                IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-            }
-            public class Src { public SrcSeq Seq { get; set; } }
-            public class Dst { public DstSeq Seq { get; set; } }
-            [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
-            """;
+                           using DwarfMapper;
+                           using System.Collections;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public struct SrcSeq : IEnumerable<int>
+                           {
+                               public int A { get; set; }
+                               public IEnumerator<int> GetEnumerator() { yield break; }
+                               IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+                           }
+                           public struct DstSeq : IEnumerable<int>
+                           {
+                               public int A { get; set; }
+                               public IEnumerator<int> GetEnumerator() { yield break; }
+                               IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+                           }
+                           public class Src { public SrcSeq Seq { get; set; } }
+                           public class Dst { public DstSeq Seq { get; set; } }
+                           [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         // Not object-field-mapped → no synthesized object mapper for the struct-enumerable pair.
         Assert.DoesNotContain("__DwarfMap_Obj_global__Demo_SrcSeq", generated, StringComparison.Ordinal);
@@ -75,14 +73,14 @@ public class NestedAutoMapEdgeTests
     public void Mutually_recursive_types_compile_without_generator_hang()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class A { public int Id { get; set; } public B? B { get; set; } }
-            public class B { public int Id { get; set; } public A? A { get; set; } }
-            public class ADto { public int Id { get; set; } public BDto? B { get; set; } }
-            public class BDto { public int Id { get; set; } public ADto? A { get; set; } }
-            [DwarfMapper] public partial class M { public partial ADto Map(A a); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class A { public int Id { get; set; } public B? B { get; set; } }
+                           public class B { public int Id { get; set; } public A? A { get; set; } }
+                           public class ADto { public int Id { get; set; } public BDto? B { get; set; } }
+                           public class BDto { public int Id { get; set; } public ADto? A { get; set; } }
+                           [DwarfMapper] public partial class M { public partial ADto Map(A a); }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -95,13 +93,13 @@ public class NestedAutoMapEdgeTests
     public void Closed_generic_nested_type_compiles()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Box<T> { public T Value { get; set; } = default!; }
-            public class Src { public Box<int> B { get; set; } = new(); }
-            public class Dst { public Box<long> B { get; set; } = new(); }
-            [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Box<T> { public T Value { get; set; } = default!; }
+                           public class Src { public Box<int> B { get; set; } = new(); }
+                           public class Dst { public Box<long> B { get; set; } = new(); }
+                           [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));

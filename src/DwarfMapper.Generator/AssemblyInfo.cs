@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 using System.Runtime.CompilerServices;
 
 // Exposes internal types (e.g. CollectionConverter.TargetKind) to the test project

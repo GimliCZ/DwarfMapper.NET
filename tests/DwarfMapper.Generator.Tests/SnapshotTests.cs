@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Threading.Tasks;
-using VerifyXunit;
 
 namespace DwarfMapper.Generator.Tests;
 
@@ -10,14 +8,14 @@ public class SnapshotTests
     public Task Flat_mapper_output_is_stable()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Person { public int Age { get; set; } public string Name { get; set; } = ""; }
-            public class PersonDto { public int Age { get; set; } public string Name { get; set; } = ""; }
-            [DwarfMapper]
-            public partial class PersonMapper { public partial PersonDto ToDto(Person p); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Person { public int Age { get; set; } public string Name { get; set; } = ""; }
+                           public class PersonDto { public int Age { get; set; } public string Name { get; set; } = ""; }
+                           [DwarfMapper]
+                           public partial class PersonMapper { public partial PersonDto ToDto(Person p); }
+                           """;
         var (_, generated) = GeneratorTestHarness.Run(src);
-        return Verifier.Verify(generated);
+        return Verify(generated);
     }
 }

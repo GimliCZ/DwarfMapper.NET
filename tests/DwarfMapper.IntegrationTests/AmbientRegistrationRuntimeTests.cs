@@ -1,20 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Linq;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
 // A real public mapper: the generator emits a [ModuleInitializer] that self-registers AmbientSrc -> AmbientDst
 // into the ambient DwarfMapperRegistry when this test assembly loads, plus a [assembly: DwarfProvidesMap]
 // manifest entry. These tests prove that end-to-end (Phase 2 / 3 of the ambient registry).
-public sealed class AmbientSrc { public int V { get; set; } }
-public sealed class AmbientDst { public int V { get; set; } }
+public sealed class AmbientSrc
+{
+    public int V { get; set; }
+}
+
+public sealed class AmbientDst
+{
+    public int V { get; set; }
+}
 
 [DwarfMapper]
 [GenerateMap<AmbientSrc, AmbientDst>]
-public partial class AmbientSampleMapper { }
+public partial class AmbientSampleMapper
+{
+}
 
 public sealed class AmbientRegistrationRuntimeTests
 {

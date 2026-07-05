@@ -1,33 +1,33 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <!-- BenchmarkDotNet requires optimizations; benchmarks are Release-only. -->
-    <Optimize>true</Optimize>
-    <!-- Benchmark harness conventions clash with the repo's maximal analyzer profile:
-         public benchmark methods/types in an exe (CA1515), members that look static-able
-         (CA1822), Console usage (CA1303), and BDN's own attribute patterns. These are
-         intentional in a benchmark project — relax them here only. -->
-    <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA1822;CA1819;CA5394;CA1051;CA1707;CA1815;CA2227;CA1002</NoWarn>
-    <!-- NU1903: AutoMapper 14.0.0 (the last MIT/GPL-compatible release; v15+ is RPL-1.5) carries a
-         known advisory. This is a BENCHMARK-ONLY, non-shipped project (IsPackable=false) that maps
-         in-memory POCOs with no untrusted input, so the advisory is not exercised. The shipped
-         library/generator do NOT reference AutoMapper. Suppressed for this project only. -->
-    <NoWarn>$(NoWarn);NU1903</NoWarn>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" />
-    <!-- Competitor mappers (benchmark comparison only). -->
-    <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all" />
-    <PackageReference Include="Mapster" />
-    <PackageReference Include="AutoMapper" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
-    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-  </ItemGroup>
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <!-- BenchmarkDotNet requires optimizations; benchmarks are Release-only. -->
+        <Optimize>true</Optimize>
+        <!-- Benchmark harness conventions clash with the repo's maximal analyzer profile:
+             public benchmark methods/types in an exe (CA1515), members that look static-able
+             (CA1822), Console usage (CA1303), and BDN's own attribute patterns. These are
+             intentional in a benchmark project — relax them here only. -->
+        <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA1822;CA1819;CA5394;CA1051;CA1707;CA1815;CA2227;CA1002</NoWarn>
+        <!-- NU1903: AutoMapper 14.0.0 (the last MIT/GPL-compatible release; v15+ is RPL-1.5) carries a
+             known advisory. This is a BENCHMARK-ONLY, non-shipped project (IsPackable=false) that maps
+             in-memory POCOs with no untrusted input, so the advisory is not exercised. The shipped
+             library/generator do NOT reference AutoMapper. Suppressed for this project only. -->
+        <NoWarn>$(NoWarn);NU1903</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet"/>
+        <!-- Competitor mappers (benchmark comparison only). -->
+        <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all"/>
+        <PackageReference Include="Mapster"/>
+        <PackageReference Include="AutoMapper"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"/>
+    </ItemGroup>
 </Project>

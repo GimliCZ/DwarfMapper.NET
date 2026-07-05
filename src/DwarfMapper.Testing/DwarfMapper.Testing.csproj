@@ -1,12 +1,12 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Description>DwarfMapper testing toolkit — seeded fixture builders, property-based fuzzer, round-trip verifier, and mapping-aware informed dumps for verifying DwarfMapper maps. Reflection-based and test-only; never AOT-published.</Description>
-    <!-- CA5394: System.Random is intentional — seeded determinism is the feature, not crypto. -->
-    <!-- CA1510: ThrowIfNull style rule; explicit pattern is fine here. -->
-    <!-- CA1032: RoundTripException always requires diff data; parameterless/string ctors would produce useless objects. -->
-    <NoWarn>$(NoWarn);CA5394;CA1510;CA1032</NoWarn>
-  </PropertyGroup>
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <Description>DwarfMapper testing toolkit — seeded fixture builders, property-based fuzzer, round-trip verifier, and mapping-aware informed dumps for verifying DwarfMapper maps. Reflection-based and test-only; never AOT-published.</Description>
+        <!-- CA5394: System.Random is intentional — seeded determinism is the feature, not crypto. -->
+        <!-- CA1510: ThrowIfNull style rule; explicit pattern is fine here. -->
+        <!-- CA1032: RoundTripException always requires diff data; parameterless/string ctors would produce useless objects. -->
+        <NoWarn>$(NoWarn);CA5394;CA1510;CA1032</NoWarn>
+    </PropertyGroup>
 </Project>

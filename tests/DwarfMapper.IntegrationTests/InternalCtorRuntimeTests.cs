@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -16,7 +14,9 @@ public sealed class IctorSrc
 // static factory. Before honoring accessibility-within, this surfaced DWARF026.
 public sealed class IctorDst
 {
-    internal IctorDst() { }
+    internal IctorDst()
+    {
+    }
 
     public string Name { get; set; } = "";
     public int Age { get; set; }

@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -38,9 +36,9 @@ public sealed class SkipNullSourceMembersRuntimeTests
     public void Null_source_members_keep_destination_defaults_when_enabled()
     {
         var dst = new SnsMapper().Map(new SnsSrc { Name = "new", Bio = null, Count = null });
-        Assert.Equal("new", dst.Name);     // non-null source still maps
+        Assert.Equal("new", dst.Name); // non-null source still maps
         Assert.Equal("keep-bio", dst.Bio); // null source preserved the default
-        Assert.Equal(99, dst.Count);       // null int? preserved the default
+        Assert.Equal(99, dst.Count); // null int? preserved the default
     }
 
     [Fact]
@@ -57,7 +55,7 @@ public sealed class SkipNullSourceMembersRuntimeTests
     {
         var dst = new SnsControlMapper().Map(new SnsSrc { Name = "new", Bio = null, Count = 5 });
         Assert.Equal("new", dst.Name);
-        Assert.Null(dst.Bio);   // overwritten with null (default behaviour)
+        Assert.Null(dst.Bio); // overwritten with null (default behaviour)
         Assert.Equal(5, dst.Count);
     }
 }

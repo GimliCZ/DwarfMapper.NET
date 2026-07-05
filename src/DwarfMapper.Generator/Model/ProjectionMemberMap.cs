@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 namespace DwarfMapper.Generator.Model;
 
 /// <summary>
-/// A single projection member binding for IQueryable.Select — carries the
-/// target name and a complete inline expression fragment (no helper calls).
-/// Value-equatable; safe for incremental-generator model caching.
+///     A single projection member binding for IQueryable.Select — carries the
+///     target name and a complete inline expression fragment (no helper calls).
+///     Value-equatable; safe for incremental-generator model caching.
 /// </summary>
 public sealed record ProjectionMemberMap(
     /// <summary>
@@ -23,4 +24,4 @@ public sealed record ProjectionMemberMap(
     ///   "new global::D.PointDto(x: __s.Point.X, y: __s.Point.Y)"
     /// Never contains a synthesized helper call (__DwarfMap_*).
     /// </summary>
-    string InlineExpr) : System.IEquatable<ProjectionMemberMap>;
+    string InlineExpr) : IEquatable<ProjectionMemberMap>;

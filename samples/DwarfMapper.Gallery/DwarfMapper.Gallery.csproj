@@ -1,20 +1,20 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <!-- Gallery/sample code: relax the repo's maximum analyzer profile so the examples stay readable
-         (Console output literals, public sample POCOs in an exe, per-file namespaces, etc.). The point of
-         these files is to teach the DwarfMapper API, not to model production analyzer hygiene. -->
-    <AnalysisMode>Recommended</AnalysisMode>
-    <NoWarn>$(NoWarn);CA1050;CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA1716;CA1724;CA5394;CA1812;CA1822</NoWarn>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
-    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
-                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <!-- Only for the last example (DI). Centrally versioned in Directory.Packages.props. -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-  </ItemGroup>
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <!-- Gallery/sample code: relax the repo's maximum analyzer profile so the examples stay readable
+             (Console output literals, public sample POCOs in an exe, per-file namespaces, etc.). The point of
+             these files is to teach the DwarfMapper API, not to model production analyzer hygiene. -->
+        <AnalysisMode>Recommended</AnalysisMode>
+        <NoWarn>$(NoWarn);CA1050;CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA1716;CA1724;CA5394;CA1812;CA1822</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false"/>
+        <!-- Only for the last example (DI). Centrally versioned in Directory.Packages.props. -->
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+    </ItemGroup>
 </Project>

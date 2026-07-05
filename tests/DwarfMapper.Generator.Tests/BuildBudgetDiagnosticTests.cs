@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Linq;
+
+using System.Globalization;
 using System.Text;
 using Microsoft.CodeAnalysis;
-using Xunit;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// DWARF055 (Info): a single mapper resolving a very large number of members gets a suppressible heads-up
-/// that it may add IDE/compile latency (all extraction runs in the syntax transform). The threshold is high
-/// (300 mapped members) so normal mappers never trip it.
+///     DWARF055 (Info): a single mapper resolving a very large number of members gets a suppressible heads-up
+///     that it may add IDE/compile latency (all extraction runs in the syntax transform). The threshold is high
+///     (300 mapped members) so normal mappers never trip it.
 /// </summary>
 public class BuildBudgetDiagnosticTests
 {
@@ -18,16 +18,16 @@ public class BuildBudgetDiagnosticTests
         var props = new StringBuilder();
         for (var i = 0; i < memberCount; i++)
             props.Append("public int P")
-                 .Append(i.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                 .Append(" { get; set; } ");
+                .Append(i.ToString(CultureInfo.InvariantCulture))
+                .Append(" { get; set; } ");
 
         return $$"""
-            using DwarfMapper;
-            namespace Demo;
-            public class Src { {{props}} }
-            public class Dst { {{props}} }
-            [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
-            """;
+                 using DwarfMapper;
+                 namespace Demo;
+                 public class Src { {{props}} }
+                 public class Dst { {{props}} }
+                 [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+                 """;
     }
 
     [Fact]

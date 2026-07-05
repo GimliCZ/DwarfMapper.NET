@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
+
 using System.Globalization;
-using System.Linq;
 using System.Reflection;
 using System.Text;
 using DwarfMapper.Testing;
@@ -17,24 +15,28 @@ namespace DwarfMapper.Generator.Tests.Fuzzing;
 // ALL tests in this class run as part of the normal suite.
 
 /// <summary>
-/// Plan 19 Part E — exhaustive combinatorial engine (depth ≤1).
-/// Matrix: ~20 basic types × 11 shapes × 2 variants.
-/// Each cell: generate source, run DwarfGenerator, assert no unexpected diagnostic,
-/// emit assembly, materialize via ObjectFactoryV2, map, verify via GraphOracleComparer.
-/// Failure messages include seed + cell identity + generated source for repro.
+///     Plan 19 Part E — exhaustive combinatorial engine (depth ≤1).
+///     Matrix: ~20 basic types × 11 shapes × 2 variants.
+///     Each cell: generate source, run DwarfGenerator, assert no unexpected diagnostic,
+///     emit assembly, materialize via ObjectFactoryV2, map, verify via GraphOracleComparer.
+///     Failure messages include seed + cell identity + generated source for repro.
 /// </summary>
 public class CombinatorialEngineTests
 {
     // ── Matrix data ──────────────────────────────────────────────────────────
-    public static IEnumerable<object[]> DepthOneIdentityCells() =>
-        CombinatorialSchema.DepthOneMatrix()
+    public static IEnumerable<object[]> DepthOneIdentityCells()
+    {
+        return CombinatorialSchema.DepthOneMatrix()
             .Where(c => c.Variant == MatrixVariant.Identity)
             .Select(c => new object[] { c });
+    }
 
-    public static IEnumerable<object[]> DepthOneDivergentCells() =>
-        CombinatorialSchema.DepthOneMatrix()
+    public static IEnumerable<object[]> DepthOneDivergentCells()
+    {
+        return CombinatorialSchema.DepthOneMatrix()
             .Where(c => c.Variant == MatrixVariant.TypeDivergent)
             .Select(c => new object[] { c });
+    }
 
     // ── Identity variant ────────────────────────────────────────────────────
 
@@ -51,7 +53,8 @@ public class CombinatorialEngineTests
             .ToList();
         if (unexpectedErrors.Count != 0)
             Assert.Fail(FormatCellFailure(cell, "generator produced unexpected errors",
-                string.Join(", ", unexpectedErrors.Select(d => d.Id + ": " + d.GetMessage(CultureInfo.InvariantCulture))),
+                string.Join(", ",
+                    unexpectedErrors.Select(d => d.Id + ": " + d.GetMessage(CultureInfo.InvariantCulture))),
                 generatedSource));
 
         // 2. Emit assembly
@@ -81,7 +84,8 @@ public class CombinatorialEngineTests
             .ToList();
         if (unexpectedErrors.Count != 0)
             Assert.Fail(FormatCellFailure(cell, "generator produced unexpected errors",
-                string.Join(", ", unexpectedErrors.Select(d => d.Id + ": " + d.GetMessage(CultureInfo.InvariantCulture))),
+                string.Join(", ",
+                    unexpectedErrors.Select(d => d.Id + ": " + d.GetMessage(CultureInfo.InvariantCulture))),
                 generatedSource));
 
         var (asm, emitErrors) = GeneratorTestHarness.EmitAssembly(cell.Source);
@@ -176,7 +180,8 @@ public class CombinatorialEngineTests
         MatrixCell cell, string reason, string details, string generatedSource)
     {
         return new StringBuilder()
-            .AppendLine("CELL [" + cell.BasicType + " × " + cell.ShapeName + " × " + cell.Variant + "] seed=" + cell.Seed.ToString(CultureInfo.InvariantCulture))
+            .AppendLine("CELL [" + cell.BasicType + " × " + cell.ShapeName + " × " + cell.Variant + "] seed=" +
+                        cell.Seed.ToString(CultureInfo.InvariantCulture))
             .AppendLine("REASON: " + reason)
             .AppendLine("DETAILS: " + details)
             .AppendLine("--- generated ---")
@@ -190,15 +195,17 @@ public class CombinatorialEngineTests
 // ─── Exhaustive-tier depth-2 tests ───────────────────────────────────────────
 
 /// <summary>
-/// Plan 19 Part E — depth-2 combinatorial cells (heavier; tagged exhaustive tier).
-/// Sample-subset of basic types × depth-2 shapes.
-/// Tag [Trait("tier","exhaustive")] so default dotnet test doesn't include them unless filtered.
+///     Plan 19 Part E — depth-2 combinatorial cells (heavier; tagged exhaustive tier).
+///     Sample-subset of basic types × depth-2 shapes.
+///     Tag [Trait("tier","exhaustive")] so default dotnet test doesn't include them unless filtered.
 /// </summary>
 public class CombinatorialDepthTwoTests
 {
-    public static IEnumerable<object[]> DepthTwoCells() =>
-        CombinatorialSchema.DepthTwoMatrix()
+    public static IEnumerable<object[]> DepthTwoCells()
+    {
+        return CombinatorialSchema.DepthTwoMatrix()
             .Select(c => new object[] { c });
+    }
 
     [Trait("tier", "exhaustive")]
     [Theory]
@@ -212,12 +219,14 @@ public class CombinatorialDepthTwoTests
             .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id != "DWARF027")
             .ToList();
         Assert.True(unexpectedErrors.Count == 0,
-            "Cell [" + cell.BasicType + " × " + cell.ShapeName + "] seed=" + cell.Seed.ToString(CultureInfo.InvariantCulture) + "\n" +
+            "Cell [" + cell.BasicType + " × " + cell.ShapeName + "] seed=" +
+            cell.Seed.ToString(CultureInfo.InvariantCulture) + "\n" +
             "Errors: " + string.Join(", ", unexpectedErrors.Select(d => d.Id)) + "\n" + cell.Source);
 
         var (asm, emitErrors) = GeneratorTestHarness.EmitAssembly(cell.Source);
         Assert.True(asm is not null,
-            "Cell [" + cell.BasicType + " × " + cell.ShapeName + "] seed=" + cell.Seed.ToString(CultureInfo.InvariantCulture) + " emit failed: " +
+            "Cell [" + cell.BasicType + " × " + cell.ShapeName + "] seed=" +
+            cell.Seed.ToString(CultureInfo.InvariantCulture) + " emit failed: " +
             string.Join(", ", emitErrors.Select(e => e.Id)));
 
         // Also verify maps correctly
@@ -241,9 +250,9 @@ public class CombinatorialDepthTwoTests
         catch (TargetInvocationException tie) when (tie.InnerException is not null)
         {
             Assert.Fail("Cell [" + cell.BasicType + " × " + cell.ShapeName + "] seed=" +
-                cell.Seed.ToString(CultureInfo.InvariantCulture) +
-                " Map threw: " + tie.InnerException.GetType().Name + ": " + tie.InnerException.Message +
-                "\n" + generatedSource);
+                        cell.Seed.ToString(CultureInfo.InvariantCulture) +
+                        " Map threw: " + tie.InnerException.GetType().Name + ": " + tie.InnerException.Message +
+                        "\n" + generatedSource);
         }
     }
 }
@@ -251,13 +260,16 @@ public class CombinatorialDepthTwoTests
 // ─── Extended behavioral fuzz ─────────────────────────────────────────────────
 
 /// <summary>
-/// Extended behavioral fuzz that uses GraphOracleComparer.CrossTypeDiff for cross-type
-/// comparison — covers a fresh batch of seeds using the new oracle.
+///     Extended behavioral fuzz that uses GraphOracleComparer.CrossTypeDiff for cross-type
+///     comparison — covers a fresh batch of seeds using the new oracle.
 /// </summary>
 public class ExtendedBehavioralFuzzTests
 {
-    public static IEnumerable<object[]> Seeds() =>
-        Enumerable.Range(200, 40).Select(i => new object[] { i }); // seeds 200-239, no overlap with existing
+    public static IEnumerable<object[]> Seeds()
+    {
+        return Enumerable.Range(200, 40).Select(i => new object[] { i });
+        // seeds 200-239, no overlap with existing
+    }
 
     [Theory]
     [MemberData(nameof(Seeds))]
@@ -280,7 +292,7 @@ public class ExtendedBehavioralFuzzTests
         var dstInstance = map.Invoke(mapper, new[] { srcInstance })!;
 
         var diffs = GraphOracleComparer.CrossTypeDiff(srcInstance, dstInstance,
-            srcType, dstType, "root");
+            srcType, dstType);
 
         Assert.True(diffs.Count == 0,
             "seed=" + seed.ToString(CultureInfo.InvariantCulture) +

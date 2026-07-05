@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 namespace DwarfMapper.Generator.Model;
 
 /// <summary>One arm of a derived-type dispatch switch.</summary>
@@ -13,4 +14,4 @@ public sealed record DerivedTypeArm(
     /// <c>ReferenceHandling = Preserve</c>).  Mirrors <see cref="MemberMap.ConverterNeedsDepthCtx"/>.
     /// </summary>
     bool ConverterNeedsDepthCtx = false)
-    : System.IEquatable<DerivedTypeArm>;
+    : IEquatable<DerivedTypeArm>;

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
+
 using Microsoft.CodeAnalysis;
-using Xunit;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Zero-alloc span mapping: void Map(ReadOnlySpan&lt;S&gt; src, Span&lt;D&gt; dst). Element-wise map into a
-/// caller buffer with a defensive length guard; element conversion reuses the resolution pipeline.
+///     Zero-alloc span mapping: void Map(ReadOnlySpan&lt;S&gt; src, Span&lt;D&gt; dst). Element-wise map into a
+///     caller buffer with a defensive length guard; element conversion reuses the resolution pipeline.
 /// </summary>
 public class SpanMapGeneratorTests
 {
@@ -15,12 +14,12 @@ public class SpanMapGeneratorTests
     public void Scalar_span_map_emits_length_guard_and_element_loop()
     {
         const string src = """
-            using System;
-            using DwarfMapper;
-            namespace Demo;
-            [DwarfMapper]
-            public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
-            """;
+                           using System;
+                           using DwarfMapper;
+                           namespace Demo;
+                           [DwarfMapper]
+                           public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -36,14 +35,14 @@ public class SpanMapGeneratorTests
     public void Struct_span_map_routes_elements_through_nested_mapper()
     {
         const string src = """
-            using System;
-            using DwarfMapper;
-            namespace Demo;
-            public struct P { public int X; }
-            public struct Q { public long X; }
-            [DwarfMapper]
-            public partial class M { public partial void Map(ReadOnlySpan<P> src, Span<Q> dst); }
-            """;
+                           using System;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public struct P { public int X; }
+                           public struct Q { public long X; }
+                           [DwarfMapper]
+                           public partial class M { public partial void Map(ReadOnlySpan<P> src, Span<Q> dst); }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
@@ -58,12 +57,12 @@ public class SpanMapGeneratorTests
         // A ReadOnlySpan destination is not a valid map target (can't write) → falls through to the
         // normal invalid-method path (DWARF003), not treated as a span map.
         const string src = """
-            using System;
-            using DwarfMapper;
-            namespace Demo;
-            [DwarfMapper]
-            public partial class M { public partial void Map(ReadOnlySpan<int> src, ReadOnlySpan<long> dst); }
-            """;
+                           using System;
+                           using DwarfMapper;
+                           namespace Demo;
+                           [DwarfMapper]
+                           public partial class M { public partial void Map(ReadOnlySpan<int> src, ReadOnlySpan<long> dst); }
+                           """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.Contains(diags, d => d.Id == "DWARF003");
     }

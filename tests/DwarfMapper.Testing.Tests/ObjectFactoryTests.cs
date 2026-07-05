@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
-using DwarfMapper.Testing;
 
 namespace DwarfMapper.Testing.Tests;
 
@@ -13,14 +11,17 @@ public class Sample
     public Nested Child { get; set; } = new();
 }
 
-public class Nested { public string City { get; set; } = ""; }
+public class Nested
+{
+    public string City { get; set; } = "";
+}
 
 public class ObjectFactoryTests
 {
     [Fact]
     public void Populates_all_members()
     {
-        var s = ObjectFactory.Create<Sample>(seed: 1);
+        var s = ObjectFactory.Create<Sample>(1);
         Assert.NotEqual(0, s.Id);
         Assert.NotEqual("", s.Name);
         Assert.NotNull(s.Maybe);
@@ -31,8 +32,8 @@ public class ObjectFactoryTests
     [Fact]
     public void Same_seed_is_deterministic()
     {
-        var a = ObjectFactory.Create<Sample>(seed: 42);
-        var b = ObjectFactory.Create<Sample>(seed: 42);
+        var a = ObjectFactory.Create<Sample>(42);
+        var b = ObjectFactory.Create<Sample>(42);
         Assert.Equal(a.Id, b.Id);
         Assert.Equal(a.Name, b.Name);
         Assert.Equal(a.Child.City, b.Child.City);
@@ -41,8 +42,8 @@ public class ObjectFactoryTests
     [Fact]
     public void Different_seeds_differ()
     {
-        var a = ObjectFactory.Create<Sample>(seed: 1);
-        var b = ObjectFactory.Create<Sample>(seed: 2);
+        var a = ObjectFactory.Create<Sample>(1);
+        var b = ObjectFactory.Create<Sample>(2);
         Assert.NotEqual(a.Id, b.Id);
     }
 }

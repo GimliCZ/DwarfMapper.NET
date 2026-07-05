@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
+
 using System.Globalization;
 using System.Text;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
 
 /// <summary>
-/// Deterministic synthetic schema generator for property-based fuzz tests.
-/// Given an integer seed, produces a complete, valid C# source string that
-/// declares Src/Dst classes with identical members and a [DwarfMapper] mapper.
-/// Same seed always produces the same source (only new Random(seed) is used).
+///     Deterministic synthetic schema generator for property-based fuzz tests.
+///     Given an integer seed, produces a complete, valid C# source string that
+///     declares Src/Dst classes with identical members and a [DwarfMapper] mapper.
+///     Same seed always produces the same source (only new Random(seed) is used).
 /// </summary>
 internal static class SyntheticSchema
 {
@@ -19,14 +19,14 @@ internal static class SyntheticSchema
 
     private static readonly string[] ScalarTypes =
     [
-        "int", "int", "int",            // weight 3 – most common
+        "int", "int", "int", // weight 3 – most common
         "long",
         "short",
         "byte",
         "double", "double",
         "float",
         "bool",
-        "string", "string",             // weight 2
+        "string", "string", // weight 2
         "global::System.Guid",
         "global::System.DateTime",
         // ── Extended scalar pool ───────────────────────────────────────────
@@ -37,7 +37,7 @@ internal static class SyntheticSchema
         "ushort",
         "ulong",
         "global::System.DateTimeOffset",
-        "global::System.TimeSpan",
+        "global::System.TimeSpan"
     ];
     // ScalarTypes has 21 entries (indices 0..20).
 
@@ -55,48 +55,68 @@ internal static class SyntheticSchema
         "ushort",
         "ulong",
         "global::System.DateTimeOffset",
-        "global::System.TimeSpan",
+        "global::System.TimeSpan"
+    ];
+
+    // For collection element types: value scalars + string (ref is fine in collections)
+    private static readonly string[] CollectionElements =
+    [
+        "int", "int",
+        "long",
+        "double",
+        "float",
+        "bool",
+        "string",
+        "global::System.Guid",
+        "global::System.DateTime",
+        "FuzzEnum",
+        "FuzzEnumL",
+        "decimal",
+        "char",
+        "sbyte",
+        "uint",
+        "ushort",
+        "ulong",
+        "global::System.DateTimeOffset",
+        "global::System.TimeSpan"
     ];
 
     /// <summary>
-    /// Generates a schema suitable for behavioral (value-preserving) property tests.
-    /// Identical to <see cref="Generate"/> except <c>HashSet&lt;T&gt;</c> members are excluded:
-    /// <c>StructuralComparer</c> compares <c>IEnumerable</c> element-by-element in iteration
-    /// order, but <c>HashSet&lt;T&gt;</c> enumeration order is an implementation detail that may
-    /// diverge between the source and destination instances even when the sets are equal.
-    /// All other types (arrays, lists, nullable value types, enums, nested structs, scalars)
-    /// are included as normal.
+    ///     Generates a schema suitable for behavioral (value-preserving) property tests.
+    ///     Identical to <see cref="Generate" /> except <c>HashSet&lt;T&gt;</c> members are excluded:
+    ///     <c>StructuralComparer</c> compares <c>IEnumerable</c> element-by-element in iteration
+    ///     order, but <c>HashSet&lt;T&gt;</c> enumeration order is an implementation detail that may
+    ///     diverge between the source and destination instances even when the sets are equal.
+    ///     All other types (arrays, lists, nullable value types, enums, nested structs, scalars)
+    ///     are included as normal.
     /// </summary>
     public static string GenerateBehavioral(int seed)
     {
         var rng = new Random(seed);
 
-        int memberCount = rng.Next(1, 11); // 1..10 members
+        var memberCount = rng.Next(1, 11); // 1..10 members
 
         var members = new (string Name, string Type)[memberCount];
-        for (int i = 0; i < memberCount; i++)
-        {
-            members[i] = ($"Member{i}", PickTypeBehavioral(rng));
-        }
+        for (var i = 0; i < memberCount; i++) members[i] = ($"Member{i}", PickTypeBehavioral(rng));
 
         return BuildSource(members);
     }
 
     /// <summary>
-    /// Generates a schema that sometimes emits advanced features:
-    /// [MapDerivedType] dispatch, [FlattenGraph] homo, or top-level collection method.
-    /// Deterministic from seed; always produces valid compilable C#.
+    ///     Generates a schema that sometimes emits advanced features:
+    ///     [MapDerivedType] dispatch, [FlattenGraph] homo, or top-level collection method.
+    ///     Deterministic from seed; always produces valid compilable C#.
     /// </summary>
     public static string GenerateWithAdvancedFeatures(int seed)
     {
         var rng = new Random(seed);
         // Pick feature variant based on seed
-        int featureVariant = rng.Next(0, 4);
+        var featureVariant = rng.Next(0, 4);
         // 0 = plain (same as Generate), 1 = MapDerivedType, 2 = FlattenGraph homo, 3 = top-level collection
 
-        int memberCount = rng.Next(1, 6); // keep small for advanced features
+        var memberCount = rng.Next(1, 6); // keep small for advanced features
         var members = new (string Name, string Type)[memberCount];
-        for (int i = 0; i < memberCount; i++)
+        for (var i = 0; i < memberCount; i++)
             members[i] = ($"Member{i}", PickTypeBehavioral(rng));
 
         return featureVariant switch
@@ -104,7 +124,7 @@ internal static class SyntheticSchema
             1 => BuildSourceWithMapDerivedType(members, seed),
             2 => BuildSourceWithFlattenGraph(members, seed),
             3 => BuildSourceWithTopLevelCollection(members, seed),
-            _ => BuildSource(members),
+            _ => BuildSource(members)
         };
     }
 
@@ -127,14 +147,16 @@ internal static class SyntheticSchema
         sb.AppendLine("public class SrcConcrete : Src");
         sb.AppendLine("{");
         foreach (var (name, type) in members)
-            sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("public abstract class Dst { public string Tag { get; set; } = \"\"; }");
         sb.AppendLine("public class DstConcrete : Dst");
         sb.AppendLine("{");
         foreach (var (name, type) in members)
-            sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("[global::DwarfMapper.DwarfMapper(AutoNest = true)]");
@@ -175,7 +197,8 @@ internal static class SyntheticSchema
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("public class SrcRoot { public Src? Entry { get; set; } }");
-        sb.AppendLine("public class DstRoot { public global::System.Collections.Generic.List<Dst> Nodes { get; set; } = new(); }");
+        sb.AppendLine(
+            "public class DstRoot { public global::System.Collections.Generic.List<Dst> Nodes { get; set; } = new(); }");
         sb.AppendLine();
         sb.AppendLine("[global::DwarfMapper.DwarfMapper]");
         sb.AppendLine("public partial class FuzzMapper");
@@ -204,20 +227,23 @@ internal static class SyntheticSchema
         sb.AppendLine("public class Src");
         sb.AppendLine("{");
         foreach (var (name, type) in members)
-            sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("public class Dst");
         sb.AppendLine("{");
         foreach (var (name, type) in members)
-            sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
         sb.AppendLine("}");
         sb.AppendLine();
         sb.AppendLine("[global::DwarfMapper.DwarfMapper]");
         sb.AppendLine("public partial class FuzzMapper");
         sb.AppendLine("{");
         sb.AppendLine("    public partial Dst Map(Src s);");
-        sb.AppendLine("    public partial global::System.Collections.Generic.List<Dst> Map(global::System.Collections.Generic.List<Src> src);");
+        sb.AppendLine(
+            "    public partial global::System.Collections.Generic.List<Dst> Map(global::System.Collections.Generic.List<Src> src);");
         sb.AppendLine("}");
         return sb.ToString();
     }
@@ -226,13 +252,10 @@ internal static class SyntheticSchema
     {
         var rng = new Random(seed);
 
-        int memberCount = rng.Next(1, 11); // 1..10 members
+        var memberCount = rng.Next(1, 11); // 1..10 members
 
         var members = new (string Name, string Type)[memberCount];
-        for (int i = 0; i < memberCount; i++)
-        {
-            members[i] = ($"Member{i}", PickType(rng));
-        }
+        for (var i = 0; i < memberCount; i++) members[i] = ($"Member{i}", PickType(rng));
 
         return BuildSource(members);
     }
@@ -266,7 +289,8 @@ internal static class SyntheticSchema
         sb.AppendLine("public class Src");
         sb.AppendLine("{");
         foreach (var (name, type) in members)
-            sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
         sb.AppendLine("}");
         sb.AppendLine();
 
@@ -274,7 +298,8 @@ internal static class SyntheticSchema
         sb.AppendLine("public class Dst");
         sb.AppendLine("{");
         foreach (var (name, type) in members)
-            sb.AppendLine(string.Create(CultureInfo.InvariantCulture, $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"    public {type} {name} {{ get; set; }}{DefaultInit(type)}"));
         sb.AppendLine("}");
         sb.AppendLine();
 
@@ -302,7 +327,7 @@ internal static class SyntheticSchema
 
     private static string PickType(Random rng)
     {
-        int category = rng.Next(0, 27);
+        var category = rng.Next(0, 27);
 
         return category switch
         {
@@ -329,23 +354,23 @@ internal static class SyntheticSchema
                 2 => "FuzzEnum[]",
                 3 => "FuzzEnumL",
                 4 => "FuzzEnumL?",
-                _ => "FuzzEnumL[]",
+                _ => "FuzzEnumL[]"
             },
 
             // 26 → FuzzInner or FuzzInner[]
-            _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]",
+            _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]"
         };
     }
 
     /// <summary>
-    /// Type picker for behavioral (value-preserving) tests: identical to <see cref="PickType"/>
-    /// but category 24 (HashSet) is redirected to List.  <c>HashSet&lt;T&gt;</c> is excluded
-    /// because <c>StructuralComparer</c> walks <c>IEnumerable</c> by position; two equal
-    /// <c>HashSet&lt;T&gt;</c> instances may enumerate in different order after a copy.
+    ///     Type picker for behavioral (value-preserving) tests: identical to <see cref="PickType" />
+    ///     but category 24 (HashSet) is redirected to List.  <c>HashSet&lt;T&gt;</c> is excluded
+    ///     because <c>StructuralComparer</c> walks <c>IEnumerable</c> by position; two equal
+    ///     <c>HashSet&lt;T&gt;</c> instances may enumerate in different order after a copy.
     /// </summary>
     private static string PickTypeBehavioral(Random rng)
     {
-        int category = rng.Next(0, 27);
+        var category = rng.Next(0, 27);
 
         return category switch
         {
@@ -361,40 +386,21 @@ internal static class SyntheticSchema
                 2 => "FuzzEnum[]",
                 3 => "FuzzEnumL",
                 4 => "FuzzEnumL?",
-                _ => "FuzzEnumL[]",
+                _ => "FuzzEnumL[]"
             },
-            _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]",
+            _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]"
         };
     }
 
-    private static string PickValueScalar(Random rng) =>
-        ValueScalars[rng.Next(ValueScalars.Length)];
+    private static string PickValueScalar(Random rng)
+    {
+        return ValueScalars[rng.Next(ValueScalars.Length)];
+    }
 
-    // For collection element types: value scalars + string (ref is fine in collections)
-    private static readonly string[] CollectionElements =
-    [
-        "int", "int",
-        "long",
-        "double",
-        "float",
-        "bool",
-        "string",
-        "global::System.Guid",
-        "global::System.DateTime",
-        "FuzzEnum",
-        "FuzzEnumL",
-        "decimal",
-        "char",
-        "sbyte",
-        "uint",
-        "ushort",
-        "ulong",
-        "global::System.DateTimeOffset",
-        "global::System.TimeSpan",
-    ];
-
-    private static string PickScalarElement(Random rng) =>
-        CollectionElements[rng.Next(CollectionElements.Length)];
+    private static string PickScalarElement(Random rng)
+    {
+        return CollectionElements[rng.Next(CollectionElements.Length)];
+    }
 
     // ── Default initialiser ───────────────────────────────────────────────
 
@@ -406,7 +412,7 @@ internal static class SyntheticSchema
         if (type.EndsWith("[]", StringComparison.Ordinal))
         {
             // Derive element type by stripping trailing []
-            string elem = type[..^2];
+            var elem = type[..^2];
             // global:: prefix is fine here — Array.Empty<T> just needs the fully-qualified T
             return $" = global::System.Array.Empty<{elem}>();";
         }

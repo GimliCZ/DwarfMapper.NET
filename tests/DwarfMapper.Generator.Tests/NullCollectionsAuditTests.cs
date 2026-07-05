@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
+
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests;
@@ -9,7 +9,7 @@ public class NullCollectionsAuditTests
     private static void NoErrors(string src)
     {
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
     }
 
@@ -23,14 +23,14 @@ public class NullCollectionsAuditTests
         // NullableContextOptions.Enable is required so Roslyn sees List<int>? as
         // NullableAnnotation.Annotated; without it, nullable ref annotations are not tracked.
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Src { public Dictionary<string, List<int>?> D { get; set; } = new(); }
-            public class Dst { public Dictionary<string, List<int>?> D { get; set; } = new(); }
-            [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-            public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         namespace Demo;
+                         public class Src { public Dictionary<string, List<int>?> D { get; set; } = new(); }
+                         public class Dst { public Dictionary<string, List<int>?> D { get; set; } = new(); }
+                         [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                         public partial class M { public partial Dst Map(Src a); }
+                         """;
         NoErrors(s);
         var (_, gen) = GeneratorTestHarness.Run(s, NullableContextOptions.Enable);
         // The inner collection helper for the dict value must use nullAsNull semantics:
@@ -47,14 +47,14 @@ public class NullCollectionsAuditTests
         // NullableContextOptions.Enable is required so Roslyn sees List<int>? as
         // NullableAnnotation.Annotated; without it, nullable ref annotations are not tracked.
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Src { public List<List<int>?> Outer { get; set; } = new(); }
-            public class Dst { public List<List<int>?> Outer { get; set; } = new(); }
-            [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-            public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         namespace Demo;
+                         public class Src { public List<List<int>?> Outer { get; set; } = new(); }
+                         public class Dst { public List<List<int>?> Outer { get; set; } = new(); }
+                         [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                         public partial class M { public partial Dst Map(Src a); }
+                         """;
         NoErrors(s);
         var (_, gen) = GeneratorTestHarness.Run(s, NullableContextOptions.Enable);
         // The inner List<int>? element helper must return null for null input.
@@ -69,21 +69,22 @@ public class NullCollectionsAuditTests
     public void A2_ImmutableArray_AsNull_emits_nullable_return_type()
     {
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            using System.Collections.Immutable;
-            namespace Demo;
-            public class Src { public List<int>? Xs { get; set; } }
-            public class Dst { public ImmutableArray<int>? Xs { get; set; } }
-            [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-            public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         using System.Collections.Immutable;
+                         namespace Demo;
+                         public class Src { public List<int>? Xs { get; set; } }
+                         public class Dst { public ImmutableArray<int>? Xs { get; set; } }
+                         [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                         public partial class M { public partial Dst Map(Src a); }
+                         """;
         NoErrors(s);
         var (_, gen) = GeneratorTestHarness.Run(s);
         // Under AsNull, the ImmutableArray helper must return ImmutableArray<int>?
         Assert.Contains("ImmutableArray<int>?", gen, StringComparison.Ordinal);
         // And the null path must return null, not default(ImmutableArray<int>)
-        Assert.DoesNotContain("default(global::System.Collections.Immutable.ImmutableArray<int>)", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("default(global::System.Collections.Immutable.ImmutableArray<int>)", gen,
+            StringComparison.Ordinal);
         Assert.Contains("return null;", gen, StringComparison.Ordinal);
     }
 
@@ -94,14 +95,14 @@ public class NullCollectionsAuditTests
     {
         // This is the key test: AssertEmpty(compilation errors) means no CS8601.
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Src { public List<int>? Xs { get; set; } }
-            public class Dst { public List<int> Xs { get; set; } = new(); }
-            [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-            public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         namespace Demo;
+                         public class Src { public List<int>? Xs { get; set; } }
+                         public class Dst { public List<int> Xs { get; set; } = new(); }
+                         [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                         public partial class M { public partial Dst Map(Src a); }
+                         """;
         // Must compile with zero errors (especially no CS8601 nullable mismatch)
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
     }
@@ -110,14 +111,14 @@ public class NullCollectionsAuditTests
     public void A3_nullable_list_target_uses_nullable_return_type()
     {
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Src { public List<int>? Xs { get; set; } }
-            public class Dst { public List<int>? Xs { get; set; } }
-            [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-            public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         namespace Demo;
+                         public class Src { public List<int>? Xs { get; set; } }
+                         public class Dst { public List<int>? Xs { get; set; } }
+                         [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                         public partial class M { public partial Dst Map(Src a); }
+                         """;
         NoErrors(s);
         var (_, gen) = GeneratorTestHarness.Run(s);
         // Nullable target → helper must return List<int>? (nullable)
@@ -128,13 +129,13 @@ public class NullCollectionsAuditTests
     public void A3_non_nullable_array_target_compiles_no_cs8601()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Src { public int[]? Xs { get; set; } }
-            public class Dst { public int[] Xs { get; set; } = System.Array.Empty<int>(); }
-            [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-            public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int[]? Xs { get; set; } }
+                         public class Dst { public int[] Xs { get; set; } = System.Array.Empty<int>(); }
+                         [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                         public partial class M { public partial Dst Map(Src a); }
+                         """;
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
     }
 
@@ -142,14 +143,14 @@ public class NullCollectionsAuditTests
     public void A3_non_nullable_hashset_target_compiles_no_cs8601()
     {
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Src { public HashSet<int>? Xs { get; set; } }
-            public class Dst { public HashSet<int> Xs { get; set; } = new(); }
-            [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-            public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         namespace Demo;
+                         public class Src { public HashSet<int>? Xs { get; set; } }
+                         public class Dst { public HashSet<int> Xs { get; set; } = new(); }
+                         [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                         public partial class M { public partial Dst Map(Src a); }
+                         """;
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
     }
 
@@ -157,14 +158,14 @@ public class NullCollectionsAuditTests
     public void A3_non_nullable_dict_target_compiles_no_cs8601()
     {
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Src { public Dictionary<string,int>? D { get; set; } }
-            public class Dst { public Dictionary<string,int> D { get; set; } = new(); }
-            [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-            public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         namespace Demo;
+                         public class Src { public Dictionary<string,int>? D { get; set; } }
+                         public class Dst { public Dictionary<string,int> D { get; set; } = new(); }
+                         [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
+                         public partial class M { public partial Dst Map(Src a); }
+                         """;
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
     }
 
@@ -174,13 +175,13 @@ public class NullCollectionsAuditTests
     public void A4_list_null_guard_before_new_allocation()
     {
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Src { public List<long> Xs { get; set; } = new(); }
-            public class Dst { public List<int> Xs { get; set; } = new(); }
-            [DwarfMapper] public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         namespace Demo;
+                         public class Src { public List<long> Xs { get; set; } = new(); }
+                         public class Dst { public List<int> Xs { get; set; } = new(); }
+                         [DwarfMapper] public partial class M { public partial Dst Map(Src a); }
+                         """;
         NoErrors(s);
         var (_, gen) = GeneratorTestHarness.Run(s);
         // In the collection helper, "if (src is null)" must appear BEFORE "var __r = new List<"
@@ -195,17 +196,18 @@ public class NullCollectionsAuditTests
     public void A4_hashset_null_guard_before_new_allocation()
     {
         const string s = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Src { public HashSet<long> Xs { get; set; } = new(); }
-            public class Dst { public HashSet<int> Xs { get; set; } = new(); }
-            [DwarfMapper] public partial class M { public partial Dst Map(Src a); }
-            """;
+                         using DwarfMapper;
+                         using System.Collections.Generic;
+                         namespace Demo;
+                         public class Src { public HashSet<long> Xs { get; set; } = new(); }
+                         public class Dst { public HashSet<int> Xs { get; set; } = new(); }
+                         [DwarfMapper] public partial class M { public partial Dst Map(Src a); }
+                         """;
         NoErrors(s);
         var (_, gen) = GeneratorTestHarness.Run(s);
         var nullIdx = gen.IndexOf("if (src is null)", StringComparison.Ordinal);
-        var allocIdx = gen.IndexOf("var __r = new global::System.Collections.Generic.HashSet<", StringComparison.Ordinal);
+        var allocIdx = gen.IndexOf("var __r = new global::System.Collections.Generic.HashSet<",
+            StringComparison.Ordinal);
         Assert.True(nullIdx >= 0, "null guard not found in generated code");
         Assert.True(allocIdx >= 0, "allocation not found in generated code");
         Assert.True(nullIdx < allocIdx, $"null guard (at {nullIdx}) must appear before allocation (at {allocIdx})");

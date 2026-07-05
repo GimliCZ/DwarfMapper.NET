@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -12,7 +7,7 @@ namespace DwarfMapper.IntegrationTests;
 public class FGNode
 {
     public string Name { get; set; } = "";
-    public long Value { get; set; }  // long→int via numeric narrowing
+    public long Value { get; set; } // long→int via numeric narrowing
     public FGNode? X { get; set; }
     public FGNode? Y { get; set; }
 }
@@ -20,7 +15,7 @@ public class FGNode
 public class FGNodeDto
 {
     public string Name { get; set; } = "";
-    public int Value { get; set; }   // long→int conversion
+    public int Value { get; set; } // long→int conversion
     public FGNodeDto? X { get; set; }
     public FGNodeDto? Y { get; set; }
 }
@@ -123,9 +118,9 @@ public class FlattenGraphRuntimeTests
         var result = _mapper.Map(root);
         Assert.Single(result.Nodes);
         Assert.Equal("A", result.Nodes[0].Name);
-        Assert.Equal(42, result.Nodes[0].Value);  // long→int
-        Assert.Null(result.Nodes[0].X);  // edge nulled
-        Assert.Null(result.Nodes[0].Y);  // edge nulled
+        Assert.Equal(42, result.Nodes[0].Value); // long→int
+        Assert.Null(result.Nodes[0].X); // edge nulled
+        Assert.Null(result.Nodes[0].Y); // edge nulled
     }
 
     // ── 3. Two-node linear chain ──────────────────────────────────────────────
@@ -150,7 +145,9 @@ public class FlattenGraphRuntimeTests
         var a = new FGNode { Name = "A" };
         var b = new FGNode { Name = "B" };
         var c = new FGNode { Name = "C" };
-        a.X = b; b.X = c; c.X = a; // ring cycle
+        a.X = b;
+        b.X = c;
+        c.X = a; // ring cycle
         var root = new FGRoot { Entry = a };
         var result = _mapper.Map(root);
         Assert.Equal(3, result.Nodes.Count);
@@ -167,12 +164,12 @@ public class FlattenGraphRuntimeTests
     public void Diamond_shared_node_collected_once()
     {
         var shared = new FGNode { Name = "S" };
-        var left   = new FGNode { Name = "L", X = shared };
-        var right  = new FGNode { Name = "R", X = shared };
-        var entry  = new FGNode { Name = "E", X = left, Y = right };
-        var root   = new FGRoot { Entry = entry };
+        var left = new FGNode { Name = "L", X = shared };
+        var right = new FGNode { Name = "R", X = shared };
+        var entry = new FGNode { Name = "E", X = left, Y = right };
+        var root = new FGRoot { Entry = entry };
         var result = _mapper.Map(root);
-        Assert.Equal(4, result.Nodes.Count);  // E, L, R, S — S exactly once
+        Assert.Equal(4, result.Nodes.Count); // E, L, R, S — S exactly once
         Assert.Single(result.Nodes, n => n.Name == "S");
     }
 
@@ -182,7 +179,7 @@ public class FlattenGraphRuntimeTests
     public void Self_loop_terminates_node_collected_once()
     {
         var node = new FGNode { Name = "Self" };
-        node.X = node;  // self-loop
+        node.X = node; // self-loop
         var root = new FGRoot { Entry = node };
         var result = _mapper.Map(root);
         Assert.Single(result.Nodes);
@@ -195,8 +192,8 @@ public class FlattenGraphRuntimeTests
     [Fact]
     public void Collection_edge_traverses_all_children()
     {
-        var c1       = new FGCollNode { Name = "C1" };
-        var c2       = new FGCollNode { Name = "C2" };
+        var c1 = new FGCollNode { Name = "C1" };
+        var c2 = new FGCollNode { Name = "C2" };
         var rootNode = new FGCollNode { Name = "Root" };
         rootNode.Children.Add(c1);
         rootNode.Children.Add(c2);
@@ -263,9 +260,10 @@ public class FlattenGraphRuntimeTests
     {
         var a = new FGNode { Name = "A" };
         var b = new FGNode { Name = "B" };
-        a.X = b; b.X = a;
+        a.X = b;
+        b.X = a;
         var root = new FGRoot { Entry = a };
-        var result = _mapper.Map(root);  // must not throw
+        var result = _mapper.Map(root); // must not throw
         Assert.Equal(2, result.Nodes.Count);
     }
 

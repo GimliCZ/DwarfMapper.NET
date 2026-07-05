@@ -1,26 +1,62 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── 4-level hetero hierarchy ──────────────────────────────────────────────────
 
-public abstract class H4Node { public string Name { get; set; } = ""; public H4Node? Parent { get; set; } }
-public class H4Root   : H4Node { public List<H4Node> Children { get; set; } = new(); }
-public class H4Branch : H4Node { public List<H4Node> Children { get; set; } = new(); }
-public class H4Leaf   : H4Node { public int Data { get; set; } }
+public abstract class H4Node
+{
+    public string Name { get; set; } = "";
+    public H4Node? Parent { get; set; }
+}
 
-public abstract class H4NodeDto { public string Name { get; set; } = ""; }
-public class H4RootDto   : H4NodeDto { public List<H4NodeDto>? Children { get; set; } public H4NodeDto? Parent { get; set; } }
-public class H4BranchDto : H4NodeDto { public List<H4NodeDto>? Children { get; set; } public H4NodeDto? Parent { get; set; } }
-public class H4LeafDto   : H4NodeDto { public int Data { get; set; } public H4NodeDto? Parent { get; set; } }
+public class H4Root : H4Node
+{
+    public List<H4Node> Children { get; set; } = new();
+}
 
-public class H4Tree    { public H4Node? Entry { get; set; } }
-public class H4TreeDto { public List<H4NodeDto> Nodes { get; set; } = new(); }
+public class H4Branch : H4Node
+{
+    public List<H4Node> Children { get; set; } = new();
+}
+
+public class H4Leaf : H4Node
+{
+    public int Data { get; set; }
+}
+
+public abstract class H4NodeDto
+{
+    public string Name { get; set; } = "";
+}
+
+public class H4RootDto : H4NodeDto
+{
+    public List<H4NodeDto>? Children { get; set; }
+    public H4NodeDto? Parent { get; set; }
+}
+
+public class H4BranchDto : H4NodeDto
+{
+    public List<H4NodeDto>? Children { get; set; }
+    public H4NodeDto? Parent { get; set; }
+}
+
+public class H4LeafDto : H4NodeDto
+{
+    public int Data { get; set; }
+    public H4NodeDto? Parent { get; set; }
+}
+
+public class H4Tree
+{
+    public H4Node? Entry { get; set; }
+}
+
+public class H4TreeDto
+{
+    public List<H4NodeDto> Nodes { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class H4Mapper
@@ -61,9 +97,9 @@ public class HeteroFlattenGraphGoldenFixtureTests
         Assert.Equal(new[] { 0, 10, 20, 30, 40, 50 }, leafDtos.Select(l => l.Data).ToArray());
 
         // All edges degraded
-        Assert.All(result.Nodes.OfType<H4RootDto>(),   n => Assert.Null(n.Children));
+        Assert.All(result.Nodes.OfType<H4RootDto>(), n => Assert.Null(n.Children));
         Assert.All(result.Nodes.OfType<H4BranchDto>(), n => Assert.Null(n.Children));
-        Assert.All(result.Nodes.OfType<H4LeafDto>(),   n => Assert.Null(n.Parent));
+        Assert.All(result.Nodes.OfType<H4LeafDto>(), n => Assert.Null(n.Parent));
     }
 
     // ── 2. MapDerivedType 4-level class hierarchy ─────────────────────────────

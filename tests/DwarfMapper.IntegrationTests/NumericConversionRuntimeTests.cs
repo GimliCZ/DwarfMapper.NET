@@ -1,41 +1,89 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── Domain types for numeric narrowing tests ──────────────────────────────────
 
-public class LongSrc  { public long  V { get; set; } }
-public class IntDst   { public int   V { get; set; } }
+public class LongSrc
+{
+    public long V { get; set; }
+}
+
+public class IntDst
+{
+    public int V { get; set; }
+}
 
 [DwarfMapper]
-public partial class LongToIntMapper { public partial IntDst Map(LongSrc s); }
+public partial class LongToIntMapper
+{
+    public partial IntDst Map(LongSrc s);
+}
 
-public class IntSrc   { public int  V { get; set; } }
-public class UIntDst  { public uint V { get; set; } }
+public class IntSrc
+{
+    public int V { get; set; }
+}
 
-[DwarfMapper]
-public partial class IntToUIntMapper { public partial UIntDst Map(IntSrc s); }
-
-public class IntSrc2   { public int   V { get; set; } }
-public class ShortDst  { public short V { get; set; } }
-
-[DwarfMapper]
-public partial class IntToShortMapper { public partial ShortDst Map(IntSrc2 s); }
-
-public class ULongSrc  { public ulong V { get; set; } }
-public class LongDst   { public long  V { get; set; } }
+public class UIntDst
+{
+    public uint V { get; set; }
+}
 
 [DwarfMapper]
-public partial class ULongToLongMapper { public partial LongDst Map(ULongSrc s); }
+public partial class IntToUIntMapper
+{
+    public partial UIntDst Map(IntSrc s);
+}
+
+public class IntSrc2
+{
+    public int V { get; set; }
+}
+
+public class ShortDst
+{
+    public short V { get; set; }
+}
+
+[DwarfMapper]
+public partial class IntToShortMapper
+{
+    public partial ShortDst Map(IntSrc2 s);
+}
+
+public class ULongSrc
+{
+    public ulong V { get; set; }
+}
+
+public class LongDst
+{
+    public long V { get; set; }
+}
+
+[DwarfMapper]
+public partial class ULongToLongMapper
+{
+    public partial LongDst Map(ULongSrc s);
+}
 
 // Nullable composition: int? → short
-public class NullableIntSrc { public int?  V { get; set; } }
-public class ShortDst2      { public short V { get; set; } }
+public class NullableIntSrc
+{
+    public int? V { get; set; }
+}
+
+public class ShortDst2
+{
+    public short V { get; set; }
+}
 
 [DwarfMapper]
-public partial class NullableIntToShortMapper { public partial ShortDst2 Map(NullableIntSrc s); }
+public partial class NullableIntToShortMapper
+{
+    public partial ShortDst2 Map(NullableIntSrc s);
+}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -61,14 +109,14 @@ public class NumericConversionRuntimeTests
     public void Long_to_int_out_of_range_throws_OverflowException()
     {
         var mapper = new LongToIntMapper();
-        Assert.Throws<OverflowException>(() => mapper.Map(new LongSrc { V = (long)int.MaxValue + 1L }));
+        Assert.Throws<OverflowException>(() => mapper.Map(new LongSrc { V = int.MaxValue + 1L }));
     }
 
     [Fact]
     public void Long_to_int_negative_out_of_range_throws_OverflowException()
     {
         var mapper = new LongToIntMapper();
-        Assert.Throws<OverflowException>(() => mapper.Map(new LongSrc { V = (long)int.MinValue - 1L }));
+        Assert.Throws<OverflowException>(() => mapper.Map(new LongSrc { V = int.MinValue - 1L }));
     }
 
     // ── int → uint ────────────────────────────────────────────────────────────
@@ -116,7 +164,7 @@ public class NumericConversionRuntimeTests
     public void Ulong_to_long_out_of_range_throws_OverflowException()
     {
         var mapper = new ULongToLongMapper();
-        Assert.Throws<OverflowException>(() => mapper.Map(new ULongSrc { V = (ulong)long.MaxValue + 1UL }));
+        Assert.Throws<OverflowException>(() => mapper.Map(new ULongSrc { V = long.MaxValue + 1UL }));
     }
 
     // ── Nullable composition: int? → short ───────────────────────────────────

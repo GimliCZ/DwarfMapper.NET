@@ -1,21 +1,21 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <PublishAot>true</PublishAot>
-    <IsPackable>false</IsPackable>
-    <!-- Sample app: top-level-statement file has types not in a namespace (CA1050)
-         and public types in an exe that doesn't expose a public API (CA1515).
-         These are intentional in a single-file sample — suppress both. -->
-    <!-- CA2007 (ConfigureAwait): not needed in a self-contained sample app's await foreach.
-         CA1819 (array-returning properties): intentional for the SIMD-widen array gate. -->
-    <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA2007;CA1819</NoWarn>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
-    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-  </ItemGroup>
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <PublishAot>true</PublishAot>
+        <IsPackable>false</IsPackable>
+        <!-- Sample app: top-level-statement file has types not in a namespace (CA1050)
+             and public types in an exe that doesn't expose a public API (CA1515).
+             These are intentional in a single-file sample — suppress both. -->
+        <!-- CA2007 (ConfigureAwait): not needed in a self-contained sample app's await foreach.
+             CA1819 (array-returning properties): intentional for the SIMD-widen array gate. -->
+        <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA2007;CA1819</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"/>
+    </ItemGroup>
 </Project>

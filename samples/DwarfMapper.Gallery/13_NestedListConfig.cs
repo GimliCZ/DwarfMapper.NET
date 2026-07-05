@@ -7,18 +7,30 @@
 // [MapProperty] on it: the parent's List<Person> -> List<PersonDto> automatically routes every element
 // through it. There is no separate Profile/config object — every rule, including for nested element types,
 // lives on this single [DwarfMapper] class.
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
 
 namespace DwarfMapper.Gallery.Ex13;
 
-public sealed class Person { public string Name { get; set; } = ""; }
-public sealed class Place { public string Name { get; set; } = ""; public List<Person> People { get; set; } = new(); }
+public sealed class Person
+{
+    public string Name { get; set; } = "";
+}
 
-public sealed class PersonDto { public string FullName { get; set; } = ""; }
-public sealed class PlaceDto { public string Name { get; set; } = ""; public List<PersonDto> People { get; set; } = new(); }
+public sealed class Place
+{
+    public string Name { get; set; } = "";
+    public List<Person> People { get; set; } = new();
+}
+
+public sealed class PersonDto
+{
+    public string FullName { get; set; } = "";
+}
+
+public sealed class PlaceDto
+{
+    public string Name { get; set; } = "";
+    public List<PersonDto> People { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class Mapper
@@ -35,15 +47,16 @@ public static class Example
 {
     public static void Run()
     {
-        Place moria = new Place
+        var moria = new Place
         {
             Name = "Moria",
-            People = new List<Person> { new Person { Name = "Gimli" }, new Person { Name = "Balin" } },
+            People = new List<Person> { new() { Name = "Gimli" }, new() { Name = "Balin" } }
         };
 
-        PlaceDto dto = new Mapper().ToDto(moria);
+        var dto = new Mapper().ToDto(moria);
 
         // dto.People[0].FullName == "Gimli" — the nested rename was applied to every list element.
-        Console.WriteLine($"13 Nested list config -> {dto.Name}: [{string.Join(", ", dto.People.Select(p => p.FullName))}]");
+        Console.WriteLine(
+            $"13 Nested list config -> {dto.Name}: [{string.Join(", ", dto.People.Select(p => p.FullName))}]");
     }
 }

@@ -7,14 +7,25 @@
 //   AutoMapper:  .ForMember(d => d.City, o => o.MapFrom(s => s.Customer.Address.City))
 //   DwarfMapper: [MapProperty("Customer.Address.City", nameof(OrderSummary.City))]
 // A nullable hop on the path surfaces DWARF044 (a visible suggestion), so it's never a silent NRE.
-using System;
-using DwarfMapper;
 
 namespace DwarfMapper.Gallery.Ex06;
 
-public sealed class Address { public string City { get; set; } = ""; }
-public sealed class Customer { public string Name { get; set; } = ""; public Address Address { get; set; } = new(); }
-public sealed class Order { public int Id { get; set; } public Customer Customer { get; set; } = new(); }
+public sealed class Address
+{
+    public string City { get; set; } = "";
+}
+
+public sealed class Customer
+{
+    public string Name { get; set; } = "";
+    public Address Address { get; set; } = new();
+}
+
+public sealed class Order
+{
+    public int Id { get; set; }
+    public Customer Customer { get; set; } = new();
+}
 
 public sealed class OrderSummary
 {
@@ -35,10 +46,10 @@ public static class Example
 {
     public static void Run()
     {
-        OrderSummary summary = new Mapper().ToSummary(new Order
+        var summary = new Mapper().ToSummary(new Order
         {
             Id = 99,
-            Customer = new Customer { Name = "Balin", Address = new Address { City = "Moria" } },
+            Customer = new Customer { Name = "Balin", Address = new Address { City = "Moria" } }
         });
         Console.WriteLine($"06 Deep paths         -> #{summary.Id}: {summary.CustomerName} of {summary.City}");
     }

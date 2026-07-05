@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 using DwarfMapper;
-using Xunit;
 
 namespace RegistryProto;
 
@@ -23,7 +23,8 @@ public class OrderSummary
 public class Order
 {
     // attribute 0 → target 0 (OrderDto.Name); attribute 1 → target 1 (OrderSummary.FullName).
-    [MapProperty("Name"), MapProperty("FullName")]
+    [MapProperty("Name")]
+    [MapProperty("FullName")]
     public string FullName { get; set; } = "";
 
     public decimal Total { get; set; }
@@ -34,16 +35,25 @@ public class Order
 
 // Per-target map/ignore mixing, order-sensitive. Two source members feed the SAME destination "Name"
 // but each in a different target.
-public class PName { public string Name { get; set; } = ""; }
-public class QName { public string Name { get; set; } = ""; }
+public class PName
+{
+    public string Name { get; set; } = "";
+}
+
+public class QName
+{
+    public string Name { get; set; } = "";
+}
 
 [MapTo(typeof(PName), typeof(QName))]
 public class Aliased
 {
-    [MapProperty("Name"), MapIgnore]   // PName.Name ← Formal ; QName: Formal ignored
+    [MapProperty("Name")]
+    [MapIgnore] // PName.Name ← Formal ; QName: Formal ignored
     public string Formal { get; set; } = "";
 
-    [MapIgnore, MapProperty("Name")]   // PName: Casual ignored ; QName.Name ← Casual
+    [MapIgnore]
+    [MapProperty("Name")] // PName: Casual ignored ; QName.Name ← Casual
     public string Casual { get; set; } = "";
 }
 
@@ -54,8 +64,8 @@ public class RegistryMapToPrototypeRuntimeTests
     {
         var order = new Order { FullName = "Ada Lovelace", Total = 42.5m, Secret = "hunter2" };
 
-        OrderDto dto = order.MapTo<OrderDto>();          // generic dispatch, no instance, no partial
-        OrderSummary summary = order.ToOrderSummary();   // named per-target extension
+        var dto = order.MapTo<OrderDto>(); // generic dispatch, no instance, no partial
+        var summary = order.ToOrderSummary(); // named per-target extension
 
         Assert.Equal("Ada Lovelace", dto.Name);
         Assert.Equal(42.5m, dto.Total);

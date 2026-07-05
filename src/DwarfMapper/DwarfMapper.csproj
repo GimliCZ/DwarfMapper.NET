@@ -1,40 +1,40 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <IsAotCompatible>true</IsAotCompatible>
-    <IsTrimmable>true</IsTrimmable>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Description>DwarfMapper — a compile-time object mapper for .NET where an unmapped member is a build error, maps are round-trip-verifiable (opt in with [RoundTrip]), and blittable data falls back to SIMD/blittable bulk copy. The shipped runtime library uses zero reflection and is NativeAOT- and trim-safe. This single package bundles the attributes, the Roslyn source generator, and the IDE code fixes — just reference it.</Description>
-    <!-- PackageRequireLicenseAcceptance is set for all packages in Directory.Build.props. -->
-  </PropertyGroup>
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsAotCompatible>true</IsAotCompatible>
+        <IsTrimmable>true</IsTrimmable>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <Description>DwarfMapper — a compile-time object mapper for .NET where an unmapped member is a build error, maps are round-trip-verifiable (opt in with [RoundTrip]), and blittable data falls back to SIMD/blittable bulk copy. The shipped runtime library uses zero reflection and is NativeAOT- and trim-safe. This single package bundles the attributes, the Roslyn source generator, and the IDE code fixes — just reference it.</Description>
+        <!-- PackageRequireLicenseAcceptance is set for all packages in Directory.Build.props. -->
+    </PropertyGroup>
 
-  <!--
-    Single-package delivery: bundle the source generator AND the code-fix providers into this package's
-    analyzer slot, so a consumer only needs ONE reference:
+    <!--
+      Single-package delivery: bundle the source generator AND the code-fix providers into this package's
+      analyzer slot, so a consumer only needs ONE reference:
 
-        <PackageReference Include="DwarfMapper" Version="..." />
+          <PackageReference Include="DwarfMapper" Version="..." />
 
-    No manual OutputItemType="Analyzer" wiring, no separate DwarfMapper.Generator reference. The
-    ProjectReferences exist only to build those analyzer assemblies first (ReferenceOutputAssembly="false" so
-    their output is not a compile reference, and SkipGetTargetFrameworkProperties so the netstandard2.0 -> net10
-    reference raises no framework-compat warning; they are deliberately NOT loaded as analyzers on this
-    attribute-only project). The <None Pack> items then place their DLLs under analyzers/dotnet/cs in the
-    produced .nupkg. PrivateAssets="all" stops the reference flowing transitively through ProjectReference
-    inside this repo, so the test/sample projects keep their own explicit analyzer references and nothing is
-    applied twice.
-  -->
-  <ItemGroup>
-    <ProjectReference Include="..\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
-                      ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
-    <ProjectReference Include="..\DwarfMapper.CodeFixes\DwarfMapper.CodeFixes.csproj"
-                      ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all" />
-  </ItemGroup>
+      No manual OutputItemType="Analyzer" wiring, no separate DwarfMapper.Generator reference. The
+      ProjectReferences exist only to build those analyzer assemblies first (ReferenceOutputAssembly="false" so
+      their output is not a compile reference, and SkipGetTargetFrameworkProperties so the netstandard2.0 -> net10
+      reference raises no framework-compat warning; they are deliberately NOT loaded as analyzers on this
+      attribute-only project). The <None Pack> items then place their DLLs under analyzers/dotnet/cs in the
+      produced .nupkg. PrivateAssets="all" stops the reference flowing transitively through ProjectReference
+      inside this repo, so the test/sample projects keep their own explicit analyzer references and nothing is
+      applied twice.
+    -->
+    <ItemGroup>
+        <ProjectReference Include="..\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all"/>
+        <ProjectReference Include="..\DwarfMapper.CodeFixes\DwarfMapper.CodeFixes.csproj"
+                          ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <None Include="..\DwarfMapper.Generator\bin\$(Configuration)\netstandard2.0\DwarfMapper.Generator.dll"
-          Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <None Include="..\DwarfMapper.CodeFixes\bin\$(Configuration)\netstandard2.0\DwarfMapper.CodeFixes.dll"
-          Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-  </ItemGroup>
+    <ItemGroup>
+        <None Include="..\DwarfMapper.Generator\bin\$(Configuration)\netstandard2.0\DwarfMapper.Generator.dll"
+              Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
+        <None Include="..\DwarfMapper.CodeFixes\bin\$(Configuration)\netstandard2.0\DwarfMapper.CodeFixes.dll"
+              Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false"/>
+    </ItemGroup>
 </Project>

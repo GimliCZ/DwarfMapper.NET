@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 using DwarfMapper.Generator.Model;
 
 // Coverage suite for DwarfMapper.Generator.Model.FlattenGraphDirective.
@@ -6,7 +7,7 @@ using DwarfMapper.Generator.Model;
 namespace DwarfMapper.Generator.Tests.Coverage;
 
 /// <summary>
-/// Value-equality and construction tests for <c>FlattenGraphDirective</c> sealed record.
+///     Value-equality and construction tests for <c>FlattenGraphDirective</c> sealed record.
 /// </summary>
 public class FlattenGraphDirectiveCoverageTests
 {
@@ -16,10 +17,10 @@ public class FlattenGraphDirectiveCoverageTests
     public void Constructor_stores_all_properties()
     {
         var d = new FlattenGraphDirective("Nav", "Coll", "TraversalHelper", "ConverterHelper");
-        Assert.Equal("Nav",              d.SourceNavigation);
-        Assert.Equal("Coll",             d.TargetCollection);
-        Assert.Equal("TraversalHelper",  d.TraversalHelperName);
-        Assert.Equal("ConverterHelper",  d.ConverterHelperName);
+        Assert.Equal("Nav", d.SourceNavigation);
+        Assert.Equal("Coll", d.TargetCollection);
+        Assert.Equal("TraversalHelper", d.TraversalHelperName);
+        Assert.Equal("ConverterHelper", d.ConverterHelperName);
     }
 
     // ─── Value equality: equal when all fields match ───────────────────────────
@@ -73,7 +74,7 @@ public class FlattenGraphDirectiveCoverageTests
     public void IEquatable_Equals_null_returns_false()
     {
         var a = new FlattenGraphDirective("N", "C", "T", "V");
-        Assert.False(a.Equals((FlattenGraphDirective?)null));
+        Assert.False(a.Equals(null));
     }
 
     [Fact]
@@ -153,7 +154,7 @@ public class FlattenGraphDirectiveCoverageTests
     {
         var a = new FlattenGraphDirective("MyNav", "MyColl", "THelper", "CHelper");
         var str = a.ToString();
-        Assert.Contains("MyNav", str, System.StringComparison.Ordinal);
+        Assert.Contains("MyNav", str, StringComparison.Ordinal);
     }
 
     // ─── Fixture: golden cases ────────────────────────────────────────────────
@@ -180,6 +181,6 @@ public class FlattenGraphDirectiveCoverageTests
         var b = a with { ConverterHelperName = "NewConv" };
         Assert.NotEqual(a, b);
         Assert.Equal("NewConv", b.ConverterHelperName);
-        Assert.Equal("Nav", b.SourceNavigation);  // unchanged fields preserved
+        Assert.Equal("Nav", b.SourceNavigation); // unchanged fields preserved
     }
 }

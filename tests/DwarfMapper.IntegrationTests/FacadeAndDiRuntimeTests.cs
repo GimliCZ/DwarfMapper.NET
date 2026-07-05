@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
+
 using DwarfMapper.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,8 +24,8 @@ public partial class FacadeOrderMapper
 }
 
 /// <summary>
-/// Runtime tests for the generated convenience facade (<c>order.ToFacadeOrderDto()</c>) and the
-/// <c>IServiceCollection.AddDwarfMappers()</c> registration extension.
+///     Runtime tests for the generated convenience facade (<c>order.ToFacadeOrderDto()</c>) and the
+///     <c>IServiceCollection.AddDwarfMappers()</c> registration extension.
 /// </summary>
 public sealed class FacadeAndDiRuntimeTests
 {

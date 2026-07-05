@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -9,8 +6,19 @@ namespace DwarfMapper.IntegrationTests;
 // maps onto an EXISTING target instance instead of constructing a new one. Settable members are
 // assigned from the source; the target identity is preserved.
 
-public class MieSrc { public int Id { get; set; } public string Name { get; set; } = ""; public long Score { get; set; } }
-public class MieDst { public int Id { get; set; } public string Name { get; set; } = ""; public int Score { get; set; } }
+public class MieSrc
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public long Score { get; set; }
+}
+
+public class MieDst
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public int Score { get; set; }
+}
 
 [DwarfMapper]
 public partial class MieVoidMapper
@@ -73,7 +81,7 @@ public class MapIntoExistingRuntimeTests
     public void Conversion_overflow_still_loud()
     {
         var dest = new MieDst();
-        var src = new MieSrc { Score = (long)int.MaxValue + 1L };
+        var src = new MieSrc { Score = int.MaxValue + 1L };
         Assert.Throws<OverflowException>(() => new MieVoidMapper().Update(src, dest));
     }
 
@@ -84,25 +92,42 @@ public class MapIntoExistingRuntimeTests
         var dest = new MieOuterDst
         {
             Inner = new MieInnerDst { X = -1 },
-            Tags = new System.Collections.Generic.List<string> { "stale" },
+            Tags = new List<string> { "stale" }
         };
         var src = new MieOuterSrc
         {
             Inner = new MieInnerSrc { X = 5 },
-            Tags = new System.Collections.Generic.List<string> { "a", "b" },
+            Tags = new List<string> { "a", "b" }
         };
 
         new MieOuterMapper().Update(src, dest);
 
-        Assert.Equal(5, dest.Inner.X);                  // nested mapped
-        Assert.Equal(new[] { "a", "b" }, dest.Tags);    // collection replaced
+        Assert.Equal(5, dest.Inner.X); // nested mapped
+        Assert.Equal(new[] { "a", "b" }, dest.Tags); // collection replaced
     }
 }
 
-public class MieInnerSrc { public int X { get; set; } }
-public class MieInnerDst { public int X { get; set; } }
-public class MieOuterSrc { public MieInnerSrc Inner { get; set; } = new(); public System.Collections.Generic.List<string> Tags { get; set; } = new(); }
-public class MieOuterDst { public MieInnerDst Inner { get; set; } = new(); public System.Collections.Generic.List<string> Tags { get; set; } = new(); }
+public class MieInnerSrc
+{
+    public int X { get; set; }
+}
+
+public class MieInnerDst
+{
+    public int X { get; set; }
+}
+
+public class MieOuterSrc
+{
+    public MieInnerSrc Inner { get; set; } = new();
+    public List<string> Tags { get; set; } = new();
+}
+
+public class MieOuterDst
+{
+    public MieInnerDst Inner { get; set; } = new();
+    public List<string> Tags { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class MieOuterMapper

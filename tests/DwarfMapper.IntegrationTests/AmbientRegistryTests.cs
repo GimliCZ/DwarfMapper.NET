@@ -1,32 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
 /// <summary>
-/// Phase-1 runtime tests for the ambient cross-assembly registry + <see cref="IDwarfMapper"/> facade.
-/// The registry is process-wide static, so each test uses its OWN distinct source/destination types
-/// (the key is the Type pair) to stay isolated without resetting global state.
+///     Phase-1 runtime tests for the ambient cross-assembly registry + <see cref="IDwarfMapper" /> facade.
+///     The registry is process-wide static, so each test uses its OWN distinct source/destination types
+///     (the key is the Type pair) to stay isolated without resetting global state.
 /// </summary>
 public sealed class AmbientRegistryTests
 {
-    // --- per-test type families (distinct so registrations never collide across tests) ---
-    private sealed class S1 { public int V { get; set; } }
-    private sealed class D1 { public int V { get; set; } }
-
-    private sealed class S2 { public int V { get; set; } }
-    private sealed class D2 { public int V { get; set; } }
-
-    private class Base3 { public int V { get; set; } }
-    private sealed class Derived3 : Base3 { }
-    private sealed class D3 { public int V { get; set; } }
-
-    private sealed class S4 { public int V { get; set; } }
-    private sealed class D4a { public int V { get; set; } }
-    private sealed class D4b { public int V { get; set; } }
-
     [Fact]
     public void Register_then_Map_resolves_by_runtime_type()
     {
@@ -45,7 +27,7 @@ public sealed class AmbientRegistryTests
     {
         DwarfMapperRegistry.Register(typeof(S2), typeof(D2), s => new D2 { V = ((S2)s).V * 2 });
 
-        IDwarfMapper mapper = DwarfMapperFacade.Instance;
+        var mapper = DwarfMapperFacade.Instance;
         var byDest = mapper.Map<D2>(new S2 { V = 5 });
         var byBoth = mapper.Map<S2, D2>(new S2 { V = 6 });
 
@@ -68,8 +50,7 @@ public sealed class AmbientRegistryTests
     public void Map_missing_throws_DwarfMapMissingException_with_types()
     {
         // Built-in types that are never registered → exercises the missing path without marker types.
-        var ex = Assert.Throws<DwarfMapMissingException>(
-            () => DwarfMapperRegistry.Map(Guid.NewGuid(), typeof(Uri)));
+        var ex = Assert.Throws<DwarfMapMissingException>(() => DwarfMapperRegistry.Map(Guid.NewGuid(), typeof(Uri)));
 
         Assert.Equal(typeof(Guid), ex.SourceType);
         Assert.Equal(typeof(Uri), ex.DestinationType);
@@ -110,5 +91,55 @@ public sealed class AmbientRegistryTests
         Assert.Throws<ArgumentNullException>(() => DwarfMapperRegistry.Register(null!, typeof(D1), _ => new D1()));
         Assert.Throws<ArgumentNullException>(() => DwarfMapperRegistry.Register(typeof(S1), null!, _ => new D1()));
         Assert.Throws<ArgumentNullException>(() => DwarfMapperRegistry.Register(typeof(S1), typeof(D1), null!));
+    }
+
+    // --- per-test type families (distinct so registrations never collide across tests) ---
+    private sealed class S1
+    {
+        public int V { get; set; }
+    }
+
+    private sealed class D1
+    {
+        public int V { get; set; }
+    }
+
+    private sealed class S2
+    {
+        public int V { get; set; }
+    }
+
+    private sealed class D2
+    {
+        public int V { get; set; }
+    }
+
+    private class Base3
+    {
+        public int V { get; set; }
+    }
+
+    private sealed class Derived3 : Base3
+    {
+    }
+
+    private sealed class D3
+    {
+        public int V { get; set; }
+    }
+
+    private sealed class S4
+    {
+        public int V { get; set; }
+    }
+
+    private sealed class D4a
+    {
+        public int V { get; set; }
+    }
+
+    private sealed class D4b
+    {
+        public int V { get; set; }
     }
 }

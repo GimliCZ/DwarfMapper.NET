@@ -7,25 +7,19 @@
 // executes the mapping fails the build. Behavioural correctness (overflow throwing, guards gating,
 // cycles terminating, values produced) is the class of bug compile-time checks structurally cannot see.
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
 
 /// <summary>
-/// Feature attributes/enums exempt from the RUNTIME-coverage requirement (must stay tiny + justified).
-///
-/// RoundTrip — a compile-time anti-mislinking VERIFICATION feature: [RoundTrip] pairs a method with its
-///             inverse and the generator proves the pairing (DWARF020/021). Its runtime behaviour is
-///             identical to an ordinary map (no distinct runtime semantics), so a dedicated runtime test
-///             would add no behavioural signal. Covered by RoundTripGenTests + ReverseMap runtime tests.
-///
-/// DwarfMapperOptions — an assembly-level compile-time option (generated-extension visibility). Its only
-///             observable effect is cross-assembly accessibility, which a single integration assembly cannot
-///             exercise behaviourally; a runtime test would be hollow. Covered by FacadeExtensionsGeneratorTests.
+///     Feature attributes/enums exempt from the RUNTIME-coverage requirement (must stay tiny + justified).
+///     RoundTrip — a compile-time anti-mislinking VERIFICATION feature: [RoundTrip] pairs a method with its
+///     inverse and the generator proves the pairing (DWARF020/021). Its runtime behaviour is
+///     identical to an ordinary map (no distinct runtime semantics), so a dedicated runtime test
+///     would add no behavioural signal. Covered by RoundTripGenTests + ReverseMap runtime tests.
+///     DwarfMapperOptions — an assembly-level compile-time option (generated-extension visibility). Its only
+///     observable effect is cross-assembly accessibility, which a single integration assembly cannot
+///     exercise behaviourally; a runtime test would be hollow. Covered by FacadeExtensionsGeneratorTests.
 /// </summary>
 file static class RuntimeCoverageExempt
 {
@@ -42,7 +36,7 @@ file static class RuntimeCoverageExempt
             "DwarfProvidesMap",
             "DwarfRequiresMap",
             "UsesMap",
-            "DwarfMapperValidationRoot",
+            "DwarfMapperValidationRoot"
         };
 
     public static readonly IReadOnlySet<string> EnumTypeNames =
@@ -53,6 +47,16 @@ public sealed class RuntimeCoverageScanTests
 {
     private static readonly Assembly DwarfMapperAssembly = typeof(DwarfMapperAttribute).Assembly;
 
+    private static readonly Lazy<string> IntegrationTestText = new(() =>
+    {
+        var dir = Path.Combine(FindRepoRoot(), "tests", "DwarfMapper.IntegrationTests");
+        return string.Concat(
+            Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
+                .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal))
+                .Select(File.ReadAllText));
+    });
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(Path.GetDirectoryName(typeof(RuntimeCoverageScanTests).Assembly.Location)!);
@@ -62,17 +66,9 @@ public sealed class RuntimeCoverageScanTests
                 return dir.FullName;
             dir = dir.Parent;
         }
+
         throw new InvalidOperationException("Cannot locate repository root (DwarfMapper.NET.sln).");
     }
-
-    private static readonly Lazy<string> IntegrationTestText = new(() =>
-    {
-        var dir = Path.Combine(FindRepoRoot(), "tests", "DwarfMapper.IntegrationTests");
-        return string.Concat(
-            Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
-                .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                .Select(File.ReadAllText));
-    });
 
     // SCAN R1 — every public feature attribute is exercised in the integration (runtime) project.
     [Fact]

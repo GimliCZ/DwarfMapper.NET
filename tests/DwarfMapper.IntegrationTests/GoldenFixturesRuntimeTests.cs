@@ -1,21 +1,38 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ─── Golden 1: Dictionary with enum keys ─────────────────────────────────────
 
-public enum GoldKeyEnum { Alpha = 1, Beta = 2, Gamma = 3 }
-public enum GoldKeyEnumDto { Alpha = 1, Beta = 2, Gamma = 3 }
+public enum GoldKeyEnum
+{
+    Alpha = 1,
+    Beta = 2,
+    Gamma = 3
+}
 
-public class GoldEnumKeySrc { public Dictionary<GoldKeyEnum, string> Map { get; set; } = new(); }
-public class GoldEnumKeyDst { public Dictionary<GoldKeyEnumDto, string> Map { get; set; } = new(); }
+public enum GoldKeyEnumDto
+{
+    Alpha = 1,
+    Beta = 2,
+    Gamma = 3
+}
+
+public class GoldEnumKeySrc
+{
+    public Dictionary<GoldKeyEnum, string> Map { get; set; } = new();
+}
+
+public class GoldEnumKeyDst
+{
+    public Dictionary<GoldKeyEnumDto, string> Map { get; set; } = new();
+}
 
 [DwarfMapper]
-public partial class GoldEnumKeyMapper { public partial GoldEnumKeyDst Map(GoldEnumKeySrc s); }
+public partial class GoldEnumKeyMapper
+{
+    public partial GoldEnumKeyDst Map(GoldEnumKeySrc s);
+}
 
 public class GoldenDictEnumKeyTests
 {
@@ -27,8 +44,8 @@ public class GoldenDictEnumKeyTests
             Map = new Dictionary<GoldKeyEnum, string>
             {
                 [GoldKeyEnum.Alpha] = "a",
-                [GoldKeyEnum.Beta]  = "b",
-                [GoldKeyEnum.Gamma] = "c",
+                [GoldKeyEnum.Beta] = "b",
+                [GoldKeyEnum.Gamma] = "c"
             }
         };
         var dst = new GoldEnumKeyMapper().Map(src);
@@ -50,17 +67,36 @@ public class GoldenDictEnumKeyTests
 
 // ─── Golden 2: Nested List<List<RecordDto>> ───────────────────────────────────
 
-public class GoldItemSrc { public string Name { get; set; } = ""; public int Count { get; set; } }
+public class GoldItemSrc
+{
+    public string Name { get; set; } = "";
+    public int Count { get; set; }
+}
+
 public record GoldItemDst(string Name, int Count);
 
-public class GoldGroupSrc { public List<GoldItemSrc> Items { get; set; } = new(); }
+public class GoldGroupSrc
+{
+    public List<GoldItemSrc> Items { get; set; } = new();
+}
+
 public record GoldGroupDst(List<GoldItemDst> Items);
 
-public class GoldSheetSrc { public List<GoldGroupSrc> Groups { get; set; } = new(); }
-public class GoldSheetDst { public List<GoldGroupDst> Groups { get; set; } = new(); }
+public class GoldSheetSrc
+{
+    public List<GoldGroupSrc> Groups { get; set; } = new();
+}
+
+public class GoldSheetDst
+{
+    public List<GoldGroupDst> Groups { get; set; } = new();
+}
 
 [DwarfMapper]
-public partial class GoldSheetMapper { public partial GoldSheetDst Map(GoldSheetSrc s); }
+public partial class GoldSheetMapper
+{
+    public partial GoldSheetDst Map(GoldSheetSrc s);
+}
 
 public class GoldenNestedListOfListRecordTests
 {
@@ -75,25 +111,25 @@ public class GoldenNestedListOfListRecordTests
                 {
                     Items = new List<GoldItemSrc>
                     {
-                        new() { Name = "Axe",   Count = 3 },
-                        new() { Name = "Sword",  Count = 1 },
+                        new() { Name = "Axe", Count = 3 },
+                        new() { Name = "Sword", Count = 1 }
                     }
                 },
                 new()
                 {
                     Items = new List<GoldItemSrc>
                     {
-                        new() { Name = "Shield", Count = 2 },
+                        new() { Name = "Shield", Count = 2 }
                     }
-                },
+                }
             }
         };
         var dst = new GoldSheetMapper().Map(src);
         Assert.Equal(2, dst.Groups.Count);
         Assert.Equal(2, dst.Groups[0].Items.Count);
-        Assert.Equal("Axe",    dst.Groups[0].Items[0].Name);
-        Assert.Equal(3,        dst.Groups[0].Items[0].Count);
-        Assert.Equal("Sword",  dst.Groups[0].Items[1].Name);
+        Assert.Equal("Axe", dst.Groups[0].Items[0].Name);
+        Assert.Equal(3, dst.Groups[0].Items[0].Count);
+        Assert.Equal("Sword", dst.Groups[0].Items[1].Name);
         Assert.Single(dst.Groups[1].Items);
         Assert.Equal("Shield", dst.Groups[1].Items[0].Name);
     }
@@ -144,7 +180,10 @@ public class GoldListOwnerDst
 }
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class GoldSharedListMapper { public partial GoldListOwnerDst Map(GoldListOwnerSrc s); }
+public partial class GoldSharedListMapper
+{
+    public partial GoldListOwnerDst Map(GoldListOwnerSrc s);
+}
 
 public class GoldenSharedListTests
 {
@@ -191,11 +230,23 @@ public class GoldenSharedListTests
 // ─── Golden 4: MaxDepth boundary chain ───────────────────────────────────────
 // Already covered in DepthSafetyRuntimeTests — this extends with a Preserve-mode chain.
 
-public class GoldChainNode    { public int V { get; set; } public GoldChainNode? Next { get; set; } }
-public class GoldChainNodeDto { public int V { get; set; } public GoldChainNodeDto? Next { get; set; } }
+public class GoldChainNode
+{
+    public int V { get; set; }
+    public GoldChainNode? Next { get; set; }
+}
+
+public class GoldChainNodeDto
+{
+    public int V { get; set; }
+    public GoldChainNodeDto? Next { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve, MaxDepth = 10)]
-public partial class GoldChainMapper { public partial GoldChainNodeDto Map(GoldChainNode n); }
+public partial class GoldChainMapper
+{
+    public partial GoldChainNodeDto Map(GoldChainNode n);
+}
 
 public class GoldenMaxDepthBoundaryTests
 {
@@ -227,30 +278,36 @@ public class GoldenMaxDepthBoundaryTests
 
 public class GoldAllCollSrc
 {
-    public List<int>?           ListProp        { get; set; }
-    public int[]?               ArrayProp       { get; set; }
-    public Dictionary<string,int>? DictProp     { get; set; }
+    public List<int>? ListProp { get; set; }
+    public int[]? ArrayProp { get; set; }
+    public Dictionary<string, int>? DictProp { get; set; }
 }
 
 public class GoldAllCollDst
 {
-    public List<int>?           ListProp        { get; set; }
-    public int[]?               ArrayProp       { get; set; }
-    public Dictionary<string,int>? DictProp     { get; set; }
+    public List<int>? ListProp { get; set; }
+    public int[]? ArrayProp { get; set; }
+    public Dictionary<string, int>? DictProp { get; set; }
 }
 
 [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
-public partial class GoldNullCollMapper { public partial GoldAllCollDst Map(GoldAllCollSrc s); }
+public partial class GoldNullCollMapper
+{
+    public partial GoldAllCollDst Map(GoldAllCollSrc s);
+}
 
-[DwarfMapper]  // default AsEmpty
-public partial class GoldEmptyCollMapper { public partial GoldAllCollDst Map(GoldAllCollSrc s); }
+[DwarfMapper] // default AsEmpty
+public partial class GoldEmptyCollMapper
+{
+    public partial GoldAllCollDst Map(GoldAllCollSrc s);
+}
 
 public class GoldenNullEmptyCollectionTests
 {
     [Fact]
     public void AsNull_mode_passes_null_through_all_shapes()
     {
-        var src = new GoldAllCollSrc();  // all null
+        var src = new GoldAllCollSrc(); // all null
         var dst = new GoldNullCollMapper().Map(src);
         Assert.Null(dst.ListProp);
         Assert.Null(dst.ArrayProp);
@@ -260,7 +317,7 @@ public class GoldenNullEmptyCollectionTests
     [Fact]
     public void AsEmpty_mode_converts_null_to_empty_all_shapes()
     {
-        var src = new GoldAllCollSrc();  // all null
+        var src = new GoldAllCollSrc(); // all null
         var dst = new GoldEmptyCollMapper().Map(src);
         Assert.NotNull(dst.ListProp);
         Assert.Empty(dst.ListProp!);
@@ -275,9 +332,9 @@ public class GoldenNullEmptyCollectionTests
     {
         var src = new GoldAllCollSrc
         {
-            ListProp  = new List<int> { 1, 2 },
+            ListProp = new List<int> { 1, 2 },
             ArrayProp = new[] { 3, 4 },
-            DictProp  = new Dictionary<string, int> { ["k"] = 99 },
+            DictProp = new Dictionary<string, int> { ["k"] = 99 }
         };
         var dst = new GoldNullCollMapper().Map(src);
         Assert.Equal(new[] { 1, 2 }, dst.ListProp);

@@ -1,27 +1,46 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
+
 using DwarfMapper;
-using Xunit;
 
 // Full conversion coverage for [MapTo]: numeric narrowing, string parse/format, enum, nested objects,
 // and List/array collections (incl. collections of nested).
 namespace RegistryProto.Conv;
 
-public enum Color { Red, Green, Blue }
-public enum Hue { Red, Green, Blue }
+public enum Color
+{
+    Red,
+    Green,
+    Blue
+}
 
-public class Address { public string City { get; set; } = ""; public string Zip { get; set; } = ""; }
-public class AddressDto { public string City { get; set; } = ""; public string Zip { get; set; } = ""; }
+public enum Hue
+{
+    Red,
+    Green,
+    Blue
+}
+
+public class Address
+{
+    public string City { get; set; } = "";
+    public string Zip { get; set; } = "";
+}
+
+public class AddressDto
+{
+    public string City { get; set; } = "";
+    public string Zip { get; set; } = "";
+}
 
 public class PersonDto
 {
-    public long Id { get; set; }            // ← int   (implicit widening)
-    public short Small { get; set; }        // ← int   (checked narrowing)
-    public int Age { get; set; }            // ← string (parse)
+    public long Id { get; set; } // ← int   (implicit widening)
+    public short Small { get; set; } // ← int   (checked narrowing)
+    public int Age { get; set; } // ← string (parse)
     public string Score { get; set; } = ""; // ← double (format)
-    public Hue Favorite { get; set; }       // ← Color  (enum by name)
-    public AddressDto Home { get; set; } = new();           // nested object
-    public List<long> Marks { get; set; } = new();          // ← List<int>   (element widen)
+    public Hue Favorite { get; set; } // ← Color  (enum by name)
+    public AddressDto Home { get; set; } = new(); // nested object
+    public List<long> Marks { get; set; } = new(); // ← List<int>   (element widen)
     public List<AddressDto> Contacts { get; set; } = new(); // ← List<Address> (element nested)
 }
 
@@ -55,21 +74,21 @@ public class RegistryMapToConversionsRuntimeTests
             Contacts = new List<Address>
             {
                 new() { City = "Brno", Zip = "60200" },
-                new() { City = "Ostrava", Zip = "70030" },
-            },
+                new() { City = "Ostrava", Zip = "70030" }
+            }
         };
 
-        PersonDto dto = p.MapTo<PersonDto>();
+        var dto = p.MapTo<PersonDto>();
 
-        Assert.Equal(7L, dto.Id);                       // implicit widen
-        Assert.Equal((short)300, dto.Small);            // checked narrow
-        Assert.Equal(42, dto.Age);                      // parse
-        Assert.Equal("3.5", dto.Score);                 // format (invariant)
-        Assert.Equal(Hue.Green, dto.Favorite);          // enum by name
-        Assert.Equal("Prague", dto.Home.City);          // nested
+        Assert.Equal(7L, dto.Id); // implicit widen
+        Assert.Equal((short)300, dto.Small); // checked narrow
+        Assert.Equal(42, dto.Age); // parse
+        Assert.Equal("3.5", dto.Score); // format (invariant)
+        Assert.Equal(Hue.Green, dto.Favorite); // enum by name
+        Assert.Equal("Prague", dto.Home.City); // nested
         Assert.Equal("11000", dto.Home.Zip);
-        Assert.Equal(new List<long> { 1, 2, 3 }, dto.Marks);            // collection element widen
-        Assert.Equal(2, dto.Contacts.Count);                           // collection of nested
+        Assert.Equal(new List<long> { 1, 2, 3 }, dto.Marks); // collection element widen
+        Assert.Equal(2, dto.Contacts.Count); // collection of nested
         Assert.Equal("Brno", dto.Contacts[0].City);
         Assert.Equal("Ostrava", dto.Contacts[1].City);
     }
@@ -78,6 +97,6 @@ public class RegistryMapToConversionsRuntimeTests
     public void Checked_narrowing_throws_on_overflow()
     {
         var p = new Person { Age = "0", Small = 70000 /* > short.MaxValue */ };
-        Assert.Throws<System.OverflowException>(() => p.MapTo<PersonDto>());
+        Assert.Throws<OverflowException>(() => p.MapTo<PersonDto>());
     }
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
+
+using System.Collections.Immutable;
+using System.Globalization;
+using System.Text;
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
@@ -14,42 +15,50 @@ namespace DwarfMapper.Generator.Pipeline;
 internal enum NullStrategy
 {
     Throw = 0,
-    SetDefault = 1,
+    SetDefault = 1
 }
 
 internal enum NullCollectionsBehavior
 {
     AsEmpty = 0,
-    AsNull  = 1,
+    AsNull = 1
 }
 
 internal static class MapperExtractor
 {
+    private const string SetsRequiredMembersAttribute = "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute";
+
+    // ── Plan 19D: max depth for projection recursion ─────────────────────────
+    // Beyond this depth, DWARF028 is emitted instead of recursing further.
+    // Keeps generated lambda bodies finite and prevents stack-overflow in the generator.
+    private const int ProjectionMaxDepth = 32;
+
     public static MapperClassModel Extract(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
-        => ExtractCore(ctx, separateEmit: false, ct);
+    {
+        return ExtractCore(ctx, false, ct);
+    }
 
     /// <summary>
-    /// Entry for a class that carries <c>[GenerateMap&lt;&gt;]</c> but is NOT a <c>[DwarfMapper]</c> mapper —
-    /// the host (e.g. a DTO) declares its mapping co-located. The mapping is emitted into a SEPARATE generated
-    /// mapper type (<c>&lt;Host&gt;Mapper</c>), so the host needs neither <c>partial</c> nor <c>[DwarfMapper]</c>;
-    /// it is consumed via the generated extension methods / DI like any other mapper. Returns <c>null</c> when
-    /// the class is also a <c>[DwarfMapper]</c> (the primary pipeline owns it). Generic hosts and
-    /// <c>&lt;Host&gt;Mapper</c> name collisions are surfaced as diagnostics (DWARF054/DWARF057) by ExtractCore.
+    ///     Entry for a class that carries <c>[GenerateMap&lt;&gt;]</c> but is NOT a <c>[DwarfMapper]</c> mapper —
+    ///     the host (e.g. a DTO) declares its mapping co-located. The mapping is emitted into a SEPARATE generated
+    ///     mapper type (<c>&lt;Host&gt;Mapper</c>), so the host needs neither <c>partial</c> nor <c>[DwarfMapper]</c>;
+    ///     it is consumed via the generated extension methods / DI like any other mapper. Returns <c>null</c> when
+    ///     the class is also a <c>[DwarfMapper]</c> (the primary pipeline owns it). Generic hosts and
+    ///     <c>&lt;Host&gt;Mapper</c> name collisions are surfaced as diagnostics (DWARF054/DWARF057) by ExtractCore.
     /// </summary>
     public static MapperClassModel? ExtractGenerateMapHost(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
     {
         var classSymbol = (INamedTypeSymbol)ctx.TargetSymbol;
         if (classSymbol.GetAttributes().Any(a =>
                 a.AttributeClass?.ToDisplayString() == "DwarfMapper.DwarfMapperAttribute"))
-        {
             return null; // a [DwarfMapper] class — the primary pipeline emits into it directly
-        }
         // Generic hosts (DWARF054) and <Host>Mapper name collisions (DWARF057) are reported loudly inside
         // ExtractCore rather than silently skipped here — see the never-silent design tenet.
-        return ExtractCore(ctx, separateEmit: true, ct);
+        return ExtractCore(ctx, true, ct);
     }
 
-    private static MapperClassModel ExtractCore(GeneratorAttributeSyntaxContext ctx, bool separateEmit, CancellationToken ct)
+    private static MapperClassModel ExtractCore(GeneratorAttributeSyntaxContext ctx, bool separateEmit,
+        CancellationToken ct)
     {
         var classSymbol = (INamedTypeSymbol)ctx.TargetSymbol;
         var classSyntax = (ClassDeclarationSyntax)ctx.TargetNode;
@@ -62,15 +71,14 @@ internal static class MapperExtractor
 
         var isPartial = classSyntax.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword));
         if (!isPartial && !separateEmit)
-        {
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.MapperNotPartial,
                 LocationInfo.From(classSyntax.Identifier.GetLocation()),
                 classSymbol.Name));
-        }
 
         var mapperNamespace = classSymbol.ContainingNamespace.IsGlobalNamespace
-            ? "" : classSymbol.ContainingNamespace.ToDisplayString();
+            ? ""
+            : classSymbol.ContainingNamespace.ToDisplayString();
 
         // A generic mapper class would get a generated `partial class Foo` with no `<T>` — which is NOT a
         // partial of the user's `Foo<T>` and does not compile. Refuse loudly (DWARF054) and skip generation
@@ -115,7 +123,7 @@ internal static class MapperExtractor
         var classIgnores = ReadIgnores(classSymbol).ToList();
         var classIgnoreSources = ReadIgnoreSources(classSymbol).ToList();
         var requiredMapping = ReadRequiredMapping(ctx.Attributes); // 0 = Target (default), 1 = Both
-        var nameConvention = ReadNameConvention(ctx.Attributes);   // 0 = Exact (default), 1 = Flexible
+        var nameConvention = ReadNameConvention(ctx.Attributes); // 0 = Exact (default), 1 = Flexible
         var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
         var generateExtensions = ReadGenerateExtensions(ctx.Attributes); // default true (opt-out)
         // The convenience facade caches a `new()` mapper singleton, so it can only be emitted for a mapper
@@ -143,19 +151,17 @@ internal static class MapperExtractor
         var maxDepth = ReadMaxDepth(ctx.Attributes);
         var referenceHandling = ReadReferenceHandling(ctx.Attributes);
         var isPreserveMode = referenceHandling == 1; // 1 = ReferenceHandlingStrategy.Preserve
-        var onCycle = ReadOnCycle(ctx.Attributes);   // 0 = Throw, 1 = SetNull
+        var onCycle = ReadOnCycle(ctx.Attributes); // 0 = Throw, 1 = SetNull
         var implicitConversions = ReadImplicitConversions(ctx.Attributes); // default true (permissive)
         // SetNull is only meaningful in None mode; under Preserve, cycles are reconstructed and
         // OnCycle is ignored → DWARF037 (loud, not a silent no-op).
         var isSetNullMode = onCycle == 1 && !isPreserveMode;
         if (onCycle == 1 && isPreserveMode)
-        {
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.OnCycleIgnoredUnderPreserve,
                 LocationInfo.From(classSyntax.Identifier.GetLocation()),
                 classSymbol.Name));
-        }
-        var synthesized = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
+        var synthesized = new Dictionary<string, SynthesizedMethod>(StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
         var valueProviders = CollectValueProviders(classSymbol); // parameterless methods for [MapValue(Use=)]
@@ -173,10 +179,7 @@ internal static class MapperExtractor
         {
             ct.ThrowIfCancellationRequested();
 
-            if (method.MethodKind != MethodKind.Ordinary || !method.IsPartialDefinition)
-            {
-                continue;
-            }
+            if (method.MethodKind != MethodKind.Ordinary || !method.IsPartialDefinition) continue;
 
             // A generic mapping method (arity > 0) cannot be implemented: the generator emits a
             // type-parameter-less body that fails to satisfy the generic partial declaration, producing
@@ -198,24 +201,22 @@ internal static class MapperExtractor
             // destination must be a writable Span<D>; a too-small destination throws (never silent
             // truncation). The element conversion reuses the full resolution pipeline.
             if (method.ReturnsVoid && method.Parameters.Length == 2
-                && TryGetSpanElement(method.Parameters[0].Type, out var spanSrcElem, out _)
-                && TryGetSpanElement(method.Parameters[1].Type, out var spanDstElem, out var dstIsReadOnly)
-                && !dstIsReadOnly)
+                                   && TryGetSpanElement(method.Parameters[0].Type, out var spanSrcElem, out _)
+                                   && TryGetSpanElement(method.Parameters[1].Type, out var spanDstElem,
+                                       out var dstIsReadOnly)
+                                   && !dstIsReadOnly)
             {
                 var spanComp = ctx.SemanticModel.Compilation;
                 var spanAutoNest = ReadMethodAutoNest(method, classAutoNest);
                 if (!TryResolveConversion(spanComp, spanSrcElem, spanDstElem, null, allMethods, mapperMethods,
                         enumStrategy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
-                        out var spanConv, out var spanNull, out var spanNeedsCtx, spanAutoNest, nestedRegistry,
-                        nullAsNull: false, isPreserve: false))
-                {
+                        out var spanConv, out var spanNull, out var spanNeedsCtx, spanAutoNest, nestedRegistry))
                     // Element pair not mappable → diagnostic (e.g. DWARF005) already added.
                     continue;
-                }
 
                 var spanElemMember = new MemberMap(
-                    TargetName: "", SourceName: "", ConverterMethod: spanConv,
-                    NullHandling: spanNull, ConverterNeedsDepthCtx: spanNeedsCtx);
+                    "", "", spanConv,
+                    spanNull, spanNeedsCtx);
 
                 methods.Add(new MapMethodModel(
                     method.Name,
@@ -225,8 +226,8 @@ internal static class MapperExtractor
                     method.Parameters[0].Name,
                     false,
                     EquatableArray.From(new[] { spanElemMember }),
-                    EquatableArray.From(System.Array.Empty<string>()),
-                    EquatableArray.From(System.Array.Empty<HookCall>()),
+                    EquatableArray.From(Array.Empty<string>()),
+                    EquatableArray.From(Array.Empty<HookCall>()),
                     false,
                     "",
                     IsSpanMap: true,
@@ -248,7 +249,7 @@ internal static class MapperExtractor
                 var updSrc = method.Parameters[0].Type;
                 var comp = ctx.SemanticModel.Compilation;
                 var updIgnores = new HashSet<string>(classIgnores);
-                foreach (var ig in ReadIgnores(method)) { updIgnores.Add(ig); }
+                foreach (var ig in ReadIgnores(method)) updIgnores.Add(ig);
                 var updExplicit = ReadExplicitMaps(method);
                 var updMapValues = ReadMapValues(method);
                 var updMapPropExtras = ReadMapPropertyExtras(method);
@@ -260,24 +261,37 @@ internal static class MapperExtractor
                     updSrc, updTgt, updIgnores, comp, methodLocation, diagnostics, caseInsensitive,
                     updExplicit, allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                     updFlatten, updReinterpret,
-                    consumedCtorParams: null, requiredMustInitialize: null, updAutoNest, nestedRegistry,
-                    nullCollections == NullCollectionsBehavior.AsNull, isPreserve: false, isSetNull: false,
-                    implicitConversions: implicitConversions, mapValues: updMapValues, valueProviders: valueProviders,
-                    nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
+                    null, null, updAutoNest, nestedRegistry,
+                    nullCollections == NullCollectionsBehavior.AsNull, false, false,
+                    implicitConversions, updMapValues, valueProviders,
+                    nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
+                    skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
 
                 var updBefore = new List<string>();
                 foreach (var h in beforeHookDefs)
-                    if (HasImplicitConversion(comp, updSrc, h.ParamType)) updBefore.Add(h.Name);
+                    if (HasImplicitConversion(comp, updSrc, h.ParamType))
+                        updBefore.Add(h.Name);
 
                 var updAfter = new List<HookCall>();
                 foreach (var h in afterHookDefs)
                 {
-                    bool applies; bool takesSource;
-                    if (h.P1 is null) { applies = HasImplicitConversion(comp, updTgt, h.P0); takesSource = false; }
-                    else { applies = HasImplicitConversion(comp, updSrc, h.P0) && HasImplicitConversion(comp, updTgt, h.P1); takesSource = true; }
+                    bool applies;
+                    bool takesSource;
+                    if (h.P1 is null)
+                    {
+                        applies = HasImplicitConversion(comp, updTgt, h.P0);
+                        takesSource = false;
+                    }
+                    else
+                    {
+                        applies = HasImplicitConversion(comp, updSrc, h.P0) &&
+                                  HasImplicitConversion(comp, updTgt, h.P1);
+                        takesSource = true;
+                    }
+
                     if (!applies) continue;
                     // Target is a reference type → by-value is fine (mutations propagate); ref optional.
-                    updAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: h.TargetRefKind == RefKind.Ref));
+                    updAfter.Add(new HookCall(h.Name, takesSource, h.TargetRefKind == RefKind.Ref));
                 }
 
                 methods.Add(new MapMethodModel(
@@ -303,22 +317,20 @@ internal static class MapperExtractor
             // Emitted as an async iterator (await foreach … yield return conv(item)) that lazily
             // transforms the source sequence — preserves streaming/back-pressure, no buffering.
             if (method.Parameters.Length == 1 && !method.ReturnsVoid
-                && TryGetAsyncEnumerableElement(method.Parameters[0].Type, out var asSrcElem)
-                && TryGetAsyncEnumerableElement(method.ReturnType, out var asDstElem))
+                                              && TryGetAsyncEnumerableElement(method.Parameters[0].Type,
+                                                  out var asSrcElem)
+                                              && TryGetAsyncEnumerableElement(method.ReturnType, out var asDstElem))
             {
                 var asComp = ctx.SemanticModel.Compilation;
                 var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
                 if (!TryResolveConversion(asComp, asSrcElem, asDstElem, null, allMethods, mapperMethods,
                         enumStrategy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
-                        out var asConv, out var asNull, out var asNeedsCtx, asAutoNest, nestedRegistry,
-                        nullAsNull: false, isPreserve: false))
-                {
+                        out var asConv, out var asNull, out var asNeedsCtx, asAutoNest, nestedRegistry))
                     continue; // element pair not mappable → diagnostic already added
-                }
 
                 var asElemMember = new MemberMap(
-                    TargetName: "", SourceName: "", ConverterMethod: asConv,
-                    NullHandling: asNull, ConverterNeedsDepthCtx: asNeedsCtx);
+                    "", "", asConv,
+                    asNull, asNeedsCtx);
 
                 methods.Add(new MapMethodModel(
                     method.Name,
@@ -328,8 +340,8 @@ internal static class MapperExtractor
                     method.Parameters[0].Name,
                     false,
                     EquatableArray.From(new[] { asElemMember }),
-                    EquatableArray.From(System.Array.Empty<string>()),
-                    EquatableArray.From(System.Array.Empty<HookCall>()),
+                    EquatableArray.From(Array.Empty<string>()),
+                    EquatableArray.From(Array.Empty<HookCall>()),
                     false,
                     "",
                     IsAsyncStreamMap: true));
@@ -340,7 +352,8 @@ internal static class MapperExtractor
             // (Phase 5) used as extra named value sources — so allow >= 1, not exactly 1.
             if (method.ReturnsVoid || method.Parameters.Length < 1)
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod, methodLocation, method.Name));
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod, methodLocation,
+                    method.Name));
                 continue;
             }
 
@@ -350,7 +363,7 @@ internal static class MapperExtractor
                 && projTarget is INamedTypeSymbol projTargetNamed)
             {
                 var projIgnores = new HashSet<string>(classIgnores);
-                foreach (var i in ReadIgnores(method)) { projIgnores.Add(i); }
+                foreach (var i in ReadIgnores(method)) projIgnores.Add(i);
 
                 // Plan 19D: DWARF028 — ReferenceHandling != None is incompatible with projection
                 // (a stateful identity map cannot live inside an expression tree).
@@ -366,12 +379,12 @@ internal static class MapperExtractor
                         method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                         method.Parameters[0].Name,
                         true,
-                        EquatableArray.From(System.Array.Empty<MemberMap>()),
-                        EquatableArray.From(System.Array.Empty<string>()),
-                        EquatableArray.From(System.Array.Empty<HookCall>()),
+                        EquatableArray.From(Array.Empty<MemberMap>()),
+                        EquatableArray.From(Array.Empty<string>()),
+                        EquatableArray.From(Array.Empty<HookCall>()),
                         true,
                         projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        ProjectionMembers: EquatableArray.From(System.Array.Empty<ProjectionMemberMap>())));
+                        ProjectionMembers: EquatableArray.From(Array.Empty<ProjectionMemberMap>())));
                     continue;
                 }
 
@@ -380,18 +393,16 @@ internal static class MapperExtractor
                 // instead of silently dropping it. Per thesis: loud, never silent.
                 var hasApplicableHook = false;
                 foreach (var h in beforeHookDefs)
-                {
                     if (HasImplicitConversion(ctx.SemanticModel.Compilation, projSource, h.ParamType))
                     {
                         hasApplicableHook = true;
                         break;
                     }
-                }
+
                 if (!hasApplicableHook)
-                {
                     foreach (var h in afterHookDefs)
                     {
-                        bool applies = h.P1 is null
+                        var applies = h.P1 is null
                             ? HasImplicitConversion(ctx.SemanticModel.Compilation, projTargetNamed, h.P0)
                             : HasImplicitConversion(ctx.SemanticModel.Compilation, projSource, h.P0)
                               && HasImplicitConversion(ctx.SemanticModel.Compilation, projTargetNamed, h.P1);
@@ -401,12 +412,10 @@ internal static class MapperExtractor
                             break;
                         }
                     }
-                }
+
                 if (hasApplicableHook)
-                {
                     EmitDWARF028(diagnostics, methodLocation, method.Name,
                         "hooks (BeforeMap/AfterMap) are not supported in IQueryable projection (expression trees cannot contain hook calls); move hooks to a runtime mapper or remove them");
-                }
 
                 var projExplicitMaps = ReadExplicitMaps(method);
                 var projMembers = ResolveProjectionMembers(
@@ -421,9 +430,9 @@ internal static class MapperExtractor
                     method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     method.Parameters[0].Name,
                     true,
-                    EquatableArray.From(System.Array.Empty<MemberMap>()),
-                    EquatableArray.From(System.Array.Empty<string>()),
-                    EquatableArray.From(System.Array.Empty<HookCall>()),
+                    EquatableArray.From(Array.Empty<MemberMap>()),
+                    EquatableArray.From(Array.Empty<string>()),
+                    EquatableArray.From(Array.Empty<HookCall>()),
                     true,
                     projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     ProjectionMembers: EquatableArray.From(projMembers.ToArray())));
@@ -432,7 +441,8 @@ internal static class MapperExtractor
 
             if (method.ReturnType is not INamedTypeSymbol targetType)
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod, methodLocation, method.Name));
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidMapMethod, methodLocation,
+                    method.Name));
                 continue;
             }
 
@@ -465,8 +475,9 @@ internal static class MapperExtractor
             var rawDerivedPairs = ReadDerivedTypeAttributes(method, ctx.SemanticModel.Compilation);
             if (rawDerivedPairs.Count > 0 && !isHeteroFlattenGraph)
             {
-                var resolvedArms = new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>();
-                var seenSrcTypes = new HashSet<string>(System.StringComparer.Ordinal);
+                var resolvedArms =
+                    new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>();
+                var seenSrcTypes = new HashSet<string>(StringComparer.Ordinal);
 
                 foreach (var (derivedSrc, derivedTgt) in rawDerivedPairs)
                 {
@@ -508,7 +519,7 @@ internal static class MapperExtractor
                     // with an interface source (e.g. [MapDerivedType(typeof(IFoo), typeof(FooDto))])
                     // are synthesized correctly. The DWARF033 guard is suppressed here because the
                     // user explicitly opted in via the attribute.
-                    bool resolved = TryResolveConversion(
+                    var resolved = TryResolveConversion(
                         ctx.SemanticModel.Compilation,
                         derivedSrc, derivedTgt,
                         null,
@@ -519,7 +530,7 @@ internal static class MapperExtractor
                         out var armConverter, out _, out var armNeedsCtx,
                         methodAutoNest, nestedRegistry,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
-                        allowInterfaceSrc: true, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
+                        true, isSetNullMode, implicitConversions);
 
                     if (!resolved || armConverter is null)
                     {
@@ -554,10 +565,8 @@ internal static class MapperExtractor
                 // Collect applicable hooks.
                 var derivedBefore = new List<string>();
                 foreach (var h in beforeHookDefs)
-                {
                     if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.ParamType))
                         derivedBefore.Add(h.Name);
-                }
                 var derivedAfter = new List<HookCall>();
                 foreach (var h in afterHookDefs)
                 {
@@ -571,13 +580,14 @@ internal static class MapperExtractor
                     else
                     {
                         applies = HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0)
-                            && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
+                                  && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
                         takesSource = true;
                     }
+
                     if (!applies) continue;
                     var targetIsRef = h.TargetRefKind == RefKind.Ref;
                     if (targetType.IsValueType && !targetIsRef) continue;
-                    derivedAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: targetIsRef));
+                    derivedAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
                 }
 
                 methods.Add(new MapMethodModel(
@@ -587,14 +597,14 @@ internal static class MapperExtractor
                     sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     method.Parameters[0].Name,
                     sourceType.IsReferenceType,
-                    EquatableArray.From(System.Array.Empty<MemberMap>()),
+                    EquatableArray.From(Array.Empty<MemberMap>()),
                     EquatableArray.From(derivedBefore),
                     EquatableArray.From(derivedAfter),
-                    IsProjection: false,
-                    ElementTargetTypeFullName: "",
-                    ConstructorArguments: EquatableArray.From(System.Array.Empty<MemberMap>()),
-                    IsPartial: true,
-                    ReturnIsReferenceType: targetType.IsReferenceType,
+                    false,
+                    "",
+                    EquatableArray.From(Array.Empty<MemberMap>()),
+                    true,
+                    targetType.IsReferenceType,
                     DerivedTypeArms: EquatableArray.From(armModels)));
                 continue;
             }
@@ -609,13 +619,13 @@ internal static class MapperExtractor
             // Scope: only fires when the return type IS a collection/dict; object/record/scalar
             // return types fail both TryResolve calls and fall through unchanged.
             var isCollReturn = CollectionConverter.TryResolve(targetType, targetType,
-                out _, out _, out _, false);
+                out _, out _, out _);
             var isDictReturn = !isCollReturn && DictionaryConverter.TryResolve(targetType, targetType,
                 out _, out _, out _, out _, out _);
 
             if (isCollReturn || isDictReturn)
             {
-                bool tlResolved = TryResolveConversion(
+                var tlResolved = TryResolveConversion(
                     ctx.SemanticModel.Compilation,
                     sourceType, targetType,
                     null,
@@ -629,15 +639,13 @@ internal static class MapperExtractor
                     isSetNull: isSetNullMode, implicitConversions: implicitConversions);
 
                 if (!tlResolved || tlConverter is null)
-                {
                     // Element conversion failed (diagnostic already reported). Skip this method.
                     continue;
-                }
 
                 var tlMember = new MemberMap(
-                    TargetName: "",
-                    SourceName: "", // sentinel: emit helper(param) not helper(param.Member)
-                    ConverterMethod: tlConverter,
+                    "",
+                    "", // sentinel: emit helper(param) not helper(param.Member)
+                    tlConverter,
                     ConverterNeedsDepthCtx: tlNeedsCtx);
 
                 methods.Add(new MapMethodModel(
@@ -648,39 +656,32 @@ internal static class MapperExtractor
                     method.Parameters[0].Name,
                     sourceType.IsReferenceType,
                     EquatableArray.From(new[] { tlMember }),
-                    EquatableArray.From(System.Array.Empty<string>()),
-                    EquatableArray.From(System.Array.Empty<HookCall>()),
-                    IsProjection: false,
-                    ElementTargetTypeFullName: "",
-                    ConstructorArguments: EquatableArray.From(System.Array.Empty<MemberMap>()),
-                    IsPartial: true,
-                    ReturnIsReferenceType: targetType.IsReferenceType,
+                    EquatableArray.From(Array.Empty<string>()),
+                    EquatableArray.From(Array.Empty<HookCall>()),
+                    false,
+                    "",
+                    EquatableArray.From(Array.Empty<MemberMap>()),
+                    true,
+                    targetType.IsReferenceType,
                     IsTopLevelCollectionConversion: true));
                 continue;
             }
             // ── End Fix 1 ────────────────────────────────────────────────────────────────
 
             // Choose construction strategy for the target type.
-            var ctor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, targetType, diagnostics, methodLocation, out var objInitOnly, allowNonPublic);
-            if (ctor is null)
-            {
-                continue;
-            }
+            var ctor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, targetType, diagnostics,
+                methodLocation, out var objInitOnly, allowNonPublic);
+            if (ctor is null) continue;
 
             var ignores = new HashSet<string>(classIgnores);
-            foreach (var i in ReadIgnores(method))
-            {
-                ignores.Add(i);
-            }
+            foreach (var i in ReadIgnores(method)) ignores.Add(i);
 
             var explicitMaps = ReadExplicitMaps(method);
             // [ReverseMap]: if this method is the inverse of a forward [ReverseMap] method, inherit the
             // inverted simple renames (A→B becomes B→A). Non-invertible forward config → DWARF051.
-            var reverseAdds = CollectReverseRenames(classSymbol, method, sourceType, targetType, explicitMaps, diagnostics, methodLocation);
-            if (reverseAdds.Count > 0)
-            {
-                explicitMaps.AddRange(reverseAdds);
-            }
+            var reverseAdds = CollectReverseRenames(classSymbol, method, sourceType, targetType, explicitMaps,
+                diagnostics, methodLocation);
+            if (reverseAdds.Count > 0) explicitMaps.AddRange(reverseAdds);
             // A forward [ReverseMap] method with no inverse declared → DWARF052.
             if (HasReverseMap(method))
             {
@@ -688,14 +689,15 @@ internal static class MapperExtractor
                 // parameter[0] + return type, not an exact arity of 1.
                 var hasInverse = classSymbol.GetMembers().OfType<IMethodSymbol>().Any(m =>
                     !SymbolEqualityComparer.Default.Equals(m, method) && m.Parameters.Length >= 1
-                    && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, targetType)
-                    && SymbolEqualityComparer.Default.Equals(m.ReturnType, sourceType));
+                                                                      && SymbolEqualityComparer.Default.Equals(
+                                                                          m.Parameters[0].Type, targetType)
+                                                                      && SymbolEqualityComparer.Default.Equals(
+                                                                          m.ReturnType, sourceType));
                 if (!hasInverse)
-                {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReverseMapTargetMissing, methodLocation,
                         $"[ReverseMap] on '{method.Name}' has no inverse mapping method '{sourceType.ToDisplayString()} X({targetType.ToDisplayString()})'"));
-                }
             }
+
             var mapPropExtras = ReadMapPropertyExtras(method);
             var mapValues = ReadMapValues(method);
 
@@ -704,25 +706,19 @@ internal static class MapperExtractor
             // and — crucially — MatchPairProps marks them consumed so DWARF056 does not fire its "matches no
             // mapped pair; add [GenerateMap]" advice for a pair this partial method already maps.
             var (pairExplicit, pairExtras) = MatchPairProps(pairProps, sourceType, targetType);
-            var methodExplicitTargets = new HashSet<string>(explicitMaps.Select(m => m.Target), System.StringComparer.Ordinal);
+            var methodExplicitTargets = new HashSet<string>(explicitMaps.Select(m => m.Target), StringComparer.Ordinal);
             foreach (var pe in pairExplicit)
-            {
-                if (methodExplicitTargets.Add(pe.Target)) explicitMaps.Add(pe);
-            }
-            var methodExtraTargets = new HashSet<string>(mapPropExtras.Select(e => e.Target), System.StringComparer.Ordinal);
+                if (methodExplicitTargets.Add(pe.Target))
+                    explicitMaps.Add(pe);
+            var methodExtraTargets = new HashSet<string>(mapPropExtras.Select(e => e.Target), StringComparer.Ordinal);
             foreach (var pe in pairExtras)
-            {
-                if (methodExtraTargets.Add(pe.Target)) mapPropExtras.Add(pe);
-            }
-            foreach (var pim in MatchPairIgnores(pairIgnores, targetType))
-            {
-                ignores.Add(pim);
-            }
-            var methodValueTargets = new HashSet<string>(mapValues.Select(v => v.Target), System.StringComparer.Ordinal);
+                if (methodExtraTargets.Add(pe.Target))
+                    mapPropExtras.Add(pe);
+            foreach (var pim in MatchPairIgnores(pairIgnores, targetType)) ignores.Add(pim);
+            var methodValueTargets = new HashSet<string>(mapValues.Select(v => v.Target), StringComparer.Ordinal);
             foreach (var pv in MatchPairValues(pairValues, targetType))
-            {
-                if (methodValueTargets.Add(pv.Target)) mapValues.Add(pv);
-            }
+                if (methodValueTargets.Add(pv.Target))
+                    mapValues.Add(pv);
 
             var flattenRoots = ReadFlattenRoots(method);
             var reinterpretMembers = ReadReinterpretMembers(method);
@@ -732,8 +728,8 @@ internal static class MapperExtractor
             // target collection members can be added to ignores and skipped from normal mapping.
             // flattenGraphRawEarly was already read above (for hetero-detection); reuse it.
             var flattenGraphRaw = flattenGraphRawEarly;
-            var flattenGraphConsumed = new HashSet<string>(System.StringComparer.Ordinal);
-            List<Model.FlattenGraphDirective> resolvedFgDirectives;
+            var flattenGraphConsumed = new HashSet<string>(StringComparer.Ordinal);
+            List<FlattenGraphDirective> resolvedFgDirectives;
             List<MemberMap> fgInjectedMembers;
 
             if (flattenGraphRaw.Count > 0)
@@ -754,7 +750,7 @@ internal static class MapperExtractor
             }
             else
             {
-                resolvedFgDirectives = new List<Model.FlattenGraphDirective>();
+                resolvedFgDirectives = new List<FlattenGraphDirective>();
                 fgInjectedMembers = new List<MemberMap>();
             }
 
@@ -767,20 +763,20 @@ internal static class MapperExtractor
             HashSet<string> requiredMustInitialize;
             if (objInitOnly)
             {
-                ctorArgs = System.Array.Empty<MemberMap>();
-                consumedParams = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-                requiredMustInitialize = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                ctorArgs = Array.Empty<MemberMap>();
+                consumedParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                requiredMustInitialize = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
             else
             {
                 if (!ResolveConstructorArguments(ctor, sourceType, ctx.SemanticModel.Compilation,
-                    methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                    enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs, out consumedParams,
-                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions))
-                {
+                        methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
+                        enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs,
+                        out consumedParams,
+                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
+                        implicitConversions))
                     // At least one parameter was unmappable → DWARF024 already reported; skip emit.
                     continue;
-                }
 
                 // Compute which consumed-param members are `required` and whose ctor lacks [SetsRequiredMembers].
                 // Those must still be emitted in the object initializer to satisfy the C# `required` rule.
@@ -792,9 +788,9 @@ internal static class MapperExtractor
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
                 enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
-                mapValues: mapValues, valueProviders: valueProviders, extraParams: extraParams,
-                nameConvention: nameConvention, mapPropertyExtras: mapPropExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
+                mapValues, valueProviders, extraParams,
+                nameConvention, mapPropExtras, skipNullSrc, allowNonPublic);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -808,34 +804,27 @@ internal static class MapperExtractor
             // [MapIgnoreSource]. Dotted source names (flattened leaves) mark their root consumed.
             if (requiredMapping == 1) // RequiredMappingStrategy.Both
             {
-                var ignoreSources = new HashSet<string>(classIgnoreSources, System.StringComparer.Ordinal);
+                var ignoreSources = new HashSet<string>(classIgnoreSources, StringComparer.Ordinal);
                 foreach (var s in ReadIgnoreSources(method))
                     ignoreSources.Add(s);
 
-                var consumed = new HashSet<string>(System.StringComparer.Ordinal);
+                var consumed = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var m in members)
                     AddConsumed(consumed, m.SourceName);
                 foreach (var m in ctorArgs)
                     AddConsumed(consumed, m.SourceName);
 
                 foreach (var (name, _) in ReadableMembers(sourceType))
-                {
                     if (!consumed.Contains(name) && !ignoreSources.Contains(name))
-                    {
                         diagnostics.Add(new DiagnosticInfo(
                             DiagnosticDescriptors.UnconsumedSourceMember, methodLocation, name));
-                    }
-                }
             }
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
-            {
                 if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.ParamType))
-                {
                     applicableBefore.Add(h.Name);
-                }
-            }
+
             var applicableAfter = new List<HookCall>();
             foreach (var h in afterHookDefs)
             {
@@ -849,14 +838,11 @@ internal static class MapperExtractor
                 else
                 {
                     applies = HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0)
-                        && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
+                              && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
                     takesSource = true;
                 }
 
-                if (!applies)
-                {
-                    continue;
-                }
+                if (!applies) continue;
 
                 var targetIsValue = targetType.IsValueType;
                 var targetIsRef = h.TargetRefKind == RefKind.Ref;
@@ -872,7 +858,7 @@ internal static class MapperExtractor
                     continue;
                 }
 
-                applicableAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: targetIsRef));
+                applicableAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
             }
 
             methods.Add(new MapMethodModel(
@@ -927,18 +913,14 @@ internal static class MapperExtractor
                     continue;
                 pc.Consumed = true;
                 var factory = allMethods.FirstOrDefault(m =>
-                    string.Equals(m.Name, pc.Method, System.StringComparison.Ordinal)
+                    string.Equals(m.Name, pc.Method, StringComparison.Ordinal)
                     && HasImplicitConversion(genComp, genSrc, m.ParamType)
                     && HasImplicitConversion(genComp, m.ReturnType, genTgt));
                 if (factory.Name is null)
-                {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConstructorInvalid, pc.Loc,
                         $"[MapConstructor<{genSrc.ToDisplayString()}, {genTgt.ToDisplayString()}>(\"{pc.Method}\")] factory was not found or has an incompatible signature (it must take the source type '{genSrc.ToDisplayString()}' and return the destination type '{genTgt.ToDisplayString()}')"));
-                }
                 else
-                {
                     genFactory = factory.Name;
-                }
                 break;
             }
 
@@ -949,26 +931,28 @@ internal static class MapperExtractor
             {
                 // Factory builds the object; only settable members are assigned afterward, so init-only /
                 // required members are excluded (the factory owns them) and there are no ctor args.
-                genCtorArgs = System.Array.Empty<MemberMap>();
+                genCtorArgs = Array.Empty<MemberMap>();
                 genConsumed = CollectFactoryExcludedMembers(genTgt);
-                genRequiredInit = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
-            else if (ConstructorSelector.Select(ctx.SemanticModel.Compilation, genTgt, diagnostics, genLoc, out var genObjInitOnly, allowNonPublic) is not { } genCtor)
+            else if (ConstructorSelector.Select(ctx.SemanticModel.Compilation, genTgt, diagnostics, genLoc,
+                         out var genObjInitOnly, allowNonPublic) is not { } genCtor)
             {
                 continue;
             }
             else if (genObjInitOnly)
             {
-                genCtorArgs = System.Array.Empty<MemberMap>();
-                genConsumed = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-                genRequiredInit = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                genCtorArgs = Array.Empty<MemberMap>();
+                genConsumed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
             else
             {
                 if (!ResolveConstructorArguments(genCtor, genSrc, genComp, genLoc, diagnostics,
                         caseInsensitive, genExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
                         nullStrategy, classAutoNest, nestedRegistry, out genCtorArgs, out genConsumed,
-                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions))
+                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
+                        implicitConversions))
                     continue;
                 genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgt, genConsumed);
             }
@@ -976,25 +960,37 @@ internal static class MapperExtractor
             var genMembers = ResolveMembers(
                 genSrc, genTgt, genIgnores, genComp, genLoc, diagnostics,
                 caseInsensitive, genExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
-                nullStrategy, System.Array.Empty<string>(), new List<string>(),
+                nullStrategy, Array.Empty<string>(), new List<string>(),
                 genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
-                mapValues: MatchPairValues(pairValues, genTgt), valueProviders: valueProviders,
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
+                MatchPairValues(pairValues, genTgt), valueProviders,
                 mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)
-                if (HasImplicitConversion(genComp, genSrc, h.ParamType)) genBefore.Add(h.Name);
+                if (HasImplicitConversion(genComp, genSrc, h.ParamType))
+                    genBefore.Add(h.Name);
             var genAfter = new List<HookCall>();
             foreach (var h in afterHookDefs)
             {
-                bool applies; bool takesSource;
-                if (h.P1 is null) { applies = HasImplicitConversion(genComp, genTgt, h.P0); takesSource = false; }
-                else { applies = HasImplicitConversion(genComp, genSrc, h.P0) && HasImplicitConversion(genComp, genTgt, h.P1); takesSource = true; }
+                bool applies;
+                bool takesSource;
+                if (h.P1 is null)
+                {
+                    applies = HasImplicitConversion(genComp, genTgt, h.P0);
+                    takesSource = false;
+                }
+                else
+                {
+                    applies = HasImplicitConversion(genComp, genSrc, h.P0) &&
+                              HasImplicitConversion(genComp, genTgt, h.P1);
+                    takesSource = true;
+                }
+
                 if (!applies) continue;
                 var tIsRef = h.TargetRefKind == RefKind.Ref;
                 if (genTgt.IsValueType && !tIsRef) continue;
-                genAfter.Add(new HookCall(h.Name, takesSource, TargetByRef: tIsRef));
+                genAfter.Add(new HookCall(h.Name, takesSource, tIsRef));
             }
 
             methods.Add(new MapMethodModel(
@@ -1007,11 +1003,11 @@ internal static class MapperExtractor
                 EquatableArray.From(genMembers),
                 EquatableArray.From(genBefore),
                 EquatableArray.From(genAfter),
-                IsProjection: false,
-                ElementTargetTypeFullName: "",
-                ConstructorArguments: EquatableArray.From(genCtorArgs),
-                IsPartial: true,
-                ReturnIsReferenceType: genTgt.IsReferenceType,
+                false,
+                "",
+                EquatableArray.From(genCtorArgs),
+                true,
+                genTgt.IsReferenceType,
                 EmitAsNonPartial: true,
                 ParameterIsPublicType: IsEffectivelyPublic(genSrc),
                 ReturnIsPublicType: IsEffectivelyPublic(genTgt),
@@ -1048,19 +1044,16 @@ internal static class MapperExtractor
             // nested diagnostics (not null, so DWARF030 has a non-null location).
             LocationInfo? nestedLocation = null;
             for (var mi = 0; mi < methods.Count; mi++)
-            {
                 if (methods[mi].IsPartial)
-                {
                     // We don't have the original method symbol here, but we can use
                     // a null location — the requirement is only for DWARF030 to be non-null.
                     // For DWARF001/005/007, the path prefix is more important than location.
                     // (LocationInfo from method model is not stored; use null per existing contract.)
                     break;
-                }
-            }
 
             // Choose construction strategy for the nested target type.
-            var nestedCtor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, nestedTgt, diagnostics, nestedLocation, out var nestedObjInitOnly, allowNonPublic);
+            var nestedCtor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, nestedTgt, diagnostics,
+                nestedLocation, out var nestedObjInitOnly, allowNonPublic);
             if (nestedCtor is null)
             {
                 // DWARF025/026 already reported; skip body emission for this pair.
@@ -1074,22 +1067,24 @@ internal static class MapperExtractor
 
             if (nestedObjInitOnly)
             {
-                nestedCtorArgs = System.Array.Empty<MemberMap>();
-                nestedConsumed = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-                nestedRequiredMustInit = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+                nestedCtorArgs = Array.Empty<MemberMap>();
+                nestedConsumed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                nestedRequiredMustInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
             else
             {
                 // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
                 if (!ResolveConstructorArguments(nestedCtor, nestedSrc, ctx.SemanticModel.Compilation,
-                    nestedLocation, diagnostics, caseInsensitive, nestedExplicit,
-                    allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
-                    pairAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
-                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions))
+                        nestedLocation, diagnostics, caseInsensitive, nestedExplicit,
+                        allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
+                        pairAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
+                        nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
+                        implicitConversions))
                 {
                     nestedRegistry.ClearCurrentPair();
                     continue;
                 }
+
                 nestedRequiredMustInit = ComputeRequiredMustInitialize(nestedCtor, nestedTgt, nestedConsumed);
             }
 
@@ -1104,8 +1099,8 @@ internal static class MapperExtractor
                 new List<string>(), new List<string>(), // no flatten/reinterpret
                 nestedConsumed, nestedRequiredMustInit,
                 pairAutoNest, nestedRegistry,
-                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
-                mapValues: MatchPairValues(pairValues, nestedTgt), valueProviders: valueProviders,
+                nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
+                MatchPairValues(pairValues, nestedTgt), valueProviders,
                 mapPropertyExtras: nestedExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
 
             nestedRegistry.ClearCurrentPair();
@@ -1113,21 +1108,20 @@ internal static class MapperExtractor
             // Build a private (non-partial) MapMethodModel for this synthesized pair.
             // IsRecursionCapable is set to false here and patched below after ComputeRecursionCapability().
             var nestedModel = new MapMethodModel(
-                MethodName: nestedName,
-                Accessibility: "private",
-                ReturnTypeFullName: nestedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                ParameterTypeFullName: nestedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                ParameterName: "s",
-                ParameterIsReferenceType: nestedSrc.IsReferenceType,
-                Members: EquatableArray.From(nestedMembers),
-                BeforeHooks: EquatableArray.From(System.Array.Empty<string>()),
-                AfterHooks: EquatableArray.From(System.Array.Empty<HookCall>()),
-                IsProjection: false,
-                ElementTargetTypeFullName: "",
-                ConstructorArguments: EquatableArray.From(nestedCtorArgs),
-                IsPartial: false,
-                ReturnIsReferenceType: nestedTgt.IsReferenceType,
-                IsRecursionCapable: false); // patched below
+                nestedName,
+                "private",
+                nestedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                nestedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                "s",
+                nestedSrc.IsReferenceType,
+                EquatableArray.From(nestedMembers),
+                EquatableArray.From(Array.Empty<string>()),
+                EquatableArray.From(Array.Empty<HookCall>()),
+                false,
+                "",
+                EquatableArray.From(nestedCtorArgs),
+                false,
+                nestedTgt.IsReferenceType); // patched below
 
             pendingNestedModels.Add((nestedModel, nestedName));
         }
@@ -1151,19 +1145,17 @@ internal static class MapperExtractor
         if (isPreserveMode)
         {
             foreach (var (_, name) in pendingNestedModels)
-            {
                 // Only object-mapper pairs (__DwarfMap_Obj_* prefix). Collection helpers
                 // (__DwarfMapColl_*) and dict helpers (__DwarfMapDict_*) already receive
                 // the preserve treatment via isPreserve=true in CollectionConverter/DictionaryConverter.
-                if (name.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
+                if (name.StartsWith("__DwarfMap_Obj_", StringComparison.Ordinal))
                     nestedRegistry.ForceRecursionCapable(name);
-            }
             // Re-run to incorporate the newly forced entries.
             nestedRegistry.ComputeRecursionCapability();
         }
 
         // Build a set of method names that are recursion-capable (for the public method check).
-        var recursionCapableNames = new HashSet<string>(System.StringComparer.Ordinal);
+        var recursionCapableNames = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var (model, name) in pendingNestedModels)
         {
@@ -1179,7 +1171,7 @@ internal static class MapperExtractor
         // consumer would otherwise see a raw CS0111 inside generated code. Detect, report loudly, and drop
         // the duplicate emission so DWARF060 is the single actionable diagnostic (the build still fails).
         {
-            var sigOwner = new Dictionary<string, int>(System.StringComparer.Ordinal);
+            var sigOwner = new Dictionary<string, int>(StringComparer.Ordinal);
             var collisionDrop = new List<int>();
             for (var i = 0; i < methods.Count; i++)
             {
@@ -1196,13 +1188,14 @@ internal static class MapperExtractor
                     sigOwner[sig] = i;
                     continue;
                 }
+
                 var owner = methods[ownerIdx];
                 // Identical (name, params, return) is a duplicate-pair concern, not a return-type clash.
-                if (string.Equals(owner.ReturnTypeFullName, m.ReturnTypeFullName, System.StringComparison.Ordinal))
+                if (string.Equals(owner.ReturnTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
                     continue;
 
                 var loc = publicMethodLocs.TryGetValue(i, out var l) ? l
-                          : (publicMethodLocs.TryGetValue(ownerIdx, out var l2) ? l2 : null);
+                    : publicMethodLocs.TryGetValue(ownerIdx, out var l2) ? l2 : null;
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.ConflictingMapSignature, loc,
                     $"Cannot generate two maps named '{m.MethodName}' from source '{m.ParameterTypeFullName}' "
@@ -1211,6 +1204,7 @@ internal static class MapperExtractor
                     + $"'public partial {m.ReturnTypeFullName} MapToOther({m.ParameterTypeFullName} source);'."));
                 collisionDrop.Add(i);
             }
+
             // Remove dropped methods (highest index first to keep indices valid).
             for (var k = collisionDrop.Count - 1; k >= 0; k--)
                 methods.RemoveAt(collisionDrop[k]);
@@ -1236,7 +1230,7 @@ internal static class MapperExtractor
         // traverse all overloads (conservative: at least one variant is reachable).
 
         // Count declared methods per name to detect overloads.
-        var declaredNameCount = new Dictionary<string, int>(System.StringComparer.Ordinal);
+        var declaredNameCount = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var i = 0; i < methods.Count; i++)
         {
             var m = methods[i];
@@ -1247,11 +1241,13 @@ internal static class MapperExtractor
 
         // Helper: get the graph key for a declared method.
         string DeclKey(MapMethodModel mm)
-            => declaredNameCount.TryGetValue(mm.MethodName, out var cnt) && cnt > 1
-               ? mm.MethodName + "§" + mm.ParameterTypeFullName
-               : mm.MethodName;
+        {
+            return declaredNameCount.TryGetValue(mm.MethodName, out var cnt) && cnt > 1
+                ? mm.MethodName + "§" + mm.ParameterTypeFullName
+                : mm.MethodName;
+        }
 
-        var allCallGraph = new Dictionary<string, HashSet<string>>(System.StringComparer.Ordinal);
+        var allCallGraph = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
         // Seed with synthesized method edges (already computed in registry, but not accessible here).
         // Re-derive from pending models (synthesized methods always have unique names).
@@ -1259,7 +1255,7 @@ internal static class MapperExtractor
         {
             var callerName = model.MethodName;
             if (!allCallGraph.ContainsKey(callerName))
-                allCallGraph[callerName] = new HashSet<string>(System.StringComparer.Ordinal);
+                allCallGraph[callerName] = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (var mem in model.Members)
                 if (mem.ConverterMethod is not null)
@@ -1277,7 +1273,7 @@ internal static class MapperExtractor
 
             var callerKey = DeclKey(m);
             if (!allCallGraph.ContainsKey(callerKey))
-                allCallGraph[callerKey] = new HashSet<string>(System.StringComparer.Ordinal);
+                allCallGraph[callerKey] = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (var mem in m.Members)
             {
@@ -1287,43 +1283,36 @@ internal static class MapperExtractor
                 // to ALL overloads of that name.  For non-overloaded names and synthesized
                 // names, add the name directly.
                 if (declaredNameCount.TryGetValue(mem.ConverterMethod, out var oc) && oc > 1)
-                {
                     // Add edges to all OTHER overloads (not the method itself — a converter can't be
                     // a self-call when it was auto-matched to a DIFFERENT overload by parameter type).
                     for (var j = 0; j < methods.Count; j++)
                     {
                         var ov = methods[j];
                         if (!ov.IsPartial) continue;
-                        if (!string.Equals(ov.MethodName, mem.ConverterMethod, System.StringComparison.Ordinal)) continue;
+                        if (!string.Equals(ov.MethodName, mem.ConverterMethod, StringComparison.Ordinal)) continue;
                         var ovKey = DeclKey(ov);
-                        if (!string.Equals(ovKey, callerKey, System.StringComparison.Ordinal))
+                        if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
                             allCallGraph[callerKey].Add(ovKey);
                     }
-                }
                 else
-                {
                     allCallGraph[callerKey].Add(mem.ConverterMethod);
-                }
             }
+
             foreach (var arg in m.ConstructorArguments)
             {
                 if (arg.ConverterMethod is null) continue;
                 if (declaredNameCount.TryGetValue(arg.ConverterMethod, out var oc) && oc > 1)
-                {
                     for (var j = 0; j < methods.Count; j++)
                     {
                         var ov = methods[j];
                         if (!ov.IsPartial) continue;
-                        if (!string.Equals(ov.MethodName, arg.ConverterMethod, System.StringComparison.Ordinal)) continue;
+                        if (!string.Equals(ov.MethodName, arg.ConverterMethod, StringComparison.Ordinal)) continue;
                         var ovKey = DeclKey(ov);
-                        if (!string.Equals(ovKey, callerKey, System.StringComparison.Ordinal))
+                        if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
                             allCallGraph[callerKey].Add(ovKey);
                     }
-                }
                 else
-                {
                     allCallGraph[callerKey].Add(arg.ConverterMethod);
-                }
             }
         }
 
@@ -1336,16 +1325,14 @@ internal static class MapperExtractor
         foreach (var cand in nestedRegistry.CtxUpgradeCandidates)
         {
             if (!allCallGraph.ContainsKey(cand.HelperName))
-                allCallGraph[cand.HelperName] = new HashSet<string>(System.StringComparer.Ordinal);
+                allCallGraph[cand.HelperName] = new HashSet<string>(StringComparer.Ordinal);
             foreach (var em in cand.ElemMethods)
-            {
                 // Only inject NON-overloaded element methods: a raw overloaded name would be expanded
                 // to edges for ALL overloads, manufacturing a false self-cycle (e.g. Map(Person) →
                 // List<Addr> helper → Map(Addr) wrongly resolving to Map(Person)). Overloaded
                 // self-map-through-collection falls back to the documented None-mode behaviour.
                 if (em is not null && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1))
                     allCallGraph[cand.HelperName].Add(em);
-            }
         }
 
         // For synthesized methods calling overloaded declared methods, also expand edges
@@ -1354,33 +1341,28 @@ internal static class MapperExtractor
         foreach (var callerKey in allCallGraph.Keys.ToList())
         {
             var edges = allCallGraph[callerKey];
-            var expandedEdges = new System.Collections.Generic.List<string>();
+            var expandedEdges = new List<string>();
             foreach (var edge in edges)
-            {
                 if (declaredNameCount.TryGetValue(edge, out var oc) && oc > 1)
-                {
                     // Replace simple name with qualified variants (excluding self to avoid false cycles).
                     for (var j = 0; j < methods.Count; j++)
                     {
                         var ov = methods[j];
                         if (!ov.IsPartial) continue;
-                        if (!string.Equals(ov.MethodName, edge, System.StringComparison.Ordinal)) continue;
+                        if (!string.Equals(ov.MethodName, edge, StringComparison.Ordinal)) continue;
                         var ovKey = DeclKey(ov);
-                        if (!string.Equals(ovKey, callerKey, System.StringComparison.Ordinal))
+                        if (!string.Equals(ovKey, callerKey, StringComparison.Ordinal))
                             expandedEdges.Add(ovKey);
                     }
-                }
                 else
-                {
                     expandedEdges.Add(edge);
-                }
-            }
+
             edges.Clear();
             foreach (var e in expandedEdges) edges.Add(e);
         }
 
         // Find which declared methods are on a cycle (can reach themselves in allCallGraph).
-        var selfRecursivePublicMethods = new HashSet<string>(System.StringComparer.Ordinal);
+        var selfRecursivePublicMethods = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < methods.Count; i++)
         {
             var m = methods[i];
@@ -1408,8 +1390,12 @@ internal static class MapperExtractor
         {
             // Self-recursive AND non-overloaded (overloaded names can't be safely disambiguated to a
             // single companion here — see the call-graph injection note above).
-            bool Upgradeable(string? em) => em is not null && selfRecursivePublicMethods.Contains(em)
-                && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1);
+            bool Upgradeable(string? em)
+            {
+                return em is not null && selfRecursivePublicMethods.Contains(em)
+                                      && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1);
+            }
+
             if (!cand.ElemMethods.Any(Upgradeable))
                 continue;
             cand.ReSynth(name => Upgradeable(name) ? "__DwarfMap_Depth_" + name : name);
@@ -1462,7 +1448,7 @@ internal static class MapperExtractor
                     {
                         // Already marked (Preserve collection helper or previously patched).
                     }
-                    else if (string.Equals(mem.ConverterMethod, m.MethodName, System.StringComparison.Ordinal))
+                    else if (string.Equals(mem.ConverterMethod, m.MethodName, StringComparison.Ordinal))
                     {
                         // Self-call: redirect to companion.
                         newMembers2[mi] = mem with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
@@ -1470,7 +1456,11 @@ internal static class MapperExtractor
                     else if (selfRecursivePublicMethods.Contains(mem.ConverterMethod))
                     {
                         // Indirect recursive declared method: redirect to its companion.
-                        newMembers2[mi] = mem with { ConverterMethod = "__DwarfMap_Depth_" + mem.ConverterMethod, ConverterNeedsDepthCtx = true };
+                        newMembers2[mi] = mem with
+                        {
+                            ConverterMethod = "__DwarfMap_Depth_" + mem.ConverterMethod,
+                            ConverterNeedsDepthCtx = true
+                        };
                     }
                     else if (recursionCapableNames.Contains(mem.ConverterMethod))
                     {
@@ -1478,6 +1468,7 @@ internal static class MapperExtractor
                         newMembers2[mi] = mem with { ConverterNeedsDepthCtx = true };
                     }
                 }
+
                 var newCtorArgs2 = m.ConstructorArguments.ToArray();
                 for (var ci = 0; ci < newCtorArgs2.Length; ci++)
                 {
@@ -1488,13 +1479,17 @@ internal static class MapperExtractor
                     {
                         // Already marked (Preserve collection helper or previously patched).
                     }
-                    else if (string.Equals(arg.ConverterMethod, m.MethodName, System.StringComparison.Ordinal))
+                    else if (string.Equals(arg.ConverterMethod, m.MethodName, StringComparison.Ordinal))
                     {
                         newCtorArgs2[ci] = arg with { ConverterMethod = companionName, ConverterNeedsDepthCtx = true };
                     }
                     else if (selfRecursivePublicMethods.Contains(arg.ConverterMethod))
                     {
-                        newCtorArgs2[ci] = arg with { ConverterMethod = "__DwarfMap_Depth_" + arg.ConverterMethod, ConverterNeedsDepthCtx = true };
+                        newCtorArgs2[ci] = arg with
+                        {
+                            ConverterMethod = "__DwarfMap_Depth_" + arg.ConverterMethod,
+                            ConverterNeedsDepthCtx = true
+                        };
                     }
                     else if (recursionCapableNames.Contains(arg.ConverterMethod))
                     {
@@ -1508,7 +1503,7 @@ internal static class MapperExtractor
                     IsRecursionCapable = true,
                     MaxDepth = maxDepth,
                     Members = EquatableArray.From(newMembers2),
-                    ConstructorArguments = EquatableArray.From(newCtorArgs2),
+                    ConstructorArguments = EquatableArray.From(newCtorArgs2)
                 };
 
                 // Synthesize the companion: same body, but IsRecursionCapable=true, IsPartial=false.
@@ -1520,7 +1515,7 @@ internal static class MapperExtractor
                     IsRecursionCapable = true,
                     MaxDepth = maxDepth,
                     Members = EquatableArray.From(newMembers2),
-                    ConstructorArguments = EquatableArray.From(newCtorArgs2),
+                    ConstructorArguments = EquatableArray.From(newCtorArgs2)
                     // Companion's self-calls also use the companion (already patched above).
                 };
                 methods.Add(companion);
@@ -1588,7 +1583,7 @@ internal static class MapperExtractor
                     IsRecursionCapable = newRc,
                     MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth, // only public methods carry MaxDepth
                     Members = EquatableArray.From(newMembers),
-                    ConstructorArguments = EquatableArray.From(newCtorArgs),
+                    ConstructorArguments = EquatableArray.From(newCtorArgs)
                 };
                 // ── Preserve-mode propagation fix ──────────────────────────────────
                 // When a synthesized (non-partial) method is newly marked recursion-capable
@@ -1612,7 +1607,6 @@ internal static class MapperExtractor
         // declared methods under Preserve mode and patch any member/ctor-arg that calls a
         // newly-added recursionCapableNames entry without ConverterNeedsDepthCtx=true.
         if (isPreserveMode)
-        {
             for (var i = 0; i < methods.Count; i++)
             {
                 var m = methods[i];
@@ -1631,6 +1625,7 @@ internal static class MapperExtractor
                         patched = true;
                     }
                 }
+
                 var newCtorArgs2 = m.ConstructorArguments.ToArray();
                 for (var ci = 0; ci < newCtorArgs2.Length; ci++)
                 {
@@ -1642,18 +1637,16 @@ internal static class MapperExtractor
                         patched = true;
                     }
                 }
+
                 if (patched)
-                {
                     methods[i] = m with
                     {
                         IsRecursionCapable = true,
                         MaxDepth = maxDepth,
                         Members = EquatableArray.From(newMembers2),
-                        ConstructorArguments = EquatableArray.From(newCtorArgs2),
+                        ConstructorArguments = EquatableArray.From(newCtorArgs2)
                     };
-                }
             }
-        }
 
         // ── MF-A fix: [MapDerivedType] dispatch method arm ctx threading ────────────
         // Now that recursion-capability is fully resolved, patch any dispatch method
@@ -1690,14 +1683,12 @@ internal static class MapperExtractor
             }
 
             if (anyArmNeedsCtx)
-            {
                 methods[i] = m with
                 {
                     IsRecursionCapable = true,
                     MaxDepth = m.IsPartial ? maxDepth : m.MaxDepth,
-                    DerivedTypeArms = EquatableArray.From(patchedArms),
+                    DerivedTypeArms = EquatableArray.From(patchedArms)
                 };
-            }
         }
         // ── End MF-A fix ─────────────────────────────────────────────────────────
 
@@ -1720,16 +1711,16 @@ internal static class MapperExtractor
         // PUBLIC dispatch by name to instead call the wrapper (with ConverterNeedsDepthCtx=true).
         // Any public method with patched members is promoted to IsRecursionCapable+IsPreserveMode
         // so the emitter creates a shared DwarfRefContext and threads it through all members.
-        var dispatchWrapperByPublicName = new System.Collections.Generic.Dictionary<string, string>(
-            System.StringComparer.Ordinal);
+        var dispatchWrapperByPublicName = new Dictionary<string, string>(
+            StringComparer.Ordinal);
         if (isPreserveMode)
         {
             for (var i = 0; i < methods.Count; i++)
             {
                 var m = methods[i];
-                if (m.DerivedTypeArms.Count == 0) continue;   // not a dispatch method
-                if (!m.IsRecursionCapable) continue;           // arm converters don't need ctx
-                if (!m.IsPartial) continue;                    // only public declared dispatch methods
+                if (m.DerivedTypeArms.Count == 0) continue; // not a dispatch method
+                if (!m.IsRecursionCapable) continue; // arm converters don't need ctx
+                if (!m.IsPartial) continue; // only public declared dispatch methods
 
                 var wrapperName = NestedMappingRegistry.BuildDispatchWrapperName(
                     m.ParameterTypeFullName, m.ReturnTypeFullName);
@@ -1746,7 +1737,6 @@ internal static class MapperExtractor
 
             // Patch: redirect members/ctor-args that call a public dispatch method to the wrapper.
             if (dispatchWrapperByPublicName.Count > 0)
-            {
                 for (var i = 0; i < methods.Count; i++)
                 {
                     var m = methods[i];
@@ -1764,6 +1754,7 @@ internal static class MapperExtractor
                             patched = true;
                         }
                     }
+
                     var newCtorArgs = m.ConstructorArguments.ToArray();
                     for (var ci = 0; ci < newCtorArgs.Length; ci++)
                     {
@@ -1775,6 +1766,7 @@ internal static class MapperExtractor
                             patched = true;
                         }
                     }
+
                     if (patched)
                     {
                         // Public methods patched to use ctx-accepting wrappers must create a shared
@@ -1788,11 +1780,10 @@ internal static class MapperExtractor
                             ConstructorArguments = EquatableArray.From(newCtorArgs),
                             IsRecursionCapable = newRc,
                             MaxDepth = m.IsPartial && !m.IsRecursionCapable ? maxDepth : m.MaxDepth,
-                            IsPreserveMode = m.IsPartial ? true : m.IsPreserveMode,
+                            IsPreserveMode = m.IsPartial ? true : m.IsPreserveMode
                         };
                     }
                 }
-            }
         }
         // ── End MF-B fix ─────────────────────────────────────────────────────────
 
@@ -1827,9 +1818,9 @@ internal static class MapperExtractor
                     // never reaches this branch.
                     var outerMethodKey = DeclKey(m);
                     foreach (var ctorArg in m.ConstructorArguments)
-                    {
                         if (ctorArg.ConverterMethod is not null && ctorArg.ConverterNeedsDepthCtx
-                            && CanReach(allCallGraph, ctorArg.ConverterMethod, outerMethodKey))
+                                                                && CanReach(allCallGraph, ctorArg.ConverterMethod,
+                                                                    outerMethodKey))
                         {
                             var loc = (LocationInfo?)null;
                             diagnostics.Add(new DiagnosticInfo(
@@ -1837,7 +1828,6 @@ internal static class MapperExtractor
                                 loc,
                                 ctorArg.TargetName));
                         }
-                    }
 
                     // Pattern B: self-map (S == T) with any ctor arg that has no converter.
                     // For S==T, direct-assignment ctor args copy the source reference into the target.
@@ -1848,10 +1838,8 @@ internal static class MapperExtractor
                     // recursion-capable (proven by members using ConverterNeedsDepthCtx).
                     // More precisely: the method must be recursion-capable to be affected.
                     if (m.IsRecursionCapable
-                        && string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, System.StringComparison.Ordinal))
-                    {
+                        && string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
                         foreach (var ctorArg in m.ConstructorArguments)
-                        {
                             // Only flag args with no converter (identity copy of potentially cyclic member).
                             // Args with a converter have already been checked above (Pattern A) or map scalars.
                             if (ctorArg.ConverterMethod is null && !ctorArg.ConverterNeedsDepthCtx)
@@ -1862,8 +1850,6 @@ internal static class MapperExtractor
                                     loc,
                                     ctorArg.TargetName));
                             }
-                        }
-                    }
                 }
 
                 // Only recursion-capable methods need the Preserve-mode register-before-populate emission.
@@ -1896,8 +1882,7 @@ internal static class MapperExtractor
                 // The method isn't recursion-capable because S=T uses implicit conversion (no auto-nest),
                 // but at RUNTIME a cyclic ImmutableNode CAN exist. Under Preserve mode, this is
                 // an unsupported pattern → DWARF030 for the cyclic ctor args.
-                if (string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, System.StringComparison.Ordinal))
-                {
+                if (string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
                     // Flag ctor args that have the same type as the source (cyclic back-edge).
                     // Since we don't have type info here, flag ALL non-scalar ctor args where
                     // the source name suggests it's a complex member (has a converter or is the cycle).
@@ -1914,7 +1899,6 @@ internal static class MapperExtractor
                             loc,
                             ctorArg.TargetName));
                     }
-                }
             }
         }
 
@@ -1928,25 +1912,21 @@ internal static class MapperExtractor
         // construction is unchanged (no register-before-populate, no DWARF030, no dispatch
         // wrapper) — the guard only nulls a re-entrant back-edge.
         if (isSetNullMode)
-        {
             for (var i = 0; i < methods.Count; i++)
             {
                 var m = methods[i];
-                if (!m.IsRecursionCapable) continue;       // only pairs that can re-enter
+                if (!m.IsRecursionCapable) continue; // only pairs that can re-enter
                 if (!m.ParameterIsReferenceType) continue; // value types never form ref cycles
                 methods[i] = m with { IsSetNullMode = true };
             }
-        }
 
         // Report DWARF031 if the registry cap was exceeded.
         if (nestedRegistry.CapExceeded)
-        {
             // Use a null location — the cap is a generator-level limit, not method-specific.
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.DeepNestingLimit,
                 null,
                 nestedRegistry.CapTriggerType));
-        }
 
         // CollectRoundTrips must be called before capturing diagnostics so that DWARF020/021 are included.
         var roundTrips = CollectRoundTrips(classSymbol, ctx.SemanticModel.Compilation, diagnostics);
@@ -1957,14 +1937,12 @@ internal static class MapperExtractor
         const int LargeMapperMemberThreshold = 300;
         var mappedMemberCount = methods.Sum(m => m.Members.Count + m.ConstructorArguments.Count);
         if (mappedMemberCount > LargeMapperMemberThreshold)
-        {
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.MapperTooLarge,
                 LocationInfo.From(classSyntax.Identifier.GetLocation()),
                 $"mapper '{classSymbol.Name}' resolves {mappedMemberCount} mapped members across its methods " +
                 $"(> {LargeMapperMemberThreshold}); a mapper this large can add IDE/compile latency — " +
                 "consider splitting it into smaller mappers"));
-        }
 
         // DWARF056: a pair-scoped attribute that matched no mapped pair (top-level or nested) silently does
         // nothing — surface it (usually a typo'd type argument or a missing [GenerateMap]).
@@ -1991,7 +1969,7 @@ internal static class MapperExtractor
             emitAccessibility,
             EquatableArray.From(methods),
             EquatableArray.From(diagnostics),
-            EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, System.StringComparer.Ordinal)),
+            EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, StringComparer.Ordinal)),
             EquatableArray.From(roundTrips),
             generateExtensions,
             hasParameterlessCtor);
@@ -2021,34 +1999,32 @@ internal static class MapperExtractor
         bool skipNullSourceMembers = false,
         bool allowNonPublic = false)
     {
-        var extrasByTarget = new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When)>(System.StringComparer.Ordinal);
+        var extrasByTarget =
+            new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When)>(StringComparer.Ordinal);
         if (mapPropertyExtras is not null)
             foreach (var e in mapPropertyExtras)
                 extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When);
-        var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+        var comparer = caseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         // NameConvention.Flexible: match on a normalized key (strip '_', lowercase) so PascalCase/camelCase/
         // snake_case/UPPER_CASE are interchangeable. Auto-match only; explicit/flatten paths stay exact.
         var flexible = nameConvention == 1;
 
         var sourceGroups = flexible
             ? ReadableMembers(sourceType, compilation, allowNonPublic)
-                .GroupBy(m => NormalizeName(m.Name), System.StringComparer.Ordinal)
-                .ToDictionary(g => g.Key, g => g.ToList(), System.StringComparer.Ordinal)
+                .GroupBy(m => NormalizeName(m.Name), StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal)
             : ReadableMembers(sourceType, compilation, allowNonPublic)
                 .GroupBy(m => m.Name, comparer)
                 .ToDictionary(g => g.Key, g => g.ToList(), comparer);
 
-        var writableByName = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
-        foreach (var m in WritableMembers(targetType, compilation, allowNonPublic))
-        {
-            writableByName[m.Name] = m.Type;
-        }
+        var writableByName = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
+        foreach (var m in WritableMembers(targetType, compilation, allowNonPublic)) writableByName[m.Name] = m.Type;
 
         var result = new List<MemberMap>();
-        var handledTargets = new HashSet<string>(System.StringComparer.Ordinal);
+        var handledTargets = new HashSet<string>(StringComparer.Ordinal);
         // Intermediate roots already opened by an unflatten leaf — additional leaves into the same root
         // are allowed (City + Street → Address); only a DIRECT mapping of the root conflicts (DWARF046).
-        var unflattenRoots = new HashSet<string>(System.StringComparer.Ordinal);
+        var unflattenRoots = new HashSet<string>(StringComparer.Ordinal);
         // Phase 5: which additional parameters were consumed by a destination (the rest → DWARF047).
         var consumedExtraParams = new HashSet<string>(comparer);
 
@@ -2065,6 +2041,7 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
                 continue;
             }
+
             var rootType = match.Value.Type;
             // Scalars (string, primitives, enums) are not flattenable roots — flattening their
             // BCL members (e.g. string.Length) is never intended and must not happen silently.
@@ -2073,25 +2050,25 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
                 continue;
             }
+
             var leaves = ReadableMembers(rootType).ToList();
             if (leaves.Count == 0)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
                 continue;
             }
+
             // A [Flatten] over a nullable-reference root emits unguarded `src.Root.Leaf` accesses that NRE
             // at runtime if the root is null. The dotted [MapProperty] path warns DWARF044 for the same
             // hazard; the [Flatten] path must be consistent (loud, never silent).
             if (SourceMayBeNullRef(rootType))
-            {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
                     $"[Flatten] source '{root}' is a nullable reference; a null value throws at runtime when its flattened members are read"));
-            }
             flattenInfos.Add((match.Value.Name, leaves));
         }
 
         // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
-        var explicitSeen = new HashSet<string>(System.StringComparer.Ordinal);
+        var explicitSeen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (srcName, tgtName, useMethod) in explicitMaps)
         {
             if (!explicitSeen.Add(tgtName))
@@ -2115,9 +2092,11 @@ internal static class MapperExtractor
                         $"[MapProperty(When/NullSubstitute)] is not supported on the unflatten target '{tgtName}'; apply it to a direct member"));
                     continue;
                 }
+
                 ResolveUnflattenTarget(
                     sourceType, targetType, srcName, tgtName, useMethod, compilation, location, diagnostics,
-                    handledTargets, unflattenRoots, writableByName, allMethods, autoCandidates, enumStrategy, synthesized,
+                    handledTargets, unflattenRoots, writableByName, allMethods, autoCandidates, enumStrategy,
+                    synthesized,
                     nullStrategy, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull, implicitConversions,
                     result);
                 continue;
@@ -2129,10 +2108,9 @@ internal static class MapperExtractor
             // UNLESS the member is `required` and the ctor lacks [SetsRequiredMembers] — in that case
             // the member must also appear in the object initializer to satisfy CS9035.
             if (consumedCtorParams is not null && consumedCtorParams.Contains(tgtName)
-                && (requiredMustInitialize is null || !requiredMustInitialize.Contains(tgtName)))
-            {
+                                               && (requiredMustInitialize is null ||
+                                                   !requiredMustInitialize.Contains(tgtName)))
                 continue;
-            }
 
             if (ignores.Contains(tgtName))
             {
@@ -2160,26 +2138,29 @@ internal static class MapperExtractor
                         $"[MapProperty] source path '{srcName}' has no member '{badSegment}'"));
                     continue;
                 }
+
                 if (nullableHop)
-                {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
                         $"[MapProperty] source path '{srcName}' traverses a nullable member; a null interior value throws at runtime"));
-                }
             }
             else
             {
                 srcMatch = ReadableMembers(sourceType, compilation, allowNonPublic)
-                    .Where(m => System.StringComparer.Ordinal.Equals(m.Name, srcName))
+                    .Where(m => StringComparer.Ordinal.Equals(m.Name, srcName))
                     .Select(m => (ITypeSymbol?)m.Type)
                     .FirstOrDefault();
             }
+
             if (srcMatch is null)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
                 continue;
             }
 
-            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv, out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
+            if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates,
+                    enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv,
+                    out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
+                    isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
                 // Phase 8: NullSubstitute (direct-assignable only) and When (guarded assignment).
                 string? nullSubLit = null;
@@ -2189,52 +2170,45 @@ internal static class MapperExtractor
                     if (ex.HasNullSub)
                     {
                         if (conv is not null)
-                        {
                             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid, location,
                                 $"[MapProperty(NullSubstitute=)] for '{tgtName}' is not supported together with a converter (Use=)"));
-                        }
                         else if (!TryFormatConstant(ex.NullSub, tgtType, compilation, out var lit, out var why))
-                        {
-                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid, location, why));
-                        }
+                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid, location,
+                                why));
                         else
-                        {
                             nullSubLit = lit;
-                        }
                     }
+
                     if (ex.When is not null)
                     {
                         var ok = false;
                         foreach (var m in allMethods)
-                        {
-                            if (System.StringComparer.Ordinal.Equals(m.Name, ex.When)
+                            if (StringComparer.Ordinal.Equals(m.Name, ex.When)
                                 && m.ReturnType.SpecialType == SpecialType.System_Boolean
                                 && HasImplicitConversion(compilation, sourceType, m.ParamType))
                             {
                                 ok = true;
                                 break;
                             }
-                        }
+
                         if (!ok)
-                        {
                             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.WhenPredicateInvalid, location,
                                 $"[MapProperty(When = \"{ex.When}\")] for '{tgtName}' must name a bool-returning method that takes the source"));
-                        }
                         else
-                        {
                             whenPred = ex.When;
-                        }
                     }
                 }
-                result.Add(new MemberMap(tgtName, srcName, conv, nullH, ConverterNeedsDepthCtx: convNeedsCtx,
-                    SourceIsNullableRef: SourceMayBeNullRef(srcMatch), NullSubstituteLiteral: nullSubLit, WhenPredicate: whenPred));
+
+                result.Add(new MemberMap(tgtName, srcName, conv, nullH, convNeedsCtx,
+                    SourceMayBeNullRef(srcMatch), NullSubstituteLiteral: nullSubLit, WhenPredicate: whenPred));
             }
         }
 
         // MAPVALUE: constant / computed values assigned to a destination member (no source). Processed
         // after [MapProperty] (so conflicts are caught) and before AUTO matching. A [MapValue]'d target
         // counts as mapped, suppressing DWARF001.
-        foreach (var mv in mapValues ?? System.Array.Empty<(string Target, bool IsConstant, TypedConstant Value, string? Use)>())
+        foreach (var mv in mapValues ??
+                           Array.Empty<(string Target, bool IsConstant, TypedConstant Value, string? Use)>())
         {
             var mvTgt = mv.Target;
             if (!handledTargets.Add(mvTgt))
@@ -2243,24 +2217,28 @@ internal static class MapperExtractor
                     $"[MapValue] target '{mvTgt}' conflicts with another mapping for the same member"));
                 continue;
             }
+
             if (ignores.Contains(mvTgt))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
                     $"[MapValue] target '{mvTgt}' is also [MapIgnore]d"));
                 continue;
             }
+
             if (consumedCtorParams is not null && consumedCtorParams.Contains(mvTgt))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
                     $"[MapValue] cannot target constructor parameter '{mvTgt}' yet (object-initialized members only)"));
                 continue;
             }
+
             if (mvTgt.IndexOf('.') >= 0)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
                     $"[MapValue] does not support a dotted target path '{mvTgt}'; assign the leaf member directly or use [MapProperty] for unflattening"));
                 continue;
             }
+
             if (!writableByName.TryGetValue(mvTgt, out var mvTgtType))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
@@ -2275,18 +2253,20 @@ internal static class MapperExtractor
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, location, why));
                     continue;
                 }
+
                 result.Add(new MemberMap(mvTgt, "", ValueExpression: literal));
             }
             else if (mv.Use is not null)
             {
-                var provider = (valueProviders ?? System.Array.Empty<(string Name, ITypeSymbol ReturnType)>())
-                    .FirstOrDefault(p => System.StringComparer.Ordinal.Equals(p.Name, mv.Use));
+                var provider = (valueProviders ?? Array.Empty<(string Name, ITypeSymbol ReturnType)>())
+                    .FirstOrDefault(p => StringComparer.Ordinal.Equals(p.Name, mv.Use));
                 if (provider.Name is null || !HasImplicitConversion(compilation, provider.ReturnType, mvTgtType))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueUseInvalid, location,
                         $"[MapValue(Use = \"{mv.Use}\")] for '{mvTgt}' must name a parameterless method whose return type is assignable to '{mvTgtType.ToDisplayString()}'"));
                     continue;
                 }
+
                 result.Add(new MemberMap(mvTgt, "", ValueExpression: mv.Use + "()"));
             }
             else
@@ -2298,7 +2278,7 @@ internal static class MapperExtractor
 
         // AUTO: remaining writable targets matched by name under the comparer.
         var targets = WritableMembers(targetType, compilation, allowNonPublic)
-            .OrderBy(m => m.Name, System.StringComparer.Ordinal)
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
             .ToList();
         foreach (var target in targets)
         {
@@ -2307,15 +2287,11 @@ internal static class MapperExtractor
             // EXCEPTION: `required` members whose ctor lacks [SetsRequiredMembers] must also be set in
             // the object initializer (CS9035), so do NOT skip them.
             if (consumedCtorParams is not null && consumedCtorParams.Contains(target.Name)
-                && (requiredMustInitialize is null || !requiredMustInitialize.Contains(target.Name)))
-            {
+                                               && (requiredMustInitialize is null ||
+                                                   !requiredMustInitialize.Contains(target.Name)))
                 continue;
-            }
 
-            if (handledTargets.Contains(target.Name) || ignores.Contains(target.Name))
-            {
-                continue;
-            }
+            if (handledTargets.Contains(target.Name) || ignores.Contains(target.Name)) continue;
 
             // Phase 5: an additional parameter matching this target by name wins over a by-name source
             // member. Emitted as the parameter name directly (or a scalar conversion of it). Converters
@@ -2326,9 +2302,12 @@ internal static class MapperExtractor
                 // independent of the mapper's member-matching case sensitivity.
                 (string Name, ITypeSymbol Type) ep = default;
                 foreach (var cand in extraParams)
-                {
-                    if (System.StringComparer.OrdinalIgnoreCase.Equals(cand.Name, target.Name)) { ep = cand; break; }
-                }
+                    if (StringComparer.OrdinalIgnoreCase.Equals(cand.Name, target.Name))
+                    {
+                        ep = cand;
+                        break;
+                    }
+
                 if (ep.Name is not null
                     && TryResolveConversion(compilation, ep.Type!, target.Type, null, allMethods, autoCandidates,
                         enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics,
@@ -2348,29 +2327,25 @@ internal static class MapperExtractor
             {
                 var flatMatches = new List<(string Root, string Leaf, ITypeSymbol LeafType)>();
                 foreach (var fi in flattenInfos)
-                {
-                    foreach (var leaf in fi.Leaves)
-                    {
-                        if (comparer.Equals(leaf.Name, target.Name))
-                        {
-                            flatMatches.Add((fi.Root, leaf.Name, leaf.Type));
-                        }
-                    }
-                }
+                foreach (var leaf in fi.Leaves)
+                    if (comparer.Equals(leaf.Name, target.Name))
+                        flatMatches.Add((fi.Root, leaf.Name, leaf.Type));
 
                 if (flatMatches.Count > 1)
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousFlatten, location, target.Name));
                     continue;
                 }
+
                 if (flatMatches.Count == 1)
                 {
                     var fm = flatMatches[0];
-                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv, out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
-                    {
-                        result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, ConverterNeedsDepthCtx: fneedsCtx,
-                            SourceIsNullableRef: SourceMayBeNullRef(fm.LeafType)));
-                    }
+                    if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates,
+                            enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv,
+                            out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
+                            isSetNull: isSetNull, implicitConversions: implicitConversions))
+                        result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, fneedsCtx,
+                            SourceMayBeNullRef(fm.LeafType)));
                     continue;
                 }
 
@@ -2392,74 +2367,64 @@ internal static class MapperExtractor
             if (reinterpretMembers.Contains(target.Name))
             {
                 if (source.Type is IArrayTypeSymbol sa && target.Type is IArrayTypeSymbol ta
-                    && sa.ElementType.IsUnmanagedType && ta.ElementType.IsUnmanagedType)
+                                                       && sa.ElementType.IsUnmanagedType &&
+                                                       ta.ElementType.IsUnmanagedType)
                 {
-                    var blit = CollectionConverter.SynthesizeBlit(synthesized, source.Type, sa.ElementType, ta.ElementType);
+                    var blit = CollectionConverter.SynthesizeBlit(synthesized, source.Type, sa.ElementType,
+                        ta.ElementType);
                     result.Add(new MemberMap(target.Name, source.Name, blit,
                         SourceIsNullableRef: SourceMayBeNullRef(source.Type)));
                 }
                 else
                 {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid, location, target.Name));
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid, location,
+                        target.Name));
                 }
+
                 continue;
             }
-            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv, out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
-            {
-                result.Add(new MemberMap(target.Name, source.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx,
-                    SourceIsNullableRef: SourceMayBeNullRef(source.Type)));
-            }
+
+            if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates,
+                    enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv,
+                    out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
+                    isSetNull: isSetNull, implicitConversions: implicitConversions))
+                result.Add(new MemberMap(target.Name, source.Name, conv, nullH, needsCtx,
+                    SourceMayBeNullRef(source.Type)));
         }
 
         // READ-ONLY destinations with a matching source (silent-loss guard).
         // A read-only member satisfied via a constructor parameter is already mapped — no diagnostic.
-        foreach (var readOnly in ReadOnlyMembers(targetType, compilation, allowNonPublic).OrderBy(m => m.Name, System.StringComparer.Ordinal))
+        foreach (var readOnly in ReadOnlyMembers(targetType, compilation, allowNonPublic)
+                     .OrderBy(m => m.Name, StringComparer.Ordinal))
         {
-            if (handledTargets.Contains(readOnly.Name) || ignores.Contains(readOnly.Name))
-            {
-                continue;
-            }
+            if (handledTargets.Contains(readOnly.Name) || ignores.Contains(readOnly.Name)) continue;
             // Satisfied via ctor param → not a silent loss.
-            if (consumedCtorParams is not null && consumedCtorParams.Contains(readOnly.Name))
-            {
-                continue;
-            }
+            if (consumedCtorParams is not null && consumedCtorParams.Contains(readOnly.Name)) continue;
             if (sourceGroups.ContainsKey(readOnly.Name))
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReadOnlyDestinationMember, location, readOnly.Name));
-            }
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReadOnlyDestinationMember, location,
+                    readOnly.Name));
         }
 
         // A [Reinterpret] name that matches no writable destination member is a typo — never silently ignore it.
         // A [Reinterpret] member that is ALSO in [MapIgnore] is a contradiction — report DWARF012.
         if (reinterpretMembers.Count > 0)
         {
-            var writableNames = new HashSet<string>(WritableMembers(targetType, compilation, allowNonPublic).Select(m => m.Name), System.StringComparer.Ordinal);
+            var writableNames =
+                new HashSet<string>(WritableMembers(targetType, compilation, allowNonPublic).Select(m => m.Name),
+                    StringComparer.Ordinal);
             foreach (var rm in reinterpretMembers)
-            {
                 if (ignores.Contains(rm))
-                {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, rm));
-                }
                 else if (!writableNames.Contains(rm))
-                {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid, location, rm));
-                }
-            }
         }
 
         // Phase 5: an additional parameter that matched no destination member is a suggestion (DWARF047).
         if (extraParams is not null)
-        {
             foreach (var ep in extraParams)
-            {
                 if (!consumedExtraParams.Contains(ep.Name))
-                {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnusedMappingParameter, location,
                         $"mapping parameter '{ep.Name}' matched no destination member"));
-                }
-            }
-        }
 
         // [DwarfMapper(SkipNullSourceMembers = true)]: a null source member must keep the destination's
         // default rather than overwrite it. Mark each simple, nullable-source, post-construction-settable
@@ -2469,38 +2434,29 @@ internal static class MapperExtractor
         {
             var srcTypeByName = new Dictionary<string, ITypeSymbol>(comparer);
             foreach (var (sName, sType) in ReadableMembers(sourceType, compilation, allowNonPublic))
-            {
                 srcTypeByName[sName] = sType;
-            }
 
-            var deferrableTargets = new HashSet<string>(System.StringComparer.Ordinal);
-            for (INamedTypeSymbol? t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
-            {
+            var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);
+            for (var t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
                 foreach (var tm in t.GetMembers())
-                {
                     if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: false } && !p.IsRequired)
                         deferrableTargets.Add(p.Name);
                     else if (tm is IFieldSymbol f && !f.IsReadOnly && !f.IsConst && !f.IsRequired)
                         deferrableTargets.Add(f.Name);
-                }
-            }
 
             for (var i = 0; i < result.Count; i++)
             {
                 var m = result[i];
                 if (string.IsNullOrEmpty(m.SourceName) || m.SourceName.IndexOf('.') >= 0
-                    || m.ValueExpression is not null || m.UnflattenIntermediateFqn is not null
-                    || m.WhenPredicate is not null || m.SkipIfSourceNull
-                    || !deferrableTargets.Contains(m.TargetName))
-                {
+                                                       || m.ValueExpression is not null ||
+                                                       m.UnflattenIntermediateFqn is not null
+                                                       || m.WhenPredicate is not null || m.SkipIfSourceNull
+                                                       || !deferrableTargets.Contains(m.TargetName))
                     continue;
-                }
 
                 if (srcTypeByName.TryGetValue(m.SourceName, out var st)
                     && (st.IsReferenceType || IsNullableValue(st, out _)))
-                {
                     result[i] = m with { SkipIfSourceNull = true };
-                }
             }
         }
 
@@ -2508,8 +2464,8 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// For each constructor parameter, find a matching source member and resolve the conversion.
-    /// Every parameter is mandatory — if any fails, DWARF024 is reported and the method returns false.
+    ///     For each constructor parameter, find a matching source member and resolve the conversion.
+    ///     Every parameter is mandatory — if any fails, DWARF024 is reported and the method returns false.
     /// </summary>
     private static bool ResolveConstructorArguments(
         IMethodSymbol ctor,
@@ -2533,14 +2489,11 @@ internal static class MapperExtractor
         bool isSetNull = false,
         bool implicitConversions = true)
     {
-        var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+        var comparer = caseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
         // Build explicit-maps index: target (param) name → source name (exact match).
-        var explicitForParams = new Dictionary<string, (string Source, string? Use)>(System.StringComparer.Ordinal);
-        foreach (var (srcName, tgtName, use) in explicitMaps)
-        {
-            explicitForParams[tgtName] = (srcName, use);
-        }
+        var explicitForParams = new Dictionary<string, (string Source, string? Use)>(StringComparer.Ordinal);
+        foreach (var (srcName, tgtName, use) in explicitMaps) explicitForParams[tgtName] = (srcName, use);
 
         var readableByName = ReadableMembers(sourceType)
             .GroupBy(m => m.Name, comparer)
@@ -2548,7 +2501,7 @@ internal static class MapperExtractor
 
         var args = new List<MemberMap>();
         // Case-insensitive set for deduplication (positional record param names can differ in case).
-        consumedParams = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        consumedParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var allOk = true;
 
         foreach (var param in ctor.Parameters)
@@ -2557,29 +2510,32 @@ internal static class MapperExtractor
             if (explicitForParams.TryGetValue(param.Name, out var explicitInfo))
             {
                 var srcList = ReadableMembers(sourceType)
-                    .Where(m => System.StringComparer.Ordinal.Equals(m.Name, explicitInfo.Source))
+                    .Where(m => StringComparer.Ordinal.Equals(m.Name, explicitInfo.Source))
                     .ToList();
                 if (srcList.Count == 0)
                 {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, explicitInfo.Source));
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location,
+                        explicitInfo.Source));
                     allOk = false;
                     continue;
                 }
 
                 var srcType = srcList[0].Type;
                 if (TryResolveConversion(compilation, srcType, param.Type, explicitInfo.Use,
-                    allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
-                    location, param.Name, diagnostics, out var eConv, out var eNull,
-                    out var eNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
+                        allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                        location, param.Name, diagnostics, out var eConv, out var eNull,
+                        out var eNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
+                        implicitConversions: implicitConversions))
                 {
-                    args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull, ConverterNeedsDepthCtx: eNeedsCtx,
-                        SourceIsNullableRef: SourceMayBeNullRef(srcType)));
+                    args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull, eNeedsCtx,
+                        SourceMayBeNullRef(srcType)));
                     consumedParams.Add(param.Name);
                 }
                 else
                 {
                     allOk = false;
                 }
+
                 continue;
             }
 
@@ -2599,6 +2555,7 @@ internal static class MapperExtractor
                     consumedParams.Add(param.Name);
                     continue;
                 }
+
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.ConstructorParameterUnmapped,
                     location, param.Name));
@@ -2616,12 +2573,13 @@ internal static class MapperExtractor
 
             var srcMember = matches[0];
             if (TryResolveConversion(compilation, srcMember.Type, param.Type, null,
-                allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
-                location, param.Name, diagnostics, out var conv, out var nullH,
-                out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
+                    allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                    location, param.Name, diagnostics, out var conv, out var nullH,
+                    out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
+                    implicitConversions: implicitConversions))
             {
-                args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH, ConverterNeedsDepthCtx: needsCtx,
-                    SourceIsNullableRef: SourceMayBeNullRef(srcMember.Type)));
+                args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH, needsCtx,
+                    SourceMayBeNullRef(srcMember.Type)));
                 consumedParams.Add(param.Name);
             }
             else
@@ -2635,9 +2593,9 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// Reads [MapDerivedType&lt;TSource,TTarget&gt;] (generic) and
-    /// [MapDerivedType(typeof(TSource),typeof(TTarget))] (non-generic) annotations from a method.
-    /// Returns raw pairs of (srcType, tgtType) INamedTypeSymbol — not yet validated.
+    ///     Reads [MapDerivedType&lt;TSource,TTarget&gt;] (generic) and
+    ///     [MapDerivedType(typeof(TSource),typeof(TTarget))] (non-generic) annotations from a method.
+    ///     Returns raw pairs of (srcType, tgtType) INamedTypeSymbol — not yet validated.
     /// </summary>
     private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt)> ReadDerivedTypeAttributes(
         IMethodSymbol method, Compilation compilation)
@@ -2651,7 +2609,7 @@ internal static class MapperExtractor
             // Generic form: MapDerivedTypeAttribute<TSource, TTarget>
             if (cls.IsGenericType
                 && cls.ConstructedFrom?.ToDisplayString().StartsWith(
-                    "DwarfMapper.MapDerivedTypeAttribute<", System.StringComparison.Ordinal) == true
+                    "DwarfMapper.MapDerivedTypeAttribute<", StringComparison.Ordinal) == true
                 && cls.TypeArguments.Length == 2
                 && cls.TypeArguments[0] is INamedTypeSymbol gSrc
                 && cls.TypeArguments[1] is INamedTypeSymbol gTgt)
@@ -2666,16 +2624,15 @@ internal static class MapperExtractor
                 && attr.ConstructorArguments.Length == 2
                 && attr.ConstructorArguments[0].Value is INamedTypeSymbol nSrc
                 && attr.ConstructorArguments[1].Value is INamedTypeSymbol nTgt)
-            {
                 result.Add((nSrc, nTgt));
-            }
         }
+
         return result;
     }
 
     /// <summary>
-    /// Returns the inheritance depth of <paramref name="type"/> (number of base classes between
-    /// it and System.Object). Interfaces return depth 0.
+    ///     Returns the inheritance depth of <paramref name="type" /> (number of base classes between
+    ///     it and System.Object). Interfaces return depth 0.
     /// </summary>
     private static int InheritanceDepth(ITypeSymbol type)
     {
@@ -2686,16 +2643,17 @@ internal static class MapperExtractor
             depth++;
             current = current.BaseType;
         }
+
         return depth;
     }
 
     /// <summary>
-    /// Sorts derived-type arms so that more-derived (more-specific) types appear before
-    /// less-derived ones (most-derived-first).  For class hierarchies, uses
-    /// <see cref="InheritanceDepth"/>.  For interface hierarchies (where all depths are 0),
-    /// uses pairwise <see cref="HasImplicitConversion"/> assignability:
-    /// if A is assignable to B (A is more derived / more specific than B), A comes first.
-    /// Stable for unrelated/equal pairs (preserves declaration order).
+    ///     Sorts derived-type arms so that more-derived (more-specific) types appear before
+    ///     less-derived ones (most-derived-first).  For class hierarchies, uses
+    ///     <see cref="InheritanceDepth" />.  For interface hierarchies (where all depths are 0),
+    ///     uses pairwise <see cref="HasImplicitConversion" /> assignability:
+    ///     if A is assignable to B (A is more derived / more specific than B), A comes first.
+    ///     Stable for unrelated/equal pairs (preserves declaration order).
     /// </summary>
     private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>
         SortArmsMostDerivedFirst(
@@ -2712,7 +2670,7 @@ internal static class MapperExtractor
             var aToB = HasImplicitConversion(compilation, a.arm.Src, b.arm.Src); // A assignable to B
             var bToA = HasImplicitConversion(compilation, b.arm.Src, a.arm.Src); // B assignable to A
             if (aToB && !bToA) return -1; // A is more derived than B → A first
-            if (bToA && !aToB) return  1; // B is more derived than A → B first
+            if (bToA && !aToB) return 1; // B is more derived than A → B first
             // Neither or both assignable: fall back to class-hierarchy depth, then declaration order.
             var depthDiff = InheritanceDepth(b.arm.Src) - InheritanceDepth(a.arm.Src);
             if (depthDiff != 0) return depthDiff;
@@ -2722,18 +2680,15 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// DWARF036: detects mutually-unorderable interface or abstract source arms.
-    ///
-    /// Two arm source types A and B are "ambiguous" when:
-    ///   1. Neither HasImplicitConversion(A,B) nor HasImplicitConversion(B,A) — they are unorderable.
-    ///   2. At least one of A or B is an interface or abstract class — meaning a concrete type
-    ///      could simultaneously satisfy both arms (e.g. class C : IFoo, IBar).
-    ///
-    /// Rationale: if both types are concrete (non-abstract classes), a concrete runtime instance
-    /// can match at most ONE arm by TypeKind/IsAbstract rules (its exact runtime type is one class),
-    /// so unrelated concrete-vs-concrete arms are not ambiguous in practice.
-    ///
-    /// Fires per-pair so multiple ambiguous pairings each produce a separate diagnostic.
+    ///     DWARF036: detects mutually-unorderable interface or abstract source arms.
+    ///     Two arm source types A and B are "ambiguous" when:
+    ///     1. Neither HasImplicitConversion(A,B) nor HasImplicitConversion(B,A) — they are unorderable.
+    ///     2. At least one of A or B is an interface or abstract class — meaning a concrete type
+    ///     could simultaneously satisfy both arms (e.g. class C : IFoo, IBar).
+    ///     Rationale: if both types are concrete (non-abstract classes), a concrete runtime instance
+    ///     can match at most ONE arm by TypeKind/IsAbstract rules (its exact runtime type is one class),
+    ///     so unrelated concrete-vs-concrete arms are not ambiguous in practice.
+    ///     Fires per-pair so multiple ambiguous pairings each produce a separate diagnostic.
     /// </summary>
     private static void DetectAmbiguousInterfaceArms(
         List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)> arms,
@@ -2742,47 +2697,43 @@ internal static class MapperExtractor
         List<DiagnosticInfo> diagnostics)
     {
         for (var i = 0; i < arms.Count; i++)
+        for (var j = i + 1; j < arms.Count; j++)
         {
-            for (var j = i + 1; j < arms.Count; j++)
-            {
-                var a = arms[i].Src;
-                var b = arms[j].Src;
+            var a = arms[i].Src;
+            var b = arms[j].Src;
 
-                // Check orderability: if either is assignable to the other the sort gives a stable order.
-                var aToB = HasImplicitConversion(compilation, a, b);
-                var bToA = HasImplicitConversion(compilation, b, a);
-                if (aToB || bToA) continue; // orderable → not ambiguous
+            // Check orderability: if either is assignable to the other the sort gives a stable order.
+            var aToB = HasImplicitConversion(compilation, a, b);
+            var bToA = HasImplicitConversion(compilation, b, a);
+            if (aToB || bToA) continue; // orderable → not ambiguous
 
-                // Check if at least one is an interface or abstract class.
-                // A concrete class (TypeKind=Class, IsAbstract=false) can't be implemented/inherited
-                // by another independent type at runtime, so two concrete unrelated classes are safe.
-                var aIsAbstractOrInterface = a.TypeKind == TypeKind.Interface || a.IsAbstract;
-                var bIsAbstractOrInterface = b.TypeKind == TypeKind.Interface || b.IsAbstract;
+            // Check if at least one is an interface or abstract class.
+            // A concrete class (TypeKind=Class, IsAbstract=false) can't be implemented/inherited
+            // by another independent type at runtime, so two concrete unrelated classes are safe.
+            var aIsAbstractOrInterface = a.TypeKind == TypeKind.Interface || a.IsAbstract;
+            var bIsAbstractOrInterface = b.TypeKind == TypeKind.Interface || b.IsAbstract;
 
-                if (!aIsAbstractOrInterface && !bIsAbstractOrInterface) continue; // both concrete → safe
+            if (!aIsAbstractOrInterface && !bIsAbstractOrInterface) continue; // both concrete → safe
 
-                var aFqn = a.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                var bFqn = b.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var aFqn = a.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var bFqn = b.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.AmbiguousDerivedType,
-                    location,
-                    $"[MapDerivedType] source types '{aFqn}' and '{bFqn}' are both interfaces or abstract types that are mutually unorderable (neither inherits from the other); any concrete type implementing both would dispatch ambiguously to whichever arm appears first. Make one a subtype of the other, remove one, or change both to concrete types."));
-            }
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.AmbiguousDerivedType,
+                location,
+                $"[MapDerivedType] source types '{aFqn}' and '{bFqn}' are both interfaces or abstract types that are mutually unorderable (neither inherits from the other); any concrete type implementing both would dispatch ambiguously to whichever arm appears first. Make one a subtype of the other, remove one, or change both to concrete types."));
         }
     }
 
     /// <summary>
-    /// Synthesizes the source code for a Preserve-mode dispatch wrapper that accepts a shared
-    /// <c>DwarfRefContext</c> and threads it to arm converters.
-    ///
-    /// The wrapper does the identity-map TryGetReference/SetReference dance around the dispatch switch
-    /// so that when a container helper (e.g. <c>__DwarfMap_Obj_Container_*</c>) calls the wrapper
-    /// twice with the SAME source reference, the second call returns the already-mapped target — i.e.
-    /// <see cref="Assert.Same"/> topology fidelity under <c>ReferenceHandling = Preserve</c>.
-    ///
-    /// Pattern (for src=PsvAnimal, tgt=PsvAnimalDto):
-    /// <code>
+    ///     Synthesizes the source code for a Preserve-mode dispatch wrapper that accepts a shared
+    ///     <c>DwarfRefContext</c> and threads it to arm converters.
+    ///     The wrapper does the identity-map TryGetReference/SetReference dance around the dispatch switch
+    ///     so that when a container helper (e.g. <c>__DwarfMap_Obj_Container_*</c>) calls the wrapper
+    ///     twice with the SAME source reference, the second call returns the already-mapped target — i.e.
+    ///     <see cref="Assert.Same" /> topology fidelity under <c>ReferenceHandling = Preserve</c>.
+    ///     Pattern (for src=PsvAnimal, tgt=PsvAnimalDto):
+    ///     <code>
     ///   private PsvAnimalDto __DwarfMap_Disp_...(PsvAnimal a, DwarfRefContext ctx, int depth)
     ///   {
     ///       if (a is null) return null!;
@@ -2796,20 +2747,20 @@ internal static class MapperExtractor
     /// </summary>
     private static string BuildDispatchWrapperCode(MapMethodModel dispatchMethod, string wrapperName)
     {
-        var sb = new System.Text.StringBuilder();
-        var p   = dispatchMethod.ParameterName;
+        var sb = new StringBuilder();
+        var p = dispatchMethod.ParameterName;
         var src = dispatchMethod.ParameterTypeFullName;
         var tgt = dispatchMethod.ReturnTypeFullName;
         var arms = dispatchMethod.DerivedTypeArms;
 
         sb.Append("    private ").Append(tgt).Append(' ').Append(wrapperName)
-          .Append('(').Append(src).Append(' ').Append(p)
-          .AppendLine(", global::DwarfMapper.DwarfRefContext ctx, int depth)");
+            .Append('(').Append(src).Append(' ').Append(p)
+            .AppendLine(", global::DwarfMapper.DwarfRefContext ctx, int depth)");
         sb.AppendLine("    {");
         if (dispatchMethod.ParameterIsReferenceType)
             sb.Append("        if (").Append(p).AppendLine(" is null) return null!;");
         sb.Append("        if (ctx.TryGetReference(").Append(p)
-          .Append(", out var __dwarf_cached)) return (").Append(tgt).AppendLine(")__dwarf_cached;");
+            .Append(", out var __dwarf_cached)) return (").Append(tgt).AppendLine(")__dwarf_cached;");
         sb.AppendLine("        if (depth >= ctx.MaxDepth)");
         sb.AppendLine("            throw new global::DwarfMapper.DwarfMappingDepthException(ctx.MaxDepth, depth);");
         sb.Append("        var __dwarf_t = ").Append(p).AppendLine(" switch");
@@ -2821,11 +2772,12 @@ internal static class MapperExtractor
                 sb.Append(", ctx, depth + 1");
             sb.AppendLine("),");
         }
+
         // Wildcard arm matching the public dispatch method's throw.
         sb.Append("            _ => throw new global::System.ArgumentException(")
-          .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
-          .Append(p).Append(".GetType() + \"' mapping to '").Append(tgt).Append("'.\", nameof(")
-          .Append(p).AppendLine(")),");
+            .Append("\"DwarfMapper: no [MapDerivedType] registered for runtime type '\" + ")
+            .Append(p).Append(".GetType() + \"' mapping to '").Append(tgt).Append("'.\", nameof(")
+            .Append(p).AppendLine(")),");
         sb.AppendLine("        };");
         sb.Append("        ctx.SetReference(").Append(p).AppendLine(", __dwarf_t);");
         sb.AppendLine("        return __dwarf_t;");
@@ -2840,7 +2792,7 @@ internal static class MapperExtractor
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
         NullStrategy nullStrategy,
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
-        out string? converterMethod, out Model.NullHandling nullHandling,
+        out string? converterMethod, out NullHandling nullHandling,
         out bool converterNeedsCtx,
         bool autoNest = false,
         NestedMappingRegistry? nestedRegistry = null,
@@ -2851,14 +2803,13 @@ internal static class MapperExtractor
         bool implicitConversions = true)
     {
         converterMethod = null;
-        nullHandling = Model.NullHandling.None;
+        nullHandling = NullHandling.None;
         converterNeedsCtx = false;
 
         if (useMethod is not null)
         {
             foreach (var m in allMethods)
-            {
-                if (string.Equals(m.Name, useMethod, System.StringComparison.Ordinal)
+                if (string.Equals(m.Name, useMethod, StringComparison.Ordinal)
                     && HasImplicitConversion(compilation, srcType, m.ParamType)
                     && HasImplicitConversion(compilation, m.ReturnType, tgtType))
                 {
@@ -2877,10 +2828,11 @@ internal static class MapperExtractor
                         // Report the diagnostic AND return false so no silent wrong code is emitted.
                         return false;
                     }
+
                     converterMethod = m.Name;
                     return true;
                 }
-            }
+
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UseMethodInvalid, location, useMethod));
             return false;
         }
@@ -2892,62 +2844,106 @@ internal static class MapperExtractor
             // A3: determine effective null-as-null for the OUTER dict helper based on target nullability.
             // If nullAsNull=true but the target dict type is non-nullable, fall back to AsEmpty
             // to prevent CS8601 (nullable helper assigned to non-nullable field).
-            bool dictEffectiveNullAsNull = nullAsNull && IsNullableReferenceType(tgtType);
+            var dictEffectiveNullAsNull = nullAsNull && IsNullableReferenceType(tgtType);
 
             // A1: propagate nullAsNull to nested key/value converters so nullable elements
             // (e.g. the value type List<int>? in Dictionary<string, List<int>?>) generate
             // helpers that preserve null instead of silently mapping to empty.
-            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull, out var keyNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
+            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy,
+                    synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull,
+                    out var keyNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
+                    implicitConversions: implicitConversions))
                 return false;
-            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull, out var valNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
+            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy,
+                    synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull,
+                    out var valNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
+                    implicitConversions: implicitConversions))
                 return false;
             // Preserve OR SetNull: if the key/value converter is an auto-nested object mapper, force it RC
             // so it carries (ctx, depth) and the dict helper threads the shared context into it — this is
             // what lets a cycle routed through a dictionary value break (SetNull) or depth-cap.
             if ((isPreserve || isSetNull) && nestedRegistry is not null)
             {
-                if (keyConv is not null && keyConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
-                { nestedRegistry.ForceRecursionCapable(keyConv); keyNeedsCtx = true; }
-                if (valConv is not null && valConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal))
-                { nestedRegistry.ForceRecursionCapable(valConv); valNeedsCtx = true; }
+                if (keyConv is not null && keyConv.StartsWith("__DwarfMap_Obj_", StringComparison.Ordinal))
+                {
+                    nestedRegistry.ForceRecursionCapable(keyConv);
+                    keyNeedsCtx = true;
+                }
+
+                if (valConv is not null && valConv.StartsWith("__DwarfMap_Obj_", StringComparison.Ordinal))
+                {
+                    nestedRegistry.ForceRecursionCapable(valConv);
+                    valNeedsCtx = true;
+                }
             }
+
             converterMethod = DictionaryConverter.Synthesize(synthesized, srcType, tgtKey, tgtVal,
                 dictHasCount, dictTargetKind, keyConv, keyNull, valConv, valNull, dictEffectiveNullAsNull,
                 isPreserve, keyNeedsCtx, valNeedsCtx);
             // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
             // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
-            bool isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary
-                              && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
+            var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary
+                                && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
             converterNeedsCtx = (isPreserve && isMutableDict) || keyNeedsCtx || valNeedsCtx;
 
             // None+Throw: a key/value resolved to a PUBLIC declared method. Record a re-synthesis
             // closure so the post-pass can upgrade this dict helper if that method is self-recursive.
             if (!isPreserve && !isSetNull && nestedRegistry is not null)
             {
-                bool KeyIsPublicObj = keyConv is not null && !keyNeedsCtx && !keyConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
-                    && tgtKey is INamedTypeSymbol tk && IsMappableObjectPair(compilation, srcKey, tk);
-                bool ValIsPublicObj = valConv is not null && !valNeedsCtx && !valConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
-                    && tgtVal is INamedTypeSymbol tv && IsMappableObjectPair(compilation, srcVal, tv);
+                var KeyIsPublicObj = keyConv is not null && !keyNeedsCtx &&
+                                     !keyConv.StartsWith("__Dwarf", StringComparison.Ordinal)
+                                     && tgtKey is INamedTypeSymbol tk && IsMappableObjectPair(compilation, srcKey, tk);
+                var ValIsPublicObj = valConv is not null && !valNeedsCtx &&
+                                     !valConv.StartsWith("__Dwarf", StringComparison.Ordinal)
+                                     && tgtVal is INamedTypeSymbol tv && IsMappableObjectPair(compilation, srcVal, tv);
                 if (KeyIsPublicObj || ValIsPublicObj)
                 {
                     var hName = converterMethod!;
                     var elems = new List<string>();
                     if (KeyIsPublicObj) elems.Add(keyConv!);
                     if (ValIsPublicObj) elems.Add(valConv!);
-                    var cSrc = srcType; var cTk = tgtKey; var cTv = tgtVal; var cHas = dictHasCount; var cKind = dictTargetKind;
-                    var cKeyConv = keyConv; var cKeyNull = keyNull; var cValConv = valConv; var cValNull = valNull;
+                    var cSrc = srcType;
+                    var cTk = tgtKey;
+                    var cTv = tgtVal;
+                    var cHas = dictHasCount;
+                    var cKind = dictTargetKind;
+                    var cKeyConv = keyConv;
+                    var cKeyNull = keyNull;
+                    var cValConv = valConv;
+                    var cValNull = valNull;
                     var cNullAsNull = dictEffectiveNullAsNull;
                     nestedRegistry.RecordCtxUpgradeCandidate(hName, elems.ToArray(), resolve =>
                     {
-                        var nk = cKeyConv; var nkCtx = false;
-                        if (KeyIsPublicObj) { var r = resolve(cKeyConv!); if (!string.Equals(r, cKeyConv, System.StringComparison.Ordinal)) { nk = r; nkCtx = true; } }
-                        var nv = cValConv; var nvCtx = false;
-                        if (ValIsPublicObj) { var r = resolve(cValConv!); if (!string.Equals(r, cValConv, System.StringComparison.Ordinal)) { nv = r; nvCtx = true; } }
+                        var nk = cKeyConv;
+                        var nkCtx = false;
+                        if (KeyIsPublicObj)
+                        {
+                            var r = resolve(cKeyConv!);
+                            if (!string.Equals(r, cKeyConv, StringComparison.Ordinal))
+                            {
+                                nk = r;
+                                nkCtx = true;
+                            }
+                        }
+
+                        var nv = cValConv;
+                        var nvCtx = false;
+                        if (ValIsPublicObj)
+                        {
+                            var r = resolve(cValConv!);
+                            if (!string.Equals(r, cValConv, StringComparison.Ordinal))
+                            {
+                                nv = r;
+                                nvCtx = true;
+                            }
+                        }
+
                         DictionaryConverter.SynthesizeInPlace(synthesized, hName, cSrc, cTk, cTv, cHas, cKind,
                             nk, cKeyNull, nkCtx, nv, cValNull, nvCtx, cNullAsNull);
                     });
                 }
             }
+
             return true;
         }
 
@@ -2955,7 +2951,8 @@ internal static class MapperExtractor
                 out var srcElem, out var tgtElem, out var collShape, nullAsNull))
         {
             if (collShape.Target == CollectionConverter.TargetKind.Array && collShape.SourceIsArray
-                && BlittableProof.CanReinterpret(srcElem, tgtElem))
+                                                                         && BlittableProof.CanReinterpret(srcElem,
+                                                                             tgtElem))
             {
                 converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
                 return true;
@@ -2965,7 +2962,8 @@ internal static class MapperExtractor
             // float[]→double[]) → Vector.Widen. Identical result to the scalar implicit widen; reflection-free.
             // Comes AFTER blit (same-size pairs blit; widen pairs differ in size so CanReinterpret is false).
             if (collShape.Target == CollectionConverter.TargetKind.Array && collShape.SourceIsArray
-                && CollectionConverter.IsWidenPair(srcElem, tgtElem))
+                                                                         && CollectionConverter.IsWidenPair(srcElem,
+                                                                             tgtElem))
             {
                 converterMethod = CollectionConverter.SynthesizeSimdWiden(synthesized, srcType, srcElem, tgtElem);
                 return true;
@@ -2976,16 +2974,19 @@ internal static class MapperExtractor
             // ImmutableArray<T>?: CollectionConverter.TryResolve already handles Nullable<ImmutableArray<T>>
             // by unwrapping it and setting nullAsNull=true in the shape, so collShape.NullAsNull is already
             // correct and we just need to preserve it.
-            bool collEffectiveNullAsNull = collShape.Target == CollectionConverter.TargetKind.ImmutableArray
+            var collEffectiveNullAsNull = collShape.Target == CollectionConverter.TargetKind.ImmutableArray
                 // ImmutableArray: shape.NullAsNull is authoritative (set by TryResolve for Nullable<> unwrapping).
                 ? collShape.NullAsNull
                 // Reference-type collections: only AsNull when target field is nullable ref type.
-                : (nullAsNull && IsNullableReferenceType(tgtType));
+                : nullAsNull && IsNullableReferenceType(tgtType);
 
             // A1: propagate nullAsNull to the element converter so nullable elements
             // (e.g. element type List<int>? inside List<List<int>?>) generate helpers
             // that preserve null instead of silently mapping to empty.
-            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull, out var elemNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve: isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
+            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy,
+                    synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull,
+                    out var elemNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
+                    implicitConversions: implicitConversions))
                 return false; // element diagnostic already reported by the recursive call
 
             // Preserve OR SetNull: if the element converter is an auto-nested object mapper, force it
@@ -2994,8 +2995,8 @@ internal static class MapperExtractor
             // is what lets a cycle routed through a collection break (SetNull → back-edge null) or
             // depth-cap, instead of the element re-entering the public entry (fresh context → StackOverflow).
             if ((isPreserve || isSetNull) && elemConv is not null
-                && elemConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
-                && nestedRegistry is not null)
+                                          && elemConv.StartsWith("__DwarfMap_Obj_", StringComparison.Ordinal)
+                                          && nestedRegistry is not null)
             {
                 nestedRegistry.ForceRecursionCapable(elemConv);
                 elemNeedsCtx = true;
@@ -3003,26 +3004,35 @@ internal static class MapperExtractor
 
             // Apply effective nullAsNull (A3: may be false even when nullAsNull=true if target is non-nullable).
             if (collEffectiveNullAsNull != nullAsNull)
-                collShape = new CollectionConverter.Shape(collShape.Target, collShape.SourceIsArray, collShape.Count, collEffectiveNullAsNull);
+                collShape = new CollectionConverter.Shape(collShape.Target, collShape.SourceIsArray, collShape.Count,
+                    collEffectiveNullAsNull);
 
-            converterMethod = CollectionConverter.Synthesize(synthesized, srcType, srcElem, tgtElem, collShape, elemConv, elemNull, isPreserve, elemNeedsCtx);
+            converterMethod = CollectionConverter.Synthesize(synthesized, srcType, srcElem, tgtElem, collShape,
+                elemConv, elemNull, isPreserve, elemNeedsCtx);
             // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
             // element is recursion-capable (Preserve, or None/SetNull self-referential element).
-            converterNeedsCtx = (isPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) || elemNeedsCtx;
+            converterNeedsCtx = (isPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) ||
+                                elemNeedsCtx;
 
             // None+Throw: the element resolved to a PUBLIC declared method (e.g. a self-map `Map`).
             // Record a re-synthesis closure; if that method turns out self-recursive, the post-pass
             // upgrades this helper to thread ctx into the depth-guarded companion (no silent SO).
             if (!isPreserve && !isSetNull && !elemNeedsCtx && nestedRegistry is not null
-                && elemConv is not null && !elemConv.StartsWith("__Dwarf", System.StringComparison.Ordinal)
+                && elemConv is not null && !elemConv.StartsWith("__Dwarf", StringComparison.Ordinal)
                 && tgtElem is INamedTypeSymbol tgtElemNamed
                 && IsMappableObjectPair(compilation, srcElem, tgtElemNamed))
             {
                 var hName = converterMethod!;
-                var capSrc = srcType; var capElem = srcElem; var capTgt = tgtElem; var capShape = collShape; var capNull = elemNull;
+                var capSrc = srcType;
+                var capElem = srcElem;
+                var capTgt = tgtElem;
+                var capShape = collShape;
+                var capNull = elemNull;
                 nestedRegistry.RecordCtxUpgradeCandidate(hName, new[] { elemConv }, resolve =>
-                    CollectionConverter.SynthesizeInPlace(synthesized, hName, capSrc, capElem, capTgt, capShape, resolve(elemConv), capNull));
+                    CollectionConverter.SynthesizeInPlace(synthesized, hName, capSrc, capElem, capTgt, capShape,
+                        resolve(elemConv), capNull));
             }
+
             return true;
         }
 
@@ -3042,7 +3052,8 @@ internal static class MapperExtractor
             // in C# but crosses kinds (and int→float / long→double silently lose precision). Same-category
             // widening (int→long, float→double) is NOT flagged. DWARF038: suggestion / strict-mode error.
             if (IsCrossCategoryNumeric(srcType, tgtType))
-                EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "cross-category numeric", implicitConversions);
+                EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType,
+                    "cross-category numeric", implicitConversions);
             return true; // direct assignment
         }
 
@@ -3050,24 +3061,24 @@ internal static class MapperExtractor
         // Must come before the source-nullable branch so that T?→U? with a synthesized inner
         // conversion resolves to NullableProject rather than ThrowIfNull/ValueOrDefault.
         if (IsNullableValue(srcType, out var bothSrcU) && IsNullableValue(tgtType, out var bothTgtU))
-        {
             if (TryResolveConversion(compilation, bothSrcU, bothTgtU, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerNN, out _, out _, autoNest, nestedRegistry, nullAsNull, isPreserve: false) && innerNN is not null)
+                    out var innerNN, out _, out _, autoNest, nestedRegistry, nullAsNull) && innerNN is not null)
             {
                 converterMethod = innerNN;
-                nullHandling = Model.NullHandling.NullableProject;
+                nullHandling = NullHandling.NullableProject;
                 return true;
             }
-            // Inner unresolved or has no converter (implicit, already caught above) — fall through.
-        }
 
+        // Inner unresolved or has no converter (implicit, already caught above) — fall through.
         if (IsNullableValue(srcType, out var underlying))
         {
             // First check the simple implicit-conversion path (int? → int, int? → long, etc.)
             if (HasImplicitConversion(compilation, underlying, tgtType))
             {
-                nullHandling = nullStrategy == NullStrategy.SetDefault ? Model.NullHandling.ValueOrDefault : Model.NullHandling.ThrowIfNull;
+                nullHandling = nullStrategy == NullStrategy.SetDefault
+                    ? NullHandling.ValueOrDefault
+                    : NullHandling.ThrowIfNull;
                 return true;
             }
 
@@ -3076,9 +3087,11 @@ internal static class MapperExtractor
             // Guard: 'underlying' is not itself nullable (Nullable<Nullable<T>> is illegal in C#).
             if (TryResolveConversion(compilation, underlying, tgtType, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerConv, out _, out _, autoNest, nestedRegistry, nullAsNull, isPreserve: false))
+                    out var innerConv, out _, out _, autoNest, nestedRegistry, nullAsNull))
             {
-                nullHandling = nullStrategy == NullStrategy.SetDefault ? Model.NullHandling.ValueOrDefault : Model.NullHandling.ThrowIfNull;
+                nullHandling = nullStrategy == NullStrategy.SetDefault
+                    ? NullHandling.ValueOrDefault
+                    : NullHandling.ThrowIfNull;
                 converterMethod = innerConv; // may be null (direct assign after unwrap) or a synthesized method
                 return true;
             }
@@ -3095,12 +3108,13 @@ internal static class MapperExtractor
         {
             if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerConvT, out _, out _, autoNest, nestedRegistry, nullAsNull, isPreserve: false))
+                    out var innerConvT, out _, out _, autoNest, nestedRegistry, nullAsNull))
             {
                 converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
                 // nullHandling stays None — source is non-null, always yields a value
                 return true;
             }
+
             // Did not resolve — fall through to DWARF005
             return false;
         }
@@ -3114,34 +3128,37 @@ internal static class MapperExtractor
         //      These are already in allMethods; excluding partials avoids double-counting mappers.
         string? found = null;
         foreach (var c in autoCandidates)
-        {
             if (HasImplicitConversion(compilation, srcType, c.ParamType)
                 && HasImplicitConversion(compilation, c.ReturnType, tgtType))
             {
                 if (found is not null)
                 {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion, location, targetName));
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion, location,
+                        targetName));
                     return false;
                 }
+
                 found = c.Name;
             }
-        }
+
         // Also search all non-partial user methods (scalar converters not declared as partial mappers).
         foreach (var m in allMethods)
         {
             // Skip methods that are already in autoCandidates (partial mapper methods).
-            if (autoCandidates.Any(ac => string.Equals(ac.Name, m.Name, System.StringComparison.Ordinal)
-                    && SymbolEqualityComparer.Default.Equals(ac.ParamType, m.ParamType)
-                    && SymbolEqualityComparer.Default.Equals(ac.ReturnType, m.ReturnType)))
+            if (autoCandidates.Any(ac => string.Equals(ac.Name, m.Name, StringComparison.Ordinal)
+                                         && SymbolEqualityComparer.Default.Equals(ac.ParamType, m.ParamType)
+                                         && SymbolEqualityComparer.Default.Equals(ac.ReturnType, m.ReturnType)))
                 continue;
             if (HasImplicitConversion(compilation, srcType, m.ParamType)
                 && HasImplicitConversion(compilation, m.ReturnType, tgtType))
             {
                 if (found is not null)
                 {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion, location, targetName));
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion, location,
+                        targetName));
                     return false;
                 }
+
                 found = m.Name;
             }
         }
@@ -3155,10 +3172,11 @@ internal static class MapperExtractor
             // context, losing identity/depth/on-stack state and causing infinite loops on cycles.
             // We fall through to the auto-nest path below only when these conditions hold;
             // user-provided converter helpers (allMethods, not autoCandidates) are always respected.
-            bool foundIsAutoCandidate = (isPreserve || isSetNull) && autoNest && nestedRegistry is not null
-                && autoCandidates.Any(ac => string.Equals(ac.Name, found, System.StringComparison.Ordinal))
-                && tgtType is INamedTypeSymbol
-                && IsMappableObjectPair(compilation, srcType, (INamedTypeSymbol)tgtType);
+            var foundIsAutoCandidate = (isPreserve || isSetNull) && autoNest && nestedRegistry is not null
+                                       && autoCandidates.Any(ac =>
+                                           string.Equals(ac.Name, found, StringComparison.Ordinal))
+                                       && tgtType is INamedTypeSymbol
+                                       && IsMappableObjectPair(compilation, srcType, (INamedTypeSymbol)tgtType);
             if (!foundIsAutoCandidate)
             {
                 converterMethod = found;
@@ -3179,7 +3197,8 @@ internal static class MapperExtractor
             // a non-lossless basic-type conversion. Surface it as a suggestion (permissive) or a build
             // error (ImplicitConversions = false). Lossless widening uses the implicit/direct path above
             // and is never flagged.
-            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "numeric (narrowing/sign-change)", implicitConversions);
+            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType,
+                "numeric (narrowing/sign-change)", implicitConversions);
             return true;
         }
 
@@ -3192,11 +3211,13 @@ internal static class MapperExtractor
         {
             converterMethod = parsableMethod;
             // DWARF038: string↔T parse/format is a non-lossless basic-type conversion → suggestion / error.
-            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "parse/format (string↔T)", implicitConversions);
+            EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "parse/format (string↔T)",
+                implicitConversions);
             return true;
         }
 
-        var enumMethod = EnumConverter.TryCreate(srcType, tgtType, enumStrategy, synthesized, location, targetName, diagnostics);
+        var enumMethod = EnumConverter.TryCreate(srcType, tgtType, enumStrategy, synthesized, location, targetName,
+            diagnostics);
         if (enumMethod is not null)
         {
             converterMethod = enumMethod;
@@ -3207,7 +3228,7 @@ internal static class MapperExtractor
         // Placed LAST before DWARF005: only fires when nothing else resolved the pair.
         // Gate: autoNest=true AND both types are mappable named object types.
         if (autoNest && nestedRegistry is not null
-            && tgtType is INamedTypeSymbol namedTgt)
+                     && tgtType is INamedTypeSymbol namedTgt)
         {
             if (IsMappableObjectPair(compilation, srcType, namedTgt, allowInterfaceSrc))
             {
@@ -3236,14 +3257,14 @@ internal static class MapperExtractor
         // The built-in classifier above excludes user-defined conversions; honor them here, LAST, so nothing
         // else is overridden. Implicit operators convert silently (the author declared them safe); explicit
         // operators are potentially lossy → DWARF038 (or a build error under ImplicitConversions = false).
-        var userConv = UserConversionConverter.TryCreate(compilation, srcType, tgtType, synthesized, out var userConvExplicit);
+        var userConv =
+            UserConversionConverter.TryCreate(compilation, srcType, tgtType, synthesized, out var userConvExplicit);
         if (userConv is not null)
         {
             converterMethod = userConv;
             if (userConvExplicit)
-            {
-                EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType, "user-defined explicit conversion operator", implicitConversions);
-            }
+                EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType,
+                    "user-defined explicit conversion operator", implicitConversions);
             return true;
         }
 
@@ -3252,12 +3273,12 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// Returns true when both <paramref name="src"/> and <paramref name="tgt"/> are named types
-    /// suitable for auto-nested-mapper synthesis. Excludes: scalars, enums, string, collection/
-    /// IEnumerable types, Nullable&lt;T&gt;, interfaces, abstract target types, and
-    /// abstract/interface source types (C2: those would silently drop derived-only members).
-    /// When <paramref name="allowInterfaceSrc"/> is <see langword="true"/>, interface source types
-    /// are accepted (used by [MapDerivedType] arm resolution where the caller explicitly opts in).
+    ///     Returns true when both <paramref name="src" /> and <paramref name="tgt" /> are named types
+    ///     suitable for auto-nested-mapper synthesis. Excludes: scalars, enums, string, collection/
+    ///     IEnumerable types, Nullable&lt;T&gt;, interfaces, abstract target types, and
+    ///     abstract/interface source types (C2: those would silently drop derived-only members).
+    ///     When <paramref name="allowInterfaceSrc" /> is <see langword="true" />, interface source types
+    ///     are accepted (used by [MapDerivedType] arm resolution where the caller explicitly opts in).
     /// </summary>
     private static bool IsMappableObjectPair(Compilation compilation, ITypeSymbol src, INamedTypeSymbol tgt,
         bool allowInterfaceSrc = false)
@@ -3271,7 +3292,7 @@ internal static class MapperExtractor
         if (allowInterfaceSrc)
         {
             if (namedSrc.TypeKind != TypeKind.Class && namedSrc.TypeKind != TypeKind.Struct
-                && namedSrc.TypeKind != TypeKind.Interface)
+                                                    && namedSrc.TypeKind != TypeKind.Interface)
                 return false;
         }
         else
@@ -3282,6 +3303,7 @@ internal static class MapperExtractor
             if (namedSrc.TypeKind != TypeKind.Class && namedSrc.TypeKind != TypeKind.Struct)
                 return false;
         }
+
         if (tgt.TypeKind != TypeKind.Class && tgt.TypeKind != TypeKind.Struct)
             return false;
 
@@ -3325,11 +3347,12 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// Returns true when <paramref name="src"/> is a named type that would be a mappable-object-pair
-    /// source except that it is abstract or an interface — i.e. it would silently drop derived members
-    /// (C2: DWARF033 guard).
+    ///     Returns true when <paramref name="src" /> is a named type that would be a mappable-object-pair
+    ///     source except that it is abstract or an interface — i.e. it would silently drop derived members
+    ///     (C2: DWARF033 guard).
     /// </summary>
-    private static bool IsAbstractOrInterfaceAutoNestSource(Compilation compilation, ITypeSymbol src, INamedTypeSymbol tgt)
+    private static bool IsAbstractOrInterfaceAutoNestSource(Compilation compilation, ITypeSymbol src,
+        INamedTypeSymbol tgt)
     {
         if (src is not INamedTypeSymbol namedSrc) return false;
 
@@ -3342,15 +3365,16 @@ internal static class MapperExtractor
         if (tgt.IsAbstract) return false;
         if (ImplementsIEnumerable(compilation, namedSrc)) return false;
         if (ImplementsIEnumerable(compilation, tgt)) return false;
-        if (!tgt.InstanceConstructors.Any(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic)) return false;
+        if (!tgt.InstanceConstructors.Any(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic))
+            return false;
 
         // The source is abstract (class abstract) or interface — this is the C2 trigger
         return namedSrc.IsAbstract;
     }
 
     /// <summary>
-    /// Returns true when <paramref name="type"/> implements <c>IEnumerable</c> (generic or non-generic),
-    /// which means it is a collection/sequence type that belongs to CollectionConverter/DictionaryConverter.
+    ///     Returns true when <paramref name="type" /> implements <c>IEnumerable</c> (generic or non-generic),
+    ///     which means it is a collection/sequence type that belongs to CollectionConverter/DictionaryConverter.
     /// </summary>
     private static bool ImplementsIEnumerable(Compilation compilation, INamedTypeSymbol type)
     {
@@ -3377,13 +3401,14 @@ internal static class MapperExtractor
             if (iface.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
                 return true;
         }
+
         return false;
     }
 
     /// <summary>
-    /// Returns true when <paramref name="type"/> is collection-shaped (implements IEnumerable,
-    /// is not string, is not already handled by CollectionConverter or DictionaryConverter)
-    /// → should emit DWARF027 rather than DWARF005.
+    ///     Returns true when <paramref name="type" /> is collection-shaped (implements IEnumerable,
+    ///     is not string, is not already handled by CollectionConverter or DictionaryConverter)
+    ///     → should emit DWARF027 rather than DWARF005.
     /// </summary>
     private static bool IsUnsupportedCollectionTarget(ITypeSymbol type)
     {
@@ -3405,6 +3430,7 @@ internal static class MapperExtractor
             if (iface.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
                 return true;
         }
+
         // Also check the type itself (IEnumerable<T> as named type)
         if (named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
             return true;
@@ -3412,98 +3438,85 @@ internal static class MapperExtractor
         return false;
     }
 
-    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> CollectMethods(INamedTypeSymbol classSymbol)
+    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> CollectMethods(
+        INamedTypeSymbol classSymbol)
     {
         var methods = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>();
         foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
-        {
             if (m.MethodKind == MethodKind.Ordinary && !m.ReturnsVoid && m.Parameters.Length == 1)
-            {
                 methods.Add((m.Name, m.Parameters[0].Type, m.ReturnType));
-            }
-        }
+
         return methods;
     }
 
     /// <summary>
-    /// Collects parameterless, non-void methods on the mapper — the candidate value providers for
-    /// <c>[MapValue(Use = nameof(...))]</c>. Returns <c>(Name, ReturnType)</c> pairs.
+    ///     Collects parameterless, non-void methods on the mapper — the candidate value providers for
+    ///     <c>[MapValue(Use = nameof(...))]</c>. Returns <c>(Name, ReturnType)</c> pairs.
     /// </summary>
     private static List<(string Name, ITypeSymbol ReturnType)> CollectValueProviders(INamedTypeSymbol classSymbol)
     {
         var providers = new List<(string Name, ITypeSymbol ReturnType)>();
         foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
-        {
             if (m.MethodKind == MethodKind.Ordinary && !m.ReturnsVoid && m.Parameters.Length == 0)
-            {
                 providers.Add((m.Name, m.ReturnType));
-            }
-        }
+
         return providers;
     }
 
-    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> CollectMapperMethods(INamedTypeSymbol classSymbol)
+    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> CollectMapperMethods(
+        INamedTypeSymbol classSymbol)
     {
         var methods = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>();
         foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
-        {
             if (m.MethodKind == MethodKind.Ordinary && m.IsPartialDefinition
-                && !m.ReturnsVoid && m.Parameters.Length == 1 && m.ReturnType is INamedTypeSymbol)
-            {
+                                                    && !m.ReturnsVoid && m.Parameters.Length == 1 &&
+                                                    m.ReturnType is INamedTypeSymbol)
                 methods.Add((m.Name, m.Parameters[0].Type, m.ReturnType));
-            }
-        }
+
         return methods;
     }
 
-    private static (List<(string Name, ITypeSymbol ParamType)> Before, List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)> After)
+    private static (List<(string Name, ITypeSymbol ParamType)> Before,
+        List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)> After)
         CollectHooks(INamedTypeSymbol classSymbol, List<DiagnosticInfo> diagnostics)
     {
         var before = new List<(string Name, ITypeSymbol ParamType)>();
         var after = new List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)>();
         foreach (var m in classSymbol.GetMembers().OfType<IMethodSymbol>())
         {
-            var isBefore = m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.BeforeMapAttribute");
-            var isAfter = m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.AfterMapAttribute");
-            if (!isBefore && !isAfter)
-            {
-                continue;
-            }
+            var isBefore = m.GetAttributes()
+                .Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.BeforeMapAttribute");
+            var isAfter = m.GetAttributes()
+                .Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.AfterMapAttribute");
+            if (!isBefore && !isAfter) continue;
             var loc = LocationInfo.From(m.Locations.FirstOrDefault() ?? Location.None);
             if (!m.ReturnsVoid)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidHook, loc, m.Name));
                 continue;
             }
+
             if (isBefore)
             {
                 if (m.Parameters.Length != 1)
-                {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidHook, loc, m.Name));
-                }
                 else
-                {
                     before.Add((m.Name, m.Parameters[0].Type));
-                }
             }
+
             if (isAfter)
             {
                 if (m.Parameters.Length == 1)
-                {
                     // 1-param: the sole parameter is the target; capture its RefKind
                     after.Add((m.Name, m.Parameters[0].Type, null, m.Parameters[0].RefKind));
-                }
                 else if (m.Parameters.Length == 2)
-                {
                     // 2-param: P0=source, P1=target; capture P1's RefKind
                     after.Add((m.Name, m.Parameters[0].Type, m.Parameters[1].Type, m.Parameters[1].RefKind));
-                }
                 else
-                {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidHook, loc, m.Name));
-                }
             }
         }
+
         return (before, after);
     }
 
@@ -3520,49 +3533,62 @@ internal static class MapperExtractor
             underlying = named.TypeArguments[0];
             return true;
         }
+
         underlying = type;
         return false;
     }
 
     /// <summary>
-    /// Returns true when <paramref name="type"/> is a nullable reference type
-    /// (i.e. a reference type with <c>NullableAnnotation.Annotated</c>), e.g. <c>List&lt;int&gt;?</c>.
-    /// Used to decide whether AsNull semantics are safe for a given target field (A3).
+    ///     Returns true when <paramref name="type" /> is a nullable reference type
+    ///     (i.e. a reference type with <c>NullableAnnotation.Annotated</c>), e.g. <c>List&lt;int&gt;?</c>.
+    ///     Used to decide whether AsNull semantics are safe for a given target field (A3).
     /// </summary>
-    private static bool IsNullableReferenceType(ITypeSymbol type) =>
-        type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated;
+    private static bool IsNullableReferenceType(ITypeSymbol type)
+    {
+        return type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated;
+    }
 
     /// <summary>
-    /// Returns true when <paramref name="type"/> carries a nullable annotation
-    /// (either a nullable reference type or a nullable value type like <c>ImmutableArray&lt;T&gt;?</c>).
-    /// Used for value-type struct nullable targets such as <c>ImmutableArray&lt;T&gt;?</c> (A2/A3).
+    ///     Returns true when <paramref name="type" /> carries a nullable annotation
+    ///     (either a nullable reference type or a nullable value type like <c>ImmutableArray&lt;T&gt;?</c>).
+    ///     Used for value-type struct nullable targets such as <c>ImmutableArray&lt;T&gt;?</c> (A2/A3).
     /// </summary>
-    private static bool IsNullableAnnotated(ITypeSymbol type) =>
-        type.NullableAnnotation == NullableAnnotation.Annotated;
+    private static bool IsNullableAnnotated(ITypeSymbol type)
+    {
+        return type.NullableAnnotation == NullableAnnotation.Annotated;
+    }
 
     /// <summary>
-    /// True when a source member of this type may be null from the compiler's point of view — a
-    /// reference type that is nullable-annotated OR oblivious (<c>#nullable disable</c> context).
-    /// Drives the null-forgiving <c>!</c> at synthesized-converter call sites: only such sources can
-    /// trip CS8604 when the converter's parameter is non-nullable. Value types (enums, numerics,
-    /// <c>Nullable&lt;T&gt;</c>) and non-nullable references never need it, so the emitter omits the
-    /// otherwise-spurious <c>!</c> for them. <see cref="MemberMap.SourceIsNullableRef"/>.
+    ///     True when a source member of this type may be null from the compiler's point of view — a
+    ///     reference type that is nullable-annotated OR oblivious (<c>#nullable disable</c> context).
+    ///     Drives the null-forgiving <c>!</c> at synthesized-converter call sites: only such sources can
+    ///     trip CS8604 when the converter's parameter is non-nullable. Value types (enums, numerics,
+    ///     <c>Nullable&lt;T&gt;</c>) and non-nullable references never need it, so the emitter omits the
+    ///     otherwise-spurious <c>!</c> for them. <see cref="MemberMap.SourceIsNullableRef" />.
     /// </summary>
-    private static bool SourceMayBeNullRef(ITypeSymbol type) =>
-        type.IsReferenceType && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
+    private static bool SourceMayBeNullRef(ITypeSymbol type)
+    {
+        return type.IsReferenceType && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
+    }
 
     // A property accessor / field is usable by the generated mapper when it is public, or — when the mapper
     // opted in via [DwarfMapper(AllowNonPublic = true)] — an internal/protected-internal accessor the mapper's
     // assembly can reach (same assembly or via [InternalsVisibleTo]). private/protected stay unreachable.
-    private static bool AccessorUsable(IMethodSymbol? accessor, Compilation? compilation, bool allowNonPublic) =>
-        accessor is not null && IsMemberReachable(accessor, accessor.DeclaredAccessibility, compilation, allowNonPublic);
+    private static bool AccessorUsable(IMethodSymbol? accessor, Compilation? compilation, bool allowNonPublic)
+    {
+        return accessor is not null &&
+               IsMemberReachable(accessor, accessor.DeclaredAccessibility, compilation, allowNonPublic);
+    }
 
-    private static bool FieldUsable(IFieldSymbol field, Compilation? compilation, bool allowNonPublic) =>
-        IsMemberReachable(field, field.DeclaredAccessibility, compilation, allowNonPublic);
+    private static bool FieldUsable(IFieldSymbol field, Compilation? compilation, bool allowNonPublic)
+    {
+        return IsMemberReachable(field, field.DeclaredAccessibility, compilation, allowNonPublic);
+    }
 
     // public is always reachable; internal / protected-internal is reachable when the mapper opted in AND the
     // mapper's own assembly can see it (same assembly, or [InternalsVisibleTo]). protected / private never are.
-    private static bool IsMemberReachable(ISymbol member, Accessibility accessibility, Compilation? compilation, bool allowNonPublic)
+    private static bool IsMemberReachable(ISymbol member, Accessibility accessibility, Compilation? compilation,
+        bool allowNonPublic)
     {
         if (accessibility == Accessibility.Public) return true;
         if (!allowNonPublic) return false;
@@ -3573,117 +3599,105 @@ internal static class MapperExtractor
         // property accessors scoped to an IAssemblySymbol, so check assembly identity / IVT directly.)
         var memberAsm = member.ContainingAssembly;
         return memberAsm is not null
-            && (SymbolEqualityComparer.Default.Equals(memberAsm, compilation.Assembly)
-                || memberAsm.GivesAccessTo(compilation.Assembly));
+               && (SymbolEqualityComparer.Default.Equals(memberAsm, compilation.Assembly)
+                   || memberAsm.GivesAccessTo(compilation.Assembly));
     }
 
-    private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type, Compilation? compilation = null, bool allowNonPublic = false)
+    private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type,
+        Compilation? compilation = null, bool allowNonPublic = false)
     {
-        var seen = new HashSet<string>(System.StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
 
         // Interface types: walk the interface itself plus all transitively inherited interfaces.
         // Interfaces don't have a BaseType class chain, so the normal loop would only see
         // the interface's own members and miss parent-interface properties.
         if (type.TypeKind == TypeKind.Interface && type is INamedTypeSymbol ifaceType)
         {
-            var ifacesToWalk = new ITypeSymbol[] { type }
-                .Concat(ifaceType.AllInterfaces.Cast<ITypeSymbol>());
+            var ifacesToWalk = new[] { type }
+                .Concat(ifaceType.AllInterfaces);
             foreach (var iface in ifacesToWalk)
+            foreach (var m in iface.GetMembers())
             {
-                foreach (var m in iface.GetMembers())
+                if (m.IsStatic) continue;
+                switch (m)
                 {
-                    if (m.IsStatic) continue;
-                    switch (m)
-                    {
-                        case IPropertySymbol p when !p.IsIndexer && p.GetMethod is not null:
-                            if (seen.Add(p.Name))
-                                yield return (p.Name, p.Type);
-                            break;
-                        case IFieldSymbol f when !f.IsImplicitlyDeclared:
-                            if (seen.Add(f.Name))
-                                yield return (f.Name, f.Type);
-                            break;
-                    }
+                    case IPropertySymbol p when !p.IsIndexer && p.GetMethod is not null:
+                        if (seen.Add(p.Name))
+                            yield return (p.Name, p.Type);
+                        break;
+                    case IFieldSymbol f when !f.IsImplicitlyDeclared:
+                        if (seen.Add(f.Name))
+                            yield return (f.Name, f.Type);
+                        break;
                 }
             }
+
             yield break;
         }
 
         // Classes and structs: walk the inheritance chain.
-        for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
-        {
+        for (var current = type;
+             current is not null && current.SpecialType != SpecialType.System_Object;
+             current = current.BaseType)
             foreach (var m in current.GetMembers())
             {
-                if (m.IsStatic)
-                {
-                    continue;
-                }
+                if (m.IsStatic) continue;
                 switch (m)
                 {
-                    case IPropertySymbol p when !p.IsIndexer && AccessorUsable(p.GetMethod, compilation, allowNonPublic):
-                        if (seen.Add(p.Name))
-                        {
-                            yield return (p.Name, p.Type);
-                        }
+                    case IPropertySymbol p
+                        when !p.IsIndexer && AccessorUsable(p.GetMethod, compilation, allowNonPublic):
+                        if (seen.Add(p.Name)) yield return (p.Name, p.Type);
                         break;
                     case IFieldSymbol f when !f.IsImplicitlyDeclared && FieldUsable(f, compilation, allowNonPublic):
-                        if (seen.Add(f.Name))
-                        {
-                            yield return (f.Name, f.Type);
-                        }
+                        if (seen.Add(f.Name)) yield return (f.Name, f.Type);
                         break;
                 }
             }
-        }
     }
 
-    private static IEnumerable<(string Name, ITypeSymbol Type)> WritableMembers(ITypeSymbol type, Compilation? compilation = null, bool allowNonPublic = false)
+    private static IEnumerable<(string Name, ITypeSymbol Type)> WritableMembers(ITypeSymbol type,
+        Compilation? compilation = null, bool allowNonPublic = false)
     {
-        var seen = new HashSet<string>(System.StringComparer.Ordinal);
-        for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
-        {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var current = type;
+             current is not null && current.SpecialType != SpecialType.System_Object;
+             current = current.BaseType)
             foreach (var m in current.GetMembers())
             {
-                if (m.IsStatic)
-                {
-                    continue;
-                }
+                if (m.IsStatic) continue;
                 switch (m)
                 {
-                    case IPropertySymbol p when !p.IsIndexer && AccessorUsable(p.SetMethod, compilation, allowNonPublic):
-                        if (seen.Add(p.Name))
-                        {
-                            yield return (p.Name, p.Type);
-                        }
+                    case IPropertySymbol p
+                        when !p.IsIndexer && AccessorUsable(p.SetMethod, compilation, allowNonPublic):
+                        if (seen.Add(p.Name)) yield return (p.Name, p.Type);
                         break;
-                    case IFieldSymbol f when !f.IsImplicitlyDeclared && !f.IsReadOnly && FieldUsable(f, compilation, allowNonPublic):
-                        if (seen.Add(f.Name))
-                        {
-                            yield return (f.Name, f.Type);
-                        }
+                    case IFieldSymbol f when !f.IsImplicitlyDeclared && !f.IsReadOnly &&
+                                             FieldUsable(f, compilation, allowNonPublic):
+                        if (seen.Add(f.Name)) yield return (f.Name, f.Type);
                         break;
                 }
             }
-        }
     }
 
-    private static IEnumerable<(string Name, ITypeSymbol Type)> ReadOnlyMembers(ITypeSymbol type, Compilation? compilation = null, bool allowNonPublic = false)
+    private static IEnumerable<(string Name, ITypeSymbol Type)> ReadOnlyMembers(ITypeSymbol type,
+        Compilation? compilation = null, bool allowNonPublic = false)
     {
-        var writable = new HashSet<string>(WritableMembers(type, compilation, allowNonPublic).Select(m => m.Name), System.StringComparer.Ordinal);
+        var writable = new HashSet<string>(WritableMembers(type, compilation, allowNonPublic).Select(m => m.Name),
+            StringComparer.Ordinal);
         return ReadableMembers(type, compilation, allowNonPublic).Where(m => !writable.Contains(m.Name));
     }
 
-    private static bool HasAccessibleParameterlessCtor(INamedTypeSymbol type) =>
-        type.InstanceConstructors.Any(c =>
+    private static bool HasAccessibleParameterlessCtor(INamedTypeSymbol type)
+    {
+        return type.InstanceConstructors.Any(c =>
             c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
-
-    private const string SetsRequiredMembersAttribute = "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute";
+    }
 
     /// <summary>
-    /// Returns the set of member names (case-insensitive) that are <c>required</c> AND satisfied via
-    /// a constructor parameter, but whose constructor does NOT carry
-    /// <c>[SetsRequiredMembers]</c>. These members must also be emitted in the object initializer to
-    /// avoid CS9035.
+    ///     Returns the set of member names (case-insensitive) that are <c>required</c> AND satisfied via
+    ///     a constructor parameter, but whose constructor does NOT carry
+    ///     <c>[SetsRequiredMembers]</c>. These members must also be emitted in the object initializer to
+    ///     avoid CS9035.
     /// </summary>
     private static HashSet<string> ComputeRequiredMustInitialize(
         IMethodSymbol ctor,
@@ -3695,19 +3709,14 @@ internal static class MapperExtractor
         var ctorHasSetsRequired = ctor.GetAttributes()
             .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttribute);
 
-        if (ctorHasSetsRequired)
-        {
-            return new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-        }
+        if (ctorHasSetsRequired) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Collect required member names from the target type hierarchy.
-        var required = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var current = (ITypeSymbol)targetType;
              current is not null && current.SpecialType != SpecialType.System_Object;
              current = current.BaseType)
-        {
             foreach (var member in current.GetMembers())
-            {
                 switch (member)
                 {
                     case IPropertySymbol p when p.IsRequired:
@@ -3717,107 +3726,94 @@ internal static class MapperExtractor
                         required.Add(f.Name);
                         break;
                 }
-            }
-        }
 
         // The intersection: consumed params that are also required members.
-        var result = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in consumedParams)
-        {
             if (required.Contains(name))
-            {
                 result.Add(name);
-            }
-        }
 
         return result;
     }
 
-    private static IEnumerable<string> ReadIgnores(ISymbol symbol) =>
-        symbol.GetAttributes()
+    private static IEnumerable<string> ReadIgnores(ISymbol symbol)
+    {
+        return symbol.GetAttributes()
             .Where(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.MapIgnoreAttribute")
             .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
             .Where(s => s is not null)
             .Select(s => s!);
+    }
 
     /// <summary>
-    /// Reads <c>[MapIgnoreSource("Member")]</c> names — the source-side mirror of <see cref="ReadIgnores"/>.
-    /// Used to suppress the DWARF039 source-coverage suggestion for specific source members.
+    ///     Reads <c>[MapIgnoreSource("Member")]</c> names — the source-side mirror of <see cref="ReadIgnores" />.
+    ///     Used to suppress the DWARF039 source-coverage suggestion for specific source members.
     /// </summary>
-    private static IEnumerable<string> ReadIgnoreSources(ISymbol symbol) =>
-        symbol.GetAttributes()
+    private static IEnumerable<string> ReadIgnoreSources(ISymbol symbol)
+    {
+        return symbol.GetAttributes()
             .Where(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.MapIgnoreSourceAttribute")
             .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
             .Where(s => s is not null)
             .Select(s => s!);
+    }
 
     private static List<(string Source, string Target, string? Use)> ReadExplicitMaps(ISymbol method)
     {
         var maps = new List<(string Source, string Target, string? Use)>();
         foreach (var attr in method.GetAttributes())
         {
-            if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapPropertyAttribute")
-            {
-                continue;
-            }
+            if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapPropertyAttribute") continue;
             if (attr.ConstructorArguments.Length == 2
                 && attr.ConstructorArguments[0].Value is string s
                 && attr.ConstructorArguments[1].Value is string t)
             {
                 string? use = null;
                 foreach (var na in attr.NamedArguments)
-                {
                     if (na.Key == "Use" && na.Value.Value is string u)
-                    {
                         use = u;
-                    }
-                }
+
                 maps.Add((s, t, use));
             }
         }
+
         return maps;
     }
 
     /// <summary>
-    /// Reads <c>[MapValue]</c> annotations. A two-argument form (<c>IsConstant = true</c>) carries a
-    /// constant <c>Value</c>; the one-argument form carries a <c>Use</c> provider-method name. The
-    /// <c>Use</c> named argument is also honoured on the two-argument form (Use wins).
+    ///     Reads <c>[MapValue]</c> annotations. A two-argument form (<c>IsConstant = true</c>) carries a
+    ///     constant <c>Value</c>; the one-argument form carries a <c>Use</c> provider-method name. The
+    ///     <c>Use</c> named argument is also honoured on the two-argument form (Use wins).
     /// </summary>
-    private static List<(string Target, bool IsConstant, TypedConstant Value, string? Use)> ReadMapValues(ISymbol method)
+    private static List<(string Target, bool IsConstant, TypedConstant Value, string? Use)> ReadMapValues(
+        ISymbol method)
     {
         var result = new List<(string, bool, TypedConstant, string?)>();
         foreach (var attr in method.GetAttributes())
         {
-            if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapValueAttribute")
-            {
-                continue;
-            }
+            if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapValueAttribute") continue;
             if (attr.ConstructorArguments.Length == 0
                 || attr.ConstructorArguments[0].Value is not string target)
-            {
                 continue;
-            }
             string? use = null;
             foreach (var na in attr.NamedArguments)
-            {
                 if (na.Key == "Use" && na.Value.Value is string u)
-                {
                     use = u;
-                }
-            }
+
             // Two-arg ctor → constant value in [1]; one-arg ctor → Use-driven.
             var isConstant = attr.ConstructorArguments.Length == 2 && use is null;
             var value = attr.ConstructorArguments.Length == 2 ? attr.ConstructorArguments[1] : default;
             result.Add((target, isConstant, value, use));
         }
+
         return result;
     }
 
     /// <summary>
-    /// Formats a <c>[MapValue]</c> constant as a C# literal assignable to <paramref name="targetType"/>,
-    /// or fails with a reason. Only attribute-legal constants are supported (string, bool, char, numeric,
-    /// enum, null); arrays/typeof and non-assignable values fail (the caller emits DWARF040). Floating/
-    /// decimal targets are cast to the target type so an un-suffixed literal (e.g. <c>1.5</c>) compiles.
+    ///     Formats a <c>[MapValue]</c> constant as a C# literal assignable to <paramref name="targetType" />,
+    ///     or fails with a reason. Only attribute-legal constants are supported (string, bool, char, numeric,
+    ///     enum, null); arrays/typeof and non-assignable values fail (the caller emits DWARF040). Floating/
+    ///     decimal targets are cast to the target type so an un-suffixed literal (e.g. <c>1.5</c>) compiles.
     /// </summary>
     private static bool TryFormatConstant(
         TypedConstant tc, ITypeSymbol targetType, Compilation compilation, out string literal, out string why)
@@ -3826,19 +3822,22 @@ internal static class MapperExtractor
         why = "";
         if (tc.Kind is TypedConstantKind.Array or TypedConstantKind.Type or TypedConstantKind.Error)
         {
-            why = $"[MapValue] constant for '{targetType.ToDisplayString()}' must be a string, bool, char, numeric, enum, or null";
+            why =
+                $"[MapValue] constant for '{targetType.ToDisplayString()}' must be a string, bool, char, numeric, enum, or null";
             return false;
         }
 
         if (tc.IsNull)
         {
             var acceptsNull = targetType.IsReferenceType
-                || (targetType is INamedTypeSymbol nt && nt.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
+                              || (targetType is INamedTypeSymbol nt &&
+                                  nt.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
             if (!acceptsNull)
             {
                 why = $"[MapValue] cannot assign null to non-nullable type '{targetType.ToDisplayString()}'";
                 return false;
             }
+
             literal = "null";
             return true;
         }
@@ -3847,35 +3846,40 @@ internal static class MapperExtractor
         {
             if (tc.Type is null || !HasImplicitConversion(compilation, tc.Type, targetType))
             {
-                why = $"[MapValue] enum constant of type '{tc.Type?.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
+                why =
+                    $"[MapValue] enum constant of type '{tc.Type?.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
                 return false;
             }
+
             var enumFqn = tc.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            literal = $"({enumFqn})({SymbolDisplay.FormatPrimitive(tc.Value!, quoteStrings: false, useHexadecimalNumbers: false)})";
+            literal = $"({enumFqn})({SymbolDisplay.FormatPrimitive(tc.Value!, false, false)})";
             return true;
         }
 
         // Primitive (string/bool/char/numeric).
         if (tc.Type is not null && !HasImplicitConversion(compilation, tc.Type, targetType))
         {
-            why = $"[MapValue] constant of type '{tc.Type.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
+            why =
+                $"[MapValue] constant of type '{tc.Type.ToDisplayString()}' is not assignable to '{targetType.ToDisplayString()}'";
             return false;
         }
-        var formatted = SymbolDisplay.FormatPrimitive(tc.Value!, quoteStrings: true, useHexadecimalNumbers: false);
+
+        var formatted = SymbolDisplay.FormatPrimitive(tc.Value!, true, false);
         // Floating/decimal targets need an explicit cast — an un-suffixed literal like "1.5" is a double
         // and would not compile when assigned to float/decimal.
-        literal = targetType.SpecialType is SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal
+        literal = targetType.SpecialType is SpecialType.System_Single or SpecialType.System_Double
+            or SpecialType.System_Decimal
             ? $"({targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({formatted})"
             : formatted;
         return true;
     }
 
     /// <summary>
-    /// Resolves a dotted source path (e.g. <c>"Customer.Name"</c>) hop-by-hop from <paramref name="root"/>,
-    /// returning the leaf member's type. <paramref name="nullableHop"/> is set when an <i>interior</i> hop
-    /// (any but the last) is a nullable/oblivious reference — dereferencing it can throw at runtime
-    /// (DWARF044). On failure, <paramref name="badSegment"/> names the first unresolved segment (DWARF043).
-    /// Segments are matched by exact ordinal name (member names never contain dots).
+    ///     Resolves a dotted source path (e.g. <c>"Customer.Name"</c>) hop-by-hop from <paramref name="root" />,
+    ///     returning the leaf member's type. <paramref name="nullableHop" /> is set when an <i>interior</i> hop
+    ///     (any but the last) is a nullable/oblivious reference — dereferencing it can throw at runtime
+    ///     (DWARF044). On failure, <paramref name="badSegment" /> names the first unresolved segment (DWARF043).
+    ///     Segments are matched by exact ordinal name (member names never contain dots).
     /// </summary>
     private static bool TryResolveSourcePath(
         ITypeSymbol root, string dottedPath, out ITypeSymbol? leafType, out bool nullableHop, out string badSegment)
@@ -3884,12 +3888,12 @@ internal static class MapperExtractor
         nullableHop = false;
         badSegment = "";
         var segments = dottedPath.Split('.');
-        ITypeSymbol current = root;
+        var current = root;
         for (var i = 0; i < segments.Length; i++)
         {
             var seg = segments[i];
             var member = ReadableMembers(current)
-                .Where(m => System.StringComparer.Ordinal.Equals(m.Name, seg))
+                .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
                 .Select(m => ((string Name, ITypeSymbol Type)?)m)
                 .FirstOrDefault();
             if (member is null)
@@ -3897,25 +3901,25 @@ internal static class MapperExtractor
                 badSegment = seg;
                 return false;
             }
+
             if (i < segments.Length - 1
                 && member.Value.Type.IsReferenceType
                 && member.Value.Type.NullableAnnotation != NullableAnnotation.NotAnnotated)
-            {
                 nullableHop = true;
-            }
             current = member.Value.Type;
         }
+
         leafType = current;
         return true;
     }
 
     /// <summary>
-    /// Resolves an unflatten target path (single level, e.g. <c>"Address.City"</c>): the intermediate root
-    /// must be a writable destination member whose type is a class with a public parameterless constructor;
-    /// the leaf must be a writable member of that type. On success appends a <see cref="MemberMap"/> whose
-    /// <see cref="MemberMap.UnflattenIntermediateFqn"/> drives post-construction instantiation, and marks
-    /// the root handled (suppressing DWARF001 and blocking auto-match). Emits DWARF045 (invalid path /
-    /// non-constructible intermediate / deeper-than-one-level) or DWARF046 (root already mapped directly).
+    ///     Resolves an unflatten target path (single level, e.g. <c>"Address.City"</c>): the intermediate root
+    ///     must be a writable destination member whose type is a class with a public parameterless constructor;
+    ///     the leaf must be a writable member of that type. On success appends a <see cref="MemberMap" /> whose
+    ///     <see cref="MemberMap.UnflattenIntermediateFqn" /> drives post-construction instantiation, and marks
+    ///     the root handled (suppressing DWARF001 and blocking auto-match). Emits DWARF045 (invalid path /
+    ///     non-constructible intermediate / deeper-than-one-level) or DWARF046 (root already mapped directly).
     /// </summary>
     private static void ResolveUnflattenTarget(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, string srcName, string tgtName, string? useMethod,
@@ -3941,7 +3945,7 @@ internal static class MapperExtractor
         else
         {
             uSrc = ReadableMembers(sourceType)
-                .Where(m => System.StringComparer.Ordinal.Equals(m.Name, srcName))
+                .Where(m => StringComparer.Ordinal.Equals(m.Name, srcName))
                 .Select(m => (ITypeSymbol?)m.Type)
                 .FirstOrDefault();
             if (uSrc is null)
@@ -3958,6 +3962,7 @@ internal static class MapperExtractor
                 $"unflatten target '{tgtName}' must have exactly one intermediate (e.g. \"Address.City\"); deeper paths are not yet supported"));
             return;
         }
+
         var rootName = segs[0];
         var leafName = segs[1];
 
@@ -3968,21 +3973,26 @@ internal static class MapperExtractor
                 $"unflatten target '{tgtName}' conflicts with a direct mapping of intermediate '{rootName}'"));
             return;
         }
+
         if (!writableByName.TryGetValue(rootName, out var rootType))
         {
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid, location,
                 $"unflatten intermediate '{rootName}' is not a writable destination member"));
             return;
         }
-        if (rootType is not INamedTypeSymbol rootNamed || !rootType.IsReferenceType || rootType.TypeKind != TypeKind.Class
-            || !rootNamed.InstanceConstructors.Any(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length == 0))
+
+        if (rootType is not INamedTypeSymbol rootNamed || !rootType.IsReferenceType ||
+            rootType.TypeKind != TypeKind.Class
+            || !rootNamed.InstanceConstructors.Any(c =>
+                c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length == 0))
         {
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid, location,
                 $"unflatten intermediate '{rootName}' (type '{rootType.ToDisplayString()}') must be a class with a public parameterless constructor"));
             return;
         }
+
         var leafType = WritableMembers(rootType)
-            .Where(m => System.StringComparer.Ordinal.Equals(m.Name, leafName))
+            .Where(m => StringComparer.Ordinal.Equals(m.Name, leafName))
             .Select(m => (ITypeSymbol?)m.Type)
             .FirstOrDefault();
         if (leafType is null)
@@ -3993,23 +4003,26 @@ internal static class MapperExtractor
         }
 
         if (TryResolveConversion(compilation, uSrc!, leafType!, useMethod, allMethods, autoCandidates, enumStrategy,
-                synthesized, nullStrategy, location, tgtName, diagnostics, out var uConv, out var uNullH, out var uNeedsCtx,
-                autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull, implicitConversions: implicitConversions))
+                synthesized, nullStrategy, location, tgtName, diagnostics, out var uConv, out var uNullH,
+                out var uNeedsCtx,
+                autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
+                implicitConversions: implicitConversions))
         {
             var rootFqn = rootType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            result.Add(new MemberMap(tgtName, srcName, uConv, uNullH, ConverterNeedsDepthCtx: uNeedsCtx,
-                SourceIsNullableRef: SourceMayBeNullRef(uSrc!), UnflattenIntermediateFqn: rootFqn));
+            result.Add(new MemberMap(tgtName, srcName, uConv, uNullH, uNeedsCtx,
+                SourceMayBeNullRef(uSrc!), UnflattenIntermediateFqn: rootFqn));
             handledTargets.Add(rootName);
             unflattenRoots.Add(rootName);
         }
     }
 
     /// <summary>
-    /// Reads the optional <c>NullSubstitute</c> / <c>When</c> named arguments of <c>[MapProperty]</c>
-    /// (Phase 8), keyed by destination target. Separate from <see cref="ReadExplicitMaps"/> so the shared
-    /// (Source, Target, Use) tuple — also consumed by constructor-argument resolution — is unchanged.
+    ///     Reads the optional <c>NullSubstitute</c> / <c>When</c> named arguments of <c>[MapProperty]</c>
+    ///     (Phase 8), keyed by destination target. Separate from <see cref="ReadExplicitMaps" /> so the shared
+    ///     (Source, Target, Use) tuple — also consumed by constructor-argument resolution — is unchanged.
     /// </summary>
-    private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)> ReadMapPropertyExtras(ISymbol method)
+    private static List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)> ReadMapPropertyExtras(
+        ISymbol method)
     {
         var result = new List<(string, bool, TypedConstant, string?)>();
         foreach (var attr in method.GetAttributes())
@@ -4017,35 +4030,39 @@ internal static class MapperExtractor
             if (attr.AttributeClass?.ToDisplayString() != "DwarfMapper.MapPropertyAttribute"
                 || attr.ConstructorArguments.Length < 2
                 || attr.ConstructorArguments[1].Value is not string target)
-            {
                 continue;
-            }
             var hasNullSub = false;
             TypedConstant nullSub = default;
             string? when = null;
             foreach (var na in attr.NamedArguments)
-            {
-                if (na.Key == "NullSubstitute") { hasNullSub = true; nullSub = na.Value; }
-                else if (na.Key == "When" && na.Value.Value is string w) { when = w; }
-            }
-            if (hasNullSub || when is not null)
-            {
-                result.Add((target, hasNullSub, nullSub, when));
-            }
+                if (na.Key == "NullSubstitute")
+                {
+                    hasNullSub = true;
+                    nullSub = na.Value;
+                }
+                else if (na.Key == "When" && na.Value.Value is string w)
+                {
+                    when = w;
+                }
+
+            if (hasNullSub || when is not null) result.Add((target, hasNullSub, nullSub, when));
         }
+
         return result;
     }
 
-    private static bool HasReverseMap(IMethodSymbol m) =>
-        m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.ReverseMapAttribute");
+    private static bool HasReverseMap(IMethodSymbol m)
+    {
+        return m.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.ReverseMapAttribute");
+    }
 
     /// <summary>
-    /// If <paramref name="method"/> is the inverse of some forward <c>[ReverseMap]</c> method
-    /// (forward source == this target, forward target == this source), returns the inverted simple renames
-    /// (<c>A→B</c> ⇒ <c>B→A</c>) to inherit. Forward renames that cannot be auto-inverted — a <c>Use=</c>
-    /// converter, a dotted path, or a <c>NullSubstitute</c>/<c>When</c> — are reported as DWARF051 and
-    /// skipped (declare those reverse renames explicitly). A rename whose inverse target the inverse method
-    /// already maps itself is also skipped (the explicit one wins).
+    ///     If <paramref name="method" /> is the inverse of some forward <c>[ReverseMap]</c> method
+    ///     (forward source == this target, forward target == this source), returns the inverted simple renames
+    ///     (<c>A→B</c> ⇒ <c>B→A</c>) to inherit. Forward renames that cannot be auto-inverted — a <c>Use=</c>
+    ///     converter, a dotted path, or a <c>NullSubstitute</c>/<c>When</c> — are reported as DWARF051 and
+    ///     skipped (declare those reverse renames explicitly). A rename whose inverse target the inverse method
+    ///     already maps itself is also skipped (the explicit one wins).
     /// </summary>
     private static List<(string Source, string Target, string? Use)> CollectReverseRenames(
         INamedTypeSymbol classSymbol, IMethodSymbol method, ITypeSymbol sourceType, ITypeSymbol targetType,
@@ -4055,23 +4072,22 @@ internal static class MapperExtractor
         var added = new List<(string, string, string?)>();
         IMethodSymbol? forward = null;
         foreach (var f in classSymbol.GetMembers().OfType<IMethodSymbol>())
-        {
             if (!SymbolEqualityComparer.Default.Equals(f, method) && HasReverseMap(f)
-                && f.Parameters.Length == 1
-                && SymbolEqualityComparer.Default.Equals(f.Parameters[0].Type, targetType)
-                && SymbolEqualityComparer.Default.Equals(f.ReturnType, sourceType))
+                                                                  && f.Parameters.Length == 1
+                                                                  && SymbolEqualityComparer.Default.Equals(
+                                                                      f.Parameters[0].Type, targetType)
+                                                                  && SymbolEqualityComparer.Default.Equals(f.ReturnType,
+                                                                      sourceType))
             {
                 forward = f;
                 break;
             }
-        }
-        if (forward is null)
-        {
-            return added;
-        }
 
-        var ownTargets = new HashSet<string>(ownExplicit.Select(e => e.Target), System.StringComparer.Ordinal);
-        var fwdExtraTargets = new HashSet<string>(ReadMapPropertyExtras(forward).Select(e => e.Target), System.StringComparer.Ordinal);
+        if (forward is null) return added;
+
+        var ownTargets = new HashSet<string>(ownExplicit.Select(e => e.Target), StringComparer.Ordinal);
+        var fwdExtraTargets =
+            new HashSet<string>(ReadMapPropertyExtras(forward).Select(e => e.Target), StringComparer.Ordinal);
         foreach (var (a, b, use) in ReadExplicitMaps(forward))
         {
             var invertible = use is null && a.IndexOf('.') < 0 && b.IndexOf('.') < 0 && !fwdExtraTargets.Contains(b);
@@ -4081,11 +4097,10 @@ internal static class MapperExtractor
                     $"[ReverseMap]: forward mapping '{a}' → '{b}' cannot be auto-inverted; declare the reverse on '{method.Name}' explicitly"));
                 continue;
             }
-            if (!ownTargets.Contains(a))
-            {
-                added.Add((b, a, null));
-            }
+
+            if (!ownTargets.Contains(a)) added.Add((b, a, null));
         }
+
         return added;
     }
 
@@ -4093,60 +4108,55 @@ internal static class MapperExtractor
     {
         var roots = new List<string>();
         foreach (var attr in method.GetAttributes())
-        {
             if (attr.AttributeClass?.ToDisplayString() == "DwarfMapper.FlattenAttribute"
                 && attr.ConstructorArguments.Length == 1
                 && attr.ConstructorArguments[0].Value is string s)
-            {
                 roots.Add(s);
-            }
-        }
+
         return roots;
     }
 
     // ── Plan 20: [FlattenGraph] ───────────────────────────────────────────────
 
     /// <summary>
-    /// Reads raw [FlattenGraph(srcNav, tgtColl)] annotation pairs from a method symbol.
+    ///     Reads raw [FlattenGraph(srcNav, tgtColl)] annotation pairs from a method symbol.
     /// </summary>
     private static List<(string SourceNavigation, string TargetCollection)> ReadFlattenGraphAttributes(ISymbol method)
     {
         var result = new List<(string, string)>();
         foreach (var attr in method.GetAttributes())
-        {
             if (attr.AttributeClass?.ToDisplayString() == "DwarfMapper.FlattenGraphAttribute"
                 && attr.ConstructorArguments.Length == 2
                 && attr.ConstructorArguments[0].Value is string src
                 && attr.ConstructorArguments[1].Value is string tgt)
-            {
                 result.Add((src, tgt));
-            }
-        }
+
         return result;
     }
 
     /// <summary>
-    /// FNV-1a hash for generating unique helper method name suffixes.
-    /// Same algorithm as CollectionConverter.
+    ///     FNV-1a hash for generating unique helper method name suffixes.
+    ///     Same algorithm as CollectionConverter.
     /// </summary>
     private static string FlattenGraphHash(string s)
     {
         unchecked
         {
-            uint h = 2166136261u;
+            var h = 2166136261u;
             foreach (var c in s)
             {
                 h ^= c;
                 h *= 16777619u;
             }
-            return h.ToString("x8", System.Globalization.CultureInfo.InvariantCulture);
+
+            return h.ToString("x8", CultureInfo.InvariantCulture);
         }
     }
 
     /// <summary>
-    /// Checks whether <paramref name="t"/> is a named generic type with the given
-    /// <paramref name="name"/> and <paramref name="ns"/> with exactly <paramref name="arity"/>
-    /// type arguments. Returns the first type argument via <paramref name="firstArg"/> if matched.
+    ///     Checks whether <paramref name="t" /> is a named generic type with the given
+    ///     <paramref name="name" /> and <paramref name="ns" /> with exactly <paramref name="arity" />
+    ///     type arguments. Returns the first type argument via <paramref name="firstArg" /> if matched.
     /// </summary>
     private static bool IsExactNamedTypeHelper(
         ITypeSymbol t, string name, string ns, int arity, out ITypeSymbol? firstArg)
@@ -4160,19 +4170,20 @@ internal static class MapperExtractor
             firstArg = n.TypeArguments[0];
             return true;
         }
+
         return false;
     }
 
     /// <summary>
-    /// Resolves and validates [FlattenGraph] directives for a single method, synthesizes
-    /// the required BFS traversal and flat-node helpers, and returns the resolved directives
-    /// plus the MemberMap entries to inject into the method's normal member list.
-    /// <para>
-    /// Mutates: <paramref name="synthesized"/> (adds helpers), <paramref name="consumedTargets"/>
-    /// (adds target collection member names so ResolveMembers skips them).
-    /// </para>
+    ///     Resolves and validates [FlattenGraph] directives for a single method, synthesizes
+    ///     the required BFS traversal and flat-node helpers, and returns the resolved directives
+    ///     plus the MemberMap entries to inject into the method's normal member list.
+    ///     <para>
+    ///         Mutates: <paramref name="synthesized" /> (adds helpers), <paramref name="consumedTargets" />
+    ///         (adds target collection member names so ResolveMembers skips them).
+    ///     </para>
     /// </summary>
-    private static (List<Model.FlattenGraphDirective> Directives, List<MemberMap> InjectedMembers)
+    private static (List<FlattenGraphDirective> Directives, List<MemberMap> InjectedMembers)
         ResolveFlattenGraphDirectives(
             ITypeSymbol sourceType,
             INamedTypeSymbol targetType,
@@ -4192,7 +4203,7 @@ internal static class MapperExtractor
             HashSet<string> consumedTargets,
             IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt)>? rawDerivedPairs = null)
     {
-        var directives = new List<Model.FlattenGraphDirective>();
+        var directives = new List<FlattenGraphDirective>();
         var injected = new List<MemberMap>();
 
         foreach (var (srcNavName, tgtCollName) in rawDirectives)
@@ -4200,13 +4211,11 @@ internal static class MapperExtractor
             // 1. Resolve source navigation member on sourceType
             ITypeSymbol? srcNavType = null;
             foreach (var m in ReadableMembers(sourceType))
-            {
-                if (string.Equals(m.Name, srcNavName, System.StringComparison.Ordinal))
+                if (string.Equals(m.Name, srcNavName, StringComparison.Ordinal))
                 {
                     srcNavType = m.Type;
                     break;
                 }
-            }
 
             if (srcNavType is null)
             {
@@ -4230,7 +4239,7 @@ internal static class MapperExtractor
             bool srcNavIsDict;
 
             if (srcNavType is IArrayTypeSymbol arrNav && arrNav.Rank == 1
-                && arrNav.ElementType.IsReferenceType)
+                                                      && arrNav.ElementType.IsReferenceType)
             {
                 nodeType = arrNav.ElementType;
                 srcNavIsCollection = true;
@@ -4271,13 +4280,11 @@ internal static class MapperExtractor
             // 3. Resolve target collection member on targetType
             ITypeSymbol? tgtCollType = null;
             foreach (var m in WritableMembers(targetType))
-            {
-                if (string.Equals(m.Name, tgtCollName, System.StringComparison.Ordinal))
+                if (string.Equals(m.Name, tgtCollName, StringComparison.Ordinal))
                 {
                     tgtCollType = m.Type;
                     break;
                 }
-            }
 
             if (tgtCollType is null)
             {
@@ -4300,17 +4307,20 @@ internal static class MapperExtractor
                 nodeDtoType = listElem!;
                 needsToArray = false;
             }
-            else if (IsExactNamedTypeHelper(tgtCollType, "IReadOnlyList", "System.Collections.Generic", 1, out var rlElem))
+            else if (IsExactNamedTypeHelper(tgtCollType, "IReadOnlyList", "System.Collections.Generic", 1,
+                         out var rlElem))
             {
                 nodeDtoType = rlElem!;
                 needsToArray = false; // List<T> implements IReadOnlyList<T>
             }
-            else if (IsExactNamedTypeHelper(tgtCollType, "ICollection", "System.Collections.Generic", 1, out var icElem))
+            else if (IsExactNamedTypeHelper(tgtCollType, "ICollection", "System.Collections.Generic", 1,
+                         out var icElem))
             {
                 nodeDtoType = icElem!;
                 needsToArray = false; // List<T> implements ICollection<T>
             }
-            else if (IsExactNamedTypeHelper(tgtCollType, "IReadOnlyCollection", "System.Collections.Generic", 1, out var ircElem))
+            else if (IsExactNamedTypeHelper(tgtCollType, "IReadOnlyCollection", "System.Collections.Generic", 1,
+                         out var ircElem))
             {
                 nodeDtoType = ircElem!;
                 needsToArray = false; // List<T> implements IReadOnlyCollection<T>
@@ -4320,7 +4330,8 @@ internal static class MapperExtractor
                 nodeDtoType = ilElem!;
                 needsToArray = false; // List<T> implements IList<T>
             }
-            else if (IsExactNamedTypeHelper(tgtCollType, "IEnumerable", "System.Collections.Generic", 1, out var ieElem))
+            else if (IsExactNamedTypeHelper(tgtCollType, "IEnumerable", "System.Collections.Generic", 1,
+                         out var ieElem))
             {
                 nodeDtoType = ieElem!;
                 needsToArray = false; // List<T> implements IEnumerable<T>
@@ -4337,7 +4348,7 @@ internal static class MapperExtractor
             // Detect hetero mode: abstract/interface node base OR [MapDerivedType] pairs present.
             var nodeIsAbstractOrInterface =
                 nodeType.TypeKind == TypeKind.Interface || nodeType.IsAbstract;
-            var effectiveDerivedPairs = rawDerivedPairs ?? System.Array.Empty<(INamedTypeSymbol, INamedTypeSymbol)>();
+            var effectiveDerivedPairs = rawDerivedPairs ?? Array.Empty<(INamedTypeSymbol, INamedTypeSymbol)>();
             var isHetero = nodeIsAbstractOrInterface || effectiveDerivedPairs.Count > 0;
 
             if (isHetero)
@@ -4356,7 +4367,7 @@ internal static class MapperExtractor
                     string FlatNodeHelperName,
                     List<(string Name, bool IsCollection, bool IsDictValue)> EdgeMembers,
                     List<(string Name, ITypeSymbol Type)> LeafMembers)>();
-                var seenSrcFqns = new HashSet<string>(System.StringComparer.Ordinal);
+                var seenSrcFqns = new HashSet<string>(StringComparer.Ordinal);
                 var anyArmError = false;
 
                 foreach (var (derivedSrc, derivedTgt) in effectiveDerivedPairs)
@@ -4417,7 +4428,8 @@ internal static class MapperExtractor
                         // Nullable<T> where T is assignable to nodeBase
                         if (nm.Type is INamedTypeSymbol nmNamed
                             && nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
-                            && HasImplicitConversion(compilation, nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None), nodeType))
+                            && HasImplicitConversion(compilation,
+                                nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None), nodeType))
                         {
                             derivedEdgeMembers.Add((nm.Name, false, false));
                             continue;
@@ -4425,24 +4437,24 @@ internal static class MapperExtractor
 
                         // SF-F3: Dictionary<K,V> where V is assignable to nodeBase → dict-value edge.
                         if (DictionaryConverter.TryGetDictionaryValueType(nm.Type, out var dictValTypeD)
-                            && HasImplicitConversion(compilation, dictValTypeD.WithNullableAnnotation(NullableAnnotation.None), nodeType))
+                            && HasImplicitConversion(compilation,
+                                dictValTypeD.WithNullableAnnotation(NullableAnnotation.None), nodeType))
                         {
                             derivedEdgeMembers.Add((nm.Name, false, true));
                             continue;
                         }
 
                         // Collection edge: element type assignable to nodeBase
-                        bool isEdgeColl = false;
+                        var isEdgeColl = false;
                         if (nm.Type is IArrayTypeSymbol arrEdge && arrEdge.Rank == 1
-                            && HasImplicitConversion(compilation, arrEdge.ElementType.WithNullableAnnotation(NullableAnnotation.None), nodeType))
-                        {
+                                                                && HasImplicitConversion(compilation,
+                                                                    arrEdge.ElementType.WithNullableAnnotation(
+                                                                        NullableAnnotation.None), nodeType))
                             isEdgeColl = true;
-                        }
                         else if (CollectionConverter.TryGetEnumerableElement(nm.Type, out var edgeElem, out _)
-                            && HasImplicitConversion(compilation, edgeElem.WithNullableAnnotation(NullableAnnotation.None), nodeType))
-                        {
+                                 && HasImplicitConversion(compilation,
+                                     edgeElem.WithNullableAnnotation(NullableAnnotation.None), nodeType))
                             isEdgeColl = true;
-                        }
 
                         if (isEdgeColl)
                             derivedEdgeMembers.Add((nm.Name, true, false));
@@ -4452,9 +4464,9 @@ internal static class MapperExtractor
 
                     // 5. Build the __DwarfMap_FlatNode_<TypeName>_<hash> helper for this concrete type
                     var armHashKey = derivedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                                  + "=>"
-                                  + derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                                  + "@FG";
+                                     + "=>"
+                                     + derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                                     + "@FG";
                     var armHash = FlattenGraphHash(armHashKey);
                     var typeName = derivedSrc.Name;
                     var perTypeHelperName = "__DwarfMap_FlatNode_" + typeName + "_" + armHash;
@@ -4462,14 +4474,14 @@ internal static class MapperExtractor
                     if (!synthesized.ContainsKey(perTypeHelperName))
                     {
                         var nodeFqDerived = derivedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                        var dtoFqDerived  = derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                        var dtoWritableDerived = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
+                        var dtoFqDerived = derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                        var dtoWritableDerived = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
                         foreach (var wm in WritableMembers(derivedTgt))
                             dtoWritableDerived[wm.Name] = wm.Type;
 
-                        var sbArm = new System.Text.StringBuilder();
+                        var sbArm = new StringBuilder();
                         sbArm.Append("    private ").Append(dtoFqDerived).Append(' ').Append(perTypeHelperName)
-                             .Append('(').Append(nodeFqDerived).AppendLine(" n)");
+                            .Append('(').Append(nodeFqDerived).AppendLine(" n)");
                         sbArm.AppendLine("    {");
                         sbArm.Append("        return new ").Append(dtoFqDerived).AppendLine();
                         sbArm.AppendLine("        {");
@@ -4481,26 +4493,28 @@ internal static class MapperExtractor
                         {
                             if (!dtoWritableDerived.TryGetValue(leaf.Name, out var dtoMemberType))
                                 continue;
-                            var leafThrowAwaySynth = new Dictionary<string, SynthesizedMethod>(System.StringComparer.Ordinal);
+                            var leafThrowAwaySynth = new Dictionary<string, SynthesizedMethod>(StringComparer.Ordinal);
                             var leafTestDiags = new List<DiagnosticInfo>();
-                            bool leafResolved = TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
-                                    allMethods, autoCandidates, enumStrategy, leafThrowAwaySynth, nullStrategy,
-                                    location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
-                                    autoNest, nestedRegistry, nullAsNull: false, isPreserve: false);
+                            var leafResolved = TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
+                                allMethods, autoCandidates, enumStrategy, leafThrowAwaySynth, nullStrategy,
+                                location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
+                                autoNest, nestedRegistry);
                             if (!leafResolved)
                             {
                                 diagnostics.AddRange(leafTestDiags);
                                 continue;
                             }
+
                             // MF-D: skip only COMPLEX helpers (Obj/Coll/Dict) that may become 3-param.
                             // Numeric/enum/parsable helpers are always single-arg and are safe.
                             if (leafConv is not null
-                                && (leafConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
-                                    || leafConv.StartsWith("__DwarfMap_Coll_", System.StringComparison.Ordinal)
-                                    || leafConv.StartsWith("__DwarfMap_Dict_", System.StringComparison.Ordinal)))
+                                && (leafConv.StartsWith("__DwarfMap_Obj_", StringComparison.Ordinal)
+                                    || leafConv.StartsWith("__DwarfMap_Coll_", StringComparison.Ordinal)
+                                    || leafConv.StartsWith("__DwarfMap_Dict_", StringComparison.Ordinal)))
                                 continue; // complex synthesized helper — skip (topology degradation)
                             foreach (var kv in leafThrowAwaySynth)
-                                if (!synthesized.ContainsKey(kv.Key)) synthesized[kv.Key] = kv.Value;
+                                if (!synthesized.ContainsKey(kv.Key))
+                                    synthesized[kv.Key] = kv.Value;
                             sbArm.Append("            ").Append(leaf.Name).Append(" = ");
                             AppendFlatNodeMemberExpr(sbArm, "n", leaf.Name, leafConv, leafNull);
                             sbArm.AppendLine(",");
@@ -4535,33 +4549,35 @@ internal static class MapperExtractor
 
                 // Build dispatch helper name and traversal helper name from the hetero hash
                 var heteroHashKey = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                                  + "=>"
-                                  + nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                                  + "@Hetero";
+                                    + "=>"
+                                    + nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                                    + "@Hetero";
                 var heteroHash = FlattenGraphHash(heteroHashKey);
 
-                var dispatchHelperName  = "__DwarfMap_FlatNodeDispatch_" + heteroHash;
+                var dispatchHelperName = "__DwarfMap_FlatNodeDispatch_" + heteroHash;
                 var traversalHelperNameH = "__DwarfMap_FlattenGraph_" + heteroHash;
 
                 // Synthesize __DwarfMap_FlatNodeDispatch_<hash>(TBase n) => n switch { ... }
                 if (!synthesized.ContainsKey(dispatchHelperName))
                 {
                     var nodeBaseFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    var dtoBaseFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    var sbDisp = new System.Text.StringBuilder();
+                    var dtoBaseFq = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    var sbDisp = new StringBuilder();
                     sbDisp.Append("    private ").Append(dtoBaseFq).Append(' ').Append(dispatchHelperName)
-                          .Append('(').Append(nodeBaseFq).AppendLine(" n)");
+                        .Append('(').Append(nodeBaseFq).AppendLine(" n)");
                     sbDisp.AppendLine("        => n switch");
                     sbDisp.AppendLine("        {");
                     foreach (var arm in sortedHeteroArms)
                     {
                         var armSrcFq = arm.NodeDerived.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         sbDisp.Append("            ").Append(armSrcFq).Append(" __s => ")
-                              .Append(arm.FlatNodeHelperName).AppendLine("(__s),");
+                            .Append(arm.FlatNodeHelperName).AppendLine("(__s),");
                     }
+
                     sbDisp.Append("            _ => throw new global::System.ArgumentException(")
-                          .Append("\"DwarfMapper [FlattenGraph]: no [MapDerivedType] registered for runtime node type '\" + ")
-                          .Append("n.GetType() + \"'.\", nameof(n)),");
+                        .Append(
+                            "\"DwarfMapper [FlattenGraph]: no [MapDerivedType] registered for runtime node type '\" + ")
+                        .Append("n.GetType() + \"'.\", nameof(n)),");
                     sbDisp.AppendLine();
                     sbDisp.AppendLine("        };");
                     synthesized[dispatchHelperName] = new SynthesizedMethod(dispatchHelperName, sbDisp.ToString());
@@ -4571,21 +4587,23 @@ internal static class MapperExtractor
                 if (!synthesized.ContainsKey(traversalHelperNameH))
                 {
                     var nodeBaseFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    var dtoBaseFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    var listFqH    = "global::System.Collections.Generic.List<" + dtoBaseFq + ">";
-                    var queueFqH   = "global::System.Collections.Generic.Queue<" + nodeBaseFq + ">";
+                    var dtoBaseFq = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    var listFqH = "global::System.Collections.Generic.List<" + dtoBaseFq + ">";
+                    var queueFqH = "global::System.Collections.Generic.Queue<" + nodeBaseFq + ">";
                     var hashSetFqH = "global::System.Collections.Generic.HashSet<object>";
 
-                    var sbBfs = new System.Text.StringBuilder();
+                    var sbBfs = new StringBuilder();
                     sbBfs.Append("    private ").Append(listFqH).Append(' ').Append(traversalHelperNameH)
-                         .Append('(');
+                        .Append('(');
                     // MF-B: use the correct parameter type for the entry parameter.
                     if (srcNavIsArray)
                         sbBfs.Append(nodeBaseFq).AppendLine("[]? entry)");
                     else if (srcNavIsDict)
-                        sbBfs.Append(srcNavType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)).AppendLine("? entry)");
+                        sbBfs.Append(srcNavType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                            .AppendLine("? entry)");
                     else if (srcNavIsCollection)
-                        sbBfs.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeBaseFq).AppendLine(">? entry)");
+                        sbBfs.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeBaseFq)
+                            .AppendLine(">? entry)");
                     else
                         sbBfs.Append(nodeBaseFq).AppendLine("? entry)");
                     sbBfs.AppendLine("    {");
@@ -4596,23 +4614,25 @@ internal static class MapperExtractor
                         // SF-F3: dict source nav — seed BFS from dict values.
                         sbBfs.AppendLine("        if (entry is null) return __result;");
                         sbBfs.Append("        var __visited = new ").Append(hashSetFqH)
-                             .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                            .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
                         sbBfs.Append("        var __queue = new ").Append(queueFqH).AppendLine("();");
-                        sbBfs.AppendLine("        foreach (var __kv in entry) if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
+                        sbBfs.AppendLine(
+                            "        foreach (var __kv in entry) if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
                     }
                     else if (srcNavIsCollection)
                     {
                         sbBfs.AppendLine("        if (entry is null) return __result;");
                         sbBfs.Append("        var __visited = new ").Append(hashSetFqH)
-                             .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                            .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
                         sbBfs.Append("        var __queue = new ").Append(queueFqH).AppendLine("();");
-                        sbBfs.AppendLine("        foreach (var __seed in entry) if (__seed is not null && __visited.Add(__seed)) __queue.Enqueue(__seed);");
+                        sbBfs.AppendLine(
+                            "        foreach (var __seed in entry) if (__seed is not null && __visited.Add(__seed)) __queue.Enqueue(__seed);");
                     }
                     else
                     {
                         sbBfs.AppendLine("        if (entry is null) return __result;");
                         sbBfs.Append("        var __visited = new ").Append(hashSetFqH)
-                             .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                            .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
                         sbBfs.Append("        var __queue = new ").Append(queueFqH).AppendLine("();");
                         sbBfs.AppendLine("        __visited.Add(entry);");
                         sbBfs.AppendLine("        __queue.Enqueue(entry);");
@@ -4635,33 +4655,28 @@ internal static class MapperExtractor
                         sbBfs.AppendLine("                {");
                         // Enqueue each edge member of this arm
                         foreach (var edge in arm.EdgeMembers)
-                        {
                             if (edge.IsDictValue)
-                            {
                                 // SF-F3: Dictionary<K,V> where V is a node — traverse values.
                                 sbBfs.Append("                    if (__t.").Append(edge.Name)
-                                     .Append(" is { } __d_").Append(edge.Name)
-                                     .Append(") foreach (var __kv in __d_").Append(edge.Name)
-                                     .AppendLine(") if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
-                            }
+                                    .Append(" is { } __d_").Append(edge.Name)
+                                    .Append(") foreach (var __kv in __d_").Append(edge.Name)
+                                    .AppendLine(
+                                        ") if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
                             else if (!edge.IsCollection)
-                            {
                                 sbBfs.Append("                    if (__t.").Append(edge.Name)
-                                     .Append(" is { } __e_").Append(edge.Name)
-                                     .Append(" && __visited.Add(__e_").Append(edge.Name)
-                                     .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
-                            }
+                                    .Append(" is { } __e_").Append(edge.Name)
+                                    .Append(" && __visited.Add(__e_").Append(edge.Name)
+                                    .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
                             else
-                            {
                                 sbBfs.Append("                    if (__t.").Append(edge.Name)
-                                     .Append(" is { } __c_").Append(edge.Name)
-                                     .Append(") foreach (var __x in __c_").Append(edge.Name)
-                                     .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
-                            }
-                        }
+                                    .Append(" is { } __c_").Append(edge.Name)
+                                    .Append(") foreach (var __x in __c_").Append(edge.Name)
+                                    .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
+
                         sbBfs.AppendLine("                    break;");
                         sbBfs.AppendLine("                }");
                     }
+
                     sbBfs.AppendLine("            }");
 
                     sbBfs.AppendLine("        }");
@@ -4675,23 +4690,25 @@ internal static class MapperExtractor
                 if (needsToArray)
                 {
                     var nodeBaseFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    var dtoBaseFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    var dtoBaseFq = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     var wrapperNameH = "__DwarfMap_FlattenGraphArr_" + heteroHash;
                     if (!synthesized.ContainsKey(wrapperNameH))
                     {
-                        var sbWr = new System.Text.StringBuilder();
+                        var sbWr = new StringBuilder();
                         sbWr.Append("    private ").Append(dtoBaseFq).Append("[] ").Append(wrapperNameH)
                             .Append('(');
                         // MF-B: match the traversal helper's parameter type.
                         if (srcNavIsArray)
                             sbWr.Append(nodeBaseFq).AppendLine("[]? entry)");
                         else if (srcNavIsCollection)
-                            sbWr.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeBaseFq).AppendLine(">? entry)");
+                            sbWr.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeBaseFq)
+                                .AppendLine(">? entry)");
                         else
                             sbWr.Append(nodeBaseFq).AppendLine("? entry)");
                         sbWr.Append("        => ").Append(traversalHelperNameH).AppendLine("(entry).ToArray();");
                         synthesized[wrapperNameH] = new SynthesizedMethod(wrapperNameH, sbWr.ToString());
                     }
+
                     converterHelperNameH = wrapperNameH;
                 }
                 else
@@ -4701,13 +4718,13 @@ internal static class MapperExtractor
 
                 consumedTargets.Add(tgtCollName);
                 injected.Add(new MemberMap(
-                    TargetName: tgtCollName,
-                    SourceName: srcNavName,
-                    ConverterMethod: converterHelperNameH,
-                    NullHandling: Model.NullHandling.None,
-                    ConverterNeedsDepthCtx: false,
-                    SourceIsNullableRef: true));
-                directives.Add(new Model.FlattenGraphDirective(
+                    tgtCollName,
+                    srcNavName,
+                    converterHelperNameH,
+                    NullHandling.None,
+                    false,
+                    true));
+                directives.Add(new FlattenGraphDirective(
                     srcNavName, tgtCollName, traversalHelperNameH, converterHelperNameH));
                 continue; // skip the homogeneous path below
             }
@@ -4721,26 +4738,23 @@ internal static class MapperExtractor
             // with a public parameterless constructor (or be constructable), OR there must be a declared
             // mapper for this pair. The flat-node helper only maps leaf members; unmappable leaves are
             // silently skipped, so the check is just a sanity gate on type kind.
-            bool nodeDtoIsConstructible = false;
+            var nodeDtoIsConstructible = false;
             if (nodeDtoType is INamedTypeSymbol namedDtoCheck)
-            {
                 nodeDtoIsConstructible =
                     (namedDtoCheck.TypeKind == TypeKind.Class || namedDtoCheck.TypeKind == TypeKind.Struct)
                     && namedDtoCheck.SpecialType == SpecialType.None
                     && namedDtoCheck.InstanceConstructors.Any(c =>
                         c.DeclaredAccessibility == Accessibility.Public);
-            }
             // Also accept if there's an explicit declared mapper method for this pair.
             var hasDeclaredMapper = false;
             foreach (var m in allMethods)
-            {
                 if (HasImplicitConversion(compilation, nodeType, m.ParamType)
                     && HasImplicitConversion(compilation, m.ReturnType, nodeDtoType))
                 {
                     hasDeclaredMapper = true;
                     break;
                 }
-            }
+
             // Accept implicit conversion too (value types, same type, etc.)
             var hasImplicit = HasImplicitConversion(compilation, nodeType, nodeDtoType);
 
@@ -4775,8 +4789,9 @@ internal static class MapperExtractor
                 //   (b) nodeType is assignable to memberType (e.g. edge typed as an interface/base
                 //       that the node implements/derives — "INode? Link" where node is a class : INode).
                 // Was: exact equality only — missed interface-typed and base-typed edges.
-                bool directToNode = HasImplicitConversion(compilation, memberTypeNoAnnotation, nodeType);
-                bool nodeToMember = !directToNode && HasImplicitConversion(compilation, nodeTypeNoAnnotation, memberTypeNoAnnotation);
+                var directToNode = HasImplicitConversion(compilation, memberTypeNoAnnotation, nodeType);
+                var nodeToMember = !directToNode &&
+                                   HasImplicitConversion(compilation, nodeTypeNoAnnotation, memberTypeNoAnnotation);
                 if (directToNode || nodeToMember)
                 {
                     // NeedsNodeCast: when the member type is a base/interface (reverse direction), we
@@ -4790,8 +4805,9 @@ internal static class MapperExtractor
                     && nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
                 {
                     var innerNoAnnot = nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None);
-                    bool innerToNode = HasImplicitConversion(compilation, innerNoAnnot, nodeType);
-                    bool nodeToInner = !innerToNode && HasImplicitConversion(compilation, nodeTypeNoAnnotation, innerNoAnnot);
+                    var innerToNode = HasImplicitConversion(compilation, innerNoAnnot, nodeType);
+                    var nodeToInner = !innerToNode &&
+                                      HasImplicitConversion(compilation, nodeTypeNoAnnotation, innerNoAnnot);
                     if (innerToNode || nodeToInner)
                     {
                         edgeMembers.Add((nm.Name, false, false, nodeToInner));
@@ -4802,64 +4818,71 @@ internal static class MapperExtractor
                 // SF-F3 fix: Dictionary<K,V> where V is assignable to nodeType → dict-value edge.
                 // Only V assignable to nodeType qualifies; keys are not traversed (v1: values only).
                 if (DictionaryConverter.TryGetDictionaryValueType(nm.Type, out var dictValType)
-                    && HasImplicitConversion(compilation, dictValType.WithNullableAnnotation(NullableAnnotation.None), nodeType))
+                    && HasImplicitConversion(compilation, dictValType.WithNullableAnnotation(NullableAnnotation.None),
+                        nodeType))
                 {
                     edgeMembers.Add((nm.Name, false, true, false)); // IsDictValue=true, no cast needed
                     continue;
                 }
 
                 // Collection of TNode (SF-F4 fix: use bidirectional assignability for element type)
-                bool isEdgeColl = false;
-                bool collNeedsCast = false;
+                var isEdgeColl = false;
+                var collNeedsCast = false;
                 if (nm.Type is IArrayTypeSymbol arrEdge && arrEdge.Rank == 1)
                 {
                     var arrElemNoAnnot = arrEdge.ElementType.WithNullableAnnotation(NullableAnnotation.None);
                     if (HasImplicitConversion(compilation, arrElemNoAnnot, nodeType))
+                    {
                         isEdgeColl = true;
+                    }
                     else if (HasImplicitConversion(compilation, nodeTypeNoAnnotation, arrElemNoAnnot))
-                    { isEdgeColl = true; collNeedsCast = true; }
+                    {
+                        isEdgeColl = true;
+                        collNeedsCast = true;
+                    }
                 }
                 else if (CollectionConverter.TryGetEnumerableElement(nm.Type, out var edgeElem, out _))
                 {
                     var edgeElemNoAnnot = edgeElem.WithNullableAnnotation(NullableAnnotation.None);
                     if (HasImplicitConversion(compilation, edgeElemNoAnnot, nodeType))
+                    {
                         isEdgeColl = true;
+                    }
                     else if (HasImplicitConversion(compilation, nodeTypeNoAnnotation, edgeElemNoAnnot))
-                    { isEdgeColl = true; collNeedsCast = true; }
+                    {
+                        isEdgeColl = true;
+                        collNeedsCast = true;
+                    }
                 }
 
                 if (isEdgeColl)
-                {
                     edgeMembers.Add((nm.Name, true, false, collNeedsCast));
-                }
                 else
-                {
                     leafMembers.Add((nm.Name, nm.Type));
-                }
             }
 
             // 7. Get writable members of nodeDtoType for the flat-node helper
-            var dtoWritable = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
+            var dtoWritable = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
             foreach (var m in WritableMembers(nodeDtoType))
                 dtoWritable[m.Name] = m.Type;
 
             // 8. Build hash key and helper names
             var hashKey = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                        + "=>"
-                        + nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                          + "=>"
+                          + nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var hash = FlattenGraphHash(hashKey);
 
-            var flatNodeHelperName    = "__DwarfMap_FlatNode_" + hash;
-            var traversalHelperName   = "__DwarfMap_FlattenGraph_" + hash;
+            var flatNodeHelperName = "__DwarfMap_FlatNode_" + hash;
+            var traversalHelperName = "__DwarfMap_FlattenGraph_" + hash;
 
             // 9. Synthesize __DwarfMap_FlatNode_HASH (maps one TNode leaf-only → TNodeDto)
             if (!synthesized.ContainsKey(flatNodeHelperName))
             {
                 var nodeFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                var dtoFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                var sb = new System.Text.StringBuilder();
+                var dtoFq = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var sb = new StringBuilder();
                 sb.Append("    private ").Append(dtoFq).Append(' ').Append(flatNodeHelperName)
-                  .Append('(').Append(nodeFq).AppendLine("? n)");
+                    .Append('(').Append(nodeFq).AppendLine("? n)");
                 sb.AppendLine("    {");
                 sb.AppendLine("        if (n is null) return null!;");
                 sb.Append("        return new ").Append(dtoFq).AppendLine();
@@ -4888,12 +4911,12 @@ internal static class MapperExtractor
                     // Use a throw-away synth dict so complex helpers (Obj/Dict/Coll) are NOT
                     // registered in the main dict and cannot be force-marked 3-param later.
                     var leafThrowAwaySynth = new Dictionary<string, SynthesizedMethod>(
-                        System.StringComparer.Ordinal);
+                        StringComparer.Ordinal);
                     var leafTestDiags = new List<DiagnosticInfo>();
-                    bool leafResolved = TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
-                            allMethods, autoCandidates, enumStrategy, leafThrowAwaySynth, nullStrategy,
-                            location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
-                            autoNest, nestedRegistry, nullAsNull: false, isPreserve: false);
+                    var leafResolved = TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
+                        allMethods, autoCandidates, enumStrategy, leafThrowAwaySynth, nullStrategy,
+                        location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
+                        autoNest, nestedRegistry);
 
                     if (!leafResolved)
                     {
@@ -4911,22 +4934,18 @@ internal static class MapperExtractor
                     // Unsafe prefixes: __DwarfMap_Obj_, __DwarfMap_Coll_, __DwarfMap_Dict_
                     // Safe prefixes:   __DwarfMap_Num_, __DwarfMap_Enum_, __DwarfMap_Pars_, __DwarfMap_Blit_
                     if (leafConv is not null
-                        && (leafConv.StartsWith("__DwarfMap_Obj_", System.StringComparison.Ordinal)
-                            || leafConv.StartsWith("__DwarfMap_Coll_", System.StringComparison.Ordinal)
-                            || leafConv.StartsWith("__DwarfMap_Dict_", System.StringComparison.Ordinal)))
-                    {
+                        && (leafConv.StartsWith("__DwarfMap_Obj_", StringComparison.Ordinal)
+                            || leafConv.StartsWith("__DwarfMap_Coll_", StringComparison.Ordinal)
+                            || leafConv.StartsWith("__DwarfMap_Dict_", StringComparison.Ordinal)))
                         // Complex synthesized helper — skip to avoid future 3-param mismatch.
                         // Don't register leafThrowAwaySynth entries in main dict.
                         continue;
-                    }
 
                     // Safe: emit the leaf member.  Merge any non-complex throw-away entries
                     // (numeric, enum, parsable helpers that are never force-marked 3-param).
                     foreach (var kv in leafThrowAwaySynth)
-                    {
                         if (!synthesized.ContainsKey(kv.Key))
                             synthesized[kv.Key] = kv.Value;
-                    }
 
                     sb.Append("            ").Append(leaf.Name).Append(" = ");
                     AppendFlatNodeMemberExpr(sb, "n", leaf.Name, leafConv, leafNull);
@@ -4949,15 +4968,15 @@ internal static class MapperExtractor
             // 10. Synthesize __DwarfMap_FlattenGraph_HASH (BFS traversal → List<TNodeDto>)
             if (!synthesized.ContainsKey(traversalHelperName))
             {
-                var nodeFq    = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                var dtoFq     = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                var listFq    = "global::System.Collections.Generic.List<" + dtoFq + ">";
-                var queueFq   = "global::System.Collections.Generic.Queue<" + nodeFq + ">";
+                var nodeFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var dtoFq = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var listFq = "global::System.Collections.Generic.List<" + dtoFq + ">";
+                var queueFq = "global::System.Collections.Generic.Queue<" + nodeFq + ">";
                 var hashSetFq = "global::System.Collections.Generic.HashSet<object>";
 
-                var sb = new System.Text.StringBuilder();
+                var sb = new StringBuilder();
                 sb.Append("    private ").Append(listFq).Append(' ').Append(traversalHelperName)
-                  .Append('(');
+                    .Append('(');
                 // MF-B: use the correct parameter type for the entry parameter.
                 // Array nav    → TNode[]?  (exact array type, avoids CS1503 with T[])
                 // Dict nav     → DictType? (seed from .Values — SF-F3 dict source nav)
@@ -4966,7 +4985,8 @@ internal static class MapperExtractor
                 if (srcNavIsArray)
                     sb.Append(nodeFq).AppendLine("[]? entry)");
                 else if (srcNavIsDict)
-                    sb.Append(srcNavType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)).AppendLine("? entry)");
+                    sb.Append(srcNavType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                        .AppendLine("? entry)");
                 else if (srcNavIsCollection)
                     sb.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeFq).AppendLine(">? entry)");
                 else
@@ -4979,24 +4999,26 @@ internal static class MapperExtractor
                     // SF-F3: dict source nav — seed BFS from dict values (not kvp pairs).
                     sb.AppendLine("        if (entry is null) return __result;");
                     sb.Append("        var __visited = new ").Append(hashSetFq)
-                      .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                        .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
                     sb.Append("        var __queue = new ").Append(queueFq).AppendLine("();");
-                    sb.AppendLine("        foreach (var __kv in entry) if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
+                    sb.AppendLine(
+                        "        foreach (var __kv in entry) if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
                 }
                 else if (srcNavIsCollection)
                 {
                     // Entry is a collection — seed the queue from all non-null elements
                     sb.AppendLine("        if (entry is null) return __result;");
                     sb.Append("        var __visited = new ").Append(hashSetFq)
-                      .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                        .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
                     sb.Append("        var __queue = new ").Append(queueFq).AppendLine("();");
-                    sb.AppendLine("        foreach (var __seed in entry) if (__seed is not null && __visited.Add(__seed)) __queue.Enqueue(__seed);");
+                    sb.AppendLine(
+                        "        foreach (var __seed in entry) if (__seed is not null && __visited.Add(__seed)) __queue.Enqueue(__seed);");
                 }
                 else
                 {
                     sb.AppendLine("        if (entry is null) return __result;");
                     sb.Append("        var __visited = new ").Append(hashSetFq)
-                      .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
+                        .AppendLine("(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);");
                     sb.Append("        var __queue = new ").Append(queueFq).AppendLine("();");
                     sb.AppendLine("        __visited.Add(entry);");
                     sb.AppendLine("        __queue.Enqueue(entry);");
@@ -5009,53 +5031,45 @@ internal static class MapperExtractor
 
                 // Enqueue reachable nodes via edge members of TNode
                 foreach (var edge in edgeMembers)
-                {
                     if (edge.IsDictValue)
                     {
                         // SF-F3: Dictionary<K,V> where V is a node — traverse values, not keys.
                         sb.Append("            if (__n.").Append(edge.Name)
-                          .Append(" is { } __d_").Append(edge.Name)
-                          .Append(") foreach (var __kv in __d_").Append(edge.Name)
-                          .AppendLine(") if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
+                            .Append(" is { } __d_").Append(edge.Name)
+                            .Append(") foreach (var __kv in __d_").Append(edge.Name)
+                            .AppendLine(
+                                ") if (__kv.Value is not null && __visited.Add(__kv.Value)) __queue.Enqueue(__kv.Value);");
                     }
                     else if (!edge.IsCollection)
                     {
                         if (edge.NeedsNodeCast)
-                        {
                             // SF-F4: edge typed as interface/base → use `is TNode` pattern to cast
                             // and filter to only concrete TNode values (safe: we're BFS-ing a TNode graph).
                             sb.Append("            if (__n.").Append(edge.Name)
-                              .Append(" is ").Append(nodeFq).Append(" __e_").Append(edge.Name)
-                              .Append(" && __visited.Add(__e_").Append(edge.Name)
-                              .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
-                        }
+                                .Append(" is ").Append(nodeFq).Append(" __e_").Append(edge.Name)
+                                .Append(" && __visited.Add(__e_").Append(edge.Name)
+                                .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
                         else
-                        {
                             sb.Append("            if (__n.").Append(edge.Name)
-                              .Append(" is { } __e_").Append(edge.Name)
-                              .Append(" && __visited.Add(__e_").Append(edge.Name)
-                              .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
-                        }
+                                .Append(" is { } __e_").Append(edge.Name)
+                                .Append(" && __visited.Add(__e_").Append(edge.Name)
+                                .Append(")) __queue.Enqueue(__e_").Append(edge.Name).AppendLine(");");
                     }
                     else
                     {
                         if (edge.NeedsNodeCast)
-                        {
                             // SF-F4: collection of interface/base elements → cast each.
                             sb.Append("            if (__n.").Append(edge.Name)
-                              .Append(" is { } __c_").Append(edge.Name)
-                              .Append(") foreach (var __xi in __c_").Append(edge.Name)
-                              .Append(") if (__xi is ").Append(nodeFq).AppendLine(" __x && __visited.Add(__x)) __queue.Enqueue(__x);");
-                        }
+                                .Append(" is { } __c_").Append(edge.Name)
+                                .Append(") foreach (var __xi in __c_").Append(edge.Name)
+                                .Append(") if (__xi is ").Append(nodeFq)
+                                .AppendLine(" __x && __visited.Add(__x)) __queue.Enqueue(__x);");
                         else
-                        {
                             sb.Append("            if (__n.").Append(edge.Name)
-                              .Append(" is { } __c_").Append(edge.Name)
-                              .Append(") foreach (var __x in __c_").Append(edge.Name)
-                              .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
-                        }
+                                .Append(" is { } __c_").Append(edge.Name)
+                                .Append(") foreach (var __x in __c_").Append(edge.Name)
+                                .AppendLine(") if (__x is not null && __visited.Add(__x)) __queue.Enqueue(__x);");
                     }
-                }
 
                 sb.AppendLine("        }");
                 sb.AppendLine("        return __result;");
@@ -5068,23 +5082,25 @@ internal static class MapperExtractor
             if (needsToArray)
             {
                 var nodeFq = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                var dtoFq  = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var dtoFq = nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 var wrapperName = "__DwarfMap_FlattenGraphArr_" + hash;
                 if (!synthesized.ContainsKey(wrapperName))
                 {
-                    var sb = new System.Text.StringBuilder();
+                    var sb = new StringBuilder();
                     sb.Append("    private ").Append(dtoFq).Append("[] ").Append(wrapperName)
-                      .Append('(');
+                        .Append('(');
                     // MF-B: match the traversal helper's parameter type.
                     if (srcNavIsArray)
                         sb.Append(nodeFq).AppendLine("[]? entry)");
                     else if (srcNavIsCollection)
-                        sb.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeFq).AppendLine(">? entry)");
+                        sb.Append("global::System.Collections.Generic.IEnumerable<").Append(nodeFq)
+                            .AppendLine(">? entry)");
                     else
                         sb.Append(nodeFq).AppendLine("? entry)");
                     sb.Append("        => ").Append(traversalHelperName).AppendLine("(entry).ToArray();");
                     synthesized[wrapperName] = new SynthesizedMethod(wrapperName, sb.ToString());
                 }
+
                 converterHelperName = wrapperName;
             }
             else
@@ -5098,15 +5114,15 @@ internal static class MapperExtractor
             // 13. Build a MemberMap for the injection — emitter handles it like any other member
             //     SourceIsNullableRef=true ensures '!' is added if needed (the traversal helper handles null internally)
             injected.Add(new MemberMap(
-                TargetName: tgtCollName,
-                SourceName: srcNavName,
-                ConverterMethod: converterHelperName,
-                NullHandling: Model.NullHandling.None,
-                ConverterNeedsDepthCtx: false,
-                SourceIsNullableRef: true));
+                tgtCollName,
+                srcNavName,
+                converterHelperName,
+                NullHandling.None,
+                false,
+                true));
 
             // 14. Record directive (for model completeness / snapshot tests)
-            directives.Add(new Model.FlattenGraphDirective(
+            directives.Add(new FlattenGraphDirective(
                 srcNavName, tgtCollName, traversalHelperName, converterHelperName));
         }
 
@@ -5114,32 +5130,32 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// Appends a member-access value expression to <paramref name="sb"/> for use inside
-    /// a <c>__DwarfMap_FlatNode_*</c> helper. Does NOT append trailing comma or newline.
+    ///     Appends a member-access value expression to <paramref name="sb" /> for use inside
+    ///     a <c>__DwarfMap_FlatNode_*</c> helper. Does NOT append trailing comma or newline.
     /// </summary>
     private static void AppendFlatNodeMemberExpr(
-        System.Text.StringBuilder sb,
+        StringBuilder sb,
         string paramName,
         string memberName,
         string? conv,
-        Model.NullHandling nh)
+        NullHandling nh)
     {
         var access = paramName + "." + memberName;
         if (conv is not null)
         {
-            var needsBang = conv.StartsWith("__DwarfMap_", System.StringComparison.Ordinal);
+            var needsBang = conv.StartsWith("__DwarfMap_", StringComparison.Ordinal);
             sb.Append(conv).Append('(').Append(access).Append(needsBang ? "!" : "").Append(')');
         }
         else
         {
             switch (nh)
             {
-                case Model.NullHandling.ThrowIfNull:
+                case NullHandling.ThrowIfNull:
                     sb.Append(access)
-                      .Append(" ?? throw new global::System.InvalidOperationException(\"Source member '")
-                      .Append(memberName).Append("' was null\")");
+                        .Append(" ?? throw new global::System.InvalidOperationException(\"Source member '")
+                        .Append(memberName).Append("' was null\")");
                     break;
-                case Model.NullHandling.ValueOrDefault:
+                case NullHandling.ValueOrDefault:
                     sb.Append(access).Append(".GetValueOrDefault()");
                     break;
                 default:
@@ -5153,115 +5169,56 @@ internal static class MapperExtractor
     {
         var members = new List<string>();
         foreach (var attr in method.GetAttributes())
-        {
             if (attr.AttributeClass?.ToDisplayString() == "DwarfMapper.ReinterpretAttribute"
                 && attr.ConstructorArguments.Length == 1
                 && attr.ConstructorArguments[0].Value is string m)
-            {
                 members.Add(m);
-            }
-        }
+
         return members;
     }
 
-    private static EnumStrategy ReadEnumStrategy(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static EnumStrategy ReadEnumStrategy(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "EnumStrategy" && named.Value.Value is int i)
-                {
-                    return (EnumStrategy)i;
-                }
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "EnumStrategy" && named.Value.Value is int i)
+                return (EnumStrategy)i;
+
         return EnumStrategy.ByName;
     }
 
-    private static NullStrategy ReadNullStrategy(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static NullStrategy ReadNullStrategy(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "NullStrategy" && named.Value.Value is int i)
-                {
-                    return (NullStrategy)i;
-                }
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "NullStrategy" && named.Value.Value is int i)
+                return (NullStrategy)i;
+
         return NullStrategy.Throw;
     }
 
-    private static bool ReadCaseInsensitive(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static bool ReadCaseInsensitive(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "CaseInsensitive" && named.Value.Value is bool b)
-                {
-                    return b;
-                }
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "CaseInsensitive" && named.Value.Value is bool b)
+                return b;
+
         return false;
     }
 
     /// <summary>
-    /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.GenerateExtensions"/> value
-    /// from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c> (the convenience facade is opt-out).
+    ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.GenerateExtensions" /> value
+    ///     from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c> (the convenience facade is opt-out).
     /// </summary>
-    private static bool ReadGenerateExtensions(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static bool ReadGenerateExtensions(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "GenerateExtensions" && named.Value.Value is bool b)
-                {
-                    return b;
-                }
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "GenerateExtensions" && named.Value.Value is bool b)
+                return b;
+
         return true;
-    }
-
-    // ── Pair-scoped member config: [MapProperty<S,T>] / [MapIgnore<T>] declared on the class ──────────────
-    // These give a [GenerateMap] pair (or an auto-synthesized nested pair) member config without a partial
-    // method. The non-generic readers above match on the exact display string "DwarfMapper.MapPropertyAttribute"
-    // etc., so they never pick up these generic variants; these readers match by name + type-argument arity.
-
-    private sealed class PairProp
-    {
-        public ITypeSymbol Source = null!;
-        public ITypeSymbol Target = null!;
-        public string SrcMember = "";
-        public string TgtMember = "";
-        public string? Use;
-        public bool HasNullSub;
-        public TypedConstant NullSub;
-        public string? When;
-        public LocationInfo? Loc;
-        public bool Consumed;
-    }
-
-    private sealed class PairIgnore
-    {
-        public ITypeSymbol Target = null!;
-        public string Member = "";
-        public LocationInfo? Loc;
-        public bool Consumed;
-    }
-
-    private sealed class PairConstructor
-    {
-        public ITypeSymbol Source = null!;
-        public ITypeSymbol Target = null!;
-        public string Method = "";
-        public LocationInfo? Loc;
-        public bool Consumed;
     }
 
     private static List<PairConstructor> ReadPairConstructors(INamedTypeSymbol classSymbol)
@@ -5272,37 +5229,32 @@ internal static class MapperExtractor
             var ac = attr.AttributeClass;
             if (ac is null || ac.Name != "MapConstructorAttribute" || ac.TypeArguments.Length != 2
                 || ac.ContainingNamespace?.Name != "DwarfMapper")
-            {
                 continue;
-            }
-            if (attr.ConstructorArguments.Length != 1 || attr.ConstructorArguments[0].Value is not string method)
-            {
-                continue;
-            }
+            if (attr.ConstructorArguments.Length != 1 ||
+                attr.ConstructorArguments[0].Value is not string method) continue;
             result.Add(new PairConstructor
             {
                 Source = ac.TypeArguments[0],
                 Target = ac.TypeArguments[1],
                 Method = method,
-                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None),
+                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
             });
         }
+
         return result;
     }
 
     /// <summary>
-    /// Names of the destination members the generator must <b>not</b> assign when a factory constructs the
-    /// target (<c>[MapConstructor]</c>): everything except a plain post-construction-settable member. That is,
-    /// <c>init</c>-only, <c>required</c>, and get-only/read-only members — all of which can only be set at
-    /// construction time and are therefore the factory's responsibility. Walks the inheritance chain.
+    ///     Names of the destination members the generator must <b>not</b> assign when a factory constructs the
+    ///     target (<c>[MapConstructor]</c>): everything except a plain post-construction-settable member. That is,
+    ///     <c>init</c>-only, <c>required</c>, and get-only/read-only members — all of which can only be set at
+    ///     construction time and are therefore the factory's responsibility. Walks the inheritance chain.
     /// </summary>
     private static HashSet<string> CollectFactoryExcludedMembers(INamedTypeSymbol target)
     {
-        var result = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (ITypeSymbol? t = target; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
-        {
             foreach (var m in t.GetMembers())
-            {
                 if (m is IPropertySymbol p && !p.IsIndexer)
                 {
                     // Keep only plain settable properties; exclude required, get-only, and init-only.
@@ -5314,8 +5266,7 @@ internal static class MapperExtractor
                     if (f.IsRequired || f.IsReadOnly || f.IsConst)
                         result.Add(f.Name);
                 }
-            }
-        }
+
         return result;
     }
 
@@ -5327,25 +5278,30 @@ internal static class MapperExtractor
             var ac = attr.AttributeClass;
             if (ac is null || ac.Name != "MapPropertyAttribute" || ac.TypeArguments.Length != 2
                 || ac.ContainingNamespace?.Name != "DwarfMapper")
-            {
                 continue;
-            }
             if (attr.ConstructorArguments.Length != 2
                 || attr.ConstructorArguments[0].Value is not string src
                 || attr.ConstructorArguments[1].Value is not string tgt)
-            {
                 continue;
-            }
             string? use = null;
             var hasNull = false;
             TypedConstant nullSub = default;
             string? when = null;
             foreach (var na in attr.NamedArguments)
-            {
-                if (na.Key == "Use" && na.Value.Value is string u) { use = u; }
-                else if (na.Key == "NullSubstitute") { hasNull = true; nullSub = na.Value; }
-                else if (na.Key == "When" && na.Value.Value is string w) { when = w; }
-            }
+                if (na.Key == "Use" && na.Value.Value is string u)
+                {
+                    use = u;
+                }
+                else if (na.Key == "NullSubstitute")
+                {
+                    hasNull = true;
+                    nullSub = na.Value;
+                }
+                else if (na.Key == "When" && na.Value.Value is string w)
+                {
+                    when = w;
+                }
+
             result.Add(new PairProp
             {
                 Source = ac.TypeArguments[0],
@@ -5356,9 +5312,10 @@ internal static class MapperExtractor
                 HasNullSub = hasNull,
                 NullSub = nullSub,
                 When = when,
-                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None),
+                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
             });
         }
+
         return result;
     }
 
@@ -5370,29 +5327,26 @@ internal static class MapperExtractor
             var ac = attr.AttributeClass;
             if (ac is null || ac.Name != "MapIgnoreAttribute" || ac.TypeArguments.Length != 1
                 || ac.ContainingNamespace?.Name != "DwarfMapper")
-            {
                 continue;
-            }
-            if (attr.ConstructorArguments.Length != 1 || attr.ConstructorArguments[0].Value is not string member)
-            {
-                continue;
-            }
+            if (attr.ConstructorArguments.Length != 1 ||
+                attr.ConstructorArguments[0].Value is not string member) continue;
             result.Add(new PairIgnore
             {
                 Target = ac.TypeArguments[0],
                 Member = member,
-                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None),
+                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
             });
         }
+
         return result;
     }
 
     /// <summary>
-    /// Returns the pair-scoped explicit renames and NullSubstitute/When extras for the <c>(src → tgt)</c> pair,
-    /// marking each matching attribute as consumed (for the DWARF056 "matched nothing" check).
+    ///     Returns the pair-scoped explicit renames and NullSubstitute/When extras for the <c>(src → tgt)</c> pair,
+    ///     marking each matching attribute as consumed (for the DWARF056 "matched nothing" check).
     /// </summary>
     private static (List<(string Source, string Target, string? Use)> Explicit,
-                    List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)> Extras)
+        List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When)> Extras)
         MatchPairProps(List<PairProp> all, ITypeSymbol src, ITypeSymbol tgt)
     {
         var ex = new List<(string Source, string Target, string? Use)>();
@@ -5401,42 +5355,26 @@ internal static class MapperExtractor
         {
             if (!SymbolEqualityComparer.Default.Equals(p.Source, src)
                 || !SymbolEqualityComparer.Default.Equals(p.Target, tgt))
-            {
                 continue;
-            }
             p.Consumed = true;
             ex.Add((p.SrcMember, p.TgtMember, p.Use));
-            if (p.HasNullSub || p.When is not null)
-            {
-                extras.Add((p.TgtMember, p.HasNullSub, p.NullSub, p.When));
-            }
+            if (p.HasNullSub || p.When is not null) extras.Add((p.TgtMember, p.HasNullSub, p.NullSub, p.When));
         }
+
         return (ex, extras);
     }
 
     private static HashSet<string> MatchPairIgnores(List<PairIgnore> all, ITypeSymbol tgt)
     {
-        var set = new HashSet<string>(System.StringComparer.Ordinal);
+        var set = new HashSet<string>(StringComparer.Ordinal);
         foreach (var ig in all)
-        {
             if (SymbolEqualityComparer.Default.Equals(ig.Target, tgt))
             {
                 ig.Consumed = true;
                 set.Add(ig.Member);
             }
-        }
-        return set;
-    }
 
-    private sealed class PairValue
-    {
-        public ITypeSymbol Target = null!;
-        public string Member = "";
-        public bool IsConstant;
-        public TypedConstant Value;
-        public string? Use;
-        public LocationInfo? Loc;
-        public bool Consumed;
+        return set;
     }
 
     private static List<PairValue> ReadPairMapValues(INamedTypeSymbol classSymbol)
@@ -5447,18 +5385,14 @@ internal static class MapperExtractor
             var ac = attr.AttributeClass;
             if (ac is null || ac.Name != "MapValueAttribute" || ac.TypeArguments.Length != 1
                 || ac.ContainingNamespace?.Name != "DwarfMapper")
-            {
                 continue;
-            }
-            if (attr.ConstructorArguments.Length == 0 || attr.ConstructorArguments[0].Value is not string target)
-            {
-                continue;
-            }
+            if (attr.ConstructorArguments.Length == 0 ||
+                attr.ConstructorArguments[0].Value is not string target) continue;
             string? use = null;
             foreach (var na in attr.NamedArguments)
-            {
-                if (na.Key == "Use" && na.Value.Value is string u) { use = u; }
-            }
+                if (na.Key == "Use" && na.Value.Value is string u)
+                    use = u;
+
             // Two-arg ctor → constant value in [1]; one-arg ctor → Use-driven (mirrors ReadMapValues).
             var isConstant = attr.ConstructorArguments.Length == 2 && use is null;
             var value = attr.ConstructorArguments.Length == 2 ? attr.ConstructorArguments[1] : default;
@@ -5469,9 +5403,10 @@ internal static class MapperExtractor
                 IsConstant = isConstant,
                 Value = value,
                 Use = use,
-                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None),
+                Loc = LocationInfo.From(attr.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? Location.None)
             });
         }
+
         return result;
     }
 
@@ -5480,203 +5415,172 @@ internal static class MapperExtractor
     {
         var result = new List<(string Target, bool IsConstant, TypedConstant Value, string? Use)>();
         foreach (var v in all)
-        {
             if (SymbolEqualityComparer.Default.Equals(v.Target, tgt))
             {
                 v.Consumed = true;
                 result.Add((v.Member, v.IsConstant, v.Value, v.Use));
             }
-        }
+
         return result;
     }
 
     /// <summary>
-    /// True when <paramref name="t"/> and every type that contains it are declared <c>public</c> — i.e. it is
-    /// reachable from another assembly. Used to gate <c>public</c> facade extensions (a public extension over a
-    /// non-public type is CS0051). It inspects the type symbol and its containing-type chain's declared
-    /// accessibility; arrays and other constructed shapes are judged by their own symbol's accessibility, not
-    /// unwrapped to their element/definition (e.g. an array symbol has no <c>public</c> accessibility, so an
-    /// array-typed member is treated as non-public).
+    ///     True when <paramref name="t" /> and every type that contains it are declared <c>public</c> — i.e. it is
+    ///     reachable from another assembly. Used to gate <c>public</c> facade extensions (a public extension over a
+    ///     non-public type is CS0051). It inspects the type symbol and its containing-type chain's declared
+    ///     accessibility; arrays and other constructed shapes are judged by their own symbol's accessibility, not
+    ///     unwrapped to their element/definition (e.g. an array symbol has no <c>public</c> accessibility, so an
+    ///     array-typed member is treated as non-public).
     /// </summary>
     private static bool IsEffectivelyPublic(ITypeSymbol t)
     {
         for (ISymbol? s = t; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
-        {
             if (s.DeclaredAccessibility != Accessibility.Public)
-            {
                 return false;
-            }
-        }
+
         return true;
     }
 
     /// <summary>
-    /// Reads <c>[DwarfMapper(MaxDepth = N)]</c>; defaults to 64; clamps to [1, 1000].
+    ///     Reads <c>[DwarfMapper(MaxDepth = N)]</c>; defaults to 64; clamps to [1, 1000].
     /// </summary>
-    private static int ReadMaxDepth(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static int ReadMaxDepth(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "MaxDepth" && named.Value.Value is int i)
             {
-                if (named.Key == "MaxDepth" && named.Value.Value is int i)
-                {
-                    // Clamp to [1, 1000] — matches DwarfRefContext.AbsoluteMaxDepth
-                    if (i < 1) return 1;
-                    if (i > 1000) return 1000;
-                    return i;
-                }
+                // Clamp to [1, 1000] — matches DwarfRefContext.AbsoluteMaxDepth
+                if (i < 1) return 1;
+                if (i > 1000) return 1000;
+                return i;
             }
-        }
+
         return 64; // default
     }
 
     /// <summary>
-    /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoNest"/> value
-    /// from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c>.
+    ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoNest" /> value
+    ///     from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c>.
     /// </summary>
-    private static bool ReadAutoNest(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static bool ReadAutoNest(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "AutoNest" && named.Value.Value is bool b)
-                {
-                    return b;
-                }
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "AutoNest" && named.Value.Value is bool b)
+                return b;
+
         return true; // default: auto-nesting enabled
     }
 
     /// <summary>
-    /// Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.SkipNullSourceMembers"/> value.
-    /// Defaults to <c>false</c>.
+    ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.SkipNullSourceMembers" /> value.
+    ///     Defaults to <c>false</c>.
     /// </summary>
-    private static bool ReadSkipNullSourceMembers(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static bool ReadSkipNullSourceMembers(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "SkipNullSourceMembers" && named.Value.Value is bool b)
-                {
-                    return b;
-                }
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "SkipNullSourceMembers" && named.Value.Value is bool b)
+                return b;
+
         return false;
     }
 
-    private static bool ReadAllowNonPublic(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static bool ReadAllowNonPublic(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "AllowNonPublic" && named.Value.Value is bool b)
-                {
-                    return b;
-                }
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "AllowNonPublic" && named.Value.Value is bool b)
+                return b;
+
         return false;
     }
 
     /// <summary>
-    /// Reads <c>[DwarfMapper(NullCollections = ...)]</c>; defaults to <c>AsEmpty</c>.
+    ///     Reads <c>[DwarfMapper(NullCollections = ...)]</c>; defaults to <c>AsEmpty</c>.
     /// </summary>
-    private static NullCollectionsBehavior ReadNullCollections(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static NullCollectionsBehavior ReadNullCollections(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "NullCollections" && named.Value.Value is int i)
-                    return (NullCollectionsBehavior)i;
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "NullCollections" && named.Value.Value is int i)
+                return (NullCollectionsBehavior)i;
+
         return NullCollectionsBehavior.AsEmpty;
     }
 
     /// <summary>
-    /// Reads <c>[DwarfMapper(ReferenceHandling = ...)]</c>; returns the integer value of the
-    /// <see cref="DwarfMapper.ReferenceHandlingStrategy"/> enum (0 = None, 1 = Preserve).
-    /// Defaults to 0 (None).
+    ///     Reads <c>[DwarfMapper(ReferenceHandling = ...)]</c>; returns the integer value of the
+    ///     <see cref="DwarfMapper.ReferenceHandlingStrategy" /> enum (0 = None, 1 = Preserve).
+    ///     Defaults to 0 (None).
     /// </summary>
-    private static int ReadReferenceHandling(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static int ReadReferenceHandling(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "ReferenceHandling" && named.Value.Value is int i)
-                    return i;
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "ReferenceHandling" && named.Value.Value is int i)
+                return i;
+
         return 0; // None
     }
 
     /// <summary>
-    /// Reads <c>[DwarfMapper(OnCycle = ...)]</c>; returns the integer value of the
-    /// <see cref="DwarfMapper.OnCycleStrategy"/> enum (0 = Throw, 1 = SetNull).
-    /// Defaults to 0 (Throw).
+    ///     Reads <c>[DwarfMapper(OnCycle = ...)]</c>; returns the integer value of the
+    ///     <see cref="DwarfMapper.OnCycleStrategy" /> enum (0 = Throw, 1 = SetNull).
+    ///     Defaults to 0 (Throw).
     /// </summary>
-    private static int ReadOnCycle(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static int ReadOnCycle(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-        {
-            foreach (var named in attr.NamedArguments)
-            {
-                if (named.Key == "OnCycle" && named.Value.Value is int i)
-                    return i;
-            }
-        }
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "OnCycle" && named.Value.Value is int i)
+                return i;
+
         return 0; // Throw
     }
 
     /// <summary>Reads <c>[DwarfMapper(ImplicitConversions = ...)]</c>; defaults to <c>true</c> (permissive).</summary>
-    private static bool ReadImplicitConversions(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static bool ReadImplicitConversions(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-            foreach (var named in attr.NamedArguments)
-                if (named.Key == "ImplicitConversions" && named.Value.Value is bool b)
-                    return b;
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "ImplicitConversions" && named.Value.Value is bool b)
+                return b;
         return true;
     }
 
     /// <summary>
-    /// Reads <c>[DwarfMapper(RequiredMapping = ...)]</c>. Returns the enum's int value:
-    /// 0 = <c>Target</c> (default — destination-coverage only), 1 = <c>Both</c> (also require every
-    /// source member consumed → DWARF039 for leftovers).
+    ///     Reads <c>[DwarfMapper(RequiredMapping = ...)]</c>. Returns the enum's int value:
+    ///     0 = <c>Target</c> (default — destination-coverage only), 1 = <c>Both</c> (also require every
+    ///     source member consumed → DWARF039 for leftovers).
     /// </summary>
-    private static int ReadRequiredMapping(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static int ReadRequiredMapping(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-            foreach (var named in attr.NamedArguments)
-                if (named.Key == "RequiredMapping" && named.Value.Value is int v)
-                    return v;
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "RequiredMapping" && named.Value.Value is int v)
+                return v;
         return 0; // RequiredMappingStrategy.Target
     }
 
     /// <summary>Reads <c>[DwarfMapper(NameConvention = ...)]</c>: 0 = Exact (default), 1 = Flexible.</summary>
-    private static int ReadNameConvention(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static int ReadNameConvention(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
-            foreach (var named in attr.NamedArguments)
-                if (named.Key == "NameConvention" && named.Value.Value is int v)
-                    return v;
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "NameConvention" && named.Value.Value is int v)
+                return v;
         return 0; // NameConvention.Exact
     }
 
     /// <summary>
-    /// Canonical form for <see cref="NameConvention.Flexible"/> matching: removes <c>_</c> and lowercases,
-    /// so <c>PascalCase</c>/<c>camelCase</c>/<c>snake_case</c>/<c>UPPER_CASE</c> all reduce to the same key.
+    ///     Canonical form for <see cref="NameConvention.Flexible" /> matching: removes <c>_</c> and lowercases,
+    ///     so <c>PascalCase</c>/<c>camelCase</c>/<c>snake_case</c>/<c>UPPER_CASE</c> all reduce to the same key.
     /// </summary>
     private static string NormalizeName(string name)
     {
-        var sb = new System.Text.StringBuilder(name.Length);
+        var sb = new StringBuilder(name.Length);
         foreach (var c in name)
             if (c != '_')
                 sb.Append(char.ToLowerInvariant(c));
@@ -5684,9 +5588,9 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// Adds the top-level source member consumed by <paramref name="sourceName"/> to
-    /// <paramref name="consumed"/>. A dotted path (a flattened leaf like <c>"Address.City"</c>) marks its
-    /// root (<c>Address</c>) consumed; the empty sentinel (top-level collection / constant value) is ignored.
+    ///     Adds the top-level source member consumed by <paramref name="sourceName" /> to
+    ///     <paramref name="consumed" />. A dotted path (a flattened leaf like <c>"Address.City"</c>) marks its
+    ///     root (<c>Address</c>) consumed; the empty sentinel (top-level collection / constant value) is ignored.
     /// </summary>
     private static void AddConsumed(HashSet<string> consumed, string sourceName)
     {
@@ -5697,20 +5601,17 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// Reads the per-method <c>[AutoNest(bool)]</c> attribute override, falling back to
-    /// <paramref name="classDefault"/> when the attribute is absent.
+    ///     Reads the per-method <c>[AutoNest(bool)]</c> attribute override, falling back to
+    ///     <paramref name="classDefault" /> when the attribute is absent.
     /// </summary>
     private static bool ReadMethodAutoNest(IMethodSymbol method, bool classDefault)
     {
         foreach (var attr in method.GetAttributes())
-        {
             if (attr.AttributeClass?.ToDisplayString() == "DwarfMapper.AutoNestAttribute"
                 && attr.ConstructorArguments.Length == 1
                 && attr.ConstructorArguments[0].Value is bool b)
-            {
                 return b;
-            }
-        }
+
         return classDefault;
     }
 
@@ -5723,17 +5624,13 @@ internal static class MapperExtractor
             element = n.TypeArguments[0];
             return true;
         }
+
         return false;
     }
 
-    // ── Plan 19D: max depth for projection recursion ─────────────────────────
-    // Beyond this depth, DWARF028 is emitted instead of recursing further.
-    // Keeps generated lambda bodies finite and prevents stack-overflow in the generator.
-    private const int ProjectionMaxDepth = 32;
-
     /// <summary>
-    /// Emits DWARF028 (ProjectionNotTranslatable) with a fully-formatted single-arg message.
-    /// The descriptor uses "{0}" so both member name and reason are concatenated here.
+    ///     Emits DWARF028 (ProjectionNotTranslatable) with a fully-formatted single-arg message.
+    ///     The descriptor uses "{0}" so both member name and reason are concatenated here.
     /// </summary>
     private static void EmitDWARF028(
         List<DiagnosticInfo> diagnostics,
@@ -5747,15 +5644,14 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// New (Plan 19D) recursive projection resolver. Produces a list of
-    /// <see cref="ProjectionMemberMap"/> with inline expression fragments (no helper calls).
-    ///
-    /// Projection translatability: every non-translatable projection member is reported as
-    ///   DWARF028 (ProjectionNotTranslatable) with a specific reason — including the
-    ///   [MapProperty(Use=)] attribute-conflict case and all type-conversion unsafety
-    ///   (narrowing numeric, parsable string↔T, enum by-name, non-translatable collections,
-    ///   reference handling, and the "no translatable conversion found" fallback).
-    ///   (DWARF019/NotProjectable was retired in favour of DWARF028's reason-carrying messages.)
+    ///     New (Plan 19D) recursive projection resolver. Produces a list of
+    ///     <see cref="ProjectionMemberMap" /> with inline expression fragments (no helper calls).
+    ///     Projection translatability: every non-translatable projection member is reported as
+    ///     DWARF028 (ProjectionNotTranslatable) with a specific reason — including the
+    ///     [MapProperty(Use=)] attribute-conflict case and all type-conversion unsafety
+    ///     (narrowing numeric, parsable string↔T, enum by-name, non-translatable collections,
+    ///     reference handling, and the "no translatable conversion found" fallback).
+    ///     (DWARF019/NotProjectable was retired in favour of DWARF028's reason-carrying messages.)
     /// </summary>
     private static List<ProjectionMemberMap> ResolveProjectionMembers(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
@@ -5763,17 +5659,17 @@ internal static class MapperExtractor
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
         EnumStrategy enumStrategy, int referenceHandling, string paramExpr)
     {
-        var comparer = caseInsensitive ? System.StringComparer.OrdinalIgnoreCase : System.StringComparer.Ordinal;
+        var comparer = caseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var sources = ReadableMembers(sourceType)
             .GroupBy(m => m.Name, comparer)
             .ToDictionary(g => g.Key, g => g.First(), comparer);
         // C4: pass comparer to nested resolvers so CaseInsensitive propagates into nested objects.
-        var writableByName = new Dictionary<string, ITypeSymbol>(System.StringComparer.Ordinal);
-        foreach (var m in WritableMembers(targetType)) { writableByName[m.Name] = m.Type; }
+        var writableByName = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
+        foreach (var m in WritableMembers(targetType)) writableByName[m.Name] = m.Type;
 
         var result = new List<ProjectionMemberMap>();
-        var handled = new HashSet<string>(System.StringComparer.Ordinal);
-        var explicitSeen = new HashSet<string>(System.StringComparer.Ordinal);
+        var handled = new HashSet<string>(StringComparer.Ordinal);
+        var explicitSeen = new HashSet<string>(StringComparer.Ordinal);
 
         // ── Explicit maps ([MapProperty]) ────────────────────────────────────
         foreach (var (srcName, tgtName, use) in explicitMaps)
@@ -5783,17 +5679,20 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DuplicateMapProperty, location, tgtName));
                 continue;
             }
+
             handled.Add(tgtName);
             if (ignores.Contains(tgtName))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName));
                 continue;
             }
+
             if (!writableByName.TryGetValue(tgtName, out var tgtType))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownTarget, location, tgtName));
                 continue;
             }
+
             // A custom converter (Use=) cannot run inside a provider-translated projection.
             if (use is not null)
             {
@@ -5801,23 +5700,28 @@ internal static class MapperExtractor
                     "custom converter (Use=) is not translatable in projection; remove Use= or map at runtime");
                 continue;
             }
+
             // Resolve the source, supporting a dotted path (e.g. "Colour.Code") for value-object /
             // nested-scalar flattening — matching the class-model [MapProperty] dotted-path feature.
             // The projection accessor "__s.Colour.Code" is built verbatim below; we walk the segments
             // here only to find the leaf type and validate each hop is a readable member.
-            ITypeSymbol? sm = sourceType;
+            var sm = sourceType;
             foreach (var seg in srcName.Split('.'))
             {
-                sm = sm is null ? null : ReadableMembers(sm)
-                    .Where(m => System.StringComparer.Ordinal.Equals(m.Name, seg))
-                    .Select(m => (ITypeSymbol?)m.Type).FirstOrDefault();
+                sm = sm is null
+                    ? null
+                    : ReadableMembers(sm)
+                        .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
+                        .Select(m => (ITypeSymbol?)m.Type).FirstOrDefault();
                 if (sm is null) break;
             }
+
             if (sm is null)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
                 continue;
             }
+
             var srcExprForExplicit = paramExpr + "." + srcName;
             var inlineExpr = ResolveProjectionExpr(
                 sm, tgtType, srcExprForExplicit, 0, compilation, location,
@@ -5837,7 +5741,7 @@ internal static class MapperExtractor
             && c.Parameters.Length == 0);
 
         var writableMembers = WritableMembers(targetType)
-            .OrderBy(m => m.Name, System.StringComparer.Ordinal)
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
             .ToList();
 
         if (writableMembers.Count == 0 || !hasParameterlessCtor)
@@ -5856,22 +5760,22 @@ internal static class MapperExtractor
                     bestCtor, sourceType, paramExpr, 0,
                     compilation, location, diagnostics, targetType, enumStrategy, comparer);
                 if (ctorExpr is not null)
-                {
                     // Store as a whole-lambda body (TargetName = "")
                     result.Add(new ProjectionMemberMap("", ctorExpr));
-                }
             }
+
             return result;
         }
 
         foreach (var target in writableMembers)
         {
-            if (handled.Contains(target.Name) || ignores.Contains(target.Name)) { continue; }
+            if (handled.Contains(target.Name) || ignores.Contains(target.Name)) continue;
             if (!sources.TryGetValue(target.Name, out var src))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name));
                 continue;
             }
+
             var srcAccessExpr = paramExpr + "." + src.Name;
             // C4: pass comparer so nested objects respect CaseInsensitive setting.
             var inlineExpr = ResolveProjectionExpr(
@@ -5885,27 +5789,25 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// Resolve a single inline projection expression for a source→target type pair.
-    /// Returns the inline C# expression string (pure, no helper calls), or null when
-    /// DWARF028 has been emitted (unsafe construct).
-    ///
-    /// SAFE:
-    ///   1. Direct-assignable (implicit conversion incl. widening numeric).
-    ///   2. Enum by-value cast: (TgtEnum)srcExpr.
-    ///   3. Nested named object: new TgtType { M1 = ..., M2 = ... } (recursive).
-    ///   4. Collection (projection-translatable): .Select(...).ToList()/.ToArray()/lazy.
-    ///
-    /// UNSAFE → DWARF028:
-    ///   - Narrowing numeric (CreateChecked path).
-    ///   - String↔T parsable (IParsable/IFormattable path).
-    ///   - Enum by-name (switch path).
-    ///   - Non-translatable collection target (HashSet/ISet/immutable/dict).
-    ///   - Depth > ProjectionMaxDepth.
-    ///   - No translatable conversion found.
+    ///     Resolve a single inline projection expression for a source→target type pair.
+    ///     Returns the inline C# expression string (pure, no helper calls), or null when
+    ///     DWARF028 has been emitted (unsafe construct).
+    ///     SAFE:
+    ///     1. Direct-assignable (implicit conversion incl. widening numeric).
+    ///     2. Enum by-value cast: (TgtEnum)srcExpr.
+    ///     3. Nested named object: new TgtType { M1 = ..., M2 = ... } (recursive).
+    ///     4. Collection (projection-translatable): .Select(...).ToList()/.ToArray()/lazy.
+    ///     UNSAFE → DWARF028:
+    ///     - Narrowing numeric (CreateChecked path).
+    ///     - String↔T parsable (IParsable/IFormattable path).
+    ///     - Enum by-name (switch path).
+    ///     - Non-translatable collection target (HashSet/ISet/immutable/dict).
+    ///     - Depth > ProjectionMaxDepth.
+    ///     - No translatable conversion found.
     /// </summary>
     /// <param name="comparer">
-    /// C4: the case-sensitivity comparer for member name matching; passed recursively into
-    /// nested object and ctor resolvers so CaseInsensitive propagates to all depths.
+    ///     C4: the case-sensitivity comparer for member name matching; passed recursively into
+    ///     nested object and ctor resolvers so CaseInsensitive propagates to all depths.
     /// </param>
     private static string? ResolveProjectionExpr(
         ITypeSymbol srcType, ITypeSymbol tgtType,
@@ -5916,9 +5818,9 @@ internal static class MapperExtractor
         List<DiagnosticInfo> diagnostics,
         string targetMemberName,
         EnumStrategy enumStrategy,
-        System.StringComparer? comparer = null)
+        StringComparer? comparer = null)
     {
-        comparer ??= System.StringComparer.Ordinal;
+        comparer ??= StringComparer.Ordinal;
 
         // ── Depth guard ───────────────────────────────────────────────────────
         if (depth > ProjectionMaxDepth)
@@ -5954,7 +5856,8 @@ internal static class MapperExtractor
             // Use fully-qualified Enumerable.Select to avoid needing 'using System.Linq' in generated code.
             var srcElemFqn = srcElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var tgtElemFqn = tgtElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var selectCall = $"global::System.Linq.Enumerable.Select<{srcElemFqn}, {tgtElemFqn}>({srcExpr}, {elemParam} => {elemExpr})";
+            var selectCall =
+                $"global::System.Linq.Enumerable.Select<{srcElemFqn}, {tgtElemFqn}>({srcExpr}, {elemParam} => {elemExpr})";
             var collectionExpr = shape.Target switch
             {
                 CollectionConverter.TargetKind.Array =>
@@ -5962,15 +5865,12 @@ internal static class MapperExtractor
                 CollectionConverter.TargetKind.IEnumerable =>
                     selectCall, // lazy, no terminal
                 _ =>
-                    $"global::System.Linq.Enumerable.ToList<{tgtElemFqn}>({selectCall})",
+                    $"global::System.Linq.Enumerable.ToList<{tgtElemFqn}>({selectCall})"
             };
             // Guard the source collection with a null-conditional ternary ONLY when it may actually be
             // null (nullable-annotated or nullable-oblivious). A non-nullable source needs no guard —
             // guarding it would assign null to a non-nullable target (CS8601). EF translates the ternary.
-            if (ProjectionSourceMayBeNull(srcType))
-            {
-                return $"{srcExpr} == null ? null : {collectionExpr}";
-            }
+            if (ProjectionSourceMayBeNull(srcType)) return $"{srcExpr} == null ? null : {collectionExpr}";
             return collectionExpr;
         }
 
@@ -5985,14 +5885,11 @@ internal static class MapperExtractor
         }
 
         // ── 1. Direct-assignable (implicit — covers widening numeric, same-type, etc.) ──
-        if (HasImplicitConversion(compilation, srcType, tgtType))
-        {
-            return srcExpr;
-        }
+        if (HasImplicitConversion(compilation, srcType, tgtType)) return srcExpr;
 
         // ── 2. Enum by-value cast (enum→enum) ─────────────────────────────────
         if (srcType.TypeKind == TypeKind.Enum && tgtType.TypeKind == TypeKind.Enum
-            && enumStrategy == EnumStrategy.ByValue)
+                                              && enumStrategy == EnumStrategy.ByValue)
         {
             var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             return $"({tgtFqn}){srcExpr}";
@@ -6012,13 +5909,15 @@ internal static class MapperExtractor
                 var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 return $"({tgtFqn}){srcExpr}";
             }
+
             // Narrowing / lossy (e.g. enum:long→int, or unsigned-underlying enum:uint→int) — the source
             // underlying does not fit the target range and a projection can't do a checked cast.
             EmitDWARF028(diagnostics, location, targetMemberName,
                 "enum→integral conversion is narrowing (the enum's underlying type does not fit the target integral type) and cannot be range-checked in a projection; map it at runtime");
             return null;
         }
-        else if (TypeInterfaces.IsIntegral(srcType) && tgtType.TypeKind == TypeKind.Enum)
+
+        if (TypeInterfaces.IsIntegral(srcType) && tgtType.TypeKind == TypeKind.Enum)
         {
             // integral→enum: safe when source integral width ≤ enum underlying width.
             var enumUnderlying = ((INamedTypeSymbol)tgtType).EnumUnderlyingType;
@@ -6027,6 +5926,7 @@ internal static class MapperExtractor
                 var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 return $"({tgtFqn}){srcExpr}";
             }
+
             // Narrowing / lossy (e.g. long→enum:int, or int→enum:uint sign change) — the source does not
             // fit the enum's underlying range and a projection can't do a checked cast.
             EmitDWARF028(diagnostics, location, targetMemberName,
@@ -6068,13 +5968,11 @@ internal static class MapperExtractor
 
         // ── 3. Nested named object (recursive) ───────────────────────────────
         if (srcType is INamedTypeSymbol namedSrc && tgtType is INamedTypeSymbol namedTgt
-            && IsMappableObjectPair(compilation, srcType, namedTgt))
-        {
+                                                 && IsMappableObjectPair(compilation, srcType, namedTgt))
             // C4: pass comparer into nested object resolver.
             return ResolveProjectionNestedObjectExpr(
                 namedSrc, namedTgt, srcExpr, depth, compilation, location, diagnostics,
                 targetMemberName, enumStrategy, comparer);
-        }
 
         // ── Nullable T? → nullable U? or non-nullable U ───────────────────────
         // C5: when source is Nullable<T> and target is also Nullable<U>, emit a null-preserving
@@ -6108,9 +6006,9 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// C6 helper: returns true when a cast from <paramref name="src"/> to <paramref name="tgt"/> is
-    /// widening or same-width (thus safe as a direct inline cast in SQL projection).
-    /// Both must be integral types.
+    ///     C6 helper: returns true when a cast from <paramref name="src" /> to <paramref name="tgt" /> is
+    ///     widening or same-width (thus safe as a direct inline cast in SQL projection).
+    ///     Both must be integral types.
     /// </summary>
     private static bool IsWideningOrSameWidth(ITypeSymbol src, ITypeSymbol tgt)
     {
@@ -6120,20 +6018,47 @@ internal static class MapperExtractor
         {
             switch (t.SpecialType)
             {
-                case SpecialType.System_Byte:   width = 8;  signed = false; return true;
-                case SpecialType.System_SByte:  width = 8;  signed = true;  return true;
-                case SpecialType.System_UInt16: width = 16; signed = false; return true;
-                case SpecialType.System_Int16:  width = 16; signed = true;  return true;
-                case SpecialType.System_UInt32: width = 32; signed = false; return true;
-                case SpecialType.System_Int32:  width = 32; signed = true;  return true;
-                case SpecialType.System_UInt64: width = 64; signed = false; return true;
-                case SpecialType.System_Int64:  width = 64; signed = true;  return true;
-                default: width = 0; signed = false; return false;
+                case SpecialType.System_Byte:
+                    width = 8;
+                    signed = false;
+                    return true;
+                case SpecialType.System_SByte:
+                    width = 8;
+                    signed = true;
+                    return true;
+                case SpecialType.System_UInt16:
+                    width = 16;
+                    signed = false;
+                    return true;
+                case SpecialType.System_Int16:
+                    width = 16;
+                    signed = true;
+                    return true;
+                case SpecialType.System_UInt32:
+                    width = 32;
+                    signed = false;
+                    return true;
+                case SpecialType.System_Int32:
+                    width = 32;
+                    signed = true;
+                    return true;
+                case SpecialType.System_UInt64:
+                    width = 64;
+                    signed = false;
+                    return true;
+                case SpecialType.System_Int64:
+                    width = 64;
+                    signed = true;
+                    return true;
+                default:
+                    width = 0;
+                    signed = false;
+                    return false;
             }
         }
 
-        if (!IntegralInfo(src, out var sw, out var ss)) { return false; }
-        if (!IntegralInfo(tgt, out var tw, out var ts)) { return false; }
+        if (!IntegralInfo(src, out var sw, out var ss)) return false;
+        if (!IntegralInfo(tgt, out var tw, out var ts)) return false;
 
         // A plain (unchecked) cast src→tgt is lossless — safe to inline in a projection that can't do a
         // checked conversion — ONLY when the target's representable range fully contains the source's:
@@ -6141,38 +6066,40 @@ internal static class MapperExtractor
         //   • unsigned → signed  → target needs a strictly wider type for the sign bit  (byte→short, uint→long)
         //   • signed → unsigned  → never lossless (source may be negative)
         // Anything else (e.g. uint→int, ushort→short, long→int) is narrowing and falls through to DWARF028.
-        if (ss == ts) { return tw >= sw; }
-        if (!ss && ts) { return tw > sw; }
+        if (ss == ts) return tw >= sw;
+        if (!ss && ts) return tw > sw;
         return false;
     }
 
     /// <summary>
-    /// Whether a projection source expression needs a null-navigation guard. A reference type needs one
-    /// only when it is nullable-annotated (<c>T?</c>) or nullable-oblivious (compiled with
-    /// <c>#nullable disable</c>). A NON-nullable-annotated reference is guaranteed non-null, so guarding it
-    /// would assign <c>null</c> to a (possibly non-nullable) target — a false CS8601/CS8603 in strict-
-    /// nullable hosts. This honours the consumer's own nullable annotations instead of guarding blindly.
+    ///     Whether a projection source expression needs a null-navigation guard. A reference type needs one
+    ///     only when it is nullable-annotated (<c>T?</c>) or nullable-oblivious (compiled with
+    ///     <c>#nullable disable</c>). A NON-nullable-annotated reference is guaranteed non-null, so guarding it
+    ///     would assign <c>null</c> to a (possibly non-nullable) target — a false CS8601/CS8603 in strict-
+    ///     nullable hosts. This honours the consumer's own nullable annotations instead of guarding blindly.
     /// </summary>
-    private static bool ProjectionSourceMayBeNull(ITypeSymbol type) =>
-        type.IsReferenceType && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
+    private static bool ProjectionSourceMayBeNull(ITypeSymbol type)
+    {
+        return type.IsReferenceType && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
+    }
 
     /// <summary>
-    /// Build an inline member-init expression for a nested object target.
-    /// For nullable reference source: emits null-navigation ternary.
-    /// For non-null / value-type source: emits plain member-init.
+    ///     Build an inline member-init expression for a nested object target.
+    ///     For nullable reference source: emits null-navigation ternary.
+    ///     For non-null / value-type source: emits plain member-init.
     /// </summary>
     /// <param name="comparer">
-    /// C4: the case-sensitivity comparer for member name matching, propagated from the top-level
-    /// call site so CaseInsensitive works at all nesting depths.
+    ///     C4: the case-sensitivity comparer for member name matching, propagated from the top-level
+    ///     call site so CaseInsensitive works at all nesting depths.
     /// </param>
     private static string? ResolveProjectionNestedObjectExpr(
         INamedTypeSymbol srcType, INamedTypeSymbol tgtType,
         string srcExpr, int depth,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         string targetMemberName, EnumStrategy enumStrategy,
-        System.StringComparer? comparer = null)
+        StringComparer? comparer = null)
     {
-        comparer ??= System.StringComparer.Ordinal;
+        comparer ??= StringComparer.Ordinal;
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
         // C4: use the configured comparer for member lookup so CaseInsensitive applies here.
@@ -6189,7 +6116,7 @@ internal static class MapperExtractor
         // settable/init properties at all; it misses positional records whose init properties
         // exist but whose constructor has no parameterless overload (CS7036 at compile time).
         var writableTargetMembers = WritableMembers(tgtType)
-            .OrderBy(m => m.Name, System.StringComparer.Ordinal)
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
             .ToList();
 
         var hasParameterlessCtor = tgtType.InstanceConstructors.Any(c =>
@@ -6226,7 +6153,7 @@ internal static class MapperExtractor
         else
         {
             // Member-init expression: new T { P1 = expr1, P2 = expr2 }
-            var memberParts = new System.Collections.Generic.List<string>();
+            var memberParts = new List<string>();
             var anyFailed = false;
 
             foreach (var tgtMember in writableTargetMembers)
@@ -6251,6 +6178,7 @@ internal static class MapperExtractor
                     anyFailed = true;
                     continue;
                 }
+
                 memberParts.Add($"{tgtMember.Name} = {memberInlineExpr}");
             }
 
@@ -6261,16 +6189,13 @@ internal static class MapperExtractor
         // Wrap with a null-navigation ternary ONLY when the source may actually be null (nullable-
         // annotated or nullable-oblivious). A non-nullable source needs no guard (guarding it would
         // assign null to a non-nullable target — CS8603).
-        if (ProjectionSourceMayBeNull(srcType))
-        {
-            return $"{srcExpr} == null ? null : {innerBodyExpr}";
-        }
+        if (ProjectionSourceMayBeNull(srcType)) return $"{srcExpr} == null ? null : {innerBodyExpr}";
         return innerBodyExpr;
     }
 
     /// <summary>
-    /// Build an inline constructor-call expression for targets with only ctor params (records etc.).
-    /// e.g. "new global::D.DstRec(x: __s.X, y: __s.Y)"
+    ///     Build an inline constructor-call expression for targets with only ctor params (records etc.).
+    ///     e.g. "new global::D.DstRec(x: __s.X, y: __s.Y)"
     /// </summary>
     private static string? ResolveProjectionCtorExpr(
         IMethodSymbol ctor,
@@ -6282,14 +6207,14 @@ internal static class MapperExtractor
         List<DiagnosticInfo> diagnostics,
         INamedTypeSymbol tgtType,
         EnumStrategy enumStrategy,
-        System.StringComparer comparer)
+        StringComparer comparer)
     {
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var srcReadable = ReadableMembers(srcType)
             .GroupBy(m => m.Name, comparer)
             .ToDictionary(g => g.Key, g => g.First(), comparer);
 
-        var argParts = new System.Collections.Generic.List<string>();
+        var argParts = new List<string>();
         var anyFailed = false;
 
         foreach (var param in ctor.Parameters)
@@ -6313,6 +6238,7 @@ internal static class MapperExtractor
                 anyFailed = true;
                 continue;
             }
+
             // Expression trees do not allow named arguments (CS0853): emit positional args.
             argParts.Add(paramInlineExpr);
         }
@@ -6322,15 +6248,15 @@ internal static class MapperExtractor
     }
 
     /// <summary>
-    /// DFS reachability: can we reach <paramref name="target"/> starting from <paramref name="start"/>
-    /// by following edges in the call graph? Used to detect recursive method cycles.
+    ///     DFS reachability: can we reach <paramref name="target" /> starting from <paramref name="start" />
+    ///     by following edges in the call graph? Used to detect recursive method cycles.
     /// </summary>
     private static bool CanReach(
         Dictionary<string, HashSet<string>> graph,
         string start,
         string target)
     {
-        var visited = new HashSet<string>(System.StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
         var stack = new Stack<string>();
         if (!graph.TryGetValue(start, out var startDeps)) return false;
         foreach (var dep in startDeps)
@@ -6339,20 +6265,19 @@ internal static class MapperExtractor
         while (stack.Count > 0)
         {
             var current = stack.Pop();
-            if (string.Equals(current, target, System.StringComparison.Ordinal)) return true;
+            if (string.Equals(current, target, StringComparison.Ordinal)) return true;
             if (!visited.Add(current)) continue;
             if (graph.TryGetValue(current, out var deps))
-            {
                 foreach (var dep in deps)
                     stack.Push(dep);
-            }
         }
+
         return false;
     }
 
     /// <summary>
-    /// Recognises <c>System.Span&lt;T&gt;</c> / <c>System.ReadOnlySpan&lt;T&gt;</c>, returning the element
-    /// type and whether it is the read-only form. Used to detect zero-alloc span map methods.
+    ///     Recognises <c>System.Span&lt;T&gt;</c> / <c>System.ReadOnlySpan&lt;T&gt;</c>, returning the element
+    ///     type and whether it is the read-only form. Used to detect zero-alloc span map methods.
     /// </summary>
     private static bool TryGetSpanElement(ITypeSymbol t, out ITypeSymbol element, out bool isReadOnly)
     {
@@ -6362,26 +6287,27 @@ internal static class MapperExtractor
             && n.TypeArguments.Length == 1
             && n.ContainingNamespace is { Name: "System" } ns
             && ns.ContainingNamespace?.IsGlobalNamespace == true
-            && (string.Equals(n.Name, "Span", System.StringComparison.Ordinal)
-                || string.Equals(n.Name, "ReadOnlySpan", System.StringComparison.Ordinal)))
+            && (string.Equals(n.Name, "Span", StringComparison.Ordinal)
+                || string.Equals(n.Name, "ReadOnlySpan", StringComparison.Ordinal)))
         {
             element = n.TypeArguments[0];
-            isReadOnly = string.Equals(n.Name, "ReadOnlySpan", System.StringComparison.Ordinal);
+            isReadOnly = string.Equals(n.Name, "ReadOnlySpan", StringComparison.Ordinal);
             return true;
         }
+
         return false;
     }
 
     /// <summary>
-    /// Recognises <c>System.Collections.Generic.IAsyncEnumerable&lt;T&gt;</c>, returning the element type.
-    /// Used to detect async streaming map methods.
+    ///     Recognises <c>System.Collections.Generic.IAsyncEnumerable&lt;T&gt;</c>, returning the element type.
+    ///     Used to detect async streaming map methods.
     /// </summary>
     private static bool TryGetAsyncEnumerableElement(ITypeSymbol t, out ITypeSymbol element)
     {
         element = null!;
         if (t is INamedTypeSymbol n
             && n.TypeArguments.Length == 1
-            && string.Equals(n.Name, "IAsyncEnumerable", System.StringComparison.Ordinal)
+            && string.Equals(n.Name, "IAsyncEnumerable", StringComparison.Ordinal)
             && n.ContainingNamespace is { Name: "Generic" } g
             && g.ContainingNamespace is { Name: "Collections" } c
             && c.ContainingNamespace is { Name: "System" } s
@@ -6390,32 +6316,37 @@ internal static class MapperExtractor
             element = n.TypeArguments[0];
             return true;
         }
+
         return false;
     }
 
     /// <summary>
-    /// Emits DWARF038 for a non-lossless implicit basic-type conversion: an Info-level suggestion when
-    /// <paramref name="implicitConversions"/> is true (permissive — the conversion is still applied), or a
-    /// build Error when false (strict — the user must opt in via <c>[MapProperty(Use = …)]</c>).
+    ///     Emits DWARF038 for a non-lossless implicit basic-type conversion: an Info-level suggestion when
+    ///     <paramref name="implicitConversions" /> is true (permissive — the conversion is still applied), or a
+    ///     build Error when false (strict — the user must opt in via <c>[MapProperty(Use = …)]</c>).
     /// </summary>
     /// <summary>
-    /// True when one type is integer-kind and the other is floating/decimal-kind (e.g. int↔double,
-    /// long↔float, int↔decimal) — a cross-category numeric conversion. Same-category pairs (int↔long,
-    /// float↔double) return false.
+    ///     True when one type is integer-kind and the other is floating/decimal-kind (e.g. int↔double,
+    ///     long↔float, int↔decimal) — a cross-category numeric conversion. Same-category pairs (int↔long,
+    ///     float↔double) return false.
     /// </summary>
     private static bool IsCrossCategoryNumeric(ITypeSymbol src, ITypeSymbol tgt)
     {
-        static int Cat(ITypeSymbol t) => t.SpecialType switch
+        static int Cat(ITypeSymbol t)
         {
-            SpecialType.System_SByte or SpecialType.System_Byte
-                or SpecialType.System_Int16 or SpecialType.System_UInt16
-                or SpecialType.System_Int32 or SpecialType.System_UInt32
-                or SpecialType.System_Int64 or SpecialType.System_UInt64
-                or SpecialType.System_Char => 1,                       // integer kind
-            SpecialType.System_Single or SpecialType.System_Double
-                or SpecialType.System_Decimal => 2,                    // floating / decimal kind
-            _ => 0,                                                     // not a numeric basic type
-        };
+            return t.SpecialType switch
+            {
+                SpecialType.System_SByte or SpecialType.System_Byte
+                    or SpecialType.System_Int16 or SpecialType.System_UInt16
+                    or SpecialType.System_Int32 or SpecialType.System_UInt32
+                    or SpecialType.System_Int64 or SpecialType.System_UInt64
+                    or SpecialType.System_Char => 1, // integer kind
+                SpecialType.System_Single or SpecialType.System_Double
+                    or SpecialType.System_Decimal => 2, // floating / decimal kind
+                _ => 0 // not a numeric basic type
+            };
+        }
+
         var a = Cat(src);
         var b = Cat(tgt);
         return a != 0 && b != 0 && a != b;
@@ -6432,39 +6363,39 @@ internal static class MapperExtractor
             : $"Member '{targetName}': implicit {kind} conversion {src} → {tgt} is disallowed ([DwarfMapper(ImplicitConversions = false)]). Map it explicitly with [MapProperty(Use = nameof(...))].";
         diagnostics.Add(new DiagnosticInfo(
             DiagnosticDescriptors.ImplicitConversionApplied, location, msg,
-            SeverityOverride: implicitConversions ? DiagnosticSeverity.Info : DiagnosticSeverity.Error));
+            implicitConversions ? DiagnosticSeverity.Info : DiagnosticSeverity.Error));
     }
 
-    private static string AccessibilityText(Accessibility a) => a switch
+    private static string AccessibilityText(Accessibility a)
     {
-        Accessibility.Public => "public",
-        Accessibility.Internal => "internal",
-        Accessibility.Protected => "protected",
-        Accessibility.ProtectedOrInternal => "protected internal",
-        Accessibility.ProtectedAndInternal => "private protected",
-        Accessibility.Private => "private",
-        _ => "public",
-    };
+        return a switch
+        {
+            Accessibility.Public => "public",
+            Accessibility.Internal => "internal",
+            Accessibility.Protected => "protected",
+            Accessibility.ProtectedOrInternal => "protected internal",
+            Accessibility.ProtectedAndInternal => "private protected",
+            Accessibility.Private => "private",
+            _ => "public"
+        };
+    }
 
-    private static List<RoundTripPair> CollectRoundTrips(INamedTypeSymbol classSymbol, Compilation compilation, List<DiagnosticInfo> diagnostics)
+    private static List<RoundTripPair> CollectRoundTrips(INamedTypeSymbol classSymbol, Compilation compilation,
+        List<DiagnosticInfo> diagnostics)
     {
         var pairs = new List<RoundTripPair>();
         // Only emit a verifier when DwarfMapper.Testing is referenced — never force the test package into production.
-        if (compilation.GetTypeByMetadataName("DwarfMapper.Testing.RoundTrip") is null)
-        {
-            return pairs;
-        }
+        if (compilation.GetTypeByMetadataName("DwarfMapper.Testing.RoundTrip") is null) return pairs;
 
         var partials = classSymbol.GetMembers().OfType<IMethodSymbol>()
-            .Where(m => m.MethodKind == MethodKind.Ordinary && m.IsPartialDefinition && !m.ReturnsVoid && m.Parameters.Length == 1)
+            .Where(m => m.MethodKind == MethodKind.Ordinary && m.IsPartialDefinition && !m.ReturnsVoid &&
+                        m.Parameters.Length == 1)
             .ToList();
 
         foreach (var fwd in partials)
         {
-            if (!fwd.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.RoundTripAttribute"))
-            {
-                continue;
-            }
+            if (!fwd.GetAttributes()
+                    .Any(a => a.AttributeClass?.ToDisplayString() == "DwarfMapper.RoundTripAttribute")) continue;
             var loc = LocationInfo.From(fwd.Locations.FirstOrDefault() ?? Location.None);
             var src = fwd.Parameters[0].Type;
             var dto = fwd.ReturnType;
@@ -6479,17 +6410,67 @@ internal static class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.RoundTripNoInverse, loc, fwd.Name));
                 continue;
             }
+
             if (inverses.Count > 1)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.RoundTripAmbiguousInverse, loc, fwd.Name));
                 continue;
             }
+
             pairs.Add(new RoundTripPair(
                 fwd.Name,
                 inverses[0].Name,
                 src.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                 dto.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
         }
+
         return pairs;
+    }
+
+    // ── Pair-scoped member config: [MapProperty<S,T>] / [MapIgnore<T>] declared on the class ──────────────
+    // These give a [GenerateMap] pair (or an auto-synthesized nested pair) member config without a partial
+    // method. The non-generic readers above match on the exact display string "DwarfMapper.MapPropertyAttribute"
+    // etc., so they never pick up these generic variants; these readers match by name + type-argument arity.
+
+    private sealed class PairProp
+    {
+        public bool Consumed;
+        public bool HasNullSub;
+        public LocationInfo? Loc;
+        public TypedConstant NullSub;
+        public ITypeSymbol Source = null!;
+        public string SrcMember = "";
+        public ITypeSymbol Target = null!;
+        public string TgtMember = "";
+        public string? Use;
+        public string? When;
+    }
+
+    private sealed class PairIgnore
+    {
+        public bool Consumed;
+        public LocationInfo? Loc;
+        public string Member = "";
+        public ITypeSymbol Target = null!;
+    }
+
+    private sealed class PairConstructor
+    {
+        public bool Consumed;
+        public LocationInfo? Loc;
+        public string Method = "";
+        public ITypeSymbol Source = null!;
+        public ITypeSymbol Target = null!;
+    }
+
+    private sealed class PairValue
+    {
+        public bool Consumed;
+        public bool IsConstant;
+        public LocationInfo? Loc;
+        public string Member = "";
+        public ITypeSymbol Target = null!;
+        public string? Use;
+        public TypedConstant Value;
     }
 }

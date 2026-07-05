@@ -1,24 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
+
 using System.Reflection;
-using DwarfMapper.Generator;
-using Xunit;
+using System.Runtime.CompilerServices;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
 
 /// <summary>
-/// STRUCTURAL incremental-cache-safety invariant. The pipeline models flow through Roslyn's incremental
-/// cache, which compares them by VALUE. <see cref="DwarfMapper.Generator.Tests.IncrementalCachingTests"/>
-/// proves caching works for the models as they are today; this proves it can't silently regress: every
-/// type in the Model/Diagnostics namespaces must be a record (value equality) whose every member is a
-/// cache-safe type. The classic traps this catches the instant they're introduced:
-///   • a raw <c>ImmutableArray&lt;T&gt;</c> (a struct, but Equals compares the backing array by REFERENCE),
+///     STRUCTURAL incremental-cache-safety invariant. The pipeline models flow through Roslyn's incremental
+///     cache, which compares them by VALUE. <see cref="DwarfMapper.Generator.Tests.IncrementalCachingTests" />
+///     proves caching works for the models as they are today; this proves it can't silently regress: every
+///     type in the Model/Diagnostics namespaces must be a record (value equality) whose every member is a
+///     cache-safe type. The classic traps this catches the instant they're introduced:
+///     • a raw <c>ImmutableArray&lt;T&gt;</c> (a struct, but Equals compares the backing array by REFERENCE),
 ///     an array, or a <c>List&lt;T&gt;</c> — use <c>EquatableArray&lt;T&gt;</c> instead;
-///   • a leaked <c>ISymbol</c>/<c>SyntaxNode</c>/<c>Compilation</c>/<c>Location</c> (reference equality →
+///     • a leaked <c>ISymbol</c>/<c>SyntaxNode</c>/<c>Compilation</c>/<c>Location</c> (reference equality →
 ///     never equal across compilations → caching disabled + compilations rooted in memory).
-/// An unrecognised type fails loudly so a human must classify it rather than silently weakening caching.
+///     An unrecognised type fails loudly so a human must classify it rather than silently weakening caching.
 /// </summary>
 public class ModelCacheSafetyTests
 {
@@ -35,13 +32,15 @@ public class ModelCacheSafetyTests
         "Microsoft.CodeAnalysis.Text.TextSpan",
         "Microsoft.CodeAnalysis.Text.LinePositionSpan",
         "Microsoft.CodeAnalysis.DiagnosticDescriptor",
-        "Microsoft.CodeAnalysis.DiagnosticSeverity", // enum, but be explicit
+        "Microsoft.CodeAnalysis.DiagnosticSeverity" // enum, but be explicit
     };
 
-    private static IEnumerable<Type> ModelTypes() =>
-        typeof(DwarfGenerator).Assembly.GetTypes()
+    private static IEnumerable<Type> ModelTypes()
+    {
+        return typeof(DwarfGenerator).Assembly.GetTypes()
             .Where(t => t.IsClass && !t.IsAbstract && (t.Namespace == ModelNs || t.Namespace == DiagNs))
-            .Where(t => !t.IsDefined(typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), false));
+            .Where(t => !t.IsDefined(typeof(CompilerGeneratedAttribute), false));
+    }
 
     [Fact]
     public void Every_model_type_is_a_record()
@@ -58,13 +57,11 @@ public class ModelCacheSafetyTests
         var violations = new List<string>();
 
         foreach (var type in ModelTypes())
+        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
-            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (prop.Name == "EqualityContract") continue; // compiler-generated record member
-                if (!IsCacheSafe(prop.PropertyType, out var why))
-                    violations.Add($"{type.Name}.{prop.Name} : {Pretty(prop.PropertyType)} — {why}");
-            }
+            if (prop.Name == "EqualityContract") continue; // compiler-generated record member
+            if (!IsCacheSafe(prop.PropertyType, out var why))
+                violations.Add($"{type.Name}.{prop.Name} : {Pretty(prop.PropertyType)} — {why}");
         }
 
         Assert.True(violations.Count == 0,
@@ -82,7 +79,11 @@ public class ModelCacheSafetyTests
         if (t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal))
             return true;
 
-        if (t.IsArray) { why = "arrays use reference equality — use EquatableArray<T>"; return false; }
+        if (t.IsArray)
+        {
+            why = "arrays use reference equality — use EquatableArray<T>";
+            return false;
+        }
 
         if (t.IsGenericType)
         {
@@ -110,16 +111,21 @@ public class ModelCacheSafetyTests
             return false;
         }
 
-        why = $"unrecognised type — classify it as cache-safe (add to the allow-list) or replace it";
+        why = "unrecognised type — classify it as cache-safe (add to the allow-list) or replace it";
         return false;
     }
 
     // A C# record has a compiler-generated `<Clone>$` method (and a protected EqualityContract property).
-    private static bool IsRecord(Type t) =>
-        t.GetMethod("<Clone>$", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance) is not null;
+    private static bool IsRecord(Type t)
+    {
+        return t.GetMethod("<Clone>$",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance) is not null;
+    }
 
-    private static string Pretty(Type t) =>
-        t.IsGenericType
+    private static string Pretty(Type t)
+    {
+        return t.IsGenericType
             ? t.Name.Split('`')[0] + "<" + string.Join(", ", t.GetGenericArguments().Select(Pretty)) + ">"
             : t.Name;
+    }
 }

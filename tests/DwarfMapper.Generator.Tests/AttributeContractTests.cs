@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
 
 namespace DwarfMapper.Generator.Tests;
 
@@ -35,11 +33,11 @@ public class AttributeContractTests
     {
         // Unified attribute: method form ([MapProperty(src, tgt)] for the class model) + member form
         // ([MapProperty(dest)] for the [MapTo] registry).
-        var usage = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
-            typeof(MapPropertyAttribute), typeof(System.AttributeUsageAttribute))!;
+        var usage = (AttributeUsageAttribute)Attribute.GetCustomAttribute(
+            typeof(MapPropertyAttribute), typeof(AttributeUsageAttribute))!;
         Assert.True(usage.AllowMultiple);
         Assert.Equal(
-            System.AttributeTargets.Method | System.AttributeTargets.Property | System.AttributeTargets.Field,
+            AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field,
             usage.ValidOn);
     }
 
@@ -60,24 +58,26 @@ public class AttributeContractTests
     public void DwarfMapperAttribute_enumStrategy_defaults_ByName()
     {
         Assert.Equal(EnumStrategy.ByName, new DwarfMapperAttribute().EnumStrategy);
-        Assert.Equal(EnumStrategy.ByValue, new DwarfMapperAttribute { EnumStrategy = EnumStrategy.ByValue }.EnumStrategy);
+        Assert.Equal(EnumStrategy.ByValue,
+            new DwarfMapperAttribute { EnumStrategy = EnumStrategy.ByValue }.EnumStrategy);
     }
 
     [Fact]
     public void DwarfMapperAttribute_nullStrategy_defaults_Throw()
     {
         Assert.Equal(NullStrategy.Throw, new DwarfMapperAttribute().NullStrategy);
-        Assert.Equal(NullStrategy.SetDefault, new DwarfMapperAttribute { NullStrategy = NullStrategy.SetDefault }.NullStrategy);
+        Assert.Equal(NullStrategy.SetDefault,
+            new DwarfMapperAttribute { NullStrategy = NullStrategy.SetDefault }.NullStrategy);
     }
 
     [Fact]
     public void FlattenAttribute_exposes_source_and_allows_multiple()
     {
         Assert.Equal("Address", new FlattenAttribute("Address").SourceMember);
-        var usage = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
-            typeof(FlattenAttribute), typeof(System.AttributeUsageAttribute))!;
+        var usage = (AttributeUsageAttribute)Attribute.GetCustomAttribute(
+            typeof(FlattenAttribute), typeof(AttributeUsageAttribute))!;
         Assert.True(usage.AllowMultiple);
-        Assert.Equal(System.AttributeTargets.Method, usage.ValidOn);
+        Assert.Equal(AttributeTargets.Method, usage.ValidOn);
     }
 
     [Fact]
@@ -85,27 +85,27 @@ public class AttributeContractTests
     {
         foreach (var t in new[] { typeof(BeforeMapAttribute), typeof(AfterMapAttribute) })
         {
-            var u = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(t, typeof(System.AttributeUsageAttribute))!;
-            Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
+            var u = (AttributeUsageAttribute)Attribute.GetCustomAttribute(t, typeof(AttributeUsageAttribute))!;
+            Assert.Equal(AttributeTargets.Method, u.ValidOn);
         }
     }
 
     [Fact]
     public void RoundTripAttribute_targets_methods()
     {
-        var u = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
-            typeof(RoundTripAttribute), typeof(System.AttributeUsageAttribute))!;
-        Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
+        var u = (AttributeUsageAttribute)Attribute.GetCustomAttribute(
+            typeof(RoundTripAttribute), typeof(AttributeUsageAttribute))!;
+        Assert.Equal(AttributeTargets.Method, u.ValidOn);
     }
 
     [Fact]
     public void ReinterpretAttribute_targets_methods_allows_multiple()
     {
         Assert.Equal("V", new ReinterpretAttribute("V").Member);
-        var u = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
-            typeof(ReinterpretAttribute), typeof(System.AttributeUsageAttribute))!;
+        var u = (AttributeUsageAttribute)Attribute.GetCustomAttribute(
+            typeof(ReinterpretAttribute), typeof(AttributeUsageAttribute))!;
         Assert.True(u.AllowMultiple);
-        Assert.Equal(System.AttributeTargets.Method, u.ValidOn);
+        Assert.Equal(AttributeTargets.Method, u.ValidOn);
     }
 
     [Fact]
@@ -113,9 +113,9 @@ public class AttributeContractTests
     {
         var attr = new MapConstructorAttribute<int, string>("Make");
         Assert.Equal("Make", attr.Method);
-        var u = (System.AttributeUsageAttribute)System.Attribute.GetCustomAttribute(
-            typeof(MapConstructorAttribute<,>), typeof(System.AttributeUsageAttribute))!;
+        var u = (AttributeUsageAttribute)Attribute.GetCustomAttribute(
+            typeof(MapConstructorAttribute<,>), typeof(AttributeUsageAttribute))!;
         Assert.True(u.AllowMultiple);
-        Assert.Equal(System.AttributeTargets.Class, u.ValidOn);
+        Assert.Equal(AttributeTargets.Class, u.ValidOn);
     }
 }

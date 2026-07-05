@@ -1,15 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
-public class C1Node { public int V { get; set; } public C1Node? Next { get; set; } }
-public class C1NodeDto { public int V { get; set; } public C1NodeDto? Next { get; set; } }
+public class C1Node
+{
+    public int V { get; set; }
+    public C1Node? Next { get; set; }
+}
+
+public class C1NodeDto
+{
+    public int V { get; set; }
+    public C1NodeDto? Next { get; set; }
+}
 
 [DwarfMapper(MaxDepth = 8)]
-public partial class C1DepthMapper { public partial C1NodeDto Map(C1Node n); }
+public partial class C1DepthMapper
+{
+    public partial C1NodeDto Map(C1Node n);
+}
 
 public class DepthSafetyRuntimeTests
 {
@@ -40,7 +49,8 @@ public class DepthSafetyRuntimeTests
     {
         var a = new C1Node { V = 1 };
         var b = new C1Node { V = 2 };
-        a.Next = b; b.Next = a; // cycle
+        a.Next = b;
+        b.Next = a; // cycle
         var ex = Record.Exception(() => new C1DepthMapper().Map(a));
         Assert.IsType<DwarfMappingDepthException>(ex);
     }
