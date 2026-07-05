@@ -15,8 +15,9 @@ crucially, **the test/diagnostic that enforces each one**, so the claims are che
 
 A destination member with no source is a **build error** (`DWARF001`), not a silent default. You cannot
 ship an incomplete map; intentional drops are explicit and auditable via `[MapIgnore]`. Source-side
-coverage is opt-in (`RequiredMapping = Both` → `DWARF039`) so a forgotten/mis-wired *source* field is never
-silent either.
+coverage is opt-in (`RequiredMapping = Both` → `DWARF039`); note `DWARF039` is an **IDE suggestion** by
+default (not build-breaking) — escalate it with `dotnet_diagnostic.DWARF039.severity = error` in
+`.editorconfig` to make an unconsumed source field fail the build.
 
 > **This is a DTO-drift contract gate.** Because the map is resolved at compile time, a DTO or entity that
 > changes shape and breaks a mapping **fails the build** — your two types provably cannot drift apart
@@ -64,9 +65,10 @@ mappers structurally cannot go.
   reflection-for-mapping tokens (`System.Reflection`, `Activator`, `GetProperty/Field/Method`,
   `MakeGenericType`, `dynamic`, …) across 64 fuzz seeds + every advanced feature.
 - *Evidence (end to end):* the CI AOT gate publishes `samples/DwarfMapper.AotSample` with **zero**
-  IL2xxx/IL3xxx warnings and runs a behavioural gate over the published native binary.
-- *Evidence (stability under AOT):* `samples/DwarfMapper.AotBench` is published with NativeAOT and run as
-  a native binary — SIMD widen/blit are bit-exact at every vector-boundary size, Preserve topology is
+  IL2xxx/IL3xxx warnings (this proves trim/AOT-clean compilation; the behavioural gate in its `Program.cs`
+  is run locally, not executed by CI).
+- *Evidence (stability under AOT):* `samples/DwarfMapper.AotBench` is published with NativeAOT and run
+  **locally** as a native binary (not a CI job) — SIMD widen/blit are bit-exact at every vector-boundary size, Preserve topology is
   deterministic over 100 000 runs, and the depth/SetNull guards hold over tens of thousands of runs. Timing
   is *steadier* than the JIT (no tiering jitter). The one AOT usage caveat — default baseline SIMD width
   (`Vector<int>.Count == 4` vs the JIT's 8), restored with `<IlcInstructionSet>native</IlcInstructionSet>`

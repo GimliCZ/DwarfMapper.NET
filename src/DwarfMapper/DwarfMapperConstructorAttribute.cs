@@ -20,8 +20,9 @@ namespace DwarfMapper;
 /// </list>
 /// </para>
 /// <para>
-/// Every constructor parameter is <strong>mandatory</strong>: if DwarfMapper cannot find a
-/// source member to satisfy a parameter, it emits <c>DWARF024 ConstructorParameterUnmapped</c>
+/// Every <em>mandatory</em> constructor parameter must be satisfied: if DwarfMapper cannot find a
+/// source member for a non-optional, non-<c>params</c> parameter, it emits <c>DWARF024 ConstructorParameterUnmapped</c>
+/// (optional parameters and <c>params</c> arrays with no matching source are omitted and take their default)
 /// and refuses to generate the mapping method.
 /// </para>
 /// </remarks>

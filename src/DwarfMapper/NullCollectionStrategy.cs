@@ -15,7 +15,7 @@ public enum NullCollectionStrategy
 
     /// <summary>
     /// A null source collection propagates as null on the target (the target
-    /// member must be a nullable reference type).  Re-enumeration of a lazy
+    /// member must then be nullable — a nullable reference or a nullable value-type collection like ImmutableArray&lt;T&gt;?; a non-nullable target silently degrades to AsEmpty).  Re-enumeration of a lazy
     /// <c>IEnumerable&lt;T&gt;</c> target re-maps the source on each call.
     /// </summary>
     AsNull = 1,

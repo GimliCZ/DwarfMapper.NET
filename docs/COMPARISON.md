@@ -38,11 +38,11 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | Collections / dictionaries | ✅ | ✅ | ✅ | ✅ |
 | Enums (by name / value) | ✅ | ✅ | ✅ | ✅ |
 | Null handling (configurable) | ✅ | ✅ | ✅ | ✅ |
-| Flattening | ✅ `[Flatten]` | manual | convention | convention (pioneered) |
+| Flattening | ✅ `[Flatten]` (explicit) | convention (auto) | convention | convention (pioneered) |
 | Custom per-member converter | ✅ `Use=` | ✅ | ✅ | ✅ |
 | Constructor / record targets | ✅ | ✅ | ✅ | ✅ |
 | Polymorphic / derived dispatch | ✅ `[MapDerivedType]` | ✅ | config | ✅ |
-| **Reference-cycle / object-graph reconstruction** | ✅ `Preserve` (full topology) | ❌ partial | ✅ `PreserveReference` | ✅ `PreserveReferences` |
+| **Reference-cycle / object-graph reconstruction** | ✅ `Preserve` (full topology) | ✅ `UseReferenceHandling` (opt-in) | ✅ `PreserveReference` | ✅ `PreserveReferences` |
 | **Cycle → null (IgnoreCycles)** | ✅ `OnCycle=SetNull` | ❌ | ~ | ~ |
 | **No-silent-StackOverflow guarantee** | ✅ depth-cap everywhere | ❌ | ~ | depth cap |
 | Graph degradation `[FlattenGraph]` | ✅ (homo + hetero) | ❌ | ❌ | ❌ |
@@ -168,7 +168,7 @@ vary by hardware; **relative ordering is the point — reproduce locally with th
 `*` Flat_Dwarf measured 4.8–7.6 ns across runs (6.4 ns this run) — nanosecond-scale noise on a
 non-dedicated machine; the generated code is the same direct-assignment shape as Mapperly. Codegen
 mappers (DwarfMapper / Mapperly) cluster at hand-written speed; the runtime tier (Mapster ~2.4–3×,
-AutoMapper ~9–11×) trails.
+AutoMapper ~8×) trails.
 
 **Takeaways:**
 - DwarfMapper **sits with hand-written and Mapperly at the codegen floor** — on the flat map its median
@@ -184,7 +184,7 @@ AutoMapper ~9–11×) trails.
   runtime mappers (Mapster/AutoMapper) and a hair ahead of Mapperly's scalar codegen loop — at this size
   the work is memory-bound (writing the 8 KB output), so SIMD mainly separates it from the reflection/
   expression tier; the gap widens for smaller element types or cache-resident data.
-- It is **~9–11× faster than AutoMapper** and **~2.4–3× faster than Mapster** on flat maps, which pay
+- It is **~8× faster than AutoMapper** and **~2× faster than Mapster** on flat maps (from the published 6.4 ns median: 51.5/6.4 ≈ 8×, 13.2/6.4 ≈ 2×), which pay
   runtime expression-tree / reflection overhead (and are not NativeAOT-safe). Mapster's first-call
   expression compilation is amortized here (steady state), yet still trails the codegen mappers.
 

@@ -75,7 +75,7 @@ public sealed class DwarfMapperAttribute : Attribute
     /// </para>
     /// <para>
     /// <see cref="NullCollectionStrategy.AsNull"/>: a null source propagates as
-    /// <c>null</c> on the target. The target member must be a nullable reference type.
+    /// <c>null</c> on the target — only when the target member is nullable (a nullable reference, or a nullable value-type collection like <c>ImmutableArray&lt;T&gt;?</c>); a non-nullable target silently degrades to <c>AsEmpty</c>.
     /// </para>
     /// </summary>
     public NullCollectionStrategy NullCollections { get; set; } = NullCollectionStrategy.AsEmpty;

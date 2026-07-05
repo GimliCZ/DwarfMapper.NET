@@ -65,7 +65,8 @@ Or, if you'd rather drop the method signatures entirely:
 | `[MapProperty("A.B.C", "D")]` (deep path) | identical dotted path (`DWARF043`/`DWARF044` for unknown/nullable-hop) |
 | `[MapperIgnoreTarget(nameof(D.X))]` | `[MapIgnore(nameof(D.X))]` |
 | `[MapperIgnoreSource(nameof(S.X))]` | `[MapIgnoreSource("X")]` (with `RequiredMapping = Both`) |
-| `[MapPropertyFromSource]` / `[MapValue]` | `[MapValue]` (const + `Use=`, type-checked `DWARF040–042`) |
+| `[MapValue]` (constant/parameterless) | `[MapValue]` (const + parameterless `Use=`, type-checked `DWARF040–042`) |
+| `[MapPropertyFromSource(t, Use=m)]` (m reads the **source**) | `[MapProperty(srcMember, t, Use=nameof(M))]` (M takes one source member), or `[AfterMap]` when computed from the whole source — **not** `[MapValue]` (its `Use=` must be parameterless → `DWARF041`) |
 | referenced-method converter | `[MapProperty(src, tgt, Use = nameof(M))]` |
 | `[MapDerivedType<DS, DD>]` | `[MapDerivedType<DS, DD>]` — **same attribute name** |
 

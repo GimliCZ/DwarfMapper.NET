@@ -53,7 +53,8 @@ public sealed class MapPropertyAttribute : Attribute
     /// <summary>
     /// Optional constant value coalesced onto the source — emitted verbatim as <c>source ?? value</c>
     /// (so it takes effect when the source member is null; on a non-nullable source the <c>??</c> is simply
-    /// a harmless no-op). The value must be assignable to the destination type (else <c>DWARF049</c>).
+    /// a harmless no-op; on a non-nullable <b>value-type</b> source such as <c>int</c>, <c>??</c> is a C# compile
+    /// error (CS0019) — use it only on a nullable source). The value must be assignable to the destination type (else <c>DWARF049</c>).
     /// Direct-assignable members only — not combinable with a <see cref="Use"/> converter.
     /// </summary>
     public object? NullSubstitute { get; set; }

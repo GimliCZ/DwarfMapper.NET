@@ -111,7 +111,7 @@ has a static, compile-checked replacement.
 |---|---|---|
 | ctor/record mapping (automatic) | automatic (records, `record struct`, immutable structs) | every ctor param mandatory (`DWARF024`); deterministic selection (`[DwarfMapperConstructor]`) |
 | `.ForCtorParam("p", o=>o.MapFrom(s=>s.Y))` | `[MapProperty(nameof(S.Y), "p")]` | targets ctor param by name; conversions apply |
-| `.ConstructUsing(s=>new D(...))` / `IDestinationFactory` | **partial / DIVERGENT** | generator emits the `new D(...)`; custom logic → `Use=` converter or `[AfterMap]` |
+| `.ConstructUsing(s=>new D(...))` / `IDestinationFactory` | `[MapConstructor<S,D>(nameof(Factory))]` | names a `D Factory(S)` on the mapper (compile-time equivalent); settable members are then filled from source. Invalid factory → `DWARF059` |
 | `mapper.Map(src, existingDest)` | `partial void Update(S s, T d)` / `partial T Update(S s, T d)` | identity preserved; nested/collections **replaced, not merged** |
 
 ### 1.8 Collections / enums / null / generics
@@ -168,7 +168,7 @@ to port for the convention path.
 | `.Map(d=>d.X, s=>s.Y, srcCond)` | `When=` | condition on the member |
 | `.IgnoreNullValues(true)` | `[DwarfMapper(SkipNullSourceMembers = true)]` | a null source member never overwrites the destination (`if (src.X is not null) …`); **not** `[MapIgnore]` (which drops unconditionally) |
 | `.AfterMapping((s,d)=>…)` / `.BeforeMapping(…)` | `[AfterMap]` / `[BeforeMap]` | named hook methods |
-| `.ConstructUsing(s=>new D(...))` | **DIVERGENT** | generator selects/emits the ctor; custom → `Use=`/`[AfterMap]` |
+| `.ConstructUsing(s=>new D(...))` | `[MapConstructor<S,D>(nameof(Factory))]` | direct equivalent (`D Factory(S)` on the mapper); or let the generator emit the ctor |
 | `.MapWith(s=>convert(s))` (type pair) | a `D Convert(S)` method on the mapper | user-method precedence |
 | `.AddDestinationTransform(...)` | `[AfterMap]` or `Use=` | post-process in a named method |
 

@@ -70,7 +70,7 @@ partial method for that pair:
 | `.IgnoreIf((s, d) => cond, d => d.X)` | `[MapProperty(src, tgt, When = nameof(P))]` — **negate the condition**: `IgnoreIf` *skips* when true, `When` *assigns* when true; and `When` sees the **source only** (no dest) |
 | `.AfterMapping((s, d) => …)` / `.BeforeMapping(…)` | `[AfterMap]` / `[BeforeMap]` named methods |
 | `.MapWith(s => convert(s))` (type pair) | a non-partial `D Convert(S s)` method on the mapper |
-| `.ConstructUsing(s => new D(...))` | generator emits the ctor automatically; custom logic → `Use=` / `[AfterMap]` |
+| `.ConstructUsing(s => new D(...))` | `[MapConstructor<S, D>(nameof(Factory))]` — names a `D Factory(S)` on the mapper (the direct equivalent); the generator emits the ctor automatically when you don't need a factory |
 | `.AddDestinationTransform(...)` | post-process in `[AfterMap]` or a `Use=` method |
 
 The rule (same as every guide): **lambdas become named methods.**
@@ -120,8 +120,7 @@ Mapster's global `TypeAdapterConfig.GlobalSettings` knobs map to class-level `[D
 ## Known divergences & non-goals (Mapster-specific)
 
 - **`.IgnoreNullValues(true)`** → **`[DwarfMapper(SkipNullSourceMembers = true)]`** — a null source member never overwrites the destination (emits `if (src.X is not null) dest.X = …`). Not `[MapIgnore]`, which would drop the member *unconditionally*. (Non-nullable value-type sources and `required`/`init` members are always assigned.)
-- **`.ConstructUsing`** — the generator selects and emits the constructor itself; custom construction goes
-  through `Use=` or `[AfterMap]`, not a factory lambda.
+- **`.ConstructUsing`** → **`[MapConstructor<S, D>(nameof(Factory))]`** (a `D Factory(S)` on the mapper — the compile-time equivalent); the generator otherwise selects/emits the constructor itself.
 - **Zero-config "map anything at runtime"** — by design you declare each pair. The payoff is the completeness
   gate, AOT-safety, and no first-call expression-compilation cost.
 - **Nested deep-merge into existing objects** — `Update` preserves top-level identity but replaces nested

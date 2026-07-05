@@ -177,8 +177,9 @@ redirect one with `[MapProperty("Source", "<paramName>")]`.
 ## dwarf025
 **Ambiguous constructor** · Error
 
-The destination type has several constructors tied for the most parameters. **Fix:** mark the intended one
-with `[DwarfMapperConstructor]`.
+Either several constructors tie for the most parameters, **or** more than one constructor is annotated
+with `[DwarfMapperConstructor]`. **Fix:** for a tie, mark exactly one with `[DwarfMapperConstructor]`; for
+duplicate annotations, remove all but one.
 
 ## dwarf026
 **No mappable constructor** · Error
