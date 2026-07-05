@@ -29,7 +29,6 @@ which attaches the following to a GitHub Release:
 | Artifact | Purpose |
 |---|---|
 | `DwarfMapper.X.Y.Z.nupkg` + `.snupkg` | **all-in-one** package (attributes + bundled generator + code fixes) — the only reference a normal consumer needs — plus symbols |
-| `DwarfMapper.Generator.X.Y.Z.nupkg` | Roslyn source generator (analyzer-only) |
 | `DwarfMapper.Testing.X.Y.Z.nupkg` + `.snupkg` | testing toolkit + symbols |
 | `bom.xml` (in `sbom/`) | CycloneDX SBOM for the whole solution |
 | `SHA256SUMS` | SHA-256 fingerprint of every `.nupkg`/`.snupkg` |
