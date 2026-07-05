@@ -114,12 +114,9 @@ method `Compute(srcMemberType) -> destType` referenced by `Use=`. A `Condition(s
 [DwarfMapper]
 public partial class CustomerMapper
 {
-    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]
-    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))]
+    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]                          // rename
+    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))] // custom conversion
     public partial CustomerDto ToDto(Customer src);
-
-    [MapIgnore(nameof(Customer.PasswordHash))]
-    public partial Customer FromDto(CustomerDto dto);
 
     private static string FormatMoney(decimal d) => d.ToString("C");
 }

@@ -118,9 +118,6 @@ public partial class CustomerMapper
     [Flatten(nameof(Customer.Address))]                                                          // Address.City -> City
     public partial CustomerDto ToDto(Customer src);
 
-    [MapIgnore(nameof(Customer.PasswordHash))]   // explicit, intentional, audited
-    public partial Customer FromDto(CustomerDto dto);
-
     private static string FormatMoney(decimal d) => d.ToString("C");
 }
 ```
