@@ -24,7 +24,7 @@ DwarfMapper is built around that pain:
 
 1. **You cannot ship an incomplete map.** Every destination member must be mapped, or *explicitly* ignored. Anything else is a build error.
 2. **Round-trips are verifiable in one line.** Tag a forward/back pair with `[RoundTrip]` (with a `DwarfMapper.Testing` reference) and the generator emits a fuzz harness you call from a test to prove `Back(Forward(x)) ≡ x`. No hand-written fixtures.
-3. **Failures explain themselves.** When a check fails you get a *mapping-aware* diff: which member diverged, source vs. destination value, and the exact resolved path — not a blind object dump.
+3. **Failures explain themselves.** When a check fails you get a *structural, member-path* diff: which member diverged, its expected vs. actual value, and the replay seed — not a blind object dump.
 
 Speed is the supporting act: we match the fastest compile-time mappers on ordinary DTOs and beat them on blittable collections.
 
@@ -48,7 +48,7 @@ Speed is the supporting act: we match the fastest compile-time mappers on ordina
 - **0 reflection.** No `System.Reflection`, no `Reflection.Emit`, no runtime configuration. Everything is resolved by the source generator. NativeAOT- and trimming-safe, and verified so in CI.
 - **0 hidden allocation.** The mapper itself allocates nothing. Mapping into a new reference type allocates only that target (unavoidable).
 - **0 silent data loss.** Completeness is enforced at compile time. Over-posting / mass-assignment-style bugs are designed out: only members the generator explicitly resolved are ever written.
-- **Provably-safe unsafe.** The blittable fast-path is gated by analyzer proofs (unmanaged types, matching size, no managed references, compatible layout). If a reinterpret cast cannot be proven safe, the generator falls back to plain assignments. It never emits an unprovable cast.
+- **Provably-safe unsafe.** The blittable fast-path is gated by analyzer proofs (unmanaged types, matching size, no managed references, compatible layout). The **automatic** fast-path never emits a cast without that full layout+name proof — it falls back to plain assignments instead. (The opt-in `[Reinterpret]` override emits a memory-safe, size-guarded blit whose field correspondence *you* assert.)
 - **Declarative only.** Configuration lives in attributes and partial methods — never a runtime fluent builder. (Fluent runtime config is the reflection trap that breaks AOT; we don't go there.)
 
 ---
@@ -58,14 +58,14 @@ Speed is the supporting act: we match the fastest compile-time mappers on ordina
 The "radical" core is that DwarfMapper **sorts members into a canonical order before pairing them**, instead of matching each member dynamically. This does two things at once:
 
 ### 1. Sort
-Members of the source and destination are sorted into a canonical order keyed by their *resolved* name (after conventions, renames, and flattening paths are applied). Sorting makes pairing **declaration-order-independent**: reordering fields in either type can never silently re-link them to the wrong target. It also groups blittable members into **contiguous runs**, which is what unlocks the bulk fast-path.
+Members of the source and destination are sorted into a canonical order keyed by their *resolved* name (after conventions, renames, and flattening paths are applied). Sorting makes pairing **declaration-order-independent**: reordering fields in either type can never silently re-link them to the wrong target. (This same canonical ordering is also what lets the generator recognize a whole `TSrc[] → TDst[]` array whose element type is a layout-identical unmanaged struct/primitive and take the blittable fast-path below.)
 
 ### 2. Pair
 Pairing walks the two sorted member lists ordinally. The result is a deterministic, stable mapping plan.
 
 ### 3. Prove (the completeness gate + blit proof)
 - **Completeness:** every destination member must be paired or carry `[MapIgnore]`. Otherwise → **build error** (always — suppressing the diagnostic in `.editorconfig` doesn't ship an incomplete map: the method body simply isn't generated, so the build still fails, just with a rawer compiler error; see *Completeness diagnostics* below). Every source member must be consumed or explicitly marked source-ignored. *"I forgot to map it" stops compiling.*
-- **Blit proof:** for each contiguous run, the generator asks: are these segments unmanaged, identically sized, layout-compatible, and transform-free? If yes, it plans a bulk copy (`MemoryMarshal.Cast` / `Unsafe.CopyBlock` / SIMD; whole-span for collections). If no, it plans direct assignments.
+- **Blit proof:** for a whole array member (`TSrc[] → TDst[]`) the generator asks: is the element type unmanaged, identically sized, and layout-compatible? If yes, the whole span is bulk-copied with a single `MemoryMarshal.Cast<TSrc,TDst>(...).CopyTo(...)` (behind a runtime size guard); `int[]→long[]` widening uses `Vector.Widen`. Everything else — including ordinary scalar members — is plain direct assignment. (There is no member-level run-coalescing; the fast-path is whole-array only.)
 
 ### 4. Emit
 The generator writes direct assignments, inline converters, and null guards for the ordinary members, and bulk/SIMD copies for the proven runs. The emitted code reads like something you'd have hand-written.
@@ -75,6 +75,11 @@ The generator writes direct assignments, inline converters, and null guards for 
 ## Quick start
 
 Start with two plain classes — your domain type and the shape you want to map it to. Mark the **source** with `[MapTo]` and the generator gives you an extension method — no mapper class, nothing to register, no reflection. (One `net10.0` package bundles the attributes, generator, and IDE code fixes — reference `DwarfMapper`; it's a release candidate, so install with `--prerelease`. See [Status](#status).)
+
+```bash
+dotnet new console -o HelloDwarf && cd HelloDwarf
+dotnet add package DwarfMapper --prerelease   # once it's on nuget.org; until then, reference the project (see Packages)
+```
 
 ```csharp
 // Program.cs — a complete program (top-level statements + the two classes)
@@ -290,7 +295,7 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 
 **Hooks.** `[BeforeMap]` (`void Hook(TSource)`) and `[AfterMap]` (`void Hook(TTarget)` or `void Hook(TSource, TTarget)`) methods on the mapper run around the generated body — validate the source, or fill computed/`[MapIgnore]`d destination members. Hooks apply to every mapping whose types are assignable to their parameters. An invalid signature is `DWARF018`.
 
-**Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to `Dictionary<K2,V2>`, converting **both keys and values** through the same rules as any other member (converters, nested mappers, enums, nullable). Entries are filled via the indexer, so post-conversion key collisions overwrite rather than throw.
+**Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to a dictionary **target** — `Dictionary<K2,V2>`, the `IDictionary`/`IReadOnlyDictionary` interfaces (which resolve to `Dictionary`), or `ImmutableDictionary<K2,V2>`/`IImmutableDictionary` — converting **both keys and values** through the same rules as any other member (converters, nested mappers, enums, nullable). Mutable/`Dictionary` targets fill via the indexer, so post-conversion key collisions overwrite (last wins); an `ImmutableDictionary` target instead throws on a duplicate converted key.
 
 **Constructor and record mapping.** DwarfMapper can map into targets that have **no parameterless constructor** — positional `record`s, `record struct`s, `readonly record struct`s, and constructor-based immutable classes/structs. The generator binds source members to constructor parameters by name, resolves any necessary conversion (same rules as property mapping), and emits a named-argument constructor call. `init`-only and mutable properties beyond the constructor parameters are object-initialized in the same statement.
 
@@ -304,7 +309,7 @@ public partial class PersonMapper
 }
 ```
 
-Every constructor parameter is **mandatory** — if DwarfMapper cannot find a matching source member, it emits `DWARF024 ConstructorParameterUnmapped` (a build error). Positional record members that are satisfied by a constructor parameter are not double-assigned in the object initializer.
+Every **mandatory** constructor parameter must be satisfied — if DwarfMapper cannot find a matching source member for a non-optional, non-`params` parameter, it emits `DWARF024 ConstructorParameterUnmapped` (a build error). Optional parameters and `params` arrays with no matching source are omitted and take their declared default. Positional record members that are satisfied by a constructor parameter are not double-assigned in the object initializer.
 
 **Constructor selection policy** (deterministic, in order):
 1. A constructor annotated `[DwarfMapperConstructor]` is selected unconditionally. More than one annotated constructor → `DWARF025 AmbiguousConstructor`.
@@ -331,8 +336,9 @@ Obsolete constructors and the implicit record copy constructor (`R(R original)`)
 [DwarfMapper]
 public partial class CustomerMapper
 {
-    public partial void Update(CustomerDto src, Customer dest);   // void form, mutates dest
-    public partial Customer Update(CustomerDto src, Customer dest); // fluent form, returns dest
+    public partial void Update(CustomerDto src, Customer dest);      // mutate dest in place
+    // Fluent variant — pick exactly ONE per pair; you can't declare both (C# won't overload on return type):
+    //   public partial Customer Update(CustomerDto src, Customer dest);   // returns dest
 }
 ```
 
@@ -404,7 +410,7 @@ var m = new OrderMapper();
 RoundTrip.Verify<Order, OrderDto>(m.ToDto, m.FromDto);   // fuzzes inputs, asserts Back(Forward(x)) ≡ x
 ```
 
-On a mismatch it throws with a mapping-aware dump (member path, expected vs. actual, and the replay seed). `ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The package is reflection-based and test-only — it is never AOT-published and does not affect the core library's reflection-free guarantees. (Prefer `[RoundTrip]` above for the zero-boilerplate path; this direct call is for ad-hoc verification.)
+On a mismatch it throws with a structural diff (the differing member's path, expected vs. actual, and the replay seed). `ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The package is reflection-based and test-only — it is never AOT-published and does not affect the core library's reflection-free guarantees. (Prefer `[RoundTrip]` above for the zero-boilerplate path; this direct call is for ad-hoc verification.)
 
 **Conformance sample.** On top of the generator/integration test suite, [`samples/DwarfMapper.Conformance`](samples/DwarfMapper.Conformance) is a single runnable app that exercises *every* feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies, `[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`, hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus adversarial "dirty paths" (null source → `ArgumentNullException`, narrowing overflow → `OverflowException` with no silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **47 runtime assertions**. It doubles as living documentation.
 
@@ -435,7 +441,7 @@ See [`docs/RELEASING.md`](docs/RELEASING.md) for step-by-step verification (fing
 ## Performance
 
 - **Direct-assignment path:** identical codegen to the fastest source-gen mappers — the JIT floor.
-- **Blittable fast-path:** contiguous unmanaged, layout-matched runs are bulk-copied; collections of such types are copied whole-span via `MemoryMarshal.Cast<TSrc, TDest>` and SIMD where it helps.
+- **Blittable fast-path:** a whole array of layout-identical unmanaged elements is copied whole-span via `MemoryMarshal.Cast<TSrc, TDest>` (and `Vector.Widen` for primitive widening) — whole-array only, not member-run coalescing.
 
 ---
 
@@ -539,7 +545,7 @@ DwarfMapper is free and open source, and it is **strong copyleft on purpose**. Y
 In plain terms: **if you build on DwarfMapper and ship it, your project is GPLv2 too, and your users get the source.** That is the point. The library stays free, and anyone who profits from it does so in the open, where its origin is visible.
 
 Caveats, stated honestly:
-- **The generated-output derivative-work question is legally unsettled.** The reading above — that code the generator *emits into your assembly* (which contains no DwarfMapper library code) makes your project a derivative work — is the **conservative** interpretation. Whether it actually holds for source-generator *output* is genuinely contested and untested in court. This is guidance, not legal advice; if your use is commercially sensitive, get your own counsel rather than relying on this summary.
+- **Two copyleft triggers — one settled, one not.** (1) *Settled (linking):* your product **redistributes and links the GPL-2.0 runtime library `DwarfMapper.dll`**, and generated maps call real runtime types from it (`DwarfRefContext`, `DwarfMapperRegistry`, `DwarfMappingDepthException`) — under the ordinary GPL linking reading this attaches copyleft on its own, independent of the next point. (2) *Unsettled (output):* whether the generator's *emitted source alone* would independently be a derivative work is genuinely contested and untested in court. Either way, shipping a closed-source binary that bundles the GPL runtime DLL is exactly the case this section warns about. This is guidance, not legal advice; if your use is commercially sensitive, get your own counsel rather than relying on this summary.
 - **SaaS is not distribution.** A company running DwarfMapper inside a hosted service never ships binaries, so GPLv2 does not compel them to publish source. (Closing that loophole would require AGPL — a deliberate choice we did *not* make.)
 - **GPLv2-only**, not "v2 or later" — the version is fixed.
 - GPLv2-only is incompatible with Apache-2.0 and GPLv3, which constrains what third-party code can be pulled in later. DwarfMapper has zero dependencies, so this is a non-issue today.

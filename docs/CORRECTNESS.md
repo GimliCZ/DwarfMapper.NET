@@ -37,7 +37,7 @@ face of anti-mislinking. *Evidence:* `MapEmitter.EmitMappingPlanDoc`; rendered f
 ## 3. Round-trips are verified, not hoped
 
 Tag a forward/back pair `[RoundTrip]` and the generator emits a seeded fuzz harness proving
-`Back(Forward(x)) ≡ x` with a mapping-aware diff on failure. No inverse → `DWARF020`; ambiguous → `DWARF021`.
+`Back(Forward(x)) ≡ x` with a structural member-path diff on failure. No inverse → `DWARF020`; ambiguous → `DWARF021`.
 One attribute replaces the fixtures you'd otherwise hand-maintain. *Evidence:* `DwarfMapper.Testing` +
 the `[RoundTrip]` generation path.
 

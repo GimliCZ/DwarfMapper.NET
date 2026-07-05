@@ -2,8 +2,9 @@
 
 // 10 — Mapping into an immutable target (positional record).
 // No parameterless constructor needed: DwarfMapper binds source members to constructor parameters by name and
-// emits a named-argument `new PersonDto(Id: ..., Name: ...)`. Every ctor parameter is mandatory (a missing one
-// is the build error DWARF024), so you can't silently leave an immutable field unset.
+// emits a named-argument `new PersonDto(Id: ..., Name: ...)`. Every *mandatory* ctor parameter must be satisfied
+// (a missing one is the build error DWARF024) — optional/`params` parameters take their default — so you can't
+// silently leave a required immutable field unset.
 using System;
 using DwarfMapper;
 

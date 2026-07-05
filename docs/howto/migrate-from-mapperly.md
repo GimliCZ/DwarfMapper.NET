@@ -99,7 +99,7 @@ One default differs: **enum strategy** (Mapperly maps enums *by value* by defaul
 
 These have no Mapperly equivalent (see [`../COMPARISON.md`](../COMPARISON.md#capability-matrix)):
 
-- **`[RoundTrip]` verification** — fuzz-driven `Back(Forward(x)) ≡ x` with mapping-aware failure dumps.
+- **`[RoundTrip]` verification** — fuzz-driven `Back(Forward(x)) ≡ x` with structural member-path failure dumps.
 - **A non-optional completeness build-error gate** — not a warning you can forget to escalate.
 - **Blittable/SIMD bulk-copy** (`MemoryMarshal.Cast`) and **SIMD widening** (`Vector.Widen`) fast-paths —
   ~2× faster on blittable struct arrays and primitive-widen arrays; Mapperly copies element-by-element.

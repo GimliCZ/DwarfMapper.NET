@@ -17,7 +17,7 @@ public sealed class SettingsService(IDwarfMapper mapper)
 }
 ```
 
-`IDwarfMapper` (`DwarfMapperFacade`) is registered for you by the generated `services.AddDwarfMappers()`. You
+`IDwarfMapper` (`DwarfMapperFacade`) is registered for you by the generated `services.AddDwarfMappers()` — but that method is generated **only in an assembly that declares at least one mapper**, in that assembly's own namespace. A pure-consumer/composition-root assembly with no local `[GenerateMap]`/`[DwarfMapper]` must call a **referenced provider assembly's** `AddDwarfMappers()` (or register `DwarfMapper.DwarfMapperFacade.Instance` directly) to get `IDwarfMapper` into DI. You
 do **not** declare the map in the consuming assembly — it is declared once, anywhere, with `[GenerateMap<S,T>]`.
 
 ## How it works
@@ -35,7 +35,7 @@ do **not** declare the map in the consuming assembly — it is declared once, an
   still throw `DwarfMapMissingException` at runtime even though the build passed — the next bullet closes that gap.
 - Call the generated `DwarfMap.Validate()` once at startup for a reflection-free runtime fail-fast: it throws
   **`DwarfMapValidationException`** listing every required ambient pair not registered in the process (defense
-  against trimming / not-yet-loaded assemblies).
+  against **trimmed or eagerly-referenced** assemblies that didn't self-register). For a genuinely *lazy*-loaded plugin, call `Validate()` **after** the plugin loads (a startup call would false-positive, since the plugin's module initializer hasn't run yet).
 
 ## When to use which
 

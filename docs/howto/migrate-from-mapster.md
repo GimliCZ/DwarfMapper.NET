@@ -121,6 +121,7 @@ Mapster's global `TypeAdapterConfig.GlobalSettings` knobs map to class-level `[D
 
 - **`.IgnoreNullValues(true)`** → **`[DwarfMapper(SkipNullSourceMembers = true)]`** — a null source member never overwrites the destination (emits `if (src.X is not null) dest.X = …`). Not `[MapIgnore]`, which would drop the member *unconditionally*. (Non-nullable value-type sources and `required`/`init` members are always assigned.)
 - **`.ConstructUsing`** → **`[MapConstructor<S, D>(nameof(Factory))]`** (a `D Factory(S)` on the mapper — the compile-time equivalent); the generator otherwise selects/emits the constructor itself.
+- **Runtime polymorphism** — Mapster maps each element by its *actual runtime subtype* (`Dog` → `DogDto`'s extra members). DwarfMapper maps the *statically-declared* type unless you declare each arm with `[MapDerivedType<Derived, DerivedDto>]` on the base-type method; **without it, only base-type members are mapped (derived-only data is silently dropped)**.
 - **Zero-config "map anything at runtime"** — by design you declare each pair. The payoff is the completeness
   gate, AOT-safety, and no first-call expression-compilation cost.
 - **Nested deep-merge into existing objects** — `Update` preserves top-level identity but replaces nested
