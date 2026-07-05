@@ -153,38 +153,39 @@ hand-written vs. the three competitors across **flat / nested / collection / bli
 with `[MemoryDiagnoser]`.
 
 A single local run — BenchmarkDotNet DefaultJob, **.NET 10.0.1, X64 RyuJIT AVX2** (AMD Ryzen 5 5600,
-non-dedicated machine; results are **not committed as artifacts** and are **not** produced in CI). Absolute ns
+non-dedicated machine; the Flat/Blit numbers are committed under [`benchmarks/results/`](../benchmarks/results/), the full 9-category sweep is not, and none run in CI). Absolute ns
 vary by hardware; **relative ordering is the point — reproduce locally with the command below**:
 
 | Scenario | DwarfMapper | Mapperly 4.3.1 | Mapster 10.0.8 | AutoMapper 14.0.0 | hand-written |
 |---|---:|---:|---:|---:|---:|
-| Flat (1 object) | 6.4 ns* | 4.6 ns | 13.2 ns | 51.5 ns | 4.8 ns |
+| Flat (1 object) † | 6.7 ns | 6.9 ns | 15.8 ns | 56.4 ns | 6.7 ns |
 | Nested | 11.5 ns | 10.3 ns | 20.5 ns | 58.4 ns | — |
 | Array (1000 objects) | 4.55 µs | 4.47 µs | 5.82 µs | 5.26 µs | — |
-| **Blit (1000 structs)** | **0.40 µs** | 0.93 µs | 0.97 µs | 1.02 µs | — |
+| **Blit (1000 structs)** † | **0.59 µs** | 1.08 µs | 1.11 µs | 1.18 µs | — |
 | **Widen (1000 int→long)** | **0.35 µs** | 0.43 µs | 0.69 µs | 0.72 µs | — |
 | Allocations (all scenarios) | = hand-written | = | = | = | baseline |
 
-`*` Flat_Dwarf measured 4.8–7.6 ns across runs (6.4 ns this run) — nanosecond-scale noise on a
-non-dedicated machine; the generated code is the same direct-assignment shape as Mapperly. Codegen
-mappers (DwarfMapper / Mapperly) cluster at hand-written speed; the runtime tier (Mapster ~2.4–3×,
-AutoMapper ~8×) trails.
+`†` **Flat and Blit re-measured this session** (Linux, AMD Ryzen 5 5600, .NET 10.0.1 DefaultJob, tight
+error bars): on Flat, hand-written (6.7 ns), DwarfMapper (6.7 ns) and Mapperly (6.9 ns) are statistically
+tied — DwarfMapper marginally ahead of Mapperly here. Nested / Array / Widen rows are from an earlier run —
+reproduce locally. Codegen mappers (DwarfMapper / Mapperly) cluster at hand-written speed; the runtime tier
+(Mapster ~2.4×, AutoMapper ~8×) trails.
 
 **Takeaways:**
 - DwarfMapper **sits with hand-written and Mapperly at the codegen floor** — on the flat map its median
-  ran a hair behind (6.4 vs 4.6–4.8 ns), within the run-to-run noise noted above (`*`) since the generated
+  is statistically tied (~6.7 ns each; DwarfMapper marginally ahead of Mapperly this run), since the generated
   code is the same direct-assignment shape — with **zero allocation overhead** (the destination object is the
   only allocation). On the 1000-object array it and
   Mapperly co-lead (4.55 µs vs 4.47 µs — within run-to-run noise), both ahead of the runtime mappers.
-- On the **blittable struct array it is ~2.3–2.5× faster than every competitor** — the `MemoryMarshal.Cast`
-  SIMD reinterpret path that none of Mapperly / Mapster / AutoMapper have (they copy field-by-field).
-  (Repeatable steady-state on this machine is ~0.40–0.50 µs vs ~0.9–1.0 µs for the others — decisive, with
-  allocations identical across all four libraries.)
+- On the **blittable struct array it is ~1.8–2.0× faster than every competitor** — the `MemoryMarshal.Cast`
+  block-copy (reinterpret) path that none of Mapperly / Mapster / AutoMapper have (they copy field-by-field).
+  (This session's measurement: **0.59 µs vs 1.08–1.18 µs** for the others — decisive, with allocations
+  identical across all four libraries.)
 - On the **primitive widening array (`int[]→long[]`)** the `Vector.Widen` path is ~2× faster than the
   runtime mappers (Mapster/AutoMapper) and a hair ahead of Mapperly's scalar codegen loop — at this size
   the work is memory-bound (writing the 8 KB output), so SIMD mainly separates it from the reflection/
   expression tier; the gap widens for smaller element types or cache-resident data.
-- It is **~8× faster than AutoMapper** and **~2× faster than Mapster** on flat maps (from the published 6.4 ns median: 51.5/6.4 ≈ 8×, 13.2/6.4 ≈ 2×), which pay
+- It is **~8× faster than AutoMapper** and **~2.4× faster than Mapster** on flat maps (measured: 56.4/6.7 ≈ 8.4×, 15.8/6.7 ≈ 2.4×), which pay
   runtime expression-tree / reflection overhead (and are not NativeAOT-safe). Mapster's first-call
   expression compilation is amortized here (steady state), yet still trails the codegen mappers.
 
