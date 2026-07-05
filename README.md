@@ -23,7 +23,7 @@ Every C# mapper today optimizes for ergonomics or raw speed. None of them treat 
 DwarfMapper is built around that pain:
 
 1. **You cannot ship an incomplete map.** Every destination member must be mapped, or *explicitly* ignored. Anything else is a build error.
-2. **Round-trips are verified for you.** Tag a forward/back pair with `[RoundTrip]` and the generator emits a fuzz-driven harness that proves `Back(Forward(x)) ≡ x`. No hand-written fixtures.
+2. **Round-trips are verifiable in one line.** Tag a forward/back pair with `[RoundTrip]` (with a `DwarfMapper.Testing` reference) and the generator emits a fuzz harness you call from a test to prove `Back(Forward(x)) ≡ x`. No hand-written fixtures.
 3. **Failures explain themselves.** When a check fails you get a *mapping-aware* diff: which member diverged, source vs. destination value, and the exact resolved path — not a blind object dump.
 
 Speed is the supporting act: we match the fastest compile-time mappers on ordinary DTOs and beat them on blittable collections.
@@ -39,7 +39,7 @@ Speed is the supporting act: we match the fastest compile-time mappers on ordina
 | **Mapperly** | Pure Roslyn source generator | Fastest tier | Zero | Excellent | Opt-in warning | No |
 | **DwarfMapper** | Pure Roslyn source generator + blit/SIMD fast-path | Fastest tier; **faster on blittable collections** | Zero | Excellent (CI-verified) | **Yes, error by default** | **Yes** |
 
-**Honest performance claim:** Mapperly already emits `dest.A = src.A`, which is the JIT floor for name-based mapping. On typical DTOs (strings, references, transforms) DwarfMapper produces the *same* direct assignments and is therefore *equally* fast. DwarfMapper pulls ahead only where the data is **blittable and layout-compatible** — there it copies whole spans with `MemoryMarshal`/`Unsafe`/SIMD instead of per-element field writes. We never claim to be "faster than everything"; we claim to be *as fast as the floor on ordinary DTOs, faster only on blittable/layout-identical collections, and far harder to get wrong.*
+**Honest performance claim:** Mapperly already emits `dest.A = src.A`, which is the JIT floor for name-based mapping. On typical DTOs (strings, references, transforms) DwarfMapper produces the *same* direct-assignment shape and measures within run-to-run noise of Mapperly / hand-written (see [COMPARISON](docs/COMPARISON.md)). DwarfMapper pulls ahead only where the data is **blittable and layout-compatible** — there it copies whole spans with `MemoryMarshal`/`Unsafe`/SIMD instead of per-element field writes. We never claim to be "faster than everything"; we claim to be *as fast as the floor on ordinary DTOs, faster only on blittable/layout-identical collections, and far harder to get wrong.*
 
 ---
 
@@ -101,7 +101,7 @@ public class PersonDto
 
 That's the whole loop: **two plain classes, one attribute, one call.** The generated body is exactly what you'd write by hand — `new PersonDto { Name = person.Name, Age = person.Age }`.
 
-**The payoff:** add an `Email` property to `PersonDto` and forget to map it, and **the build fails** — `DWARFR02` points straight at the unmapped member. (You'll also see `CS1061: 'Person' does not contain 'MapTo'` — that's expected: the generator withholds the extension method until the map is complete, so the `DWARFR02` is the real cause, not a missing `using`.) You cannot silently ship an incomplete map. Don't want a member mapped? Put `[MapIgnore]` on it.
+**The payoff:** add an `Email` property to `PersonDto` and forget to map it, and **the build fails** — `DWARFR02` names the unmapped member (`Email`). (The squiggle sits on the `[MapTo]` source type. You'll also see `CS1061: 'Person' does not contain 'MapTo'` — that's expected: the generator withholds the extension method until the map is complete, so the `DWARFR02` is the real cause, not a missing `using`.) You cannot silently ship an incomplete map. Don't want a member mapped? Put `[MapIgnore]` on it.
 
 `[MapTo]` carries the full conversion engine — number/string/enum/date conversions, nested objects, and `T[]`/`List<T>` collections — and one source can target several DTOs with per-member control (see [No mapper class — `[MapTo]`](#no-mapper-class--mapto) below).
 
@@ -417,7 +417,7 @@ RoundTrip.Verify<Order, OrderDto>(m.ToDto, m.FromDto);   // fuzzes inputs, asser
 
 On a mismatch it throws with a mapping-aware dump (member path, expected vs. actual, and the replay seed). `ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The package is reflection-based and test-only — it is never AOT-published and does not affect the core library's reflection-free guarantees. (Prefer `[RoundTrip]` above for the zero-boilerplate path; this direct call is for ad-hoc verification.)
 
-**Conformance sample.** On top of the generator/integration test suite, [`samples/DwarfMapper.Conformance`](samples/DwarfMapper.Conformance) is a single runnable app that exercises *every* feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies, `[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`, hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus adversarial "dirty paths" (null source → `ArgumentNullException`, narrowing overflow → `OverflowException` with no silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **48 runtime assertions**. It doubles as living documentation.
+**Conformance sample.** On top of the generator/integration test suite, [`samples/DwarfMapper.Conformance`](samples/DwarfMapper.Conformance) is a single runnable app that exercises *every* feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies, `[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`, hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus adversarial "dirty paths" (null source → `ArgumentNullException`, narrowing overflow → `OverflowException` with no silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **47 runtime assertions**. It doubles as living documentation.
 
 ---
 
@@ -504,7 +504,7 @@ README.md
 - Enums and null handling
 - Custom per-member conversion: `[MapProperty(src, tgt, Use = nameof(Method))]`
 - Canonical sort → ordinal pairing
-- Completeness diagnostics (build error by design — no configurable severity)
+- Completeness diagnostics (build error by construction — configuring its severity can’t ship an incomplete map)
 - Blittable bulk-copy + SIMD fast-path, analyzer-gated; `[Reinterpret]` escape hatch
 - Flattening: `[Flatten("Root")]` pulls sub-members to top-level destination
 - Before/after mapping hooks: `[BeforeMap]` / `[AfterMap]`
@@ -559,7 +559,7 @@ The full license text lives in [`LICENSE`](https://github.com/GimliCZ/DwarfMappe
 
 ## Status
 
-**Feature-complete v1 — pre-release (`1.0.0-rc.1`).** The generator, all documented attributes, and the testing toolkit are built and covered by tests; APIs are stabilising. Packages build, keyless-sign (GitHub identity), and publish through a tag-triggered pipeline ([`docs/RELEASING.md`](docs/RELEASING.md)). Being a release candidate, install it with the `--prerelease` flag. Feedback on rough edges welcome.
+**Feature-complete v1 — pre-release (`1.0.0-rc.1`).** The generator, all documented attributes, and the testing toolkit are built and covered by tests; APIs are stabilising. Packages build, keyless-sign (GitHub identity), and ship via a tag-triggered pipeline that cuts a signed GitHub Release ([`docs/RELEASING.md`](docs/RELEASING.md)); nuget.org publishing is manual. Being a release candidate, install it with the `--prerelease` flag. Feedback on rough edges welcome.
 
 ## Name
 
