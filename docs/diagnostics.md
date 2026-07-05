@@ -443,25 +443,34 @@ all but one definition. Reported at the validation root.
 
 ## Runtime exceptions
 
-The diagnostics above are **compile-time**. A generated mapper is also, by design, **strict at runtime**: rather
-than silently producing wrong data, out-of-range or malformed input **throws**. There is no lenient / non-throwing
-mode. **DwarfMapper is not an input-validation layer — validate untrusted input (request bodies, external data)
-before you map it.** The runtime throws you can encounter:
+The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather
+than silently truncating or defaulting, out-of-range or malformed input **throws** — there is no lenient /
+non-throwing mode. **DwarfMapper is not an input-validation layer — validate untrusted input (request bodies,
+external data) before you map it.**
+
+> **"Strict" is not "total" — a few paths still lose data silently** (no throw, no diagnostic): an in-range but
+> **undefined** `integral → enum` value yields an undefined enum; a `Dictionary<K,V>` target is built
+> last-writer-wins, so a **lossy key conversion drops entries**; and a `HashSet<T>`/set target **de-duplicates**.
+
+The throws you can encounter:
 
 | When | Exception | Notes |
 |---|---|---|
-| `null` passed to a generated map method | `ArgumentNullException` | every method opens with `ArgumentNullException.ThrowIfNull(source)` |
-| Numeric **narrowing** out of range (`long→int`, `enum`↔integral) | `OverflowException` | `CreateChecked` — never silent truncation |
+| `null` passed to a **public** map method (or update-into `void Map(S,T)`) | `ArgumentNullException` | public entry points open with `ArgumentNullException.ThrowIfNull(source)` (synthesized nested mappers do not) |
+| A **null source member → non-nullable target** under the default `NullStrategy.Throw` | `InvalidOperationException` | the most common case (`int? → int` when null); also a null **collection element**, a null **dictionary entry**, or a null reference-source mapped to a **value-type** target. Avoid with `NullStrategy.SetDefault`, `[MapProperty(NullSubstitute=…)]`, or a nullable target |
+| Numeric **narrowing** out of range (`long→int`; `enum`↔integral overflow) | `OverflowException` | `CreateChecked` — never silent truncation |
 | `string → int/Guid/DateTime/…` on unparseable input | `FormatException` (or `OverflowException`) | `Parse(…, InvariantCulture)`; there is **no `TryParse`/lenient mode** |
-| `string → enum` unrecognized name, or out-of-range integral→enum | `ArgumentOutOfRangeException` | the generated `switch` has a throwing default — string→enum is **not total** (compile-time `DWARF015` covers only enum↔enum by-name) |
+| `string → enum` unrecognized name, or `enum → enum` **by-name** with an undefined/cast source value | `ArgumentOutOfRangeException` | the generated `switch` has a throwing default — these are **not total** (`DWARF015` only checks *declared* members) |
 | Nullable **interior hop** on a deep source path (`"Customer.Name"`, `Customer` null) | `NullReferenceException` | only `DWARF044` (Info) at build; a raw NRE at runtime |
 | `[Flatten]` root is `null` | `NullReferenceException` | no diagnostic — guard the root or accept the risk |
+| `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …" |
 | Span/destination too small (span overloads) | `ArgumentException` | |
 | Cycle under the default depth guard (no `ReferenceHandling`) | `DwarfMappingDepthException` | catchable; carries `MaxDepth`/`ActualDepth` (never a `StackOverflow`) |
 | Ambient `IDwarfMapper.Map<T>(src)` with no registered provider (e.g. provider assembly not yet loaded) | `DwarfMapMissingException` | `DWARF061` proves the reference **graph** at build, not runtime **load order** — see [ambient maps](howto/ambient-cross-assembly-maps.md) |
 | `DwarfMap.Validate()` / `[DwarfMapperValidationRoot(AutoValidate = true)]` finds an unregistered required pair | `DwarfMapValidationException` | reflection-free startup fail-fast listing the missing pairs |
 
 **Handling.** `DwarfMappingDepthException`, `DwarfMapMissingException`, and `DwarfMapValidationException` are the
-DwarfMapper-typed exceptions you catch by type; coercion failures are standard BCL types (`OverflowException`,
-`FormatException`, `ArgumentOutOfRangeException`). For untrusted input, validate before mapping (or map into a
-string-shaped DTO and validate after) — do not rely on the mapper to reject bad data gracefully.
+DwarfMapper-typed exceptions you catch by type; the rest are standard BCL types (`InvalidOperationException`,
+`OverflowException`, `FormatException`, `ArgumentOutOfRangeException`, `ArgumentException`, `NullReferenceException`).
+For untrusted input, validate before mapping (or map into a string-shaped DTO and validate after) — do not rely on
+the mapper to reject bad data gracefully.
