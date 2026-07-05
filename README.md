@@ -198,7 +198,7 @@ var dto = mapper.Map<OrderDto>(order);              // resolves from the process
 - **`AddDwarfMappers()`** is generated only when your project references `Microsoft.Extensions.DependencyInjection.Abstractions`. It registers each mapper as a singleton (no reflection, no assembly scan) — AOT-safe like everything else.
 - **Thread-safe.** Generated mappers hold no mutable state; `DwarfMapperFacade.Instance` / `IDwarfMapper` and the `DwarfMapperRegistry` are safe for concurrent use (the registry is a `ConcurrentDictionary`); and reference-handling (`Preserve`/`SetNull`) allocates a fresh per-call context. So a single mapper instance — or the DI singleton, or the shared facade — can map from any number of threads at once.
 
-### Configuring mapping
+### Configuring mapping (name-matching & conversions)
 
 ```csharp
 [DwarfMapper(CaseInsensitive = true)]      // opt-in: match 'name' to 'Name'
@@ -297,7 +297,9 @@ All emitted calls (`CreateChecked`, `Parse`, `ToString`) are concrete static/ins
 
 **Dictionaries.** `Dictionary<K,V>` (and `IDictionary<K,V>`/`IReadOnlyDictionary<K,V>` sources) map to a dictionary **target** — `Dictionary<K2,V2>`, the `IDictionary`/`IReadOnlyDictionary` interfaces (which resolve to `Dictionary`), or `ImmutableDictionary<K2,V2>`/`IImmutableDictionary` — converting **both keys and values** through the same rules as any other member (converters, nested mappers, enums, nullable). Mutable/`Dictionary` targets fill via the indexer, so post-conversion key collisions overwrite (last wins); an `ImmutableDictionary` target instead throws on a duplicate converted key.
 
-**Constructor and record mapping.** DwarfMapper can map into targets that have **no parameterless constructor** — positional `record`s, `record struct`s, `readonly record struct`s, and constructor-based immutable classes/structs. The generator binds source members to constructor parameters by name, resolves any necessary conversion (same rules as property mapping), and emits a named-argument constructor call. `init`-only and mutable properties beyond the constructor parameters are object-initialized in the same statement.
+### Constructor & record mapping
+
+DwarfMapper can map into targets that have **no parameterless constructor** — positional `record`s, `record struct`s, `readonly record struct`s, and constructor-based immutable classes/structs. The generator binds source members to constructor parameters by name, resolves any necessary conversion (same rules as property mapping), and emits a named-argument constructor call. `init`-only and mutable properties beyond the constructor parameters are object-initialized in the same statement.
 
 ```csharp
 public record PersonDto(int Id, string Name);     // no parameterless ctor
@@ -326,11 +328,17 @@ Obsolete constructors and the implicit record copy constructor (`R(R original)`)
 
 **Emitted code is AOT-safe.** Named-argument constructor calls are concrete, non-reflective invocations — no `Activator.CreateInstance`, no expression trees.
 
-**Projection (IQueryable).** A partial method `IQueryable<TDto> Project(IQueryable<T> src)` generates `src.Select(s => new TDto { … })` — an expression tree your ORM translates to SQL. **Projection is provably translatable:** directly-assignable members, `[MapProperty]` renames/`[MapIgnore]`, enum→int casts, nested objects (`new TInnerDto { … }`, recursively), collections (`.Select(…).ToList()/.ToArray()`), and dotted-path source flattening (`[MapProperty("A.B", …)]`) are all inlined into the expression tree. Only members needing a runtime conversion — narrowing, string-parse, enum-by-name, a custom `Use=`, a non-translatable collection/dictionary target (`HashSet`/`ISet`/immutable/`Dictionary`), or reference handling — are rejected as `DWARF028` (with a reason); do those with a runtime mapper instead.
+### Projection (IQueryable)
 
-**Blittable fast-path (SIMD).** When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing, and the same ordered field names/types (including nested structs, recursively) — DwarfMapper skips the element loop and reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove, behind a JIT-folded runtime size guard. This is the one place DwarfMapper beats a hand-written name-based copy, and it is emitted **only when proven safe** — otherwise it falls back to the element loop. For layout-compatible types the proof can't confirm (differing field names you know are positionally correct, types from referenced assemblies), opt in with `[Reinterpret("Member")]` — still memory-safe (unmanaged + size guard), with the field correspondence as your assertion. A bad `[Reinterpret]` target is `DWARF022`.
+A partial method `IQueryable<TDto> Project(IQueryable<T> src)` generates `src.Select(s => new TDto { … })` — an expression tree your ORM translates to SQL. **Projection is provably translatable:** directly-assignable members, `[MapProperty]` renames/`[MapIgnore]`, enum→int casts, nested objects (`new TInnerDto { … }`, recursively), collections (`.Select(…).ToList()/.ToArray()`), and dotted-path source flattening (`[MapProperty("A.B", …)]`) are all inlined into the expression tree. Only members needing a runtime conversion — narrowing, string-parse, enum-by-name, a custom `Use=`, a non-translatable collection/dictionary target (`HashSet`/`ISet`/immutable/`Dictionary`), or reference handling — are rejected as `DWARF028` (with a reason); do those with a runtime mapper instead.
 
-**Update-into-existing.** Declare a two-parameter partial method to map onto an **existing** target instead of constructing a new one — the target's identity is preserved (handy for updating tracked entities, pooled objects, or pre-allocated buffers):
+### Blittable fast-path (SIMD)
+
+When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing, and the same ordered field names/types (including nested structs, recursively) — DwarfMapper skips the element loop and reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove, behind a JIT-folded runtime size guard. This is the one place DwarfMapper beats a hand-written name-based copy, and it is emitted **only when proven safe** — otherwise it falls back to the element loop. For layout-compatible types the proof can't confirm (differing field names you know are positionally correct, types from referenced assemblies), opt in with `[Reinterpret("Member")]` — still memory-safe (unmanaged + size guard), with the field correspondence as your assertion. A bad `[Reinterpret]` target is `DWARF022`.
+
+### Update-into-existing
+
+Declare a two-parameter partial method to map onto an **existing** target instead of constructing a new one — the target's identity is preserved (handy for updating tracked entities, pooled objects, or pre-allocated buffers):
 
 ```csharp
 [DwarfMapper]
@@ -344,7 +352,9 @@ public partial class CustomerMapper
 
 Settable members are assigned from the source; the same completeness gate (`DWARF001`), conversions, `[MapProperty]`/`[MapIgnore]`, and hooks apply. Both parameters are null-guarded (loud `ArgumentNullException`). Nested members and collections are **replaced** (mapped fresh / assigned), not merged. The target must be a reference type (a struct passed by value couldn't observe the mutation). Recursion-capable nested members are depth-guarded as usual.
 
-**Zero-alloc span mapping.** Declare `void Map(ReadOnlySpan<S> src, Span<D> dst)` to map element-wise into a caller-provided buffer with no heap allocation — ideal for hot paths over `stackalloc`/pooled memory:
+### Zero-alloc span mapping
+
+Declare `void Map(ReadOnlySpan<S> src, Span<D> dst)` to map element-wise into a caller-provided buffer with no heap allocation — ideal for hot paths over `stackalloc`/pooled memory:
 
 ```csharp
 [DwarfMapper]
@@ -353,7 +363,9 @@ public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<lon
 
 Each element runs through the full conversion pipeline (`dst[i] = convert(src[i])`). The destination must be a writable `Span<D>` (source may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws `ArgumentException` — never a silent truncation.
 
-**Async streaming.** Declare `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` to lazily transform an async sequence — the generator emits an `async` iterator (`await foreach … yield return convert(item)`) that streams element-by-element without buffering, preserving back-pressure:
+### Async streaming
+
+Declare `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` to lazily transform an async sequence — the generator emits an `async` iterator (`await foreach … yield return convert(item)`) that streams element-by-element without buffering, preserving back-pressure:
 
 ```csharp
 [DwarfMapper]
@@ -362,7 +374,9 @@ public partial class M { public partial IAsyncEnumerable<Dto> Map(IAsyncEnumerab
 
 Ideal for mapping a streamed data source (DB cursor, network stream) to DTOs without materializing the whole sequence.
 
-**Reference handling & cycles.** Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recursive types) are detected at generator time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead. The behaviour for shared references and cycles is controlled per mapper:
+### Reference handling & cycles
+
+Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recursive types) are detected at generator time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead. The behaviour for shared references and cycles is controlled per mapper:
 
 ```csharp
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]   // full topology
