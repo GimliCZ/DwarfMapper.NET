@@ -77,12 +77,12 @@ Or, if you'd rather drop the method signatures entirely:
 |---|---|
 | `PropertyNameMappingStrategy.CaseInsensitive` | `[DwarfMapper(CaseInsensitive = true)]` |
 | `RequiredMappingStrategy.Target` / `Both` | `[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Target/Both)]` |
-| `EnumMappingStrategy.ByName` / `ByValue` | `[DwarfMapper(EnumStrategy = EnumStrategy.ByName/ByValue)]` — **default is ByName in both** |
+| `EnumMappingStrategy.ByName` / `ByValue` | `[DwarfMapper(EnumStrategy = EnumStrategy.ByName/ByValue)]` — **Mapperly defaults to ByValue, DwarfMapper to ByName**; set it explicitly for parity |
 | strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions = false)]` (flips `DWARF038` suggestions into build errors) |
 | `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` — DwarfMapper reconstructs the **full** topology (Mapperly's is partial) |
 | `[UseMapper]` / `[UseStaticMapper]` (compose mappers) | call another mapper from a `Use=` method, or nest types — no first-class mapper-injection attribute |
 
-Good news on enums and case-sensitivity: the defaults match, so most `[Mapper]` option lines port verbatim.
+One default differs: **enum strategy** (Mapperly maps enums *by value* by default, DwarfMapper *by name*) — set `EnumStrategy` explicitly to match. Case-sensitivity defaults otherwise line up.
 
 ## Step 5 — Build, clear DWARF001, verify, remove Mapperly
 

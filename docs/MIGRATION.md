@@ -166,7 +166,7 @@ to port for the convention path.
 | `.Ignore(d=>d.X)` | `[MapIgnore(nameof(D.X))]` | required (completeness gate) |
 | `.IgnoreIf((s,d)=>cond, d=>d.X)` | `[MapProperty(src, tgt, When=nameof(P))]` | `When` gates the assignment |
 | `.Map(d=>d.X, s=>s.Y, srcCond)` | `When=` | condition on the member |
-| `.IgnoreNullValues(true)` | **DIVERGENT** | DwarfMapper update **replaces**; it does not skip null-source members. Use `[MapIgnore]` or restructure. |
+| `.IgnoreNullValues(true)` | `[DwarfMapper(SkipNullSourceMembers = true)]` | a null source member never overwrites the destination (`if (src.X is not null) …`); **not** `[MapIgnore]` (which drops unconditionally) |
 | `.AfterMapping((s,d)=>…)` / `.BeforeMapping(…)` | `[AfterMap]` / `[BeforeMap]` | named hook methods |
 | `.ConstructUsing(s=>new D(...))` | **DIVERGENT** | generator selects/emits the ctor; custom → `Use=`/`[AfterMap]` |
 | `.MapWith(s=>convert(s))` (type pair) | a `D Convert(S)` method on the mapper | user-method precedence |
@@ -219,7 +219,7 @@ and `partial Dst Map(Src)` methods. Migration is **nearly mechanical**, often le
 |---|---|---|
 | `PropertyNameMappingStrategy.CaseInsensitive` | `[DwarfMapper(CaseInsensitive=true)]` | `DWARF010` on ambiguity |
 | `RequiredMappingStrategy.Target/Both` | `[DwarfMapper(RequiredMapping=Target/Both)]` | `DWARF039` (Info) for unconsumed source; `.editorconfig` to escalate |
-| `EnumMappingStrategy.ByName/ByValue` + `EnumMappingIgnoreCase` | `[DwarfMapper(EnumStrategy=ByName/ByValue)]` | **default is ByName in both**; mismatch → `DWARF015` |
+| `EnumMappingStrategy.ByName/ByValue` + `EnumMappingIgnoreCase` | `[DwarfMapper(EnumStrategy=ByName/ByValue)]` | **Mapperly defaults ByValue, DwarfMapper ByName** — set explicitly; by-name mismatch → `DWARF015` |
 | strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions=false)]` | flips `DWARF038` suggestions into build errors (Mapperly-style strict) |
 | `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling=Preserve)]` | **DwarfMapper reconstructs full topology** (Mapperly's is partial) |
 | `[MapDerivedType<DS,DD>]` | `[MapDerivedType<DS,DD>]` | same attribute name |

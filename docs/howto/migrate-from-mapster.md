@@ -67,7 +67,7 @@ partial method for that pair:
 | `.Map(d => d.X, s => s.Y)` | `[MapProperty(nameof(S.Y), nameof(D.X))]` |
 | `.Map(d => d.X, s => Expr(s))` | `[MapProperty(nameof(S.Y), nameof(D.X), Use = nameof(Method))]` |
 | `.Ignore(d => d.X)` | `[MapIgnore(nameof(D.X))]` — required (completeness gate) |
-| `.IgnoreIf((s, d) => cond, d => d.X)` | `[MapProperty(src, tgt, When = nameof(P))]` |
+| `.IgnoreIf((s, d) => cond, d => d.X)` | `[MapProperty(src, tgt, When = nameof(P))]` — **negate the condition**: `IgnoreIf` *skips* when true, `When` *assigns* when true; and `When` sees the **source only** (no dest) |
 | `.AfterMapping((s, d) => …)` / `.BeforeMapping(…)` | `[AfterMap]` / `[BeforeMap]` named methods |
 | `.MapWith(s => convert(s))` (type pair) | a non-partial `D Convert(S s)` method on the mapper |
 | `.ConstructUsing(s => new D(...))` | generator emits the ctor automatically; custom logic → `Use=` / `[AfterMap]` |
@@ -119,8 +119,7 @@ Mapster's global `TypeAdapterConfig.GlobalSettings` knobs map to class-level `[D
 
 ## Known divergences & non-goals (Mapster-specific)
 
-- **`.IgnoreNullValues(true)`** — DwarfMapper's `Update` **replaces**; it does not skip null-source members.
-  Use `[MapIgnore]` or restructure if you relied on null-skipping merge semantics.
+- **`.IgnoreNullValues(true)`** → **`[DwarfMapper(SkipNullSourceMembers = true)]`** — a null source member never overwrites the destination (emits `if (src.X is not null) dest.X = …`). Not `[MapIgnore]`, which would drop the member *unconditionally*. (Non-nullable value-type sources and `required`/`init` members are always assigned.)
 - **`.ConstructUsing`** — the generator selects and emits the constructor itself; custom construction goes
   through `Use=` or `[AfterMap]`, not a factory lambda.
 - **Zero-config "map anything at runtime"** — by design you declare each pair. The payoff is the completeness
