@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
+using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;
@@ -134,7 +135,10 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                 foreach (var p in assembly) all.Add(p);
                 foreach (var list in classLevel) foreach (var p in list) all.Add(p);
                 foreach (var list in classLevelGeneric) foreach (var p in list) all.Add(p);
-                return ImmutableArray.CreateRange(all);
+                // EquatableArray (not raw ImmutableArray): this node feeds off assemblyUsesMap (a
+                // CompilationProvider that re-runs every keystroke), so its output must be value-equatable or
+                // every downstream SourceOutput re-emits on unrelated edits. See the caching regression test.
+                return EquatableArray.From(all);
             });
 
         context.RegisterSourceOutput(ownRequired, static (spc, pairs) => EmitRequiresManifest(spc, pairs));
@@ -147,21 +151,26 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                 return ImmutableArray.CreateRange(AggregateEmitter.CollectProvidedPairs(usable));
             });
 
-        // Root-only whole-graph view: is this the validation root (+ its AutoValidate/Mode/DI settings), and
-        // the Provides/Requires of referenced assemblies.
-        var rootInfo = context.CompilationProvider.Select(static (compilation, _) =>
+        // Root-only whole-graph view: is this the validation root (+ its AutoValidate/DI settings), and the
+        // Provides/Requires of referenced assemblies.
+        // NB: CompilationProvider re-runs on every keystroke, so this node's OUTPUT must be value-equatable or
+        // the downstream root-validation SourceOutput re-emits Validate.g.cs on every unrelated edit. The bools
+        // are value types; the pair sets are wrapped in EquatableArray (raw ImmutableArray has REFERENCE
+        // equality on its backing array). Guarded by Unrelated_edit_leaves_the_root_validation_output_cached.
+        var emptyPairs = EquatableArray.From(System.Array.Empty<(string, string)>());
+        var rootInfo = context.CompilationProvider.Select((compilation, _) =>
         {
             var (isRoot, autoValidate) = AmbientValidator.GetRootConfig(compilation);
             if (!isRoot)
             {
                 return (IsRoot: false, AutoValidate: false, DiAvailable: false,
-                        Provided: ImmutableArray<(string, string)>.Empty, Required: ImmutableArray<(string, string)>.Empty);
+                        Provided: emptyPairs, Required: emptyPairs);
             }
             var (provided, required) = AmbientValidator.ReadReferenced(compilation);
             var diAvailable = compilation.GetTypeByMetadataName(
                 "Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null;
             return (IsRoot: true, AutoValidate: autoValidate, DiAvailable: diAvailable,
-                    Provided: provided, Required: required);
+                    Provided: EquatableArray.From(provided), Required: EquatableArray.From(required));
         });
 
         context.RegisterSourceOutput(
@@ -211,9 +220,9 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             });
     }
 
-    private static void EmitRequiresManifest(SourceProductionContext spc, ImmutableArray<(string Source, string Destination)> pairs)
+    private static void EmitRequiresManifest(SourceProductionContext spc, EquatableArray<(string Source, string Destination)> pairs)
     {
-        if (pairs.Length == 0)
+        if (pairs.Count == 0)
         {
             return;
         }

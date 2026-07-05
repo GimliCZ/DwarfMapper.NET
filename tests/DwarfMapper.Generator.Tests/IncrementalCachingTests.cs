@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -70,6 +71,61 @@ public class IncrementalCachingTests
             Assert.True(
                 output.Reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged,
                 $"SourceOutput expected Cached/Unchanged after an unrelated edit, but was {output.Reason}.")));
+    }
+
+    // Emits a provider assembly (with its generated [assembly: DwarfProvidesMap] manifest) as a metadata
+    // reference, so a downstream validation-root compilation's ReadReferenced() returns a NON-empty pair set.
+    private static PortableExecutableReference CompileProviderRef(string ns)
+    {
+        var src = $$"""
+            namespace {{ns}};
+            public class Doc { public int V { get; set; } }
+            public class Model { public int V { get; set; } }
+            [global::DwarfMapper.DwarfMapper]
+            [global::DwarfMapper.GenerateMap<Doc, Model>]
+            public partial class Mapper { }
+            """;
+        var compilation = GeneratorTestHarness.BuildCompilation("Prov_" + ns, src);
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
+        using var ms = new MemoryStream();
+        Assert.True(output.Emit(ms).Success);
+        return MetadataReference.CreateFromImage(ms.ToArray());
+    }
+
+    [Fact]
+    public void Unrelated_edit_leaves_the_root_validation_output_cached()
+    {
+        // A [DwarfMapperValidationRoot] that consumes a cross-assembly map. The root-validation SourceOutput
+        // (DwarfMapper.Validate.g.cs / ValidateDi.g.cs) reads referenced provider manifests via the
+        // CompilationProvider, which re-runs on every keystroke — so its output must be VALUE-equatable or the
+        // node re-emits on every unrelated edit. Regression guard for that (raw ImmutableArray -> ref equality).
+        var provRef = CompileProviderRef("Prov1");
+        const string rootSrc = """
+            [assembly: global::DwarfMapper.DwarfMapperValidationRoot]
+            namespace App;
+            public class Consumer
+            {
+                public global::Prov1.Model C(global::DwarfMapper.IDwarfMapper m, global::Prov1.Doc d)
+                    => m.Map<global::Prov1.Model>(d);
+            }
+            """;
+        var compilation = GeneratorTestHarness.BuildCompilation("RootIncCache", rootSrc).AddReferences(provRef);
+        GeneratorDriver driver = NewDriver();
+
+        driver = driver.RunGenerators(compilation);
+        var modified = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Other { public class Unrelated { public int Z; } }"));
+        driver = driver.RunGenerators(modified);
+
+        var result = driver.GetRunResult().Results[0];
+        var outputSteps = result.TrackedSteps["SourceOutput"];
+        Assert.All(outputSteps, step => Assert.All(step.Outputs, output =>
+            Assert.True(
+                output.Reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged,
+                $"Root-validation SourceOutput expected Cached/Unchanged after an unrelated edit, but was " +
+                $"{output.Reason}. The rootInfo tuple's Provided/Required must be value-equatable (EquatableArray), " +
+                "else the [DwarfMapperValidationRoot] node re-emits Validate.g.cs on every keystroke.")));
     }
 
     private const string CoLocatedSource = """
