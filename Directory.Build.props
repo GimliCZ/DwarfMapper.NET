@@ -34,6 +34,6 @@
 
         <!-- Version: overridable by CI from the release tag (-p:Version=x.y.z).
              Keep in sync with the README 'Status' section. -->
-        <Version Condition="'$(Version)' == ''">1.0.0-rc.1</Version>
+        <Version Condition="'$(Version)' == ''">1.0.1-rc.1</Version>
     </PropertyGroup>
 </Project>

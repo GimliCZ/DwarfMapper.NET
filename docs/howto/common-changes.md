@@ -25,7 +25,7 @@ fixes), plus an optional **testing** package for `[RoundTrip]`.
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="DwarfMapper" Version="1.0.0-rc.1" />
+  <PackageReference Include="DwarfMapper" Version="1.0.1-rc.1" />
 </ItemGroup>
 ```
 

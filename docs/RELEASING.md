@@ -68,16 +68,16 @@ GitHub mints automatically (the workflow already requests `id-token: write` + `a
 ```bash
 # 1. Pick the version (keep README 'Status' in sync).
 # 2. Tag and push — the pipeline does the rest.
-git tag v1.0.0-rc.1
-git push origin v1.0.0-rc.1
+git tag v1.0.1-rc.1
+git push origin v1.0.1-rc.1
 # 3. (Manual, when ready) publish to nuget.org — push the SAME signed packages the Release carries
 #    (don't re-pack locally; a local build can differ byte-for-byte and fail attestation):
-#    gh release download v1.0.0-rc.1 -p '*.nupkg' -p '*.snupkg'
+#    gh release download v1.0.1-rc.1 -p '*.nupkg' -p '*.snupkg'
 #    dotnet nuget push '*.nupkg' -s https://api.nuget.org/v3/index.json -k <API_KEY>
 ```
 
 The version flows from the tag (`vX.Y.Z` → `X.Y.Z`) into `-p:Version=` for both build and pack.
-Local default (no tag) is `1.0.0-rc.1`, set in [`Directory.Build.props`](../Directory.Build.props).
+Local default (no tag) is `1.0.1-rc.1`, set in [`Directory.Build.props`](../Directory.Build.props).
 
 > **Want a NuGet-native author signature too?** That requires an X.509 code-signing certificate and
 > a stored private key, which this project intentionally avoids. If a downstream consumer ever mandates

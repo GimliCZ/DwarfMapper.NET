@@ -12,7 +12,7 @@ with one attribute**, and blittable data (unmanaged, fixed-layout structs) falls
     ** ([why →](#license))
 > - **.NET 10 only.** The runtime package targets `net10.0` with no multi-targeting — net8/net9 projects can't reference
     it yet.
-> - **Pre-release.** `1.0.0-rc.1` is a release candidate — APIs are stabilising; install it with the `--prerelease`
+> - **Pre-release.** `1.0.1-rc.1` is a release candidate — APIs are stabilising; install it with the `--prerelease`
     flag. ([status →](#status))
 >
 > If GPLv2, .NET 10, and pre-release all work for you, read on: completeness becomes a *build error*, maps are
@@ -751,7 +751,7 @@ DwarfMapper is **.NET 10 only**. The one exception is the generator/code-fix ass
 
 ```xml
 <!-- one reference enables compile-time mapping + the IDE quick-fixes; no analyzer wiring -->
-<PackageReference Include="DwarfMapper" Version="1.0.0-rc.1" />
+<PackageReference Include="DwarfMapper" Version="1.0.1-rc.1" />
 ```
 
 \* The bundled generator/code-fix assemblies target `netstandard2.0` because Roslyn loads analyzers/source generators
@@ -856,8 +856,7 @@ README.md
 ### Releasing
 
 - Tagging `v*` builds, tests, signs (keyless GitHub OIDC), SBOMs, and cuts a **GitHub Release** with the signed
-  packages; **nuget.org publishing is done manually by the maintainer** from those artifacts. `v1.0.0-rc.1` is the first
-  published release.
+  packages; **nuget.org publishing is done manually by the maintainer** from those artifacts. `v1.0.1-rc.1` is the current pre-release.
 
 ---
 
@@ -897,7 +896,7 @@ file carries an SPDX header (`// SPDX-License-Identifier: GPL-2.0-only`).
 
 ## Status
 
-**Feature-complete v1 — pre-release (`1.0.0-rc.1`).** The generator, all documented attributes, and the testing toolkit
+**Feature-complete v1 — pre-release (`1.0.1-rc.1`).** The generator, all documented attributes, and the testing toolkit
 are built and covered by tests; APIs are stabilising. Packages build, keyless-sign (GitHub identity), and ship via a
 tag-triggered pipeline that cuts a signed GitHub Release ([`docs/RELEASING.md`](docs/RELEASING.md)); nuget.org
 publishing is manual. Being a release candidate, install it with the `--prerelease` flag. Feedback on rough edges

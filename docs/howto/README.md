@@ -61,5 +61,5 @@ Every migration, from every library, is the same three moves (detailed in [commo
 
 ## Status note
 
-DwarfMapper is **pre-release — `1.0.0-rc.1`, a release candidate.** Install it with the `--prerelease`
+DwarfMapper is **pre-release — `1.0.1-rc.1`, a release candidate.** Install it with the `--prerelease`
 flag (`dotnet add package DwarfMapper --prerelease`). See the repository [README](../../README.md#status).
