@@ -72,6 +72,47 @@ public sealed class AmbientValidationGeneratorTests
         Assert.Equal(string.Empty, GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs"));
     }
 
+    private const string ProvidingRoot = "namespace Demo;\n" + Consumer + """
+
+        [global::DwarfMapper.DwarfMapper]
+        [global::DwarfMapper.GenerateMap<Doc, Model>]
+        public partial class M { }
+        """;
+
+    [Fact]
+    public void AutoValidate_true_emits_a_module_initializer_calling_Validate()
+    {
+        const string s = "[assembly: global::DwarfMapper.DwarfMapperValidationRoot(AutoValidate = true)]\n" + ProvidingRoot;
+
+        var validate = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs");
+
+        Assert.Contains("[global::System.Runtime.CompilerServices.ModuleInitializer]", validate, System.StringComparison.Ordinal);
+        Assert.Contains("__DwarfAutoValidate() => Validate();", validate, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AutoValidate_absent_emits_no_module_initializer()
+    {
+        const string s = "[assembly: global::DwarfMapper.DwarfMapperValidationRoot]\n" + ProvidingRoot;
+
+        var validate = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs");
+
+        Assert.Contains("public static void Validate()", validate, System.StringComparison.Ordinal);
+        Assert.DoesNotContain("ModuleInitializer", validate, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_forces_own_registration_first_so_it_is_ordering_independent()
+    {
+        // When the root also provides maps, Validate() invokes the own-assembly registration before checking,
+        // so an AutoValidate module initializer can't race the registration initializer.
+        const string s = "[assembly: global::DwarfMapper.DwarfMapperValidationRoot(AutoValidate = true)]\n" + ProvidingRoot;
+
+        var validate = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.Validate.g.cs");
+
+        Assert.Contains("__DwarfMapperAmbientRegistration.__Register();", validate, System.StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Non_root_assembly_does_not_validate()
     {

@@ -468,7 +468,7 @@ The throws you can encounter:
 | Span/destination too small (span overloads) | `ArgumentException` | |
 | Cycle under the default depth guard (no `ReferenceHandling`) | `DwarfMappingDepthException` | catchable; carries `MaxDepth`/`ActualDepth` (never a `StackOverflow`) |
 | Ambient `IDwarfMapper.Map<T>(src)` with no registered provider (e.g. provider assembly not yet loaded) | `DwarfMapMissingException` | `DWARF061` proves the reference **graph** at build, not runtime **load order** — see [ambient maps](howto/ambient-cross-assembly-maps.md) |
-| `DwarfMap.Validate()` (call once at startup) finds an unregistered required pair | `DwarfMapValidationException` | reflection-free fail-fast listing the missing pairs |
+| `DwarfMap.Validate()` finds an unregistered required pair (call it explicitly, via `services.AddDwarfMappers().ValidateDwarfMaps()`, or automatically with `[DwarfMapperValidationRoot(AutoValidate = true)]`) | `DwarfMapValidationException` | reflection-free fail-fast listing the missing pairs |
 
 **Handling.** `DwarfMappingDepthException`, `DwarfMapMissingException`, and `DwarfMapValidationException` are the
 DwarfMapper-typed exceptions you catch by type; the rest are standard BCL types (`InvalidOperationException`,

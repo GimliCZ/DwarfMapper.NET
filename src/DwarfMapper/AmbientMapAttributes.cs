@@ -92,8 +92,15 @@ public sealed class UsesMapAttribute : Attribute
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperValidationRootAttribute : Attribute
 {
-    /// <summary>When true, the root emits a module initializer that calls <c>DwarfMap.Validate()</c> on
-    /// load, turning a missing/ambiguous ambient map into a fail-fast startup exception. Default false
-    /// (call <c>DwarfMap.Validate()</c> explicitly).</summary>
+    /// <summary>When true, the root emits a module initializer that calls <c>DwarfMap.Validate()</c> as the
+    /// root module loads, turning a missing ambient map into a fail-fast startup exception. Default false.
+    /// <para>Validation automatically follows the link flow: it checks exactly the ambient maps the graph
+    /// actually consumes (auto-detected from call sites and <see cref="UsesMapAttribute{TSource,TDestination}"/>),
+    /// so a pair used in both directions is validated both ways (round-trip) and a one-way use is validated
+    /// one-way — no configuration.</para>
+    /// <para>Caveat: module-initializer ordering across assemblies is not guaranteed, so this is reliable for
+    /// eagerly-referenced providers but can false-positive on a genuinely lazy-loaded plugin whose
+    /// registration hasn't run yet. For DI apps prefer <c>services.ValidateDwarfMaps()</c> (runs when the
+    /// container is built); for lazy plugins call <c>DwarfMap.Validate()</c> after the plugin loads.</para></summary>
     public bool AutoValidate { get; set; }
 }

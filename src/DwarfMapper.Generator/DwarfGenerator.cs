@@ -147,15 +147,21 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                 return ImmutableArray.CreateRange(AggregateEmitter.CollectProvidedPairs(usable));
             });
 
-        // Root-only whole-graph view: is this the validation root, and the Provides/Requires of referenced assemblies.
+        // Root-only whole-graph view: is this the validation root (+ its AutoValidate/Mode/DI settings), and
+        // the Provides/Requires of referenced assemblies.
         var rootInfo = context.CompilationProvider.Select(static (compilation, _) =>
         {
-            if (!AmbientValidator.IsValidationRoot(compilation))
+            var (isRoot, autoValidate) = AmbientValidator.GetRootConfig(compilation);
+            if (!isRoot)
             {
-                return (IsRoot: false, Provided: ImmutableArray<(string, string)>.Empty, Required: ImmutableArray<(string, string)>.Empty);
+                return (IsRoot: false, AutoValidate: false, DiAvailable: false,
+                        Provided: ImmutableArray<(string, string)>.Empty, Required: ImmutableArray<(string, string)>.Empty);
             }
             var (provided, required) = AmbientValidator.ReadReferenced(compilation);
-            return (IsRoot: true, Provided: provided, Required: required);
+            var diAvailable = compilation.GetTypeByMetadataName(
+                "Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null;
+            return (IsRoot: true, AutoValidate: autoValidate, DiAvailable: diAvailable,
+                    Provided: provided, Required: required);
         });
 
         context.RegisterSourceOutput(
@@ -183,10 +189,24 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                 }
 
                 // Runtime fail-fast fallback: DwarfMap.Validate() over every consumed pair (own + referenced).
-                var validate = AmbientValidator.EmitValidateMethod(req.Concat(root.Required));
+                // The checked set IS the consumed link flow, so round-trip vs one-way is covered automatically.
+                // AutoValidate additionally emits a [ModuleInitializer] that calls it on load.
+                var consumed = req.Concat(root.Required).ToList();
+                var validate = AmbientValidator.EmitValidateMethod(consumed, root.AutoValidate, hasOwnRegistration: own.Length > 0);
                 if (validate.Length != 0)
                 {
                     spc.AddSource("DwarfMapper.Validate.g.cs", validate);
+
+                    // DI-configurable counterpart: services.AddDwarfMappers().ValidateDwarfMaps() runs the
+                    // check when the container is built (ordering-safe, unlike the module initializer).
+                    if (root.DiAvailable)
+                    {
+                        var di = AmbientValidator.EmitValidateDiExtension(consumed);
+                        if (di.Length != 0)
+                        {
+                            spc.AddSource("DwarfMapper.ValidateDi.g.cs", di);
+                        }
+                    }
                 }
             });
     }

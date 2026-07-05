@@ -17,17 +17,30 @@ internal static class AmbientValidator
 {
     private static readonly SymbolDisplayFormat Fq = SymbolDisplayFormat.FullyQualifiedFormat;
 
-    /// <summary>True when this assembly is marked as the ambient validation root.</summary>
-    public static bool IsValidationRoot(Compilation compilation)
+    /// <summary>
+    /// Reads <c>[assembly: DwarfMapperValidationRoot]</c> and its <c>AutoValidate</c> setting. <c>IsRoot</c> is
+    /// false when the attribute is absent.
+    /// </summary>
+    public static (bool IsRoot, bool AutoValidate) GetRootConfig(Compilation compilation)
     {
         foreach (var a in compilation.Assembly.GetAttributes())
         {
-            if (a.AttributeClass?.ToDisplayString() == "DwarfMapper.DwarfMapperValidationRootAttribute")
+            if (a.AttributeClass?.ToDisplayString() != "DwarfMapper.DwarfMapperValidationRootAttribute")
             {
-                return true;
+                continue;
             }
+
+            var autoValidate = false;
+            foreach (var named in a.NamedArguments)
+            {
+                if (named.Key == "AutoValidate" && named.Value.Value is bool b)
+                {
+                    autoValidate = b;
+                }
+            }
+            return (true, autoValidate);
         }
-        return false;
+        return (false, false);
     }
 
     /// <summary>
@@ -123,10 +136,13 @@ internal static class AmbientValidator
     /// <summary>
     /// Emits the root-only <c>DwarfMapper.DwarfMap.Validate()</c> — a hard-coded (reflection-free) runtime
     /// fail-fast that throws <c>DwarfMapValidationException</c> if any ambient map the app consumes is not
-    /// registered in the live registry (defense-in-depth against trimming / unloaded assemblies). Returns the
-    /// empty string when nothing is consumed.
+    /// registered in the live registry (defense-in-depth against trimming / unloaded assemblies). The checked
+    /// set is exactly what the graph consumes, so a pair used both ways is validated both ways automatically.
+    /// When <paramref name="autoValidate"/> is set, a <c>[ModuleInitializer]</c> calls <c>Validate()</c> on
+    /// load. Returns the empty string when nothing is consumed.
     /// </summary>
-    public static string EmitValidateMethod(IEnumerable<(string Source, string Destination)> required)
+    public static string EmitValidateMethod(
+        IEnumerable<(string Source, string Destination)> required, bool autoValidate, bool hasOwnRegistration)
     {
         var pairs = new SortedSet<(string, string)>();
         foreach (var r in required)
@@ -140,12 +156,19 @@ internal static class AmbientValidator
         sb.AppendLine();
         sb.AppendLine("/// <summary>Generated in the validation-root assembly: a runtime fail-fast check that every ambient");
         sb.AppendLine("/// map the application consumes is actually registered (defense-in-depth against trimming or");
-        sb.AppendLine("/// not-yet-loaded assemblies). Call it once at startup.</summary>");
+        sb.AppendLine("/// not-yet-loaded assemblies). Call it once at startup, via <c>services.ValidateDwarfMaps()</c>,");
+        sb.AppendLine("/// or set <c>[DwarfMapperValidationRoot(AutoValidate = true)]</c>.</summary>");
         sb.AppendLine("public static class DwarfMap");
         sb.AppendLine("{");
         sb.AppendLine("    /// <summary>Throws <see cref=\"DwarfMapValidationException\"/> if any consumed ambient map is missing.</summary>");
         sb.AppendLine("    public static void Validate()");
         sb.AppendLine("    {");
+        if (hasOwnRegistration)
+        {
+            // Force this assembly's own ambient registration first, so Validate() is independent of
+            // module-initializer ordering (the AutoValidate initializer may otherwise run before it). Idempotent.
+            sb.AppendLine("        global::DwarfMapper.Generated.__DwarfMapperAmbientRegistration.__Register();");
+        }
         sb.AppendLine("        var __missing = new global::System.Collections.Generic.List<string>();");
         foreach (var (source, destination) in pairs)
         {
@@ -156,6 +179,47 @@ internal static class AmbientValidator
         sb.AppendLine("        if (__missing.Count > 0)");
         sb.AppendLine("            throw new global::DwarfMapper.DwarfMapValidationException(");
         sb.AppendLine("                \"DwarfMapper: required ambient map(s) not registered at runtime: \" + global::System.String.Join(\", \", __missing));");
+        sb.AppendLine("    }");
+        if (autoValidate)
+        {
+            sb.AppendLine();
+            sb.AppendLine("    /// <summary>Auto-invoked on root-module load via <c>[DwarfMapperValidationRoot(AutoValidate = true)]</c>.</summary>");
+            sb.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
+            sb.AppendLine("    internal static void __DwarfAutoValidate() => Validate();");
+        }
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Emits an <c>IServiceCollection.ValidateDwarfMaps()</c> extension in the validation-root assembly that
+    /// calls <c>DwarfMap.Validate()</c> when invoked (typically right after <c>AddDwarfMappers()</c>, so the
+    /// check runs when the container is built — the deterministic, ordering-safe counterpart to
+    /// <c>AutoValidate</c>). Returns the empty string when nothing is consumed. Emitted only when the DI
+    /// abstractions are referenced.
+    /// </summary>
+    public static string EmitValidateDiExtension(IEnumerable<(string Source, string Destination)> required)
+    {
+        var pairs = new SortedSet<(string, string)>();
+        foreach (var r in required)
+            pairs.Add(r);
+        if (pairs.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.Append("// <auto-generated/>\n// SPDX-License-Identifier: GPL-2.0-only\n#nullable enable\n\n");
+        sb.AppendLine("namespace Microsoft.Extensions.DependencyInjection;");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>DI-friendly ambient-map validation for the validation-root assembly.</summary>");
+        sb.AppendLine("public static class DwarfMapValidationServiceCollectionExtensions");
+        sb.AppendLine("{");
+        sb.AppendLine("    /// <summary>Runs <c>DwarfMap.Validate()</c> immediately (fail-fast) and returns <paramref name=\"services\"/>.");
+        sb.AppendLine("    /// Chain after <c>AddDwarfMappers()</c> so provider registration has run: <c>services.AddDwarfMappers().ValidateDwarfMaps();</c></summary>");
+        sb.AppendLine("    public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection ValidateDwarfMaps(");
+        sb.AppendLine("        this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        global::DwarfMapper.DwarfMap.Validate();");
+        sb.AppendLine("        return services;");
         sb.AppendLine("    }");
         sb.AppendLine("}");
         return sb.ToString();

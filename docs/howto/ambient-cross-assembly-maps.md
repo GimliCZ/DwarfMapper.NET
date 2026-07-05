@@ -33,9 +33,17 @@ do **not** declare the map in the consuming assembly — it is declared once, an
   this proves the reference *graph*: a provider's map only actually registers once its assembly loads (its
   `[ModuleInitializer]` runs), so with trimming or lazy-loaded plugins an `IDwarfMapper.Map<TDest>` call can
   still throw `DwarfMapMissingException` at runtime even though the build passed — the next bullet closes that gap.
-- Call the generated `DwarfMap.Validate()` once at startup for a reflection-free runtime fail-fast: it throws
-  **`DwarfMapValidationException`** listing every required ambient pair not registered in the process (defense
-  against **trimmed or eagerly-referenced** assemblies that didn't self-register). For a genuinely *lazy*-loaded plugin, call `Validate()` **after** the plugin loads (a startup call would false-positive, since the plugin's module initializer hasn't run yet).
+- Run the generated `DwarfMap.Validate()` for a reflection-free runtime fail-fast: it throws
+  **`DwarfMapValidationException`** listing every required ambient pair not registered in the process. It checks
+  exactly the pairs the graph consumes, so a map used both directions is validated both ways automatically — no
+  configuration. Three ways to invoke it:
+  - **Explicit:** call `DwarfMapper.DwarfMap.Validate()` once at startup.
+  - **DI (recommended):** `services.AddDwarfMappers().ValidateDwarfMaps();` — runs when the container is built,
+    after provider registration, so it's ordering-safe.
+  - **Automatic:** `[assembly: DwarfMapperValidationRoot(AutoValidate = true)]` emits a `[ModuleInitializer]`
+    that calls `Validate()` on load. Reliable for **trimmed / eagerly-referenced** providers; for a genuinely
+    *lazy*-loaded plugin whose module initializer hasn't run yet, prefer the DI form or call `Validate()` after
+    the plugin loads (an on-load call would false-positive).
 
 ## When to use which
 
