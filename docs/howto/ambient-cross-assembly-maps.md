@@ -33,11 +33,9 @@ do **not** declare the map in the consuming assembly — it is declared once, an
   this proves the reference *graph*: a provider's map only actually registers once its assembly loads (its
   `[ModuleInitializer]` runs), so with trimming or lazy-loaded plugins an `IDwarfMapper.Map<TDest>` call can
   still throw `DwarfMapMissingException` at runtime even though the build passed — the next bullet closes that gap.
-- Optionally call the generated `DwarfMap.Validate()` once at startup for a reflection-free runtime fail-fast:
-  it throws **`DwarfMapValidationException`** listing every required ambient pair not registered in the process
-  (defense against trimming / not-yet-loaded assemblies). Prefer
-  `[assembly: DwarfMapperValidationRoot(AutoValidate = true)]` to run that check automatically from a module
-  initializer on assembly load, rather than calling `DwarfMap.Validate()` yourself.
+- Call the generated `DwarfMap.Validate()` once at startup for a reflection-free runtime fail-fast: it throws
+  **`DwarfMapValidationException`** listing every required ambient pair not registered in the process (defense
+  against trimming / not-yet-loaded assemblies).
 
 ## When to use which
 
