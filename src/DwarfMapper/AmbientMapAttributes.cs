@@ -87,7 +87,9 @@ public sealed class UsesMapAttribute : Attribute
 /// Marks the composition-root assembly (the one that references every map-providing and map-consuming
 /// assembly). Only in this compilation does the generator perform the whole-graph cross-assembly linkage
 /// validation (DWARF061) and emit <c>DwarfMap.Validate()</c>. Mid-tier assemblies see only a partial graph
-/// and therefore only emit manifests.
+/// and therefore only emit manifests. Use exactly ONE validation root per consumer graph — the generated
+/// <c>DwarfMap</c> and <c>ValidateDwarfMaps</c> have fixed names, so two roots referenced by a single
+/// consumer would collide (CS0433).
 /// </summary>
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperValidationRootAttribute : Attribute
@@ -98,9 +100,11 @@ public sealed class DwarfMapperValidationRootAttribute : Attribute
     /// actually consumes (auto-detected from call sites and <see cref="UsesMapAttribute{TSource,TDestination}"/>),
     /// so a pair used in both directions is validated both ways (round-trip) and a one-way use is validated
     /// one-way — no configuration.</para>
-    /// <para>Caveat: module-initializer ordering across assemblies is not guaranteed, so this is reliable for
-    /// eagerly-referenced providers but can false-positive on a genuinely lazy-loaded plugin whose
-    /// registration hasn't run yet. For DI apps prefer <c>services.ValidateDwarfMaps()</c> (runs when the
-    /// container is built); for lazy plugins call <c>DwarfMap.Validate()</c> after the plugin loads.</para></summary>
+    /// <para>Caveat: <c>Validate()</c> force-registers the root's OWN maps first, so those always validate.
+    /// A <b>referenced provider assembly</b> registers in its own module initializer, which the CLR runs
+    /// lazily on first access — a compile-time reference does NOT force it to load. So AutoValidate can
+    /// false-positive at startup for a correctly-wired <i>cross-assembly</i> map whose provider hasn't been
+    /// touched yet. For cross-assembly maps prefer <c>services.AddDwarfMappers().ValidateDwarfMaps()</c> or
+    /// call <c>DwarfMap.Validate()</c> after the provider assemblies are loaded.</para></summary>
     public bool AutoValidate { get; set; }
 }

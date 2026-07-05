@@ -269,9 +269,16 @@ internal static class AggregateEmitter
               .Append(FieldName(field)).Append(" = new();").Append('\n');
         }
         sb.AppendLine();
+        // Run-once: the CLR fires __Register from the module initializer, but DwarfMap.Validate() also calls it
+        // (to be independent of module-init ordering). Without this guard the second run re-registers every
+        // pair; DwarfMapperRegistry.Register treats a re-add as a competing provider and would falsely flag the
+        // assembly's own maps as ambiguous. Idempotent + thread-safe so any caller order is safe.
+        sb.AppendLine("    private static int __registered;");
+        sb.AppendLine();
         sb.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
         sb.AppendLine("    internal static void __Register()");
         sb.AppendLine("    {");
+        sb.AppendLine("        if (global::System.Threading.Interlocked.Exchange(ref __registered, 1) != 0) return;");
         foreach (var r in regs)
         {
             sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(")

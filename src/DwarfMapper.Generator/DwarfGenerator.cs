@@ -129,7 +129,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             .Select(static (data, _) =>
             {
                 var (((facade, assembly), classLevel), classLevelGeneric) = data;
-                var all = new SortedSet<(string, string)>();
+                var all = new SortedSet<(string, string)>(AmbientValidator.OrdinalPair);
                 foreach (var p in facade) all.Add(p);
                 foreach (var p in assembly) all.Add(p);
                 foreach (var list in classLevel) foreach (var p in list) all.Add(p);
@@ -198,7 +198,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                     spc.AddSource("DwarfMapper.Validate.g.cs", validate);
 
                     // DI-configurable counterpart: services.AddDwarfMappers().ValidateDwarfMaps() runs the
-                    // check when the container is built (ordering-safe, unlike the module initializer).
+                    // check synchronously at the call site (chain it after the AddDwarfMappers that load providers).
                     if (root.DiAvailable)
                     {
                         var di = AmbientValidator.EmitValidateDiExtension(consumed);

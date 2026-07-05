@@ -38,8 +38,9 @@ do **not** declare the map in the consuming assembly — it is declared once, an
   exactly the pairs the graph consumes, so a map used both directions is validated both ways automatically — no
   configuration. Three ways to invoke it:
   - **Explicit:** call `DwarfMapper.DwarfMap.Validate()` once at startup.
-  - **DI (recommended):** `services.AddDwarfMappers().ValidateDwarfMaps();` — runs when the container is built,
-    after provider registration, so it's ordering-safe.
+  - **DI (recommended):** `services.AddDwarfMappers().ValidateDwarfMaps();` — runs **synchronously at that
+    call site** (during service registration). Chain it after every `AddDwarfMappers()` that loads a provider
+    assembly, so their maps are registered first.
   - **Automatic:** `[assembly: DwarfMapperValidationRoot(AutoValidate = true)]` emits a `[ModuleInitializer]`
     that calls `Validate()` on load. Reliable for **trimmed / eagerly-referenced** providers; for a genuinely
     *lazy*-loaded plugin whose module initializer hasn't run yet, prefer the DI form or call `Validate()` after

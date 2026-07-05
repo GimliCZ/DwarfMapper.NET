@@ -152,18 +152,49 @@ public sealed class AutoValidateRuntimeTests
     }
 
     [Fact]
-    public void AutoValidate_module_initializer_calls_Validate_and_fails_fast_on_a_missing_map()
+    public void AutoValidate_module_initializer_fires_on_load_and_fails_fast_on_a_missing_map()
     {
         WithUnregisteredPairRoot(autoValidate: true, (rootAsm, docType, modelType) =>
         {
-            // Touching the generated DwarfMap type runs the AutoValidate [ModuleInitializer]
-            // (__DwarfAutoValidate -> Validate()), which fails fast — the CLR surfaces that as a
-            // TypeInitializationException wrapping our DwarfMapValidationException.
-            var thrown = Record.Exception(() => InvokeStatic(rootAsm, "__DwarfAutoValidate", BindingFlags.NonPublic));
+            // Force the root MODULE initializer to run — without naming __DwarfAutoValidate — so the test
+            // actually exercises the [ModuleInitializer] auto-firing (a direct call would throw even if the
+            // attribute were dropped). The AutoValidate initializer calls Validate(), which fails fast.
+            var thrown = Record.Exception(() => System.Runtime.CompilerServices.RuntimeHelpers
+                .RunModuleConstructor(rootAsm.ManifestModule.ModuleHandle));
             Assert.NotNull(thrown);
             var v = FindValidationException(thrown);
             Assert.Contains(docType.Name, v.Message, StringComparison.Ordinal);
             Assert.Contains(modelType.Name, v.Message, StringComparison.Ordinal);
         });
+    }
+
+    [Fact]
+    public void Validate_does_not_falsely_flag_the_roots_own_maps_as_ambiguous()
+    {
+        // Regression: Validate() re-invokes the root's __Register (for ordering-safety), and __Register also
+        // runs as a [ModuleInitializer]. A run-once guard must stop the re-run from re-registering — otherwise
+        // DwarfMapperRegistry.Register would treat the re-add as a competing provider and set IsAmbiguous=true
+        // for the assembly's own single-provider maps.
+        const string root = """
+            [assembly: global::DwarfMapper.DwarfMapperValidationRoot]
+            namespace RootAmbig;
+            public class Doc { public int V { get; set; } }
+            public class Model { public int V { get; set; } }
+            public class Consumer { public Model C(global::DwarfMapper.IDwarfMapper m, Doc d) => m.Map<Model>(d); }
+            [global::DwarfMapper.DwarfMapper]
+            [global::DwarfMapper.GenerateMap<Doc, Model>]
+            public partial class M { }
+            """;
+        var asm = Assembly.Load(EmitImage("RootAmbig_" + Guid.NewGuid().ToString("N"), root));
+        var docType = asm.GetType("RootAmbig.Doc")!;
+        var modelType = asm.GetType("RootAmbig.Model")!;
+
+        // Each Validate() triggers module-init __Register + the explicit __Register call. Twice for good measure.
+        InvokeStatic(asm, "Validate", BindingFlags.Public);
+        InvokeStatic(asm, "Validate", BindingFlags.Public);
+
+        Assert.True(global::DwarfMapper.DwarfMapperRegistry.IsProvided(docType, modelType));
+        Assert.False(global::DwarfMapper.DwarfMapperRegistry.IsAmbiguous(docType, modelType),
+            "the root's own single-provider map must not be flagged ambiguous after Validate re-runs __Register");
     }
 }

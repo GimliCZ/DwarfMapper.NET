@@ -17,6 +17,16 @@ internal static class AmbientValidator
 {
     private static readonly SymbolDisplayFormat Fq = SymbolDisplayFormat.FullyQualifiedFormat;
 
+    /// <summary>Ordinal ordering for (source, destination) pairs — the default tuple comparer routes to
+    /// culture-sensitive <c>string.CompareTo</c>, which would make the emitted check order, message order, and
+    /// diagnostic order vary by machine culture (breaking deterministic-build reproducibility).</summary>
+    public static readonly System.Collections.Generic.IComparer<(string, string)> OrdinalPair =
+        System.Collections.Generic.Comparer<(string, string)>.Create((a, b) =>
+        {
+            var c = string.CompareOrdinal(a.Item1, b.Item1);
+            return c != 0 ? c : string.CompareOrdinal(a.Item2, b.Item2);
+        });
+
     /// <summary>
     /// Reads <c>[assembly: DwarfMapperValidationRoot]</c> and its <c>AutoValidate</c> setting. <c>IsRoot</c> is
     /// false when the attribute is absent.
@@ -97,7 +107,7 @@ internal static class AmbientValidator
         foreach (var p in ownProvided) provided.Add(p);
         foreach (var p in referencedProvided) provided.Add(p);
 
-        var required = new SortedSet<(string, string)>();
+        var required = new SortedSet<(string, string)>(OrdinalPair);
         foreach (var r in ownRequired) required.Add(r);
         foreach (var r in referencedRequired) required.Add(r);
 
@@ -124,7 +134,7 @@ internal static class AmbientValidator
         foreach (var p in referencedProvided)
             counts[p] = counts.TryGetValue(p, out var c) ? c + 1 : 1;
 
-        var result = new SortedSet<(string, string)>();
+        var result = new SortedSet<(string, string)>(OrdinalPair);
         foreach (var kv in counts)
         {
             if (kv.Value > 1)
@@ -144,7 +154,7 @@ internal static class AmbientValidator
     public static string EmitValidateMethod(
         IEnumerable<(string Source, string Destination)> required, bool autoValidate, bool hasOwnRegistration)
     {
-        var pairs = new SortedSet<(string, string)>();
+        var pairs = new SortedSet<(string, string)>(OrdinalPair);
         foreach (var r in required)
             pairs.Add(r);
         if (pairs.Count == 0)
@@ -166,7 +176,8 @@ internal static class AmbientValidator
         if (hasOwnRegistration)
         {
             // Force this assembly's own ambient registration first, so Validate() is independent of
-            // module-initializer ordering (the AutoValidate initializer may otherwise run before it). Idempotent.
+            // module-initializer ordering (the AutoValidate initializer may otherwise run before it). __Register
+            // is guarded run-once (thread-safe), so this never double-registers or pollutes the ambiguity set.
             sb.AppendLine("        global::DwarfMapper.Generated.__DwarfMapperAmbientRegistration.__Register();");
         }
         sb.AppendLine("        var __missing = new global::System.Collections.Generic.List<string>();");
@@ -194,13 +205,13 @@ internal static class AmbientValidator
     /// <summary>
     /// Emits an <c>IServiceCollection.ValidateDwarfMaps()</c> extension in the validation-root assembly that
     /// calls <c>DwarfMap.Validate()</c> when invoked (typically right after <c>AddDwarfMappers()</c>, so the
-    /// check runs when the container is built — the deterministic, ordering-safe counterpart to
+    /// check runs synchronously at the call site (during ConfigureServices) — the ordering-safe counterpart to
     /// <c>AutoValidate</c>). Returns the empty string when nothing is consumed. Emitted only when the DI
     /// abstractions are referenced.
     /// </summary>
     public static string EmitValidateDiExtension(IEnumerable<(string Source, string Destination)> required)
     {
-        var pairs = new SortedSet<(string, string)>();
+        var pairs = new SortedSet<(string, string)>(OrdinalPair);
         foreach (var r in required)
             pairs.Add(r);
         if (pairs.Count == 0)

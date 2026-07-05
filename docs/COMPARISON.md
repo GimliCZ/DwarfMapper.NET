@@ -231,7 +231,7 @@ Results (ILC 10.0.1, win-x64, AMD Ryzen 5 5600; **1.16 MB** self-contained nativ
   reference at all boundary sizes, including negatives (sign extension).
 - **AOT timing is *steadier* than the JIT** — no tiered-compilation jitter, so per-op min/max spreads are
   tighter (a stability *positive*). Indicative ns/op at baseline SSE2 width: Flat ≈ 8 ns, Array (1000)
-  ≈ 8.8 µs, **Blit (1000) ≈ 0.39 µs** (identical to the JIT — the reinterpret is width-independent),
+  ≈ 8.8 µs, **Blit (1000) ≈ 0.39 µs** (from the earlier AOT run — the JIT was later re-measured at ~0.59 µs, so treat these AOT figures as indicative of that run; the reinterpret is width-independent),
   Widen (1000) ≈ 0.47 µs (half-width; see the caveat below).
 - **One AOT usage caveat worth knowing (not an instability).** NativeAOT defaults to a **baseline
   instruction set** (x86-64-v1 / SSE2) for portability, so `Vector<int>.Count == 4` under default AOT vs
