@@ -552,11 +552,21 @@ internal static class CollectionConverter
         StringBuilder sb, string name, string srcFq, string srcParamType, ITypeSymbol srcElemType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
-        // Return type is IEnumerable<T> (deferred — no materialisation).
-        // IEnumerable is lazy: we cannot register-before-fill (no concrete instance).
-        // We CAN thread ctx/depth into the Select lambda if the element converter needs it.
-        // Note: Enumerable.Select returns a lazy sequence (not materialised); the consumer
-        // enumerates it on demand, which is correct for IEnumerable<T> target fields.
+        // Return type is IEnumerable<T>, MATERIALISED into a fresh List<T>.
+        //
+        // This used to hand back a lazy sequence — `src` itself when the element needed no transform, or an
+        // un-materialised Enumerable.Select otherwise. Both leak the source across the map boundary and were
+        // silent about it:
+        //   * identity  → the destination WAS the source collection. Mutating either corrupted the other, and
+        //                 a consumer can cast the IEnumerable<T> back to List<T> and write straight into the
+        //                 source. (This is AutoMapper's v3.1 "assignable collection" bug.)
+        //   * deferred  → the destination was a live query over the source: the element conversion re-ran on
+        //                 EVERY enumeration (wrong for a converter with side effects, and O(n) each time), and
+        //                 enumerating after the source was mutated threw InvalidOperationException. A mapped
+        //                 DTO must not be a time-bomb tied to the lifetime of the entity it came from.
+        //
+        // Map() returns an independent value; that contract outranks saving one allocation. The zero-alloc
+        // paths that are genuinely safe (blit/SIMD into a NEW buffer) are unaffected — they already copy.
         var ieFq = "global::System.Collections.Generic.IEnumerable<" + elem + ">";
         var retFq = nullAsNull ? ieFq + "?" : ieFq;
         var emptyExpr = nullAsNull
@@ -568,22 +578,29 @@ internal static class CollectionConverter
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
             .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
-        if (identity)
+        // One materialising path for both the identity and the converting case: `item` already carries the
+        // element conversion (it is just `__item` when no transform is needed), so the fill is the same.
+        _ = identity;
+        _ = srcElemType;
+        var cap = CapacityArg(shape);
+        sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
+        if (cap.Length > 0)
         {
-            // Identity: source is already assignable to IEnumerable<T> — pass through.
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return src;\n");
+            // Size is known up front (src.Length / src.Count): allocate the exact array once and fill it by
+            // index. Cheapest possible independent copy — one allocation, no List growth/reallocation, no
+            // per-Add bounds+version checks — and the source is enumerated exactly ONCE.
+            sb.Append("        var __a = new ").Append(elem).Append('[').Append(cap).Append("];\n");
+            sb.Append("        var __i = 0;\n");
+            sb.Append("        foreach (var __item in src) { __a[__i++] = ").Append(item).Append("; }\n");
+            sb.Append("        return __a;\n");
         }
         else
         {
-            // Deferred: emit Enumerable.Select<SrcElem,TgtElem>(src, __item => map(__item)) without ToList().
-            // We must specify type arguments explicitly so the C# compiler doesn't infer the wrong
-            // return type when the element conversion is implicit (e.g. int→long).
-            var srcElemFq = Fq(srcElemType);
-            var selectFq = "global::System.Linq.Enumerable";
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return ").Append(selectFq).Append(".Select<").Append(srcElemFq).Append(", ").Append(elem)
-                .Append(">(src, __item => ").Append(item).Append(");\n");
+            // Size unknown (a bare IEnumerable<T>): a single growing pass. Still exactly one enumeration —
+            // we must never count-then-enumerate, which would double-enumerate a side-effecting sequence.
+            sb.Append("        var __r = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
+            sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
+            sb.Append("        return __r;\n");
         }
 
         sb.Append("    }\n");

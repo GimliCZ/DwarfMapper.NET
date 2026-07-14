@@ -447,8 +447,16 @@ public class LazyIEnumerableTargetTests
                      """);
     }
 
+    // An IEnumerable<T> destination used to be handed back LAZILY — `src` itself when the element needed no
+    // transform, or an un-materialised Enumerable.Select otherwise. Both leaked the source across the map
+    // boundary: the identity form made the destination literally BE the source list (a consumer could cast the
+    // IEnumerable<T> back to List<T> and write into the entity — AutoMapper's v3.1 "assignable collection"
+    // bug), and the deferred form re-ran the element conversion on every enumeration and threw
+    // InvalidOperationException if the source was mutated after mapping. Map() must return an INDEPENDENT
+    // value. These tests pin the safe contract; the runtime proof lives in CollectionAliasingRuntimeTests.
+
     [Fact]
-    public void IEnumerable_target_does_NOT_contain_ToList_or_ToArray()
+    public void IEnumerable_target_does_NOT_alias_the_source()
     {
         var gen = Col.GenOf("""
                             using DwarfMapper;
@@ -458,13 +466,13 @@ public class LazyIEnumerableTargetTests
                             public class B { public IEnumerable<int> Xs { get; set; } = System.Array.Empty<int>(); }
                             [DwarfMapper] public partial class M { public partial B Map(A a); }
                             """);
-        // Lazy target must NOT materialise
-        Assert.DoesNotContain(".ToList()", gen, StringComparison.Ordinal);
-        Assert.DoesNotContain(".ToArray()", gen, StringComparison.Ordinal);
+        // The identity pass-through ("return src;") handed the destination the SOURCE collection. It must
+        // never be emitted — the copy has to be a fresh buffer.
+        Assert.DoesNotContain("return src;", gen, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void IEnumerable_target_emits_Select()
+    public void IEnumerable_target_is_materialised_into_an_exact_sized_buffer()
     {
         var gen = Col.GenOf("""
                             using DwarfMapper;
@@ -474,18 +482,13 @@ public class LazyIEnumerableTargetTests
                             public class B { public IEnumerable<int> Xs { get; set; } = System.Array.Empty<int>(); }
                             [DwarfMapper] public partial class M { public partial B Map(A a); }
                             """);
-        // deferred: uses Select (or identity passthrough)
-        // When src element == tgt element, passthrough is fine (src is already IEnumerable<T>-assignable)
-        // Accept either (identity passthrough also valid — no Select needed for identity)
-        Assert.True(
-            gen.Contains("Select(", StringComparison.Ordinal) ||
-            // identity passthrough: just assigns src directly (no loop, no Select)
-            gen.Contains("src", StringComparison.Ordinal),
-            "IEnumerable<T> target should use Select or identity passthrough, not materialise");
+        // Source Count is known (List<T>), so the cheapest independent copy is a single exactly-sized array
+        // filled by index — one allocation, no List growth, no per-Add bounds/version checks.
+        Assert.Contains("new int[src.Count]", gen, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void IEnumerable_with_conversion_emits_Select_not_ToList()
+    public void IEnumerable_with_conversion_is_materialised_not_deferred()
     {
         var gen = Col.GenOf("""
                             using DwarfMapper;
@@ -495,10 +498,27 @@ public class LazyIEnumerableTargetTests
                             public class B { public IEnumerable<long> Xs { get; set; } = System.Array.Empty<long>(); }
                             [DwarfMapper] public partial class M { public partial B Map(A a); }
                             """);
-        // Emitter uses explicit type args: Enumerable.Select<TSrc, TDst>(src, ...) — match ".Select"
-        Assert.Contains(".Select", gen, StringComparison.Ordinal);
-        Assert.DoesNotContain(".ToList()", gen, StringComparison.Ordinal);
-        Assert.DoesNotContain(".ToArray()", gen, StringComparison.Ordinal);
+        // A deferred Select would re-run the int->long conversion on every enumeration and would throw if the
+        // source list were mutated after mapping. The conversion must be applied once, into a real buffer.
+        Assert.DoesNotContain(".Select", gen, StringComparison.Ordinal);
+        Assert.Contains("new long[src.Count]", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IEnumerable_target_enumerates_the_source_exactly_once()
+    {
+        var gen = Col.GenOf("""
+                            using DwarfMapper;
+                            using System.Collections.Generic;
+                            namespace Demo;
+                            public class A { public List<int> Xs { get; set; } = new(); }
+                            public class B { public IEnumerable<long> Xs { get; set; } = System.Array.Empty<long>(); }
+                            [DwarfMapper] public partial class M { public partial B Map(A a); }
+                            """);
+        // Sizing from src.Count (a property read) rather than counting by enumeration keeps this to a single
+        // pass — a count-then-enumerate shape would double-enumerate a side-effecting source.
+        var passes = gen.Split("foreach (var __item in src)").Length - 1;
+        Assert.Equal(1, passes);
     }
 }
 
