@@ -557,4 +557,30 @@ public static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf069");
+
+    // A nullable-annotated REFERENCE source assigned to a non-nullable reference target. Per NullStrategy's
+    // documented contract this raw-assigns (NullStrategy governs nullable VALUE types only), so a null lands
+    // in a member whose type says it cannot be null. Two things were wrong with staying quiet about it:
+    //
+    //   * it is silent — the whole point of DwarfMapper is that a mapping decision the user did not make is a
+    //     build-time diagnostic, not a runtime surprise; and
+    //   * it was not even silent in practice: the raw assignment made the COMPILER emit CS8601 ("possible null
+    //     reference assignment") from inside the generated file. A consumer with TreatWarningsAsErrors got a
+    //     build break they could not fix, in code they cannot edit, with no mention of DwarfMapper.
+    //
+    // So the emitter now suppresses that CS8601 (the raw-assign is intentional) and DwarfMapper says it in its
+    // own voice instead: actionable, pointing at the user's own DTO, and suppressible per-rule.
+    //
+    // Fires ONLY for Annotated -> NotAnnotated, exactly when CS8601 would. An oblivious (None) annotation on
+    // either side means the user opted out of nullable analysis (#nullable disable), and the compiler stays
+    // quiet there too — so we do as well, rather than flooding legacy code with warnings.
+    public static readonly DiagnosticDescriptor NullableRefSourceToNonNullableTarget = new(
+        "DWARF070",
+        "Nullable source member is assigned to a non-nullable target member",
+        "Source member '{0}' is a nullable reference but the destination member is non-nullable, so a null "
+        + "would be stored in a member whose type forbids it. Fix it in one of: [MapProperty(NullSubstitute = …)] "
+        + "for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] to keep the destination default, "
+        + "or make the destination member nullable.",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf070");
 }

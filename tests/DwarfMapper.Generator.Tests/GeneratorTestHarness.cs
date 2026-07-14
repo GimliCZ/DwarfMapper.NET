@@ -91,6 +91,34 @@ internal static class GeneratorTestHarness
     }
 
     /// <summary>
+    ///     Runs the generator and returns every C# compiler diagnostic of WARNING severity or worse whose
+    ///     location lies inside a GENERATED file. Empty => the generated code is clean in the consumer's build.
+    /// <para>
+    ///     <see cref="RunAndGetCompilationErrors" /> filters to <see cref="DiagnosticSeverity.Error" />, which
+    ///     made a whole class of defect invisible: generated code that merely WARNS. That is not a lesser
+    ///     problem — this repo's own Directory.Build.props sets <c>TreatWarningsAsErrors</c>, as do many
+    ///     consumers, so a warning emitted from a <c>.g.cs</c> file is a hard build break in code the user
+    ///     cannot edit and cannot fix. (A nullable-reference raw assign emitted exactly such a CS8601; see
+    ///     DWARF070.) Diagnostics originating in the USER's own source are excluded — the schemas and test
+    ///     inputs are allowed to be sloppy; only what the generator itself emits is held to this bar.
+    /// </para>
+    /// </summary>
+    public static ImmutableArray<Diagnostic> GeneratedCodeWarnings(string source,
+        NullableContextOptions nullable = NullableContextOptions.Enable)
+    {
+        var compilation = BuildCompilation("DwarfMapperWarnTestAsm", source, nullable);
+
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        return outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity >= DiagnosticSeverity.Warning)
+            .Where(d => d.Id.StartsWith("CS", StringComparison.Ordinal))
+            .Where(d => d.Location.SourceTree?.FilePath.EndsWith(".g.cs", StringComparison.Ordinal) == true)
+            .ToImmutableArray();
+    }
+
+    /// <summary>
     ///     Runs the generator and emits the resulting compilation to an in-memory assembly.
     ///     Returns the loaded assembly (or null on emit failure) and any emit-time error diagnostics.
     ///     Each call uses a unique assembly name to avoid load collisions across seeds.

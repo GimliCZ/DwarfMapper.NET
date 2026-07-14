@@ -38,9 +38,7 @@ internal static class AggregateEmitter
         {
             if (!model.GenerateExtensions || !model.HasParameterlessCtor) continue;
 
-            var mapperFullName = "global::" + (string.IsNullOrEmpty(model.Namespace)
-                ? model.ClassName
-                : model.Namespace + "." + model.ClassName);
+            var mapperFullName = model.FullyQualifiedName;
 
             foreach (var method in model.Methods)
             {
@@ -124,8 +122,7 @@ internal static class AggregateEmitter
     public static string? EmitServiceCollection(IReadOnlyList<MapperClassModel> models, string assemblyNamespace)
     {
         var mapperTypes = models
-            .Select(m =>
-                "global::" + (string.IsNullOrEmpty(m.Namespace) ? m.ClassName : m.Namespace + "." + m.ClassName))
+            .Select(m => m.FullyQualifiedName)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToList();
@@ -188,9 +185,7 @@ internal static class AggregateEmitter
                 .ToList();
             if (eligible.Count == 0) continue;
 
-            var mapperFullName = "global::" + (string.IsNullOrEmpty(model.Namespace)
-                ? model.ClassName
-                : model.Namespace + "." + model.ClassName);
+            var mapperFullName = model.FullyQualifiedName;
 
             if (!model.HasParameterlessCtor)
             {

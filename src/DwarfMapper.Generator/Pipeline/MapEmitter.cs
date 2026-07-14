@@ -22,6 +22,17 @@ internal static class MapEmitter
             sb.AppendLine();
         }
 
+        // Re-open every type this mapper is nested inside. A partial class is only completed within the SAME
+        // containing type(s); declaring our half at namespace scope while the user's half lives inside `Outer`
+        // yields two unrelated types, not a partial pair (CS0759 / CS8795 out of generated code). The body
+        // below keeps its own indentation — cosmetic in a generated file, and re-indenting it would churn
+        // every snapshot for no benefit.
+        foreach (var containing in model.ContainingTypes)
+        {
+            sb.AppendLine(containing);
+            sb.AppendLine("{");
+        }
+
         sb.Append(model.Accessibility).Append(" partial class ").AppendLine(model.ClassName);
         sb.AppendLine("{");
 
@@ -44,6 +55,9 @@ internal static class MapEmitter
         }
 
         sb.AppendLine("}");
+
+        foreach (var _ in model.ContainingTypes) sb.AppendLine("}");
+
         return sb.ToString();
     }
 
@@ -1087,6 +1101,13 @@ internal static class MapEmitter
         else
         {
             sb.Append(innerAccess);
+
+            // Direct assignment of a nullable reference into a non-nullable one. The raw assign is the
+            // documented NullStrategy contract (it governs nullable VALUE types only), but it makes the
+            // compiler emit CS8601 from inside THIS generated file — a warning the consumer cannot fix,
+            // in code they cannot edit, and a build break under TreatWarningsAsErrors. Suppress it here and
+            // let DWARF070 carry the signal against the user's own DTO instead, where it is actionable.
+            if (member.NullRefIntoNonNullable) sb.Append('!');
         }
     }
 }

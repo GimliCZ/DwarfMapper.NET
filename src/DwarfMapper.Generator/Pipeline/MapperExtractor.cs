@@ -2128,6 +2128,13 @@ internal static partial class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PairScopedNoMatch, pc.Loc,
                     $"[MapConstructor<{pc.Source.ToDisplayString()}, {pc.Target.ToDisplayString()}>(\"{pc.Method}\")] matches no [GenerateMap<{pc.Source.ToDisplayString()}, {pc.Target.ToDisplayString()}>] pair"));
 
+        // A mapper nested inside another type (e.g. inside the service that owns it) must have its generated
+        // half re-declared inside that same containing type. Skipped for the co-located ([GenerateMap]) form,
+        // whose emitted mapper is a brand-new class rather than the other half of the user's partial.
+        var containingTypes = separateEmit
+            ? new List<string>()
+            : ContainingTypeDeclarations(classSymbol, classSyntax, diagnostics);
+
         return new MapperClassModel(
             classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
             emitClassName,
@@ -2137,7 +2144,48 @@ internal static partial class MapperExtractor
             EquatableArray.From(synthesized.Values.OrderBy(m => m.Name, StringComparer.Ordinal)),
             EquatableArray.From(roundTrips),
             generateExtensions,
-            hasParameterlessCtor);
+            hasParameterlessCtor,
+            EquatableArray.From(containingTypes));
+    }
+
+    /// <summary>
+    ///     The declaration headers of every type the mapper is nested inside, OUTERMOST FIRST — the chain the
+    ///     emitter has to reproduce so the generated half lands in the same containing type as the user's half.
+    ///     <para>
+    ///     Each containing type must itself be <c>partial</c>: C# only lets a partial type be completed inside
+    ///     a partial containing type. That is precisely what DWARF002 already says, so a non-partial outer type
+    ///     reports DWARF002 against the outer type — an actionable error instead of the CS0759/CS8795 pair that
+    ///     the compiler would otherwise raise from inside generated code.
+    ///     </para>
+    /// </summary>
+    private static List<string> ContainingTypeDeclarations(
+        INamedTypeSymbol classSymbol, TypeDeclarationSyntax classSyntax, List<DiagnosticInfo> diagnostics)
+    {
+        var chain = new List<string>();
+
+        for (var outer = classSymbol.ContainingType; outer is not null; outer = outer.ContainingType)
+        {
+            var isPartial = outer.DeclaringSyntaxReferences
+                .Select(r => r.GetSyntax())
+                .OfType<TypeDeclarationSyntax>()
+                .Any(t => t.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)));
+
+            if (!isPartial)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.MapperNotPartial,
+                    LocationInfo.From(classSyntax.Identifier.GetLocation()),
+                    outer.Name));
+                return new List<string>();
+            }
+
+            var keyword = outer.TypeKind == TypeKind.Struct ? "struct" : "class";
+            var accessibility = SyntaxFacts.GetText(outer.DeclaredAccessibility);
+            chain.Add($"{accessibility} partial {keyword} {outer.Name}");
+        }
+
+        chain.Reverse(); // ContainingType walks inner -> outer; the emitter opens outer -> inner.
+        return chain;
     }
 
     private static List<MemberMap> ResolveMembers(
@@ -2377,7 +2425,11 @@ internal static partial class MapperExtractor
                 }
 
                 result.Add(new MemberMap(tgtName, srcName, conv, nullH, convNeedsCtx,
-                    SourceMayBeNullRef(srcMatch), NullSubstituteLiteral: nullSubLit, WhenPredicate: whenPred));
+                    SourceMayBeNullRef(srcMatch), NullSubstituteLiteral: nullSubLit, WhenPredicate: whenPred,
+                    // NullSubstitute already coalesces the null away (`src.X ?? literal`), so the assignment
+                    // is provably non-null and needs neither the '!' nor DWARF070.
+                    NullRefIntoNonNullable: nullSubLit is null
+                                            && IsDirectNullRefAssign(conv, nullH, srcMatch, tgtType)));
             }
         }
 
@@ -2536,7 +2588,9 @@ internal static partial class MapperExtractor
                             out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                             isSetNull: isSetNull, implicitConversions: implicitConversions))
                         result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, fneedsCtx,
-                            SourceMayBeNullRef(fm.LeafType)));
+                            SourceMayBeNullRef(fm.LeafType),
+                            NullRefIntoNonNullable:
+                            IsDirectNullRefAssign(fconv, fnull, fm.LeafType, target.Type)));
                     continue;
                 }
 
@@ -2580,7 +2634,8 @@ internal static partial class MapperExtractor
                     out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                     isSetNull: isSetNull, implicitConversions: implicitConversions))
                 result.Add(new MemberMap(target.Name, source.Name, conv, nullH, needsCtx,
-                    SourceMayBeNullRef(source.Type)));
+                    SourceMayBeNullRef(source.Type),
+                    NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type)));
         }
 
         // READ-ONLY destinations with a matching source (silent-loss guard).
@@ -2647,9 +2702,21 @@ internal static partial class MapperExtractor
 
                 if (srcTypeByName.TryGetValue(m.SourceName, out var st)
                     && (st.IsReferenceType || IsNullableValue(st, out _)))
-                    result[i] = m with { SkipIfSourceNull = true };
+                    // The emitter now guards this with `if (src.X is not null) dst.X = …;`, so inside that
+                    // guard flow analysis already proves non-null: no CS8601, hence no '!' and no DWARF070.
+                    // SkipNullSourceMembers IS the fix DWARF070 would have told them to apply.
+                    result[i] = m with { SkipIfSourceNull = true, NullRefIntoNonNullable = false };
             }
         }
+
+        // DWARF070: a nullable reference source raw-assigned into a non-nullable reference target. Reported
+        // here, once, after every other pass has had its chance to handle the null (NullSubstitute, a
+        // converter, SkipNullSourceMembers), so the diagnostic only fires when the null genuinely survives to
+        // the destination. Ordered by target name to keep generator output deterministic.
+        foreach (var m in result.Where(m => m.NullRefIntoNonNullable)
+                     .OrderBy(m => m.TargetName, StringComparer.Ordinal))
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.NullableRefSourceToNonNullableTarget, location, m.SourceName));
 
         return result;
     }
@@ -3793,6 +3860,40 @@ internal static partial class MapperExtractor
     private static bool SourceMayBeNullRef(ITypeSymbol type)
     {
         return type.IsReferenceType && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
+    }
+
+    /// <summary>
+    ///     True when a nullable-annotated REFERENCE source is being assigned to a NON-nullable reference
+    ///     target — i.e. exactly the case in which the C# compiler raises CS8601 on the generated assignment.
+    ///     Drives DWARF070 and the null-forgiving <c>!</c> that keeps CS8601 out of the generated file.
+    ///     <para>
+    ///     Deliberately strict on BOTH sides (<c>== Annotated</c> / <c>== NotAnnotated</c>) rather than the
+    ///     looser <c>!= NotAnnotated</c> used by <see cref="SourceMayBeNullRef" />. NullableAnnotation has
+    ///     three states, and the third — <c>None</c>, "oblivious", a type written in a <c>#nullable disable</c>
+    ///     context — means the user opted out of nullable analysis. The compiler emits no CS8601 there, so
+    ///     neither do we: an oblivious codebase would otherwise be flooded with warnings about a contract it
+    ///     never opted into. This predicate tracks the compiler exactly.
+    ///     </para>
+    /// </summary>
+    private static bool NullRefIntoNonNullableRef(ITypeSymbol srcType, ITypeSymbol tgtType)
+    {
+        return srcType.IsReferenceType && srcType.NullableAnnotation == NullableAnnotation.Annotated
+                                       && tgtType.IsReferenceType
+                                       && tgtType.NullableAnnotation == NullableAnnotation.NotAnnotated;
+    }
+
+    /// <summary>
+    ///     True when this member resolves to a <b>raw</b> assignment of a nullable reference into a
+    ///     non-nullable one — the only shape that actually emits CS8601. A converter or a NullHandling
+    ///     strategy means the emitter routes the value through something that deals with the null
+    ///     (<c>Conv(src.X!)</c>, <c>src.X ?? throw</c>, …), so neither the <c>!</c> nor DWARF070 applies there.
+    /// </summary>
+    private static bool IsDirectNullRefAssign(
+        string? converterMethod, NullHandling nullHandling, ITypeSymbol srcType, ITypeSymbol tgtType)
+    {
+        return converterMethod is null
+               && nullHandling == NullHandling.None
+               && NullRefIntoNonNullableRef(srcType, tgtType);
     }
 
     // A property accessor / field is usable by the generated mapper when it is public, or — when the mapper

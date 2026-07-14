@@ -75,3 +75,4 @@ DWARF066 | DwarfMapper | Info | [MapProperty(When=)] can leave a non-nullable me
 DWARF067 | DwarfMapper | Error | [GenerateWrapperMap] wrapper is not a single-payload generic
 DWARF068 | DwarfMapper | Error | MapConfigUnsupportedExpression
 DWARF069 | DwarfMapper | Error | MapConfigConflict
+DWARF070 | DwarfMapper | Warning | Nullable source member is assigned to a non-nullable target member

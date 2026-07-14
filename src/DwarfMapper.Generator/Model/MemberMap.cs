@@ -61,4 +61,15 @@ public sealed record MemberMap(
     /// members (AutoMapper's <c>ForAllMembers(o =&gt; o.Condition((_,_,src) =&gt; src != null))</c>).
     /// Mutually exclusive with <see cref="WhenPredicate"/>.
     /// </summary>
-    bool SkipIfSourceNull = false) : IEquatable<MemberMap>;
+    bool SkipIfSourceNull = false,
+    /// <summary>
+    /// When <c>true</c>, a nullable-annotated REFERENCE source is being raw-assigned to a non-nullable
+    /// reference target (the documented <see cref="DwarfMapper.NullStrategy"/> contract: it governs nullable
+    /// VALUE types only). The assignment is intentional, but it makes the C# compiler emit CS8601 from inside
+    /// the generated file — an unfixable warning for a consumer with TreatWarningsAsErrors, in code they cannot
+    /// edit. The emitter therefore appends the null-forgiving <c>!</c> to silence CS8601, and DwarfMapper
+    /// reports DWARF070 against the user's own DTO instead: same signal, but actionable and suppressible.
+    /// Set only for the direct-assign path (no converter, no null-handling, no NullSubstitute) and cleared
+    /// when <see cref="SkipIfSourceNull"/> already guards the null.
+    /// </summary>
+    bool NullRefIntoNonNullable = false) : IEquatable<MemberMap>;

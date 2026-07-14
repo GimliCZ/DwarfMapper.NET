@@ -63,6 +63,22 @@ internal static class CombinatorialSchema
         ("Cmb_LongEnum", null) // enum : long
     ];
 
+    /// <summary>
+    /// Every generated cell is compiled in a NULLABLE-ANNOTATED context — what real consumers ship
+    /// (<c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c> is the default for new .NET projects, and this repo's own
+    /// Directory.Build.props sets it alongside TreatWarningsAsErrors).
+    /// <para>
+    /// Without this the whole combinatorial tier ran in the OBLIVIOUS world:
+    /// <see cref="GeneratorTestHarness" /> defaults to <c>NullableContextOptions.Disable</c>, so every
+    /// reference member came back with <c>NullableAnnotation.None</c> rather than Annotated/NotAnnotated.
+    /// That is not a cosmetic difference — the generator branches on the annotation
+    /// (<c>SourceMayBeNullRef</c>, the null-forgiving <c>!</c>, DWARF070), so the matrix was exercising code
+    /// paths that production never takes and skipping the ones it does. Nullability has THREE states and we
+    /// were only ever testing the third.
+    /// </para>
+    /// </summary>
+    private const string NullableDirective = "#nullable enable";
+
     // All shapes at depth ≤1 (the exhaustive tier)
     private static readonly string[] DepthOneShapes =
     [
@@ -98,6 +114,12 @@ internal static class CombinatorialSchema
         "tuple", // (B, string) — ValueTuple was entirely absent from every schema
         "generic_box", // CmbBox<B> — a USER generic type, not a BCL one
         "nullable_ref", // string? — the nullable REFERENCE case (3-state NullableAnnotation)
+
+        // string? SOURCE -> string TARGET. Probably the single commonest real-world DTO mapping there is, and
+        // no schema had it: `nullable_ref` used string? on BOTH sides, so the nullability MISMATCH — the one
+        // shape that makes the compiler emit CS8601 out of the generated file — was never generated at all.
+        // This is the cell that DWARF070 exists for.
+        "nullable_ref_mismatch",
 
         "nested_object",
         "record_type",
@@ -204,6 +226,7 @@ internal static class CombinatorialSchema
         var sb = new StringBuilder();
         sb.AppendLine("// CombinatorialSchema auto-generated — do not edit");
         sb.AppendLine("// seed=" + seed.ToString(CultureInfo.InvariantCulture));
+        sb.AppendLine(NullableDirective);
         sb.AppendLine("using DwarfMapper;");
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
@@ -288,6 +311,7 @@ internal static class CombinatorialSchema
         sb.AppendLine("// CombinatorialSchema auto-generated — do not edit");
         sb.AppendLine("// seed=" + seed.ToString(CultureInfo.InvariantCulture));
         sb.AppendLine("// shape=polymorphic_dispatch");
+        sb.AppendLine(NullableDirective);
         sb.AppendLine("using DwarfMapper;");
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
@@ -371,6 +395,11 @@ internal static class CombinatorialSchema
             // The nullable REFERENCE case. NullableAnnotation has THREE states (Annotated / NotAnnotated /
             // None-oblivious) and code that tests `== Annotated` silently drops the null guard on the third.
             "nullable_ref" => "string?",
+
+            // The nullability MISMATCH: nullable on the source, non-nullable on the destination. The generated
+            // assignment would raise CS8601 in the consumer's build if the emitter did not suppress it, and
+            // DwarfMapper reports DWARF070 so the risk is not silent.
+            "nullable_ref_mismatch" => src ? "string?" : "string",
             "nested_object" => $"CmbNested_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
             "record_type" => $"CmbRecord_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
             "ListOfList" => $"global::System.Collections.Generic.List<global::System.Collections.Generic.List<{elem}>>",

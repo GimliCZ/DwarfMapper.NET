@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF069`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF070`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -493,6 +493,33 @@ an inline lambda `v => v`). **Fix:** extract a named method (a method group), or
 The same destination member is configured more than once — by both an attribute (`[MapProperty<,>]`/
 `[MapValue<>]`) and a `MapConfig<S,T>` `.Map`/`.Value` call, or twice within the same `MapConfig<S,T>` method.
 **Fix:** remove one of the two configurations for that member.
+
+---
+
+## dwarf070
+**Nullable source member is assigned to a non-nullable target member** · Warning
+
+The source member is a nullable reference (`string?`) but the destination member is not (`string`), so a null
+would be stored in a member whose type says it cannot be null. `NullStrategy` does **not** cover this: it
+governs nullable *value* types (`int?`) only, and a nullable *reference* source raw-assigns by design.
+
+Left alone, that raw assignment also made the **compiler** emit `CS8601` ("possible null reference assignment")
+from inside the *generated* file — a warning you cannot fix, in code you cannot edit, and a hard build break
+under `TreatWarningsAsErrors`. DwarfMapper now suppresses that `CS8601` and reports this instead, against your
+own DTO, where you can act on it.
+
+**Fix** — pick the one that matches your intent:
+
+| You want | Use |
+|---|---|
+| a fallback value when the source is null | `[MapProperty(nameof(Src.Name), nameof(Dst.Name), NullSubstitute = "(none)")]` |
+| the destination to keep its own default | `[DwarfMapper(SkipNullSourceMembers = true)]` |
+| null to be a legal value here | make the destination member nullable (`string?`) |
+| to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+Only fires for a genuinely annotated source (`string?`) flowing into an annotated non-nullable target. Code in
+a `#nullable disable` context is *oblivious*, the compiler raises no `CS8601` there, and neither does this — a
+legacy codebase is not flooded with warnings about a contract it never opted into.
 
 ---
 

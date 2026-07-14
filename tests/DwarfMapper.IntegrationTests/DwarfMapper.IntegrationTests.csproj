@@ -19,7 +19,10 @@
         <!-- CA1812: MapConfigRuntimeTests' S/T fixtures are only referenced via typeof()/lambda member-access
              (the MapConfig<S,T> surface is compile-time-only and never actually instantiates them at runtime),
              so the analyzer can't see they're "used" -->
-        <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;CA5394;CA1812;DWARF038;DWARF044</NoWarn>
+        <!-- DWARF070: NullableRefAssignRuntimeTests deliberately maps string? -> string to PIN the documented
+             raw-assign behaviour at runtime. The warning is the correct output for that mapping; the fixture
+             exists to prove the null still flows rather than silently becoming a throw or a default. -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA1051;CA1002;CA1819;CA2227;CA1861;CA1815;CA1028;CA1711;CA1008;CA5394;CA1812;DWARF038;DWARF044;DWARF070</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
