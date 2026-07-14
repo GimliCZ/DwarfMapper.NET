@@ -120,6 +120,52 @@ public class CollectionCoverageSelfValidationTests
         return dot >= 0 ? name[(dot + 1)..] : name;
     }
 
+    /// <summary>
+    /// The targets the COMBINATORIAL matrix actually emits. Coverage in one tier is not coverage in all of
+    /// them: the fuzzers vary shapes randomly, but only the combinatorial tier crosses each target against the
+    /// other axes (widening variant, cycle mode, update-into, null strategy). A target the fuzzers reach but
+    /// the matrix never does is still only half-tested.
+    /// </summary>
+    private static HashSet<string> CombinatorialKinds()
+    {
+        var kinds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var cell in CombinatorialSchema.DepthOneMatrix().Concat(CombinatorialSchema.DepthTwoMatrix()))
+        {
+            foreach (var kind in new[] { KindOf(cell.SrcType), KindOf(cell.DstType) })
+            {
+                if (kind is not null) kinds.Add(kind);
+            }
+        }
+
+        return kinds;
+    }
+
+    [Fact]
+    public void Every_supported_collection_target_is_covered_by_the_COMBINATORIAL_matrix()
+    {
+        var covered = CombinatorialKinds();
+        var missing = SupportedCollectionKinds().Where(k => !covered.Contains(k)).ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            "These SUPPORTED collection targets never appear in the combinatorial matrix, so they are never "
+            + "crossed with the other axes (widening, cycle mode, update-into, null strategy):\n  "
+            + string.Join("\n  ", missing)
+            + "\n\nAdd them to CombinatorialSchema.DepthOneShapes (and to WrapShape/DefaultInit).");
+    }
+
+    [Fact]
+    public void Every_supported_dictionary_target_is_covered_by_the_COMBINATORIAL_matrix()
+    {
+        var covered = CombinatorialKinds();
+        var missing = SupportedDictionaryKinds().Where(k => !covered.Contains(k)).ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            "These SUPPORTED dictionary targets never appear in the combinatorial matrix:\n  "
+            + string.Join("\n  ", missing));
+    }
+
     [Fact]
     public void Every_supported_collection_target_is_generated_by_the_fuzz_schema()
     {

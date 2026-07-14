@@ -159,6 +159,9 @@ internal static class SyntheticSchema
         sb.AppendLine("public sealed class FuzzRef { public int A { get; set; } public string B { get; set; } = \"\"; }");
         sb.AppendLine("public sealed record FuzzRec(int A, string B);");
         sb.AppendLine("public readonly record struct FuzzRecS(int A, double B);");
+        // A USER-DEFINED generic. Every generic in every schema was a BCL type, so a user generic as a
+        // member type — a completely ordinary thing to write — was never exercised anywhere.
+        sb.AppendLine("public sealed class FuzzBox<T> { public T? Val { get; set; } }");
         sb.AppendLine();
         // Abstract base and concrete source
         sb.AppendLine("public abstract class Src { public string Tag { get; set; } = \"\"; }");
@@ -205,6 +208,9 @@ internal static class SyntheticSchema
         sb.AppendLine("public sealed class FuzzRef { public int A { get; set; } public string B { get; set; } = \"\"; }");
         sb.AppendLine("public sealed record FuzzRec(int A, string B);");
         sb.AppendLine("public readonly record struct FuzzRecS(int A, double B);");
+        // A USER-DEFINED generic. Every generic in every schema was a BCL type, so a user generic as a
+        // member type — a completely ordinary thing to write — was never exercised anywhere.
+        sb.AppendLine("public sealed class FuzzBox<T> { public T? Val { get; set; } }");
         sb.AppendLine();
         // Node types (simple: only scalar members + a single-ref edge)
         sb.AppendLine("public class Src");
@@ -251,6 +257,9 @@ internal static class SyntheticSchema
         sb.AppendLine("public sealed class FuzzRef { public int A { get; set; } public string B { get; set; } = \"\"; }");
         sb.AppendLine("public sealed record FuzzRec(int A, string B);");
         sb.AppendLine("public readonly record struct FuzzRecS(int A, double B);");
+        // A USER-DEFINED generic. Every generic in every schema was a BCL type, so a user generic as a
+        // member type — a completely ordinary thing to write — was never exercised anywhere.
+        sb.AppendLine("public sealed class FuzzBox<T> { public T? Val { get; set; } }");
         sb.AppendLine();
         sb.AppendLine("public class Src");
         sb.AppendLine("{");
@@ -336,6 +345,9 @@ internal static class SyntheticSchema
         sb.AppendLine("public sealed class FuzzRef { public int A { get; set; } public string B { get; set; } = \"\"; }");
         sb.AppendLine("public sealed record FuzzRec(int A, string B);");
         sb.AppendLine("public readonly record struct FuzzRecS(int A, double B);");
+        // A USER-DEFINED generic. Every generic in every schema was a BCL type, so a user generic as a
+        // member type — a completely ordinary thing to write — was never exercised anywhere.
+        sb.AppendLine("public sealed class FuzzBox<T> { public T? Val { get; set; } }");
         sb.AppendLine();
 
         // ── Src class ───────────────────────────────────────────────────
@@ -532,20 +544,26 @@ internal static class SyntheticSchema
                     $"global::System.Collections.Generic.IReadOnlyDictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>"
             },
 
-            // 29 → a nested REFERENCE type, and RECORDS.
+            // 29 → a nested REFERENCE type, RECORDS, TUPLES, a USER GENERIC, and a nullable REFERENCE.
             //
             // FuzzInner is a struct, so until now the behavioural schema had no nested reference type at all —
             // yet that is the commonest DTO shape and the one where identity, aliasing and cycles actually
             // live. Records (class and struct) are the dominant modern DTO shape and drive the constructor
-            // mapping path, which the value oracles also never touched.
-            29 => rng.Next(6) switch
+            // mapping path. Tuples, user-defined generics, and nullable REFERENCE types were absent from every
+            // schema — the last of those matters because NullableAnnotation has THREE states, and the
+            // oblivious one is silently treated as non-null by any check written as `== Annotated`.
+            29 => rng.Next(10) switch
             {
                 0 => "FuzzRef",
                 1 => "FuzzRef[]",
                 2 => "global::System.Collections.Generic.List<FuzzRef>",
                 3 => "FuzzRec",
                 4 => "FuzzRec[]",
-                _ => "FuzzRecS"
+                5 => "FuzzRecS",
+                6 => $"({PickValueScalar(rng)}, string)", // ValueTuple
+                7 => $"FuzzBox<{PickScalarElement(rng)}>", // user-defined generic
+                8 => "string?", // nullable reference
+                _ => "FuzzRef?" // nullable reference to a nested type
             },
 
             _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]"
@@ -568,6 +586,18 @@ internal static class SyntheticSchema
     {
         if (type == "string")
             return " = \"\";";
+
+        // A nullable REFERENCE (`string?`, `FuzzRef?`) is meant to be null — that is the shape. No initialiser.
+        if (type.EndsWith('?') && !type.StartsWith("global::", StringComparison.Ordinal))
+            return string.Empty;
+
+        // ValueTuple is a struct: default(...) is valid, no initialiser needed.
+        if (type.StartsWith('('))
+            return string.Empty;
+
+        // A user-defined generic still needs an instance.
+        if (type.StartsWith("FuzzBox<", StringComparison.Ordinal))
+            return " = new();";
 
         if (type.EndsWith("[]", StringComparison.Ordinal))
         {

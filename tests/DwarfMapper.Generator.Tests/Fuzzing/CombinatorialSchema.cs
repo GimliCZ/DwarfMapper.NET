@@ -73,8 +73,32 @@ internal static class CombinatorialSchema
         "IReadOnlyList",
         "HashSet",
         "ImmutableArray",
+
+        // The rest of the supported System.* collection surface. The combinatorial tier previously covered
+        // only a slice of it, so most supported targets were never crossed with the other axes (cycle mode,
+        // update-into, null strategy…). Coverage of a target in ONE tier is not coverage of it in all of them.
+        "IEnumerable",
+        "ICollection",
+        "IList",
+        "IReadOnlyCollection",
+        "ISet",
+        "IReadOnlySet",
+        "ImmutableList",
+        "IImmutableList",
+        "ImmutableHashSet",
+        "IImmutableSet",
+
         "DictStringKey", // Dictionary<string, B>
         "DictStringValue", // Dictionary<B, string>  (only valid for value-types as key)
+        "IDict", // IDictionary<string, B>
+        "IReadOnlyDict", // IReadOnlyDictionary<string, B>
+        "ImmutableDict", // ImmutableDictionary<string, B>
+        "IImmutableDict", // IImmutableDictionary<string, B>
+
+        "tuple", // (B, string) — ValueTuple was entirely absent from every schema
+        "generic_box", // CmbBox<B> — a USER generic type, not a BCL one
+        "nullable_ref", // string? — the nullable REFERENCE case (3-state NullableAnnotation)
+
         "nested_object",
         "record_type",
         "polymorphic_dispatch" // [MapDerivedType] dispatch — Plan 22 coverage
@@ -213,6 +237,14 @@ internal static class CombinatorialSchema
             sb.AppendLine();
         }
 
+        if (shape == "generic_box")
+        {
+            // A USER-DEFINED generic. Every generic in every schema was a BCL type, so a user generic as a
+            // member type — a completely ordinary thing to write — was never exercised anywhere.
+            sb.AppendLine("public class CmbBox<T> { public T? Val { get; set; } }");
+            sb.AppendLine();
+        }
+
         if (shape == "ListOfRecord")
         {
             sb.AppendLine("public record CmbRecEl_" + EscapeType(srcElem) + "_Src(" + srcElem + " Val);");
@@ -310,8 +342,35 @@ internal static class CombinatorialSchema
             "IReadOnlyList" => $"global::System.Collections.Generic.IReadOnlyList<{elem}>",
             "HashSet" => $"global::System.Collections.Generic.HashSet<{elem}>",
             "ImmutableArray" => $"global::System.Collections.Immutable.ImmutableArray<{elem}>",
+
+            "IEnumerable" => $"global::System.Collections.Generic.IEnumerable<{elem}>",
+            "ICollection" => $"global::System.Collections.Generic.ICollection<{elem}>",
+            "IList" => $"global::System.Collections.Generic.IList<{elem}>",
+            "IReadOnlyCollection" => $"global::System.Collections.Generic.IReadOnlyCollection<{elem}>",
+            "ISet" => $"global::System.Collections.Generic.ISet<{elem}>",
+            "IReadOnlySet" => $"global::System.Collections.Generic.IReadOnlySet<{elem}>",
+            "ImmutableList" => $"global::System.Collections.Immutable.ImmutableList<{elem}>",
+            "IImmutableList" => $"global::System.Collections.Immutable.IImmutableList<{elem}>",
+            "ImmutableHashSet" => $"global::System.Collections.Immutable.ImmutableHashSet<{elem}>",
+            "IImmutableSet" => $"global::System.Collections.Immutable.IImmutableSet<{elem}>",
+
             "DictStringKey" => $"global::System.Collections.Generic.Dictionary<string, {elem}>",
             "DictStringValue" => $"global::System.Collections.Generic.Dictionary<{elem}, string>",
+            "IDict" => $"global::System.Collections.Generic.IDictionary<string, {elem}>",
+            "IReadOnlyDict" => $"global::System.Collections.Generic.IReadOnlyDictionary<string, {elem}>",
+            "ImmutableDict" => $"global::System.Collections.Immutable.ImmutableDictionary<string, {elem}>",
+            "IImmutableDict" => $"global::System.Collections.Immutable.IImmutableDictionary<string, {elem}>",
+
+            // ValueTuple: a structural type, not a named one — no schema generated it before.
+            "tuple" => $"({elem}, string)",
+
+            // A USER generic type. Every generic in the schemas was a BCL one, so a user-defined generic
+            // member was never exercised at all.
+            "generic_box" => $"CmbBox<{elem}>",
+
+            // The nullable REFERENCE case. NullableAnnotation has THREE states (Annotated / NotAnnotated /
+            // None-oblivious) and code that tests `== Annotated` silently drops the null guard on the third.
+            "nullable_ref" => "string?",
             "nested_object" => $"CmbNested_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
             "record_type" => $"CmbRecord_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
             "ListOfList" => $"global::System.Collections.Generic.List<global::System.Collections.Generic.List<{elem}>>",
@@ -361,9 +420,23 @@ internal static class CombinatorialSchema
             .Replace(" ", "", StringComparison.Ordinal);
     }
 
+    /// <summary>The type arguments of a closed generic, verbatim (handles both 1-arg and K,V forms).</summary>
+    private static string TypeArgsOf(string type)
+    {
+        var lt = type.IndexOf('<', StringComparison.Ordinal);
+        var gt = type.LastIndexOf('>');
+        return lt >= 0 && gt > lt ? type.Substring(lt + 1, gt - lt - 1).Trim() : "object";
+    }
+
     private static string DefaultInit(string type)
     {
         if (type == "string") return " = \"\";";
+
+        // `string?` — a nullable REFERENCE. No initialiser: null is the whole point of the shape.
+        if (type.EndsWith('?')) return string.Empty;
+
+        // ValueTuple is a struct; default(...) is valid and needs no initialiser.
+        if (type.StartsWith('(')) return string.Empty;
         if (type.EndsWith("[]", StringComparison.Ordinal))
         {
             var elem = type[..^2];
@@ -392,19 +465,53 @@ internal static class CombinatorialSchema
             type.StartsWith("global::System.Collections.Generic.Dictionary<", StringComparison.Ordinal))
             return " = new();";
         // Interface collection types: cannot use new() — use concrete List<T> or new()
-        // IReadOnlyList<T> → init with new System.Collections.Generic.List<T>()
-        if (type.StartsWith("global::System.Collections.Generic.IReadOnlyList<", StringComparison.Ordinal))
+        // Ordered collection interfaces → back with a concrete List<T>; set interfaces → HashSet<T>.
+        // (IReadOnlyList was the only one handled before, because it was the only one generated.)
+        if (type.StartsWith("global::System.Collections.Generic.IEnumerable<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.ICollection<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IList<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyCollection<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyList<", StringComparison.Ordinal))
         {
-            var lt = type.LastIndexOf('<');
-            var gt = type.LastIndexOf('>');
-            var elemT = lt >= 0 && gt > lt ? type.Substring(lt + 1, gt - lt - 1).Trim() : "object";
-            return " = new global::System.Collections.Generic.List<" + elemT + ">();";
+            var args = TypeArgsOf(type);
+            return " = new global::System.Collections.Generic.List<" + args + ">();";
         }
 
-        if (type.StartsWith("global::System.Collections.Immutable.ImmutableDictionary<", StringComparison.Ordinal) ||
-            type.StartsWith("global::System.Collections.Immutable.ImmutableList<", StringComparison.Ordinal) ||
-            type.StartsWith("global::System.Collections.Immutable.ImmutableHashSet<", StringComparison.Ordinal))
-            return " = new();";
+        if (type.StartsWith("global::System.Collections.Generic.ISet<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlySet<", StringComparison.Ordinal))
+        {
+            var args = TypeArgsOf(type);
+            return " = new global::System.Collections.Generic.HashSet<" + args + ">();";
+        }
+
+        if (type.StartsWith("global::System.Collections.Generic.IDictionary<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyDictionary<", StringComparison.Ordinal))
+        {
+            var args = TypeArgsOf(type);
+            return " = new global::System.Collections.Generic.Dictionary<" + args + ">();";
+        }
+
+        // The immutable family has NO public constructor — `new()` would not compile. They expose a static
+        // Empty. (This block previously said `new()`, which was simply never exercised because none of these
+        // shapes were ever generated.) The INTERFACE forms have no Empty of their own, so they are backed by
+        // the corresponding concrete implementation.
+        if (type.StartsWith("global::System.Collections.Immutable.", StringComparison.Ordinal))
+        {
+            var open = type.IndexOf('<', StringComparison.Ordinal);
+            var name = type[..open];
+            var concrete = name switch
+            {
+                "global::System.Collections.Immutable.IImmutableList" =>
+                    "global::System.Collections.Immutable.ImmutableList",
+                "global::System.Collections.Immutable.IImmutableSet" =>
+                    "global::System.Collections.Immutable.ImmutableHashSet",
+                "global::System.Collections.Immutable.IImmutableDictionary" =>
+                    "global::System.Collections.Immutable.ImmutableDictionary",
+                _ => name,
+            };
+
+            return " = " + concrete + "<" + TypeArgsOf(type) + ">.Empty;";
+        }
         // Nested record types (have required ctor params) — cannot use new()
         if (type.StartsWith("CmbRecord_", StringComparison.Ordinal))
             return string.Empty; // will be set by the ctor; not initialized in class body
