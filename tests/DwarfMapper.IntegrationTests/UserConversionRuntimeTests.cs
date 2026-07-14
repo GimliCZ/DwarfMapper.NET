@@ -3,7 +3,7 @@
 #pragma warning disable CA1815, CA1062, CA2225, CA1305, IDE0079
 namespace DwarfMapper.IntegrationTests;
 
-// A strong-type with a user-defined IMPLICIT operator (mirrors FusedChat's UserId -> int DTO field).
+// A strong-type with a user-defined IMPLICIT operator (e.g. a UserId strong-type -> int DTO field).
 public sealed class UcId
 {
     private readonly int _v;

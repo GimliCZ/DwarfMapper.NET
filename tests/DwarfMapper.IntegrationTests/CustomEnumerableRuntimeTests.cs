@@ -5,7 +5,7 @@ using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
-// A user collection type that only implements IEnumerable<T> (like FusedChat's ConcurrentList<T>):
+// A user collection type that only implements IEnumerable<T> (e.g. a hand-rolled ConcurrentList<T>):
 // no ICollection<T>, no indexer, no Count. DwarfMapper must still accept it as a collection source.
 public sealed class Bag<T> : IEnumerable<T>
 {

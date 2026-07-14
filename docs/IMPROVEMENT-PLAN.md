@@ -38,7 +38,7 @@ Landed since this plan was written (correcting stale items below):
   `[GenerateMap]`; 061–063 = ambient cross-assembly registry: required-not-provided / ctor-deps-not-registered
   / ambiguous-provider). The "free slots DWARF059–062" note below is obsolete; the planned diagnostics 7/12/13/14
   need freshly-allocated IDs (≥ DWARF064).
-- **Five library fixes landed this round** (FusedChat AutoMapper→DwarfMapper migration hardening; each with a
+- **Five library fixes landed this round** (hardening found while migrating a real AutoMapper codebase; each with a
   regression test, full suite green): nested/element maps now run their Before/AfterMap hooks; update-into treats
   an init-only target as non-writable (DWARF007, not CS8852); constructor parameters match case-insensitively by
   default; a nullable reference collection/array element mapped to a non-null target throws instead of failing to

@@ -9,7 +9,7 @@ public class NafInnerDst { public int Val { get; set; } public int Computed { ge
 public class NafOuterSrc { public NafInnerSrc Child { get; set; } = new(); }
 public class NafOuterDst { public NafInnerDst Child { get; set; } = new(); }
 
-// Attribute-declared pairs (as the FusedChat document mappers do): the generator emits a public Map AND a
+// Attribute-declared pairs (as document/DTO mappers typically do): the generator emits a public Map AND a
 // private nested helper for the inner pair. The [AfterMap] must run in BOTH, otherwise a target produced as
 // a nested member silently loses the post-processing.
 [DwarfMapper]

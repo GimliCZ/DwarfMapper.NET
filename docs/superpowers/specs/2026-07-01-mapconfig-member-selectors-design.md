@@ -175,7 +175,7 @@ Adding `MapConfig<,>` as a public type and DWARF068/069:
 1. **Differential runtime oracle (primary).** For a representative set of shapes (rename, flatten, converter, predicate, null-substitute, ignore, value, factory), build two mappers — one authored with attributes, one with `MapConfig` — and assert **byte-identical output** over shared `ObjectFactory(seed)` graphs via the existing cross-type comparer. This directly proves the front-end has parity.
 2. **Generator unit tests.** Selector parsing (rename / flatten / deep nested path), method-group extraction, block vs expression body, and each new diagnostic (DWARF068 unsupported selector, DWARF068 non-method-group ref, DWARF069 conflict, DWARF056 unmapped pair).
 3. **Snapshot.** `MapConfig` and the equivalent attributes produce equivalent generated code.
-4. **Full suite green** (currently 3,589 self-tests) after each increment, and the FusedChat consumer re-verified against the new library.
+4. **Full suite green** (currently 3,589 self-tests) after each increment, and a real downstream consumer re-verified against the new library.
 
 ## 11. Scope boundary (v1)
 
