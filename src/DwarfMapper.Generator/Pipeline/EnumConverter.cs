@@ -128,26 +128,116 @@ internal static class EnumConverter
 
         // The synthesized switch method body is still registered only once (dedup by name).
         if (!synth.ContainsKey(name))
-        {
-            var sb = new StringBuilder();
-            sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
-                .Append('(').Append(Fq(src)).Append(" v) => v switch\n    {\n");
-            var seenValues = new HashSet<object>();
-            foreach (var m in EnumMembers(src))
-            {
-                if (m.ConstantValue is null ||
-                    !seenValues.Add(m.ConstantValue)) continue; // alias of an already-emitted value
-                if (targetNames.Contains(m.Name))
-                    sb.Append("        ").Append(Fq(src)).Append('.').Append(m.Name)
-                        .Append(" => ").Append(Fq(tgt)).Append('.').Append(m.Name).Append(",\n");
-            }
-
-            sb.Append(
-                "        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unmapped enum value\"),\n    };\n");
-            synth[name] = new SynthesizedMethod(name, sb.ToString());
-        }
+            synth[name] = new SynthesizedMethod(name,
+                IsFlagsEnum(src) && IsFlagsEnum(tgt)
+                    ? EmitFlagsByName(name, src, tgt, targetNames)
+                    : EmitSwitchByName(name, src, tgt, targetNames));
 
         return name;
+    }
+
+    private static string EmitSwitchByName(
+        string name, INamedTypeSymbol src, INamedTypeSymbol tgt, HashSet<string> targetNames)
+    {
+        var sb = new StringBuilder();
+        sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
+            .Append('(').Append(Fq(src)).Append(" v) => v switch\n    {\n");
+        var seenValues = new HashSet<object>();
+        foreach (var m in EnumMembers(src))
+        {
+            if (m.ConstantValue is null ||
+                !seenValues.Add(m.ConstantValue)) continue; // alias of an already-emitted value
+            if (targetNames.Contains(m.Name))
+                sb.Append("        ").Append(Fq(src)).Append('.').Append(m.Name)
+                    .Append(" => ").Append(Fq(tgt)).Append('.').Append(m.Name).Append(",\n");
+        }
+
+        sb.Append(
+            "        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unmapped enum value\"),\n    };\n");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    ///     By-name mapping for a <c>[Flags]</c> enum pair, done BITWISE.
+    ///     <para>
+    ///     A one-arm-per-declared-member switch is simply wrong for a flags enum: the whole point of
+    ///     <c>[Flags]</c> is that <c>Read | Write</c> (value 3) is a legal value, and it matches no declared
+    ///     member, so it fell to <c>_ =&gt; throw</c>. Every combined value — the ordinary case for a flags enum
+    ///     — threw <c>ArgumentOutOfRangeException</c> at run time, on valid input, with nothing said at build
+    ///     time. And <c>ByName</c> is the DEFAULT strategy, so this was the default behaviour.
+    ///     </para>
+    ///     <para>
+    ///     Instead: translate each set flag individually and re-combine. Bits that correspond to no declared
+    ///     source flag are left over and still throw — an undeclared bit is genuinely unmappable, and staying
+    ///     loud there is the point. (A source flag with no same-named target member is caught earlier, at
+    ///     compile time, by DWARF015.)
+    ///     </para>
+    /// </summary>
+    private static string EmitFlagsByName(
+        string name, INamedTypeSymbol src, INamedTypeSymbol tgt, HashSet<string> targetNames)
+    {
+        var underlying = Fq(src.EnumUnderlyingType!);
+
+        var sb = new StringBuilder();
+        sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
+            .Append('(').Append(Fq(src)).Append(" v)\n    {\n");
+        sb.Append("        var __r = default(").Append(Fq(tgt)).Append(");\n");
+        sb.Append("        var __rest = (").Append(underlying).Append(")v;\n");
+
+        var seenValues = new HashSet<object>();
+        foreach (var m in EnumMembers(src))
+        {
+            if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue)) continue;
+            if (!targetNames.Contains(m.Name)) continue;
+
+            // The zero member (None = 0) carries no bit: `(v & None) == None` is true for every value, so
+            // testing it would be meaningless. It needs no arm — default(TTarget) already IS zero.
+            if (IsZero(m.ConstantValue)) continue;
+
+            var srcMember = Fq(src) + "." + m.Name;
+            sb.Append("        if ((v & ").Append(srcMember).Append(") == ").Append(srcMember).Append(")\n");
+            sb.Append("        {\n");
+            sb.Append("            __r |= ").Append(Fq(tgt)).Append('.').Append(m.Name).Append(";\n");
+            sb.Append("            __rest &= unchecked((").Append(underlying).Append(")~(")
+                .Append(underlying).Append(')').Append(srcMember).Append(");\n");
+            sb.Append("        }\n");
+        }
+
+        sb.Append("        if (__rest != 0) throw new global::System.ArgumentOutOfRangeException(")
+            .Append("nameof(v), v, \"Unmapped enum flag\");\n");
+        sb.Append("        return __r;\n    }\n");
+        return sb.ToString();
+    }
+
+    /// <summary>True when the enum carries <c>[Flags]</c>, so combined values are legal by design.</summary>
+    private static bool IsFlagsEnum(INamedTypeSymbol enumType)
+    {
+        foreach (var attribute in enumType.GetAttributes())
+            if (attribute.AttributeClass is { Name: "FlagsAttribute" } a
+                && a.ContainingNamespace?.ToDisplayString() == "System")
+                return true;
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Whether an enum member's constant value is zero, without enumerating the eight underlying types by
+    ///     hand.
+    ///     <para>
+    ///     The obvious tool is generic math (<c>INumberBase&lt;T&gt;.IsZero</c>), but it is unavailable HERE: the
+    ///     generator targets netstandard2.0 because that is what the Roslyn host loads, and generic math is
+    ///     .NET 7+. It is available in the code we EMIT (which targets net10 — that is why the numeric
+    ///     converters can emit <c>CreateChecked</c>), just not in the process doing the emitting.
+    ///     </para>
+    ///     <para>
+    ///     <c>decimal</c> is the netstandard2.0 stand-in: every enum underlying type is integral, and decimal
+    ///     represents all of <c>sbyte</c>…<c>ulong</c> exactly, so a single conversion decides it for all of
+    ///     them with no per-type list to drift out of date.
+    ///     </para>
+    /// </summary>
+    private static bool IsZero(object constantValue)
+    {
+        return constantValue is IConvertible c && c.ToDecimal(CultureInfo.InvariantCulture) == 0m;
     }
 
     private static IEnumerable<IFieldSymbol> EnumMembers(INamedTypeSymbol enumType)
@@ -226,18 +316,47 @@ internal static class EnumConverter
     {
         var name = GeneratedNames.StrToEnum + Sanitize(tgt) + "_" + Hash("StrEnum|" + Fq(tgt));
         if (!synth.ContainsKey(name))
-        {
-            var sb = new StringBuilder();
-            sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
-                .Append("(string v) => v switch\n    {\n");
-            foreach (var m in EnumMembers(tgt))
-                sb.Append("        \"").Append(m.Name).Append("\" => ").Append(Fq(tgt)).Append('.').Append(m.Name)
-                    .Append(",\n");
-            sb.Append(
-                "        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),\n    };\n");
-            synth[name] = new SynthesizedMethod(name, sb.ToString());
-        }
+            synth[name] = new SynthesizedMethod(name,
+                IsFlagsEnum(tgt) ? EmitStringToFlags(name, tgt) : EmitStringToEnum(name, tgt));
 
         return name;
+    }
+
+    private static string EmitStringToEnum(string name, INamedTypeSymbol tgt)
+    {
+        var sb = new StringBuilder();
+        sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
+            .Append("(string v) => v switch\n    {\n");
+        foreach (var m in EnumMembers(tgt))
+            sb.Append("        \"").Append(m.Name).Append("\" => ").Append(Fq(tgt)).Append('.').Append(m.Name)
+                .Append(",\n");
+        sb.Append(
+            "        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),\n    };\n");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    ///     string → <c>[Flags]</c> enum. The counterpart of the bitwise by-name mapping, and broken for the
+    ///     same reason: a flags enum formats a combined value as <c>"Read, Write"</c> (that is what
+    ///     <c>Enum.ToString()</c> produces, and what <see cref="AddEnumToString" /> therefore emits), but the
+    ///     one-arm-per-name switch only recognised single names and threw on every combination — so a value
+    ///     this very library had just written out could not be read back in. Split on the separator and OR the
+    ///     parts. Unknown names still throw: reflection-free, allocation-light, and never silent.
+    /// </summary>
+    private static string EmitStringToFlags(string name, INamedTypeSymbol tgt)
+    {
+        var sb = new StringBuilder();
+        sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name).Append("(string v)\n    {\n");
+        sb.Append("        var __r = default(").Append(Fq(tgt)).Append(");\n");
+        sb.Append("        foreach (var __part in v.Split(','))\n");
+        sb.Append("        {\n");
+        sb.Append("            __r |= __part.Trim() switch\n            {\n");
+        foreach (var m in EnumMembers(tgt))
+            sb.Append("                \"").Append(m.Name).Append("\" => ").Append(Fq(tgt)).Append('.')
+                .Append(m.Name).Append(",\n");
+        sb.Append("                _ => throw new global::System.ArgumentOutOfRangeException(")
+            .Append("nameof(v), v, \"Unrecognized enum name\"),\n            };\n");
+        sb.Append("        }\n\n        return __r;\n    }\n");
+        return sb.ToString();
     }
 }

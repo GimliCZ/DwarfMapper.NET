@@ -60,7 +60,12 @@ internal static class CombinatorialSchema
         ("global::System.DateTimeOffset", null),
         ("global::System.TimeSpan", null),
         ("Cmb_IntEnum", null), // enum : int
-        ("Cmb_LongEnum", null) // enum : long
+        ("Cmb_LongEnum", null), // enum : long
+
+        // A [Flags] enum. No schema had one, which is exactly why a by-name enum converter that THREW on every
+        // combined value (Read | Write — the ordinary case for a flags enum, and the DEFAULT strategy) sailed
+        // through the entire suite. A shape nothing generates is a shape nothing can test.
+        ("Cmb_FlagsEnum", null)
     ];
 
     /// <summary>
@@ -239,6 +244,9 @@ internal static class CombinatorialSchema
         // Shared enum declarations (always emitted so the type names resolve)
         sb.AppendLine("public enum Cmb_IntEnum  { A = 1, B = 2, C = 3 }");
         sb.AppendLine("public enum Cmb_LongEnum : long { A = 1, B = 2, C = 3 }");
+        // Powers of two, so combined values (A | B == 3) are legal and DISTINCT from any declared member.
+        sb.AppendLine(
+            "[global::System.Flags] public enum Cmb_FlagsEnum { None = 0, A = 1, B = 2, C = 4 }");
         sb.AppendLine();
 
         // Emit nested helper types if needed
@@ -321,6 +329,9 @@ internal static class CombinatorialSchema
         sb.AppendLine();
         sb.AppendLine("public enum Cmb_IntEnum  { A = 1, B = 2, C = 3 }");
         sb.AppendLine("public enum Cmb_LongEnum : long { A = 1, B = 2, C = 3 }");
+        // Powers of two, so combined values (A | B == 3) are legal and DISTINCT from any declared member.
+        sb.AppendLine(
+            "[global::System.Flags] public enum Cmb_FlagsEnum { None = 0, A = 1, B = 2, C = 4 }");
         sb.AppendLine();
 
         // Abstract base source/dto
@@ -426,7 +437,7 @@ internal static class CombinatorialSchema
                    : t is "bool" or "sbyte" or "byte" or "short" or "ushort"
                        or "int" or "uint" or "long" or "ulong" or "char"
                        or "float" or "double" or "decimal"
-                       or "Cmb_IntEnum" or "Cmb_LongEnum");
+                       or "Cmb_IntEnum" or "Cmb_LongEnum" or "Cmb_FlagsEnum");
     }
 
     private static bool IsValidDictKey(string t)

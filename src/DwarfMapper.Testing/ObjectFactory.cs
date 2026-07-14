@@ -61,6 +61,32 @@ public static class ObjectFactory
         if (type.IsEnum)
         {
             var values = Enum.GetValues(type);
+            if (values.Length == 0) return Activator.CreateInstance(type);
+
+            // A [Flags] enum's whole point is that COMBINED values (Read | Write) are legal — and picking a
+            // single declared member, as this did, can never produce one. So the fuzzers only ever fed enums
+            // values that happened to have a name, and a by-name converter that threw on every combination
+            // looked perfectly healthy. Build a real combination instead.
+            if (type.IsDefined(typeof(FlagsAttribute), false))
+            {
+                var picks = rng.Next(1, Math.Min(values.Length, 4) + 1);
+
+                // Accumulate in the enum's own underlying type: an unsigned enum can hold values above
+                // long.MaxValue, which Convert.ToInt64 would throw on.
+                if (Enum.GetUnderlyingType(type) == typeof(ulong))
+                {
+                    ulong acc = 0;
+                    for (var i = 0; i < picks; i++)
+                        acc |= Convert.ToUInt64(values.GetValue(rng.Next(values.Length)), CultureInfo.InvariantCulture);
+                    return Enum.ToObject(type, acc);
+                }
+
+                long signed = 0;
+                for (var i = 0; i < picks; i++)
+                    signed |= Convert.ToInt64(values.GetValue(rng.Next(values.Length)), CultureInfo.InvariantCulture);
+                return Enum.ToObject(type, signed);
+            }
+
             return values.GetValue(rng.Next(values.Length));
         }
 
