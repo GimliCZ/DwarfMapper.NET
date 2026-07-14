@@ -81,6 +81,39 @@ public static class ObjectFactory
             return list;
         }
 
+        // Sets and the collection INTERFACES.
+        //
+        // Without this, two whole families of member were never actually exercised by the fuzzers:
+        //   * HashSet<T>/ISet<T> fell through to the parameterless-ctor path below, and since a set exposes no
+        //     settable properties it was populated with nothing — every set in every fuzz run was EMPTY.
+        //   * every interface-typed collection (IEnumerable<T>, ICollection<T>, IList<T>, IReadOnlyList<T>,
+        //     IReadOnlyCollection<T>) hit the `IsInterface -> null` bail-out below and was silently NULL.
+        // So the generated "covers every supported linkage" space quietly excluded them. That is how an
+        // IEnumerable<T>-target aliasing bug survived a fuzz + matrix suite: the shape was never populated.
+        if (type.IsGenericType)
+        {
+            var def = type.GetGenericTypeDefinition();
+            var elementType = type.GetGenericArguments()[0];
+            var n = depth >= MaxDepth ? 0 : rng.Next(1, 4);
+
+            if (def == typeof(IEnumerable<>) || def == typeof(ICollection<>) || def == typeof(IList<>) ||
+                def == typeof(IReadOnlyCollection<>) || def == typeof(IReadOnlyList<>))
+            {
+                var backing = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elementType))!;
+                for (var i = 0; i < n; i++) backing.Add(Create(elementType, rng, depth + 1));
+                return backing;
+            }
+
+            if (def == typeof(HashSet<>) || def == typeof(ISet<>) || def == typeof(IReadOnlySet<>))
+            {
+                var setType = typeof(HashSet<>).MakeGenericType(elementType);
+                var set = Activator.CreateInstance(setType)!;
+                var add = setType.GetMethod("Add", new[] { elementType })!;
+                for (var i = 0; i < n; i++) add.Invoke(set, new[] { Create(elementType, rng, depth + 1) });
+                return set;
+            }
+        }
+
         if (type.IsInterface || type.IsAbstract || depth >= MaxDepth)
             return type.IsValueType ? Activator.CreateInstance(type) : null;
 

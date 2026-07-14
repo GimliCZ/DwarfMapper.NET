@@ -376,10 +376,18 @@ internal static class SyntheticSchema
     //   24     → HashSet<T>
     //   25     → FuzzEnum / FuzzEnumL variants
     //   26     → FuzzInner / FuzzInner[]
+    //   27     → a collection INTERFACE: IEnumerable<T> / ICollection<T> / IList<T> /
+    //            IReadOnlyCollection<T> / IReadOnlyList<T>
+    //
+    // Slot 27 exists because the generated space previously contained only concrete collections
+    // (T[], List<T>, HashSet<T>). The interface-typed collection targets — which are exactly where an
+    // aliasing/pass-through fast-path is tempting, and where one really did ship — were never generated at
+    // all, so no amount of fuzzing could have found the bug. (ObjectFactory had the mirror-image hole: it
+    // returned null for any interface type, so even a generated one would have been empty.)
 
     private static string PickType(Random rng)
     {
-        var category = rng.Next(0, 27);
+        var category = rng.Next(0, 28);
 
         return category switch
         {
@@ -397,6 +405,16 @@ internal static class SyntheticSchema
 
             // 24 → HashSet<T>
             24 => $"global::System.Collections.Generic.HashSet<{PickScalarElement(rng)}>",
+
+            // 27 → collection interface (the family that used to be unreachable)
+            27 => rng.Next(5) switch
+            {
+                0 => $"global::System.Collections.Generic.IEnumerable<{PickScalarElement(rng)}>",
+                1 => $"global::System.Collections.Generic.ICollection<{PickScalarElement(rng)}>",
+                2 => $"global::System.Collections.Generic.IList<{PickScalarElement(rng)}>",
+                3 => $"global::System.Collections.Generic.IReadOnlyCollection<{PickScalarElement(rng)}>",
+                _ => $"global::System.Collections.Generic.IReadOnlyList<{PickScalarElement(rng)}>",
+            },
 
             // 25 → FuzzEnum or FuzzEnumL variants
             25 => rng.Next(6) switch
@@ -422,7 +440,7 @@ internal static class SyntheticSchema
     /// </summary>
     private static string PickTypeBehavioral(Random rng)
     {
-        var category = rng.Next(0, 27);
+        var category = rng.Next(0, 28);
 
         return category switch
         {
@@ -440,6 +458,21 @@ internal static class SyntheticSchema
                 4 => "FuzzEnumL?",
                 _ => "FuzzEnumL[]"
             },
+
+            // 27 → collection INTERFACES. These were unreachable from the behavioural picker, which is why the
+            // value oracles never exercised them — and an interface-typed destination is exactly where a
+            // pass-through/aliasing fast-path is tempting (and where one really did ship). Unlike HashSet<T>
+            // these are safe for the position-walking comparer: ObjectFactory backs them with a List<T>, so
+            // enumeration order is stable across a copy.
+            27 => rng.Next(5) switch
+            {
+                0 => $"global::System.Collections.Generic.IEnumerable<{PickScalarElement(rng)}>",
+                1 => $"global::System.Collections.Generic.ICollection<{PickScalarElement(rng)}>",
+                2 => $"global::System.Collections.Generic.IList<{PickScalarElement(rng)}>",
+                3 => $"global::System.Collections.Generic.IReadOnlyCollection<{PickScalarElement(rng)}>",
+                _ => $"global::System.Collections.Generic.IReadOnlyList<{PickScalarElement(rng)}>"
+            },
+
             _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]"
         };
     }
