@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -99,8 +99,8 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             static (spc, pair) => EmitAggregates(
                 spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right.Di, pair.Right.PublicExtensions, pair.Right.AsmNs));
 
-        // Ambient REQUIRES manifest: the cross-assembly maps this assembly consumes through IDwarfMapper â€”
-        // auto-detected from Map<TDest>(src) call sites + declared via [UsesMap] â€” emitted as
+        // Ambient REQUIRES manifest: the cross-assembly maps this assembly consumes through IDwarfMapper —
+        // auto-detected from Map<TDest>(src) call sites + declared via [UsesMap] — emitted as
         // [assembly: DwarfRequiresMap(...)] for the validation root to cross-check against the Provides set.
         var facadeRequires = context.SyntaxProvider
             .CreateSyntaxProvider(AmbientRequiresCollector.IsFacadeMapCall, AmbientRequiresCollector.ExtractFacadeRequire)
@@ -120,7 +120,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             predicate: static (node, _) => node is ClassDeclarationSyntax,
             transform: static (ctx, ct) => AmbientRequiresCollector.ReadClassUsesMap(ctx, ct));
 
-        // This assembly's own consumed (required) ambient pairs â€” sorted + distinct. Reused by both the
+        // This assembly's own consumed (required) ambient pairs — sorted + distinct. Reused by both the
         // Requires manifest emit and the root validation.
         var ownRequired = facadeRequires.Collect()
             .Combine(assemblyUsesMap)
@@ -139,7 +139,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
         context.RegisterSourceOutput(ownRequired, static (spc, pairs) => EmitRequiresManifest(spc, pairs));
 
-        // This assembly's own provided (registered) ambient pairs â€” exactly what its module initializer registers.
+        // This assembly's own provided (registered) ambient pairs — exactly what its module initializer registers.
         var ownProvided = mappers.Collect().Combine(coLocated.Collect())
             .Select(static (pair, _) =>
             {
@@ -262,7 +262,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             spc.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.DuplicateFacadeExtension, Location.None,
                 $"more than one mapper maps from '{sourceType}', so the '{extName}(this {sourceType})' convenience "
-                + "extension was not generated (it would be ambiguous) â€” call the mapper instance method, or "
+                + "extension was not generated (it would be ambiguous) — call the mapper instance method, or "
                 + "disable one mapper's extensions with [DwarfMapper(GenerateExtensions = false)]"));
         }
 

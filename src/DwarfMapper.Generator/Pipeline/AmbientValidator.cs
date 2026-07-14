@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Text;
@@ -11,7 +11,7 @@ namespace DwarfMapper.Generator.Pipeline;
 /// <c>[assembly: DwarfMapperValidationRoot]</c> (the one that references every provider and consumer). It
 /// aggregates the <c>Provides</c> / <c>Requires</c> manifests of all referenced assemblies with this
 /// compilation's own provided/required pairs, and reports DWARF061 for any required ambient map that nothing
-/// provides â€” turning the otherwise-runtime "no map registered" failure into a compile-time error.
+/// provides — turning the otherwise-runtime "no map registered" failure into a compile-time error.
 /// </summary>
 internal static class AmbientValidator
 {
@@ -32,7 +32,7 @@ internal static class AmbientValidator
 
     /// <summary>
     /// Reads the <c>DwarfProvidesMap</c> / <c>DwarfRequiresMap</c> manifests from every referenced assembly
-    /// (these live in metadata as assembly attributes â€” readable; the generator cannot see its OWN
+    /// (these live in metadata as assembly attributes — readable; the generator cannot see its OWN
     /// not-yet-emitted manifests, so the root supplies its own provided/required separately).
     /// </summary>
     public static (ImmutableArray<(string Source, string Destination)> Provided,
@@ -72,7 +72,7 @@ internal static class AmbientValidator
 
     /// <summary>
     /// The required ambient pairs (this compilation's own + all referenced) that nothing in the graph
-    /// provides â€” each becomes a DWARF061. Deterministically ordered.
+    /// provides — each becomes a DWARF061. Deterministically ordered.
     /// </summary>
     public static IReadOnlyList<(string Source, string Destination)> MissingRequires(
         IEnumerable<(string Source, string Destination)> ownProvided,
@@ -98,7 +98,7 @@ internal static class AmbientValidator
     }
 
     /// <summary>
-    /// Pairs provided by MORE THAN ONE assembly in the graph (this compilation + referenced) â€” the ambient
+    /// Pairs provided by MORE THAN ONE assembly in the graph (this compilation + referenced) — the ambient
     /// registry keeps the first registration and ignores the rest, so these become DWARF063 warnings.
     /// </summary>
     public static IReadOnlyList<(string Source, string Destination)> AmbiguousProviders(
@@ -121,7 +121,7 @@ internal static class AmbientValidator
     }
 
     /// <summary>
-    /// Emits the root-only <c>DwarfMapper.DwarfMap.Validate()</c> â€” a hard-coded (reflection-free) runtime
+    /// Emits the root-only <c>DwarfMapper.DwarfMap.Validate()</c> — a hard-coded (reflection-free) runtime
     /// fail-fast that throws <c>DwarfMapValidationException</c> if any ambient map the app consumes is not
     /// registered in the live registry (defense-in-depth against trimming / unloaded assemblies). Returns the
     /// empty string when nothing is consumed.
