@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -18,7 +16,9 @@ public sealed class McSrc
 // parameterless ctor would leave Parsed empty — so the map must go through the factory.
 public sealed class McDst
 {
-    public McDst() { }
+    public McDst()
+    {
+    }
 
     public McDst(string format, string aliasText)
     {
@@ -41,7 +41,10 @@ public sealed class McDst
 [MapConstructor<McSrc, McDst>(nameof(MakeDst))]
 public partial class McMapper
 {
-    private static McDst MakeDst(McSrc s) => new(s.Format, s.AliasText);
+    private static McDst MakeDst(McSrc s)
+    {
+        return new McDst(s.Format, s.AliasText);
+    }
 }
 
 public sealed class MapConstructorRuntimeTests
@@ -51,7 +54,7 @@ public sealed class MapConstructorRuntimeTests
     {
         var d = new McMapper().Map(new McSrc
         {
-            Id = "src-id", Format = "!buy", AliasText = "song", Cost = 5, Enabled = true,
+            Id = "src-id", Format = "!buy", AliasText = "song", Cost = 5, Enabled = true
         });
 
         // From the factory's 2-arg ctor:

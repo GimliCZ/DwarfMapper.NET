@@ -1,32 +1,80 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── Type hierarchy ─────────────────────────────────────────────────────────────
 
-public abstract class DrvAnimal { public string Name { get; set; } = ""; }
-public class DrvDog : DrvAnimal { public string Breed { get; set; } = ""; }
-public class DrvCat : DrvAnimal { public int Lives { get; set; } }
-public class DrvUnknown : DrvAnimal { }
+public abstract class DrvAnimal
+{
+    public string Name { get; set; } = "";
+}
+
+public class DrvDog : DrvAnimal
+{
+    public string Breed { get; set; } = "";
+}
+
+public class DrvCat : DrvAnimal
+{
+    public int Lives { get; set; }
+}
+
+public class DrvUnknown : DrvAnimal
+{
+}
 
 // 3-level: Puppy : DrvDog : DrvAnimal
-public class DrvPuppy : DrvDog { public bool IsVaccinated { get; set; } }
+public class DrvPuppy : DrvDog
+{
+    public bool IsVaccinated { get; set; }
+}
 
 // Interface-based hierarchy
-public interface IDrvCreature { string Name { get; set; } }
-public class DrvFish : IDrvCreature { public string Name { get; set; } = ""; public int Fins { get; set; } }
-public class DrvBird : IDrvCreature { public string Name { get; set; } = ""; public bool CanFly { get; set; } }
+public interface IDrvCreature
+{
+    string Name { get; set; }
+}
+
+public class DrvFish : IDrvCreature
+{
+    public int Fins { get; set; }
+    public string Name { get; set; } = "";
+}
+
+public class DrvBird : IDrvCreature
+{
+    public bool CanFly { get; set; }
+    public string Name { get; set; } = "";
+}
 
 // DTOs — must form an inheritance hierarchy matching the source hierarchy
-public class DrvAnimalDto { public string Name { get; set; } = ""; }
-public class DrvDogDto : DrvAnimalDto { public string Breed { get; set; } = ""; }
-public class DrvCatDto : DrvAnimalDto { public int Lives { get; set; } }
-public class DrvPuppyDto : DrvDogDto { public bool IsVaccinated { get; set; } }
-public interface IDrvCreatureDto { string Name { get; } }
+public class DrvAnimalDto
+{
+    public string Name { get; set; } = "";
+}
+
+public class DrvDogDto : DrvAnimalDto
+{
+    public string Breed { get; set; } = "";
+}
+
+public class DrvCatDto : DrvAnimalDto
+{
+    public int Lives { get; set; }
+}
+
+public class DrvPuppyDto : DrvDogDto
+{
+    public bool IsVaccinated { get; set; }
+}
+
+public interface IDrvCreatureDto
+{
+    string Name { get; }
+}
+
 public record DrvFishDto(string Name, int Fins) : IDrvCreatureDto;
+
 public record DrvBirdDto(string Name, bool CanFly) : IDrvCreatureDto;
 
 // ── Mappers ────────────────────────────────────────────────────────────────────
@@ -127,18 +175,38 @@ public partial class ZooMapper
 // ── Interface hierarchy with WRONG declaration order — audit #1 adversarial ──
 // IFoo : IBar; DrvC : IFoo — declared [IBar] BEFORE [IFoo] (wrong order)
 // Generator MUST sort most-derived-first; DrvC must dispatch to IFoo arm (IDrvFooDto), not IBar arm.
-public interface IDrvBar { string Tag { get; set; } }
-public interface IDrvFoo : IDrvBar { int Extra { get; set; } }
-public class DrvC : IDrvFoo { public string Tag { get; set; } = ""; public int Extra { get; set; } }
-public class IDrvBarDto { public string Tag { get; set; } = ""; }
-public class IDrvFooDto : IDrvBarDto { public int Extra { get; set; } }
+public interface IDrvBar
+{
+    string Tag { get; set; }
+}
+
+public interface IDrvFoo : IDrvBar
+{
+    int Extra { get; set; }
+}
+
+public class DrvC : IDrvFoo
+{
+    public string Tag { get; set; } = "";
+    public int Extra { get; set; }
+}
+
+public class IDrvBarDto
+{
+    public string Tag { get; set; } = "";
+}
+
+public class IDrvFooDto : IDrvBarDto
+{
+    public int Extra { get; set; }
+}
 
 [DwarfMapper]
 public partial class DrvIfaceOrderMapper
 {
     // Declaration order is deliberately WRONG: concrete DrvC arm listed LAST (most specific should win)
-    [MapDerivedType(typeof(IDrvBar), typeof(IDrvBarDto))]  // IBar arm — less derived; declared first
-    [MapDerivedType<DrvC, IDrvFooDto>]                     // DrvC : IDrvFoo : IDrvBar — most derived; declared last
+    [MapDerivedType(typeof(IDrvBar), typeof(IDrvBarDto))] // IBar arm — less derived; declared first
+    [MapDerivedType<DrvC, IDrvFooDto>] // DrvC : IDrvFoo : IDrvBar — most derived; declared last
     public partial IDrvBarDto Map(IDrvBar x);
 
     // Explicit overload for concrete DrvC → IDrvFooDto
@@ -146,15 +214,45 @@ public partial class DrvIfaceOrderMapper
 }
 
 // ── 4-arm class hierarchy with wrong declaration order ────────────────────────
-public abstract class DrvBase { public string Id { get; set; } = ""; }
-public class DrvLevel1 : DrvBase { public int L1 { get; set; } }
-public class DrvLevel2 : DrvLevel1 { public int L2 { get; set; } }
-public class DrvLevel3 : DrvLevel2 { public int L3 { get; set; } }
+public abstract class DrvBase
+{
+    public string Id { get; set; } = "";
+}
 
-public class DrvBaseDto { public string Id { get; set; } = ""; }
-public class DrvLevel1Dto : DrvBaseDto { public int L1 { get; set; } }
-public class DrvLevel2Dto : DrvLevel1Dto { public int L2 { get; set; } }
-public class DrvLevel3Dto : DrvLevel2Dto { public int L3 { get; set; } }
+public class DrvLevel1 : DrvBase
+{
+    public int L1 { get; set; }
+}
+
+public class DrvLevel2 : DrvLevel1
+{
+    public int L2 { get; set; }
+}
+
+public class DrvLevel3 : DrvLevel2
+{
+    public int L3 { get; set; }
+}
+
+public class DrvBaseDto
+{
+    public string Id { get; set; } = "";
+}
+
+public class DrvLevel1Dto : DrvBaseDto
+{
+    public int L1 { get; set; }
+}
+
+public class DrvLevel2Dto : DrvLevel1Dto
+{
+    public int L2 { get; set; }
+}
+
+public class DrvLevel3Dto : DrvLevel2Dto
+{
+    public int L3 { get; set; }
+}
 
 [DwarfMapper]
 public partial class DrvFourArmMapper
@@ -202,7 +300,7 @@ public class MapDerivedTypeRuntimeTests
         // Must dispatch to DogDto — not just base AnimalDto
         var dog = Assert.IsType<DrvDogDto>(result);
         Assert.Equal("Buddy", dog.Name);
-        Assert.Equal("Lab", dog.Breed);  // derived-only member — proves correct dispatch
+        Assert.Equal("Lab", dog.Breed); // derived-only member — proves correct dispatch
     }
 
     [Fact]
@@ -290,7 +388,7 @@ public class MapDerivedTypeRuntimeTests
         // Must dispatch to DogDto — synthesized __DwarfMap_Obj_ helper, not base
         var dog = Assert.IsType<DrvDogDto>(result);
         Assert.Equal("Rexo", dog.Name);
-        Assert.Equal("Poodle", dog.Breed);  // derived-only member — proves auto-nest dispatch worked
+        Assert.Equal("Poodle", dog.Breed); // derived-only member — proves auto-nest dispatch worked
     }
 
     [Fact]
@@ -301,7 +399,7 @@ public class MapDerivedTypeRuntimeTests
         {
             new DrvDog { Name = "Rex", Breed = "Husky" },
             new DrvCat { Name = "Luna", Lives = 9 },
-            new DrvDog { Name = "Buddy", Breed = "Lab" },
+            new DrvDog { Name = "Buddy", Breed = "Lab" }
         };
         // Map each element via the dispatch method
         var dtos = animals.ConvertAll(a => m.Map(a));
@@ -326,7 +424,7 @@ public class MapDerivedTypeRuntimeTests
             {
                 new DrvDog { Name = "Rex", Breed = "Husky" },
                 new DrvCat { Name = "Luna", Lives = 9 },
-                new DrvDog { Name = "Buddy", Breed = "Lab" },
+                new DrvDog { Name = "Buddy", Breed = "Lab" }
             }
         };
 
@@ -355,8 +453,8 @@ public class MapDerivedTypeRuntimeTests
         var m = new DrvIfaceOrderMapper();
         var c = new DrvC { Tag = "t1", Extra = 42 };
         var result = m.Map(c);
-        var dto = Assert.IsType<IDrvFooDto>(result);   // NOT IDrvBarDto
-        Assert.Equal(42, dto.Extra);                    // derived-only member
+        var dto = Assert.IsType<IDrvFooDto>(result); // NOT IDrvBarDto
+        Assert.Equal(42, dto.Extra); // derived-only member
         Assert.Equal("t1", dto.Tag);
     }
 
@@ -367,7 +465,7 @@ public class MapDerivedTypeRuntimeTests
         var l3 = new DrvLevel3 { Id = "x", L1 = 1, L2 = 2, L3 = 3 };
         var result = m.Map(l3);
         var dto = Assert.IsType<DrvLevel3Dto>(result);
-        Assert.Equal(3, dto.L3);                         // leaf-only member
+        Assert.Equal(3, dto.L3); // leaf-only member
         Assert.Equal(2, dto.L2);
         Assert.Equal(1, dto.L1);
         Assert.Equal("x", dto.Id);
@@ -394,20 +492,35 @@ public class MapDerivedTypeRuntimeTests
 // target DogDto instance (identity preservation via the ctx identity map).
 // PsvAnimal is abstract so C2b (concrete-src auto-nest bypass) does NOT fire for
 // PsvAnimal→PsvAnimalDto; the dispatch method Map(PsvAnimal) is used instead.
-public abstract class PsvAnimal { public string Name { get; set; } = ""; }
-public class PsvDog : PsvAnimal { public string Breed { get; set; } = ""; }
-public class PsvAnimalDto { public string Name { get; set; } = ""; }
-public class PsvDogDto : PsvAnimalDto { public string Breed { get; set; } = ""; }
+public abstract class PsvAnimal
+{
+    public string Name { get; set; } = "";
+}
+
+public class PsvDog : PsvAnimal
+{
+    public string Breed { get; set; } = "";
+}
+
+public class PsvAnimalDto
+{
+    public string Name { get; set; } = "";
+}
+
+public class PsvDogDto : PsvAnimalDto
+{
+    public string Breed { get; set; } = "";
+}
 
 public class PsvTwoSlot
 {
-    public PsvAnimal? First  { get; set; }
+    public PsvAnimal? First { get; set; }
     public PsvAnimal? Second { get; set; }
 }
 
 public class PsvTwoSlotDto
 {
-    public PsvAnimalDto? First  { get; set; }
+    public PsvAnimalDto? First { get; set; }
     public PsvAnimalDto? Second { get; set; }
 }
 
@@ -448,9 +561,9 @@ public class MapDerivedTypePreserveRegressionTests
         Assert.NotNull(dto.Second);
 
         // Values must be correct
-        var first  = Assert.IsType<PsvDogDto>(dto.First);
+        var first = Assert.IsType<PsvDogDto>(dto.First);
         var second = Assert.IsType<PsvDogDto>(dto.Second);
-        Assert.Equal("Rex",   first.Name);
+        Assert.Equal("Rex", first.Name);
         Assert.Equal("Husky", first.Breed);
 
         // Topology: same source → same target (reference identity preserved via identity map)
@@ -461,7 +574,7 @@ public class MapDerivedTypePreserveRegressionTests
     public void Preserve_distinct_Dog_instances_yield_distinct_target_instances()
     {
         // Two DISTINCT Dog sources → two DISTINCT DogDto targets (not collapsed)
-        var dog1 = new PsvDog { Name = "Rex",   Breed = "Husky" };
+        var dog1 = new PsvDog { Name = "Rex", Breed = "Husky" };
         var dog2 = new PsvDog { Name = "Buddy", Breed = "Lab" };
         var container = new PsvTwoSlot { First = dog1, Second = dog2 };
 
@@ -471,7 +584,7 @@ public class MapDerivedTypePreserveRegressionTests
         Assert.NotNull(dto.First);
         Assert.NotNull(dto.Second);
         Assert.NotSame(dto.First, dto.Second); // distinct sources → distinct targets
-        Assert.Equal("Rex",   dto.First!.Name);
+        Assert.Equal("Rex", dto.First!.Name);
         Assert.Equal("Buddy", dto.Second!.Name);
     }
 }

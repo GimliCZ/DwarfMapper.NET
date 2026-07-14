@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
+
 using System.Collections;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Reflection;
 using System.Text;
 using DwarfMapper.Testing;
@@ -12,7 +10,10 @@ namespace DwarfMapper.Generator.Tests.Fuzzing;
 
 public class BehavioralFuzzTests
 {
-    public static IEnumerable<object[]> Seeds() => Enumerable.Range(0, 60).Select(i => new object[] { i });
+    public static IEnumerable<object[]> Seeds()
+    {
+        return Enumerable.Range(0, 60).Select(i => new object[] { i });
+    }
 
     [Theory]
     [MemberData(nameof(Seeds))]
@@ -40,15 +41,11 @@ public class BehavioralFuzzTests
         // uses expected.GetType() to discover PropertyInfos and then calls
         // p.GetValue(actual), which throws TargetException when actual is a
         // different type. Instead we compare member-by-member via name lookup.
-        var diffs = CrossTypeStructuralDiff("root", srcType, srcInstance, dstType, dstInstance, depth: 0);
+        var diffs = CrossTypeStructuralDiff("root", srcType, srcInstance, dstType, dstInstance, 0);
 
         Assert.True(diffs.Count == 0,
             $"seed={seed} not value-preserving:\n{RenderDiffs(diffs)}\n--- source ---\n{src}");
     }
-
-    // ── Cross-type structural diff ────────────────────────────────────────────
-
-    private sealed record Diff(string Path, string? Expected, string? Actual);
 
     private static List<Diff> CrossTypeStructuralDiff(
         string path, Type srcType, object srcVal, Type dstType, object dstVal, int depth)
@@ -120,11 +117,9 @@ public class BehavioralFuzzTests
             var sl = ToList(se);
             var dl = ToList(de);
             if (sl.Count != dl.Count)
-            {
                 diffs.Add(new Diff(path + ".Count",
                     sl.Count.ToString(CultureInfo.InvariantCulture),
                     dl.Count.ToString(CultureInfo.InvariantCulture)));
-            }
             var n = Math.Min(sl.Count, dl.Count);
             for (var i = 0; i < n; i++)
                 CompareValues(
@@ -147,6 +142,7 @@ public class BehavioralFuzzTests
                     : d.Path;
                 diffs.Add(new Diff(path + strippedPath, d.Expected, d.Actual));
             }
+
             return;
         }
 
@@ -154,10 +150,12 @@ public class BehavioralFuzzTests
         CompareByName(path, svType, sv, dvType, dv, diffs, depth + 1);
     }
 
-    private static bool IsScalar(Type t) =>
-        t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal)
-        || t == typeof(Guid) || t == typeof(DateTime) || t == typeof(DateTimeOffset)
-        || t == typeof(TimeSpan);
+    private static bool IsScalar(Type t)
+    {
+        return t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal)
+               || t == typeof(Guid) || t == typeof(DateTime) || t == typeof(DateTimeOffset)
+               || t == typeof(TimeSpan);
+    }
 
     private static bool ScalarEquals(object a, object b)
     {
@@ -167,7 +165,7 @@ public class BehavioralFuzzTests
         // compare by their underlying integral value.
         if (a.GetType().IsEnum && b.GetType().IsEnum)
             return Convert.ToInt64(a, CultureInfo.InvariantCulture)
-                == Convert.ToInt64(b, CultureInfo.InvariantCulture);
+                   == Convert.ToInt64(b, CultureInfo.InvariantCulture);
         return Equals(a, b);
     }
 
@@ -178,19 +176,26 @@ public class BehavioralFuzzTests
         return l;
     }
 
-    private static string? Fmt(object? o) => o switch
+    private static string? Fmt(object? o)
     {
-        null => null,
-        IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
-        _ => o.ToString(),
-    };
+        return o switch
+        {
+            null => null,
+            IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+            _ => o.ToString()
+        };
+    }
 
     private static string RenderDiffs(IReadOnlyList<Diff> diffs)
     {
         var sb = new StringBuilder();
         foreach (var d in diffs)
             sb.Append("  ").Append(d.Path).Append(": expected ").Append(d.Expected ?? "<null>")
-              .Append(", actual ").Append(d.Actual ?? "<null>").Append('\n');
+                .Append(", actual ").Append(d.Actual ?? "<null>").Append('\n');
         return sb.ToString();
     }
+
+    // ── Cross-type structural diff ────────────────────────────────────────────
+
+    private sealed record Diff(string Path, string? Expected, string? Actual);
 }

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
+
 using System.Collections.Immutable;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -12,6 +10,7 @@ public class A1DictNullSrc
 {
     public Dictionary<string, List<int>?>? Outer { get; set; }
 }
+
 public class A1DictNullDst
 {
     public Dictionary<string, List<int>?>? Outer { get; set; }
@@ -27,6 +26,7 @@ public class A1ListNullSrc
 {
     public List<List<int>?>? Outer { get; set; }
 }
+
 public class A1ListNullDst
 {
     public List<List<int>?>? Outer { get; set; }
@@ -60,7 +60,7 @@ public class NullCollectionsNestedA1RuntimeTests
     {
         var src = new A1DictNullSrc
         {
-            Outer = new Dictionary<string, List<int>?> { ["k"] = new List<int> { 1, 2 } }
+            Outer = new Dictionary<string, List<int>?> { ["k"] = new() { 1, 2 } }
         };
         var dst = new A1DictNullMapper().Map(src);
         Assert.NotNull(dst.Outer);
@@ -73,12 +73,12 @@ public class NullCollectionsNestedA1RuntimeTests
     {
         var src = new A1ListNullSrc
         {
-            Outer = new List<List<int>?> { null, new List<int> { 3 } }
+            Outer = new List<List<int>?> { null, new() { 3 } }
         };
         var dst = new A1ListNullMapper().Map(src);
         Assert.NotNull(dst.Outer);
         Assert.Equal(2, dst.Outer!.Count);
-        Assert.Null(dst.Outer[0]);      // must be null, NOT empty List
+        Assert.Null(dst.Outer[0]); // must be null, NOT empty List
         Assert.Equal(new[] { 3 }, dst.Outer[1]);
     }
 
@@ -90,7 +90,7 @@ public class NullCollectionsNestedA1RuntimeTests
         // Using the existing TaxNestedMapper which has no AsNull
         var src = new TaxNestedSrc
         {
-            NestedList = new List<List<int>> { new List<int> { 1 } }
+            NestedList = new List<List<int>> { new() { 1 } }
         };
         var dst = new TaxNestedMapper().Map(src);
         Assert.NotNull(dst.NestedList[0]); // not null under default AsEmpty
@@ -103,6 +103,7 @@ public class A2ImmutNullSrc
 {
     public List<int>? Xs { get; set; }
 }
+
 public class A2ImmutNullDst
 {
     public ImmutableArray<int>? Xs { get; set; }
@@ -141,6 +142,7 @@ public class A3NonNullTargetSrc
 {
     public List<int>? Xs { get; set; }
 }
+
 public class A3NonNullTargetDst
 {
     // NON-nullable target: AsNull must fall back to AsEmpty to avoid CS8601
@@ -159,10 +161,12 @@ public class A3MixedSrc
     public List<int>? Xs { get; set; }
     public List<int>? Ys { get; set; }
 }
+
 public class A3MixedDst
 {
     // NON-nullable: fallback to AsEmpty
     public List<int> Xs { get; set; } = new();
+
     // Nullable: AsNull propagates null
     public List<int>? Ys { get; set; }
 }
@@ -199,7 +203,7 @@ public class NullCollectionsA3NonNullTargetRuntimeTests
         var dst = new A3MixedMapper().MapFull(new A3MixedSrc { Xs = null, Ys = null });
         Assert.NotNull(dst.Xs); // non-nullable → falls back to empty
         Assert.Empty(dst.Xs);
-        Assert.Null(dst.Ys);    // nullable → AsNull propagates null
+        Assert.Null(dst.Ys); // nullable → AsNull propagates null
     }
 }
 
@@ -211,17 +215,19 @@ public class NullCollectionsA3NonNullTargetRuntimeTests
 public class A4NullOrderSrc
 {
     public List<int>? Xs { get; set; }
-    public System.Collections.Generic.HashSet<int>? Hs { get; set; }
+    public HashSet<int>? Hs { get; set; }
 }
+
 public class A4NullOrderDstEmpty
 {
     public List<int> Xs { get; set; } = new();
-    public System.Collections.Generic.HashSet<int> Hs { get; set; } = new();
+    public HashSet<int> Hs { get; set; } = new();
 }
+
 public class A4NullOrderDstNull
 {
     public List<int>? Xs { get; set; }
-    public System.Collections.Generic.HashSet<int>? Hs { get; set; }
+    public HashSet<int>? Hs { get; set; }
 }
 
 [DwarfMapper]
@@ -262,7 +268,7 @@ public class NullCollectionsA4AllocationOrderRuntimeTests
         var dst = new A4NullMapper().Map(new A4NullOrderSrc
         {
             Xs = new List<int> { 1, 2 },
-            Hs = new System.Collections.Generic.HashSet<int> { 3, 4 }
+            Hs = new HashSet<int> { 3, 4 }
         });
         Assert.Equal(new[] { 1, 2 }, dst.Xs);
         Assert.True(dst.Hs!.SetEquals(new[] { 3, 4 }));

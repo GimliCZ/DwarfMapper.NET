@@ -61,6 +61,5 @@ Every migration, from every library, is the same three moves (detailed in [commo
 
 ## Status note
 
-DwarfMapper is **pre-release (`1.0.0-rc.1`) and not yet on nuget.org.** Until it ships, reference it via
-project/source reference (every guide's install step shows both the project-reference form to use now and
-the `PackageReference` form for when it publishes). See the repository [README](../../README.md#status).
+DwarfMapper is **pre-release — `1.0.1-rc.1`, a release candidate.** Install it with the `--prerelease`
+flag (`dotnet add package DwarfMapper --prerelease`). See the repository [README](../../README.md#status).

@@ -15,29 +15,36 @@ crucially, **the test/diagnostic that enforces each one**, so the claims are che
 
 A destination member with no source is a **build error** (`DWARF001`), not a silent default. You cannot
 ship an incomplete map; intentional drops are explicit and auditable via `[MapIgnore]`. Source-side
-coverage is opt-in (`RequiredMapping = Both` → `DWARF039`) so a forgotten/mis-wired *source* field is never
-silent either.
+coverage is opt-in (`RequiredMapping = Both` → `DWARF039`); note `DWARF039` is an **IDE suggestion** by
+default (not build-breaking) — escalate it with `dotnet_diagnostic.DWARF039.severity = error` in
+`.editorconfig` to make an unconsumed source field fail the build.
 
 > **This is a DTO-drift contract gate.** Because the map is resolved at compile time, a DTO or entity that
 > changes shape and breaks a mapping **fails the build** — your two types provably cannot drift apart
 > unnoticed. AutoMapper offers this only as a test-time `AssertConfigurationIsValid()`; Mapster offers no
-> equivalent. *Evidence:* the completeness gate is exercised throughout the generator suite and is
-> non-suppressible globally.
+> equivalent. *Evidence:* the completeness gate is exercised throughout the generator suite and is enforced
+> by construction — suppressing the diagnostic in `.editorconfig` doesn't help: the incomplete method body
+> isn't generated, so the build still fails (with a rawer compiler error).
 
 ## 2. The resolved mapping is visible, not inferred
 
-Every generated public method carries an XML-doc **mapping plan**: `target ← source`, `via {converter}`,
+Every generated public **object-to-object** method carries an XML-doc **mapping plan**: `target <- source`, `via {converter}`,
 `= {constant}`, `(?? {substitute})`, `(when {predicate})`, `[ctor]`. It shows on IDE hover and at the top
 of the generated `.g.cs`, so a reviewer can see *what maps to what* without reading the body — the readable
-face of anti-mislinking. *Evidence:* `MapEmitter.EmitMappingPlanDoc`; rendered for every public method
-(snapshot-tested).
+face of anti-mislinking. *Evidence:* `MapEmitter.EmitMappingPlanDoc`; rendered for every public object-to-object method
+(snapshot-tested). Projection, span, and async-stream methods carry the `<summary>` but no per-member plan list.
 
 ## 3. Round-trips are verified, not hoped
 
 Tag a forward/back pair `[RoundTrip]` and the generator emits a seeded fuzz harness proving
-`Back(Forward(x)) ≡ x` with a mapping-aware diff on failure. No inverse → `DWARF020`; ambiguous → `DWARF021`.
+`Back(Forward(x)) ≡ x` with a structural member-path diff on failure. No inverse → `DWARF020`; ambiguous → `DWARF021`.
 One attribute replaces the fixtures you'd otherwise hand-maintain. *Evidence:* `DwarfMapper.Testing` +
 the `[RoundTrip]` generation path.
+
+> **This proof is test-time, not AOT-runtime.** The emitted verifier calls into `DwarfMapper.Testing`, which
+> is **reflection-based** — the one reflection-using piece, deliberately **not** part of the shipped mapper.
+> Reference `DwarfMapper.Testing` from **test projects only**; the round-trip check runs in your test run, not
+> in production. §5's reflection-free / AOT-safe guarantee covers the generated *mapping* code, not this verifier.
 
 ## 4. The codegen is deterministic and incrementally cached — proven
 
@@ -63,9 +70,10 @@ mappers structurally cannot go.
   reflection-for-mapping tokens (`System.Reflection`, `Activator`, `GetProperty/Field/Method`,
   `MakeGenericType`, `dynamic`, …) across 64 fuzz seeds + every advanced feature.
 - *Evidence (end to end):* the CI AOT gate publishes `samples/DwarfMapper.AotSample` with **zero**
-  IL2xxx/IL3xxx warnings and runs a behavioural gate over the published native binary.
-- *Evidence (stability under AOT):* `samples/DwarfMapper.AotBench` is published with NativeAOT and run as
-  a native binary — SIMD widen/blit are bit-exact at every vector-boundary size, Preserve topology is
+  IL2xxx/IL3xxx warnings (this proves trim/AOT-clean compilation; the behavioural gate in its `Program.cs`
+  is run locally, not executed by CI).
+- *Evidence (stability under AOT):* `samples/DwarfMapper.AotBench` is published with NativeAOT and run
+  **locally** as a native binary (not a CI job) — SIMD widen/blit are bit-exact at every vector-boundary size, Preserve topology is
   deterministic over 100 000 runs, and the depth/SetNull guards hold over tens of thousands of runs. Timing
   is *steadier* than the JIT (no tiering jitter). The one AOT usage caveat — default baseline SIMD width
   (`Vector<int>.Count == 4` vs the JIT's 8), restored with `<IlcInstructionSet>native</IlcInstructionSet>`

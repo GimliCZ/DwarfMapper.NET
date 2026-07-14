@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using DwarfMapper;
-using Xunit;
+
+
 
 // CA5394: System.Random is used ONLY for deterministic, seeded test-data generation. Not security.
 #pragma warning disable CA5394
@@ -14,18 +12,42 @@ namespace DwarfMapper.IntegrationTests;
 // mapper, so a node re-entered while still on the stack maps to null — even across a List<T>
 // or Dictionary<K,V> boundary.
 
-public class SncTree    { public int V { get; set; } public List<SncTree>? Children { get; set; } }
-public class SncTreeDto { public int V { get; set; } public List<SncTreeDto>? Children { get; set; } }
+public class SncTree
+{
+    public int V { get; set; }
+    public List<SncTree>? Children { get; set; }
+}
+
+public class SncTreeDto
+{
+    public int V { get; set; }
+    public List<SncTreeDto>? Children { get; set; }
+}
 
 [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
-public partial class SncTreeMapper { public partial SncTreeDto Map(SncTree t); }
+public partial class SncTreeMapper
+{
+    public partial SncTreeDto Map(SncTree t);
+}
 
 // Cross-collection cycle via dictionary value.
-public class SncDictNode    { public int V { get; set; } public Dictionary<string, SncDictNode>? Edges { get; set; } }
-public class SncDictNodeDto { public int V { get; set; } public Dictionary<string, SncDictNodeDto>? Edges { get; set; } }
+public class SncDictNode
+{
+    public int V { get; set; }
+    public Dictionary<string, SncDictNode>? Edges { get; set; }
+}
+
+public class SncDictNodeDto
+{
+    public int V { get; set; }
+    public Dictionary<string, SncDictNodeDto>? Edges { get; set; }
+}
 
 [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
-public partial class SncDictMapper { public partial SncDictNodeDto Map(SncDictNode n); }
+public partial class SncDictMapper
+{
+    public partial SncDictNodeDto Map(SncDictNode n);
+}
 
 public class SetNullCollectionCycleRuntimeTests
 {
@@ -33,8 +55,8 @@ public class SetNullCollectionCycleRuntimeTests
     [Fact]
     public void ListEdge_cycle_back_edge_element_is_null()
     {
-        var root = new SncTree { V = 1, Children = new() };
-        var child = new SncTree { V = 2, Children = new() };
+        var root = new SncTree { V = 1, Children = new List<SncTree>() };
+        var child = new SncTree { V = 2, Children = new List<SncTree>() };
         root.Children!.Add(child);
         child.Children!.Add(root); // back-edge through the list
 
@@ -53,7 +75,7 @@ public class SetNullCollectionCycleRuntimeTests
     [Fact]
     public void ListEdge_self_loop_element_is_null()
     {
-        var n = new SncTree { V = 7, Children = new() };
+        var n = new SncTree { V = 7, Children = new List<SncTree>() };
         n.Children!.Add(n);
 
         var t = new SncTreeMapper().Map(n);
@@ -66,8 +88,8 @@ public class SetNullCollectionCycleRuntimeTests
     [Fact]
     public void DictValueEdge_cycle_back_edge_value_is_null()
     {
-        var a = new SncDictNode { V = 1, Edges = new() };
-        var b = new SncDictNode { V = 2, Edges = new() };
+        var a = new SncDictNode { V = 1, Edges = new Dictionary<string, SncDictNode>() };
+        var b = new SncDictNode { V = 2, Edges = new Dictionary<string, SncDictNode>() };
         a.Edges!["to-b"] = b;
         b.Edges!["to-a"] = a; // cycle through dictionary values
 
@@ -94,7 +116,7 @@ public class SetNullCollectionCycleRuntimeTests
         {
             var n = rng.Next(1, 10);
             var nodes = new List<SncTree>();
-            for (var i = 0; i < n; i++) nodes.Add(new SncTree { V = i, Children = new() });
+            for (var i = 0; i < n; i++) nodes.Add(new SncTree { V = i, Children = new List<SncTree>() });
             // Wire each node's Children to a random subset of existing nodes (incl. self/ancestors → cycles).
             foreach (var node in nodes)
             {
@@ -116,15 +138,18 @@ public class SetNullCollectionCycleRuntimeTests
     {
         var onPath = new HashSet<SncTreeDto>(ReferenceEqualityComparer.Instance);
         var total = 0;
+
         void Walk(SncTreeDto? node)
         {
             if (node is null) return;
             Assert.True(onPath.Add(node), "result must be acyclic");
             Assert.True(++total < 1_000_000, "result must be finite");
             if (node.Children is not null)
-                foreach (var c in node.Children) Walk(c);
+                foreach (var c in node.Children)
+                    Walk(c);
             onPath.Remove(node);
         }
+
         Walk(root);
     }
 
@@ -133,7 +158,7 @@ public class SetNullCollectionCycleRuntimeTests
         if (node is null) return ".";
         var parts = node.Children is null
             ? ""
-            : string.Join(",", System.Linq.Enumerable.Select(node.Children, Shape));
+            : string.Join(",", node.Children.Select(Shape));
         return $"({node.V} [{parts}])";
     }
 }

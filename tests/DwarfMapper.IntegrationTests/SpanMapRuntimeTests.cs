@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -9,14 +6,24 @@ namespace DwarfMapper.IntegrationTests;
 // caller-provided destination buffer (no heap allocation). Element conversions reuse the full
 // pipeline. Defensive: a destination too small to hold the source throws (never silent truncation).
 
-public struct SpPointSrc { public int X; public int Y; }
-public struct SpPointDst { public long X; public long Y; }
+public struct SpPointSrc
+{
+    public int X;
+    public int Y;
+}
+
+public struct SpPointDst
+{
+    public long X;
+    public long Y;
+}
 
 [DwarfMapper]
 public partial class SpanMapper
 {
     // scalar element widening (int -> long, implicit)
     public partial void Map(ReadOnlySpan<int> src, Span<long> dst);
+
     // struct element mapping (nested, auto-synthesized)
     public partial void MapPoints(ReadOnlySpan<SpPointSrc> src, Span<SpPointDst> dst);
 }
@@ -67,13 +74,14 @@ public class SpanMapRuntimeTests
         {
             caught = true;
         }
+
         Assert.True(caught, "destination smaller than source must throw ArgumentException");
     }
 
     [Fact]
     public void Empty_source_leaves_destination_untouched()
     {
-        ReadOnlySpan<int> src = ReadOnlySpan<int>.Empty;
+        var src = ReadOnlySpan<int>.Empty;
         Span<long> dst = stackalloc long[] { 111L, 222L };
         new SpanMapper().Map(src, dst); // no elements to map; must not throw or alter dst
         Assert.Equal(111L, dst[0]);

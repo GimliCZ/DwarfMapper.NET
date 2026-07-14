@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
+
+using System.Globalization;
 using System.Text;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -8,63 +9,54 @@ namespace DwarfMapper.Generator.Pipeline;
 
 internal static class CollectionConverter
 {
-    // ─── Target kinds ─────────────────────────────────────────────────────────
-    internal enum TargetKind
+    // ── Emitters ─────────────────────────────────────────────────────────────
+
+    // Shared preserve-mode signature suffix: (DwarfRefContext ctx, int depth)
+    private const string CtxDepthParams = ", global::DwarfMapper.DwarfRefContext ctx, int depth";
+
+    // ── SIMD widening for primitive array conversions ────────────────────────────
+    // The seven element pairs that System.Numerics.Vector.Widen supports — each is a PROVABLY-LOSSLESS
+    // same-signedness widening (smaller → larger of the same kind), so the vectorized result is bit-for-bit
+    // identical to the scalar implicit widening. Anything else (sign changes, narrowing, multi-step,
+    // nullable, non-primitive) is NOT in this set and falls back to the element loop / CreateChecked path.
+    private static readonly (SpecialType Src, SpecialType Tgt)[] WidenPairs =
     {
-        // ── Concrete / today ──────────────────────────────────────────
-        Array,              // T[]            — projection-translatable
-        List,               // List<T>        — projection-translatable
-        HashSet,            // HashSet<T>     — NOT translatable
-        // ── Interface → List<T> ──────────────────────────────────────
-        IEnumerable,        // IEnumerable<T> — projection-translatable (LAZY)
-        ICollection,        // ICollection<T> — projection-translatable
-        IList,              // IList<T>       — projection-translatable
-        IReadOnlyList,      // IReadOnlyList<T>       — projection-translatable
-        IReadOnlyCollection,// IReadOnlyCollection<T> — projection-translatable
-        // ── Interface → HashSet<T> ───────────────────────────────────
-        ISet,               // ISet<T>           — NOT translatable
-        IReadOnlySet,       // IReadOnlySet<T>   — NOT translatable
-        // ── Immutable ────────────────────────────────────────────────
-        ImmutableArray,     // ImmutableArray<T>      — NOT translatable
-        ImmutableList,      // ImmutableList<T>       — NOT translatable
-        IImmutableList,     // IImmutableList<T>      — NOT translatable
-        ImmutableHashSet,   // ImmutableHashSet<T>    — NOT translatable
-        IImmutableSet,      // IImmutableSet<T>       — NOT translatable
-    }
+        (SpecialType.System_Byte, SpecialType.System_UInt16),
+        (SpecialType.System_UInt16, SpecialType.System_UInt32),
+        (SpecialType.System_UInt32, SpecialType.System_UInt64),
+        (SpecialType.System_SByte, SpecialType.System_Int16),
+        (SpecialType.System_Int16, SpecialType.System_Int32),
+        (SpecialType.System_Int32, SpecialType.System_Int64),
+        (SpecialType.System_Single, SpecialType.System_Double)
+    };
+
+    // Nullable-aware fully-qualified format — includes ? on nullable reference type arguments.
+    // Used for PARAMETER types so the helper signature accepts nullable-annotated source types
+    // (e.g. Dictionary<string, List<int>?>) without a CS8620 mismatch.
+    private static readonly SymbolDisplayFormat NullableFullyQualifiedFormat =
+        SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(
+                SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions
+                | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
 
     // ─── Projection-translatability classification ────────────────────────────
     /// <summary>
-    /// Returns true when the target collection kind is safe to inline into an
-    /// IQueryable projection expression (EF-Core-translatable). Used by Part D.
+    ///     Returns true when the target collection kind is safe to inline into an
+    ///     IQueryable projection expression (EF-Core-translatable). Used by Part D.
     /// </summary>
-    public static bool IsTargetKindTranslatable(TargetKind kind) => kind switch
+    public static bool IsTargetKindTranslatable(TargetKind kind)
     {
-        TargetKind.Array             => true,
-        TargetKind.List              => true,
-        TargetKind.IEnumerable       => true,
-        TargetKind.ICollection       => true,
-        TargetKind.IList             => true,
-        TargetKind.IReadOnlyList     => true,
-        TargetKind.IReadOnlyCollection => true,
-        _                            => false,   // HashSet/ISet/IReadOnlySet/immutables
-    };
-
-    internal enum CountKind { None, Length, Count }
-
-    internal readonly struct Shape
-    {
-        public Shape(TargetKind target, bool sourceIsArray, CountKind count, bool nullAsNull)
+        return kind switch
         {
-            Target = target;
-            SourceIsArray = sourceIsArray;
-            Count = count;
-            NullAsNull = nullAsNull;
-        }
-        public TargetKind Target { get; }
-        public bool SourceIsArray { get; }
-        public CountKind Count { get; }
-        /// <summary>When true, a null source is mapped as null (AsNull strategy).</summary>
-        public bool NullAsNull { get; }
+            TargetKind.Array => true,
+            TargetKind.List => true,
+            TargetKind.IEnumerable => true,
+            TargetKind.ICollection => true,
+            TargetKind.IList => true,
+            TargetKind.IReadOnlyList => true,
+            TargetKind.IReadOnlyCollection => true,
+            _ => false // HashSet/ISet/IReadOnlySet/immutables
+        };
     }
 
     // ─── Detection ────────────────────────────────────────────────────────────
@@ -90,10 +82,8 @@ internal static class CollectionConverter
         {
             var inner = tgtNullable.TypeArguments[0];
             if (IsExactNamedType(inner, "ImmutableArray", "System.Collections.Immutable", 1, out _))
-            {
                 // Recurse with the unwrapped target and nullAsNull=true.
-                return TryResolve(src, inner, out srcElem, out tgtElem, out shape, nullAsNull: true);
-            }
+                return TryResolve(src, inner, out srcElem, out tgtElem, out shape, true);
         }
 
         TargetKind targetKind;
@@ -199,39 +189,42 @@ internal static class CollectionConverter
     // ─── Preserve-mode mutable collection gate ───────────────────────────────
 
     /// <summary>
-    /// Returns true for mutable reference-type collection kinds that can participate in the
-    /// reference-identity graph under <c>ReferenceHandling = Preserve</c>.
-    /// Immutables (struct ImmutableArray, ImmutableList, ImmutableHashSet, etc.) and
-    /// lazy IEnumerable cannot be registered before filling, so they are excluded.
+    ///     Returns true for mutable reference-type collection kinds that can participate in the
+    ///     reference-identity graph under <c>ReferenceHandling = Preserve</c>.
+    ///     Immutables (struct ImmutableArray, ImmutableList, ImmutableHashSet, etc.) and
+    ///     lazy IEnumerable cannot be registered before filling, so they are excluded.
     /// </summary>
-    public static bool IsMutableReferenceCollection(TargetKind kind) => kind switch
+    public static bool IsMutableReferenceCollection(TargetKind kind)
     {
-        TargetKind.List              => true,
-        TargetKind.HashSet           => true,
-        TargetKind.ICollection       => true,
-        TargetKind.IList             => true,
-        TargetKind.IReadOnlyList     => true,
-        TargetKind.IReadOnlyCollection => true,
-        TargetKind.ISet              => true,
-        TargetKind.IReadOnlySet      => true,
-        TargetKind.Array             => true,  // reference-type; registered after allocation
-        _                            => false, // immutables and lazy IEnumerable
-    };
+        return kind switch
+        {
+            TargetKind.List => true,
+            TargetKind.HashSet => true,
+            TargetKind.ICollection => true,
+            TargetKind.IList => true,
+            TargetKind.IReadOnlyList => true,
+            TargetKind.IReadOnlyCollection => true,
+            TargetKind.ISet => true,
+            TargetKind.IReadOnlySet => true,
+            TargetKind.Array => true, // reference-type; registered after allocation
+            _ => false // immutables and lazy IEnumerable
+        };
+    }
 
     // ─── Synthesis ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Synthesize (or reuse) the collection-mapping method and return its name.
+    ///     Synthesize (or reuse) the collection-mapping method and return its name.
     /// </summary>
     /// <param name="isPreserve">
-    /// When true, mutable reference collections register-before-fill in the DwarfRefContext identity
-    /// map; immutables still thread ctx/depth to recursion-capable element converters.
-    /// Produces a distinct helper (name contains <c>_p</c> tag) so Preserve and None helpers
-    /// for the same collection type coexist in the same mapper class.
+    ///     When true, mutable reference collections register-before-fill in the DwarfRefContext identity
+    ///     map; immutables still thread ctx/depth to recursion-capable element converters.
+    ///     Produces a distinct helper (name contains <c>_p</c> tag) so Preserve and None helpers
+    ///     for the same collection type coexist in the same mapper class.
     /// </param>
     /// <param name="elemNeedsCtx">
-    /// When true, the element converter requires <c>(ctx, depth+1)</c> extra arguments.
-    /// This is true when the element itself is a recursion-capable synthesized object mapper.
+    ///     When true, the element converter requires <c>(ctx, depth+1)</c> extra arguments.
+    ///     This is true when the element itself is a recursion-capable synthesized object mapper.
     /// </param>
     public static string Synthesize(
         Dictionary<string, SynthesizedMethod> synth,
@@ -241,8 +234,8 @@ internal static class CollectionConverter
     {
         // Use nullable-aware format for element type so emitted container types and Add() calls match
         // nullable element types (e.g. List<List<int>?> not List<List<int>>).
-        var elemFq  = FqTypeArg(tgtElem);
-        var srcFq   = Fq(srcType);
+        var elemFq = FqTypeArg(tgtElem);
+        var srcFq = Fq(srcType);
         // Nullable-aware param type: strips outer nullable annotation then re-adds ?, preserving
         // inner nullable type arguments (e.g. Dictionary<string, List<int>?> → Dictionary<string, List<int>?>?).
         var srcParamType = FqNullableParam(srcType);
@@ -253,26 +246,26 @@ internal static class CollectionConverter
         //          variant (a re-entrant element breaks via its own on-stack/depth guard).
         //   ""   = plain (no ctx, no register).
         // Keeping the Preserve branch byte-identical means Preserve helper names/snapshots don't move.
-        var preserveTag = (isPreserve && (IsMutableReferenceCollection(shape.Target) || elemNeedsCtx)) ? "_p"
-                        : (elemNeedsCtx ? "_c" : "");
+        var preserveTag = isPreserve && (IsMutableReferenceCollection(shape.Target) || elemNeedsCtx) ? "_p"
+            : elemNeedsCtx ? "_c" : "";
 
         var targetTag = shape.Target switch
         {
-            TargetKind.Array            => elemFq + "[]",
-            TargetKind.List             => "List<"            + elemFq + ">",
-            TargetKind.HashSet          => "HashSet<"         + elemFq + ">",
-            TargetKind.IEnumerable      => "IEnumerable<"     + elemFq + ">",
-            TargetKind.ICollection      => "ICollection<"     + elemFq + ">",
-            TargetKind.IList            => "IList<"           + elemFq + ">",
-            TargetKind.IReadOnlyList    => "IReadOnlyList<"   + elemFq + ">",
+            TargetKind.Array => elemFq + "[]",
+            TargetKind.List => "List<" + elemFq + ">",
+            TargetKind.HashSet => "HashSet<" + elemFq + ">",
+            TargetKind.IEnumerable => "IEnumerable<" + elemFq + ">",
+            TargetKind.ICollection => "ICollection<" + elemFq + ">",
+            TargetKind.IList => "IList<" + elemFq + ">",
+            TargetKind.IReadOnlyList => "IReadOnlyList<" + elemFq + ">",
             TargetKind.IReadOnlyCollection => "IReadOnlyCollection<" + elemFq + ">",
-            TargetKind.ISet             => "ISet<"            + elemFq + ">",
-            TargetKind.IReadOnlySet     => "IReadOnlySet<"    + elemFq + ">",
-            TargetKind.ImmutableArray   => "ImmutableArray<"  + elemFq + ">",
-            TargetKind.ImmutableList    => "ImmutableList<"   + elemFq + ">",
-            TargetKind.IImmutableList   => "IImmutableList<"  + elemFq + ">",
-            TargetKind.ImmutableHashSet => "ImmutableHashSet<"+ elemFq + ">",
-            _                          => "IImmutableSet<"   + elemFq + ">",
+            TargetKind.ISet => "ISet<" + elemFq + ">",
+            TargetKind.IReadOnlySet => "IReadOnlySet<" + elemFq + ">",
+            TargetKind.ImmutableArray => "ImmutableArray<" + elemFq + ">",
+            TargetKind.ImmutableList => "ImmutableList<" + elemFq + ">",
+            TargetKind.IImmutableList => "IImmutableList<" + elemFq + ">",
+            TargetKind.ImmutableHashSet => "ImmutableHashSet<" + elemFq + ">",
+            _ => "IImmutableSet<" + elemFq + ">"
         };
 
         var name = GeneratedNames.Collection + Hash(srcFq + "=>" + targetTag + nullTag + preserveTag);
@@ -282,7 +275,7 @@ internal static class CollectionConverter
         var identity = SymbolEqualityComparer.Default.Equals(srcElem, tgtElem)
                        && elemConverter is null
                        && elemNull == NullHandling.None;
-        var item  = ElementExpr("__item", elemConverter, elemNull, elemNeedsCtx);
+        var item = ElementExpr("__item", elemConverter, elemNull, elemNeedsCtx);
 
         // Effective preserve: are we emitting register-before-fill for THIS collection? (Preserve only.)
         var registerBeforeFill = isPreserve && IsMutableReferenceCollection(shape.Target);
@@ -293,21 +286,22 @@ internal static class CollectionConverter
         var threadCtx = registerBeforeFill || elemNeedsCtx;
 
         var sb = new StringBuilder();
-        EmitBody(sb, name, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape, identity, threadCtx, registerBeforeFill);
+        EmitBody(sb, name, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape, identity, threadCtx,
+            registerBeforeFill);
 
         synth[name] = new SynthesizedMethod(name, sb.ToString());
         return name;
     }
 
     /// <summary>
-    /// Re-emits an EXISTING collection helper (keyed by <paramref name="existingName"/>) so it threads
-    /// <c>(ctx, depth)</c> and routes each element through <paramref name="ctxElementConverter"/>
-    /// (a recursion-capable method — typically a <c>__DwarfMap_Depth_*</c> companion). Used by the
-    /// post-pass when a None-mode collection's element method is discovered to be self-recursive:
-    /// the originally-emitted body (which called the public entry on a fresh context → StackOverflow)
-    /// is overwritten in place with a depth-guarded, ctx-threaded body. Never register-before-fills
-    /// (that is Preserve-only). Overwriting in place keeps the helper name stable, so existing member
-    /// references stay valid — they just gain <c>ConverterNeedsDepthCtx = true</c>.
+    ///     Re-emits an EXISTING collection helper (keyed by <paramref name="existingName" />) so it threads
+    ///     <c>(ctx, depth)</c> and routes each element through <paramref name="ctxElementConverter" />
+    ///     (a recursion-capable method — typically a <c>__DwarfMap_Depth_*</c> companion). Used by the
+    ///     post-pass when a None-mode collection's element method is discovered to be self-recursive:
+    ///     the originally-emitted body (which called the public entry on a fresh context → StackOverflow)
+    ///     is overwritten in place with a depth-guarded, ctx-threaded body. Never register-before-fills
+    ///     (that is Preserve-only). Overwriting in place keeps the helper name stable, so existing member
+    ///     references stay valid — they just gain <c>ConverterNeedsDepthCtx = true</c>.
     /// </summary>
     public static void SynthesizeInPlace(
         Dictionary<string, SynthesizedMethod> synth, string existingName,
@@ -318,11 +312,11 @@ internal static class CollectionConverter
         var srcFq = Fq(srcType);
         var srcParamType = FqNullableParam(srcType);
         // Recursion-capable element → identity fast-path is never applicable; element call threads ctx.
-        var item = ElementExpr("__item", ctxElementConverter, elemNull, needsCtx: true);
+        var item = ElementExpr("__item", ctxElementConverter, elemNull, true);
 
         var sb = new StringBuilder();
         EmitBody(sb, existingName, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape,
-            identity: false, threadCtx: true, registerBeforeFill: false);
+            false, true, false);
         synth[existingName] = new SynthesizedMethod(existingName, sb.ToString());
     }
 
@@ -335,7 +329,8 @@ internal static class CollectionConverter
         switch (shape.Target)
         {
             case TargetKind.Array:
-                EmitArray(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx, registerBeforeFill);
+                EmitArray(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx,
+                    registerBeforeFill);
                 break;
 
             case TargetKind.List:
@@ -343,91 +338,91 @@ internal static class CollectionConverter
             case TargetKind.IList:
             case TargetKind.IReadOnlyList:
             case TargetKind.IReadOnlyCollection:
-                EmitList(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx, registerBeforeFill);
+                EmitList(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx,
+                    registerBeforeFill);
                 break;
 
             case TargetKind.HashSet:
             case TargetKind.ISet:
             case TargetKind.IReadOnlySet:
-                EmitHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, srcType, identity, shape.NullAsNull, threadCtx, registerBeforeFill);
+                EmitHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, srcType, identity, shape.NullAsNull,
+                    threadCtx, registerBeforeFill);
                 break;
 
             case TargetKind.IEnumerable:
                 // IEnumerable is lazy — cannot register-before-fill (no concrete instance exists).
                 // Still thread ctx/depth to element if needed (via closure in the Select lambda).
-                EmitLazyEnumerable(sb, name, srcFq, srcParamType, srcElem, elemFq, item, shape, identity, shape.NullAsNull, threadCtx);
+                EmitLazyEnumerable(sb, name, srcFq, srcParamType, srcElem, elemFq, item, shape, identity,
+                    shape.NullAsNull, threadCtx);
                 break;
 
             case TargetKind.ImmutableArray:
                 // ImmutableArray is a value-type struct — cannot be registered.
                 // Thread ctx/depth to element via the fill loop.
-                EmitImmutableArray(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx);
+                EmitImmutableArray(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull,
+                    threadCtx);
                 break;
 
             case TargetKind.ImmutableList:
             case TargetKind.IImmutableList:
-                EmitImmutableList(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx);
+                EmitImmutableList(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull,
+                    threadCtx);
                 break;
 
             case TargetKind.ImmutableHashSet:
             case TargetKind.IImmutableSet:
-                EmitImmutableHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx);
+                EmitImmutableHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull,
+                    threadCtx);
                 break;
         }
     }
 
-    // ── Emitters ─────────────────────────────────────────────────────────────
-
-    // Shared preserve-mode signature suffix: (DwarfRefContext ctx, int depth)
-    private const string CtxDepthParams = ", global::DwarfMapper.DwarfRefContext ctx, int depth";
-
     /// <summary>
-    /// The count-bearing capacity argument for a pre-sizable target (<c>List</c>/<c>HashSet</c>), or
-    /// <c>""</c> when the source count is not known cheaply (lazy/unknown-count). Pre-sizing avoids the
-    /// repeated internal-array doubling+copy that <c>new List&lt;T&gt;()</c> + <c>Add</c> incurs — matching
-    /// what the array (<c>new T[src.Length]</c>) and dictionary (<c>new Dictionary(src.Count)</c>) paths
-    /// already do. Over-reservation for sets (distinct &lt; source count) is harmless.
+    ///     The count-bearing capacity argument for a pre-sizable target (<c>List</c>/<c>HashSet</c>), or
+    ///     <c>""</c> when the source count is not known cheaply (lazy/unknown-count). Pre-sizing avoids the
+    ///     repeated internal-array doubling+copy that <c>new List&lt;T&gt;()</c> + <c>Add</c> incurs — matching
+    ///     what the array (<c>new T[src.Length]</c>) and dictionary (<c>new Dictionary(src.Count)</c>) paths
+    ///     already do. Over-reservation for sets (distinct &lt; source count) is harmless.
     /// </summary>
-    private static string CapacityArg(Shape shape) => shape.Count switch
+    private static string CapacityArg(Shape shape)
     {
-        CountKind.Length => "src.Length",
-        CountKind.Count => "src.Count",
-        _ => "",
-    };
+        return shape.Count switch
+        {
+            CountKind.Length => "src.Length",
+            CountKind.Count => "src.Count",
+            _ => ""
+        };
+    }
 
     private static void EmitArray(
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool threadCtx, bool registerBeforeFill)
     {
-        var retType   = nullAsNull ? elem + "[]?" : elem + "[]";
-        var paramType = srcParamType;  // nullable-aware; null guard inside the body handles it
+        var retType = nullAsNull ? elem + "[]?" : elem + "[]";
+        var paramType = srcParamType; // nullable-aware; null guard inside the body handles it
         var emptyExpr = nullAsNull ? "null" : "global::System.Array.Empty<" + elem + ">()";
         var ctxParams = threadCtx ? CtxDepthParams : "";
 
         sb.Append("    private ").Append(retType).Append(' ').Append(name)
-          .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity && shape.SourceIsArray && !registerBeforeFill && !threadCtx)
         {
             // identity array→array: Clone() fast-path (only safe without register-before-fill / ctx threading).
             sb.Append("        return src is null ? ")
-              .Append(emptyExpr)
-              .Append(" : (").Append(elem).Append("[])src.Clone();\n");
+                .Append(emptyExpr)
+                .Append(" : (").Append(elem).Append("[])src.Clone();\n");
         }
         else if (shape.Count != CountKind.None)
         {
-            var countExpr   = shape.Count == CountKind.Length ? "src.Length" : "src.Count";
-            var arrayAlloc  = ArrayNewExpr(elem, countExpr);
+            var countExpr = shape.Count == CountKind.Length ? "src.Length" : "src.Count";
+            var arrayAlloc = ArrayNewExpr(elem, countExpr);
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
             if (registerBeforeFill)
-            {
-                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(elem).Append("[])__cc;\n");
-            }
+                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(elem)
+                    .Append("[])__cc;\n");
             sb.Append("        var __r = ").Append(arrayAlloc).Append(";\n");
-            if (registerBeforeFill)
-            {
-                sb.Append("        ctx.SetReference(src, __r);\n");
-            }
+            if (registerBeforeFill) sb.Append("        ctx.SetReference(src, __r);\n");
             if (shape.SourceIsArray && !registerBeforeFill && !threadCtx)
             {
                 // Non-recursive array→array (None mode): index with a single length-bounded counter over
@@ -437,13 +432,14 @@ internal static class CollectionConverter
                 // slower in a hot 1000-element loop. Preserve (register-before-fill), ctx-threaded, and
                 // non-array (no indexer) sources keep the foreach form unchanged.
                 sb.Append("        for (int __i = 0; __i < ").Append(countExpr).Append("; __i++) { __r[__i] = ")
-                  .Append(item.Replace("__item", "src[__i]")).Append("; }\n");
+                    .Append(item.Replace("__item", "src[__i]")).Append("; }\n");
             }
             else
             {
                 sb.Append("        var __i = 0;\n");
                 sb.Append("        foreach (var __item in src) { __r[__i++] = ").Append(item).Append("; }\n");
             }
+
             sb.Append("        return __r;\n");
         }
         else
@@ -458,18 +454,15 @@ internal static class CollectionConverter
             // unknown-count sources mapping to an array target. Two-parents-sharing is fully correct.
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
             if (registerBeforeFill)
-            {
-                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(elem).Append("[])__cc;\n");
-            }
+                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(elem)
+                    .Append("[])__cc;\n");
             sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
             sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
             sb.Append("        var __r = __buf.ToArray();\n");
-            if (registerBeforeFill)
-            {
-                sb.Append("        ctx.SetReference(src, __r);\n");
-            }
+            if (registerBeforeFill) sb.Append("        ctx.SetReference(src, __r);\n");
             sb.Append("        return __r;\n");
         }
+
         sb.Append("    }\n");
     }
 
@@ -477,20 +470,20 @@ internal static class CollectionConverter
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool threadCtx, bool registerBeforeFill)
     {
-        var listFq    = "global::System.Collections.Generic.List<" + elem + ">";
-        var retFq     = nullAsNull ? listFq + "?" : listFq;
+        var listFq = "global::System.Collections.Generic.List<" + elem + ">";
+        var retFq = nullAsNull ? listFq + "?" : listFq;
         var emptyExpr = nullAsNull ? "null" : "new " + listFq + "()";
-        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
+        var paramType = srcParamType; // nullable-aware; null guard inside handles it
         var ctxParams = threadCtx ? CtxDepthParams : "";
 
         // Return type is always List<T> (concrete); the field type is an interface but assignable.
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-          .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity && !registerBeforeFill && !threadCtx)
         {
             sb.Append("        return src is null ? ").Append(emptyExpr)
-              .Append(" : new ").Append(listFq).Append("(src);\n");
+                .Append(" : new ").Append(listFq).Append("(src);\n");
         }
         else if (registerBeforeFill)
         {
@@ -512,26 +505,28 @@ internal static class CollectionConverter
             sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
             sb.Append("        return __r;\n");
         }
+
         sb.Append("    }\n");
     }
 
     private static void EmitHashSet(
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
-        string item, Shape shape, ITypeSymbol srcType, bool identity, bool nullAsNull, bool threadCtx, bool registerBeforeFill)
+        string item, Shape shape, ITypeSymbol srcType, bool identity, bool nullAsNull, bool threadCtx,
+        bool registerBeforeFill)
     {
-        var setFq     = "global::System.Collections.Generic.HashSet<" + elem + ">";
-        var retFq     = nullAsNull ? setFq + "?" : setFq;
+        var setFq = "global::System.Collections.Generic.HashSet<" + elem + ">";
+        var retFq = nullAsNull ? setFq + "?" : setFq;
         var emptyExpr = nullAsNull ? "null" : "new " + setFq + "()";
-        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
+        var paramType = srcParamType; // nullable-aware; null guard inside handles it
         var ctxParams = threadCtx ? CtxDepthParams : "";
 
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-          .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity && IsHashSetType(srcType) && !registerBeforeFill && !threadCtx)
         {
             sb.Append("        return src is null ? ").Append(emptyExpr)
-              .Append(" : new ").Append(setFq).Append("(src);\n");
+                .Append(" : new ").Append(setFq).Append("(src);\n");
         }
         else if (registerBeforeFill)
         {
@@ -549,6 +544,7 @@ internal static class CollectionConverter
             sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
             sb.Append("        return __r;\n");
         }
+
         sb.Append("    }\n");
     }
 
@@ -561,16 +557,16 @@ internal static class CollectionConverter
         // We CAN thread ctx/depth into the Select lambda if the element converter needs it.
         // Note: Enumerable.Select returns a lazy sequence (not materialised); the consumer
         // enumerates it on demand, which is correct for IEnumerable<T> target fields.
-        var ieFq      = "global::System.Collections.Generic.IEnumerable<" + elem + ">";
-        var retFq     = nullAsNull ? ieFq + "?" : ieFq;
+        var ieFq = "global::System.Collections.Generic.IEnumerable<" + elem + ">";
+        var retFq = nullAsNull ? ieFq + "?" : ieFq;
         var emptyExpr = nullAsNull
             ? "null"
             : "global::System.Array.Empty<" + elem + ">()";
-        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
+        var paramType = srcParamType; // nullable-aware; null guard inside handles it
         var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
 
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-          .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity)
         {
@@ -584,10 +580,12 @@ internal static class CollectionConverter
             // We must specify type arguments explicitly so the C# compiler doesn't infer the wrong
             // return type when the element conversion is implicit (e.g. int→long).
             var srcElemFq = Fq(srcElemType);
-            var selectFq  = "global::System.Linq.Enumerable";
+            var selectFq = "global::System.Linq.Enumerable";
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return ").Append(selectFq).Append(".Select<").Append(srcElemFq).Append(", ").Append(elem).Append(">(src, __item => ").Append(item).Append(");\n");
+            sb.Append("        return ").Append(selectFq).Append(".Select<").Append(srcElemFq).Append(", ").Append(elem)
+                .Append(">(src, __item => ").Append(item).Append(");\n");
         }
+
         sb.Append("    }\n");
     }
 
@@ -595,8 +593,8 @@ internal static class CollectionConverter
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
-        var tgtFq     = "global::System.Collections.Immutable.ImmutableArray<" + elem + ">";
-        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
+        var tgtFq = "global::System.Collections.Immutable.ImmutableArray<" + elem + ">";
+        var paramType = srcParamType; // nullable-aware; null guard inside handles it
         // ImmutableArray<T> is a value type. Under AsNull, we emit ImmutableArray<T>? (nullable struct)
         // so a null source maps to null (HasValue=false) rather than default(ImmutableArray<T>)
         // which would yield HasValue=true with an empty value — a silent loss.
@@ -608,31 +606,34 @@ internal static class CollectionConverter
         // When the source type itself is ImmutableArray<T> (a value-type struct), the nullable
         // parameter is Nullable<ImmutableArray<T>> which does NOT implement IEnumerable<T>.
         // We must unwrap it with .GetValueOrDefault() before passing to CreateRange / foreach.
-        bool srcIsImmutableArrayStruct = srcFq.StartsWith(
+        var srcIsImmutableArrayStruct = srcFq.StartsWith(
             "global::System.Collections.Immutable.ImmutableArray<",
-            System.StringComparison.Ordinal);
-        string srcExpr = srcIsImmutableArrayStruct ? "src.GetValueOrDefault()" : "src";
+            StringComparison.Ordinal);
+        var srcExpr = srcIsImmutableArrayStruct ? "src.GetValueOrDefault()" : "src";
 
         // Under AsNull, return ImmutableArray<T>? so null source yields null (HasValue=false).
         var retTypeFq = nullAsNull ? tgtFq + "?" : tgtFq;
 
         sb.Append("    private ").Append(retTypeFq).Append(' ').Append(name)
-          .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity && !elemNeedsCtx)
         {
             // Identity elements without ctx threading: copy straight into the ImmutableArray via CreateRange.
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(").Append(srcExpr).Append(");\n");
+            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(").Append(srcExpr)
+                .Append(");\n");
         }
         else
         {
             // Need element conversion or ctx threading: build a List first, then CreateRange.
             sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
             sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
-            sb.Append("        foreach (var __item in ").Append(srcExpr).Append(") { __buf.Add(").Append(item).Append("); }\n");
+            sb.Append("        foreach (var __item in ").Append(srcExpr).Append(") { __buf.Add(").Append(item)
+                .Append("); }\n");
             sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(__buf);\n");
         }
+
         sb.Append("    }\n");
     }
 
@@ -640,16 +641,16 @@ internal static class CollectionConverter
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
-        var tgtFq     = "global::System.Collections.Immutable.ImmutableList<" + elem + ">";
-        var retFq     = nullAsNull ? tgtFq + "?" : tgtFq;
-        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
+        var tgtFq = "global::System.Collections.Immutable.ImmutableList<" + elem + ">";
+        var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
+        var paramType = srcParamType; // nullable-aware; null guard inside handles it
         var emptyExpr = nullAsNull
             ? "null"
             : "global::System.Collections.Immutable.ImmutableList<" + elem + ">.Empty";
         var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
 
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-          .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity && !elemNeedsCtx)
         {
@@ -663,6 +664,7 @@ internal static class CollectionConverter
             sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
             sb.Append("        return global::System.Collections.Immutable.ImmutableList.CreateRange(__buf);\n");
         }
+
         sb.Append("    }\n");
     }
 
@@ -670,16 +672,16 @@ internal static class CollectionConverter
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
-        var tgtFq     = "global::System.Collections.Immutable.ImmutableHashSet<" + elem + ">";
-        var retFq     = nullAsNull ? tgtFq + "?" : tgtFq;
-        var paramType = srcParamType;  // nullable-aware; null guard inside handles it
+        var tgtFq = "global::System.Collections.Immutable.ImmutableHashSet<" + elem + ">";
+        var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
+        var paramType = srcParamType; // nullable-aware; null guard inside handles it
         var emptyExpr = nullAsNull
             ? "null"
             : "global::System.Collections.Immutable.ImmutableHashSet<" + elem + ">.Empty";
         var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
 
         sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-          .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
 
         if (identity && !elemNeedsCtx)
         {
@@ -693,6 +695,7 @@ internal static class CollectionConverter
             sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
             sb.Append("        return global::System.Collections.Immutable.ImmutableHashSet.CreateRange(__buf);\n");
         }
+
         sb.Append("    }\n");
     }
 
@@ -702,45 +705,32 @@ internal static class CollectionConverter
     public static string SynthesizeBlit(
         Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcArrayType, ITypeSymbol srcElem, ITypeSymbol tgtElem)
     {
-        var elem  = Fq(tgtElem);
-        var srcE  = Fq(srcElem);
+        var elem = Fq(tgtElem);
+        var srcE = Fq(srcElem);
         var srcFq = Fq(srcArrayType);
-        var name  = "__DwarfBlit_" + Hash(srcFq + "=>" + elem + "[]");
+        var name = "__DwarfBlit_" + Hash(srcFq + "=>" + elem + "[]");
         if (synth.ContainsKey(name))
             return name;
         var sb = new StringBuilder();
-        sb.Append("    private static ").Append(elem).Append("[] ").Append(name).Append('(').Append(srcFq).Append(" src)\n    {\n");
+        sb.Append("    private static ").Append(elem).Append("[] ").Append(name).Append('(').Append(srcFq)
+            .Append(" src)\n    {\n");
         sb.Append("        if (src is null) return global::System.Array.Empty<").Append(elem).Append(">();\n");
         sb.Append("        if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(srcE)
-          .Append(">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(elem).Append(">())\n");
-        sb.Append("            throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");\n");
+            .Append(">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(elem).Append(">())\n");
+        sb.Append(
+            "            throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");\n");
         sb.Append("        var __r = new ").Append(elem).Append("[src.Length];\n");
-        sb.Append("        global::System.Runtime.InteropServices.MemoryMarshal.Cast<").Append(srcE).Append(", ").Append(elem)
-          .Append(">(new global::System.ReadOnlySpan<").Append(srcE).Append(">(src)).CopyTo(__r);\n");
+        sb.Append("        global::System.Runtime.InteropServices.MemoryMarshal.Cast<").Append(srcE).Append(", ")
+            .Append(elem)
+            .Append(">(new global::System.ReadOnlySpan<").Append(srcE).Append(">(src)).CopyTo(__r);\n");
         sb.Append("        return __r;\n    }\n");
         synth[name] = new SynthesizedMethod(name, sb.ToString());
         return name;
     }
 
-    // ── SIMD widening for primitive array conversions ────────────────────────────
-    // The seven element pairs that System.Numerics.Vector.Widen supports — each is a PROVABLY-LOSSLESS
-    // same-signedness widening (smaller → larger of the same kind), so the vectorized result is bit-for-bit
-    // identical to the scalar implicit widening. Anything else (sign changes, narrowing, multi-step,
-    // nullable, non-primitive) is NOT in this set and falls back to the element loop / CreateChecked path.
-    private static readonly (SpecialType Src, SpecialType Tgt)[] WidenPairs =
-    {
-        (SpecialType.System_Byte,   SpecialType.System_UInt16),
-        (SpecialType.System_UInt16, SpecialType.System_UInt32),
-        (SpecialType.System_UInt32, SpecialType.System_UInt64),
-        (SpecialType.System_SByte,  SpecialType.System_Int16),
-        (SpecialType.System_Int16,  SpecialType.System_Int32),
-        (SpecialType.System_Int32,  SpecialType.System_Int64),
-        (SpecialType.System_Single, SpecialType.System_Double),
-    };
-
     /// <summary>
-    /// True when <paramref name="srcElem"/>→<paramref name="tgtElem"/> is one of the seven
-    /// <c>Vector.Widen</c>-supported lossless primitive widenings (e.g. <c>int→long</c>, <c>float→double</c>).
+    ///     True when <paramref name="srcElem" />→<paramref name="tgtElem" /> is one of the seven
+    ///     <c>Vector.Widen</c>-supported lossless primitive widenings (e.g. <c>int→long</c>, <c>float→double</c>).
     /// </summary>
     public static bool IsWidenPair(ITypeSymbol srcElem, ITypeSymbol tgtElem)
     {
@@ -751,23 +741,24 @@ internal static class CollectionConverter
     }
 
     /// <summary>
-    /// Synthesizes a vectorized <c>TSrc[] → TDst[]</c> widening helper using <c>Vector.Widen</c>, with a
-    /// hardware-accelerated guard and a scalar tail/fallback. The output is identical to the scalar
-    /// implicit widening — this is purely a throughput optimisation. Reflection-free / AOT-safe
-    /// (<c>Vector&lt;T&gt;</c> + <c>Vector.Widen</c> are JIT/AOT intrinsics).
+    ///     Synthesizes a vectorized <c>TSrc[] → TDst[]</c> widening helper using <c>Vector.Widen</c>, with a
+    ///     hardware-accelerated guard and a scalar tail/fallback. The output is identical to the scalar
+    ///     implicit widening — this is purely a throughput optimisation. Reflection-free / AOT-safe
+    ///     (<c>Vector&lt;T&gt;</c> + <c>Vector.Widen</c> are JIT/AOT intrinsics).
     /// </summary>
     public static string SynthesizeSimdWiden(
         Dictionary<string, SynthesizedMethod> synth, ITypeSymbol srcArrayType, ITypeSymbol srcElem, ITypeSymbol tgtElem)
     {
-        var dst   = Fq(tgtElem);
-        var srcE  = Fq(srcElem);
+        var dst = Fq(tgtElem);
+        var srcE = Fq(srcElem);
         var srcFq = Fq(srcArrayType);
-        var name  = "__DwarfWiden_" + Hash(srcFq + "=>" + dst + "[]");
+        var name = "__DwarfWiden_" + Hash(srcFq + "=>" + dst + "[]");
         if (synth.ContainsKey(name))
             return name;
 
         var sb = new StringBuilder();
-        sb.Append("    private static ").Append(dst).Append("[] ").Append(name).Append('(').Append(srcFq).Append(" src)\n    {\n");
+        sb.Append("    private static ").Append(dst).Append("[] ").Append(name).Append('(').Append(srcFq)
+            .Append(" src)\n    {\n");
         sb.Append("        if (src is null) return global::System.Array.Empty<").Append(dst).Append(">();\n");
         sb.Append("        var __r = new ").Append(dst).Append("[src.Length];\n");
         sb.Append("        int __i = 0;\n");
@@ -775,7 +766,8 @@ internal static class CollectionConverter
         sb.Append("            int __w = global::System.Numerics.Vector<").Append(srcE).Append(">.Count;\n");
         sb.Append("            int __half = global::System.Numerics.Vector<").Append(dst).Append(">.Count;\n");
         sb.Append("            for (; __i + __w <= src.Length; __i += __w)\n            {\n");
-        sb.Append("                var __v = new global::System.Numerics.Vector<").Append(srcE).Append(">(src, __i);\n");
+        sb.Append("                var __v = new global::System.Numerics.Vector<").Append(srcE)
+            .Append(">(src, __i);\n");
         sb.Append("                global::System.Numerics.Vector.Widen(__v, out var __lo, out var __hi);\n");
         sb.Append("                __lo.CopyTo(__r, __i);\n");
         sb.Append("                __hi.CopyTo(__r, __i + __half);\n");
@@ -790,20 +782,21 @@ internal static class CollectionConverter
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Generates a correct C# array creation expression for element type <paramref name="elem"/>
-    /// with a size expression. Handles jagged arrays like <c>int[]</c> → <c>new int[n][]</c>
-    /// instead of the invalid <c>new int[][n]</c>.
+    ///     Generates a correct C# array creation expression for element type <paramref name="elem" />
+    ///     with a size expression. Handles jagged arrays like <c>int[]</c> → <c>new int[n][]</c>
+    ///     instead of the invalid <c>new int[][n]</c>.
     /// </summary>
     private static string ArrayNewExpr(string elem, string sizeExpr)
     {
         // If elem ends with "[]", it's a jagged array element.
         // C# syntax: new ElemBase[size][] (size goes on the FIRST bracket)
-        if (elem.EndsWith("[]", System.StringComparison.Ordinal))
+        if (elem.EndsWith("[]", StringComparison.Ordinal))
         {
-            var baseType   = elem.Substring(0, elem.Length - 2);
+            var baseType = elem.Substring(0, elem.Length - 2);
             var bracketRep = elem.Substring(baseType.Length); // "[]"
             return "new " + baseType + "[" + sizeExpr + "]" + bracketRep;
         }
+
         return "new " + elem + "[" + sizeExpr + "]";
     }
 
@@ -815,18 +808,22 @@ internal static class CollectionConverter
             var args = needsCtx ? item + ", ctx, depth + 1" : item;
             return conv + "(" + args + ")";
         }
+
         return nh switch
         {
-            NullHandling.ThrowIfNull   => item + " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")",
+            NullHandling.ThrowIfNull => item +
+                                        " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")",
             NullHandling.ValueOrDefault => item + ".GetValueOrDefault()",
-            _ => item,
+            _ => item
         };
     }
 
-    private static bool IsHashSetType(ITypeSymbol t) =>
-        t is INamedTypeSymbol n && n.TypeArguments.Length == 1
-        && n.Name == "HashSet"
-        && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
+    private static bool IsHashSetType(ITypeSymbol t)
+    {
+        return t is INamedTypeSymbol n && n.TypeArguments.Length == 1
+                                       && n.Name == "HashSet"
+                                       && n.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
+    }
 
     private static bool IsIEnumerableT(ITypeSymbol t, out ITypeSymbol? element)
     {
@@ -849,11 +846,12 @@ internal static class CollectionConverter
             element = n.TypeArguments[0];
             return true;
         }
+
         return false;
     }
 
     /// <summary>
-    /// Matches a named type in a specific namespace with a given number of type arguments.
+    ///     Matches a named type in a specific namespace with a given number of type arguments.
     /// </summary>
     private static bool IsExactNamedType(ITypeSymbol t, string name, string ns, int arity, out ITypeSymbol? firstArg)
     {
@@ -866,46 +864,46 @@ internal static class CollectionConverter
             firstArg = n.TypeArguments[0];
             return true;
         }
+
         return false;
     }
 
     internal static bool TryGetEnumerableElement(ITypeSymbol src, out ITypeSymbol element, out CountKind count)
     {
         element = src;
-        count   = CountKind.None;
+        count = CountKind.None;
 
         if (src is IArrayTypeSymbol arr)
         {
             element = arr.ElementType;
-            count   = CountKind.Length;
+            count = CountKind.Length;
             return true;
         }
 
         INamedTypeSymbol? enumerable = null;
         foreach (var candidate in Self(src))
-        {
             if (candidate is INamedTypeSymbol named
                 && named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
             {
                 enumerable = named;
                 break;
             }
-        }
+
         if (enumerable is null)
             return false;
 
         element = enumerable.TypeArguments[0];
 
         foreach (var candidate in Self(src))
-        {
             if (candidate is INamedTypeSymbol named
                 && (named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_ICollection_T
-                    || named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IReadOnlyCollection_T))
+                    || named.OriginalDefinition.SpecialType ==
+                    SpecialType.System_Collections_Generic_IReadOnlyCollection_T))
             {
                 count = CountKind.Count;
                 break;
             }
-        }
+
         return true;
     }
 
@@ -916,32 +914,27 @@ internal static class CollectionConverter
             yield return i;
     }
 
-    private static string Fq(ITypeSymbol t) =>
-        t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    private static string Fq(ITypeSymbol t)
+    {
+        return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    }
 
     /// <summary>
-    /// Formats a type argument with nullable annotation preserved (e.g. <c>List&lt;int&gt;?</c>).
-    /// Used for element types in the generated container type names and Add() calls so nullable
-    /// element types (e.g. element <c>List&lt;int&gt;?</c>) are correctly reflected in the helper.
+    ///     Formats a type argument with nullable annotation preserved (e.g. <c>List&lt;int&gt;?</c>).
+    ///     Used for element types in the generated container type names and Add() calls so nullable
+    ///     element types (e.g. element <c>List&lt;int&gt;?</c>) are correctly reflected in the helper.
     /// </summary>
-    private static string FqTypeArg(ITypeSymbol t) =>
-        t.ToDisplayString(NullableFullyQualifiedFormat);
-
-    // Nullable-aware fully-qualified format — includes ? on nullable reference type arguments.
-    // Used for PARAMETER types so the helper signature accepts nullable-annotated source types
-    // (e.g. Dictionary<string, List<int>?>) without a CS8620 mismatch.
-    private static readonly Microsoft.CodeAnalysis.SymbolDisplayFormat NullableFullyQualifiedFormat =
-        Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat
-            .WithMiscellaneousOptions(
-                Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions
-                | Microsoft.CodeAnalysis.SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+    private static string FqTypeArg(ITypeSymbol t)
+    {
+        return t.ToDisplayString(NullableFullyQualifiedFormat);
+    }
 
     /// <summary>
-    /// Computes the nullable-outer parameter type for a collection/dict helper method.
-    /// Strips any OUTER nullable annotation (e.g. <c>List&lt;int&gt;?</c> → <c>List&lt;int&gt;</c>),
-    /// formats with inner nullable annotations preserved, then adds <c>?</c> for the outer nullable.
-    /// This ensures the helper accepts both nullable and non-nullable outer types while correctly
-    /// matching inner-nullable type arguments (e.g. <c>Dictionary&lt;string, List&lt;int&gt;?&gt;</c>).
+    ///     Computes the nullable-outer parameter type for a collection/dict helper method.
+    ///     Strips any OUTER nullable annotation (e.g. <c>List&lt;int&gt;?</c> → <c>List&lt;int&gt;</c>),
+    ///     formats with inner nullable annotations preserved, then adds <c>?</c> for the outer nullable.
+    ///     This ensures the helper accepts both nullable and non-nullable outer types while correctly
+    ///     matching inner-nullable type arguments (e.g. <c>Dictionary&lt;string, List&lt;int&gt;?&gt;</c>).
     /// </summary>
     private static string FqNullableParam(ITypeSymbol t)
     {
@@ -955,13 +948,66 @@ internal static class CollectionConverter
     {
         unchecked
         {
-            uint h = 2166136261u;
+            var h = 2166136261u;
             foreach (var c in s)
             {
                 h ^= c;
                 h *= 16777619u;
             }
-            return h.ToString("x8", System.Globalization.CultureInfo.InvariantCulture);
+
+            return h.ToString("x8", CultureInfo.InvariantCulture);
         }
+    }
+
+    // ─── Target kinds ─────────────────────────────────────────────────────────
+    internal enum TargetKind
+    {
+        // ── Concrete / today ──────────────────────────────────────────
+        Array, // T[]            — projection-translatable
+        List, // List<T>        — projection-translatable
+        HashSet, // HashSet<T>     — NOT translatable
+
+        // ── Interface → List<T> ──────────────────────────────────────
+        IEnumerable, // IEnumerable<T> — projection-translatable (LAZY)
+        ICollection, // ICollection<T> — projection-translatable
+        IList, // IList<T>       — projection-translatable
+        IReadOnlyList, // IReadOnlyList<T>       — projection-translatable
+        IReadOnlyCollection, // IReadOnlyCollection<T> — projection-translatable
+
+        // ── Interface → HashSet<T> ───────────────────────────────────
+        ISet, // ISet<T>           — NOT translatable
+        IReadOnlySet, // IReadOnlySet<T>   — NOT translatable
+
+        // ── Immutable ────────────────────────────────────────────────
+        ImmutableArray, // ImmutableArray<T>      — NOT translatable
+        ImmutableList, // ImmutableList<T>       — NOT translatable
+        IImmutableList, // IImmutableList<T>      — NOT translatable
+        ImmutableHashSet, // ImmutableHashSet<T>    — NOT translatable
+        IImmutableSet // IImmutableSet<T>       — NOT translatable
+    }
+
+    internal enum CountKind
+    {
+        None,
+        Length,
+        Count
+    }
+
+    internal readonly struct Shape
+    {
+        public Shape(TargetKind target, bool sourceIsArray, CountKind count, bool nullAsNull)
+        {
+            Target = target;
+            SourceIsArray = sourceIsArray;
+            Count = count;
+            NullAsNull = nullAsNull;
+        }
+
+        public TargetKind Target { get; }
+        public bool SourceIsArray { get; }
+        public CountKind Count { get; }
+
+        /// <summary>When true, a null source is mapped as null (AsNull strategy).</summary>
+        public bool NullAsNull { get; }
     }
 }

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Linq;
+
+using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Generator-level checks for integral narrowing / sign-change conversions
-/// via INumberBase.CreateChecked.
+///     Generator-level checks for integral narrowing / sign-change conversions
+///     via INumberBase.CreateChecked.
 /// </summary>
 public class NumericConversionTests
 {
@@ -16,15 +16,15 @@ public class NumericConversionTests
     public void Long_to_int_narrowing_compiles_and_emits_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public long V { get; set; } }
-            public class D { public int  V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public long V { get; set; } }
+                           public class D { public int  V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -33,15 +33,15 @@ public class NumericConversionTests
     public void Int_to_uint_narrowing_compiles_and_emits_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public int  V { get; set; } }
-            public class D { public uint V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int  V { get; set; } }
+                           public class D { public uint V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -50,15 +50,15 @@ public class NumericConversionTests
     public void Int_to_short_narrowing_compiles_and_emits_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public int   V { get; set; } }
-            public class D { public short V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int   V { get; set; } }
+                           public class D { public short V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -67,15 +67,15 @@ public class NumericConversionTests
     public void Ulong_to_long_narrowing_compiles_and_emits_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public ulong V { get; set; } }
-            public class D { public long  V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public ulong V { get; set; } }
+                           public class D { public long  V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -86,15 +86,15 @@ public class NumericConversionTests
     public void Byte_to_int_widening_does_NOT_emit_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public byte V { get; set; } }
-            public class D { public int  V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public byte V { get; set; } }
+                           public class D { public int  V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -103,15 +103,15 @@ public class NumericConversionTests
     public void Int_to_long_widening_does_NOT_emit_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public int  V { get; set; } }
-            public class D { public long V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int  V { get; set; } }
+                           public class D { public long V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -120,15 +120,15 @@ public class NumericConversionTests
     public void Byte_to_long_widening_does_NOT_emit_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public byte V { get; set; } }
-            public class D { public long V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public byte V { get; set; } }
+                           public class D { public long V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -137,15 +137,15 @@ public class NumericConversionTests
     public void Uint_to_ulong_widening_does_NOT_emit_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public uint  V { get; set; } }
-            public class D { public ulong V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public uint  V { get; set; } }
+                           public class D { public ulong V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -154,15 +154,15 @@ public class NumericConversionTests
     public void Ushort_to_int_widening_does_NOT_emit_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public ushort V { get; set; } }
-            public class D { public int    V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public ushort V { get; set; } }
+                           public class D { public int    V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -178,16 +178,16 @@ public class NumericConversionTests
         // (which uses the prefix "__DwarfMap_Num_"), but should contain CreateChecked from
         // EnumConverter (prefix "__DwarfMap_EnumNum_").
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public enum Color { Red, Green, Blue }
-            public class S { public Color V { get; set; } }
-            public class D { public int   V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public enum Color { Red, Green, Blue }
+                           public class S { public Color V { get; set; } }
+                           public class D { public int   V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         // Must use EnumConverter path, not NumericConverter path
         Assert.DoesNotContain("__DwarfMap_Num_", generated, StringComparison.Ordinal);
@@ -201,15 +201,15 @@ public class NumericConversionTests
     public void Int_to_int_identity_does_NOT_emit_CreateChecked()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public int V { get; set; } }
-            public class D { public int V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int V { get; set; } }
+                           public class D { public int V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -224,20 +224,20 @@ public class NumericConversionTests
         // built-in NumericConverter synthesized method. Today NumericConverter fires
         // BEFORE autoCandidates → this FAILS (generates __DwarfMap_Num_ instead of Shrink).
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public long V { get; set; } }
-            public class D { public int  V { get; set; } }
-            [DwarfMapper]
-            public partial class M
-            {
-                public partial D Map(S s);
-                private static int Shrink(long v) => (int)v;
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public long V { get; set; } }
+                           public class D { public int  V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial D Map(S s);
+                               private static int Shrink(long v) => (int)v;
+                           }
+                           """;
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         // User method must be called, not the synthesized one
         Assert.Contains("Shrink", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("__DwarfMap_Num_", generated, StringComparison.Ordinal);
@@ -249,15 +249,15 @@ public class NumericConversionTests
     public void Nullable_int_to_short_narrowing_compiles()
     {
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public class S { public int?  V { get; set; } }
-            public class D { public short V { get; set; } }
-            [DwarfMapper]
-            public partial class M { public partial D Map(S s); }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int?  V { get; set; } }
+                           public class D { public short V { get; set; } }
+                           [DwarfMapper]
+                           public partial class M { public partial D Map(S s); }
+                           """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }

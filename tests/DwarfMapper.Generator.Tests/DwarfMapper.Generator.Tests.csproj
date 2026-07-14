@@ -1,37 +1,37 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <!-- CA1707: test methods intentionally use underscores (Given_When_Then / Method_Scenario_Expected style) -->
-    <!-- CA5394: SyntheticSchema uses System.Random for deterministic seeded fuzzing, not cryptography -->
-    <!-- CA1707: test methods intentionally use underscores -->
-    <!-- CA5394: deterministic seeded fuzzing uses System.Random -->
-    <!-- CA1515: test types need not be sealed -->
-    <!-- CA1861: InlineData / inline array literals are acceptable in test code -->
-    <!-- CA1508: dead-code analyzer false positive in test assertions -->
-    <NoWarn>$(NoWarn);CA1707;CA5394;CA1515;CA1861;CA1508</NoWarn>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="xunit" />
-    <PackageReference Include="xunit.runner.visualstudio" />
-    <PackageReference Include="coverlet.collector" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
-    <PackageReference Include="Verify.Xunit" />
-    <PackageReference Include="Verify.SourceGenerators" />
-    <!-- Lets the harness reference Microsoft.Extensions.DependencyInjection so the generator emits the
-         AddDwarfMappers() DI registration (covers the per-assembly-namespace / CS0121 regression). -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj" />
-    <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj" />
-    <ProjectReference Include="..\..\src\DwarfMapper.CodeFixes\DwarfMapper.CodeFixes.csproj" />
-    <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <Using Include="Xunit" />
-  </ItemGroup>
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <!-- CA1707: test methods intentionally use underscores (Given_When_Then / Method_Scenario_Expected style) -->
+        <!-- CA5394: SyntheticSchema uses System.Random for deterministic seeded fuzzing, not cryptography -->
+        <!-- CA1707: test methods intentionally use underscores -->
+        <!-- CA5394: deterministic seeded fuzzing uses System.Random -->
+        <!-- CA1515: test types need not be sealed -->
+        <!-- CA1861: InlineData / inline array literals are acceptable in test code -->
+        <!-- CA1508: dead-code analyzer false positive in test assertions -->
+        <NoWarn>$(NoWarn);CA1707;CA5394;CA1515;CA1861;CA1508</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="xunit"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="coverlet.collector"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces"/>
+        <PackageReference Include="Verify.Xunit"/>
+        <PackageReference Include="Verify.SourceGenerators"/>
+        <!-- Lets the harness reference Microsoft.Extensions.DependencyInjection so the generator emits the
+             AddDwarfMappers() DI registration (covers the per-assembly-namespace / CS0121 regression). -->
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.CodeFixes\DwarfMapper.CodeFixes.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj"/>
+    </ItemGroup>
+    <ItemGroup>
+        <Using Include="Xunit"/>
+    </ItemGroup>
 </Project>

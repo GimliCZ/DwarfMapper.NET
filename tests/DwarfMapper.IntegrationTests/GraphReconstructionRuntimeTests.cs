@@ -1,24 +1,52 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
 // Class node with named neighbour slots to build the owner graph A→B, B⇄C, C⇄D, B⇄D.
-public class GNode { public string Name { get; set; } = ""; public GNode? B { get; set; } public GNode? C { get; set; } public GNode? D { get; set; } }
-public class GNodeDto { public string Name { get; set; } = ""; public GNodeDto? B { get; set; } public GNodeDto? C { get; set; } public GNodeDto? D { get; set; } }
+public class GNode
+{
+    public string Name { get; set; } = "";
+    public GNode? B { get; set; }
+    public GNode? C { get; set; }
+    public GNode? D { get; set; }
+}
+
+public class GNodeDto
+{
+    public string Name { get; set; } = "";
+    public GNodeDto? B { get; set; }
+    public GNodeDto? C { get; set; }
+    public GNodeDto? D { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class GraphMapper { public partial GNodeDto Map(GNode n); }
+public partial class GraphMapper
+{
+    public partial GNodeDto Map(GNode n);
+}
 
 // Record nodes (value equality) to prove distinct-but-equal nodes are NOT merged.
-public class RecHolder { public RecNode First { get; set; } = null!; public RecNode Second { get; set; } = null!; }
+public class RecHolder
+{
+    public RecNode First { get; set; } = null!;
+    public RecNode Second { get; set; } = null!;
+}
+
 public record RecNode(string Name);
-public class RecHolderDto { public RecNodeDto First { get; set; } = null!; public RecNodeDto Second { get; set; } = null!; }
+
+public class RecHolderDto
+{
+    public RecNodeDto First { get; set; } = null!;
+    public RecNodeDto Second { get; set; } = null!;
+}
+
 public record RecNodeDto(string Name);
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class RecGraphMapper { public partial RecHolderDto Map(RecHolder h); }
+public partial class RecGraphMapper
+{
+    public partial RecHolderDto Map(RecHolder h);
+}
 
 public class GraphReconstructionRuntimeTests
 {
@@ -30,9 +58,12 @@ public class GraphReconstructionRuntimeTests
         var c = new GNode { Name = "C" };
         var d = new GNode { Name = "D" };
         a.B = b;
-        b.C = c; b.D = d;
-        c.B = b; c.D = d;
-        d.C = c; d.B = b;
+        b.C = c;
+        b.D = d;
+        c.B = b;
+        c.D = d;
+        d.C = c;
+        d.B = b;
 
         var ta = new GraphMapper().Map(a);
 
@@ -44,11 +75,11 @@ public class GraphReconstructionRuntimeTests
         Assert.Equal("D", td.Name);
 
         // Exactly one instance per source node, all cross/back edges relinked to it:
-        Assert.Same(tb, tc.B);   // B⇄C closed
-        Assert.Same(td, tc.D);   // C's D == the shared D'
-        Assert.Same(tc, td.C);   // C⇄D closed
-        Assert.Same(tb, td.B);   // B⇄D closed
-        Assert.Same(td, tb.D);   // B's D == shared D'
+        Assert.Same(tb, tc.B); // B⇄C closed
+        Assert.Same(td, tc.D); // C's D == the shared D'
+        Assert.Same(tc, td.C); // C⇄D closed
+        Assert.Same(tb, td.B); // B⇄D closed
+        Assert.Same(td, tb.D); // B's D == shared D'
         // The D reached via B and via C is the SAME instance:
         Assert.Same(tb.D, tc.D);
         // The B reached via C and via D is the SAME instance:
@@ -69,8 +100,8 @@ public class GraphReconstructionRuntimeTests
     {
         // Two distinct instances that are value-equal (record equality).
         var holder = new RecHolder { First = new RecNode("X"), Second = new RecNode("X") };
-        Assert.Equal(holder.First, holder.Second);          // value-equal
-        Assert.NotSame(holder.First, holder.Second);        // distinct instances
+        Assert.Equal(holder.First, holder.Second); // value-equal
+        Assert.NotSame(holder.First, holder.Second); // distinct instances
 
         var dto = new RecGraphMapper().Map(holder);
         // Must remain two DISTINCT target instances — reference identity, not value equality.

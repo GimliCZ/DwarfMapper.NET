@@ -1,23 +1,50 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
+
+using System.Globalization;
 
 namespace DwarfMapper.IntegrationTests;
 
-public class MoneySource { public string Amount { get; set; } = ""; }
-public class MoneyTarget { public int Amount { get; set; } }
+public class MoneySource
+{
+    public string Amount { get; set; } = "";
+}
+
+public class MoneyTarget
+{
+    public int Amount { get; set; }
+}
 
 [DwarfMapper]
 public partial class MoneyMapper
 {
     [MapProperty("Amount", "Amount", Use = nameof(Parse))]
     public partial MoneyTarget Map(MoneySource s);
-    private static int Parse(string v) => int.Parse(v, System.Globalization.CultureInfo.InvariantCulture);
+
+    private static int Parse(string v)
+    {
+        return int.Parse(v, CultureInfo.InvariantCulture);
+    }
 }
 
-public class Addr { public string City { get; set; } = ""; }
-public class AddrDto { public string City { get; set; } = ""; }
-public class Person2 { public Addr Home { get; set; } = new(); }
-public class Person2Dto { public AddrDto Home { get; set; } = new(); }
+public class Addr
+{
+    public string City { get; set; } = "";
+}
+
+public class AddrDto
+{
+    public string City { get; set; } = "";
+}
+
+public class Person2
+{
+    public Addr Home { get; set; } = new();
+}
+
+public class Person2Dto
+{
+    public AddrDto Home { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class NestedMapper

@@ -3,11 +3,12 @@
 
 ### New Rules
 
-Rule ID | Category | Severity | Notes
---------|----------|----------|-------
-DWARF001 | DwarfMapper | Error | Destination member is not mapped
-DWARF002 | DwarfMapper | Error | Mapper type must be partial
-DWARF003 | DwarfMapper | Error | Invalid mapping method signature
+ Rule ID  | Category    | Severity | Notes
+----------|-------------|----------|----------------------------------
+ DWARF001 | DwarfMapper | Error    | Destination member is not mapped
+ DWARF002 | DwarfMapper | Error    | Mapper type must be partial
+ DWARF003 | DwarfMapper | Error    | Invalid mapping method signature
+
 ; DWARF004 — reserved; do not reuse
 DWARF005 | DwarfMapper | Error | No implicit conversion between mapped members
 ; DWARF006 — retired; superseded by DWARF026 (NoMappableConstructor); do not reuse

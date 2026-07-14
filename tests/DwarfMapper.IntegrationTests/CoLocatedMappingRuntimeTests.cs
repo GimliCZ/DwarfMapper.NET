@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using DwarfMapper;
 using DwarfMapper.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,7 +14,7 @@ public sealed class ClPerson
 // Co-located mapping with NO partial and NO [DwarfMapper] — just declarative attributes on a plain data class.
 // The generator emits a separate ClPersonDtoMapper; this stays an ordinary sealed DTO.
 [GenerateMap<ClPerson, ClPersonDto>]
-[MapProperty<ClPerson, ClPersonDto>(nameof(ClPerson.Name), nameof(ClPersonDto.FullName))]
+[MapProperty<ClPerson, ClPersonDto>(nameof(ClPerson.Name), nameof(FullName))]
 public sealed class ClPersonDto
 {
     public string FullName { get; set; } = "";
@@ -29,7 +28,7 @@ public sealed class CoLocatedMappingRuntimeTests
     {
         var person = new ClPerson { Name = "John Doe", Age = 100 };
 
-        ClPersonDto dto = person.ToClPersonDto();
+        var dto = person.ToClPersonDto();
 
         Assert.Equal("John Doe", dto.FullName);
         Assert.Equal(100, dto.Age);

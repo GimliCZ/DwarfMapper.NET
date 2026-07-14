@@ -3,6 +3,8 @@
 
 Every DwarfMapper diagnostic (`DWARF001`–`DWARF069`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
+These are **compile-time**; for what a generated mapper can throw **at runtime**, see
+[Runtime exceptions](#runtime-exceptions) at the bottom.
 
 ## How severities and suppression work
 
@@ -12,17 +14,36 @@ fix it. The IDE "learn more" link on each build error points at the matching `#d
 | **Warning** | The configuration compiles but something was skipped or won't behave as you might expect. | `dotnet_diagnostic.DWARFxxx.severity = none` in `.editorconfig`. |
 | **Info / suggestion** | Visible in the IDE, never build-breaking — surfaces a footgun without forcing a change. | Suppress with `.editorconfig`, or escalate to `error` there. |
 
-The headline rule, **`DWARF001` (completeness)**, is an **Error by design with no severity override** — see
+The headline rule, **`DWARF001` (completeness)**, is enforced **by construction**: you *can* set its severity in `.editorconfig`, but that doesn't ship an incomplete map — the method body isn't generated, so the build still fails (with a rawer compiler error instead of the helpful `DWARF001`). See
 [`CORRECTNESS.md`](CORRECTNESS.md). Everything else is suppressible or escalatable through `.editorconfig`,
 e.g.:
 
 ```ini
 # .editorconfig — make an opt-in suggestion strict, or silence a known-safe one
-dotnet_diagnostic.DWARF039.severity = error   # require every source member to be consumed
+dotnet_diagnostic.DWARF039.severity = error   # only fires under [DwarfMapper(RequiredMapping = Both)]; escalates its Info to Error
 dotnet_diagnostic.DWARF044.severity = none    # I accept the nullable-path risk here
 ```
 
 `DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
+
+The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR06` family — see
+[Registry diagnostics](#registry-diagnostics-mapto) just below.
+
+---
+
+## Registry diagnostics (`[MapTo]`)
+
+The `[MapTo]` registry front door (attribute-on-the-source, no mapper class) has its own `DWARFR##` codes,
+category `DwarfMapper.Registry`, distinct from the `[DwarfMapper]` class-model `DWARF###` codes below:
+
+| Code | Meaning & fix |
+|---|---|
+| `DWARFR01` | **Invalid `[MapTo]` target** — the target type isn't a mappable class/struct. |
+| `DWARFR02` | **Destination member is not mapped** — the registry's completeness gate (the `[MapTo]` counterpart of `DWARF001`). Add a source member, a `[MapProperty]` binding, or drop it. |
+| `DWARFR03` | **Conflicting sources for one destination member** — more than one source claims it; give them distinct positional `[MapProperty]` names. |
+| `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. |
+| `DWARFR05` | **No conversion between mapped members** — the member types are incompatible; use the `[DwarfMapper]` class model for a custom `Use=` converter. |
+| `DWARFR06` | **Recursive nested mapping is not supported by the registry** — the front door threads no reference context; use the `[DwarfMapper]` class model (`ReferenceHandling`/`OnCycle`) for cyclic graphs. |
 
 ---
 
@@ -156,8 +177,9 @@ redirect one with `[MapProperty("Source", "<paramName>")]`.
 ## dwarf025
 **Ambiguous constructor** · Error
 
-The destination type has several constructors tied for the most parameters. **Fix:** mark the intended one
-with `[DwarfMapperConstructor]`.
+Either several constructors tie for the most parameters, **or** more than one constructor is annotated
+with `[DwarfMapperConstructor]`. **Fix:** for a tie, mark exactly one with `[DwarfMapperConstructor]`; for
+duplicate annotations, remove all but one.
 
 ## dwarf026
 **No mappable constructor** · Error
@@ -175,9 +197,10 @@ The collection/dictionary target type isn't supported. **Fix:** use a supported 
 **Projection member cannot be translated to a database query** · Error
 
 An `IQueryable` projection becomes an expression tree your database/ORM provider translates into a query. A
-member that needs a runtime conversion, a custom converter, a collection rebuild, or reference handling has no
-query equivalent. The build error names the specific reason (narrowing, parse, by-name, converter, collection,
-hook, reference handling, …). **Fix:** map those members with a runtime mapper (an ordinary `Map` method)
+member that needs a runtime conversion, a custom converter, a non-translatable collection/dictionary target
+(`HashSet`/`ISet`/immutable/`Dictionary` — `List<T>`/`T[]` targets *do* translate), or reference handling has no
+query equivalent. The build error names the specific reason (narrowing, parse, by-name, converter, collection
+kind, hook, reference handling, …). **Fix:** map those members with a runtime mapper (an ordinary `Map` method)
 rather than `Project`.
 
 ## dwarf030
@@ -353,7 +376,7 @@ split it into several mappers, or suppress via `.editorconfig`.
 ## dwarf056
 **Pair-scoped attribute matches no mapped pair** · Warning
 
-A class-level pair-scoped attribute — `[MapProperty<TSource, TTarget>(…)]` or `[MapIgnore<TTarget>(…)]` —
+A class-level pair-scoped attribute — `[MapProperty<TSource, TTarget>(…)]`, `[MapIgnore<TTarget>(…)]`, `[MapValue<TTarget>(…)]`, or `[MapConstructor<TSource, TTarget>(…)]` —
 matched no mapped pair, so it silently does nothing (usually a typo'd type argument or a missing
 `[GenerateMap]`). A pair-scoped linkage applies wherever its `(TSource → TTarget)` pair is actually mapped —
 a top-level `[GenerateMap]` pair or an auto-synthesized nested/collection-element pair. **Fix:** add the
@@ -470,3 +493,39 @@ an inline lambda `v => v`). **Fix:** extract a named method (a method group), or
 The same destination member is configured more than once — by both an attribute (`[MapProperty<,>]`/
 `[MapValue<>]`) and a `MapConfig<S,T>` `.Map`/`.Value` call, or twice within the same `MapConfig<S,T>` method.
 **Fix:** remove one of the two configurations for that member.
+
+---
+
+## Runtime exceptions
+
+The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather
+than silently truncating or defaulting, out-of-range or malformed input **throws** — there is no lenient /
+non-throwing mode. **DwarfMapper is not an input-validation layer — validate untrusted input (request bodies,
+external data) before you map it.**
+
+> **"Strict" is not "total" — a few paths still lose data silently** (no throw, no diagnostic): an in-range but
+> **undefined** `integral → enum` value yields an undefined enum; a `Dictionary<K,V>` target is built
+> last-writer-wins, so a **lossy key conversion drops entries**; and a `HashSet<T>`/set target **de-duplicates**.
+
+The throws you can encounter:
+
+| When | Exception | Notes |
+|---|---|---|
+| `null` passed to a **public** map method (or update-into `void Map(S,T)`) | `ArgumentNullException` | public entry points open with `ArgumentNullException.ThrowIfNull(source)` (synthesized nested mappers do not) |
+| A **null source member → non-nullable target** under the default `NullStrategy.Throw` | `InvalidOperationException` | the most common case (`int? → int` when null); also a null **collection element**, a null **dictionary entry**, or a null reference-source mapped to a **value-type** target. Avoid with `NullStrategy.SetDefault`, `[MapProperty(NullSubstitute=…)]`, or a nullable target |
+| Numeric **narrowing** out of range (`long→int`; `enum`↔integral overflow) | `OverflowException` | `CreateChecked` — never silent truncation |
+| `string → int/Guid/DateTime/…` on unparseable input | `FormatException` (or `OverflowException`) | `Parse(…, InvariantCulture)`; there is **no `TryParse`/lenient mode** |
+| `string → enum` unrecognized name, or `enum → enum` **by-name** with an undefined/cast source value | `ArgumentOutOfRangeException` | the generated `switch` has a throwing default — these are **not total** (`DWARF015` only checks *declared* members) |
+| Nullable **interior hop** on a deep source path (`"Customer.Name"`, `Customer` null) | `NullReferenceException` | only `DWARF044` (Info) at build; a raw NRE at runtime |
+| `[Flatten]` root is `null` | `NullReferenceException` | no diagnostic — guard the root or accept the risk |
+| `[MapDerivedType]` dispatch hits a runtime subtype with no registered arm | `ArgumentException` | "no `[MapDerivedType]` registered for runtime type …" |
+| Span/destination too small (span overloads) | `ArgumentException` | |
+| Cycle under the default depth guard (no `ReferenceHandling`) | `DwarfMappingDepthException` | catchable; carries `MaxDepth`/`ActualDepth` (never a `StackOverflow`) |
+| Ambient `IDwarfMapper.Map<T>(src)` with no registered provider (e.g. provider assembly not yet loaded) | `DwarfMapMissingException` | `DWARF061` proves the reference **graph** at build, not runtime **load order** — see [ambient maps](howto/ambient-cross-assembly-maps.md) |
+| `DwarfMap.Validate()` finds an unregistered required pair (call it explicitly, via `services.AddDwarfMappers().ValidateDwarfMaps()`, or automatically with `[DwarfMapperValidationRoot(AutoValidate = true)]`) | `DwarfMapValidationException` | reflection-free fail-fast listing the missing pairs |
+
+**Handling.** `DwarfMappingDepthException`, `DwarfMapMissingException`, and `DwarfMapValidationException` are the
+DwarfMapper-typed exceptions you catch by type; the rest are standard BCL types (`InvalidOperationException`,
+`OverflowException`, `FormatException`, `ArgumentOutOfRangeException`, `ArgumentException`, `NullReferenceException`).
+For untrusted input, validate before mapping (or map into a string-shaped DTO and validate after) — do not rely on
+the mapper to reject bad data gracefully.

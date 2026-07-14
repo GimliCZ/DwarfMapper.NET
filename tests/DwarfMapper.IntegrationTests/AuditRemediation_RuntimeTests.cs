@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -137,9 +133,9 @@ public class AuditRemediation_RuntimeTests
         {
             Entries = new Dictionary<string, DNode>
             {
-                ["x"] = new DNode { Name = "x" },
-                ["y"] = new DNode { Name = "y" },
-                ["z"] = new DNode { Name = "z" },
+                ["x"] = new() { Name = "x" },
+                ["y"] = new() { Name = "y" },
+                ["z"] = new() { Name = "z" }
             }
         };
         var result = mapper.Map(root);
@@ -153,7 +149,7 @@ public class AuditRemediation_RuntimeTests
         var result = mapper.Map(new DRoot
         {
             Tag = "hello",
-            Entries = new Dictionary<string, DNode> { ["n"] = new DNode { Name = "n" } }
+            Entries = new Dictionary<string, DNode> { ["n"] = new() { Name = "n" } }
         });
         Assert.Equal("hello", result.Tag);
     }

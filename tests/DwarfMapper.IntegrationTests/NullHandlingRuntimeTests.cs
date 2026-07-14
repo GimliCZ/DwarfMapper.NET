@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
-public class NSrc { public int? N { get; set; } }
-public class NDst { public int N { get; set; } }
+public class NSrc
+{
+    public int? N { get; set; }
+}
+
+public class NDst
+{
+    public int N { get; set; }
+}
 
 [DwarfMapper]
 public partial class ThrowMapper
@@ -24,7 +30,7 @@ public class NullHandlingRuntimeTests
     public void Throw_strategy_maps_value_and_throws_on_null()
     {
         Assert.Equal(5, new ThrowMapper().Map(new NSrc { N = 5 }).N);
-        Assert.Throws<System.InvalidOperationException>(() => new ThrowMapper().Map(new NSrc { N = null }));
+        Assert.Throws<InvalidOperationException>(() => new ThrowMapper().Map(new NSrc { N = null }));
     }
 
     [Fact]

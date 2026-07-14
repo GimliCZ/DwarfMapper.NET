@@ -1,19 +1,31 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── Domain types for nested auto-map tests ───────────────────────────────────
 
 // 3-level chain
-public class City3L   { public string Name { get; set; } = ""; }
-public class Addr3L   { public City3L Location { get; set; } = new(); public int Zip { get; set; } }
-public class Person3L { public Addr3L Home { get; set; } = new(); public string FullName { get; set; } = ""; }
+public class City3L
+{
+    public string Name { get; set; } = "";
+}
+
+public class Addr3L
+{
+    public City3L Location { get; set; } = new();
+    public int Zip { get; set; }
+}
+
+public class Person3L
+{
+    public Addr3L Home { get; set; } = new();
+    public string FullName { get; set; } = "";
+}
 
 public record City3LDto(string Name);
+
 public record Addr3LDto(City3LDto Location, int Zip);
+
 public record Person3LDto(Addr3LDto Home, string FullName);
 
 [DwarfMapper]
@@ -23,9 +35,19 @@ public partial class Person3LMapper
 }
 
 // Nested type conversion at depth (long→int, string→Guid)
-public class InnerConv  { public long Count { get; set; } public string Id { get; set; } = ""; }
-public class OuterConv  { public InnerConv Sub { get; set; } = new(); }
+public class InnerConv
+{
+    public long Count { get; set; }
+    public string Id { get; set; } = "";
+}
+
+public class OuterConv
+{
+    public InnerConv Sub { get; set; } = new();
+}
+
 public record InnerConvDto(int Count, Guid Id);
+
 public record OuterConvDto(InnerConvDto Sub);
 
 [DwarfMapper]
@@ -35,9 +57,20 @@ public partial class OuterConvMapper
 }
 
 // Dedup: two members of the same nested type → one synthesized method
-public class PtNested   { public int X { get; set; } public int Y { get; set; } }
-public class LineNested { public PtNested A { get; set; } = new(); public PtNested B { get; set; } = new(); }
+public class PtNested
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+}
+
+public class LineNested
+{
+    public PtNested A { get; set; } = new();
+    public PtNested B { get; set; } = new();
+}
+
 public record PtNDto(int X, int Y);
+
 public record LineNDto(PtNDto A, PtNDto B);
 
 [DwarfMapper]
@@ -47,21 +80,45 @@ public partial class LineMapper
 }
 
 // User-declared sub-mapper overrides synthesis
-public class NestInner  { public string V { get; set; } = ""; }
-public class NestOuter  { public NestInner Sub { get; set; } = new(); }
-public class NestInnerDst { public string V { get; set; } = ""; }
-public class NestOuterDst { public NestInnerDst Sub { get; set; } = new(); }
+public class NestInner
+{
+    public string V { get; set; } = "";
+}
+
+public class NestOuter
+{
+    public NestInner Sub { get; set; } = new();
+}
+
+public class NestInnerDst
+{
+    public string V { get; set; } = "";
+}
+
+public class NestOuterDst
+{
+    public NestInnerDst Sub { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class NestOverrideMapper
 {
     public partial NestOuterDst Map(NestOuter o);
-    public partial NestInnerDst MapInner(NestInner i);   // explicit — must win over synthesis
+    public partial NestInnerDst MapInner(NestInner i); // explicit — must win over synthesis
 }
 
 // Recursive tree
-public class NestTree    { public int V { get; set; } public List<NestTree> Children { get; set; } = new(); }
-public class NestTreeDto { public int V { get; set; } public List<NestTreeDto> Children { get; set; } = new(); }
+public class NestTree
+{
+    public int V { get; set; }
+    public List<NestTree> Children { get; set; } = new();
+}
+
+public class NestTreeDto
+{
+    public int V { get; set; }
+    public List<NestTreeDto> Children { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class NestTreeMapper

@@ -67,10 +67,10 @@ partial method for that pair:
 | `.Map(d => d.X, s => s.Y)` | `[MapProperty(nameof(S.Y), nameof(D.X))]` |
 | `.Map(d => d.X, s => Expr(s))` | `[MapProperty(nameof(S.Y), nameof(D.X), Use = nameof(Method))]` |
 | `.Ignore(d => d.X)` | `[MapIgnore(nameof(D.X))]` — required (completeness gate) |
-| `.IgnoreIf((s, d) => cond, d => d.X)` | `[MapProperty(src, tgt, When = nameof(P))]` |
+| `.IgnoreIf((s, d) => cond, d => d.X)` | `[MapProperty(src, tgt, When = nameof(P))]` — **negate the condition**: `IgnoreIf` *skips* when true, `When` *assigns* when true; and `When` sees the **source only** (no dest) |
 | `.AfterMapping((s, d) => …)` / `.BeforeMapping(…)` | `[AfterMap]` / `[BeforeMap]` named methods |
 | `.MapWith(s => convert(s))` (type pair) | a non-partial `D Convert(S s)` method on the mapper |
-| `.ConstructUsing(s => new D(...))` | generator emits the ctor automatically; custom logic → `Use=` / `[AfterMap]` |
+| `.ConstructUsing(s => new D(...))` | `[MapConstructor<S, D>(nameof(Factory))]` — names a `D Factory(S)` on the mapper (the direct equivalent); the generator emits the ctor automatically when you don't need a factory |
 | `.AddDestinationTransform(...)` | post-process in `[AfterMap]` or a `Use=` method |
 
 The rule (same as every guide): **lambdas become named methods.**
@@ -98,7 +98,7 @@ Mapster's global `TypeAdapterConfig.GlobalSettings` knobs map to class-level `[D
 | `.MaxDepth(n)` | `[DwarfMapper(MaxDepth = n)]` (catchable depth exception, never silent SO) |
 | `.PreserveReference(true)` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` (full topology) |
 | enum mapping (by **value** default) | `[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]` for parity (DwarfMapper defaults to **by name**) |
-| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S> q)` — minimal/translatable only |
+| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S> q)` — translatable subset (nested/collection/**enum→int casts**/dotted supported — enum→enum needs `EnumStrategy.ByValue`; non-translatable → `DWARF028`) |
 | `Mapster.Tool` codegen step | **not needed** — DwarfMapper is always source-gen, no separate tool/CLI |
 
 > **Watch the enum default.** Mapster maps enums by value; DwarfMapper maps by **name** by default. If you
@@ -119,10 +119,9 @@ Mapster's global `TypeAdapterConfig.GlobalSettings` knobs map to class-level `[D
 
 ## Known divergences & non-goals (Mapster-specific)
 
-- **`.IgnoreNullValues(true)`** — DwarfMapper's `Update` **replaces**; it does not skip null-source members.
-  Use `[MapIgnore]` or restructure if you relied on null-skipping merge semantics.
-- **`.ConstructUsing`** — the generator selects and emits the constructor itself; custom construction goes
-  through `Use=` or `[AfterMap]`, not a factory lambda.
+- **`.IgnoreNullValues(true)`** → **`[DwarfMapper(SkipNullSourceMembers = true)]`** — a null source member never overwrites the destination (emits `if (src.X is not null) dest.X = …`). Not `[MapIgnore]`, which would drop the member *unconditionally*. (Non-nullable value-type sources and `required`/`init` members are always assigned.)
+- **`.ConstructUsing`** → **`[MapConstructor<S, D>(nameof(Factory))]`** (a `D Factory(S)` on the mapper — the compile-time equivalent); the generator otherwise selects/emits the constructor itself.
+- **Runtime polymorphism** — Mapster maps each element by its *actual runtime subtype* (`Dog` → `DogDto`'s extra members). DwarfMapper maps the *statically-declared* type unless you declare each arm with `[MapDerivedType<Derived, DerivedDto>]` on the base-type method; **without it, only base-type members are mapped (derived-only data is silently dropped)**.
 - **Zero-config "map anything at runtime"** — by design you declare each pair. The payoff is the completeness
   gate, AOT-safety, and no first-call expression-compilation cost.
 - **Nested deep-merge into existing objects** — `Update` preserves top-level identity but replaces nested

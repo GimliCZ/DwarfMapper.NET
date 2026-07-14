@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Contract tests for the ambient cross-assembly mapping attributes: the generator-emitted manifests
-/// (<see cref="DwarfProvidesMapAttribute"/> / <see cref="DwarfRequiresMapAttribute"/>), the user-facing
-/// consumption marker (<see cref="UsesMapAttribute"/> / <see cref="UsesMapAttribute{TSource,TDestination}"/>),
-/// and the validation-root marker (<see cref="DwarfMapperValidationRootAttribute"/>). These pin their
-/// AttributeUsage so the generator's emission/reading (later ambient-registry phases) can rely on it.
+///     Contract tests for the ambient cross-assembly mapping attributes: the generator-emitted manifests
+///     (<see cref="DwarfProvidesMapAttribute" /> / <see cref="DwarfRequiresMapAttribute" />), the user-facing
+///     consumption marker (<see cref="UsesMapAttribute" /> / <see cref="UsesMapAttribute{TSource,TDestination}" />),
+///     and the validation-root marker (<see cref="DwarfMapperValidationRootAttribute" />). These pin their
+///     AttributeUsage so the generator's emission/reading (later ambient-registry phases) can rely on it.
 /// </summary>
 public sealed class AmbientManifestAttributesTests
 {
     private static AttributeUsageAttribute Usage<T>() where T : Attribute
-        => (AttributeUsageAttribute)Attribute.GetCustomAttribute(typeof(T), typeof(AttributeUsageAttribute))!;
+    {
+        return (AttributeUsageAttribute)Attribute.GetCustomAttribute(typeof(T), typeof(AttributeUsageAttribute))!;
+    }
 
     [Fact]
     public void ProvidesMap_and_RequiresMap_are_assembly_targeted_multiple()

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
+
 using System.Collections;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -11,11 +9,11 @@ using System.Text;
 namespace DwarfMapper.Testing;
 
 /// <summary>
-/// Plan 19 Part E — graph-aware oracle comparer.
-/// Two modes:
-/// (a) Value compare: deep, MaxDepth-guarded, deterministic ordering for sets/dicts so
+///     Plan 19 Part E — graph-aware oracle comparer.
+///     Two modes:
+///     (a) Value compare: deep, MaxDepth-guarded, deterministic ordering for sets/dicts so
 ///     HashSet/Dictionary compare stably.
-/// (b) Topology compare: asserts the target graph's sharing/cycle pattern matches the source's —
+///     (b) Topology compare: asserts the target graph's sharing/cycle pattern matches the source's —
 ///     a shared source node produces the same target instance; a cycle is closed. Uses a
 ///     reference-identity visited map so the oracle itself never infinite-loops on cycles.
 /// </summary>
@@ -29,9 +27,9 @@ public static class GraphOracleComparer
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Deep value comparison between two object graphs.
-    /// Sets / dictionaries are compared in deterministic (sorted) order.
-    /// Returns every difference with its member path.
+    ///     Deep value comparison between two object graphs.
+    ///     Sets / dictionaries are compared in deterministic (sorted) order.
+    ///     Returns every difference with its member path.
     /// </summary>
     public static IReadOnlyList<string> ValueDiff(object? expected, object? actual, string rootPath = "root")
     {
@@ -42,8 +40,10 @@ public static class GraphOracleComparer
     }
 
     /// <summary>Returns true when two graphs are value-equal; false otherwise.</summary>
-    public static bool ValueEqual(object? expected, object? actual) =>
-        ValueDiff(expected, actual).Count == 0;
+    public static bool ValueEqual(object? expected, object? actual)
+    {
+        return ValueDiff(expected, actual).Count == 0;
+    }
 
     /// <summary>Render value diffs as a readable string.</summary>
     public static string RenderValueDiff(IReadOnlyList<string> diffs)
@@ -60,16 +60,16 @@ public static class GraphOracleComparer
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Topology comparison: assert that each distinct source reference maps to exactly
-    /// one target reference (sharing preserved), and that cycles are closed.
-    /// <para>
-    /// The oracle walks the source graph and target graph in lock-step. On revisiting a
-    /// source node that was already seen, it asserts the corresponding target node is the
-    /// same instance as last time (ReferenceEquals). This catches both
-    /// sharing (shared source node → same target instance) and cycles (back-edge returns
-    /// to the already-registered target).
-    /// </para>
-    /// Returns a list of topology violations; empty list = topology preserved.
+    ///     Topology comparison: assert that each distinct source reference maps to exactly
+    ///     one target reference (sharing preserved), and that cycles are closed.
+    ///     <para>
+    ///         The oracle walks the source graph and target graph in lock-step. On revisiting a
+    ///         source node that was already seen, it asserts the corresponding target node is the
+    ///         same instance as last time (ReferenceEquals). This catches both
+    ///         sharing (shared source node → same target instance) and cycles (back-edge returns
+    ///         to the already-registered target).
+    ///     </para>
+    ///     Returns a list of topology violations; empty list = topology preserved.
     /// </summary>
     public static IReadOnlyList<string> TopologyDiff(object? srcRoot, object? tgtRoot, string rootPath = "root")
     {
@@ -81,8 +81,10 @@ public static class GraphOracleComparer
     }
 
     /// <summary>Returns true when topology is preserved; false otherwise.</summary>
-    public static bool TopologyPreserved(object? srcRoot, object? tgtRoot) =>
-        TopologyDiff(srcRoot, tgtRoot).Count == 0;
+    public static bool TopologyPreserved(object? srcRoot, object? tgtRoot)
+    {
+        return TopologyDiff(srcRoot, tgtRoot).Count == 0;
+    }
 
     /// <summary>Render topology diffs as a readable string.</summary>
     public static string RenderTopologyDiff(IReadOnlyList<string> violations)
@@ -99,9 +101,9 @@ public static class GraphOracleComparer
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Value diff between two objects of potentially-different runtime types.
-    /// Compares scalar and collection members by name; handles type divergence
-    /// (e.g. int→long widening) by comparing the numeric underlying value.
+    ///     Value diff between two objects of potentially-different runtime types.
+    ///     Compares scalar and collection members by name; handles type divergence
+    ///     (e.g. int→long widening) by comparing the numeric underlying value.
     /// </summary>
     public static IReadOnlyList<string> CrossTypeDiff(object? expected, object? actual,
         Type? expectedType = null, Type? actualType = null, string rootPath = "root")
@@ -118,22 +120,20 @@ public static class GraphOracleComparer
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Oracle for [FlattenGraph] mappers. Given the source entry node and the
-    /// flat result list, verifies:
-    /// (a) result count == BFS-reachable node count from srcEntry (reference equality),
-    /// (b) every result node's properties that ARE navigation edges (reference to same
+    ///     Oracle for [FlattenGraph] mappers. Given the source entry node and the
+    ///     flat result list, verifies:
+    ///     (a) result count == BFS-reachable node count from srcEntry (reference equality),
+    ///     (b) every result node's properties that ARE navigation edges (reference to same
     ///     node type or assignable) are null (topology degraded).
-    ///
-    /// Returns a list of violation strings; empty = oracle passes.
-    ///
-    /// <paramref name="srcEntry"/> — the entry node of the source graph.
-    /// <paramref name="resultNodes"/> — the flat result collection (IEnumerable).
-    /// <paramref name="nodeBaseType"/> — the common base type of source nodes.
-    /// <paramref name="dtoBaseType"/> — the common base type of result DTOs.
+    ///     Returns a list of violation strings; empty = oracle passes.
+    ///     <paramref name="srcEntry" /> — the entry node of the source graph.
+    ///     <paramref name="resultNodes" /> — the flat result collection (IEnumerable).
+    ///     <paramref name="nodeBaseType" /> — the common base type of source nodes.
+    ///     <paramref name="dtoBaseType" /> — the common base type of result DTOs.
     /// </summary>
     public static IReadOnlyList<string> FlattenGraphDiff(
         object? srcEntry,
-        System.Collections.IEnumerable? resultNodes,
+        IEnumerable? resultNodes,
         Type nodeBaseType,
         Type dtoBaseType)
     {
@@ -167,7 +167,8 @@ public static class GraphOracleComparer
         var resultList = new List<object>();
         if (resultNodes is not null)
             foreach (var item in resultNodes)
-                if (item is not null) resultList.Add(item);
+                if (item is not null)
+                    resultList.Add(item);
 
         // (a) Count check
         if (resultList.Count != reachable.Count)
@@ -176,16 +177,14 @@ public static class GraphOracleComparer
 
         // (b) Edge-null check: every result DTO's navigation properties must be null
         foreach (var dto in resultList)
+        foreach (var p in dto.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
-            foreach (var p in dto.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (!p.CanRead || p.GetIndexParameters().Length != 0) continue;
-                if (!IsNavigationProperty(p.PropertyType, dtoBaseType)) continue;
-                var val = p.GetValue(dto);
-                if (val is not null)
-                    violations.Add(
-                        $"FlattenGraph edge not degraded: {dto.GetType().Name}.{p.Name} = {val} (expected null)");
-            }
+            if (!p.CanRead || p.GetIndexParameters().Length != 0) continue;
+            if (!IsNavigationProperty(p.PropertyType, dtoBaseType)) continue;
+            var val = p.GetValue(dto);
+            if (val is not null)
+                violations.Add(
+                    $"FlattenGraph edge not degraded: {dto.GetType().Name}.{p.Name} = {val} (expected null)");
         }
 
         return violations;
@@ -214,37 +213,33 @@ public static class GraphOracleComparer
                 queue.Enqueue(val);
             return;
         }
+
         // Collection edge: IEnumerable — enumerate and enqueue node-typed elements
-        if (val is System.Collections.IEnumerable enumerable && val is not string)
+        if (val is IEnumerable enumerable && val is not string)
         {
             foreach (var item in enumerable)
             {
                 if (item is null) continue;
                 var itemType = item.GetType();
                 if (nodeBaseType.IsAssignableFrom(itemType) || itemType.IsAssignableFrom(nodeBaseType))
-                {
                     if (!visited.Contains(item))
                         queue.Enqueue(item);
-                }
             }
+
             // Dictionary values — try to get Values property
             var valuesProp = val.GetType().GetProperty("Values");
             if (valuesProp is not null)
             {
-                var values = valuesProp.GetValue(val) as System.Collections.IEnumerable;
+                var values = valuesProp.GetValue(val) as IEnumerable;
                 if (values is not null)
-                {
                     foreach (var v2 in values)
                     {
                         if (v2 is null) continue;
                         var vt = v2.GetType();
                         if (nodeBaseType.IsAssignableFrom(vt) || vt.IsAssignableFrom(nodeBaseType))
-                        {
                             if (!visited.Contains(v2))
                                 queue.Enqueue(v2);
-                        }
                     }
-                }
             }
         }
     }
@@ -260,16 +255,16 @@ public static class GraphOracleComparer
             var elem = propType.GetElementType()!;
             return dtoBaseType.IsAssignableFrom(elem) || elem.IsAssignableFrom(dtoBaseType);
         }
+
         // Generic collection navigation (e.g. List<DtoBase>)
         if (propType.IsGenericType)
         {
             var args = propType.GetGenericArguments();
             foreach (var arg in args)
-            {
                 if (dtoBaseType.IsAssignableFrom(arg) || arg.IsAssignableFrom(dtoBaseType))
                     return true;
-            }
         }
+
         return false;
     }
 
@@ -314,9 +309,8 @@ public static class GraphOracleComparer
             var el = ToSortedList(ee);
             var al = ToSortedList(ae);
             if (el.Count != al.Count)
-            {
-                diffs.Add(path + ".Count: expected " + el.Count.ToString(CultureInfo.InvariantCulture) + ", actual " + al.Count.ToString(CultureInfo.InvariantCulture));
-            }
+                diffs.Add(path + ".Count: expected " + el.Count.ToString(CultureInfo.InvariantCulture) + ", actual " +
+                          al.Count.ToString(CultureInfo.InvariantCulture));
             var n = Math.Min(el.Count, al.Count);
             for (var i = 0; i < n; i++)
                 ValueCompare(path + "[" + i.ToString(CultureInfo.InvariantCulture) + "]",
@@ -331,11 +325,10 @@ public static class GraphOracleComparer
             ValueCompare(path + "." + p.Name, p.GetValue(expected), p.GetValue(actual),
                 diffs, depth + 1, visited);
         }
+
         foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-        {
             ValueCompare(path + "." + f.Name, f.GetValue(expected), f.GetValue(actual),
                 diffs, depth + 1, visited);
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -352,10 +345,8 @@ public static class GraphOracleComparer
 
         if (src is null && tgt is null) return;
         if (src is null || tgt is null)
-        {
             // null mismatch is a value issue not a topology issue; skip
             return;
-        }
 
         var srcType = src.GetType();
 
@@ -377,12 +368,10 @@ public static class GraphOracleComparer
         {
             // The target must be the SAME instance we registered earlier
             if (!ReferenceEquals(registeredTgt, tgt))
-            {
                 violations.Add(
                     $"{path}: shared source node (#{RuntimeHelpers.GetHashCode(src)}) should map to " +
                     $"the same target instance (#{RuntimeHelpers.GetHashCode(registeredTgt)}) " +
                     $"but got a different instance (#{RuntimeHelpers.GetHashCode(tgt)})");
-            }
             // Either way, stop recursing — we've already walked this pair
             return;
         }
@@ -421,6 +410,7 @@ public static class GraphOracleComparer
             var tv = tp is not null && tp.CanRead ? tp.GetValue(tgt) : null;
             TopologyCompare(path + "." + p.Name, sv, tv, srcToTgt, violations, depth + 1);
         }
+
         foreach (var f in srcType.GetFields(BindingFlags.Public | BindingFlags.Instance))
         {
             var sv = f.GetValue(src);
@@ -469,12 +459,14 @@ public static class GraphOracleComparer
                     if (srcIsFloat && dstIsDouble)
                     {
                         // float→double widening: cast actual back to float for comparison
-                        var fExpected = (float)Convert.ChangeType(expected, typeof(float), CultureInfo.InvariantCulture)!;
+                        var fExpected =
+                            (float)Convert.ChangeType(expected, typeof(float), CultureInfo.InvariantCulture)!;
                         var fActual = (float)Convert.ChangeType(actual, typeof(float), CultureInfo.InvariantCulture)!;
                         if (Math.Abs(fExpected - fActual) >= 1e-6f)
                             diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
                         return;
                     }
+
                     var ev = Convert.ToDecimal(expected, CultureInfo.InvariantCulture);
                     var av = Convert.ToDecimal(actual, CultureInfo.InvariantCulture);
                     if (ev != av)
@@ -490,8 +482,10 @@ public static class GraphOracleComparer
                     if (!ScalarEquals(expected, actual))
                         diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
                 }
+
                 return;
             }
+
             if (expectedType.IsEnum && actualType.IsEnum)
             {
                 var ev = Convert.ToInt64(expected, CultureInfo.InvariantCulture);
@@ -500,6 +494,7 @@ public static class GraphOracleComparer
                     diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
                 return;
             }
+
             if (!ScalarEquals(expected, actual))
                 diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
             return;
@@ -519,7 +514,8 @@ public static class GraphOracleComparer
             var el = ToSortedList(ee);
             var al = ToSortedList(ae);
             if (el.Count != al.Count)
-                diffs.Add(path + ".Count: expected " + el.Count.ToString(CultureInfo.InvariantCulture) + ", actual " + al.Count.ToString(CultureInfo.InvariantCulture));
+                diffs.Add(path + ".Count: expected " + el.Count.ToString(CultureInfo.InvariantCulture) + ", actual " +
+                          al.Count.ToString(CultureInfo.InvariantCulture));
             var n = Math.Min(el.Count, al.Count);
             for (var i = 0; i < n; i++)
                 CrossTypeCompare(path + "[" + i.ToString(CultureInfo.InvariantCulture) + "]",
@@ -538,6 +534,7 @@ public static class GraphOracleComparer
             CrossTypeCompare(path + "." + sp.Name, sv, sv?.GetType(), dv, dv?.GetType(),
                 diffs, depth + 1, visited);
         }
+
         foreach (var sf in expectedType.GetFields(BindingFlags.Public | BindingFlags.Instance))
         {
             var df = actualType.GetField(sf.Name, BindingFlags.Public | BindingFlags.Instance);
@@ -553,23 +550,27 @@ public static class GraphOracleComparer
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────────
 
-    private static bool IsScalar(Type t) =>
-        t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal)
-        || t == typeof(Guid) || t == typeof(DateTime) || t == typeof(DateTimeOffset)
-        || t == typeof(TimeSpan);
+    private static bool IsScalar(Type t)
+    {
+        return t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal)
+               || t == typeof(Guid) || t == typeof(DateTime) || t == typeof(DateTimeOffset)
+               || t == typeof(TimeSpan);
+    }
 
-    private static bool IsNumeric(Type t) =>
-        t == typeof(byte) || t == typeof(sbyte) || t == typeof(short) || t == typeof(ushort)
-        || t == typeof(int) || t == typeof(uint) || t == typeof(long) || t == typeof(ulong)
-        || t == typeof(float) || t == typeof(double) || t == typeof(decimal);
+    private static bool IsNumeric(Type t)
+    {
+        return t == typeof(byte) || t == typeof(sbyte) || t == typeof(short) || t == typeof(ushort)
+               || t == typeof(int) || t == typeof(uint) || t == typeof(long) || t == typeof(ulong)
+               || t == typeof(float) || t == typeof(double) || t == typeof(decimal);
+    }
 
     private static bool ScalarEquals(object a, object b)
     {
         if (a is double da && b is double db) return Math.Abs(da - db) < FloatEpsilon;
-        if (a is float fa && b is float fb)   return Math.Abs(fa - fb) < 1e-6f;
+        if (a is float fa && b is float fb) return Math.Abs(fa - fb) < 1e-6f;
         if (a.GetType().IsEnum && b.GetType().IsEnum)
             return Convert.ToInt64(a, CultureInfo.InvariantCulture)
-                == Convert.ToInt64(b, CultureInfo.InvariantCulture);
+                   == Convert.ToInt64(b, CultureInfo.InvariantCulture);
         return Equals(a, b);
     }
 
@@ -587,7 +588,6 @@ public static class GraphOracleComparer
 
         // Sort scalars for stable set comparison
         if (list.Count > 0 && list[0] is not null && IsScalar(list[0]!.GetType()))
-        {
             list.Sort((x, y) =>
             {
                 if (x is null && y is null) return 0;
@@ -598,19 +598,24 @@ public static class GraphOracleComparer
                     // C9: use a stable sort key — for float/double use "R" (round-trip) format;
                     // for other scalars use InvariantCulture formatting for deterministic order.
                     var xKey = x is float fx ? fx.ToString("R", CultureInfo.InvariantCulture)
-                             : x is double dx ? dx.ToString("R", CultureInfo.InvariantCulture)
-                             : x is IFormattable fi ? fi.ToString(null, CultureInfo.InvariantCulture)
-                             : x.ToString() ?? "";
+                        : x is double dx ? dx.ToString("R", CultureInfo.InvariantCulture)
+                        : x is IFormattable fi ? fi.ToString(null, CultureInfo.InvariantCulture)
+                        : x.ToString() ?? "";
                     var yKey = y is float fy ? fy.ToString("R", CultureInfo.InvariantCulture)
-                             : y is double dy ? dy.ToString("R", CultureInfo.InvariantCulture)
-                             : y is IFormattable gi ? gi.ToString(null, CultureInfo.InvariantCulture)
-                             : y.ToString() ?? "";
+                        : y is double dy ? dy.ToString("R", CultureInfo.InvariantCulture)
+                        : y is IFormattable gi ? gi.ToString(null, CultureInfo.InvariantCulture)
+                        : y.ToString() ?? "";
                     return StringComparer.Ordinal.Compare(xKey, yKey);
                 }
-                catch (InvalidOperationException) { return 0; }
-                catch (ArgumentException) { return 0; }
+                catch (InvalidOperationException)
+                {
+                    return 0;
+                }
+                catch (ArgumentException)
+                {
+                    return 0;
+                }
             });
-        }
 
         return list;
     }
@@ -624,12 +629,15 @@ public static class GraphOracleComparer
         return list;
     }
 
-    private static string? Fmt(object? o) => o switch
+    private static string? Fmt(object? o)
     {
-        null => "<null>",
-        IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
-        _ => o.ToString(),
-    };
+        return o switch
+        {
+            null => "<null>",
+            IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+            _ => o.ToString()
+        };
+    }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // RuntimeId: wraps an object for reference-identity keying in a Dictionary
@@ -646,17 +654,34 @@ public static class GraphOracleComparer
             _hash = RuntimeHelpers.GetHashCode(obj);
         }
 
-        public bool Equals(RuntimeId other) => ReferenceEquals(_obj, other._obj);
-        public override bool Equals(object? obj) => obj is RuntimeId other && Equals(other);
-        public override int GetHashCode() => _hash;
+        public bool Equals(RuntimeId other)
+        {
+            return ReferenceEquals(_obj, other._obj);
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is RuntimeId other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return _hash;
+        }
     }
 
     private sealed class RuntimeIdPairComparer : IEqualityComparer<(RuntimeId A, RuntimeId B)>
     {
         internal static readonly RuntimeIdPairComparer Instance = new();
+
         public bool Equals((RuntimeId A, RuntimeId B) x, (RuntimeId A, RuntimeId B) y)
-            => x.A.Equals(y.A) && x.B.Equals(y.B);
+        {
+            return x.A.Equals(y.A) && x.B.Equals(y.B);
+        }
+
         public int GetHashCode((RuntimeId A, RuntimeId B) obj)
-            => HashCode.Combine(obj.A.GetHashCode(), obj.B.GetHashCode());
+        {
+            return HashCode.Combine(obj.A.GetHashCode(), obj.B.GetHashCode());
+        }
     }
 }

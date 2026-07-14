@@ -66,21 +66,23 @@ diagnostics below (items 7/12/13/14) must take fresh IDs ≥ DWARF064. Reserved/
 ## Benchmark regression scrutiny (capstone)
 
 - **AOT real-world infrastructure: GREEN.** `samples/DwarfMapper.AotSample` NativeAOT-publishes with
-  **zero** IL2xxx/IL3xxx trim/AOT warnings; native exe ~1.53 MB; the runtime gate passes every check
+  **zero** IL2xxx/IL3xxx trim/AOT warnings (this is the CI gate); native exe ~1.53 MB; the behavioural runtime gate (run **locally**, not in CI) passes every check
   (checked-narrowing overflow, IParsable, IFormattable, record ctor, auto-nest, depth-guard, None/Preserve/
   SetNull cycles incl. through collections, FlattenGraph homo+hetero, MapDerivedType dispatch, update-into,
   zero-alloc span map, SIMD widen == scalar, async streaming). No AOT regression.
 - **Blit (1000 structs): confirmed +29% doc drift — [DONE].** Measured ~0.50 µs vs documented 0.39 µs
   (repeatable across two runs + the committed artifact). Not a code regression — the 0.39 µs was a
-  best-case figure; steady-state is ~0.50 µs and the SIMD lead is ~2.0–2.3× (was stated 2.5×).
-  `docs/COMPARISON.md` corrected.
+  best-case figure; the re-measured steady state (Linux/Ryzen 5600, .NET 10) is **~0.59 µs** and the lead
+  is **~1.8–2.0×** (589.592 ns vs 1081–1181 ns; see `benchmarks/results/`). `docs/COMPARISON.md` matches.
 - **Array (1000 objects): confirmed code regression — fix [DONE] and VERIFIED.** DwarfMapper trailed
   Mapperly ~1.5× (and even AutoMapper) on `FlatSrc[]`→`FlatDst[]`. Root cause: the non-recursive array
   fill used `foreach` + a separate running write-index, leaving the destination store not provably
   in-bounds (bounds check survives). Fixed by emitting an index `for` over `src[__i]` in the None-mode
   array path only (`CollectionConverter.cs`), so both source-read and dest-write bounds checks elide.
   Preserve/SetNull/ctx-threaded/non-array paths are unchanged. **Re-measured: 7.73 µs → 5.21 µs (~33%),
-  now the FASTEST of the four** (Mapperly 5.30, AutoMapper 5.76, Mapster 6.17 µs). The secondary cost
+  now the FASTEST of the four** (Mapperly 5.30, AutoMapper 5.76, Mapster 6.17 µs). *(Array was not re-measured
+  in the 2026-07-05 session — `docs/COMPARISON.md` shows a different earlier run, 4.55 vs Mapperly 4.47; treat
+  both Array runs as indicative and re-measure for a single authoritative set.)* The secondary cost
   (per-element non-inlined `MapFlat` + `ThrowIfNull`, item 22) is therefore moot — no further work needed.
 
 ## Ranked plan

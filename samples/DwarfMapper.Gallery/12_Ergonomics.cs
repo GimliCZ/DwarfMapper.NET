@@ -5,15 +5,24 @@
 // target type, and — when Microsoft.Extensions.DependencyInjection is referenced — an AddDwarfMappers() that
 // registers every mapper as a (stateless) singleton with NO reflection or assembly scan. Opt the extensions out
 // per mapper with [DwarfMapper(GenerateExtensions = false)].
-using System;
-using DwarfMapper;
-using DwarfMapper.Extensions;                       // surfaces the generated ToGemDto() extension
+
+using DwarfMapper.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+// surfaces the generated ToGemDto() extension
 
 namespace DwarfMapper.Gallery.Ex12;
 
-public sealed class Gem { public string Kind { get; set; } = ""; public int Carats { get; set; } }
-public sealed class GemDto { public string Kind { get; set; } = ""; public int Carats { get; set; } }
+public sealed class Gem
+{
+    public string Kind { get; set; } = "";
+    public int Carats { get; set; }
+}
+
+public sealed class GemDto
+{
+    public string Kind { get; set; } = "";
+    public int Carats { get; set; }
+}
 
 [DwarfMapper]
 public partial class Mapper
@@ -25,14 +34,14 @@ public static class Example
 {
     public static void Run()
     {
-        Gem gem = new Gem { Kind = "Arkenstone", Carats = 999 };
+        var gem = new Gem { Kind = "Arkenstone", Carats = 999 };
 
         // (a) generated extension method (named after the target type):
-        GemDto viaExtension = gem.ToGemDto();
+        var viaExtension = gem.ToGemDto();
 
         // (b) dependency injection — one registration call, then inject the mapper:
-        using ServiceProvider provider = new ServiceCollection().AddDwarfMappers().BuildServiceProvider();
-        GemDto viaDi = provider.GetRequiredService<Mapper>().ToDto(gem);
+        using var provider = new ServiceCollection().AddDwarfMappers().BuildServiceProvider();
+        var viaDi = provider.GetRequiredService<Mapper>().ToDto(gem);
 
         Console.WriteLine($"12 Facade + DI        -> ext: {viaExtension.Kind}; di: {viaDi.Kind} ({viaDi.Carats} ct)");
     }

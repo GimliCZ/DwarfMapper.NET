@@ -1,75 +1,201 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── Types for Preserve runtime tests ─────────────────────────────────────────
 
 // Self-loop: n.Self = n
-public class SelfLoopNode    { public int V { get; set; } public SelfLoopNode? Self { get; set; } }
-public class SelfLoopNodeDto { public int V { get; set; } public SelfLoopNodeDto? Self { get; set; } }
+public class SelfLoopNode
+{
+    public int V { get; set; }
+    public SelfLoopNode? Self { get; set; }
+}
+
+public class SelfLoopNodeDto
+{
+    public int V { get; set; }
+    public SelfLoopNodeDto? Self { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class SelfLoopMapper { public partial SelfLoopNodeDto Map(SelfLoopNode n); }
+public partial class SelfLoopMapper
+{
+    public partial SelfLoopNodeDto Map(SelfLoopNode n);
+}
 
 // 2-node cycle: a.Next=b, b.Next=a
-public class TwoNode    { public int V { get; set; } public TwoNode? Next { get; set; } }
-public class TwoNodeDto { public int V { get; set; } public TwoNodeDto? Next { get; set; } }
+public class TwoNode
+{
+    public int V { get; set; }
+    public TwoNode? Next { get; set; }
+}
+
+public class TwoNodeDto
+{
+    public int V { get; set; }
+    public TwoNodeDto? Next { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class TwoCycleMapper { public partial TwoNodeDto Map(TwoNode n); }
+public partial class TwoCycleMapper
+{
+    public partial TwoNodeDto Map(TwoNode n);
+}
 
 // Diamond / shared node: root.Left and root.Right share same child.
 // DiamondChild has a back-reference to root (making it recursion-capable),
 // so the identity map is active and the diamond is reconstructed faithfully.
-public class DiamondChild    { public int V { get; set; } public DiamondRoot? Root { get; set; } }
-public class DiamondRoot     { public DiamondChild? Left { get; set; } public DiamondChild? Right { get; set; } }
-public class DiamondChildDto { public int V { get; set; } public DiamondRootDto? Root { get; set; } }
-public class DiamondRootDto  { public DiamondChildDto? Left { get; set; } public DiamondChildDto? Right { get; set; } }
+public class DiamondChild
+{
+    public int V { get; set; }
+    public DiamondRoot? Root { get; set; }
+}
+
+public class DiamondRoot
+{
+    public DiamondChild? Left { get; set; }
+    public DiamondChild? Right { get; set; }
+}
+
+public class DiamondChildDto
+{
+    public int V { get; set; }
+    public DiamondRootDto? Root { get; set; }
+}
+
+public class DiamondRootDto
+{
+    public DiamondChildDto? Left { get; set; }
+    public DiamondChildDto? Right { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class DiamondMapper { public partial DiamondRootDto Map(DiamondRoot r); }
+public partial class DiamondMapper
+{
+    public partial DiamondRootDto Map(DiamondRoot r);
+}
 
 // Owner graph: A→B, B⇄C, C⇄D, B⇄D
-public class OwnerA { public int Id { get; set; } public OwnerB? B { get; set; } }
-public class OwnerB { public int Id { get; set; } public OwnerC? C { get; set; } public OwnerD? D { get; set; } }
-public class OwnerC { public int Id { get; set; } public OwnerB? B { get; set; } public OwnerD? D { get; set; } }
-public class OwnerD { public int Id { get; set; } public OwnerB? B { get; set; } public OwnerC? C { get; set; } }
+public class OwnerA
+{
+    public int Id { get; set; }
+    public OwnerB? B { get; set; }
+}
 
-public class OwnerADto { public int Id { get; set; } public OwnerBDto? B { get; set; } }
-public class OwnerBDto { public int Id { get; set; } public OwnerCDto? C { get; set; } public OwnerDDto? D { get; set; } }
-public class OwnerCDto { public int Id { get; set; } public OwnerBDto? B { get; set; } public OwnerDDto? D { get; set; } }
-public class OwnerDDto { public int Id { get; set; } public OwnerBDto? B { get; set; } public OwnerCDto? C { get; set; } }
+public class OwnerB
+{
+    public int Id { get; set; }
+    public OwnerC? C { get; set; }
+    public OwnerD? D { get; set; }
+}
+
+public class OwnerC
+{
+    public int Id { get; set; }
+    public OwnerB? B { get; set; }
+    public OwnerD? D { get; set; }
+}
+
+public class OwnerD
+{
+    public int Id { get; set; }
+    public OwnerB? B { get; set; }
+    public OwnerC? C { get; set; }
+}
+
+public class OwnerADto
+{
+    public int Id { get; set; }
+    public OwnerBDto? B { get; set; }
+}
+
+public class OwnerBDto
+{
+    public int Id { get; set; }
+    public OwnerCDto? C { get; set; }
+    public OwnerDDto? D { get; set; }
+}
+
+public class OwnerCDto
+{
+    public int Id { get; set; }
+    public OwnerBDto? B { get; set; }
+    public OwnerDDto? D { get; set; }
+}
+
+public class OwnerDDto
+{
+    public int Id { get; set; }
+    public OwnerBDto? B { get; set; }
+    public OwnerCDto? C { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve, MaxDepth = 64)]
-public partial class OwnerGraphMapper { public partial OwnerADto Map(OwnerA a); }
+public partial class OwnerGraphMapper
+{
+    public partial OwnerADto Map(OwnerA a);
+}
 
 // Records NOT merged: two distinct-but-equal record source nodes → two distinct target instances
 public record RecordSrc(int X, int Y);
+
 public record RecordDst(int X, int Y);
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class RecordContainerMapper { public partial RecordContainerDto Map(RecordContainer r); }
+public partial class RecordContainerMapper
+{
+    public partial RecordContainerDto Map(RecordContainer r);
+}
 
-public class RecordContainer    { public RecordSrc? A { get; set; } public RecordSrc? B { get; set; } }
-public class RecordContainerDto { public RecordDst? A { get; set; } public RecordDst? B { get; set; } }
+public class RecordContainer
+{
+    public RecordSrc? A { get; set; }
+    public RecordSrc? B { get; set; }
+}
+
+public class RecordContainerDto
+{
+    public RecordDst? A { get; set; }
+    public RecordDst? B { get; set; }
+}
 
 // Acyclic under Preserve: normal acyclic graph still maps correctly
-public class AcyclicSrc    { public int V { get; set; } public string Label { get; set; } = ""; }
-public class AcyclicDst    { public int V { get; set; } public string Label { get; set; } = ""; }
+public class AcyclicSrc
+{
+    public int V { get; set; }
+    public string Label { get; set; } = "";
+}
+
+public class AcyclicDst
+{
+    public int V { get; set; }
+    public string Label { get; set; } = "";
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class AcyclicPreserveMapper { public partial AcyclicDst Map(AcyclicSrc s); }
+public partial class AcyclicPreserveMapper
+{
+    public partial AcyclicDst Map(AcyclicSrc s);
+}
 
 // None mode (default): recursion-capable type still uses C1 depth-guard (not identity map)
-public class NoneNode    { public int V { get; set; } public NoneNode? Next { get; set; } }
-public class NoneNodeDto { public int V { get; set; } public NoneNodeDto? Next { get; set; } }
+public class NoneNode
+{
+    public int V { get; set; }
+    public NoneNode? Next { get; set; }
+}
+
+public class NoneNodeDto
+{
+    public int V { get; set; }
+    public NoneNodeDto? Next { get; set; }
+}
 
 [DwarfMapper(MaxDepth = 4)]
-public partial class NoneMapper { public partial NoneNodeDto Map(NoneNode n); }
+public partial class NoneMapper
+{
+    public partial NoneNodeDto Map(NoneNode n);
+}
 
 public class PreserveReferenceRuntimeTests
 {
@@ -107,9 +233,9 @@ public class PreserveReferenceRuntimeTests
     [Fact]
     public void Diamond_shared_child_one_target_instance()
     {
-        var root  = new DiamondRoot();
+        var root = new DiamondRoot();
         var child = new DiamondChild { V = 99, Root = root }; // back-reference to root
-        root.Left  = child;
+        root.Left = child;
         root.Right = child; // SAME child instance shared
 
         var troot = new DiamondMapper().Map(root);
@@ -134,9 +260,9 @@ public class PreserveReferenceRuntimeTests
         var b = new OwnerB { Id = 2, C = c, D = d };
         var a = new OwnerA { Id = 1, B = b };
         // Set back-edges
-        c.B = b;    // B⇄C
-        d.B = b;    // B⇄D
-        d.C = c;    // C⇄D
+        c.B = b; // B⇄C
+        d.B = b; // B⇄D
+        d.C = c; // C⇄D
 
         var ta = new OwnerGraphMapper().Map(a);
 
@@ -172,7 +298,7 @@ public class PreserveReferenceRuntimeTests
         var srcA = new RecordSrc(1, 2);
         var srcB = new RecordSrc(1, 2); // same value, different reference
         Assert.NotSame(srcA, srcB); // precondition
-        Assert.Equal(srcA, srcB);   // precondition: value-equal
+        Assert.Equal(srcA, srcB); // precondition: value-equal
 
         var container = new RecordContainer { A = srcA, B = srcB };
         var result = new RecordContainerMapper().Map(container);
@@ -202,7 +328,8 @@ public class PreserveReferenceRuntimeTests
     {
         var a = new NoneNode { V = 1 };
         var b = new NoneNode { V = 2 };
-        a.Next = b; b.Next = a;
+        a.Next = b;
+        b.Next = a;
         var ex = Record.Exception(() => new NoneMapper().Map(a));
         Assert.IsType<DwarfMappingDepthException>(ex);
     }
@@ -211,9 +338,15 @@ public class PreserveReferenceRuntimeTests
     [Fact]
     public void None_mode_within_cap_maps_correctly()
     {
-        var chain = new NoneNode { V = 1,
-            Next = new NoneNode { V = 2,
-                Next = new NoneNode { V = 3 } } };
+        var chain = new NoneNode
+        {
+            V = 1,
+            Next = new NoneNode
+            {
+                V = 2,
+                Next = new NoneNode { V = 3 }
+            }
+        };
         var dto = new NoneMapper().Map(chain);
         Assert.Equal(1, dto.V);
         Assert.Equal(2, dto.Next!.V);

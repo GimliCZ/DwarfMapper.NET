@@ -21,17 +21,16 @@ fixes), plus an optional **testing** package for `[RoundTrip]`.
 | `DwarfMapper` | Everything: the attributes you annotate with **and** the bundled generator + code fixes (analyzer slot). Zero runtime dependencies. | `net10.0` |
 | `DwarfMapper.Testing` | Optional. Powers `[RoundTrip]` and the seeded fuzzer. Test projects only. | `net10.0` |
 
-**When published to NuGet** (it isn't yet — see the [README status](../../README.md#status)) it's a single
-reference, no analyzer wiring:
+**Install** — a single reference, no analyzer wiring (it's a release candidate, so use `--prerelease`):
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="DwarfMapper" Version="1.0.0-rc.1" />
+  <PackageReference Include="DwarfMapper" Version="1.0.1-rc.1" />
 </ItemGroup>
 ```
 
-**Until then**, reference the projects directly. With source/project references the generator isn't bundled
-for you, so wire it as an **analyzer** explicitly (this is the line people miss):
+**Building from source instead?** Reference the projects directly. With source/project references the generator
+isn't bundled for you, so wire it as an **analyzer** explicitly (this is the line people miss):
 
 ```xml
 <ItemGroup>

@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
+
 # DwarfMapper.Benchmarks
 
 In-repo [BenchmarkDotNet](https://benchmarkdotnet.org/) suite measuring DwarfMapper's
@@ -6,17 +7,17 @@ compile-time-generated mappers against a hand-written baseline **and** against M
 Mapster, and AutoMapper. Each scenario below is a `[BenchmarkCategory]` with four methods —
 `<Scenario>_Dwarf`, `_Mapperly`, `_Mapster`, `_AutoMapper` — plus the `Flat_Hand` baseline:
 
-| Category | Scenario |
-|---|---|
-| `Flat` | flat object copy (`Flat_Hand` is the hand-written baseline) |
-| `Nested` | nested object graph (auto-synthesized sub-mapper) |
-| `Array` | `FlatSrc[]` → `FlatDst[]` element-loop mapping |
-| `List` | `List<FlatSrc>` → `List<FlatDst>` mapping |
-| `Blit` | `Vec3Src[]` → `Vec3Dst[]` — the SIMD reinterpret blit fast-path |
-| `Widen` | same-category numeric widening conversion |
-| `Flatten` | `[Flatten]` sub-member pull-up |
-| `Enum` | enum-to-enum mapping |
-| `Dict` | `Dictionary<K,V>` → `Dictionary<K2,V2>` mapping |
+| Category  | Scenario                                                        |
+|-----------|-----------------------------------------------------------------|
+| `Flat`    | flat object copy (`Flat_Hand` is the hand-written baseline)     |
+| `Nested`  | nested object graph (auto-synthesized sub-mapper)               |
+| `Array`   | `FlatSrc[]` → `FlatDst[]` element-loop mapping                  |
+| `List`    | `List<FlatSrc>` → `List<FlatDst>` mapping                       |
+| `Blit`    | `Vec3Src[]` → `Vec3Dst[]` — the SIMD reinterpret blit fast-path |
+| `Widen`   | same-category numeric widening conversion                       |
+| `Flatten` | `[Flatten]` sub-member pull-up                                  |
+| `Enum`    | enum-to-enum mapping                                            |
+| `Dict`    | `Dictionary<K,V>` → `Dictionary<K2,V2>` mapping                 |
 
 Filter a single category with its name, e.g. `--filter "*Blit*"` or `--filter "*Flat_*"`.
 
@@ -47,11 +48,11 @@ meaningful numbers.
 The suite compares DwarfMapper against three peers — all **benchmark-only** dependencies, never
 referenced by the shipped library or generator:
 
-| Mapper | Version | License | Notes |
-|---|---|---|---|
-| Riok.Mapperly | 4.3.1 | MIT | Roslyn source-gen peer (AOT-safe) |
-| Mapster | 10.0.8 | MIT | runtime/expression mode (not AOT-safe) |
-| **AutoMapper** | **14.0.0 only** | **MIT** | see below |
+| Mapper         | Version         | License | Notes                                  |
+|----------------|-----------------|---------|----------------------------------------|
+| Riok.Mapperly  | 4.3.1           | MIT     | Roslyn source-gen peer (AOT-safe)      |
+| Mapster        | 10.0.8          | MIT     | runtime/expression mode (not AOT-safe) |
+| **AutoMapper** | **14.0.0 only** | **MIT** | see below                              |
 
 ### AutoMapper is deliberately pinned to **14.0.0** (the last MIT release)
 

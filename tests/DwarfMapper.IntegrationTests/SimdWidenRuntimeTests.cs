@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Linq;
-using DwarfMapper;
-using Xunit;
+
+
 
 // CA5394: seeded System.Random for deterministic adversary/fuzz data only. Not security.
 #pragma warning disable CA5394
@@ -25,24 +23,37 @@ public class SwSrc
 
 public class SwDst
 {
-    public long[] Ints { get; set; } = Array.Empty<long>();      // int   → long
-    public int[] Shorts { get; set; } = Array.Empty<int>();      // short → int
+    public long[] Ints { get; set; } = Array.Empty<long>(); // int   → long
+    public int[] Shorts { get; set; } = Array.Empty<int>(); // short → int
     public ushort[] Bytes { get; set; } = Array.Empty<ushort>(); // byte  → ushort
-    public uint[] UShorts { get; set; } = Array.Empty<uint>();   // ushort→ uint
-    public ulong[] UInts { get; set; } = Array.Empty<ulong>();   // uint  → ulong
-    public short[] SBytes { get; set; } = Array.Empty<short>();  // sbyte → short
-    public double[] Floats { get; set; } = Array.Empty<double>();// float → double
+    public uint[] UShorts { get; set; } = Array.Empty<uint>(); // ushort→ uint
+    public ulong[] UInts { get; set; } = Array.Empty<ulong>(); // uint  → ulong
+    public short[] SBytes { get; set; } = Array.Empty<short>(); // sbyte → short
+    public double[] Floats { get; set; } = Array.Empty<double>(); // float → double
 }
 
 [DwarfMapper]
-public partial class SwMapper { public partial SwDst Map(SwSrc s); }
+public partial class SwMapper
+{
+    public partial SwDst Map(SwSrc s);
+}
 
 // Dedicated int[]→long[] mapper for focused length fuzzing.
-public class SwIntSrc { public int[] V { get; set; } = Array.Empty<int>(); }
-public class SwLongDst { public long[] V { get; set; } = Array.Empty<long>(); }
+public class SwIntSrc
+{
+    public int[] V { get; set; } = Array.Empty<int>();
+}
+
+public class SwLongDst
+{
+    public long[] V { get; set; } = Array.Empty<long>();
+}
 
 [DwarfMapper]
-public partial class SwIntMapper { public partial SwLongDst Map(SwIntSrc s); }
+public partial class SwIntMapper
+{
+    public partial SwLongDst Map(SwIntSrc s);
+}
 
 public class SimdWidenRuntimeTests
 {
@@ -57,7 +68,7 @@ public class SimdWidenRuntimeTests
             UShorts = new ushort[] { 0, 1, 32767, 65535 },
             UInts = new uint[] { 0, 1, uint.MaxValue },
             SBytes = new sbyte[] { sbyte.MinValue, -1, 0, 1, sbyte.MaxValue },
-            Floats = new[] { float.MinValue, -1.5f, 0f, 1.5f, float.MaxValue, float.NaN, float.PositiveInfinity },
+            Floats = new[] { float.MinValue, -1.5f, 0f, 1.5f, float.MaxValue, float.NaN, float.PositiveInfinity }
         };
         var d = new SwMapper().Map(src);
 
@@ -69,15 +80,29 @@ public class SimdWidenRuntimeTests
         Assert.Equal(src.SBytes.Select(x => (short)x), d.SBytes);
         // float→double: exact widening (incl. NaN/Inf). Compare bitwise to handle NaN.
         Assert.Equal(src.Floats.Select(x => (double)x).Select(BitConverter.DoubleToInt64Bits),
-                     d.Floats.Select(BitConverter.DoubleToInt64Bits));
+            d.Floats.Select(BitConverter.DoubleToInt64Bits));
     }
 
     // ── Adversary/fuzz: every length around the SIMD vector boundary must equal the scalar oracle ──
     [Theory]
-    [InlineData(0)] [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)]
-    [InlineData(7)] [InlineData(8)] [InlineData(9)] [InlineData(15)] [InlineData(16)]
-    [InlineData(17)] [InlineData(31)] [InlineData(32)] [InlineData(33)]
-    [InlineData(63)] [InlineData(64)] [InlineData(65)] [InlineData(1000)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(15)]
+    [InlineData(16)]
+    [InlineData(17)]
+    [InlineData(31)]
+    [InlineData(32)]
+    [InlineData(33)]
+    [InlineData(63)]
+    [InlineData(64)]
+    [InlineData(65)]
+    [InlineData(1000)]
     public void Vectorized_equals_scalar_oracle_for_every_length(int len)
     {
         var rng = new Random(len + 12345);
@@ -88,7 +113,7 @@ public class SimdWidenRuntimeTests
 
         Assert.Equal(len, dst.V.Length);
         for (var i = 0; i < len; i++)
-            Assert.Equal((long)ints[i], dst.V[i]); // SIMD result must equal the scalar implicit widen
+            Assert.Equal(ints[i], dst.V[i]); // SIMD result must equal the scalar implicit widen
     }
 
     [Theory]

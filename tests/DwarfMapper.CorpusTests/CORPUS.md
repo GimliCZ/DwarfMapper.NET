@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
+
 # Real-world mapping parity corpus
 
 This project replicates mapping transformations that **real, popular OSS .NET projects** implement with the
@@ -15,17 +16,17 @@ semantics describe. It is a *capability/parity* corpus: each scenario is a gener
 
 Grounded in real usage of the reference mappers (stars / NuGet downloads at time of survey):
 
-| Project / package | Scale | Mapper used | Scenarios drawn |
-|---|---|---|---|
-| dotnet/eShop, eShopOnWeb | ~11k★ each | manual + AutoMapper | Order total, constant status, CatalogType/Item DTOs |
-| ABP Framework | ~13k★ | **switched default → Mapperly** | validates the compile-time-mapper stance |
-| Jellyfin | ~53k★ | manual `DtoService` | scalar→array, enrichment |
-| Jason Taylor CleanArchitecture | ~20k★ | AutoMapper | `(int)Priority`, audit create-flow, `Colour` value object |
-| FastEndpoints | ~6k★, 14M dl | manual `Mapper<,,>` | computed FullName, request→entity→response |
-| nopCommerce | ~10k★ | AutoMapper | ignore `PasswordHash` both directions |
-| Mapperly | 24M dl (Volo.Abp.Mapperly is top dependent) | — | flattening, enum strategies, ctor mapping |
-| Mapster | 69M dl | — | TwoWays round-trip, computed/conditional, dictionaries |
-| AutoMapper 14.0.0 | 892M dl | — | NullSubstitute, null collections, value converters |
+| Project / package              | Scale                                       | Mapper used                     | Scenarios drawn                                           |
+|--------------------------------|---------------------------------------------|---------------------------------|-----------------------------------------------------------|
+| dotnet/eShop, eShopOnWeb       | ~11k★ each                                  | manual + AutoMapper             | Order total, constant status, CatalogType/Item DTOs       |
+| ABP Framework                  | ~13k★                                       | **switched default → Mapperly** | validates the compile-time-mapper stance                  |
+| Jellyfin                       | ~53k★                                       | manual `DtoService`             | scalar→array, enrichment                                  |
+| Jason Taylor CleanArchitecture | ~20k★                                       | AutoMapper                      | `(int)Priority`, audit create-flow, `Colour` value object |
+| FastEndpoints                  | ~6k★, 14M dl                                | manual `Mapper<,,>`             | computed FullName, request→entity→response                |
+| nopCommerce                    | ~10k★                                       | AutoMapper                      | ignore `PasswordHash` both directions                     |
+| Mapperly                       | 24M dl (Volo.Abp.Mapperly is top dependent) | —                               | flattening, enum strategies, ctor mapping                 |
+| Mapster                        | 69M dl                                      | —                               | TwoWays round-trip, computed/conditional, dictionaries    |
+| AutoMapper 14.0.0              | 892M dl                                     | —                               | NullSubstitute, null collections, value converters        |
 
 ## Scenarios (20 runtime-validated)
 

@@ -65,7 +65,8 @@ Or, if you'd rather drop the method signatures entirely:
 | `[MapProperty("A.B.C", "D")]` (deep path) | identical dotted path (`DWARF043`/`DWARF044` for unknown/nullable-hop) |
 | `[MapperIgnoreTarget(nameof(D.X))]` | `[MapIgnore(nameof(D.X))]` |
 | `[MapperIgnoreSource(nameof(S.X))]` | `[MapIgnoreSource("X")]` (with `RequiredMapping = Both`) |
-| `[MapPropertyFromSource]` / `[MapValue]` | `[MapValue]` (const + `Use=`, type-checked `DWARF040–042`) |
+| `[MapValue]` (constant/parameterless) | `[MapValue]` (const + parameterless `Use=`, type-checked `DWARF040–042`) |
+| `[MapPropertyFromSource(t, Use=m)]` (m reads the **source**) | `[MapProperty(srcMember, t, Use=nameof(M))]` (M takes one source member), or `[AfterMap]` when computed from the whole source — **not** `[MapValue]` (its `Use=` must be parameterless → `DWARF041`) |
 | referenced-method converter | `[MapProperty(src, tgt, Use = nameof(M))]` |
 | `[MapDerivedType<DS, DD>]` | `[MapDerivedType<DS, DD>]` — **same attribute name** |
 
@@ -77,12 +78,12 @@ Or, if you'd rather drop the method signatures entirely:
 |---|---|
 | `PropertyNameMappingStrategy.CaseInsensitive` | `[DwarfMapper(CaseInsensitive = true)]` |
 | `RequiredMappingStrategy.Target` / `Both` | `[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Target/Both)]` |
-| `EnumMappingStrategy.ByName` / `ByValue` | `[DwarfMapper(EnumStrategy = EnumStrategy.ByName/ByValue)]` — **default is ByName in both** |
+| `EnumMappingStrategy.ByName` / `ByValue` | `[DwarfMapper(EnumStrategy = EnumStrategy.ByName/ByValue)]` — **Mapperly defaults to ByValue, DwarfMapper to ByName**; set it explicitly for parity |
 | strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions = false)]` (flips `DWARF038` suggestions into build errors) |
 | `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` — DwarfMapper reconstructs the **full** topology (Mapperly's is partial) |
 | `[UseMapper]` / `[UseStaticMapper]` (compose mappers) | call another mapper from a `Use=` method, or nest types — no first-class mapper-injection attribute |
 
-Good news on enums and case-sensitivity: the defaults match, so most `[Mapper]` option lines port verbatim.
+One default differs: **enum strategy** (Mapperly maps enums *by value* by default, DwarfMapper *by name*) — set `EnumStrategy` explicitly to match. Case-sensitivity defaults otherwise line up.
 
 ## Step 5 — Build, clear DWARF001, verify, remove Mapperly
 
@@ -98,7 +99,7 @@ Good news on enums and case-sensitivity: the defaults match, so most `[Mapper]` 
 
 These have no Mapperly equivalent (see [`../COMPARISON.md`](../COMPARISON.md#capability-matrix)):
 
-- **`[RoundTrip]` verification** — fuzz-driven `Back(Forward(x)) ≡ x` with mapping-aware failure dumps.
+- **`[RoundTrip]` verification** — fuzz-driven `Back(Forward(x)) ≡ x` with structural member-path failure dumps.
 - **A non-optional completeness build-error gate** — not a warning you can forget to escalate.
 - **Blittable/SIMD bulk-copy** (`MemoryMarshal.Cast`) and **SIMD widening** (`Vector.Widen`) fast-paths —
   ~2× faster on blittable struct arrays and primitive-widen arrays; Mapperly copies element-by-element.

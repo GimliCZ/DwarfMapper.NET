@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Tests for the assembly-wide convenience facade (<c>DwarfMapper.Extensions.g.cs</c>): the
-/// <c>source.ToTarget()</c> extension methods generated from simple maps.
+///     Tests for the assembly-wide convenience facade (<c>DwarfMapper.Extensions.g.cs</c>): the
+///     <c>source.ToTarget()</c> extension methods generated from simple maps.
 /// </summary>
 public sealed class FacadeExtensionsGeneratorTests
 {
@@ -15,12 +14,12 @@ public sealed class FacadeExtensionsGeneratorTests
     public void Facade_emits_extension_for_a_simple_map()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Person { public int Age { get; set; } }
-            public class PersonDto { public int Age { get; set; } }
-            [DwarfMapper] public partial class PersonMapper { public partial PersonDto ToDto(Person p); }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Person { public int Age { get; set; } }
+                         public class PersonDto { public int Age { get; set; } }
+                         [DwarfMapper] public partial class PersonMapper { public partial PersonDto ToDto(Person p); }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
 
@@ -33,12 +32,12 @@ public sealed class FacadeExtensionsGeneratorTests
     public void Facade_extension_name_follows_target_type_not_method_name()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Person { public int Age { get; set; } }
-            public class PersonDto { public int Age { get; set; } }
-            [DwarfMapper] public partial class PersonMapper { public partial PersonDto Convert(Person p); }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Person { public int Age { get; set; } }
+                         public class PersonDto { public int Age { get; set; } }
+                         [DwarfMapper] public partial class PersonMapper { public partial PersonDto Convert(Person p); }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
 
@@ -51,12 +50,12 @@ public sealed class FacadeExtensionsGeneratorTests
     public void Facade_respects_GenerateExtensions_false()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Person { public int Age { get; set; } }
-            public class PersonDto { public int Age { get; set; } }
-            [DwarfMapper(GenerateExtensions = false)] public partial class PersonMapper { public partial PersonDto ToDto(Person p); }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Person { public int Age { get; set; } }
+                         public class PersonDto { public int Age { get; set; } }
+                         [DwarfMapper(GenerateExtensions = false)] public partial class PersonMapper { public partial PersonDto ToDto(Person p); }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
 
@@ -68,13 +67,13 @@ public sealed class FacadeExtensionsGeneratorTests
     public void Facade_skips_colliding_extension_signatures()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Person { public int Age { get; set; } }
-            public class PersonDto { public int Age { get; set; } }
-            [DwarfMapper] public partial class MapperA { public partial PersonDto ToDto(Person p); }
-            [DwarfMapper] public partial class MapperB { public partial PersonDto ToDto(Person p); }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Person { public int Age { get; set; } }
+                         public class PersonDto { public int Age { get; set; } }
+                         [DwarfMapper] public partial class MapperA { public partial PersonDto ToDto(Person p); }
+                         [DwarfMapper] public partial class MapperB { public partial PersonDto ToDto(Person p); }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
 
@@ -86,18 +85,18 @@ public sealed class FacadeExtensionsGeneratorTests
     public void Facade_skips_update_into_and_projection_methods()
     {
         const string s = """
-            using DwarfMapper;
-            using System.Linq;
-            namespace Demo;
-            public class Person { public int Age { get; set; } }
-            public class PersonDto { public int Age { get; set; } }
-            [DwarfMapper] public partial class PersonMapper
-            {
-                public partial PersonDto ToDto(Person p);                 // eligible
-                public partial void Update(Person p, PersonDto d);        // update-into: skipped
-                public partial IQueryable<PersonDto> Project(IQueryable<Person> q); // projection: skipped
-            }
-            """;
+                         using DwarfMapper;
+                         using System.Linq;
+                         namespace Demo;
+                         public class Person { public int Age { get; set; } }
+                         public class PersonDto { public int Age { get; set; } }
+                         [DwarfMapper] public partial class PersonMapper
+                         {
+                             public partial PersonDto ToDto(Person p);                 // eligible
+                             public partial void Update(Person p, PersonDto d);        // update-into: skipped
+                             public partial IQueryable<PersonDto> Project(IQueryable<Person> q); // projection: skipped
+                         }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
 
@@ -111,12 +110,12 @@ public sealed class FacadeExtensionsGeneratorTests
     public void Facade_code_compiles_clean()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Person { public int Age { get; set; } public string Name { get; set; } }
-            public class PersonDto { public int Age { get; set; } public string Name { get; set; } }
-            [DwarfMapper] public partial class PersonMapper { public partial PersonDto ToDto(Person p); }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Person { public int Age { get; set; } public string Name { get; set; } }
+                         public class PersonDto { public int Age { get; set; } public string Name { get; set; } }
+                         [DwarfMapper] public partial class PersonMapper { public partial PersonDto ToDto(Person p); }
+                         """;
 
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(s);
         Assert.Empty(errors);
@@ -126,32 +125,33 @@ public sealed class FacadeExtensionsGeneratorTests
     public void Duplicate_facade_signature_reports_DWARF058_not_a_silent_drop()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Order { public int Id { get; set; } }
-            public class OrderDto { public int Id { get; set; } }
-            [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class MapperA { }
-            [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class MapperB { }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Order { public int Id { get; set; } }
+                         public class OrderDto { public int Id { get; set; } }
+                         [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class MapperA { }
+                         [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class MapperB { }
+                         """;
 
         var (diags, _) = GeneratorTestHarness.Run(s);
         Assert.Contains(diags, d => d.Id == "DWARF058");
-        Assert.DoesNotContain("ToOrderDto", GeneratorTestHarness.RunAndGetSource(s, FacadeHint), StringComparison.Ordinal);
+        Assert.DoesNotContain("ToOrderDto", GeneratorTestHarness.RunAndGetSource(s, FacadeHint),
+            StringComparison.Ordinal);
     }
 
     [Fact]
     public void Facade_mixed_opt_out_emits_only_the_opted_in_mapper()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class A { public int V { get; set; } }
-            public class ADto { public int V { get; set; } }
-            public class B { public int V { get; set; } }
-            public class BDto { public int V { get; set; } }
-            [DwarfMapper] [GenerateMap<A, ADto>] public partial class MA { }
-            [DwarfMapper(GenerateExtensions = false)] [GenerateMap<B, BDto>] public partial class MB { }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class A { public int V { get; set; } }
+                         public class ADto { public int V { get; set; } }
+                         public class B { public int V { get; set; } }
+                         public class BDto { public int V { get; set; } }
+                         [DwarfMapper] [GenerateMap<A, ADto>] public partial class MA { }
+                         [DwarfMapper(GenerateExtensions = false)] [GenerateMap<B, BDto>] public partial class MB { }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
         Assert.Contains("ToADto(this global::Demo.A", facade, StringComparison.Ordinal);
@@ -162,12 +162,12 @@ public sealed class FacadeExtensionsGeneratorTests
     public void Facade_extensions_are_assembly_internal_by_default()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class Order { public int Id { get; set; } }
-            public class OrderDto { public int Id { get; set; } }
-            [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class M { }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Order { public int Id { get; set; } }
+                         public class OrderDto { public int Id { get; set; } }
+                         [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class M { }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
         Assert.Contains("internal static class DwarfMapperGeneratedExtensions", facade, StringComparison.Ordinal);
@@ -178,13 +178,13 @@ public sealed class FacadeExtensionsGeneratorTests
     public void DwarfMapperOptions_PublicExtensions_makes_extensions_public_for_public_types()
     {
         const string s = """
-            using DwarfMapper;
-            [assembly: DwarfMapperOptions(PublicExtensions = true)]
-            namespace Demo;
-            public class Order { public int Id { get; set; } }
-            public class OrderDto { public int Id { get; set; } }
-            [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class M { }
-            """;
+                         using DwarfMapper;
+                         [assembly: DwarfMapperOptions(PublicExtensions = true)]
+                         namespace Demo;
+                         public class Order { public int Id { get; set; } }
+                         public class OrderDto { public int Id { get; set; } }
+                         [DwarfMapper] [GenerateMap<Order, OrderDto>] public partial class M { }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
         Assert.Contains("public static class DwarfMapperGeneratedExtensions", facade, StringComparison.Ordinal);
@@ -196,17 +196,17 @@ public sealed class FacadeExtensionsGeneratorTests
     public void PublicExtensions_keeps_a_non_public_typed_extension_internal_for_safety()
     {
         const string s = """
-            using DwarfMapper;
-            [assembly: DwarfMapperOptions(PublicExtensions = true)]
-            namespace Demo;
-            public class Order { public int Id { get; set; } }
-            internal class OrderView { public int Id { get; set; } }
-            [DwarfMapper]
-            internal partial class M
-            {
-                internal partial OrderView ToView(Order o);
-            }
-            """;
+                         using DwarfMapper;
+                         [assembly: DwarfMapperOptions(PublicExtensions = true)]
+                         namespace Demo;
+                         public class Order { public int Id { get; set; } }
+                         internal class OrderView { public int Id { get; set; } }
+                         [DwarfMapper]
+                         internal partial class M
+                         {
+                             internal partial OrderView ToView(Order o);
+                         }
+                         """;
 
         var facade = GeneratorTestHarness.RunAndGetSource(s, FacadeHint);
         // The facade class is public, but THIS extension stays internal because OrderView is internal (a public

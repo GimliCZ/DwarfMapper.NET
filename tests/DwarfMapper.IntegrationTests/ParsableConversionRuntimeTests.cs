@@ -1,48 +1,130 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
+
 using System.Globalization;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
-public class StringSrc   { public string V { get; set; } = ""; }
-public class IntDst2     { public int    V { get; set; } }
-public class GuidDst     { public Guid   V { get; set; } }
-public class BoolDst     { public bool   V { get; set; } }
+public class StringSrc
+{
+    public string V { get; set; } = "";
+}
 
-[DwarfMapper] public partial class StringToIntMapper2  { public partial IntDst2 Map(StringSrc s); }
-[DwarfMapper] public partial class StringToGuidMapper  { public partial GuidDst  Map(StringSrc s); }
-[DwarfMapper] public partial class StringToBoolMapper  { public partial BoolDst  Map(StringSrc s); }
+public class IntDst2
+{
+    public int V { get; set; }
+}
 
-public class IntSrc3     { public int    V { get; set; } }
-public class GuidSrc     { public Guid   V { get; set; } }
-public class StringDst2  { public string V { get; set; } = ""; }
+public class GuidDst
+{
+    public Guid V { get; set; }
+}
 
-[DwarfMapper] public partial class IntToStringMapper   { public partial StringDst2 Map(IntSrc3 s); }
-[DwarfMapper] public partial class GuidToStringMapper  { public partial StringDst2 Map(GuidSrc  s); }
+public class BoolDst
+{
+    public bool V { get; set; }
+}
+
+[DwarfMapper]
+public partial class StringToIntMapper2
+{
+    public partial IntDst2 Map(StringSrc s);
+}
+
+[DwarfMapper]
+public partial class StringToGuidMapper
+{
+    public partial GuidDst Map(StringSrc s);
+}
+
+[DwarfMapper]
+public partial class StringToBoolMapper
+{
+    public partial BoolDst Map(StringSrc s);
+}
+
+public class IntSrc3
+{
+    public int V { get; set; }
+}
+
+public class GuidSrc
+{
+    public Guid V { get; set; }
+}
+
+public class StringDst2
+{
+    public string V { get; set; } = "";
+}
+
+[DwarfMapper]
+public partial class IntToStringMapper
+{
+    public partial StringDst2 Map(IntSrc3 s);
+}
+
+[DwarfMapper]
+public partial class GuidToStringMapper
+{
+    public partial StringDst2 Map(GuidSrc s);
+}
 
 // ── char ↔ string ─────────────────────────────────────────────────────────────
 
-public class CharSrc     { public char   V { get; set; } }
-public class StringDst3  { public string V { get; set; } = ""; }
+public class CharSrc
+{
+    public char V { get; set; }
+}
 
-[DwarfMapper] public partial class CharToStringMapper  { public partial StringDst3 Map(CharSrc s); }
+public class StringDst3
+{
+    public string V { get; set; } = "";
+}
+
+[DwarfMapper]
+public partial class CharToStringMapper
+{
+    public partial StringDst3 Map(CharSrc s);
+}
 
 // ── bool → string ─────────────────────────────────────────────────────────────
 
-public class BoolSrc     { public bool   V { get; set; } }
+public class BoolSrc
+{
+    public bool V { get; set; }
+}
 
-[DwarfMapper] public partial class BoolToStringMapper  { public partial StringDst3 Map(BoolSrc s); }
+[DwarfMapper]
+public partial class BoolToStringMapper
+{
+    public partial StringDst3 Map(BoolSrc s);
+}
 
 // ── string → double / float ───────────────────────────────────────────────────
 
-public class DoubleDst   { public double V { get; set; } }
-public class FloatDst    { public float  V { get; set; } }
+public class DoubleDst
+{
+    public double V { get; set; }
+}
 
-[DwarfMapper] public partial class StringToDoubleMapper { public partial DoubleDst Map(StringSrc s); }
-[DwarfMapper] public partial class StringToFloatMapper  { public partial FloatDst  Map(StringSrc s); }
+public class FloatDst
+{
+    public float V { get; set; }
+}
+
+[DwarfMapper]
+public partial class StringToDoubleMapper
+{
+    public partial DoubleDst Map(StringSrc s);
+}
+
+[DwarfMapper]
+public partial class StringToFloatMapper
+{
+    public partial FloatDst Map(StringSrc s);
+}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -185,7 +267,7 @@ public class ParsableConversionRuntimeTests
     public void String_to_double_maps_decimal_value()
     {
         var result = new StringToDoubleMapper().Map(new StringSrc { V = "3.14" });
-        Assert.Equal(3.14, result.V, precision: 10);
+        Assert.Equal(3.14, result.V, 10);
     }
 
     [Fact]
@@ -198,13 +280,15 @@ public class ParsableConversionRuntimeTests
 
     [Fact]
     public void String_to_double_bad_input_throws()
-        => Assert.ThrowsAny<Exception>(() => new StringToDoubleMapper().Map(new StringSrc { V = "abc" }));
+    {
+        Assert.ThrowsAny<Exception>(() => new StringToDoubleMapper().Map(new StringSrc { V = "abc" }));
+    }
 
     [Fact]
     public void String_to_float_maps_value()
     {
         var result = new StringToFloatMapper().Map(new StringSrc { V = "3.14" });
-        Assert.Equal(3.14f, result.V, precision: 2);
+        Assert.Equal(3.14f, result.V, 2);
     }
 
     // ── Culture independence for double/float ─────────────────────────────────
@@ -219,7 +303,7 @@ public class ParsableConversionRuntimeTests
         {
             CultureInfo.CurrentCulture = new CultureInfo("de-DE");
             var result = new StringToDoubleMapper().Map(new StringSrc { V = "3.14" });
-            Assert.Equal(3.14, result.V, precision: 10);
+            Assert.Equal(3.14, result.V, 10);
         }
         finally
         {

@@ -1,35 +1,38 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
+
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DwarfMapper.Generator.Pipeline;
 
 /// <summary>
-/// Collects the cross-assembly maps this compilation CONSUMES through the ambient <c>IDwarfMapper</c>
-/// facade — auto-detected from <c>Map&lt;TDest&gt;(src)</c> / <c>Map&lt;TSrc,TDest&gt;(src)</c> call sites and
-/// declared via <c>[UsesMap]</c> — emitted as <c>[assembly: DwarfRequiresMap(...)]</c> so the validation
-/// root can verify every consumed pair is provided by some referenced assembly (DWARF061).
+///     Collects the cross-assembly maps this compilation CONSUMES through the ambient <c>IDwarfMapper</c>
+///     facade — auto-detected from <c>Map&lt;TDest&gt;(src)</c> / <c>Map&lt;TSrc,TDest&gt;(src)</c> call sites and
+///     declared via <c>[UsesMap]</c> — emitted as <c>[assembly: DwarfRequiresMap(...)]</c> so the validation
+///     root can verify every consumed pair is provided by some referenced assembly (DWARF061).
 /// </summary>
 internal static class AmbientRequiresCollector
 {
-    private static readonly SymbolDisplayFormat Fq = SymbolDisplayFormat.FullyQualifiedFormat;
-
     private const string FacadeInterface = "DwarfMapper.IDwarfMapper";
+    private static readonly SymbolDisplayFormat Fq = SymbolDisplayFormat.FullyQualifiedFormat;
 
     /// <summary>Cheap syntactic gate: any <c>receiver.Map&lt;...&gt;(...)</c> invocation.</summary>
     public static bool IsFacadeMapCall(SyntaxNode node, CancellationToken _)
-        => node is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name: GenericNameSyntax g } }
-           && g.Identifier.Text == "Map";
+    {
+        return node is InvocationExpressionSyntax
+               {
+                   Expression: MemberAccessExpressionSyntax { Name: GenericNameSyntax g }
+               }
+               && g.Identifier.Text == "Map";
+    }
 
     /// <summary>
-    /// Resolves an <c>IDwarfMapper.Map</c> call site to a (source, destination) pair, or <c>null</c> when it
-    /// is not a facade call or the source type is not a concrete named type (object / type-parameter / no
-    /// argument — left to an explicit <c>[UsesMap]</c>).
+    ///     Resolves an <c>IDwarfMapper.Map</c> call site to a (source, destination) pair, or <c>null</c> when it
+    ///     is not a facade call or the source type is not a concrete named type (object / type-parameter / no
+    ///     argument — left to an explicit <c>[UsesMap]</c>).
     /// </summary>
-    public static (string Source, string Destination)? ExtractFacadeRequire(GeneratorSyntaxContext ctx, CancellationToken ct)
+    public static (string Source, string Destination)? ExtractFacadeRequire(GeneratorSyntaxContext ctx,
+        CancellationToken ct)
     {
         var inv = (InvocationExpressionSyntax)ctx.Node;
         if (ctx.SemanticModel.GetSymbolInfo(inv, ct).Symbol is not IMethodSymbol method)
@@ -58,7 +61,8 @@ internal static class AmbientRequiresCollector
     }
 
     /// <summary>Reads assembly-level <c>[UsesMap]</c> (generic and non-generic) from the compilation.</summary>
-    public static IReadOnlyList<(string Source, string Destination)> ReadAssemblyUsesMap(Compilation compilation, CancellationToken _)
+    public static IReadOnlyList<(string Source, string Destination)> ReadAssemblyUsesMap(Compilation compilation,
+        CancellationToken _)
     {
         var result = new List<(string, string)>();
         foreach (var attr in compilation.Assembly.GetAttributes())
@@ -67,11 +71,13 @@ internal static class AmbientRequiresCollector
             if (pair is not null)
                 result.Add(pair.Value);
         }
+
         return result;
     }
 
     /// <summary>Reads a <c>[UsesMap]</c> applied to a class (via ForAttributeWithMetadataName).</summary>
-    public static IReadOnlyList<(string Source, string Destination)> ReadClassUsesMap(GeneratorAttributeSyntaxContext ctx, CancellationToken _)
+    public static IReadOnlyList<(string Source, string Destination)> ReadClassUsesMap(
+        GeneratorAttributeSyntaxContext ctx, CancellationToken _)
     {
         var result = new List<(string, string)>();
         foreach (var attr in ctx.Attributes)
@@ -80,6 +86,7 @@ internal static class AmbientRequiresCollector
             if (pair is not null)
                 result.Add(pair.Value);
         }
+
         return result;
     }
 
@@ -90,12 +97,14 @@ internal static class AmbientRequiresCollector
             return null;
 
         // Generic: UsesMapAttribute<TSource, TDestination> — types are the attribute's type arguments.
-        if (cls.IsGenericType && cls.OriginalDefinition.ToDisplayString() == "DwarfMapper.UsesMapAttribute<TSource, TDestination>")
+        if (cls.IsGenericType && cls.OriginalDefinition.ToDisplayString() ==
+            "DwarfMapper.UsesMapAttribute<TSource, TDestination>")
             return ToPair(cls.TypeArguments.ElementAtOrDefault(0), cls.TypeArguments.ElementAtOrDefault(1));
 
         // Non-generic: UsesMapAttribute(Type source, Type destination).
         if (cls.ToDisplayString() == KnownNames.UsesMapFqn && attr.ConstructorArguments.Length == 2)
-            return ToPair(attr.ConstructorArguments[0].Value as ITypeSymbol, attr.ConstructorArguments[1].Value as ITypeSymbol);
+            return ToPair(attr.ConstructorArguments[0].Value as ITypeSymbol,
+                attr.ConstructorArguments[1].Value as ITypeSymbol);
 
         return null;
     }
@@ -126,10 +135,8 @@ internal static class AmbientRequiresCollector
             return IsEffectivelyPublic(arr.ElementType);
 
         for (ISymbol? s = type; s is not null and not INamespaceSymbol; s = s.ContainingSymbol)
-        {
             if (s.DeclaredAccessibility != Accessibility.Public)
                 return false;
-        }
 
         if (type is INamedTypeSymbol named)
             foreach (var typeArgument in named.TypeArguments)

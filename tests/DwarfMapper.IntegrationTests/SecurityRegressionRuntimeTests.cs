@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
+
 using System.Globalization;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -12,17 +11,55 @@ namespace DwarfMapper.IntegrationTests;
 //   • Culture footgun: generated Parse/ToString must be invariant, NOT pick up ambient CurrentCulture
 //     (where "1.5" parses to 15 under de-DE).
 
-public class Sec_Node { public int V { get; set; } public Sec_Node? Next { get; set; } }
-public class Sec_NodeDto { public int V { get; set; } public Sec_NodeDto? Next { get; set; } }
-[DwarfMapper] public partial class Sec_CycleMapper { public partial Sec_NodeDto Map(Sec_Node n); }
+public class Sec_Node
+{
+    public int V { get; set; }
+    public Sec_Node? Next { get; set; }
+}
 
-public class Sec_ParseSrc { public string D { get; set; } = ""; }
-public class Sec_ParseDst { public double D { get; set; } }
-[DwarfMapper] public partial class Sec_ParseMapper { public partial Sec_ParseDst Map(Sec_ParseSrc s); }
+public class Sec_NodeDto
+{
+    public int V { get; set; }
+    public Sec_NodeDto? Next { get; set; }
+}
 
-public class Sec_FmtSrc { public double D { get; set; } }
-public class Sec_FmtDst { public string D { get; set; } = ""; }
-[DwarfMapper] public partial class Sec_FmtMapper { public partial Sec_FmtDst Map(Sec_FmtSrc s); }
+[DwarfMapper]
+public partial class Sec_CycleMapper
+{
+    public partial Sec_NodeDto Map(Sec_Node n);
+}
+
+public class Sec_ParseSrc
+{
+    public string D { get; set; } = "";
+}
+
+public class Sec_ParseDst
+{
+    public double D { get; set; }
+}
+
+[DwarfMapper]
+public partial class Sec_ParseMapper
+{
+    public partial Sec_ParseDst Map(Sec_ParseSrc s);
+}
+
+public class Sec_FmtSrc
+{
+    public double D { get; set; }
+}
+
+public class Sec_FmtDst
+{
+    public string D { get; set; } = "";
+}
+
+[DwarfMapper]
+public partial class Sec_FmtMapper
+{
+    public partial Sec_FmtDst Map(Sec_FmtSrc s);
+}
 
 public class SecurityRegressionRuntimeTests
 {

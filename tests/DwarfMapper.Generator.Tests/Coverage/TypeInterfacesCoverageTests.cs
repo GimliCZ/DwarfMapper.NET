@@ -1,26 +1,38 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
+
+using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using DwarfMapper.Generator.Pipeline;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 // Coverage suite for DwarfMapper.Generator.Pipeline.TypeInterfaces.
 // Techniques: unit (Roslyn symbol-based), adversary, defensive, fuzzy (oracle), fixture.
 namespace DwarfMapper.Generator.Tests.Coverage;
 
 /// <summary>
-/// Unit tests for <c>TypeInterfaces</c> symbol predicates,
-/// covering IsIntegral / ImplementsIParsable / ImplementsIFormattable / IsINumberBase.
+///     Unit tests for <c>TypeInterfaces</c> symbol predicates,
+///     covering IsIntegral / ImplementsIParsable / ImplementsIFormattable / IsINumberBase.
 /// </summary>
 public class TypeInterfacesCoverageTests
 {
+    // ─── ImplementsIParsable ──────────────────────────────────────────────────
+
+    private static readonly Dictionary<string, string> ClrNameMap = new(StringComparer.Ordinal)
+    {
+        ["int"] = "System.Int32",
+        ["long"] = "System.Int64",
+        ["double"] = "System.Double",
+        ["float"] = "System.Single",
+        ["bool"] = "System.Boolean",
+        ["byte"] = "System.Byte",
+        ["short"] = "System.Int16",
+        ["decimal"] = "System.Decimal"
+    };
     // ─── Roslyn compilation helper ────────────────────────────────────────────
 
     /// <summary>
-    /// Builds a minimal Roslyn compilation containing <paramref name="source"/>
-    /// with the same references as GeneratorTestHarness.
+    ///     Builds a minimal Roslyn compilation containing <paramref name="source" />
+    ///     with the same references as GeneratorTestHarness.
     /// </summary>
     private static (Compilation Compilation, IReadOnlyDictionary<string, INamedTypeSymbol> Types)
         BuildCompilation(string source)
@@ -31,7 +43,7 @@ public class TypeInterfacesCoverageTests
             .Select(a => MetadataReference.CreateFromFile(a.Location))
             .Cast<MetadataReference>()
             .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location))
-            .Append(MetadataReference.CreateFromFile(typeof(System.Linq.Queryable).Assembly.Location));
+            .Append(MetadataReference.CreateFromFile(typeof(Queryable).Assembly.Location));
 
         var compilation = CSharpCompilation.Create(
             "TypeInterfacesTestAsm_" + Guid.NewGuid().ToString("N"),
@@ -41,9 +53,9 @@ public class TypeInterfacesCoverageTests
 
         // Collect all types declared in our snippet by walking the syntax tree + SemanticModel.
         var model = compilation.GetSemanticModel(tree);
-        var root  = tree.GetRoot();
+        var root = tree.GetRoot();
         var types = new Dictionary<string, INamedTypeSymbol>(StringComparer.Ordinal);
-        foreach (var decl in root.DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.TypeDeclarationSyntax>())
+        foreach (var decl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
         {
             var sym = model.GetDeclaredSymbol(decl);
             if (sym is INamedTypeSymbol named)
@@ -55,7 +67,9 @@ public class TypeInterfacesCoverageTests
 
     /// <summary>Returns the ITypeSymbol for a well-known BCL special type via the compilation.</summary>
     private static ITypeSymbol SpecialTypeSymbol(Compilation compilation, SpecialType st)
-        => compilation.GetSpecialType(st);
+    {
+        return compilation.GetSpecialType(st);
+    }
 
     // ─── IsIntegral ──────────────────────────────────────────────────────────
 
@@ -107,8 +121,8 @@ public class TypeInterfacesCoverageTests
         var source = "namespace T { public enum Color { R, G, B } }";
         var (compilation, _) = BuildCompilation(source);
         var model = compilation.GetSemanticModel(compilation.SyntaxTrees.First());
-        var root  = compilation.SyntaxTrees.First().GetRoot();
-        foreach (var decl in root.DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.EnumDeclarationSyntax>())
+        var root = compilation.SyntaxTrees.First().GetRoot();
+        foreach (var decl in root.DescendantNodes().OfType<EnumDeclarationSyntax>())
         {
             var sym = model.GetDeclaredSymbol(decl);
             if (sym != null)
@@ -117,6 +131,7 @@ public class TypeInterfacesCoverageTests
                 return;
             }
         }
+
         Assert.Fail("Could not find enum symbol");
     }
 
@@ -137,20 +152,6 @@ public class TypeInterfacesCoverageTests
         Assert.NotNull(guid);
         Assert.False(TypeInterfaces.IsIntegral(guid!));
     }
-
-    // ─── ImplementsIParsable ──────────────────────────────────────────────────
-
-    private static readonly Dictionary<string, string> ClrNameMap = new(StringComparer.Ordinal)
-    {
-        ["int"]     = "System.Int32",
-        ["long"]    = "System.Int64",
-        ["double"]  = "System.Double",
-        ["float"]   = "System.Single",
-        ["bool"]    = "System.Boolean",
-        ["byte"]    = "System.Byte",
-        ["short"]   = "System.Int16",
-        ["decimal"] = "System.Decimal",
-    };
 
     [Theory]
     [InlineData("int")]
@@ -296,13 +297,9 @@ public class TypeInterfacesCoverageTests
         // float is not integral, so it falls through to AllInterfaces walk.
         var numberBase = compilation.GetTypeByMetadataName("System.Numerics.INumberBase`1");
         if (numberBase is null)
-        {
             Assert.False(TypeInterfaces.IsINumberBase(compilation, t));
-        }
         else
-        {
             Assert.True(TypeInterfaces.IsINumberBase(compilation, t));
-        }
     }
 
     [Fact]
@@ -343,19 +340,19 @@ public class TypeInterfacesCoverageTests
             SpecialType.System_Int16, SpecialType.System_UInt16,
             SpecialType.System_Int32, SpecialType.System_UInt32,
             SpecialType.System_Int64, SpecialType.System_UInt64,
-            SpecialType.System_IntPtr, SpecialType.System_UIntPtr,
+            SpecialType.System_IntPtr, SpecialType.System_UIntPtr
         };
 
         var candidates = new[]
         {
-            SpecialType.System_SByte,   SpecialType.System_Byte,
-            SpecialType.System_Int16,   SpecialType.System_UInt16,
-            SpecialType.System_Int32,   SpecialType.System_UInt32,
-            SpecialType.System_Int64,   SpecialType.System_UInt64,
-            SpecialType.System_IntPtr,  SpecialType.System_UIntPtr,
-            SpecialType.System_Single,  SpecialType.System_Double,
+            SpecialType.System_SByte, SpecialType.System_Byte,
+            SpecialType.System_Int16, SpecialType.System_UInt16,
+            SpecialType.System_Int32, SpecialType.System_UInt32,
+            SpecialType.System_Int64, SpecialType.System_UInt64,
+            SpecialType.System_IntPtr, SpecialType.System_UIntPtr,
+            SpecialType.System_Single, SpecialType.System_Double,
             SpecialType.System_Decimal, SpecialType.System_Boolean,
-            SpecialType.System_Char,    SpecialType.System_String,
+            SpecialType.System_Char, SpecialType.System_String
         };
 
         foreach (var st in candidates)

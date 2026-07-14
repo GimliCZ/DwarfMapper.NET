@@ -19,10 +19,6 @@
 //             DwarfMapper.dll must appear in the FIM source OR in a test source file.
 //             Every TargetKind value must appear in the FIM source OR a test source.
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
@@ -34,29 +30,25 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 // ── Exemption lists ───────────────────────────────────────────────────────────
 
 /// <summary>
-/// Attribute types exempt from the FeatureInteractionCompileMatrix coverage requirement.
-/// Keep this list tiny and justified; it must only SHRINK — never grow without explicit
-/// justification added as a comment.
-///
-/// RoundTrip         — pairing/verification feature, orthogonal to all others; the matrix
-///                     would need a *pair* of methods and an emit step, making it a full
-///                     integration scenario, not a compile-matrix case.  Covered by
-///                     RoundTripGenTests + integration tests.
-///
-/// DwarfMapperConstructor — constructor-selection marker; must live on the constructor,
-///                     not on the mapping method, so it's structurally incompatible with
-///                     the method-level matrix format.  Covered by ConstructorMappingTests.
-///
-/// DwarfMapperOptions — an ASSEMBLY-level compile-time option (controls generated-extension
-///                     visibility); it is not a per-mapping feature and has no method-level
-///                     matrix form.  Covered by FacadeExtensionsGeneratorTests.
-///
-/// DwarfProvidesMap / DwarfRequiresMap / UsesMap / DwarfMapperValidationRoot — the ambient
-///                     cross-assembly registry infrastructure (generator-emitted manifests, the
-///                     consumption marker, and the validation-root marker). None affect a single
-///                     mapping's generated output, so they have no per-mapping compile-matrix form.
-///                     Covered by AmbientManifestAttributesTests + AmbientRegistryTests (and the
-///                     ambient-registry generator/validation tests).
+///     Attribute types exempt from the FeatureInteractionCompileMatrix coverage requirement.
+///     Keep this list tiny and justified; it must only SHRINK — never grow without explicit
+///     justification added as a comment.
+///     RoundTrip         — pairing/verification feature, orthogonal to all others; the matrix
+///     would need a *pair* of methods and an emit step, making it a full
+///     integration scenario, not a compile-matrix case.  Covered by
+///     RoundTripGenTests + integration tests.
+///     DwarfMapperConstructor — constructor-selection marker; must live on the constructor,
+///     not on the mapping method, so it's structurally incompatible with
+///     the method-level matrix format.  Covered by ConstructorMappingTests.
+///     DwarfMapperOptions — an ASSEMBLY-level compile-time option (controls generated-extension
+///     visibility); it is not a per-mapping feature and has no method-level
+///     matrix form.  Covered by FacadeExtensionsGeneratorTests.
+///     DwarfProvidesMap / DwarfRequiresMap / UsesMap / DwarfMapperValidationRoot — the ambient
+///     cross-assembly registry infrastructure (generator-emitted manifests, the
+///     consumption marker, and the validation-root marker). None affect a single
+///     mapping's generated output, so they have no per-mapping compile-matrix form.
+///     Covered by AmbientManifestAttributesTests + AmbientRegistryTests (and the
+///     ambient-registry generator/validation tests).
 /// </summary>
 file static class MatrixExemptAttributes
 {
@@ -65,21 +57,24 @@ file static class MatrixExemptAttributes
         {
             "RoundTrip",
             "DwarfMapperConstructor",
+            // DwarfMapper.MapToAttribute: the [MapTo] front door handled by MapToGenerator, not the
+            // [DwarfMapper] partial-class pipeline the FIM matrix covers. Has its own coverage
+            // (RegistryMapTo*RuntimeTests). Remove if [MapTo] folds into the main pipeline/matrix.
+            "MapTo",
             "DwarfMapperOptions",
             "DwarfProvidesMap",
             "DwarfRequiresMap",
             "UsesMap",
-            "DwarfMapperValidationRoot",
+            "DwarfMapperValidationRoot"
         };
 }
 
 /// <summary>
-/// Test class-name prefixes whose [Fact]/[Theory] methods are legitimately
-/// assertion-free in their OWN body — because they return a Task&lt;VerifyResult&gt;
-/// from Verifier.Verify, which is the assertion mechanism at the runner level.
-/// Every entry must be justified.  This list MUST only SHRINK.
-///
-/// SnapshotSuite — partial class; all methods are of the form
+///     Test class-name prefixes whose [Fact]/[Theory] methods are legitimately
+///     assertion-free in their OWN body — because they return a Task&lt;VerifyResult&gt;
+///     from Verifier.Verify, which is the assertion mechanism at the runner level.
+///     Every entry must be justified.  This list MUST only SHRINK.
+///     SnapshotSuite — partial class; all methods are of the form
 ///     return Verifier.Verify(generated);
 ///     The Verify infrastructure throws on mismatch — the return-value IS the assertion.
 /// </summary>
@@ -88,7 +83,7 @@ file static class HollowAllowlist
     public static readonly IReadOnlySet<string> ClassNamePrefixes =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            "SnapshotSuite",
+            "SnapshotSuite"
         };
 }
 
@@ -103,6 +98,18 @@ public sealed class TestTheTestsScanTests
     private static readonly Assembly DwarfMapperAssembly =
         typeof(DwarfMapperAttribute).Assembly;
 
+    private static readonly Lazy<string> AllTestSourceText = new(() =>
+        string.Concat(TestSources().Select(File.ReadAllText)));
+
+    private static readonly Lazy<string> FimSourceText = new(() => File.ReadAllText(FimFile));
+
+    private static string RepoRoot { get; } = FindRepoRoot();
+
+    /// <summary>Path to the FeatureInteractionCompileMatrix source file.</summary>
+    private static string FimFile =>
+        Path.Combine(RepoRoot, "tests", "DwarfMapper.Generator.Tests",
+            "FeatureInteractionCompileMatrixTests.cs");
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(
@@ -113,56 +120,46 @@ public sealed class TestTheTestsScanTests
                 return dir.FullName;
             dir = dir.Parent;
         }
+
         throw new InvalidOperationException(
             "Cannot locate repository root: no DwarfMapper.NET.sln found walking upward from " +
             typeof(TestTheTestsScanTests).Assembly.Location);
     }
 
-    private static string RepoRoot { get; } = FindRepoRoot();
-
     private static IEnumerable<string> EnumerateSources(string subPath)
-        => Directory.EnumerateFiles(
+    {
+        return Directory.EnumerateFiles(
                 Path.Combine(RepoRoot, subPath), "*.cs",
                 SearchOption.AllDirectories)
             .Where(f => !f.Contains(
                 Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
                 StringComparison.Ordinal));
+    }
 
     private static IEnumerable<string> TestSources()
-        => EnumerateSources("tests");
-
-    private static readonly Lazy<string> AllTestSourceText = new(() =>
-        string.Concat(TestSources().Select(File.ReadAllText)));
-
-    /// <summary>Path to the FeatureInteractionCompileMatrix source file.</summary>
-    private static string FimFile =>
-        Path.Combine(RepoRoot, "tests", "DwarfMapper.Generator.Tests",
-                     "FeatureInteractionCompileMatrixTests.cs");
-
-    private static readonly Lazy<string> FimSourceText = new(() => File.ReadAllText(FimFile));
+    {
+        return EnumerateSources("tests");
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // SCAN T1 — Hollow-test detector
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Parse every test .cs file with Roslyn.  Every [Fact]/[Theory] method body
-    /// must contain at least one ASSERTION — either directly or by calling a
-    /// method declared in the SAME file whose body contains an assertion.
-    ///
-    /// Recognised direct assertion patterns:
-    ///   Assert.            xunit Assert.* (True, False, Equal, Contains, etc.)
-    ///   Verifier.Verify    Verify.Xunit snapshot assertion (return value = assertion)
-    ///   await Verifier.    async snapshot
-    ///   Record.Exception   xunit exception recorder
-    ///   .ShouldBe          Shouldly (future-proof)
-    ///
-    /// Intra-file delegation: if the method body calls a method (by simple name or
-    /// qualified with a file-local class) that is declared in the same source file
-    /// AND that callee's body contains a direct assertion, the caller is non-hollow.
-    ///
-    /// Methods in HollowAllowlist.ClassNamePrefixes are skipped ONLY IF their body
-    /// contains a Verifier.Verify call (confirming the exemption is earned).
+    ///     Parse every test .cs file with Roslyn.  Every [Fact]/[Theory] method body
+    ///     must contain at least one ASSERTION — either directly or by calling a
+    ///     method declared in the SAME file whose body contains an assertion.
+    ///     Recognised direct assertion patterns:
+    ///     Assert.            xunit Assert.* (True, False, Equal, Contains, etc.)
+    ///     Verifier.Verify    Verify.Xunit snapshot assertion (return value = assertion)
+    ///     await Verifier.    async snapshot
+    ///     Record.Exception   xunit exception recorder
+    ///     .ShouldBe          Shouldly (future-proof)
+    ///     Intra-file delegation: if the method body calls a method (by simple name or
+    ///     qualified with a file-local class) that is declared in the same source file
+    ///     AND that callee's body contains a direct assertion, the caller is non-hollow.
+    ///     Methods in HollowAllowlist.ClassNamePrefixes are skipped ONLY IF their body
+    ///     contains a Verifier.Verify call (confirming the exemption is earned).
     /// </summary>
     [Fact]
     public void T1_No_Fact_or_Theory_method_is_hollow()
@@ -200,16 +197,14 @@ public sealed class TestTheTestsScanTests
 
                 // ── Allowlist ──────────────────────────────────────────────
                 if (HollowAllowlist.ClassNamePrefixes
-                        .Any(p => className.StartsWith(p, StringComparison.Ordinal)))
+                    .Any(p => className.StartsWith(p, StringComparison.Ordinal)))
                 {
                     // Verify the allowlisted method genuinely uses Verifier.
                     var bodyText = GetMethodBodyText(method);
                     if (!ContainsVerifierCall(bodyText))
-                    {
                         hollow.Add(
                             $"{Path.GetFileName(filePath)}::{className}::{methodName} " +
                             $"[in HollowAllowlist but has no Verifier.Verify call — not earned]");
-                    }
                     continue;
                 }
 
@@ -227,23 +222,20 @@ public sealed class TestTheTestsScanTests
                         fileMethodBodies.TryGetValue(name, out var calleeBody) &&
                         ContainsAssertion(calleeBody));
 
-                if (!delegatesAssertion)
-                {
-                    hollow.Add($"{Path.GetFileName(filePath)}::{className}::{methodName}");
-                }
+                if (!delegatesAssertion) hollow.Add($"{Path.GetFileName(filePath)}::{className}::{methodName}");
             }
         }
 
         Assert.True(hollow.Count == 0,
-            $"HOLLOW test(s) — [Fact]/[Theory] method(s) with no assertion (direct or via in-file helper):\n" +
+            "HOLLOW test(s) — [Fact]/[Theory] method(s) with no assertion (direct or via in-file helper):\n" +
             string.Join("\n", hollow.Select(h => "  " + h)) +
             "\nFix: add an Assert.* / Verifier.Verify / Record.Exception call (directly or via a helper), " +
             "or justify an exemption in HollowAllowlist.");
     }
 
     /// <summary>
-    /// Assert that every entry in HollowAllowlist.ClassNamePrefixes corresponds to
-    /// at least one class in the test sources (no stale entries).
+    ///     Assert that every entry in HollowAllowlist.ClassNamePrefixes corresponds to
+    ///     at least one class in the test sources (no stale entries).
     /// </summary>
     [Fact]
     public void T1b_HollowAllowlist_has_no_stale_entries()
@@ -264,15 +256,14 @@ public sealed class TestTheTestsScanTests
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Every public, non-abstract Attribute subclass in DwarfMapper.dll must have
-    /// its usage name appear in FeatureInteractionCompileMatrixTests.cs, UNLESS it
-    /// is in MatrixExemptAttributes.
-    /// Forces: new feature → must add a matrix case.
-    ///
-    /// Usage-name derivation: strip backtick generic suffix first (e.g.
-    /// "MapDerivedTypeAttribute`2" → "MapDerivedTypeAttribute"), then strip
-    /// "Attribute" suffix (→ "MapDerivedType"), then deduplicate.  Both
-    /// MapDerivedTypeAttribute and MapDerivedTypeAttribute`2 resolve to "MapDerivedType".
+    ///     Every public, non-abstract Attribute subclass in DwarfMapper.dll must have
+    ///     its usage name appear in FeatureInteractionCompileMatrixTests.cs, UNLESS it
+    ///     is in MatrixExemptAttributes.
+    ///     Forces: new feature → must add a matrix case.
+    ///     Usage-name derivation: strip backtick generic suffix first (e.g.
+    ///     "MapDerivedTypeAttribute`2" → "MapDerivedTypeAttribute"), then strip
+    ///     "Attribute" suffix (→ "MapDerivedType"), then deduplicate.  Both
+    ///     MapDerivedTypeAttribute and MapDerivedTypeAttribute`2 resolve to "MapDerivedType".
     /// </summary>
     [Fact]
     public void T2_Every_feature_attribute_is_represented_in_FeatureInteractionCompileMatrix()
@@ -296,8 +287,8 @@ public sealed class TestTheTestsScanTests
     }
 
     /// <summary>
-    /// Assert that every entry in MatrixExemptAttributes still exists as a real
-    /// attribute in the DwarfMapper assembly (stale exemption detection).
+    ///     Assert that every entry in MatrixExemptAttributes still exists as a real
+    ///     attribute in the DwarfMapper assembly (stale exemption detection).
     /// </summary>
     [Fact]
     public void T2b_MatrixExemptAttributes_has_no_stale_entries()
@@ -318,8 +309,8 @@ public sealed class TestTheTestsScanTests
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Every public enum VALUE from DwarfMapper.dll must appear in the
-    /// FeatureInteractionCompileMatrix OR in any test source file.
+    ///     Every public enum VALUE from DwarfMapper.dll must appear in the
+    ///     FeatureInteractionCompileMatrix OR in any test source file.
     /// </summary>
     [Fact]
     public void T3a_Every_public_enum_value_appears_in_matrix_or_tests()
@@ -335,13 +326,9 @@ public sealed class TestTheTestsScanTests
 
         var missing = new List<string>();
         foreach (var enumType in publicEnums)
-        {
-            foreach (var valueName in Enum.GetNames(enumType))
-            {
-                if (!combinedText.Contains(valueName, StringComparison.Ordinal))
-                    missing.Add($"{enumType.Name}.{valueName}");
-            }
-        }
+        foreach (var valueName in Enum.GetNames(enumType))
+            if (!combinedText.Contains(valueName, StringComparison.Ordinal))
+                missing.Add($"{enumType.Name}.{valueName}");
 
         Assert.True(missing.Count == 0,
             "Public enum value(s) with no coverage in the FIM or any test file:\n" +
@@ -350,8 +337,8 @@ public sealed class TestTheTestsScanTests
     }
 
     /// <summary>
-    /// Every TargetKind value (internal enum, exposed via InternalsVisibleTo) must
-    /// appear in FeatureInteractionCompileMatrixTests.cs OR in any test source file.
+    ///     Every TargetKind value (internal enum, exposed via InternalsVisibleTo) must
+    ///     appear in FeatureInteractionCompileMatrixTests.cs OR in any test source file.
     /// </summary>
     [Fact]
     public void T3b_Every_TargetKind_value_appears_in_matrix_or_tests()
@@ -377,8 +364,8 @@ public sealed class TestTheTestsScanTests
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Sanity gate: the HollowAllowlist prefix set is smaller than a hard limit,
-    /// preventing the allowlist from growing unbounded to silence the hollow detector.
+    ///     Sanity gate: the HollowAllowlist prefix set is smaller than a hard limit,
+    ///     preventing the allowlist from growing unbounded to silence the hollow detector.
     /// </summary>
     [Fact]
     public void T4a_HollowAllowlist_is_small()
@@ -392,7 +379,7 @@ public sealed class TestTheTestsScanTests
     }
 
     /// <summary>
-    /// Sanity gate: the MatrixExemptAttributes set is smaller than a hard limit.
+    ///     Sanity gate: the MatrixExemptAttributes set is smaller than a hard limit.
     /// </summary>
     [Fact]
     public void T4b_MatrixExemptAttributes_is_small()
@@ -400,8 +387,10 @@ public sealed class TestTheTestsScanTests
         // 3 historical (RoundTrip, DwarfMapperConstructor, DwarfMapperOptions) + 4 ambient cross-assembly
         // registry markers (DwarfProvidesMap/DwarfRequiresMap/UsesMap/DwarfMapperValidationRoot) — none of
         // which affect a single mapping's output, so none have a per-mapping compile-matrix form. Bumped
-        // from 4 -> 7 with that justification. The set must still only SHRINK from here.
-        const int MaxAllowedEntries = 7;
+        // 4 -> 7 with that justification, then 7 -> 8 for MapTo (the [MapTo] front door is handled by
+        // MapToGenerator, not the [DwarfMapper] FIM pipeline, and has its own RegistryMapTo*RuntimeTests).
+        // The set must still only SHRINK from here.
+        const int MaxAllowedEntries = 8;
         Assert.True(
             MatrixExemptAttributes.UsageNames.Count <= MaxAllowedEntries,
             $"MatrixExemptAttributes has {MatrixExemptAttributes.UsageNames.Count} entries " +
@@ -414,13 +403,12 @@ public sealed class TestTheTestsScanTests
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Derives the C# usage name for each public non-abstract Attribute subclass in
-    /// DwarfMapper.dll, deduplicating (e.g. MapDerivedTypeAttribute and
-    /// MapDerivedTypeAttribute`2 both yield "MapDerivedType").
-    ///
-    /// Algorithm:
-    ///   1. Strip backtick-suffix (generic arity marker), e.g. "Foo`2" → "Foo".
-    ///   2. Strip "Attribute" suffix, e.g. "FooAttribute" → "Foo".
+    ///     Derives the C# usage name for each public non-abstract Attribute subclass in
+    ///     DwarfMapper.dll, deduplicating (e.g. MapDerivedTypeAttribute and
+    ///     MapDerivedTypeAttribute`2 both yield "MapDerivedType").
+    ///     Algorithm:
+    ///     1. Strip backtick-suffix (generic arity marker), e.g. "Foo`2" → "Foo".
+    ///     2. Strip "Attribute" suffix, e.g. "FooAttribute" → "Foo".
     /// </summary>
     private static HashSet<string> GetAttributeUsageNames()
     {
@@ -439,6 +427,7 @@ public sealed class TestTheTestsScanTests
             if (!string.IsNullOrEmpty(name))
                 result.Add(name);
         }
+
         return result;
     }
 
@@ -449,16 +438,15 @@ public sealed class TestTheTestsScanTests
     private static bool IsFactOrTheory(MethodDeclarationSyntax method)
     {
         foreach (var attrList in method.AttributeLists)
+        foreach (var attr in attrList.Attributes)
         {
-            foreach (var attr in attrList.Attributes)
-            {
-                var name = attr.Name.ToString();
-                if (name is "Fact" or "Theory" or
-                    "Xunit.Fact" or "Xunit.Theory" or
-                    "FactAttribute" or "TheoryAttribute")
-                    return true;
-            }
+            var name = attr.Name.ToString();
+            if (name is "Fact" or "Theory" or
+                "Xunit.Fact" or "Xunit.Theory" or
+                "FactAttribute" or "TheoryAttribute")
+                return true;
         }
+
         return false;
     }
 
@@ -471,6 +459,7 @@ public sealed class TestTheTestsScanTests
                 return cls.Identifier.Text;
             parent = parent.Parent;
         }
+
         return "<unknown>";
     }
 
@@ -484,26 +473,34 @@ public sealed class TestTheTestsScanTests
     }
 
     /// <summary>
-    /// Returns true when the body text contains at least one recognised assertion.
+    ///     Returns true when the body text contains at least one recognised assertion.
     /// </summary>
     private static bool ContainsAssertion(string bodyText)
-        => bodyText.Contains("Assert.", StringComparison.Ordinal)
-        || bodyText.Contains("Verifier.Verify", StringComparison.Ordinal)
-        || bodyText.Contains("await Verifier.", StringComparison.Ordinal)
-        || bodyText.Contains("Record.Exception", StringComparison.Ordinal)
-        || bodyText.Contains(".ShouldBe", StringComparison.Ordinal)
-        || bodyText.Contains("Assert.Fail(", StringComparison.Ordinal);
+    {
+        return bodyText.Contains("Assert.", StringComparison.Ordinal)
+               || ContainsVerifierCall(bodyText)
+               || bodyText.Contains("Record.Exception", StringComparison.Ordinal)
+               || bodyText.Contains(".ShouldBe", StringComparison.Ordinal)
+               || bodyText.Contains("Assert.Fail(", StringComparison.Ordinal);
+    }
 
+    // A VerifyXunit snapshot assertion (the return value IS the assertion). Accepts both the legacy
+    // `Verifier.Verify(...)` form and the modern static `Verify(...)` form (invoked as `return Verify(` /
+    // `await Verify(`), so a code-style change between the two never makes a real snapshot test read as hollow.
     private static bool ContainsVerifierCall(string bodyText)
-        => bodyText.Contains("Verifier.Verify", StringComparison.Ordinal)
-        || bodyText.Contains("await Verifier.", StringComparison.Ordinal);
+    {
+        return bodyText.Contains("Verifier.Verify", StringComparison.Ordinal)
+               || bodyText.Contains("await Verifier.", StringComparison.Ordinal)
+               || bodyText.Contains("return Verify(", StringComparison.Ordinal)
+               || bodyText.Contains("await Verify(", StringComparison.Ordinal);
+    }
 
     /// <summary>
-    /// Extracts simple method-call names from a test method, so we can resolve
-    /// intra-file helper delegation.  We collect:
-    ///   - InvocationExpression where the expression is a simple IdentifierName
+    ///     Extracts simple method-call names from a test method, so we can resolve
+    ///     intra-file helper delegation.  We collect:
+    ///     - InvocationExpression where the expression is a simple IdentifierName
     ///     (e.g. "NoErrors(src)")
-    ///   - InvocationExpression where the expression is a MemberAccessExpression
+    ///     - InvocationExpression where the expression is a MemberAccessExpression
     ///     (e.g. "Col.NoErrors(src)") — we take the member name part.
     /// </summary>
     private static IEnumerable<string> ExtractCalledMethodNames(MethodDeclarationSyntax method)
@@ -512,7 +509,6 @@ public sealed class TestTheTestsScanTests
         if (bodyNode is null) yield break;
 
         foreach (var invocation in bodyNode.DescendantNodes().OfType<InvocationExpressionSyntax>())
-        {
             switch (invocation.Expression)
             {
                 case IdentifierNameSyntax id:
@@ -522,6 +518,5 @@ public sealed class TestTheTestsScanTests
                     yield return ma.Name.Identifier.Text;
                     break;
             }
-        }
     }
 }

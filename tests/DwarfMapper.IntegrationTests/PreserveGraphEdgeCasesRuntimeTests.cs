@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -15,27 +11,52 @@ namespace DwarfMapper.IntegrationTests;
 // If the identity map check comes first, the shared node is found on the
 // short path (depth < MaxDepth), registered, then found again on the long
 // path (depth > MaxDepth) — must NOT throw.
-public class B1Node { public int V { get; set; } public B1Node? Next { get; set; } }
-public class B1NodeDto { public int V { get; set; } public B1NodeDto? Next { get; set; } }
+public class B1Node
+{
+    public int V { get; set; }
+    public B1Node? Next { get; set; }
+}
+
+public class B1NodeDto
+{
+    public int V { get; set; }
+    public B1NodeDto? Next { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve, MaxDepth = 4)]
-public partial class B1Mapper { public partial B1NodeDto Map(B1Node n); }
+public partial class B1Mapper
+{
+    public partial B1NodeDto Map(B1Node n);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // B2 — BeforeMap hook fires on every visit to a shared node (should fire once)
 // ═══════════════════════════════════════════════════════════════════════════
 
-public class B2Node { public int V { get; set; } public B2Node? Next { get; set; } }
-public class B2NodeDto { public int V { get; set; } public B2NodeDto? Next { get; set; } }
+public class B2Node
+{
+    public int V { get; set; }
+    public B2Node? Next { get; set; }
+}
+
+public class B2NodeDto
+{
+    public int V { get; set; }
+    public B2NodeDto? Next { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
 public partial class B2Mapper
 {
-    public partial B2NodeDto Map(B2Node n);
-
     // Observable side-effect: counts how many times the hook fires.
     internal static int BeforeCallCount;
-    [BeforeMap] private static void CountBefore(B2Node _) => ++BeforeCallCount;
+    public partial B2NodeDto Map(B2Node n);
+
+    [BeforeMap]
+    private static void CountBefore(B2Node _)
+    {
+        ++BeforeCallCount;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -58,14 +79,29 @@ public class B3ContainerDto
 }
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-public partial class B3Mapper { public partial B3ContainerDto Map(B3Container c); }
+public partial class B3Mapper
+{
+    public partial B3ContainerDto Map(B3Container c);
+}
 
 // Depth guard still fires for a genuinely-deep acyclic chain through Preserve.
-public class B3DeepNode { public int V { get; set; } public B3DeepNode? Next { get; set; } }
-public class B3DeepNodeDto { public int V { get; set; } public B3DeepNodeDto? Next { get; set; } }
+public class B3DeepNode
+{
+    public int V { get; set; }
+    public B3DeepNode? Next { get; set; }
+}
+
+public class B3DeepNodeDto
+{
+    public int V { get; set; }
+    public B3DeepNodeDto? Next { get; set; }
+}
 
 [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve, MaxDepth = 4)]
-public partial class B3DeepMapper { public partial B3DeepNodeDto Map(B3DeepNode n); }
+public partial class B3DeepMapper
+{
+    public partial B3DeepNodeDto Map(B3DeepNode n);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
@@ -76,14 +112,13 @@ public class PreserveGraphEdgeCasesRuntimeTests
     // ── B1 ───────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// A shared node that is first reached via a short path (depth 0, the entry point) and
-    /// then reachable again via a path that reaches exactly MaxDepth must NOT throw — the
-    /// identity map check must return the cached instance BEFORE the depth guard fires.
-    ///
-    /// MaxDepth = 4. The public Map(root) registers root at depth 0 (no depth guard for public).
-    /// The synthesized helper is called with depth values 0, 1, 2, 3, 4 for the chain.
-    /// At depth 4 it tries to map root again → bug: depth guard fires before TryGetReference.
-    ///   root → n1 → n2 → n3 → n4 → root  (root encountered at depth 4 by the synthesized method)
+    ///     A shared node that is first reached via a short path (depth 0, the entry point) and
+    ///     then reachable again via a path that reaches exactly MaxDepth must NOT throw — the
+    ///     identity map check must return the cached instance BEFORE the depth guard fires.
+    ///     MaxDepth = 4. The public Map(root) registers root at depth 0 (no depth guard for public).
+    ///     The synthesized helper is called with depth values 0, 1, 2, 3, 4 for the chain.
+    ///     At depth 4 it tries to map root again → bug: depth guard fires before TryGetReference.
+    ///     root → n1 → n2 → n3 → n4 → root  (root encountered at depth 4 by the synthesized method)
     /// </summary>
     [Fact]
     public void B1_Shared_node_reachable_via_long_path_does_not_throw_when_cached()
@@ -92,15 +127,15 @@ public class PreserveGraphEdgeCasesRuntimeTests
         // At depth 4 (>= MaxDepth) the bug fires BEFORE TryGetReference → throws.
         // With the fix TryGetReference fires first → root found cached → returns.
         var root = new B1Node { V = 0 };
-        var n1   = new B1Node { V = 1 };
-        var n2   = new B1Node { V = 2 };
-        var n3   = new B1Node { V = 3 };
-        var n4   = new B1Node { V = 4 };
+        var n1 = new B1Node { V = 1 };
+        var n2 = new B1Node { V = 2 };
+        var n3 = new B1Node { V = 3 };
+        var n4 = new B1Node { V = 4 };
         root.Next = n1;
-        n1.Next   = n2;
-        n2.Next   = n3;
-        n3.Next   = n4;
-        n4.Next   = root;   // back-edge: root encountered when synthesized depth = 4
+        n1.Next = n2;
+        n2.Next = n3;
+        n3.Next = n4;
+        n4.Next = root; // back-edge: root encountered when synthesized depth = 4
 
         // With the bug: depth guard at depth=4 fires BEFORE TryGetReference → DwarfMappingDepthException.
         // With the fix: TryGetReference fires first → root cached → returns immediately.
@@ -113,8 +148,8 @@ public class PreserveGraphEdgeCasesRuntimeTests
     }
 
     /// <summary>
-    /// A genuinely-deep ACYCLIC chain (not in the identity map) must still throw
-    /// DwarfMappingDepthException even with Preserve mode active.
+    ///     A genuinely-deep ACYCLIC chain (not in the identity map) must still throw
+    ///     DwarfMappingDepthException even with Preserve mode active.
     /// </summary>
     [Fact]
     public void B1_Genuinely_deep_acyclic_chain_still_throws_depth_exception()
@@ -122,7 +157,12 @@ public class PreserveGraphEdgeCasesRuntimeTests
         // MaxDepth = 4. Build a chain of 10 distinct nodes (no shared node, no cycle).
         var head = new B1Node { V = 0 };
         var curr = head;
-        for (var i = 1; i <= 9; i++) { var n = new B1Node { V = i }; curr.Next = n; curr = n; }
+        for (var i = 1; i <= 9; i++)
+        {
+            var n = new B1Node { V = i };
+            curr.Next = n;
+            curr = n;
+        }
 
         var ex = Record.Exception(() => new B1Mapper().Map(head));
         Assert.IsType<DwarfMappingDepthException>(ex);
@@ -131,8 +171,8 @@ public class PreserveGraphEdgeCasesRuntimeTests
     // ── B2 ───────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// A shared source node (reached from two distinct paths) must fire its BeforeMap hook
-    /// exactly ONCE — on the first (construct) path — not on the cache-return path.
+    ///     A shared source node (reached from two distinct paths) must fire its BeforeMap hook
+    ///     exactly ONCE — on the first (construct) path — not on the cache-return path.
     /// </summary>
     [Fact]
     public void B2_BeforeMap_fires_once_for_shared_node_not_per_inbound_edge()
@@ -147,7 +187,7 @@ public class PreserveGraphEdgeCasesRuntimeTests
         var a = new B2Node { V = 1 };
         var b = new B2Node { V = 2 };
         a.Next = b;
-        b.Next = a;  // cycle: a appears twice (once as entry, once as back-edge from b)
+        b.Next = a; // cycle: a appears twice (once as entry, once as back-edge from b)
 
         var dto = new B2Mapper().Map(a);
 
@@ -164,8 +204,8 @@ public class PreserveGraphEdgeCasesRuntimeTests
     // ── B3 ───────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Two parents sharing the SAME IEnumerable&lt;int&gt; source (unknown-count)
-    /// must produce ONE target int[] instance (Assert.Same).
+    ///     Two parents sharing the SAME IEnumerable&lt;int&gt; source (unknown-count)
+    ///     must produce ONE target int[] instance (Assert.Same).
     /// </summary>
     [Fact]
     public void B3_Two_parents_sharing_unknown_count_array_produce_one_target_array()
@@ -185,15 +225,20 @@ public class PreserveGraphEdgeCasesRuntimeTests
     }
 
     /// <summary>
-    /// Genuinely deep acyclic chain under Preserve still throws DwarfMappingDepthException.
-    /// (Regression guard: the B1 fix for shared-node-at-depth-boundary must not break this.)
+    ///     Genuinely deep acyclic chain under Preserve still throws DwarfMappingDepthException.
+    ///     (Regression guard: the B1 fix for shared-node-at-depth-boundary must not break this.)
     /// </summary>
     [Fact]
     public void B3_Deep_acyclic_still_throws_with_Preserve()
     {
         var head = new B3DeepNode { V = 0 };
         var curr = head;
-        for (var i = 1; i <= 9; i++) { var n = new B3DeepNode { V = i }; curr.Next = n; curr = n; }
+        for (var i = 1; i <= 9; i++)
+        {
+            var n = new B3DeepNode { V = i };
+            curr.Next = n;
+            curr = n;
+        }
 
         var ex = Record.Exception(() => new B3DeepMapper().Map(head));
         Assert.IsType<DwarfMappingDepthException>(ex);

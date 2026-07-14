@@ -60,8 +60,8 @@ has a static, compile-checked replacement.
 | `.Ignore()` | `[MapIgnore(nameof(D.X))]` | **required** in DwarfMapper — unmapped = `DWARF001`, not silent |
 | `.MapFrom(_=>"const")` (constant) | `[MapValue(nameof(D.X), "const")]` | type-checked → `DWARF040` |
 | `.MapFrom(_=>Compute())` (no-source computed) | `[MapValue(nameof(D.X), Use=nameof(Compute))]` | `Compute` is **parameterless** → `DWARF041` |
-| `.NullSubstitute(v)` | `[MapProperty(src, tgt, NullSubstitute=v)]` | emits `src ?? v`; type-checked → `DWARF049` |
-| `.Condition(s=>p)` / `.PreCondition(s=>p)` | `[MapProperty(src, tgt, When=nameof(P))]` | `bool P(S)`; member keeps **default** when false → `DWARF050` |
+| `.NullSubstitute(v)` | `[MapProperty(src, tgt, NullSubstitute=v)]` | emits `src ?? v`; type-checked → `DWARF049`. **Not combinable with `Use=`** (direct-assignable members only); for substitute+convert use a `Use=` that handles null, or `[MapIgnore]`+`[AfterMap]` |
+| `.Condition(s=>p)` / `.PreCondition(s=>p)` | `[MapProperty(src, tgt, When=nameof(P))]` | `bool P(S)` — **source object only**; member keeps **default** when false → `DWARF050`. No destination/mapped-value inspection and no pre-/post-resolution timing — move those to `[AfterMap]` |
 | `.ForSourceMember(s=>s.X, o=>o.DoNotValidate())` | `[MapIgnoreSource("X")]` | only relevant under `RequiredMapping=Both` |
 | `.ForPath(d=>d.A.B, …)` | `[MapProperty(src, "A.B")]` | single-level unflatten; deeper → `DWARF045` |
 | `.SetMappingOrder(n)` | **non-goal** | deterministic canonical order; use `[AfterMap]` if order mattered |
@@ -80,7 +80,9 @@ has a static, compile-checked replacement.
 | AutoMapper 14 | DwarfMapper | Note |
 |---|---|---|
 | `.ConvertUsing(s=>…)` / `ITypeConverter<S,D>` (type pair) | a `D Convert(S s)` method on the mapper | user methods take precedence over synthesis; no `ResolutionContext` |
-| `IValueResolver` / `IMemberValueResolver` (per member) | `[MapProperty(src, tgt, Use=nameof(M))]` | `M` sees the **source member**, not whole source/dest/ctx |
+| `IMemberValueResolver` (**one** source member) | `[MapProperty(src, tgt, Use=nameof(M))]` | `M` takes the **source member**; a whole-source `Use=` is `DWARF014` |
+| `IValueResolver` (**whole source**) | `[MapIgnore(target)]` + `[AfterMap] void Fill(S,D)` | the hook sees the whole source + target (`Use=` cannot) |
+| resolver/converter needing **DI** | mapper **ctor** + instance `Use=`/`Convert` method | register the concrete type; such a mapper can't be `new`-ed argument-free and gets no `To<T>()` extension |
 | `IValueConverter<TSrc,TDst>` (reusable per member) | `Use=nameof(M)` | exact match |
 | `mapper.Map(src, o=>o.Items["k"]=v)` + `context.Items` | **extra method parameter**: `partial D Map(S s, T k)` | **DIVERGENT**: typed param matched to a dest member by name (`DWARF047`); no dynamic bag, not propagated to nested |
 | built-in scalar coercions (often needs config) | **richer & stricter, built-in** | `int↔long` checked, `string↔IParsable` (InvariantCulture), enum↔{enum,string,int}, nullable lift; lossy → `DWARF038` (or error under `ImplicitConversions=false`). **You can often delete explicit converters.** float/decimal→int still needs `Use=` (never silent truncation). |
@@ -107,9 +109,9 @@ has a static, compile-checked replacement.
 
 | AutoMapper 14 | DwarfMapper | Note |
 |---|---|---|
-| ctor/record mapping (automatic) | automatic (records, `record struct`, immutable structs) | every ctor param mandatory (`DWARF024`); deterministic selection (`[DwarfMapperConstructor]`) |
+| ctor/record mapping (automatic) | automatic (records, `record struct`, immutable structs) | every **mandatory** ctor param must be satisfied (`DWARF024`); optional/`params` take their default; deterministic selection (`[DwarfMapperConstructor]`) |
 | `.ForCtorParam("p", o=>o.MapFrom(s=>s.Y))` | `[MapProperty(nameof(S.Y), "p")]` | targets ctor param by name; conversions apply |
-| `.ConstructUsing(s=>new D(...))` / `IDestinationFactory` | **partial / DIVERGENT** | generator emits the `new D(...)`; custom logic → `Use=` converter or `[AfterMap]` |
+| `.ConstructUsing(s=>new D(...))` / `IDestinationFactory` | `[MapConstructor<S,D>(nameof(Factory))]` | names a `D Factory(S)` on the mapper (compile-time equivalent); settable members are then filled from source. Invalid factory → `DWARF059` |
 | `mapper.Map(src, existingDest)` | `partial void Update(S s, T d)` / `partial T Update(S s, T d)` | identity preserved; nested/collections **replaced, not merged** |
 
 ### 1.8 Collections / enums / null / generics
@@ -126,10 +128,10 @@ has a static, compile-checked replacement.
 
 | AutoMapper 14 | DwarfMapper | Note |
 |---|---|---|
-| `.MaxDepth(n)` (default 64→ here too) | `[DwarfMapper(MaxDepth=n)]` | throws catchable `DwarfMappingDepthException`, never silent SO; applies to direct/list/dict edges |
+| `.MaxDepth(n)` (no default limit) | `[DwarfMapper(MaxDepth=n)]` (**default 64**) | throws catchable `DwarfMappingDepthException`, never silent SO; applies to direct/list/dict edges |
 | `.PreserveReferences()` | `[DwarfMapper(ReferenceHandling=Preserve)]` | full topology (shared/diamond/cycle) reconstructed |
 | *(no first-class equivalent)* | `[DwarfMapper(OnCycle=SetNull)]` | **DwarfMapper-only**: cycle→null ≡ `System.Text.Json` `IgnoreCycles` |
-| `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S>)` | **DIVERGENT (deliberately minimal)**: only direct members + renames + `[MapIgnore]`; a member needing conversion → `DWARF028` |
+| `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S>)` | **provably translatable**: direct members, renames, `[MapIgnore]`, enum→int casts, nested objects, collections, and dotted-path flattening; only non-translatable conversions (narrowing/parse/by-name/`Use=`/`HashSet`·dict/reference-handling) → `DWARF028` |
 | `.ExplicitExpansion()` / projection params | **non-goal** | define a narrower DTO/`Project` method; parameterize the source query |
 | `AssertConfigurationIsValid()` | **build error `DWARF001`** (always on) | `MemberList.Source` ≡ `RequiredMapping=Both`; `MemberList.None` ≡ has no analogue (use `[MapIgnore]`) |
 | naming conventions (`SourceMemberNamingConvention` …) | `[DwarfMapper(NameConvention=Flexible)]` | Pascal/camel/snake/UPPER interchangeable; collision → `DWARF048` |
@@ -164,9 +166,9 @@ to port for the convention path.
 | `.Ignore(d=>d.X)` | `[MapIgnore(nameof(D.X))]` | required (completeness gate) |
 | `.IgnoreIf((s,d)=>cond, d=>d.X)` | `[MapProperty(src, tgt, When=nameof(P))]` | `When` gates the assignment |
 | `.Map(d=>d.X, s=>s.Y, srcCond)` | `When=` | condition on the member |
-| `.IgnoreNullValues(true)` | **DIVERGENT** | DwarfMapper update **replaces**; it does not skip null-source members. Use `[MapIgnore]` or restructure. |
+| `.IgnoreNullValues(true)` | `[DwarfMapper(SkipNullSourceMembers = true)]` | a null source member never overwrites the destination (`if (src.X is not null) …`); **not** `[MapIgnore]` (which drops unconditionally) |
 | `.AfterMapping((s,d)=>…)` / `.BeforeMapping(…)` | `[AfterMap]` / `[BeforeMap]` | named hook methods |
-| `.ConstructUsing(s=>new D(...))` | **DIVERGENT** | generator selects/emits the ctor; custom → `Use=`/`[AfterMap]` |
+| `.ConstructUsing(s=>new D(...))` | `[MapConstructor<S,D>(nameof(Factory))]` | direct equivalent (`D Factory(S)` on the mapper); or let the generator emit the ctor |
 | `.MapWith(s=>convert(s))` (type pair) | a `D Convert(S)` method on the mapper | user-method precedence |
 | `.AddDestinationTransform(...)` | `[AfterMap]` or `Use=` | post-process in a named method |
 
@@ -180,7 +182,7 @@ to port for the convention path.
 | `.PreserveReference(true)` | `[DwarfMapper(ReferenceHandling=Preserve)]` | full topology |
 | unflattening | `[MapProperty(src, "A.B")]` | single-level dotted target |
 | enum mapping (by value default) | `[DwarfMapper(EnumStrategy=ByValue)]` for parity | DwarfMapper default is **by name** (`DWARF015` on mismatch) |
-| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S>)` | minimal/translatable only (`DWARF028`) |
+| `ProjectToType<Dst>()` (EF) | `partial IQueryable<Dst> Project(IQueryable<S>)` | translatable subset — nested/collection/**enum→int casts**/dotted supported (enum→enum needs `EnumStrategy.ByValue`); non-translatable conversions → `DWARF028` |
 | `Mapster.Tool` source-gen | built-in (DwarfMapper is always source-gen) | no separate tool/codegen step |
 
 ---
@@ -217,11 +219,11 @@ and `partial Dst Map(Src)` methods. Migration is **nearly mechanical**, often le
 |---|---|---|
 | `PropertyNameMappingStrategy.CaseInsensitive` | `[DwarfMapper(CaseInsensitive=true)]` | `DWARF010` on ambiguity |
 | `RequiredMappingStrategy.Target/Both` | `[DwarfMapper(RequiredMapping=Target/Both)]` | `DWARF039` (Info) for unconsumed source; `.editorconfig` to escalate |
-| `EnumMappingStrategy.ByName/ByValue` + `EnumMappingIgnoreCase` | `[DwarfMapper(EnumStrategy=ByName/ByValue)]` | **default is ByName in both**; mismatch → `DWARF015` |
+| `EnumMappingStrategy.ByName/ByValue` + `EnumMappingIgnoreCase` | `[DwarfMapper(EnumStrategy=ByName/ByValue)]` | **Mapperly defaults ByValue, DwarfMapper ByName** — set explicitly; by-name mismatch → `DWARF015` |
 | strict lossy-conversion diagnostics | `[DwarfMapper(ImplicitConversions=false)]` | flips `DWARF038` suggestions into build errors (Mapperly-style strict) |
 | `UseReferenceHandling` | `[DwarfMapper(ReferenceHandling=Preserve)]` | **DwarfMapper reconstructs full topology** (Mapperly's is partial) |
 | `[MapDerivedType<DS,DD>]` | `[MapDerivedType<DS,DD>]` | same attribute name |
-| `IQueryable` projection | `partial IQueryable<Dst> Project(…)` | minimal/translatable (`DWARF028`) |
+| `IQueryable` projection | `partial IQueryable<Dst> Project(…)` | translatable subset — nested/collection/enum-cast/dotted supported; non-translatable → `DWARF028` |
 | `[MapEnum]`/`[MapEnumValue]` per-value remap | **partial** | differing enum member sets are a build error to resolve explicitly |
 | `[UseMapper]`/`[UseStaticMapper]` (compose mappers) | call another mapper from a `Use=` method, or nest types | no first-class mapper-injection attribute |
 

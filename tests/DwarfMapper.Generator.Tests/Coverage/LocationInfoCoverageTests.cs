@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -9,8 +10,8 @@ using Microsoft.CodeAnalysis.Text;
 namespace DwarfMapper.Generator.Tests.Coverage;
 
 /// <summary>
-/// Tests for <c>LocationInfo</c> value record — covers both branches of <c>From()</c>
-/// plus value equality and <c>ToLocation()</c>.
+///     Tests for <c>LocationInfo</c> value record — covers both branches of <c>From()</c>
+///     plus value equality and <c>ToLocation()</c>.
 /// </summary>
 public class LocationInfoCoverageTests
 {
@@ -27,7 +28,7 @@ public class LocationInfoCoverageTests
     public void From_null_location_returns_null()
     {
         // The From() implementation guards: if (location is null || location.SourceTree is null)
-        LocationInfo? result = LocationInfo.From(null!);
+        var result = LocationInfo.From(null!);
         Assert.Null(result);
     }
 
@@ -138,7 +139,7 @@ public class LocationInfoCoverageTests
     public void From_location_with_zero_length_span_does_not_throw()
     {
         var source = "class C{}";
-        var (location, _, _) = BuildLocation(source, "Empty.cs", startPos: 0, length: 0);
+        var (location, _, _) = BuildLocation(source, "Empty.cs", 0, 0);
         // No exception expected; From() should not crash on a zero-length span.
         var ex = Record.Exception(() => LocationInfo.From(location));
         Assert.Null(ex);
@@ -148,7 +149,7 @@ public class LocationInfoCoverageTests
     public void From_location_at_end_of_file()
     {
         var source = "namespace T { class C { } }";
-        var (location, _, _) = BuildLocation(source, "EndOfFile.cs", startPos: source.Length - 1, length: 1);
+        var (location, _, _) = BuildLocation(source, "EndOfFile.cs", source.Length - 1, 1);
         var info = LocationInfo.From(location);
         Assert.NotNull(info);
     }
@@ -186,7 +187,7 @@ public class LocationInfoCoverageTests
         var info = new LocationInfo("src/File.cs", new TextSpan(0, 1),
             new LinePositionSpan(new LinePosition(0, 0), new LinePosition(0, 1)));
         var str = info.ToString();
-        Assert.Contains("src/File.cs", str, System.StringComparison.Ordinal);
+        Assert.Contains("src/File.cs", str, StringComparison.Ordinal);
     }
 
     // ─── IEquatable via record: Equals(null) returns false ───────────────────
@@ -196,13 +197,13 @@ public class LocationInfoCoverageTests
     {
         var a = new LocationInfo("f.cs", new TextSpan(0, 1),
             new LinePositionSpan(new LinePosition(0, 0), new LinePosition(0, 1)));
-        Assert.False(a.Equals((LocationInfo?)null));
+        Assert.False(a.Equals(null));
     }
 
     // ─── Helper ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Builds a real Roslyn Location from a source snippet and file name.
+    ///     Builds a real Roslyn Location from a source snippet and file name.
     /// </summary>
     private static (Location Location, string FilePath, TextSpan Span)
         BuildLocation(string source, string filePath, int startPos = 6, int length = 4)

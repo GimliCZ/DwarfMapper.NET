@@ -11,11 +11,7 @@
 //  5. Every public enum VALUE has at least one test reference
 //  6. TargetKind completeness via [InternalsVisibleTo] from the generator
 
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using DwarfMapper.Generator.Diagnostics;
@@ -25,10 +21,10 @@ using Microsoft.CodeAnalysis;
 namespace DwarfMapper.Generator.Tests.SelfValidation;
 
 /// <summary>
-/// Ids that are intentionally reserved and must have NO descriptor field.
-/// DWARF004 — reserved since initial design (do not reuse).
-/// DWARF006 — superseded by DWARF026 (NoMappableConstructor); descriptor removed, id retired.
-/// DWARF029 — reserved since initial design (do not reuse).
+///     Ids that are intentionally reserved and must have NO descriptor field.
+///     DWARF004 — reserved since initial design (do not reuse).
+///     DWARF006 — superseded by DWARF026 (NoMappableConstructor); descriptor removed, id retired.
+///     DWARF029 — reserved since initial design (do not reuse).
 /// </summary>
 file static class ReservedIds
 {
@@ -37,14 +33,14 @@ file static class ReservedIds
         "DWARF004",
         "DWARF006",
         "DWARF019", // retired; superseded by DWARF028 (ProjectionNotTranslatable)
-        "DWARF029",
+        "DWARF029"
     };
 }
 
 /// <summary>
-/// DWARF ids for which triggering a test is accepted as genuinely impractical at the
-/// generator-test level. Keep this list as small as possible; every entry must have a
-/// justification. This list must only SHRINK — adding entries requires explicit justification.
+///     DWARF ids for which triggering a test is accepted as genuinely impractical at the
+///     generator-test level. Keep this list as small as possible; every entry must have a
+///     justification. This list must only SHRINK — adding entries requires explicit justification.
 /// </summary>
 file static class DiagnosticTestAllowlist
 {
@@ -60,8 +56,17 @@ public sealed class AssemblyScanTests
         typeof(DwarfMapperAttribute).Assembly;
 
     /// <summary>
-    /// Walk upward from the test assembly location to find the repository root
-    /// (identified by the presence of "DwarfMapper.NET.sln").
+    ///     Read all test source text into a single concatenated blob for substring scanning.
+    ///     Cached per test run.
+    /// </summary>
+    private static readonly Lazy<string> AllTestSourceText = new(() =>
+        string.Concat(TestSources().Select(File.ReadAllText)));
+
+    private static string RepoRoot { get; } = FindRepoRoot();
+
+    /// <summary>
+    ///     Walk upward from the test assembly location to find the repository root
+    ///     (identified by the presence of "DwarfMapper.NET.sln").
     /// </summary>
     private static string FindRepoRoot()
     {
@@ -80,32 +85,29 @@ public sealed class AssemblyScanTests
             typeof(AssemblyScanTests).Assembly.Location);
     }
 
-    private static string RepoRoot { get; } = FindRepoRoot();
-
     // ── Shared helpers ────────────────────────────────────────────────────────
 
     /// <summary>Enumerate all .cs source files under a relative sub-path of the repo.</summary>
     private static IEnumerable<string> EnumerateSources(string subPath)
-        => Directory.EnumerateFiles(
+    {
+        return Directory.EnumerateFiles(
                 Path.Combine(RepoRoot, subPath), "*.cs",
                 SearchOption.AllDirectories)
             // Exclude generated obj/ artefacts
             .Where(f => !f.Contains(
                 Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
                 StringComparison.Ordinal));
+    }
 
     private static IEnumerable<string> GeneratorSources()
-        => EnumerateSources(Path.Combine("src", "DwarfMapper.Generator"));
+    {
+        return EnumerateSources(Path.Combine("src", "DwarfMapper.Generator"));
+    }
 
     private static IEnumerable<string> TestSources()
-        => EnumerateSources("tests");
-
-    /// <summary>
-    /// Read all test source text into a single concatenated blob for substring scanning.
-    /// Cached per test run.
-    /// </summary>
-    private static readonly Lazy<string> AllTestSourceText = new(() =>
-        string.Concat(TestSources().Select(File.ReadAllText)));
+    {
+        return EnumerateSources("tests");
+    }
 
     // ── Self-validation: every [DwarfMapper] option must be exercised by a test ──
     // This is the guard that would have caught a new option (e.g. AllowNonPublic) shipping with no test:
@@ -138,10 +140,11 @@ public sealed class AssemblyScanTests
         const string suffix = ".verified.txt";
         var orphans = Directory
             .EnumerateFiles(Path.Combine(RepoRoot, "tests"), "*" + suffix, SearchOption.AllDirectories)
-            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
+                StringComparison.Ordinal))
             .Select(f => Path.GetFileName(f)!)
-            .Select(name => name[..^suffix.Length])           // strip ".verified.txt"
-            .Select(stem => stem.Split('.').Last())            // "Class.Method" → "Method"
+            .Select(name => name[..^suffix.Length]) // strip ".verified.txt"
+            .Select(stem => stem.Split('.').Last()) // "Class.Method" → "Method"
             .Select(method => method.Split('_')[0] == method ? method : method) // keep full method name
             .Where(method => !testText.Contains(method, StringComparison.Ordinal))
             .Distinct()
@@ -174,7 +177,7 @@ public sealed class AssemblyScanTests
             var lines = File.ReadAllLines(path).ToList();
             lines.AddRange(missing.Select(d => $"{d.Id} | {d.Category} | {d.DefaultSeverity} | {d.Title}"));
             File.WriteAllLines(path, lines);
-            missing = new List<Microsoft.CodeAnalysis.DiagnosticDescriptor>(); // healed
+            missing = new List<DiagnosticDescriptor>(); // healed
         }
 
         Assert.True(missing.Count == 0,
@@ -245,11 +248,9 @@ public sealed class AssemblyScanTests
             var actualSeverity = desc.DefaultSeverity.ToString();
 
             if (!string.Equals(expectedSeverity, actualSeverity, StringComparison.OrdinalIgnoreCase))
-            {
                 mismatches.Add(
                     $"{desc.Id} ({fieldName}): descriptor Severity={actualSeverity} " +
                     $"but AnalyzerReleases says {expectedSeverity}");
-            }
         }
 
         Assert.True(mismatches.Count == 0,
@@ -292,13 +293,9 @@ public sealed class AssemblyScanTests
 
         var gaps = new List<string>();
         for (var i = 1; i < allIds.Count; i++)
-        {
             if (allIds[i] - allIds[i - 1] > 1)
-            {
                 for (var g = allIds[i - 1] + 1; g < allIds[i]; g++)
                     gaps.Add($"DWARF{g:D3}");
-            }
-        }
 
         Assert.True(gaps.Count == 0,
             "Gap(s) in DWARF numbering (neither a descriptor nor a reserved id): " +
@@ -431,13 +428,9 @@ public sealed class AssemblyScanTests
 
         var missing = new List<string>();
         foreach (var enumType in publicEnums)
-        {
-            foreach (var valueName in Enum.GetNames(enumType))
-            {
-                if (!testText.Contains(valueName, StringComparison.Ordinal))
-                    missing.Add($"{enumType.Name}.{valueName}");
-            }
-        }
+        foreach (var valueName in Enum.GetNames(enumType))
+            if (!testText.Contains(valueName, StringComparison.Ordinal))
+                missing.Add($"{enumType.Name}.{valueName}");
 
         Assert.True(missing.Count == 0,
             "Public enum value(s) with no test reference:\n" + string.Join("\n", missing));
@@ -477,12 +470,6 @@ public sealed class AssemblyScanTests
             "TargetKind value(s) with no test reference:\n" + string.Join("\n", missing));
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // AnalyzerReleases parser
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private sealed record ReleaseRow(string Id, string Category, string Severity);
-
     private static Dictionary<string, ReleaseRow> ParseAnalyzerReleases()
     {
         var result = new Dictionary<string, ReleaseRow>(StringComparer.Ordinal);
@@ -519,4 +506,10 @@ public sealed class AssemblyScanTests
 
         return result;
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AnalyzerReleases parser
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private sealed record ReleaseRow(string Id, string Category, string Severity);
 }

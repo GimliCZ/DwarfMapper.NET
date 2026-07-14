@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using DwarfMapper;
 using DwarfMapper.Gallery.Ex15.Models;
 
 namespace DwarfMapper.Gallery.Ex15.Dtos;
@@ -13,7 +12,7 @@ namespace DwarfMapper.Gallery.Ex15.Dtos;
 // stays a plain sealed data class. Delete this file and the mapping goes with it. Trade-off: PersonDto
 // references Person (the host takes the dependency, by design).
 [GenerateMap<Person, PersonDto>]
-[MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]
+[MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(FullName))]
 public sealed class PersonDto
 {
     public string FullName { get; set; } = "";

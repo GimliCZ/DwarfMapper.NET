@@ -2,7 +2,7 @@
 # Release pipeline. On a version tag (e.g. v1.0.0-rc.1) this builds, tests, packs,
 # SBOMs, checksums, and signs the NuGet packages KEYLESSLY via GitHub's OIDC
 # identity (Sigstore build-provenance attestation), then publishes them all to a
-# GitHub Release. It does NOT push to nuget.org.
+# GitHub Release. Pushing to nuget.org is done MANUALLY by the maintainer.
 #
 # Signing model: no private key is stored anywhere. Authenticity is proven by the
 # combination of each artifact's SHA-256 fingerprint and a provenance attestation
@@ -60,6 +60,9 @@ jobs:
             artifacts/*.snupkg
 
       # ── Publish a GitHub Release with all artifacts ──────────────────────────
+      #    nuget.org publishing is done MANUALLY by the maintainer (deliberate control
+      #    over what goes public) — download the signed .nupkg/.snupkg from the Release
+      #    and `dotnet nuget push` them. See docs/RELEASING.md.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,4 +71,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             artifacts/*.nupkg artifacts/*.snupkg artifacts/SHA256SUMS artifacts/sbom/* \
             --title "$GITHUB_REF_NAME" \
-            --notes "Keyless-signed via GitHub OIDC (Sigstore build-provenance — verify with \`gh attestation verify <pkg> --repo GimliCZ/DwarfMapper.NET\`), with a CycloneDX SBOM and SHA256SUMS attached. Not pushed to nuget.org automatically."
+            --notes "Keyless-signed via GitHub OIDC (Sigstore build-provenance — verify with \`gh attestation verify <pkg> --repo GimliCZ/DwarfMapper.NET\`), with a CycloneDX SBOM and SHA256SUMS attached. Published to nuget.org manually by the maintainer."

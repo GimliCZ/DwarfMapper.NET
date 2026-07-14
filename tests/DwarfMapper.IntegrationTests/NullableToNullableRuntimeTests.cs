@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── long? → int? ──────────────────────────────────────────────────────────────
-public class LongNullableSrc  { public long? V { get; set; } }
-public class IntNullableDst   { public int?  V { get; set; } }
+public class LongNullableSrc
+{
+    public long? V { get; set; }
+}
+
+public class IntNullableDst
+{
+    public int? V { get; set; }
+}
 
 [DwarfMapper]
 public partial class LongNullableToIntNullableMapper
@@ -15,11 +20,29 @@ public partial class LongNullableToIntNullableMapper
 }
 
 // ── E1? → E2? (by-name) ──────────────────────────────────────────────────────
-public enum NNE1 { A, B, C }
-public enum NNE2 { A, B, C }
+public enum NNE1
+{
+    A,
+    B,
+    C
+}
 
-public class NNE1NullableSrc { public NNE1? V { get; set; } }
-public class NNE2NullableDst { public NNE2? V { get; set; } }
+public enum NNE2
+{
+    A,
+    B,
+    C
+}
+
+public class NNE1NullableSrc
+{
+    public NNE1? V { get; set; }
+}
+
+public class NNE2NullableDst
+{
+    public NNE2? V { get; set; }
+}
 
 [DwarfMapper]
 public partial class NullableEnumToNullableEnumMapper
@@ -53,7 +76,7 @@ public class NullableToNullableRuntimeTests
     {
         // Non-null out-of-range value still throws (CreateChecked applies to the value path).
         var mapper = new LongNullableToIntNullableMapper();
-        Assert.Throws<OverflowException>(() => mapper.Map(new LongNullableSrc { V = (long)int.MaxValue + 1L }));
+        Assert.Throws<OverflowException>(() => mapper.Map(new LongNullableSrc { V = int.MaxValue + 1L }));
     }
 
     // ── E1? → E2? ────────────────────────────────────────────────────────────

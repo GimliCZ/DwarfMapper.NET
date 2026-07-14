@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
-public class Person { public int Age { get; set; } public string Name { get; set; } = ""; }
-public class PersonDto { public int Age { get; set; } public string Name { get; set; } = ""; }
+public class Person
+{
+    public int Age { get; set; }
+    public string Name { get; set; } = "";
+}
+
+public class PersonDto
+{
+    public int Age { get; set; }
+    public string Name { get; set; } = "";
+}
 
 [DwarfMapper]
 public partial class PersonMapper
@@ -27,6 +35,6 @@ public class FlatMappingRuntimeTests
     public void Null_source_throws_ArgumentNullException()
     {
         var mapper = new PersonMapper();
-        Assert.Throws<System.ArgumentNullException>(() => mapper.ToDto(null!));
+        Assert.Throws<ArgumentNullException>(() => mapper.ToDto(null!));
     }
 }

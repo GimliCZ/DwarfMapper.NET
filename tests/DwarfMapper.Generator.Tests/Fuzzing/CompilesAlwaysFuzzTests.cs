@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
+
 using System.Globalization;
-using System.Linq;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
 
 public class CompilesAlwaysFuzzTests
 {
-    public static IEnumerable<object[]> Seeds() =>
-        Enumerable.Range(0, 200).Select(i => new object[] { i });
+    public static IEnumerable<object[]> Seeds()
+    {
+        return Enumerable.Range(0, 200).Select(i => new object[] { i });
+    }
 
-    public static IEnumerable<object[]> AdvancedSeeds() =>
-        Enumerable.Range(0, 50).Select(i => new object[] { i });
+    public static IEnumerable<object[]> AdvancedSeeds()
+    {
+        return Enumerable.Range(0, 50).Select(i => new object[] { i });
+    }
 
     [Theory]
     [MemberData(nameof(Seeds))]

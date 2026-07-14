@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 namespace DwarfMapper.Testing;
 
-/// <summary>A single difference found by <see cref="StructuralComparer"/>.</summary>
+/// <summary>A single difference found by <see cref="StructuralComparer" />.</summary>
 public sealed class MemberDiff
 {
     /// <summary>Creates a member difference.</summary>

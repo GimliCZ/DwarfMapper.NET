@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 namespace DwarfMapper;
 
 /// <summary>How enum-to-enum mappings are resolved.</summary>
@@ -8,5 +9,5 @@ public enum EnumStrategy
     ByName = 0,
 
     /// <summary>Match members by their underlying numeric value (a cast).</summary>
-    ByValue = 1,
+    ByValue = 1
 }

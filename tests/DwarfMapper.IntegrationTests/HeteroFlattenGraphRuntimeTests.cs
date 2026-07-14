@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -12,6 +7,7 @@ namespace DwarfMapper.IntegrationTests;
 public abstract class HFsNode
 {
     public string Name { get; set; } = "";
+
     // Base edge: present on all derived types — inherited by Folder and HFile
     public HFsNode? Parent { get; set; }
 }
@@ -66,7 +62,10 @@ public class HTreeArrDto
 }
 
 // Unregistered node type (to test loud failure)
-public class HSymlink : HFsNode { public string Target { get; set; } = ""; }
+public class HSymlink : HFsNode
+{
+    public string Target { get; set; } = "";
+}
 
 // ── Mapper ───────────────────────────────────────────────────────────────────
 
@@ -112,7 +111,7 @@ public class HeteroFlattenGraphRuntimeTests
         var dto = Assert.IsType<HFileDto>(result.Nodes[0]);
         Assert.Equal("readme.txt", dto.Name);
         Assert.Equal(1024L, dto.Size);
-        Assert.Null(dto.Parent);  // edge degraded
+        Assert.Null(dto.Parent); // edge degraded
         Assert.Equal("root", result.Label);
     }
 
@@ -128,8 +127,8 @@ public class HeteroFlattenGraphRuntimeTests
         Assert.Single(result.Nodes);
         var dto = Assert.IsType<HFolderDto>(result.Nodes[0]);
         Assert.Equal("src", dto.Name);
-        Assert.Null(dto.Children);  // edge degraded
-        Assert.Null(dto.Parent);    // base edge degraded
+        Assert.Null(dto.Children); // edge degraded
+        Assert.Null(dto.Parent); // base edge degraded
     }
 
     // ── 4. Folder with two File children: all 3 nodes collected, correct types ─

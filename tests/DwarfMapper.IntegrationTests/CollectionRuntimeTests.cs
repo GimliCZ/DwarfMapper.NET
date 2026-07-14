@@ -1,14 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
-public class CAddr { public string City { get; set; } = ""; }
-public class CAddrDto { public string City { get; set; } = ""; }
+public class CAddr
+{
+    public string City { get; set; } = "";
+}
 
-public class CSrc { public int[] Nums { get; set; } = System.Array.Empty<int>(); public List<CAddr> Addrs { get; set; } = new(); }
-public class CDst { public List<int> Nums { get; set; } = new(); public CAddrDto[] Addrs { get; set; } = System.Array.Empty<CAddrDto>(); }
+public class CAddrDto
+{
+    public string City { get; set; } = "";
+}
+
+public class CSrc
+{
+    public int[] Nums { get; set; } = Array.Empty<int>();
+    public List<CAddr> Addrs { get; set; } = new();
+}
+
+public class CDst
+{
+    public List<int> Nums { get; set; } = new();
+    public CAddrDto[] Addrs { get; set; } = Array.Empty<CAddrDto>();
+}
 
 [DwarfMapper]
 public partial class CollMapper
@@ -19,8 +33,15 @@ public partial class CollMapper
 
 // ── Top-level collection-returning mappers (Fix 1) ────────────────────────────
 
-public class TLSrc { public int Value { get; set; } }
-public class TLDto { public int Value { get; set; } }
+public class TLSrc
+{
+    public int Value { get; set; }
+}
+
+public class TLDto
+{
+    public int Value { get; set; }
+}
 
 [DwarfMapper]
 public partial class TopLevelCollMapper
@@ -44,7 +65,7 @@ public class CollectionRuntimeTests
         var d = new CollMapper().Map(new CSrc
         {
             Nums = new[] { 1, 2, 3 },
-            Addrs = new List<CAddr> { new() { City = "Erebor" }, new() { City = "Moria" } },
+            Addrs = new List<CAddr> { new() { City = "Erebor" }, new() { City = "Moria" } }
         });
         Assert.Equal(new[] { 1, 2, 3 }, d.Nums);
         Assert.Equal(2, d.Addrs.Length);

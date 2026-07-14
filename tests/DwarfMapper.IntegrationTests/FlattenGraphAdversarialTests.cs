@@ -1,28 +1,57 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
 // ── Top-level collection target-type matrix ───────────────────────────────────
 
-public class TlcItem { public int Id { get; set; } public string Name { get; set; } = ""; }
-public class TlcItemDto { public int Id { get; set; } public string Name { get; set; } = ""; }
-public abstract class TlcAnimal { public string Name { get; set; } = ""; }
-public class TlcDog : TlcAnimal { public string Breed { get; set; } = ""; }
-public class TlcCat : TlcAnimal { public int Lives { get; set; } }
-public class TlcAnimalDto { public string Name { get; set; } = ""; }
-public class TlcDogDto : TlcAnimalDto { public string Breed { get; set; } = ""; }
-public class TlcCatDto : TlcAnimalDto { public int Lives { get; set; } }
+public class TlcItem
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+}
+
+public class TlcItemDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+}
+
+public abstract class TlcAnimal
+{
+    public string Name { get; set; } = "";
+}
+
+public class TlcDog : TlcAnimal
+{
+    public string Breed { get; set; } = "";
+}
+
+public class TlcCat : TlcAnimal
+{
+    public int Lives { get; set; }
+}
+
+public class TlcAnimalDto
+{
+    public string Name { get; set; } = "";
+}
+
+public class TlcDogDto : TlcAnimalDto
+{
+    public string Breed { get; set; } = "";
+}
+
+public class TlcCatDto : TlcAnimalDto
+{
+    public int Lives { get; set; }
+}
 
 [DwarfMapper]
 public partial class TlcMapper
 {
     // List<T> → List<T>
     public partial List<TlcItemDto> Map(List<TlcItem> src);
+
     // List<T> → IReadOnlyList<T>
     public partial IReadOnlyList<TlcItemDto> MapRol(List<TlcItem> src);
 
@@ -50,10 +79,25 @@ public partial class TlcHashSetMapper
 }
 
 // Dictionary → IReadOnlyDictionary  (separate mapper)
-public class TlcKey { public string K { get; set; } = ""; }
-public class TlcValue { public int V { get; set; } }
-public class TlcKeyDto { public string K { get; set; } = ""; }
-public class TlcValueDto { public int V { get; set; } }
+public class TlcKey
+{
+    public string K { get; set; } = "";
+}
+
+public class TlcValue
+{
+    public int V { get; set; }
+}
+
+public class TlcKeyDto
+{
+    public string K { get; set; } = "";
+}
+
+public class TlcValueDto
+{
+    public int V { get; set; }
+}
 
 [DwarfMapper]
 public partial class TlcDictMapper
@@ -65,10 +109,10 @@ public partial class TlcDictMapper
 
 public class TopLevelCollectionMatrixTests
 {
-    private readonly TlcMapper _m = new();
-    private readonly TlcHashSetMapper _hsm = new();
-    private readonly TlcDictMapper _dm = new();
     private readonly TlcAnimalMapper _am = new();
+    private readonly TlcDictMapper _dm = new();
+    private readonly TlcHashSetMapper _hsm = new();
+    private readonly TlcMapper _m = new();
 
     // ── 1. List<T> → List<T> ─────────────────────────────────────────────────
     [Fact]
@@ -77,7 +121,7 @@ public class TopLevelCollectionMatrixTests
         var src = new List<TlcItem>
         {
             new() { Id = 1, Name = "Alpha" },
-            new() { Id = 2, Name = "Beta" },
+            new() { Id = 2, Name = "Beta" }
         };
         var result = _m.Map(src);
         Assert.Equal(2, result.Count);
@@ -91,7 +135,7 @@ public class TopLevelCollectionMatrixTests
     public void ListToIReadOnlyList_maps_all_elements()
     {
         var src = new List<TlcItem> { new() { Id = 3, Name = "Gamma" } };
-        IReadOnlyList<TlcItemDto> result = _m.MapRol(src);
+        var result = _m.MapRol(src);
         Assert.Single(result);
         Assert.Equal(3, result[0].Id);
         Assert.Equal("Gamma", result[0].Name);
@@ -104,7 +148,7 @@ public class TopLevelCollectionMatrixTests
         var src = new HashSet<TlcItem>
         {
             new() { Id = 7, Name = "G" },
-            new() { Id = 8, Name = "H" },
+            new() { Id = 8, Name = "H" }
         };
         var result = _hsm.Map(src);
         Assert.Equal(2, result.Count);
@@ -121,7 +165,7 @@ public class TopLevelCollectionMatrixTests
         var src = new Dictionary<TlcKey, TlcValue>
         {
             [k1] = new() { V = 10 },
-            [k2] = new() { V = 20 },
+            [k2] = new() { V = 20 }
         };
         var result = _dm.Map(src);
         Assert.Equal(2, result.Count);
@@ -137,14 +181,14 @@ public class TopLevelCollectionMatrixTests
         {
             new TlcDog { Name = "Rex", Breed = "Husky" },
             new TlcCat { Name = "Luna", Lives = 9 },
-            new TlcDog { Name = "Buddy", Breed = "Lab" },
+            new TlcDog { Name = "Buddy", Breed = "Lab" }
         };
         var results = animals.ConvertAll(a => _am.Map(a));
         Assert.Equal(3, results.Count);
         var dog1 = Assert.IsType<TlcDogDto>(results[0]);
-        Assert.Equal("Husky", dog1.Breed);   // derived-only member
+        Assert.Equal("Husky", dog1.Breed); // derived-only member
         var cat = Assert.IsType<TlcCatDto>(results[1]);
-        Assert.Equal(9, cat.Lives);           // derived-only member
+        Assert.Equal(9, cat.Lives); // derived-only member
         var dog2 = Assert.IsType<TlcDogDto>(results[2]);
         Assert.Equal("Lab", dog2.Breed);
     }
@@ -171,9 +215,9 @@ public class TopLevelCollectionMatrixTests
 public class EkNode
 {
     public string Name { get; set; } = "";
-    public EkNode? SingleRef { get; set; }                // single reference
-    public List<EkNode> ListEdge { get; set; } = new();   // List<T>
-    public EkNode[] ArrayEdge { get; set; } = Array.Empty<EkNode>();  // T[]
+    public EkNode? SingleRef { get; set; } // single reference
+    public List<EkNode> ListEdge { get; set; } = new(); // List<T>
+    public EkNode[] ArrayEdge { get; set; } = Array.Empty<EkNode>(); // T[]
     public HashSet<EkNode> SetEdge { get; set; } = new(); // HashSet<T>
     public Dictionary<string, EkNode> DictEdge { get; set; } = new(); // Dictionary<K,Node>
 }
@@ -188,8 +232,15 @@ public class EkNodeDto
     public Dictionary<string, EkNodeDto>? DictEdge { get; set; }
 }
 
-public class EkRoot { public EkNode? Entry { get; set; } }
-public class EkRootDto { public List<EkNodeDto> Nodes { get; set; } = new(); }
+public class EkRoot
+{
+    public EkNode? Entry { get; set; }
+}
+
+public class EkRootDto
+{
+    public List<EkNodeDto> Nodes { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class EkMapper
@@ -199,12 +250,37 @@ public partial class EkMapper
 }
 
 // Interface/base-typed edge traversal (homo)
-public class IEkBase { public string Name { get; set; } = ""; public IEkBase? Parent { get; set; } }
-public class IEkConcrete : IEkBase { public int Extra { get; set; } }
-public class IEkBaseDto { public string Name { get; set; } = ""; public IEkBaseDto? Parent { get; set; } }
-public class IEkConcreteDto : IEkBaseDto { public int Extra { get; set; } }
-public class IEkRoot { public IEkBase? Entry { get; set; } }
-public class IEkRootDto { public List<IEkBaseDto> Nodes { get; set; } = new(); }
+public class IEkBase
+{
+    public string Name { get; set; } = "";
+    public IEkBase? Parent { get; set; }
+}
+
+public class IEkConcrete : IEkBase
+{
+    public int Extra { get; set; }
+}
+
+public class IEkBaseDto
+{
+    public string Name { get; set; } = "";
+    public IEkBaseDto? Parent { get; set; }
+}
+
+public class IEkConcreteDto : IEkBaseDto
+{
+    public int Extra { get; set; }
+}
+
+public class IEkRoot
+{
+    public IEkBase? Entry { get; set; }
+}
+
+public class IEkRootDto
+{
+    public List<IEkBaseDto> Nodes { get; set; } = new();
+}
 
 [DwarfMapper]
 public partial class IEkMapper
@@ -215,8 +291,8 @@ public partial class IEkMapper
 
 public class FlattenGraphEdgeKindMatrixTests
 {
-    private readonly EkMapper _m = new();
     private readonly IEkMapper _im = new();
+    private readonly EkMapper _m = new();
 
     // ── 1. Single-reference edge traversed ───────────────────────────────────
     [Fact]
@@ -228,7 +304,7 @@ public class FlattenGraphEdgeKindMatrixTests
         Assert.Equal(2, result.Nodes.Count);
         var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
         Assert.Equal(new[] { "A", "B" }, names);
-        Assert.All(result.Nodes, n => Assert.Null(n.SingleRef));  // edges degraded
+        Assert.All(result.Nodes, n => Assert.Null(n.SingleRef)); // edges degraded
     }
 
     // ── 2. List<Node> edge traversed ─────────────────────────────────────────
@@ -283,7 +359,7 @@ public class FlattenGraphEdgeKindMatrixTests
             DictEdge = new Dictionary<string, EkNode>
             {
                 ["k1"] = f1,
-                ["k2"] = f2,
+                ["k2"] = f2
             }
         };
         var result = _m.Map(new EkRoot { Entry = a });
@@ -304,7 +380,7 @@ public class FlattenGraphEdgeKindMatrixTests
         Assert.Equal(2, result.Nodes.Count);
         var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
         Assert.Equal(new[] { "Child", "Parent" }, names);
-        Assert.All(result.Nodes, n => Assert.Null(n.Parent));  // edges degraded
+        Assert.All(result.Nodes, n => Assert.Null(n.Parent)); // edges degraded
     }
 }
 

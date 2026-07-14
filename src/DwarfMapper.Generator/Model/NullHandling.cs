@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 namespace DwarfMapper.Generator.Model;
 
 /// <summary>How the emitter unwraps a nullable value-type source for a non-nullable destination.</summary>
@@ -14,8 +15,8 @@ public enum NullHandling
     ValueOrDefault = 2,
 
     /// <summary>
-    /// Source and target are both <c>Nullable&lt;T&gt;</c>; emit
-    /// <c>x.HasValue ? Conv(x.Value) : null</c> (null-preserving).
+    ///     Source and target are both <c>Nullable&lt;T&gt;</c>; emit
+    ///     <c>x.HasValue ? Conv(x.Value) : null</c> (null-preserving).
     /// </summary>
-    NullableProject = 3,
+    NullableProject = 3
 }

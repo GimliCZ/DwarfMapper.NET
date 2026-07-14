@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using DwarfMapper;
 
 namespace DwarfMapper.IntegrationTests;
 
-public class FieldSource { public int Count; public string Tag = ""; }
-public class FieldTarget { public int Count; public string Tag = ""; }
+public class FieldSource
+{
+    public int Count;
+    public string Tag = "";
+}
+
+public class FieldTarget
+{
+    public int Count;
+    public string Tag = "";
+}
 
 [DwarfMapper]
 public partial class FieldMapper
@@ -12,8 +20,15 @@ public partial class FieldMapper
     public partial FieldTarget Map(FieldSource s);
 }
 
-public class RenameSource { public string FullName { get; set; } = ""; }
-public class RenameTarget { public string Name { get; set; } = ""; }
+public class RenameSource
+{
+    public string FullName { get; set; } = "";
+}
+
+public class RenameTarget
+{
+    public string Name { get; set; } = "";
+}
 
 [DwarfMapper]
 public partial class RenameMapper
@@ -22,8 +37,15 @@ public partial class RenameMapper
     public partial RenameTarget Map(RenameSource s);
 }
 
-public class CiSource { public int count { get; set; } }
-public class CiTarget { public int Count { get; set; } }
+public class CiSource
+{
+    public int count { get; set; }
+}
+
+public class CiTarget
+{
+    public int Count { get; set; }
+}
 
 [DwarfMapper(CaseInsensitive = true)]
 public partial class CiMapper

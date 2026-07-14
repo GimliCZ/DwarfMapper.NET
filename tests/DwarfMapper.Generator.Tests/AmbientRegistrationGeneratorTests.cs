@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 using Microsoft.CodeAnalysis;
-using Xunit;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Generator-side tests for the ambient-registry emission: the module-initializer self-registration +
-/// <c>[assembly: DwarfProvidesMap]</c> manifest (asserted on the aggregate file), and DWARF062 when a
-/// mapper has constructor dependencies and so cannot self-register.
+///     Generator-side tests for the ambient-registry emission: the module-initializer self-registration +
+///     <c>[assembly: DwarfProvidesMap]</c> manifest (asserted on the aggregate file), and DWARF062 when a
+///     mapper has constructor dependencies and so cannot self-register.
 /// </summary>
 public sealed class AmbientRegistrationGeneratorTests
 {
@@ -15,20 +15,23 @@ public sealed class AmbientRegistrationGeneratorTests
     public void Public_typed_map_emits_module_initializer_and_provides_manifest()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class A { public int V { get; set; } }
-            public class B { public int V { get; set; } }
-            [DwarfMapper]
-            [GenerateMap<A, B>]
-            public partial class M { }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class A { public int V { get; set; } }
+                         public class B { public int V { get; set; } }
+                         [DwarfMapper]
+                         [GenerateMap<A, B>]
+                         public partial class M { }
+                         """;
 
         var ambient = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.AmbientRegistration.g.cs");
 
-        Assert.Contains("ModuleInitializer", ambient, System.StringComparison.Ordinal);
-        Assert.Contains("DwarfMapperRegistry.Register(typeof(global::Demo.A), typeof(global::Demo.B)", ambient, System.StringComparison.Ordinal);
-        Assert.Contains("[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::Demo.A), typeof(global::Demo.B))]", ambient, System.StringComparison.Ordinal);
+        Assert.Contains("ModuleInitializer", ambient, StringComparison.Ordinal);
+        Assert.Contains("DwarfMapperRegistry.Register(typeof(global::Demo.A), typeof(global::Demo.B)", ambient,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::Demo.A), typeof(global::Demo.B))]", ambient,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -37,14 +40,14 @@ public sealed class AmbientRegistrationGeneratorTests
         // Internal source/dest types cannot be named by another assembly, so they are NOT registered
         // ambiently (no aggregate file produced for this mapper).
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            internal class A { public int V { get; set; } }
-            internal class B { public int V { get; set; } }
-            [DwarfMapper]
-            [GenerateMap<A, B>]
-            public partial class M { }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         internal class A { public int V { get; set; } }
+                         internal class B { public int V { get; set; } }
+                         [DwarfMapper]
+                         [GenerateMap<A, B>]
+                         public partial class M { }
+                         """;
 
         var ambient = GeneratorTestHarness.RunAndGetSource(s, "DwarfMapper.AmbientRegistration.g.cs");
         Assert.Equal(string.Empty, ambient);
@@ -54,18 +57,18 @@ public sealed class AmbientRegistrationGeneratorTests
     public void Mapper_with_constructor_dependency_reports_DWARF062()
     {
         const string s = """
-            using DwarfMapper;
-            namespace Demo;
-            public class A { public int V { get; set; } }
-            public class B { public int V { get; set; } }
-            public class Dep { }
-            [DwarfMapper]
-            [GenerateMap<A, B>]
-            public partial class M
-            {
-                public M(Dep dep) { _ = dep; }
-            }
-            """;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class A { public int V { get; set; } }
+                         public class B { public int V { get; set; } }
+                         public class Dep { }
+                         [DwarfMapper]
+                         [GenerateMap<A, B>]
+                         public partial class M
+                         {
+                             public M(Dep dep) { _ = dep; }
+                         }
+                         """;
 
         var (diags, _) = GeneratorTestHarness.Run(s);
 

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
+
 namespace DwarfMapper.Generator.Model;
 
 /// <summary>
-/// A resolved [FlattenGraph] directive stored in <see cref="MapMethodModel"/>.
-/// Carries the synthesized helper names and collection-conversion suffix needed for emission.
+///     A resolved [FlattenGraph] directive stored in <see cref="MapMethodModel" />.
+///     Carries the synthesized helper names and collection-conversion suffix needed for emission.
 /// </summary>
 public sealed record FlattenGraphDirective(
     /// <summary>Member name on the root source type entering the graph.</summary>
@@ -18,4 +19,4 @@ public sealed record FlattenGraphDirective(
     /// <c>__DwarfMap_FlattenGraphArr_HASH</c> thin wrapper that calls <c>.ToArray()</c>.
     /// </summary>
     string ConverterHelperName
-) : System.IEquatable<FlattenGraphDirective>;
+) : IEquatable<FlattenGraphDirective>;

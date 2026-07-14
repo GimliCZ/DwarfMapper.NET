@@ -1,16 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
 // Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src) lazily transforms an async
 // sequence element-by-element (await foreach … yield return), preserving streaming/back-pressure.
 
-public class AsSrc { public int Id { get; set; } public long Score { get; set; } }
-public class AsDst { public int Id { get; set; } public int Score { get; set; } }
+public class AsSrc
+{
+    public int Id { get; set; }
+    public long Score { get; set; }
+}
+
+public class AsDst
+{
+    public int Id { get; set; }
+    public int Score { get; set; }
+}
 
 [DwarfMapper]
 public partial class AsyncStreamMapper
@@ -63,6 +68,7 @@ public class AsyncStreamMapRuntimeTests
         // If the mapper buffered the whole sequence eagerly, taking 1 element would still pull all.
         // We assert we can stop early after the first element (the source tracks how many it produced).
         var produced = 0;
+
         async IAsyncEnumerable<AsSrc> Counting()
         {
             for (var i = 0; i < 100; i++)

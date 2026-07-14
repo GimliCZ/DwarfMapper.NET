@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using DwarfMapper;
-using Xunit;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -13,36 +8,118 @@ namespace DwarfMapper.IntegrationTests;
 // File-scoped domain types use an `Ec_` prefix to stay unique across the project.
 
 // ── Overflow inside a collection element ─────────────────────────────────────
-public class Ec_LongListSrc { public List<long> V { get; set; } = new(); }
-public class Ec_IntListDst { public List<int> V { get; set; } = new(); }
-[DwarfMapper] public partial class Ec_ListNarrowMapper { public partial Ec_IntListDst Map(Ec_LongListSrc s); }
+public class Ec_LongListSrc
+{
+    public List<long> V { get; set; } = new();
+}
+
+public class Ec_IntListDst
+{
+    public List<int> V { get; set; } = new();
+}
+
+[DwarfMapper]
+public partial class Ec_ListNarrowMapper
+{
+    public partial Ec_IntListDst Map(Ec_LongListSrc s);
+}
 
 // ── Overflow inside a nested member ──────────────────────────────────────────
-public class Ec_LongHolder { public long V { get; set; } }
-public class Ec_IntHolder { public int V { get; set; } }
-public class Ec_NestSrc { public Ec_LongHolder Inner { get; set; } = new(); }
-public class Ec_NestDst { public Ec_IntHolder Inner { get; set; } = new(); }
-[DwarfMapper] public partial class Ec_NestNarrowMapper { public partial Ec_NestDst Map(Ec_NestSrc s); }
+public class Ec_LongHolder
+{
+    public long V { get; set; }
+}
+
+public class Ec_IntHolder
+{
+    public int V { get; set; }
+}
+
+public class Ec_NestSrc
+{
+    public Ec_LongHolder Inner { get; set; } = new();
+}
+
+public class Ec_NestDst
+{
+    public Ec_IntHolder Inner { get; set; } = new();
+}
+
+[DwarfMapper]
+public partial class Ec_NestNarrowMapper
+{
+    public partial Ec_NestDst Map(Ec_NestSrc s);
+}
 
 // ── Overflow inside a constructor parameter ──────────────────────────────────
-public class Ec_CtorSrc { public long V { get; set; } }
+public class Ec_CtorSrc
+{
+    public long V { get; set; }
+}
+
 public record Ec_CtorDst(int V);
-[DwarfMapper] public partial class Ec_CtorNarrowMapper { public partial Ec_CtorDst Map(Ec_CtorSrc s); }
+
+[DwarfMapper]
+public partial class Ec_CtorNarrowMapper
+{
+    public partial Ec_CtorDst Map(Ec_CtorSrc s);
+}
 
 // ── Overflow inside a dictionary value ───────────────────────────────────────
-public class Ec_DictLongSrc { public Dictionary<string, long> M { get; set; } = new(); }
-public class Ec_DictIntDst { public Dictionary<string, int> M { get; set; } = new(); }
-[DwarfMapper] public partial class Ec_DictNarrowMapper { public partial Ec_DictIntDst Map(Ec_DictLongSrc s); }
+public class Ec_DictLongSrc
+{
+    public Dictionary<string, long> M { get; set; } = new();
+}
+
+public class Ec_DictIntDst
+{
+    public Dictionary<string, int> M { get; set; } = new();
+}
+
+[DwarfMapper]
+public partial class Ec_DictNarrowMapper
+{
+    public partial Ec_DictIntDst Map(Ec_DictLongSrc s);
+}
 
 // ── Boundary values: widening exact + in-range narrowing succeeds ─────────────
-public class Ec_BoundSrc { public int I { get; set; } public byte B { get; set; } public long N { get; set; } }
-public class Ec_BoundDst { public long I { get; set; } public int B { get; set; } public int N { get; set; } }
-[DwarfMapper] public partial class Ec_BoundMapper { public partial Ec_BoundDst Map(Ec_BoundSrc s); }
+public class Ec_BoundSrc
+{
+    public int I { get; set; }
+    public byte B { get; set; }
+    public long N { get; set; }
+}
+
+public class Ec_BoundDst
+{
+    public long I { get; set; }
+    public int B { get; set; }
+    public int N { get; set; }
+}
+
+[DwarfMapper]
+public partial class Ec_BoundMapper
+{
+    public partial Ec_BoundDst Map(Ec_BoundSrc s);
+}
 
 // ── Additional parameter that needs a (narrowing) conversion to its destination ─
-public class Ec_ApcSrc { public int Id { get; set; } }
-public class Ec_ApcDst { public int Id { get; set; } public int Seq { get; set; } }
-[DwarfMapper] public partial class Ec_ApcMapper { public partial Ec_ApcDst Map(Ec_ApcSrc s, long seq); }
+public class Ec_ApcSrc
+{
+    public int Id { get; set; }
+}
+
+public class Ec_ApcDst
+{
+    public int Id { get; set; }
+    public int Seq { get; set; }
+}
+
+[DwarfMapper]
+public partial class Ec_ApcMapper
+{
+    public partial Ec_ApcDst Map(Ec_ApcSrc s, long seq);
+}
 
 // ── Null source collections → empty (default AsEmpty) ────────────────────────
 public class Ec_NullCollSrc
@@ -52,6 +129,7 @@ public class Ec_NullCollSrc
     public int[]? A { get; set; }
     public Dictionary<string, int>? D { get; set; }
 }
+
 public class Ec_NullCollDst
 {
     public List<int> L { get; set; } = new();
@@ -59,40 +137,147 @@ public class Ec_NullCollDst
     public int[] A { get; set; } = Array.Empty<int>();
     public Dictionary<string, int> D { get; set; } = new();
 }
-[DwarfMapper] public partial class Ec_NullCollMapper { public partial Ec_NullCollDst Map(Ec_NullCollSrc s); }
+
+[DwarfMapper]
+public partial class Ec_NullCollMapper
+{
+    public partial Ec_NullCollDst Map(Ec_NullCollSrc s);
+}
 
 // ── Dictionary key collision (post-conversion) + key/value conversion ────────
-public class Ec_DictKeySrc { public Dictionary<string, long> M { get; set; } = new(); }
-public class Ec_DictKeyDst { public Dictionary<int, int> M { get; set; } = new(); }
-[DwarfMapper] public partial class Ec_DictKeyMapper { public partial Ec_DictKeyDst Map(Ec_DictKeySrc s); }
+public class Ec_DictKeySrc
+{
+    public Dictionary<string, long> M { get; set; } = new();
+}
+
+public class Ec_DictKeyDst
+{
+    public Dictionary<int, int> M { get; set; } = new();
+}
+
+[DwarfMapper]
+public partial class Ec_DictKeyMapper
+{
+    public partial Ec_DictKeyDst Map(Ec_DictKeySrc s);
+}
 
 // ── Nullable lift/unwrap matrix ──────────────────────────────────────────────
-public class Ec_NvSrc { public int? V { get; set; } }
-public class Ec_NvDst { public int V { get; set; } }
-[DwarfMapper] public partial class Ec_NvThrowMapper { public partial Ec_NvDst Map(Ec_NvSrc s); }
-[DwarfMapper(NullStrategy = NullStrategy.SetDefault)] public partial class Ec_NvDefaultMapper { public partial Ec_NvDst Map(Ec_NvSrc s); }
-public class Ec_NnDst { public int? V { get; set; } }
-[DwarfMapper] public partial class Ec_NnMapper { public partial Ec_NnDst Map(Ec_NvSrc s); }
+public class Ec_NvSrc
+{
+    public int? V { get; set; }
+}
+
+public class Ec_NvDst
+{
+    public int V { get; set; }
+}
+
+[DwarfMapper]
+public partial class Ec_NvThrowMapper
+{
+    public partial Ec_NvDst Map(Ec_NvSrc s);
+}
+
+[DwarfMapper(NullStrategy = NullStrategy.SetDefault)]
+public partial class Ec_NvDefaultMapper
+{
+    public partial Ec_NvDst Map(Ec_NvSrc s);
+}
+
+public class Ec_NnDst
+{
+    public int? V { get; set; }
+}
+
+[DwarfMapper]
+public partial class Ec_NnMapper
+{
+    public partial Ec_NnDst Map(Ec_NvSrc s);
+}
 
 // ── Deep nesting (auto-nest, 6 levels) ───────────────────────────────────────
-public class Ec_D5 { public string Leaf { get; set; } = ""; }
-public class Ec_D4 { public Ec_D5 N { get; set; } = new(); }
-public class Ec_D3 { public Ec_D4 N { get; set; } = new(); }
-public class Ec_D2 { public Ec_D3 N { get; set; } = new(); }
-public class Ec_D1 { public Ec_D2 N { get; set; } = new(); }
-public class Ec_D0 { public Ec_D1 N { get; set; } = new(); }
-public class Ec_E5 { public string Leaf { get; set; } = ""; }
-public class Ec_E4 { public Ec_E5 N { get; set; } = new(); }
-public class Ec_E3 { public Ec_E4 N { get; set; } = new(); }
-public class Ec_E2 { public Ec_E3 N { get; set; } = new(); }
-public class Ec_E1 { public Ec_E2 N { get; set; } = new(); }
-public class Ec_E0 { public Ec_E1 N { get; set; } = new(); }
-[DwarfMapper] public partial class Ec_DeepMapper { public partial Ec_E0 Map(Ec_D0 s); }
+public class Ec_D5
+{
+    public string Leaf { get; set; } = "";
+}
+
+public class Ec_D4
+{
+    public Ec_D5 N { get; set; } = new();
+}
+
+public class Ec_D3
+{
+    public Ec_D4 N { get; set; } = new();
+}
+
+public class Ec_D2
+{
+    public Ec_D3 N { get; set; } = new();
+}
+
+public class Ec_D1
+{
+    public Ec_D2 N { get; set; } = new();
+}
+
+public class Ec_D0
+{
+    public Ec_D1 N { get; set; } = new();
+}
+
+public class Ec_E5
+{
+    public string Leaf { get; set; } = "";
+}
+
+public class Ec_E4
+{
+    public Ec_E5 N { get; set; } = new();
+}
+
+public class Ec_E3
+{
+    public Ec_E4 N { get; set; } = new();
+}
+
+public class Ec_E2
+{
+    public Ec_E3 N { get; set; } = new();
+}
+
+public class Ec_E1
+{
+    public Ec_E2 N { get; set; } = new();
+}
+
+public class Ec_E0
+{
+    public Ec_E1 N { get; set; } = new();
+}
+
+[DwarfMapper]
+public partial class Ec_DeepMapper
+{
+    public partial Ec_E0 Map(Ec_D0 s);
+}
 
 // ── Large collection ─────────────────────────────────────────────────────────
-public class Ec_BigSrc { public List<int> V { get; set; } = new(); }
-public class Ec_BigDst { public List<long> V { get; set; } = new(); }
-[DwarfMapper] public partial class Ec_BigMapper { public partial Ec_BigDst Map(Ec_BigSrc s); }
+public class Ec_BigSrc
+{
+    public List<int> V { get; set; } = new();
+}
+
+public class Ec_BigDst
+{
+    public List<long> V { get; set; } = new();
+}
+
+[DwarfMapper]
+public partial class Ec_BigMapper
+{
+    public partial Ec_BigDst Map(Ec_BigSrc s);
+}
 
 public class EdgeCaseParityRuntimeTests
 {
@@ -128,9 +313,9 @@ public class EdgeCaseParityRuntimeTests
     public void Boundary_widening_exact_and_in_range_narrowing_succeeds()
     {
         var d = new Ec_BoundMapper().Map(new Ec_BoundSrc { I = int.MaxValue, B = byte.MaxValue, N = 100 });
-        Assert.Equal(int.MaxValue, d.I);  // int → long widening, exact
-        Assert.Equal(255, d.B);           // byte → int widening, exact
-        Assert.Equal(100, d.N);           // long → int NARROWING, in range → succeeds (no overflow)
+        Assert.Equal(int.MaxValue, d.I); // int → long widening, exact
+        Assert.Equal(255, d.B); // byte → int widening, exact
+        Assert.Equal(100, d.N); // long → int NARROWING, in range → succeeds (no overflow)
 
         var min = new Ec_BoundMapper().Map(new Ec_BoundSrc { I = int.MinValue, B = 0, N = int.MinValue });
         Assert.Equal(int.MinValue, min.I);
@@ -145,17 +330,22 @@ public class EdgeCaseParityRuntimeTests
         var d = new Ec_ApcMapper().Map(new Ec_ApcSrc { Id = 1 }, 42L);
         Assert.Equal(42, d.Seq);
         // ...and overflow throws, just like any other narrowing.
-        Assert.Throws<OverflowException>(() => new Ec_ApcMapper().Map(new Ec_ApcSrc { Id = 1 }, (long)int.MaxValue + 1));
+        Assert.Throws<OverflowException>(() =>
+            new Ec_ApcMapper().Map(new Ec_ApcSrc { Id = 1 }, (long)int.MaxValue + 1));
     }
 
     [Fact]
     public void Null_source_collections_become_empty_not_null()
     {
         var d = new Ec_NullCollMapper().Map(new Ec_NullCollSrc()); // all null
-        Assert.NotNull(d.L); Assert.Empty(d.L);
-        Assert.NotNull(d.H); Assert.Empty(d.H);
-        Assert.NotNull(d.A); Assert.Empty(d.A);
-        Assert.NotNull(d.D); Assert.Empty(d.D);
+        Assert.NotNull(d.L);
+        Assert.Empty(d.L);
+        Assert.NotNull(d.H);
+        Assert.Empty(d.H);
+        Assert.NotNull(d.A);
+        Assert.Empty(d.A);
+        Assert.NotNull(d.D);
+        Assert.Empty(d.D);
     }
 
     [Fact]

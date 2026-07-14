@@ -1,36 +1,39 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 <Project>
-  <PropertyGroup>
-    <LangVersion>latest</LangVersion>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarningsNotAsErrors></WarningsNotAsErrors>
+    <PropertyGroup>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <WarningsNotAsErrors></WarningsNotAsErrors>
 
-    <!-- Static analysis: maximum, defensive from the start -->
-    <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisLevel>latest-all</AnalysisLevel>
-    <AnalysisMode>All</AnalysisMode>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <!-- Static analysis: maximum, defensive from the start -->
+        <EnableNETAnalyzers>true</EnableNETAnalyzers>
+        <AnalysisLevel>latest-all</AnalysisLevel>
+        <AnalysisMode>All</AnalysisMode>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
-    <!-- Reproducible / CRA: deterministic builds, source link -->
-    <Deterministic>true</Deterministic>
-    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <!-- Reproducible / CRA: deterministic builds, source link -->
+        <Deterministic>true</Deterministic>
+        <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
-    <!-- Package metadata (license is unambiguous in every artifact) -->
-    <Authors>DwarfMapper contributors</Authors>
-    <Company>DwarfMapper contributors</Company>
-    <Copyright>Copyright (c) DwarfMapper contributors</Copyright>
-    <PackageLicenseExpression>GPL-2.0-only</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/GimliCZ/DwarfMapper.NET</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/GimliCZ/DwarfMapper.NET</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>mapper;mapping;source-generator;roslyn;aot;dto;blittable;simd</PackageTags>
+        <!-- Package metadata (license is unambiguous in every artifact) -->
+        <Authors>DwarfMapper contributors</Authors>
+        <Company>DwarfMapper contributors</Company>
+        <Copyright>Copyright (c) DwarfMapper contributors</Copyright>
+        <PackageLicenseExpression>GPL-2.0-only</PackageLicenseExpression>
+        <!-- Strong copyleft: require explicit license acceptance on install for every produced package
+             (DwarfMapper, DwarfMapper.Generator, DwarfMapper.Testing). -->
+        <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+        <PackageProjectUrl>https://github.com/GimliCZ/DwarfMapper.NET</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/GimliCZ/DwarfMapper.NET</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageTags>mapper;mapping;source-generator;roslyn;aot;dto;blittable;simd</PackageTags>
 
-    <!-- Version: overridable by CI from the release tag (-p:Version=x.y.z).
-         Keep in sync with the README 'Status' section. -->
-    <Version Condition="'$(Version)' == ''">1.0.0-rc.1</Version>
-  </PropertyGroup>
+        <!-- Version: overridable by CI from the release tag (-p:Version=x.y.z).
+             Keep in sync with the README 'Status' section. -->
+        <Version Condition="'$(Version)' == ''">1.0.1-rc.1</Version>
+    </PropertyGroup>
 </Project>

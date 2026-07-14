@@ -143,7 +143,8 @@ work and must itself be released under GPLv2, with corresponding source made ava
 distribute the binary to.
 
 In plain terms: **if you build on DwarfMapper and ship the binary, your project is GPLv2 too, and your users
-get the source.** Plan accordingly:
+get the source.** (This is the *conservative* reading — whether a source generator's emitted output makes your
+assembly a derivative work is legally unsettled; note also that the GPL-2.0 runtime library `DwarfMapper.dll` you link and redistribute carries **no linking/runtime-library exception** — unlike GCC's runtime — so ordinary GPLv2 terms apply to it regardless. Consult counsel for commercially sensitive use.) Plan accordingly:
 
 - **Distributing a binary product (desktop app, on-prem server, library on NuGet, mobile app)?** Your
   product must be GPLv2 with source available. If that's incompatible with your licensing, DwarfMapper is
@@ -156,7 +157,7 @@ get the source.** Plan accordingly:
   you can combine with it.
 
 Every source file carries an SPDX header (`// SPDX-License-Identifier: GPL-2.0-only`); the full text is in
-[`LICENSE`](../../LICENSE), and the rationale is in the [README license section](../../README.md#license).
+[`LICENSE`](https://github.com/GimliCZ/DwarfMapper.NET/blob/master/LICENSE), and the rationale is in the [README license section](../../README.md#license).
 
 > **Migration sequencing tip:** resolve the license question first. It's the only part of adopting
 > DwarfMapper that can't be undone with a code change later.

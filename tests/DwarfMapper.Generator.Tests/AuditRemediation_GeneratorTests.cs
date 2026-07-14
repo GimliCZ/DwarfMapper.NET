@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
-using System;
-using System.Linq;
+
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-/// Red-phase TDD generator tests for the Plan 22 audit findings.
-/// Each test covers a specific bug that must be fixed in the generator;
-/// the test is intentionally written so it fails against the current (unfixed) generator.
+///     Red-phase TDD generator tests for the Plan 22 audit findings.
+///     Each test covers a specific bug that must be fixed in the generator;
+///     the test is intentionally written so it fails against the current (unfixed) generator.
 /// </summary>
 public class AuditRemediation_GeneratorTests
 {
@@ -26,19 +25,19 @@ public class AuditRemediation_GeneratorTests
         // recursion-capable helper.  The [MapDerivedType] dispatch call must also
         // forward those params; before the fix it doesn't → CS7036.
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public abstract class Animal    { public string Name { get; set; } = ""; }
-            public class Dog : Animal       { public string Breed { get; set; } = ""; }
-            public abstract class AnimalDto { public string Name { get; set; } = ""; }
-            public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
-            [DwarfMapper(AutoNest = true, ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-            public partial class M
-            {
-                [MapDerivedType<Dog, DogDto>]
-                public partial AnimalDto Map(Animal a);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public abstract class Animal    { public string Name { get; set; } = ""; }
+                           public class Dog : Animal       { public string Breed { get; set; } = ""; }
+                           public abstract class AnimalDto { public string Name { get; set; } = ""; }
+                           public class DogDto : AnimalDto { public string Breed { get; set; } = ""; }
+                           [DwarfMapper(AutoNest = true, ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                           public partial class M
+                           {
+                               [MapDerivedType<Dog, DogDto>]
+                               public partial AnimalDto Map(Animal a);
+                           }
+                           """;
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
     }
@@ -55,20 +54,20 @@ public class AuditRemediation_GeneratorTests
         // Root.Entries is List<Node> — the traversal helper must accept IEnumerable<Node>
         // (or equivalent) so the call site compiles.  Before the fix → CS1503.
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Node    { public string Name { get; set; } = ""; public List<Node> Children { get; set; } = new(); }
-            public class NodeDto { public string Name { get; set; } = ""; public List<NodeDto>? Children { get; set; } }
-            public class Root    { public List<Node> Entries { get; set; } = new(); public string Tag { get; set; } = ""; }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); public string Tag { get; set; } = ""; }
-            [DwarfMapper]
-            public partial class M
-            {
-                [FlattenGraph("Entries", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class Node    { public string Name { get; set; } = ""; public List<Node> Children { get; set; } = new(); }
+                           public class NodeDto { public string Name { get; set; } = ""; public List<NodeDto>? Children { get; set; } }
+                           public class Root    { public List<Node> Entries { get; set; } = new(); public string Tag { get; set; } = ""; }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); public string Tag { get; set; } = ""; }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entries", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
     }
@@ -77,20 +76,20 @@ public class AuditRemediation_GeneratorTests
     public void MfB_FlattenGraph_IReadOnlyListSourceNav_compiles()
     {
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Node    { public string Name { get; set; } = ""; public Node? Next { get; set; } }
-            public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
-            public class Root    { public IReadOnlyList<Node> Entries { get; set; } = new List<Node>(); }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                [FlattenGraph("Entries", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class Node    { public string Name { get; set; } = ""; public Node? Next { get; set; } }
+                           public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
+                           public class Root    { public IReadOnlyList<Node> Entries { get; set; } = new List<Node>(); }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entries", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
     }
@@ -100,20 +99,20 @@ public class AuditRemediation_GeneratorTests
     {
         // Array source nav must continue to work after the fix.
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Node    { public string Name { get; set; } = ""; public Node? Next { get; set; } }
-            public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
-            public class Root    { public Node[] Entries { get; set; } = []; }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                [FlattenGraph("Entries", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class Node    { public string Name { get; set; } = ""; public Node? Next { get; set; } }
+                           public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
+                           public class Root    { public Node[] Entries { get; set; } = []; }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entries", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
     }
@@ -122,20 +121,20 @@ public class AuditRemediation_GeneratorTests
     public void MfB_FlattenGraph_HashSetSourceNav_compiles()
     {
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Node    { public string Name { get; set; } = ""; public Node? Next { get; set; } }
-            public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
-            public class Root    { public HashSet<Node> Entries { get; set; } = new(); }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                [FlattenGraph("Entries", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class Node    { public string Name { get; set; } = ""; public Node? Next { get; set; } }
+                           public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
+                           public class Root    { public HashSet<Node> Entries { get; set; } = new(); }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entries", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
     }
@@ -153,20 +152,20 @@ public class AuditRemediation_GeneratorTests
         // AutoNest=true.  The flat-node helper must call the dict-member converter
         // with the correct number of arguments.
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Node    { public string Name { get; set; } = ""; public Dictionary<string, Node> Links { get; set; } = new(); public Node? Next { get; set; } }
-            public class NodeDto { public string Name { get; set; } = ""; public Dictionary<string, NodeDto>? Links { get; set; } public NodeDto? Next { get; set; } }
-            public class Root    { public Node? Entry { get; set; } }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
-            [DwarfMapper(AutoNest = true)]
-            public partial class M
-            {
-                [FlattenGraph("Entry", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class Node    { public string Name { get; set; } = ""; public Dictionary<string, Node> Links { get; set; } = new(); public Node? Next { get; set; } }
+                           public class NodeDto { public string Name { get; set; } = ""; public Dictionary<string, NodeDto>? Links { get; set; } public NodeDto? Next { get; set; } }
+                           public class Root    { public Node? Entry { get; set; } }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                           [DwarfMapper(AutoNest = true)]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entry", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
     }
@@ -177,20 +176,20 @@ public class AuditRemediation_GeneratorTests
         // Same as above but the mapper also has ReferenceHandling=Preserve,
         // which makes the arg-count mismatch worse (3 vs 1 instead of 2 vs 1).
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Node    { public string Name { get; set; } = ""; public Dictionary<string, Node> Links { get; set; } = new(); public Node? Next { get; set; } }
-            public class NodeDto { public string Name { get; set; } = ""; public Dictionary<string, NodeDto>? Links { get; set; } public NodeDto? Next { get; set; } }
-            public class Root    { public Node? Entry { get; set; } }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
-            [DwarfMapper(AutoNest = true, ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
-            public partial class M
-            {
-                [FlattenGraph("Entry", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class Node    { public string Name { get; set; } = ""; public Dictionary<string, Node> Links { get; set; } = new(); public Node? Next { get; set; } }
+                           public class NodeDto { public string Name { get; set; } = ""; public Dictionary<string, NodeDto>? Links { get; set; } public NodeDto? Next { get; set; } }
+                           public class Root    { public Node? Entry { get; set; } }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                           [DwarfMapper(AutoNest = true, ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entry", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
     }
@@ -207,20 +206,20 @@ public class AuditRemediation_GeneratorTests
         // The generated BFS helper must contain a loop over dictionary values
         // (__kv / __kv.Value) so that dict-value edges are enqueued.
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class Node    { public string Name { get; set; } = ""; public Dictionary<string, Node> Links { get; set; } = new(); }
-            public class NodeDto { public string Name { get; set; } = ""; public Dictionary<string, NodeDto>? Links { get; set; } }
-            public class Root    { public Node? Entry { get; set; } }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                [FlattenGraph("Entry", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class Node    { public string Name { get; set; } = ""; public Dictionary<string, Node> Links { get; set; } = new(); }
+                           public class NodeDto { public string Name { get; set; } = ""; public Dictionary<string, NodeDto>? Links { get; set; } }
+                           public class Root    { public Node? Entry { get; set; } }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entry", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         // The BFS helper must iterate over dictionary values to enqueue them.
@@ -241,21 +240,21 @@ public class AuditRemediation_GeneratorTests
         // as a graph edge and enqueued in BFS.  Before the fix only exact-type
         // matches are traversed, so nodes reachable via .Link are silently dropped.
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public interface INode { string Name { get; set; } }
-            public class Node : INode { public string Name { get; set; } = ""; public INode? Link { get; set; } }
-            public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Link { get; set; } }
-            public class Root    { public Node? Entry { get; set; } }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
-            [DwarfMapper]
-            public partial class M
-            {
-                [FlattenGraph("Entry", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public interface INode { string Name { get; set; } }
+                           public class Node : INode { public string Name { get; set; } = ""; public INode? Link { get; set; } }
+                           public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Link { get; set; } }
+                           public class Root    { public Node? Entry { get; set; } }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entry", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         // Must compile cleanly.
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
@@ -288,22 +287,22 @@ public class AuditRemediation_GeneratorTests
         // [MapDerivedType(IFoo, …)] is declared SECOND.
         // After sorting most-derived-first: IFoo arm must precede IBar arm.
         const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public interface IBar { string Name { get; set; } }
-            public interface IFoo : IBar { int Extra { get; set; } }
-            public class C : IFoo  { public string Name { get; set; } = ""; public int Extra { get; set; } }
-            public class BarDto    { public string Name { get; set; } = ""; }
-            public class FooDto : BarDto { public int Extra { get; set; } }
-            public class CDto : FooDto  { }
-            [DwarfMapper(AutoNest = true)]
-            public partial class M
-            {
-                [MapDerivedType(typeof(IBar), typeof(BarDto))]
-                [MapDerivedType(typeof(IFoo), typeof(FooDto))]
-                public partial BarDto Map(IBar b);
-            }
-            """;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public interface IBar { string Name { get; set; } }
+                           public interface IFoo : IBar { int Extra { get; set; } }
+                           public class C : IFoo  { public string Name { get; set; } = ""; public int Extra { get; set; } }
+                           public class BarDto    { public string Name { get; set; } = ""; }
+                           public class FooDto : BarDto { public int Extra { get; set; } }
+                           public class CDto : FooDto  { }
+                           [DwarfMapper(AutoNest = true)]
+                           public partial class M
+                           {
+                               [MapDerivedType(typeof(IBar), typeof(BarDto))]
+                               [MapDerivedType(typeof(IFoo), typeof(FooDto))]
+                               public partial BarDto Map(IBar b);
+                           }
+                           """;
         // Must compile.
         var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
         Assert.Empty(errors);
@@ -336,22 +335,22 @@ public class AuditRemediation_GeneratorTests
         // so the generator cannot map the "Extra" member.
         // Expected: at least one error diagnostic (DWARF005 or any DWARF error).
         const string src = """
-            using DwarfMapper;
-            using System.Collections.Generic;
-            namespace Demo;
-            public class SomeComplex    { public int X { get; set; } public int Y { get; set; } }
-            public class SomeComplexDto { public int X { get; set; } public int Z { get; set; } }
-            public class Node    { public string Name { get; set; } = ""; public SomeComplex Extra { get; set; } = new(); public Node? Next { get; set; } }
-            public class NodeDto { public string Name { get; set; } = ""; public SomeComplexDto? Extra { get; set; } public NodeDto? Next { get; set; } }
-            public class Root    { public Node? Entry { get; set; } }
-            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
-            [DwarfMapper(AutoNest = false)]
-            public partial class M
-            {
-                [FlattenGraph("Entry", "Nodes")]
-                public partial RootDto Map(Root r);
-            }
-            """;
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class SomeComplex    { public int X { get; set; } public int Y { get; set; } }
+                           public class SomeComplexDto { public int X { get; set; } public int Z { get; set; } }
+                           public class Node    { public string Name { get; set; } = ""; public SomeComplex Extra { get; set; } = new(); public Node? Next { get; set; } }
+                           public class NodeDto { public string Name { get; set; } = ""; public SomeComplexDto? Extra { get; set; } public NodeDto? Next { get; set; } }
+                           public class Root    { public Node? Entry { get; set; } }
+                           public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                           [DwarfMapper(AutoNest = false)]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entry", "Nodes")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         // Must emit at least one error-level diagnostic for the unmappable member.
         Assert.Contains(diags, d =>

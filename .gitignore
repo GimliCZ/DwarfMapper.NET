@@ -32,3 +32,5 @@ artifacts/
 
 # project-rag / FastEmbed model cache — dropped in cwd when the RAG MCP server runs here; never commit it.
 .fastembed_cache/
+# Deep-research intermediate dump (curated digest/report committed instead)
+docs/research/_raw-harvest.jsonl

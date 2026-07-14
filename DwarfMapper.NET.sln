@@ -32,6 +32,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DwarfMapper.AotBench", "sam
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DwarfMapper.Gallery", "samples\DwarfMapper.Gallery\DwarfMapper.Gallery.csproj", "{1B001DB2-8646-4426-9BC6-0E805EC05080}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DwarfMapper.Conformance", "samples\DwarfMapper.Conformance\DwarfMapper.Conformance.csproj", "{673000C3-7E8D-45D2-BCB0-607964B3BF4A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -186,6 +188,18 @@ Global
 		{1B001DB2-8646-4426-9BC6-0E805EC05080}.Release|x64.Build.0 = Release|Any CPU
 		{1B001DB2-8646-4426-9BC6-0E805EC05080}.Release|x86.ActiveCfg = Release|Any CPU
 		{1B001DB2-8646-4426-9BC6-0E805EC05080}.Release|x86.Build.0 = Release|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Debug|x64.Build.0 = Debug|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Debug|x86.Build.0 = Debug|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Release|x64.ActiveCfg = Release|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Release|x64.Build.0 = Release|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Release|x86.ActiveCfg = Release|Any CPU
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -203,5 +217,6 @@ Global
 		{51C3D069-3D01-435A-83F9-A623DB57F9EE} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{E2D1A48A-C524-4DDA-AFE3-809A504205DB} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{1B001DB2-8646-4426-9BC6-0E805EC05080} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
+		{673000C3-7E8D-45D2-BCB0-607964B3BF4A} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 EndGlobal
