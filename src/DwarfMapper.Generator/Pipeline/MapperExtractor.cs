@@ -1538,17 +1538,32 @@ internal static partial class MapperExtractor
         // never recorded, so they stay zero-overhead.
         foreach (var cand in nestedRegistry.CtxUpgradeCandidates)
         {
-            // Self-recursive AND non-overloaded (overloaded names can't be safely disambiguated to a
-            // single companion here — see the call-graph injection note above).
-            bool Upgradeable(string? em)
-            {
-                return em is not null && selfRecursivePublicMethods.Contains(em)
-                                      && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1);
-            }
+            // Two kinds of element can turn out recursion-capable, and they upgrade DIFFERENTLY:
+            //
+            //  * a synthesized object-map helper (`__DwarfMap_Obj_…`, what a [GenerateMap<S,T>] pair yields)
+            //    gains the (ctx, depth) parameters IN PLACE — it keeps its own name. The collection helper
+            //    just has to be re-emitted so it calls it with (elem, ctx, depth + 1).
+            //  * a PUBLIC declared method cannot change signature (it is the user's API), so it is routed
+            //    through its depth-guarded `__DwarfMap_Depth_<method>` companion instead. Must also be
+            //    non-overloaded: an overloaded name can't be safely disambiguated to a single companion.
+            bool UpgradeableSynth(string? em) =>
+                em is not null && GeneratedNames.IsObjectMap(em) && nestedRegistry.IsRecursionCapable(em);
+
+            bool UpgradeablePublic(string? em) =>
+                em is not null && selfRecursivePublicMethods.Contains(em)
+                               && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1);
+
+            bool Upgradeable(string? em) => UpgradeableSynth(em) || UpgradeablePublic(em);
 
             if (!cand.ElemMethods.Any(Upgradeable))
                 continue;
-            cand.ReSynth(name => Upgradeable(name) ? GeneratedNames.Depth + name : name);
+
+            // Synthesized helper → same name (now 3-param). Public method → its Depth companion.
+            cand.ReSynth(name => UpgradeableSynth(name)
+                ? name
+                : UpgradeablePublic(name)
+                    ? GeneratedNames.Depth + name
+                    : name);
             recursionCapableNames.Add(cand.HelperName);
         }
 
@@ -3213,11 +3228,21 @@ internal static partial class MapperExtractor
             converterNeedsCtx = (isPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) ||
                                 elemNeedsCtx;
 
-            // None+Throw: the element resolved to a PUBLIC declared method (e.g. a self-map `Map`).
-            // Record a re-synthesis closure; if that method turns out self-recursive, the post-pass
-            // upgrades this helper to thread ctx into the depth-guarded companion (no silent SO).
+            // None+Throw: the element resolved either to a PUBLIC declared method (e.g. a self-map `Map`) or
+            // to a SYNTHESIZED object-map helper (`__DwarfMap_Obj_…`, which is what a [GenerateMap<S,T>] pair
+            // produces — there is no declared method to resolve to). Record a re-synthesis closure for BOTH:
+            // if the element turns out self-recursive, the post-pass re-emits this collection helper so it
+            // threads (ctx, depth) into the element call.
+            //
+            // Only covering the public-method case was a real bug: a [GenerateMap] pair whose type recurses
+            // THROUGH a collection edge (e.g. `class Node { List<Node> Kids; }`) had its object helper marked
+            // recursion-capable by ComputeRecursionCapability() — gaining (ctx, depth) IN PLACE — while the
+            // collection helper calling it was never re-synthesized, so it still called it with one argument.
+            // That emitted code which did not compile (CS7036). The equivalent partial-method mapper worked,
+            // because its element resolved to a declared method and so WAS recorded here.
             if (!isPreserve && !isSetNull && !elemNeedsCtx && nestedRegistry is not null
-                && elemConv is not null && !GeneratedNames.IsAnySynthesized(elemConv)
+                && elemConv is not null
+                && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv))
                 && tgtElem is INamedTypeSymbol tgtElemNamed
                 && IsMappableObjectPair(compilation, srcElem, tgtElemNamed))
             {
