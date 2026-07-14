@@ -2,6 +2,7 @@
 
 using System.Collections;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 
 namespace DwarfMapper.Testing;
@@ -112,13 +113,54 @@ public static class ObjectFactory
                 for (var i = 0; i < n; i++) add.Invoke(set, new[] { Create(elementType, rng, depth + 1) });
                 return set;
             }
+
+            // Dictionaries had the same defect as sets: a Dictionary<K,V> member reached the
+            // parameterless-ctor path and, exposing no settable properties, came back EMPTY — so the whole
+            // DictionaryConverter was being fuzzed against zero entries. The interface forms were NULL.
+            if (type.GetGenericArguments().Length == 2 &&
+                (def == typeof(Dictionary<,>) || def == typeof(IDictionary<,>) ||
+                 def == typeof(IReadOnlyDictionary<,>)))
+            {
+                var keyType = type.GetGenericArguments()[0];
+                var valueType = type.GetGenericArguments()[1];
+                var dictType = typeof(Dictionary<,>).MakeGenericType(keyType, valueType);
+                var dict = (IDictionary)Activator.CreateInstance(dictType)!;
+                for (var i = 0; i < n; i++)
+                {
+                    var key = Create(keyType, rng, depth + 1);
+                    if (key is null || dict.Contains(key)) continue; // keys must be unique and non-null
+                    dict[key] = Create(valueType, rng, depth + 1);
+                }
+
+                return dict;
+            }
         }
 
         if (type.IsInterface || type.IsAbstract || depth >= MaxDepth)
             return type.IsValueType ? Activator.CreateInstance(type) : null;
 
         var ctor = type.GetConstructor(Type.EmptyTypes);
-        if (ctor is null) return type.IsValueType ? Activator.CreateInstance(type) : null;
+        if (ctor is null)
+        {
+            // No parameterless constructor. Before, this simply returned null — which meant every POSITIONAL
+            // RECORD and every ctor-only DTO was silently null in every fuzz run, so the constructor-mapping
+            // path was never exercised by the value oracles at all. Construct it properly instead: take the
+            // ctor with the fewest parameters and generate an argument for each.
+            var candidate = type
+                .GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+                .OrderBy(c => c.GetParameters().Length)
+                .FirstOrDefault();
+
+            if (candidate is null)
+                return type.IsValueType ? Activator.CreateInstance(type) : null;
+
+            var parameters = candidate.GetParameters();
+            var args = new object?[parameters.Length];
+            for (var i = 0; i < parameters.Length; i++)
+                args[i] = Create(parameters[i].ParameterType, rng, depth + 1);
+
+            return candidate.Invoke(args);
+        }
 
         var instance = ctor.Invoke(null);
         foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))

@@ -154,6 +154,11 @@ internal static class SyntheticSchema
         sb.AppendLine("public enum FuzzEnumL : long { A, B, C }");
         sb.AppendLine();
         sb.AppendLine("public struct FuzzInner { public int A; public float B; }");
+        // A nested REFERENCE type (FuzzInner is a struct, so the schema had none) plus records —
+        // the dominant modern DTO shape, and the constructor-mapping path the value oracles never hit.
+        sb.AppendLine("public sealed class FuzzRef { public int A { get; set; } public string B { get; set; } = \"\"; }");
+        sb.AppendLine("public sealed record FuzzRec(int A, string B);");
+        sb.AppendLine("public readonly record struct FuzzRecS(int A, double B);");
         sb.AppendLine();
         // Abstract base and concrete source
         sb.AppendLine("public abstract class Src { public string Tag { get; set; } = \"\"; }");
@@ -195,6 +200,11 @@ internal static class SyntheticSchema
         sb.AppendLine("public enum FuzzEnumL : long { A, B, C }");
         sb.AppendLine();
         sb.AppendLine("public struct FuzzInner { public int A; public float B; }");
+        // A nested REFERENCE type (FuzzInner is a struct, so the schema had none) plus records —
+        // the dominant modern DTO shape, and the constructor-mapping path the value oracles never hit.
+        sb.AppendLine("public sealed class FuzzRef { public int A { get; set; } public string B { get; set; } = \"\"; }");
+        sb.AppendLine("public sealed record FuzzRec(int A, string B);");
+        sb.AppendLine("public readonly record struct FuzzRecS(int A, double B);");
         sb.AppendLine();
         // Node types (simple: only scalar members + a single-ref edge)
         sb.AppendLine("public class Src");
@@ -236,6 +246,11 @@ internal static class SyntheticSchema
         sb.AppendLine("public enum FuzzEnumL : long { A, B, C }");
         sb.AppendLine();
         sb.AppendLine("public struct FuzzInner { public int A; public float B; }");
+        // A nested REFERENCE type (FuzzInner is a struct, so the schema had none) plus records —
+        // the dominant modern DTO shape, and the constructor-mapping path the value oracles never hit.
+        sb.AppendLine("public sealed class FuzzRef { public int A { get; set; } public string B { get; set; } = \"\"; }");
+        sb.AppendLine("public sealed record FuzzRec(int A, string B);");
+        sb.AppendLine("public readonly record struct FuzzRecS(int A, double B);");
         sb.AppendLine();
         sb.AppendLine("public class Src");
         sb.AppendLine("{");
@@ -316,6 +331,11 @@ internal static class SyntheticSchema
 
         // ── Shared nested struct ─────────────────────────────────────────
         sb.AppendLine("public struct FuzzInner { public int A; public float B; }");
+        // A nested REFERENCE type (FuzzInner is a struct, so the schema had none) plus records —
+        // the dominant modern DTO shape, and the constructor-mapping path the value oracles never hit.
+        sb.AppendLine("public sealed class FuzzRef { public int A { get; set; } public string B { get; set; } = \"\"; }");
+        sb.AppendLine("public sealed record FuzzRec(int A, string B);");
+        sb.AppendLine("public readonly record struct FuzzRecS(int A, double B);");
         sb.AppendLine();
 
         // ── Src class ───────────────────────────────────────────────────
@@ -440,7 +460,7 @@ internal static class SyntheticSchema
     /// </summary>
     private static string PickTypeBehavioral(Random rng)
     {
-        var category = rng.Next(0, 28);
+        var category = rng.Next(0, 30);
 
         return category switch
         {
@@ -473,6 +493,33 @@ internal static class SyntheticSchema
                 _ => $"global::System.Collections.Generic.IReadOnlyList<{PickScalarElement(rng)}>"
             },
 
+            // 28 → DICTIONARIES. DwarfMapper ships a whole DictionaryConverter that the fuzzers never
+            // exercised at all — the single largest unfuzzed feature in the library. Key is a scalar (a
+            // dictionary key must be non-null and hashable); the value is a scalar or a nested type.
+            28 => rng.Next(3) switch
+            {
+                0 => $"global::System.Collections.Generic.Dictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>",
+                1 => $"global::System.Collections.Generic.IDictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>",
+                _ =>
+                    $"global::System.Collections.Generic.IReadOnlyDictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>"
+            },
+
+            // 29 → a nested REFERENCE type, and RECORDS.
+            //
+            // FuzzInner is a struct, so until now the behavioural schema had no nested reference type at all —
+            // yet that is the commonest DTO shape and the one where identity, aliasing and cycles actually
+            // live. Records (class and struct) are the dominant modern DTO shape and drive the constructor
+            // mapping path, which the value oracles also never touched.
+            29 => rng.Next(6) switch
+            {
+                0 => "FuzzRef",
+                1 => "FuzzRef[]",
+                2 => "global::System.Collections.Generic.List<FuzzRef>",
+                3 => "FuzzRec",
+                4 => "FuzzRec[]",
+                _ => "FuzzRecS"
+            },
+
             _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]"
         };
     }
@@ -503,10 +550,39 @@ internal static class SyntheticSchema
         }
 
         if (type.StartsWith("global::System.Collections.Generic.List<", StringComparison.Ordinal) ||
-            type.StartsWith("global::System.Collections.Generic.HashSet<", StringComparison.Ordinal))
+            type.StartsWith("global::System.Collections.Generic.HashSet<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.Dictionary<", StringComparison.Ordinal))
             return " = new();";
 
-        // Nullable value types, structs, enums, scalars: no explicit init needed
+        // Collection/dictionary INTERFACES cannot be `new()`d — back them with a concrete instance, matching
+        // what ObjectFactory builds for them.
+        if (type.StartsWith("global::System.Collections.Generic.IEnumerable<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.ICollection<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IList<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyCollection<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyList<", StringComparison.Ordinal))
+        {
+            var open = type.IndexOf('<', StringComparison.Ordinal);
+            var elem = type[(open + 1)..^1];
+            return $" = new global::System.Collections.Generic.List<{elem}>();";
+        }
+
+        if (type.StartsWith("global::System.Collections.Generic.IDictionary<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyDictionary<", StringComparison.Ordinal))
+        {
+            var open = type.IndexOf('<', StringComparison.Ordinal);
+            var args = type[(open + 1)..^1];
+            return $" = new global::System.Collections.Generic.Dictionary<{args}>();";
+        }
+
+        // A nested reference type needs an instance; a POSITIONAL record has no parameterless ctor, so it must
+        // be constructed with arguments.
+        if (type == "FuzzRef")
+            return " = new();";
+        if (type == "FuzzRec")
+            return " = new(0, \"\");";
+
+        // Nullable value types, structs (incl. record structs), enums, scalars: no explicit init needed
         return string.Empty;
     }
 }
