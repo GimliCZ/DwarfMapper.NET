@@ -574,6 +574,34 @@ public static class DiagnosticDescriptors
     // Fires ONLY for Annotated -> NotAnnotated, exactly when CS8601 would. An oblivious (None) annotation on
     // either side means the user opted out of nullable analysis (#nullable disable), and the compiler stays
     // quiet there too — so we do as well, rather than flooding legacy code with warnings.
+    // The polymorphic silent drop, concrete-base-class edition.
+    //
+    // DWARF033 already refuses an ABSTRACT or INTERFACE auto-nest source, on the grounds that it "silently
+    // drops members that exist only on derived runtime types". A CONCRETE base class carries exactly the same
+    // risk — a `Animal Pet` member can hold a `Dog` at run time, and the mapper, which can only see the
+    // declared type, copies the Animal members and drops Breed — but it is perfectly instantiable, so it sails
+    // straight through the DWARF033 gate. The caller gets a plausible object quietly missing data: precisely
+    // the failure the "never silent" premise exists to prevent, and the one place where being a compile-time
+    // mapper is a real disadvantage against a reflective one (which can dispatch on the runtime type).
+    //
+    // Info, not Error, and the distinction is principled: an abstract source is NECESSARILY a derived instance
+    // at run time, so the drop is certain; a concrete base MAY genuinely hold exactly the base type, so this is
+    // a risk rather than a defect, and mapping base-only is often exactly what the author intends. Per the
+    // severity table that is an Info — "surfaces a footgun without forcing a change".
+    //
+    // Fires only when a derived type is actually present IN THE COMPILATION and no [MapDerivedType] arm covers
+    // the pair; a non-sealed class nobody derives from raises nothing.
+    public static readonly DiagnosticDescriptor PolymorphicSourceMayDropMembers = new(
+        "DWARF071",
+        "Source type has derived types whose members would be dropped",
+        "Source member type '{0}' has derived types in this compilation. A mapper resolves members at compile "
+        + "time from the DECLARED type, so if this member holds a derived instance at run time, the members "
+        + "declared only on that derived type are dropped — silently, with no error. Add [MapDerivedType<TFrom, "
+        + "TTo>] to dispatch on the runtime type, seal the source type, or accept that only the base members "
+        + "are mapped.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf071");
+
     public static readonly DiagnosticDescriptor NullableRefSourceToNonNullableTarget = new(
         "DWARF070",
         "Nullable source member is assigned to a non-nullable target member",

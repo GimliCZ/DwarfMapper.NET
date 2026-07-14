@@ -3523,6 +3523,17 @@ internal static partial class MapperExtractor
         {
             if (IsMappableObjectPair(compilation, srcType, namedTgt, allowInterfaceSrc))
             {
+                // DWARF071: the source is a CONCRETE class that other types derive from. It maps fine, but only
+                // the declared members are mapped — a derived instance at run time loses everything declared
+                // below the base. DWARF033 catches the abstract/interface form of this; the concrete form is
+                // instantiable and slips past it. Reported (not refused) because base-only mapping is often
+                // exactly what was intended. Suppressed under allowInterfaceSrc — a [MapDerivedType] arm has
+                // already told us how the runtime type is dispatched.
+                if (!allowInterfaceSrc && HasDerivedTypesInCompilation(compilation, srcType))
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.PolymorphicSourceMayDropMembers, location,
+                        srcType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
+
                 // C1: pass the effective autoNest value so the drain loop uses it for the pair's body.
                 var synthName = nestedRegistry.GetOrReserve(srcType, namedTgt, location, autoNest);
                 if (synthName is not null)
@@ -3642,6 +3653,55 @@ internal static partial class MapperExtractor
     ///     source except that it is abstract or an interface — i.e. it would silently drop derived members
     ///     (C2: DWARF033 guard).
     /// </summary>
+    /// <summary>
+    ///     True when <paramref name="src" /> is a concrete, NON-SEALED class that at least one other type in
+    ///     this compilation derives from — i.e. a member declared as this type can hold a subclass instance at
+    ///     run time, whose extra members an auto-nested map would silently drop (DWARF071).
+    ///     <para>
+    ///     Deliberately narrow, to keep the Info actionable rather than ambient noise:
+    ///     </para>
+    ///     <list type="bullet">
+    ///       <item><description>sealed source → the declared type IS the runtime type; nothing can be dropped;</description></item>
+    ///       <item><description>abstract source → already a hard error, DWARF033; not this diagnostic's business;</description></item>
+    ///       <item><description>no derived type anywhere in the compilation → the risk is theoretical. A type
+    ///       derived in a DOWNSTREAM assembly is not visible here, and warning on every non-sealed class on
+    ///       that basis would fire on essentially every DTO in existence.</description></item>
+    ///     </list>
+    /// </summary>
+    private static bool HasDerivedTypesInCompilation(Compilation compilation, ITypeSymbol src)
+    {
+        if (src is not INamedTypeSymbol { TypeKind: TypeKind.Class } namedSrc) return false;
+        if (namedSrc.IsSealed || namedSrc.IsAbstract) return false;
+        if (namedSrc.SpecialType != SpecialType.None) return false;
+
+        foreach (var type in AllTypesIn(compilation.Assembly.GlobalNamespace))
+        {
+            if (SymbolEqualityComparer.Default.Equals(type, namedSrc)) continue;
+
+            for (var b = type.BaseType; b is not null; b = b.BaseType)
+                if (SymbolEqualityComparer.Default.Equals(b.OriginalDefinition, namedSrc.OriginalDefinition))
+                    return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Every named type declared in this assembly, walking nested types too.</summary>
+    private static IEnumerable<INamedTypeSymbol> AllTypesIn(INamespaceOrTypeSymbol root)
+    {
+        foreach (var member in root.GetMembers())
+            switch (member)
+            {
+                case INamespaceSymbol ns:
+                    foreach (var t in AllTypesIn(ns)) yield return t;
+                    break;
+                case INamedTypeSymbol type:
+                    yield return type;
+                    foreach (var t in AllTypesIn(type)) yield return t;
+                    break;
+            }
+    }
+
     private static bool IsAbstractOrInterfaceAutoNestSource(Compilation compilation, ITypeSymbol src,
         INamedTypeSymbol tgt)
     {

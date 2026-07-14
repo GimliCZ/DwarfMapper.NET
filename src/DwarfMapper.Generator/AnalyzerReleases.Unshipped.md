@@ -76,3 +76,4 @@ DWARF067 | DwarfMapper | Error | [GenerateWrapperMap] wrapper is not a single-pa
 DWARF068 | DwarfMapper | Error | MapConfigUnsupportedExpression
 DWARF069 | DwarfMapper | Error | MapConfigConflict
 DWARF070 | DwarfMapper | Warning | Nullable source member is assigned to a non-nullable target member
+DWARF071 | DwarfMapper | Info | Source type has derived types whose members would be dropped

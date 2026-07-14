@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF070`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF071`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -520,6 +520,41 @@ own DTO, where you can act on it.
 Only fires for a genuinely annotated source (`string?`) flowing into an annotated non-nullable target. Code in
 a `#nullable disable` context is *oblivious*, the compiler raises no `CS8601` there, and neither does this — a
 legacy codebase is not flooded with warnings about a contract it never opted into.
+
+---
+
+## dwarf071
+**Source type has derived types whose members would be dropped** · Info
+
+The source member is declared as a concrete class that something else in your compilation *derives from*. A
+mapper resolves members at **compile time from the declared type**, so if that member holds a derived instance
+at run time, the members declared only on the derived type are dropped — silently, with no error:
+
+```csharp
+public class Animal { public string Name { get; set; } = ""; }
+public sealed class Dog : Animal { public string Breed { get; set; } = ""; }
+
+public class Kennel { public Animal Pet { get; set; } = new(); }   // may actually hold a Dog
+// -> the mapper copies Name and drops Breed.
+```
+
+This is the one place where being a compile-time mapper is a genuine disadvantage against a reflective one,
+which can dispatch on the runtime type. So DwarfMapper does the next best thing: it tells you.
+
+**Fix** — pick the one that matches your intent:
+
+| You want | Use |
+|---|---|
+| dispatch on the runtime type | `[MapDerivedType<Dog, DogDto>]` on the mapping method |
+| the declared type to be the only type | `sealed` on the source class |
+| base members only — that *is* the intent | `dotnet_diagnostic.DWARF071.severity = none` |
+
+Related: **`DWARF033`** is the same hazard when the source is *abstract or an interface*. That one is an
+**Error**, not an Info, and the difference is principled — an abstract source is *necessarily* a derived
+instance at run time, so the drop is certain, whereas a concrete base may genuinely hold exactly the base type.
+
+Deliberately quiet: it does not fire for a `sealed` source, nor for a non-sealed class that nothing in the
+compilation actually derives from.
 
 ---
 
