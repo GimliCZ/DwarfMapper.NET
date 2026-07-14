@@ -407,7 +407,7 @@ internal static class SyntheticSchema
 
     private static string PickType(Random rng)
     {
-        var category = rng.Next(0, 28);
+        var category = rng.Next(0, 30);
 
         return category switch
         {
@@ -434,6 +434,34 @@ internal static class SyntheticSchema
                 2 => $"global::System.Collections.Generic.IList<{PickScalarElement(rng)}>",
                 3 => $"global::System.Collections.Generic.IReadOnlyCollection<{PickScalarElement(rng)}>",
                 _ => $"global::System.Collections.Generic.IReadOnlyList<{PickScalarElement(rng)}>",
+            },
+
+            // 28 → set interfaces + the whole IMMUTABLE family. CollectionConverter.TargetKind lists all of
+            // these as supported, yet not one of them was ever generated — 7 of the 15 supported collection
+            // targets were unreachable by any fuzzer. The coverage self-validation test now fails if that
+            // regresses.
+            28 => rng.Next(7) switch
+            {
+                0 => $"global::System.Collections.Generic.ISet<{PickScalarElement(rng)}>",
+                1 => $"global::System.Collections.Generic.IReadOnlySet<{PickScalarElement(rng)}>",
+                2 => $"global::System.Collections.Immutable.ImmutableArray<{PickScalarElement(rng)}>",
+                3 => $"global::System.Collections.Immutable.ImmutableList<{PickScalarElement(rng)}>",
+                4 => $"global::System.Collections.Immutable.IImmutableList<{PickScalarElement(rng)}>",
+                5 => $"global::System.Collections.Immutable.ImmutableHashSet<{PickScalarElement(rng)}>",
+                _ => $"global::System.Collections.Immutable.IImmutableSet<{PickScalarElement(rng)}>",
+            },
+
+            // 29 → dictionaries, including the immutable ones DictionaryConverter accepts.
+            29 => rng.Next(5) switch
+            {
+                0 => $"global::System.Collections.Generic.Dictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>",
+                1 => $"global::System.Collections.Generic.IDictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>",
+                2 =>
+                    $"global::System.Collections.Generic.IReadOnlyDictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>",
+                3 =>
+                    $"global::System.Collections.Immutable.ImmutableDictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>",
+                _ =>
+                    $"global::System.Collections.Immutable.IImmutableDictionary<{PickValueScalar(rng)}, {PickScalarElement(rng)}>",
             },
 
             // 25 → FuzzEnum or FuzzEnumL variants
@@ -573,6 +601,40 @@ internal static class SyntheticSchema
             var open = type.IndexOf('<', StringComparison.Ordinal);
             var args = type[(open + 1)..^1];
             return $" = new global::System.Collections.Generic.Dictionary<{args}>();";
+        }
+
+        // Sets by interface, and the immutable family: none of these can be `new()`d.
+        if (type.StartsWith("global::System.Collections.Generic.ISet<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlySet<", StringComparison.Ordinal))
+        {
+            var open = type.IndexOf('<', StringComparison.Ordinal);
+            var elem = type[(open + 1)..^1];
+            return $" = new global::System.Collections.Generic.HashSet<{elem}>();";
+        }
+
+        // Immutable collections expose a static Empty rather than a public constructor. ImmutableArray<T> is a
+        // struct whose `default` is the "uninitialised" state (enumerating it throws), so it too must be given
+        // Empty explicitly rather than left to default(T).
+        if (type.StartsWith("global::System.Collections.Immutable.", StringComparison.Ordinal))
+        {
+            var open = type.IndexOf('<', StringComparison.Ordinal);
+            var name = type[..open];
+            var args = type[(open + 1)..^1];
+
+            // The interface forms (IImmutableList/IImmutableSet/IImmutableDictionary) have no Empty of their
+            // own — back them with the corresponding concrete implementation.
+            var concrete = name switch
+            {
+                "global::System.Collections.Immutable.IImmutableList" =>
+                    "global::System.Collections.Immutable.ImmutableList",
+                "global::System.Collections.Immutable.IImmutableSet" =>
+                    "global::System.Collections.Immutable.ImmutableHashSet",
+                "global::System.Collections.Immutable.IImmutableDictionary" =>
+                    "global::System.Collections.Immutable.ImmutableDictionary",
+                _ => name,
+            };
+
+            return $" = {concrete}<{args}>.Empty;";
         }
 
         // A nested reference type needs an instance; a POSITIONAL record has no parameterless ctor, so it must
