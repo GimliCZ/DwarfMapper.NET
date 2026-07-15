@@ -29,6 +29,29 @@ dotnet_diagnostic.DWARF044.severity = none    # I accept the nullable-path risk 
 The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR06` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
 
+### Adopting incrementally (the strictness valve)
+
+DwarfMapper is strict by default so that a mapping decision you didn't make is a build-time signal, not a
+runtime surprise. When retrofitting it onto an existing codebase you can dial that strictness up or down, per
+rule, without giving up the guarantees you *do* want:
+
+1. **Loosen the noise, keep the guarantees.** Turn opt-in *suggestions* off where they don't fit
+   (`dotnet_diagnostic.DWARF039.severity = none`), while the correctness rules (`DWARF001`, conversions,
+   depth guard) stay on. `DWARF001` is enforced *by construction* — you cannot accidentally ship an incomplete
+   map even if you silence its id.
+2. **One-click resolutions.** The common completeness diagnostics carry code fixes: `DWARF001` → *Add
+   [MapIgnore]*, `DWARF072` → *Map it* / *Ignore it*, `DWARF052` → *scaffold the inverse*. Adopt member by
+   member from the IDE lightbulb rather than hand-editing attributes.
+3. **Tighten as you go.** Escalate a suggestion to a build error once a module is clean
+   (`dotnet_diagnostic.DWARF038.severity = error` for strict, Mapperly-style conversions;
+   `[DwarfMapper(RequiredMapping = Both)]` to also flag unused source members), or reach for the
+   trust-boundary guard (`AutoMatchMembers = false`) on the maps that cross one.
+4. **Migrating from another mapper?** Start from the matching guide under
+   [`howto/`](howto/) (AutoMapper / Mapperly / Mapster / handwritten) — each maps that library's knobs onto
+   these.
+
+Every diagnostic below documents its own fix; this table is just the order to apply them in.
+
 ---
 
 ## Registry diagnostics (`[MapTo]`)
