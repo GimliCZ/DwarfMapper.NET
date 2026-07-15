@@ -22,6 +22,8 @@ mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe,
 | `ImplicitConversions` | `bool` | `true` | `true`: non-lossless conversions are applied but surface `DWARF038` (Info). `false`: they become build errors (Mapperly-strict). |
 | `RequiredMapping` | `RequiredMappingStrategy` | `Target` | `Target`: every destination member must be mapped. `Both`: also require every source member to be read (`DWARF039`). |
 | `GenerateExtensions` | `bool` | `true` | Emit `source.ToTarget()` convenience extension methods (namespace `DwarfMapper.Extensions`). `false` suppresses them for this mapper. |
+| `AutoMatchMembers` | `bool` | `true` | `false` = explicit-only (trust-boundary guard): nothing is wired by name, every member needs `[MapProperty]`/`[MapValue]` or `[MapIgnore]`, and a would-be auto-match raises `DWARF072`. Stops an untrusted same-named field (e.g. `IsAdmin`) over-posting onto a protected member. |
+| `IgnoreObsoleteMembers` | `bool` | `false` | Drop `[Obsolete]` members from mapping: an obsolete destination is neither required nor auto-populated, an obsolete source needn't be consumed (no `DWARF039`). An explicit `[MapProperty]`/`[MapValue]` still opts a specific one back in. |
 
 > **`CaseInsensitive` and `NameConvention` interact** — they both govern how member names are matched, so set
 > one or the other. `NameConvention.Exact` honours `CaseInsensitive` (`Exact` + `CaseInsensitive=true` =

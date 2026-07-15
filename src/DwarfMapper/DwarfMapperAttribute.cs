@@ -60,6 +60,22 @@ public sealed class DwarfMapperAttribute : Attribute
     public bool AutoMatchMembers { get; set; } = true;
 
     /// <summary>
+    ///     When <c>true</c>, members marked <c>[Obsolete]</c> are excluded from mapping: an obsolete
+    ///     <b>destination</b> member is neither required to be mapped nor auto-populated, and an obsolete
+    ///     <b>source</b> member does not need to be consumed under <see cref="RequiredMapping" /> =
+    ///     <see cref="RequiredMappingStrategy.Both" />. Defaults to <c>false</c>.
+    ///     <para>
+    ///         The point of deprecating a member is to stop feeding it. Without this flag the completeness gate
+    ///         works against that — <c>DWARF001</c> forces you to map (or explicitly <c>[MapIgnore]</c>) every
+    ///         obsolete destination member, and mapping one revives the very data flow you are retiring. With it,
+    ///         obsolete members drop out silently-but-safely: they keep their default and no diagnostic fires.
+    ///         An explicit <c>[MapProperty]</c>/<c>[MapValue]</c> targeting an obsolete member still wins, so you
+    ///         can opt a specific one back in.
+    ///     </para>
+    /// </summary>
+    public bool IgnoreObsoleteMembers { get; set; }
+
+    /// <summary>
     ///     When <c>true</c>, a <b>null source member never overwrites the destination's default</b>: for every
     ///     nullable-source, post-construction-settable member the generator emits
     ///     <c>if (src.Member is not null) dest.Member = …;</c>, so a default set in the destination's field

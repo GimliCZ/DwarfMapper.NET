@@ -154,6 +154,7 @@ internal static partial class MapperExtractor
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);
         var explicitOnly = !ReadAutoMatchMembers(ctx.Attributes); // trust-boundary guard (DWARF072)
+        var ignoreObsolete = ReadIgnoreObsoleteMembers(ctx.Attributes);
         var skipNullSrc = ReadSkipNullSourceMembers(ctx.Attributes);
         var allowNonPublic = ReadAllowNonPublic(ctx.Attributes);
         var nullCollections = ReadNullCollections(ctx.Attributes);
@@ -275,7 +276,7 @@ internal static partial class MapperExtractor
                     implicitConversions, updMapValues, valueProviders,
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
                     skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
-                    explicitOnly: explicitOnly);
+                    explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete);
 
                 // Update-into assigns members post-construction, so init-only targets cannot be written
                 // (they would emit CS8852). Treat them as read-only here: drop them and surface DWARF007
@@ -849,7 +850,7 @@ internal static partial class MapperExtractor
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
-                nameConvention, mapPropExtras, skipNullSrc, allowNonPublic, explicitOnly);
+                nameConvention, mapPropExtras, skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -866,6 +867,11 @@ internal static partial class MapperExtractor
                 var ignoreSources = new HashSet<string>(classIgnoreSources, StringComparer.Ordinal);
                 foreach (var s in ReadIgnoreSources(method))
                     ignoreSources.Add(s);
+                // IgnoreObsoleteMembers, source side: an obsolete source member need not be consumed — you are
+                // retiring it, not required to keep reading it — so it does not surface DWARF039.
+                if (ignoreObsolete)
+                    foreach (var s in ObsoleteMemberNames(sourceType))
+                        ignoreSources.Add(s);
 
                 var consumed = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var m in members)
@@ -1079,7 +1085,7 @@ internal static partial class MapperExtractor
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 MatchPairValues(pairValues, genTgt), valueProviders,
                 mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
-                explicitOnly: explicitOnly);
+                explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -1222,7 +1228,10 @@ internal static partial class MapperExtractor
                 // normally. Propagating here would give every nested member DWARF072 — a synthesized mapper has
                 // no [MapProperty] to satisfy it — making nested objects unmappable. For a nested trust
                 // boundary, declare that pair's own [DwarfMapper(AutoMatchMembers = false)] mapper.
-                mapPropertyExtras: nestedExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
+                // ignoreObsolete DOES propagate (unlike explicitOnly): skipping an obsolete nested member just
+                // leaves it at its default — safe and consistent — with no "unmappable" hazard.
+                mapPropertyExtras: nestedExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
+                ignoreObsolete: ignoreObsolete);
 
             nestedRegistry.ClearCurrentPair();
 
@@ -2220,8 +2229,28 @@ internal static partial class MapperExtractor
         IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
         bool skipNullSourceMembers = false,
         bool allowNonPublic = false,
-        bool explicitOnly = false)
+        bool explicitOnly = false,
+        bool ignoreObsolete = false)
     {
+        // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
+        // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
+        // honours `ignores`, so this one addition covers them all. An obsolete member that IS explicitly
+        // targeted (by [MapProperty]/[MapValue]) is left OUT of the ignore set, so the developer can opt a
+        // specific one back in without tripping the ignore-vs-explicit conflict (DWARF012).
+        if (ignoreObsolete)
+        {
+            var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
+            if (mapValues is not null)
+                foreach (var mv in mapValues)
+                    explicitTargets.Add(mv.Target);
+
+            ignores = new HashSet<string>(ignores, StringComparer.Ordinal);
+            foreach (var name in ObsoleteMemberNames(targetType))
+                if (!explicitTargets.Contains(name))
+                    ignores.Add(name);
+        }
+
         var extrasByTarget =
             new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>(
                 StringComparer.Ordinal);
@@ -5906,6 +5935,43 @@ internal static partial class MapperExtractor
                 return b;
 
         return true; // default: by-name auto-matching enabled
+    }
+
+    /// <summary>
+    ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.IgnoreObsoleteMembers" /> value.
+    ///     Defaults to <c>false</c>.
+    /// </summary>
+    private static bool ReadIgnoreObsoleteMembers(ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "IgnoreObsoleteMembers" && named.Value.Value is bool b)
+                return b;
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Names of the accessible instance properties/fields of <paramref name="type" /> that carry
+    ///     <c>[System.ObsoleteAttribute]</c> — the members <c>IgnoreObsoleteMembers</c> drops from mapping.
+    ///     Walks the inheritance chain so an obsolete member declared on a base type is included too.
+    /// </summary>
+    private static IEnumerable<string> ObsoleteMemberNames(ITypeSymbol type)
+    {
+        for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            foreach (var member in t.GetMembers())
+                if (member is IPropertySymbol or IFieldSymbol && IsObsolete(member))
+                    yield return member.Name;
+    }
+
+    private static bool IsObsolete(ISymbol symbol)
+    {
+        foreach (var attribute in symbol.GetAttributes())
+            if (attribute.AttributeClass is { Name: "ObsoleteAttribute" } a
+                && a.ContainingNamespace?.ToDisplayString() == "System")
+                return true;
+
+        return false;
     }
 
     /// <summary>
