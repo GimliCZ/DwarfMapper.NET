@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF072`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF073`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -593,6 +593,25 @@ Related: `DWARF001` is the *other* completeness case — a destination member th
 `[Flatten]`, and additional mapping parameters still resolve in explicit-only mode — they are already explicit
 or structurally required; only the implicit by-name matching of settable members is disabled. See
 [`SECURITY.md`](SECURITY.md#over-posting--mass-assignment-guidance-consumer-responsibility).
+
+---
+
+## dwarf073
+**`[MapProperty(StringFormat=)]` is not applicable here** · Error
+
+A `StringFormat` was given where it cannot apply. It formats a value into a string —
+`source.ToString(format, InvariantCulture)` — so it is valid **only** when the destination member is `string`
+and the source implements `System.IFormattable` (`int`, `decimal`, `DateTime`, `Guid`, `TimeSpan`, …), and
+**not** alongside `Use=` (the converter already produces the value).
+
+```csharp
+[MapProperty(nameof(Src.When), nameof(Dst.When), StringFormat = "yyyy-MM-dd")]   // DateTime -> string ✓
+[MapProperty(nameof(Src.Amount), nameof(Dst.Amount), StringFormat = "F2")]        // decimal  -> string ✓
+```
+
+The provider is always `InvariantCulture`, by design — the formatted output must be stable across deployments
+and threads, not shift with the ambient culture (see [`SECURITY.md`](SECURITY.md), the culture-footgun row).
+**Fix:** map to a `string` member, drop `Use=`, or remove the `StringFormat`.
 
 ---
 

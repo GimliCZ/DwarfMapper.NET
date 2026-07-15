@@ -66,6 +66,7 @@ Put these on the mapping method (or the class, where noted).
 | `[MapProperty(src, tgt, Use = nameof(M))]` | Custom conversion via a named method (`M(srcType) → tgtType`). |
 | `[MapProperty(src, tgt, NullSubstitute = v)]` | Emit `src ?? v` for a nullable source. |
 | `[MapProperty(src, tgt, When = nameof(P))]` | Guard the assignment with `bool P(S)`. |
+| `[MapProperty(src, tgt, StringFormat = "F2")]` | Format an `IFormattable` source into a `string` member: `src.ToString("F2", InvariantCulture)`. Non-string target / non-formattable source / with `Use=` → `DWARF073`. |
 | `[MapValue(tgt, "const")]` / `[MapValue(tgt, Use = nameof(M))]` | Constant or computed (parameterless `M`) value for a source-less member. |
 | `[MapIgnore("Member")]` | Intentionally drop a destination member (suppresses `DWARF001`). Class- or method-level. |
 | `[MapIgnoreSource("Member")]` | Source-side mirror (under `RequiredMapping = Both`). |

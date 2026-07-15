@@ -610,6 +610,15 @@ public static class DiagnosticDescriptors
     // here a source EXISTS and the message tells the developer to make the over-post an explicit decision.
     // Error — it is the completeness gate applied at the trust boundary; the safe path (do nothing) leaves the
     // member unmapped and forces a visible [MapProperty]/[MapIgnore] choice.
+    // [MapProperty(StringFormat = "...")] used where it cannot apply: the destination is not string, the source
+    // is not IFormattable, or a Use= converter is also present (the converter already owns the transform).
+    public static readonly DiagnosticDescriptor StringFormatInvalid = new(
+        "DWARF073",
+        "[MapProperty(StringFormat=)] is not applicable here",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf073");
+
     public static readonly DiagnosticDescriptor AutoMatchDisabled = new(
         "DWARF072",
         "Member has a source match but auto-matching is disabled",

@@ -276,7 +276,8 @@ internal static partial class MapperExtractor
                     implicitConversions, updMapValues, valueProviders,
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
                     skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
-                    explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete);
+                    explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
+                    stringFormats: ReadStringFormats(method));
 
                 // Update-into assigns members post-construction, so init-only targets cannot be written
                 // (they would emit CS8852). Treat them as read-only here: drop them and surface DWARF007
@@ -759,6 +760,7 @@ internal static partial class MapperExtractor
             }
 
             var mapPropExtras = ReadMapPropertyExtras(method);
+            var stringFormats = ReadStringFormats(method);
             var mapValues = ReadMapValues(method);
 
             // Pair-scoped class-level config ([MapProperty<S,T>] / [MapIgnore<T>]) also applies to a DECLARED
@@ -850,7 +852,8 @@ internal static partial class MapperExtractor
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
-                nameConvention, mapPropExtras, skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete);
+                nameConvention, mapPropExtras, skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete,
+                stringFormats);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -2230,7 +2233,8 @@ internal static partial class MapperExtractor
         bool skipNullSourceMembers = false,
         bool allowNonPublic = false,
         bool explicitOnly = false,
-        bool ignoreObsolete = false)
+        bool ignoreObsolete = false,
+        Dictionary<string, string>? stringFormats = null)
     {
         // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
         // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
@@ -2415,6 +2419,26 @@ internal static partial class MapperExtractor
                     out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                     isSetNull: isSetNull, implicitConversions: implicitConversions))
             {
+                // [MapProperty(StringFormat="…")]: replace the resolved converter with a format-aware
+                // src.ToString(format, InvariantCulture). Only valid for an IFormattable source into a string
+                // target, and not alongside Use= (which already owns the transform). An invalid use reports
+                // DWARF073 (an Error — so no output is emitted — hence leaving the default converter in place
+                // rather than skipping the member avoids a spurious second diagnostic).
+                if (stringFormats is not null && stringFormats.TryGetValue(tgtName, out var fmt))
+                {
+                    if (tgtType.SpecialType != SpecialType.System_String)
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StringFormatInvalid, location,
+                            $"[MapProperty(StringFormat=\"{fmt}\")] for '{tgtName}' needs a string destination, but it is '{tgtType.ToDisplayString()}'"));
+                    else if (useMethod is not null)
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StringFormatInvalid, location,
+                            $"[MapProperty(StringFormat=…)] for '{tgtName}' cannot be combined with Use= — the converter already produces the value"));
+                    else if (!ParsableConverter.SupportsStringFormat(srcMatch))
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StringFormatInvalid, location,
+                            $"[MapProperty(StringFormat=…)] for '{tgtName}' needs a source implementing IFormattable; '{srcMatch.ToDisplayString()}' does not"));
+                    else
+                        conv = ParsableConverter.AddFormattedToString(synthesized, srcMatch, fmt);
+                }
+
                 // Phase 8: NullSubstitute (direct-assignable only) and When (guarded assignment).
                 string? nullSubLit = null;
                 string? whenPred = null;
@@ -4492,6 +4516,28 @@ internal static partial class MapperExtractor
                 }
 
             if (hasNullSub || when is not null) result.Add((target, hasNullSub, nullSub, when, null));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Reads <c>[MapProperty("src", "tgt", StringFormat = "…")]</c> named arguments into a
+    ///     target-name → format-string map. Kept separate from <see cref="ReadMapPropertyExtras" /> because a
+    ///     StringFormat can appear with no NullSubstitute/When, which that reader would drop.
+    /// </summary>
+    private static Dictionary<string, string> ReadStringFormats(ISymbol method)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapPropertyFqn
+                || attr.ConstructorArguments.Length < 2
+                || attr.ConstructorArguments[1].Value is not string target)
+                continue;
+            foreach (var na in attr.NamedArguments)
+                if (na.Key == "StringFormat" && na.Value.Value is string fmt)
+                    result[target] = fmt;
         }
 
         return result;

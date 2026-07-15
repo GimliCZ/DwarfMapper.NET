@@ -174,6 +174,39 @@ internal static class ParsableConverter
                && t.TypeKind == TypeKind.Struct;
     }
 
+    /// <summary>
+    ///     True when a value of <paramref name="src" /> can be formatted with an explicit .NET format string —
+    ///     i.e. it implements <see cref="System.IFormattable" />. <c>bool</c>/<c>char</c> are excluded: they are
+    ///     string-convertible but their public <c>ToString()</c> takes no format, so a format string is
+    ///     meaningless (and would not compile). Drives <c>[MapProperty(StringFormat=)]</c> validity (DWARF073).
+    /// </summary>
+    public static bool SupportsStringFormat(ITypeSymbol src)
+    {
+        return TypeInterfaces.ImplementsIFormattable(src);
+    }
+
+    /// <summary>
+    ///     Synthesizes a <c>src → string</c> converter that applies an explicit format:
+    ///     <c>v.ToString("format", InvariantCulture)</c>. One method per (source type, format) pair. Backs
+    ///     <c>[MapProperty(StringFormat="…")]</c>. The provider is always InvariantCulture, by design — the
+    ///     formatted output must not shift with the ambient culture.
+    /// </summary>
+    public static string AddFormattedToString(
+        Dictionary<string, SynthesizedMethod> synth, ITypeSymbol src, string format)
+    {
+        // Format is part of the identity so two different formats on the same type get distinct methods.
+        var name = GeneratedNames.Base + "FmtStrF_" + Sanitize(src) + "_" + Hash("FmtStrF|" + Fq(src) + "|" + format);
+        if (!synth.ContainsKey(name))
+        {
+            var escaped = format.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var code = $"    private static string {name}({Fq(src)} v) => "
+                       + $"v.ToString(\"{escaped}\", global::System.Globalization.CultureInfo.InvariantCulture);\n";
+            synth[name] = new SynthesizedMethod(name, code);
+        }
+
+        return name;
+    }
+
     private static string Fq(ITypeSymbol t)
     {
         return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
