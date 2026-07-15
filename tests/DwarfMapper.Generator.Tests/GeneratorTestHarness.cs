@@ -60,6 +60,23 @@ internal static class GeneratorTestHarness
     }
 
     /// <summary>
+    ///     Runs the <c>[MapTo]</c> registry generator (a SEPARATE <see cref="IIncrementalGenerator" /> from
+    ///     <see cref="DwarfGenerator" />, so the default <see cref="Run(string, NullableContextOptions)" /> never
+    ///     exercises it) and returns its diagnostics. The registry's whole error surface — the
+    ///     <c>DWARFR01</c>–<c>DWARFR06</c> family — is only reachable through this driver.
+    /// </summary>
+    public static ImmutableArray<Diagnostic> RunMapTo(string source,
+        NullableContextOptions nullable = NullableContextOptions.Disable)
+    {
+        var compilation = BuildCompilation("DwarfMapperMapToTestAsm", source, nullable);
+
+        var driver = CSharpGeneratorDriver.Create(new DwarfMapper.Generator.Registry.MapToGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out _, out var genDiagnostics);
+
+        return genDiagnostics;
+    }
+
+    /// <summary>
     ///     Runs the generator and returns the text of the single generated file whose hint name ends with
     ///     <paramref name="hintNameSuffix" /> (e.g. <c>"DwarfMapper.Extensions.g.cs"</c>), or an empty string if
     ///     no such file was produced. Used to assert on the assembly-wide aggregate outputs.

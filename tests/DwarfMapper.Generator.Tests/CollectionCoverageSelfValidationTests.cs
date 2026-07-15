@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -44,35 +43,21 @@ public class CollectionCoverageSelfValidationTests
         return Enum.GetNames(targetKind!);
     }
 
-    /// <summary>The dictionary targets DictionaryConverter matches by name. Scanned from its source, in the
-    /// same spirit as the existing diagnostic Scan self-validation tests.</summary>
-    private static List<string> SupportedDictionaryKinds()
+    /// <summary>The dictionary targets the generator says it supports — its own <c>DictTargetKind</c> enum, read
+    /// reflectively, exactly like <see cref="SupportedCollectionKinds" /> reads TargetKind.</summary>
+    private static string[] SupportedDictionaryKinds()
     {
-        // DictionaryConverter recognises its targets with `switch (name) { case "Dictionary": ... }`, so the
-        // case labels ARE the supported set. Scanning them (rather than copying a list here) means a newly
-        // supported dictionary type fails this test until the fuzzers cover it.
-        var source = FindGeneratorSource("DictionaryConverter.cs");
-        var names = Regex.Matches(source, @"case\s+""(?<n>I?[A-Za-z]*Dictionary)""\s*:")
-            .Select(m => m.Groups["n"].Value)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        Assert.True(names.Count > 0,
-            "Could not scan any dictionary target names out of DictionaryConverter.cs — the recognition shape "
-            + "changed, so this self-validation is no longer checking anything. Fix the scan.");
-        return names;
-    }
-
-    private static string FindGeneratorSource(string fileName)
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "src")))
-            dir = dir.Parent;
-
-        Assert.True(dir is not null, "Could not locate the repository root from the test output directory.");
-        var path = Path.Combine(dir!.FullName, "src", "DwarfMapper.Generator", "Pipeline", fileName);
-        Assert.True(File.Exists(path), $"Expected generator source not found: {path}");
-        return File.ReadAllText(path);
+        // Was a source-regex over DictionaryConverter's `switch (name) { case "Dictionary": ... }` labels — which
+        // silently depended on every supported kind being wired via a string case ending in "Dictionary". A kind
+        // recognised by a non-string path (SpecialType/interface match, as the collection side already uses) would
+        // be un-fuzzed with the gate still green. Reflecting the enum makes the supported set authoritative, and
+        // matches the collection side's mechanism. (The enum names equal the case labels 1:1 today, so this is
+        // behaviour-preserving now and drift-proof going forward.)
+        var generatorAssembly = typeof(DwarfGenerator).Assembly;
+        var dictKind = generatorAssembly.GetType("DwarfMapper.Generator.Pipeline.DictionaryConverter+DictTargetKind");
+        Assert.True(dictKind is not null,
+            "DictionaryConverter.DictTargetKind not found — the taxonomy moved; this self-validation must be updated.");
+        return Enum.GetNames(dictKind!);
     }
 
     /// <summary>
