@@ -24,6 +24,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 file static class RuntimeCoverageExempt
 {
     // RoundTrip / DwarfMapperOptions — verification/assembly-option markers, not per-mapping execution.
+    // DwarfMapperDefaults — ASSEMBLY-GLOBAL default options. It cannot be exercised in this shared integration
+    //   assembly: one [assembly: DwarfMapperDefaults(...)] would re-default every mapper in the project. Its
+    //   layering (mapper > assembly defaults > built-in) is covered at the generator level by
+    //   AssemblyDefaultsTests, which is the correct place to isolate an assembly-scoped attribute.
     // DwarfProvidesMap / DwarfRequiresMap / UsesMap / DwarfMapperValidationRoot — ambient cross-assembly
     //   registry infrastructure (manifests / consumption marker / validation-root marker). You cannot
     //   "execute a mapping" using them; they are covered by AmbientRegistryTests (runtime registry +
@@ -33,6 +37,7 @@ file static class RuntimeCoverageExempt
         {
             "RoundTrip",
             "DwarfMapperOptions",
+            "DwarfMapperDefaults",
             "DwarfProvidesMap",
             "DwarfRequiresMap",
             "UsesMap",

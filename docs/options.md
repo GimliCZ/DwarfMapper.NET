@@ -4,6 +4,12 @@
 Every knob in one place. Class-level options go on `[DwarfMapper(...)]`; per-member attributes go on the
 mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe, strict one (completeness enforced, null/cycle throw by default).
 
+Set a house style once for the whole assembly with `[assembly: DwarfMapperDefaults(...)]` — every mapper
+inherits those values unless it sets its own. **Precedence: mapper > assembly defaults > built-in default.**
+The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `NullStrategy`, `NullCollections`,
+`ImplicitConversions`, `RequiredMapping`, `AllowNonPublic`, `AutoNest`, `AutoMatchMembers`, `IgnoreObsoleteMembers`,
+`SkipNullSourceMembers`); per-graph knobs (`MaxDepth`, `ReferenceHandling`, `OnCycle`) stay per-mapper.
+
 ## Class-level options — `[DwarfMapper(...)]`
 
 | Option | Type | Default | What it does |

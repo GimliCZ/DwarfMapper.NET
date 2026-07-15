@@ -62,6 +62,10 @@ file static class MatrixExemptAttributes
             // (RegistryMapTo*RuntimeTests). Remove if [MapTo] folds into the main pipeline/matrix.
             "MapTo",
             "DwarfMapperOptions",
+            // DwarfMapperDefaults: an ASSEMBLY-GLOBAL default-options marker, not a per-mapper feature the
+            // FIM matrix crosses. It cannot be a matrix case (one [assembly:] attribute re-defaults the whole
+            // matrix). Its layering is covered by AssemblyDefaultsTests.
+            "DwarfMapperDefaults",
             "DwarfProvidesMap",
             "DwarfRequiresMap",
             "UsesMap",
@@ -388,9 +392,12 @@ public sealed class TestTheTestsScanTests
         // registry markers (DwarfProvidesMap/DwarfRequiresMap/UsesMap/DwarfMapperValidationRoot) — none of
         // which affect a single mapping's output, so none have a per-mapping compile-matrix form. Bumped
         // 4 -> 7 with that justification, then 7 -> 8 for MapTo (the [MapTo] front door is handled by
-        // MapToGenerator, not the [DwarfMapper] FIM pipeline, and has its own RegistryMapTo*RuntimeTests).
+        // MapToGenerator, not the [DwarfMapper] FIM pipeline, and has its own RegistryMapTo*RuntimeTests),
+        // then 8 -> 9 for DwarfMapperDefaults (an ASSEMBLY-GLOBAL default-options marker — one [assembly:]
+        // attribute re-defaults the whole matrix, so it cannot be a per-mapper matrix case; covered by
+        // AssemblyDefaultsTests, structurally the same exemption as DwarfMapperOptions).
         // The set must still only SHRINK from here.
-        const int MaxAllowedEntries = 8;
+        const int MaxAllowedEntries = 9;
         Assert.True(
             MatrixExemptAttributes.UsageNames.Count <= MaxAllowedEntries,
             $"MatrixExemptAttributes has {MatrixExemptAttributes.UsageNames.Count} entries " +

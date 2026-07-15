@@ -122,10 +122,21 @@ internal static partial class MapperExtractor
 
         var classIgnores = ReadIgnores(classSymbol).ToList();
         var classIgnoreSources = ReadIgnoreSources(classSymbol).ToList();
-        var requiredMapping = ReadRequiredMapping(ctx.Attributes); // 0 = Target (default), 1 = Both
-        var nameConvention = ReadNameConvention(ctx.Attributes); // 0 = Exact (default), 1 = Flexible
-        var caseInsensitive = ReadCaseInsensitive(ctx.Attributes);
-        var generateExtensions = ReadGenerateExtensions(ctx.Attributes); // default true (opt-out)
+
+        // Assembly-wide default options ([assembly: DwarfMapperDefaults(...)]) layer UNDER the mapper's own
+        // options. Every option reader returns the first matching named argument across the attribute list, so
+        // appending the assembly-defaults attribute AFTER the class's [DwarfMapper] attribute gives exactly the
+        // precedence we want — mapper > assembly defaults > built-in default — with no reader changes. Options
+        // not present on DwarfMapperDefaults (MaxDepth, ReferenceHandling, OnCycle, GenerateExtensions) simply
+        // never match there and stay per-mapper.
+        var asmDefaults = ctx.SemanticModel.Compilation.Assembly.GetAttributes()
+            .FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == KnownNames.DwarfMapperDefaultsFqn);
+        var opts = asmDefaults is null ? ctx.Attributes : ctx.Attributes.Add(asmDefaults);
+
+        var requiredMapping = ReadRequiredMapping(opts); // 0 = Target (default), 1 = Both
+        var nameConvention = ReadNameConvention(opts); // 0 = Exact (default), 1 = Flexible
+        var caseInsensitive = ReadCaseInsensitive(opts);
+        var generateExtensions = ReadGenerateExtensions(opts); // default true (opt-out)
         // The convenience facade caches a `new()` mapper singleton, so it can only be emitted for a mapper
         // that has an accessible parameterless constructor (the implicit one counts).
         // For separateEmit the cached facade singleton is `new <Host>Mapper()` — the generated mapper always
@@ -150,19 +161,19 @@ internal static partial class MapperExtractor
         pairValues.AddRange(mapConfig.Values);
         pairConstructors.AddRange(mapConfig.Constructors);
         classIgnoreSources.AddRange(mapConfig.IgnoreSources);
-        var enumStrategy = ReadEnumStrategy(ctx.Attributes);
-        var nullStrategy = ReadNullStrategy(ctx.Attributes);
-        var classAutoNest = ReadAutoNest(ctx.Attributes);
-        var explicitOnly = !ReadAutoMatchMembers(ctx.Attributes); // trust-boundary guard (DWARF072)
-        var ignoreObsolete = ReadIgnoreObsoleteMembers(ctx.Attributes);
-        var skipNullSrc = ReadSkipNullSourceMembers(ctx.Attributes);
-        var allowNonPublic = ReadAllowNonPublic(ctx.Attributes);
-        var nullCollections = ReadNullCollections(ctx.Attributes);
-        var maxDepth = ReadMaxDepth(ctx.Attributes);
-        var referenceHandling = ReadReferenceHandling(ctx.Attributes);
+        var enumStrategy = ReadEnumStrategy(opts);
+        var nullStrategy = ReadNullStrategy(opts);
+        var classAutoNest = ReadAutoNest(opts);
+        var explicitOnly = !ReadAutoMatchMembers(opts); // trust-boundary guard (DWARF072)
+        var ignoreObsolete = ReadIgnoreObsoleteMembers(opts);
+        var skipNullSrc = ReadSkipNullSourceMembers(opts);
+        var allowNonPublic = ReadAllowNonPublic(opts);
+        var nullCollections = ReadNullCollections(opts);
+        var maxDepth = ReadMaxDepth(opts);
+        var referenceHandling = ReadReferenceHandling(opts);
         var isPreserveMode = referenceHandling == 1; // 1 = ReferenceHandlingStrategy.Preserve
-        var onCycle = ReadOnCycle(ctx.Attributes); // 0 = Throw, 1 = SetNull
-        var implicitConversions = ReadImplicitConversions(ctx.Attributes); // default true (permissive)
+        var onCycle = ReadOnCycle(opts); // 0 = Throw, 1 = SetNull
+        var implicitConversions = ReadImplicitConversions(opts); // default true (permissive)
         // SetNull is only meaningful in None mode; under Preserve, cycles are reconstructed and
         // OnCycle is ignored → DWARF037 (loud, not a silent no-op).
         var isSetNullMode = onCycle == 1 && !isPreserveMode;

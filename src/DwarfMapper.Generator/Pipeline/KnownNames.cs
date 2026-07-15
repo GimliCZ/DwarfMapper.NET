@@ -18,6 +18,7 @@ internal static class KnownNames
     // ── Attribute simple names (matched via AttributeClass.Name) ──
     public const string DwarfMapper          = "DwarfMapperAttribute";
     public const string DwarfMapperOptions   = "DwarfMapperOptionsAttribute";
+    public const string DwarfMapperDefaults  = "DwarfMapperDefaultsAttribute";
     public const string GenerateMap          = "GenerateMapAttribute";
     public const string GenerateWrapperMap   = "GenerateWrapperMapAttribute";
     public const string MapProperty          = "MapPropertyAttribute";
@@ -46,6 +47,7 @@ internal static class KnownNames
     // ── Fully-qualified names (matched via AttributeClass.ToDisplayString()) ──
     public const string DwarfMapperFqn        = Ns + "." + DwarfMapper;
     public const string DwarfMapperOptionsFqn = Ns + "." + DwarfMapperOptions;
+    public const string DwarfMapperDefaultsFqn = Ns + "." + DwarfMapperDefaults;
     public const string MapPropertyFqn        = Ns + "." + MapProperty;
     public const string MapIgnoreFqn          = Ns + "." + MapIgnore;
     public const string MapIgnoreSourceFqn    = Ns + "." + MapIgnoreSource;
