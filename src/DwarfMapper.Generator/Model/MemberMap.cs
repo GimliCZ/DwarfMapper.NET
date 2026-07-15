@@ -72,4 +72,13 @@ public sealed record MemberMap(
     /// Set only for the direct-assign path (no converter, no null-handling, no NullSubstitute) and cleared
     /// when <see cref="SkipIfSourceNull"/> already guards the null.
     /// </summary>
-    bool NullRefIntoNonNullable = false) : IEquatable<MemberMap>;
+    bool NullRefIntoNonNullable = false,
+    /// <summary>
+    /// When non-null, this is an <b>update-into key-based upsert</b> of a <c>List&lt;T&gt;</c> member (set by
+    /// <c>[MapCollectionKey]</c>): the emitter merges the source list into the existing one by this key member
+    /// rather than replacing it — matched keys update the slot, new keys are added, unmatched existing elements
+    /// are kept. <see cref="UpsertKeyMember"/> is the element-type key member; <see cref="UpsertKeyTypeFqn"/>
+    /// its type (for the index dictionary). v1: element type identical on both sides.
+    /// </summary>
+    string? UpsertKeyMember = null,
+    string? UpsertKeyTypeFqn = null) : IEquatable<MemberMap>;

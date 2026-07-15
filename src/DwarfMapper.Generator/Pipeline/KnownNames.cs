@@ -19,6 +19,7 @@ internal static class KnownNames
     public const string DwarfMapper          = "DwarfMapperAttribute";
     public const string DwarfMapperOptions   = "DwarfMapperOptionsAttribute";
     public const string DwarfMapperDefaults  = "DwarfMapperDefaultsAttribute";
+    public const string MapCollectionKey     = "MapCollectionKeyAttribute";
     public const string GenerateMap          = "GenerateMapAttribute";
     public const string GenerateWrapperMap   = "GenerateWrapperMapAttribute";
     public const string MapProperty          = "MapPropertyAttribute";
@@ -48,6 +49,7 @@ internal static class KnownNames
     public const string DwarfMapperFqn        = Ns + "." + DwarfMapper;
     public const string DwarfMapperOptionsFqn = Ns + "." + DwarfMapperOptions;
     public const string DwarfMapperDefaultsFqn = Ns + "." + DwarfMapperDefaults;
+    public const string MapCollectionKeyFqn   = Ns + "." + MapCollectionKey;
     public const string MapPropertyFqn        = Ns + "." + MapProperty;
     public const string MapIgnoreFqn          = Ns + "." + MapIgnore;
     public const string MapIgnoreSourceFqn    = Ns + "." + MapIgnoreSource;

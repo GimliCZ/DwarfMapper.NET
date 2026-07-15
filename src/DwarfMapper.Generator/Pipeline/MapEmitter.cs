@@ -710,6 +710,15 @@ internal static class MapEmitter
         {
             if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null ||
                 member.SkipIfSourceNull) continue; // deferred
+
+            // [MapCollectionKey]: merge the source List<T> into the existing one by key instead of replacing
+            // it. Same element type on both sides (v1), so a matched source element is assigned directly.
+            if (member.UpsertKeyMember is not null)
+            {
+                EmitCollectionKeyUpsert(sb, member, src, dst, indent + "    ");
+                continue;
+            }
+
             sb.Append(indent).Append("    ").Append(dst).Append('.').Append(member.TargetName).Append(" = ");
             AppendValueExpression(sb, member, src, ctxVar);
             sb.AppendLine(";");
@@ -730,6 +739,42 @@ internal static class MapEmitter
         if (!method.UpdateReturnsVoid)
             sb.Append(indent).Append("    return ").Append(dst).AppendLine(";");
 
+        sb.Append(indent).AppendLine("}");
+    }
+
+    /// <summary>
+    ///     Emits a key-based in-place upsert of a <c>List&lt;T&gt;</c> member ([MapCollectionKey]). The existing
+    ///     list instance is kept: an existing element whose key matches a source element's key has its slot
+    ///     replaced by that (same-type) source element; a source element with a new key is appended; existing
+    ///     elements whose key is absent from the source are left as-is. A null source collection leaves the
+    ///     destination unchanged. Wrapped in its own block so its locals don't collide with a second upsert.
+    /// </summary>
+    private static void EmitCollectionKeyUpsert(StringBuilder sb, MemberMap member, string src, string dst,
+        string indent)
+    {
+        var srcAccess = src + "." + member.SourceName;
+        var dstAccess = dst + "." + member.TargetName;
+        var key = member.UpsertKeyMember;
+        var keyType = member.UpsertKeyTypeFqn;
+
+        sb.Append(indent).Append("if (").Append(srcAccess).AppendLine(" is not null)");
+        sb.Append(indent).AppendLine("{");
+        sb.Append(indent).Append("    var __idx = new global::System.Collections.Generic.Dictionary<")
+            .Append(keyType).AppendLine(", int>();");
+        sb.Append(indent).Append("    for (var __i = 0; __i < ").Append(dstAccess).AppendLine(".Count; __i++)");
+        sb.Append(indent).Append("        __idx[").Append(dstAccess).Append("[__i].").Append(key)
+            .AppendLine("] = __i;");
+        sb.Append(indent).Append("    foreach (var __e in ").Append(srcAccess).AppendLine(")");
+        sb.Append(indent).AppendLine("    {");
+        sb.Append(indent).Append("        if (__idx.TryGetValue(__e.").Append(key).AppendLine(", out var __j))");
+        sb.Append(indent).Append("            ").Append(dstAccess).AppendLine("[__j] = __e;");
+        sb.Append(indent).AppendLine("        else");
+        sb.Append(indent).AppendLine("        {");
+        sb.Append(indent).Append("            __idx[__e.").Append(key).Append("] = ").Append(dstAccess)
+            .AppendLine(".Count;");
+        sb.Append(indent).Append("            ").Append(dstAccess).AppendLine(".Add(__e);");
+        sb.Append(indent).AppendLine("        }");
+        sb.Append(indent).AppendLine("    }");
         sb.Append(indent).AppendLine("}");
     }
 

@@ -146,6 +146,19 @@ public class FeatureInteractionCompileMatrixTests
                                                                     }
                                                                     """);
 
+        yield return new FimMatrixCase("collection_key_upsert", """
+                                                               using DwarfMapper;
+                                                               using System.Collections.Generic;
+                                                               namespace Fim;
+                                                               public class Item { public int Id { get; set; } public string Name { get; set; } = ""; }
+                                                               public class Src { public List<Item> Items { get; set; } = new(); }
+                                                               public class Dst { public List<Item> Items { get; set; } = new(); }
+                                                               [DwarfMapper] public partial class M {
+                                                                   [MapCollectionKey(nameof(Dst.Items), nameof(Item.Id))]
+                                                                   public partial void Merge(Src src, Dst dst);
+                                                               }
+                                                               """);
+
         // ── 4. Top-level collection methods ──────────────────────────────────
 
         yield return new FimMatrixCase("toplevel_List_to_List", """

@@ -74,6 +74,7 @@ Put these on the mapping method (or the class, where noted).
 | `[MapProperty(src, tgt, When = nameof(P))]` | Guard the assignment with `bool P(S)`. |
 | `[MapProperty(src, tgt, StringFormat = "F2")]` | Format an `IFormattable` source into a `string` member: `src.ToString("F2", InvariantCulture)`. Non-string target / non-formattable source / with `Use=` → `DWARF073`. |
 | `[MapValue(tgt, "const")]` / `[MapValue(tgt, Use = nameof(M))]` | Constant or computed (parameterless `M`) value for a source-less member. |
+| `[MapCollectionKey("Items", "Id")]` | **Update-into only.** Merge a `List<T>` member by key instead of replacing it: matched keys update the slot, new keys are added, unmatched existing elements are kept. v1: same element type both sides. Out of scope → `DWARF074`. |
 | `[MapIgnore("Member")]` | Intentionally drop a destination member (suppresses `DWARF001`). Class- or method-level. |
 | `[MapIgnoreSource("Member")]` | Source-side mirror (under `RequiredMapping = Both`). |
 | `[MapProperty<TSource, TTarget>(src, tgt)]` | **Class-level, pair-scoped** rename/convert (`Use`/`NullSubstitute`/`When` too). Configures a `[GenerateMap]` pair — or an auto-synthesized nested/collection-element pair — with **no partial method**. Matches nothing → `DWARF056`. |

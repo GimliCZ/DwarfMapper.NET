@@ -612,6 +612,16 @@ public static class DiagnosticDescriptors
     // member unmapped and forces a visible [MapProperty]/[MapIgnore] choice.
     // [MapProperty(StringFormat = "...")] used where it cannot apply: the destination is not string, the source
     // is not IFormattable, or a Use= converter is also present (the converter already owns the transform).
+    // [MapCollectionKey] used where the v1 key-based upsert cannot apply: not an update-into method, the named
+    // member is not a List<T>, the element type differs between source and target, or the key member is not
+    // found on the element type. Loud rather than silently falling back to whole-collection replacement.
+    public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
+        "DWARF074",
+        "[MapCollectionKey] cannot be applied here",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf074");
+
     public static readonly DiagnosticDescriptor StringFormatInvalid = new(
         "DWARF073",
         "[MapProperty(StringFormat=)] is not applicable here",

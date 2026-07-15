@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF073`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF074`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -640,6 +640,29 @@ and the source implements `System.IFormattable` (`int`, `decimal`, `DateTime`, `
 The provider is always `InvariantCulture`, by design — the formatted output must be stable across deployments
 and threads, not shift with the ambient culture (see [`SECURITY.md`](SECURITY.md), the culture-footgun row).
 **Fix:** map to a `string` member, drop `Use=`, or remove the `StringFormat`.
+
+---
+
+## dwarf074
+**`[MapCollectionKey]` cannot be applied here** · Error
+
+`[MapCollectionKey("Member", "Key")]` merges an update-into collection member by key instead of replacing it,
+but the v1 upsert has a defined scope and refuses anything outside it rather than silently replacing:
+
+- the method must be **update-into** (`void Map(TSource, TTarget)`);
+- the named member must be a **`List<T>`** on both source and destination;
+- the element type must be the **same** on both sides (the common Entity↔Entity update);
+- the key must be a **readable member** of the element type.
+
+```csharp
+[MapCollectionKey(nameof(Order.Lines), nameof(OrderLine.Id))]
+public partial void Merge(OrderUpdate src, Order dst);   // dst.Lines merged by Id, not replaced
+```
+
+Merged in place: an element whose key matches an existing one updates that slot, a new key is added, and
+existing elements the update didn't mention are kept — so the list instance and its untouched elements survive
+(contrast `DWARF065`, whole-collection replacement). **Fix:** meet the scope above, or drop the attribute to
+accept whole-collection replacement.
 
 ---
 

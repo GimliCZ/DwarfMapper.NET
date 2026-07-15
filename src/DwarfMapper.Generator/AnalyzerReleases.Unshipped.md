@@ -79,3 +79,4 @@ DWARF070 | DwarfMapper | Warning | Nullable source member is assigned to a non-n
 DWARF071 | DwarfMapper | Info | Source type has derived types whose members would be dropped
 DWARF072 | DwarfMapper | Error | Member has a source match but auto-matching is disabled (explicit-only)
 DWARF073 | DwarfMapper | Error | [MapProperty(StringFormat=)] is not applicable here
+DWARF074 | DwarfMapper | Error | [MapCollectionKey] cannot be applied here

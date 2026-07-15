@@ -320,6 +320,11 @@ internal static partial class MapperExtractor
                     updMembers = keptUpd;
                 }
 
+                // [MapCollectionKey]: turn a List<T> member's whole-collection replacement into a key-based
+                // upsert (merge in place). Applied before DWARF065 so an upserted collection is not also flagged
+                // as "replaced".
+                ApplyCollectionKeyUpserts(method, updSrc, updTgt, comp, methodLocation, diagnostics, updMembers);
+
                 // Item 13 (DWARF065): update-into maps a nested object member by REPLACING dest's existing
                 // instance with a freshly-mapped one (the auto-nested __DwarfMap_Obj_* converter constructs a
                 // new object), NOT by recursively merging into it. Callers expecting a deep merge / preserved
@@ -4530,6 +4535,94 @@ internal static partial class MapperExtractor
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Applies <c>[MapCollectionKey]</c> to the update-into member list: converts a matched
+    ///     <c>List&lt;T&gt;</c> member from whole-collection replacement into a key-based in-place upsert.
+    ///     v1 scope — <c>List&lt;T&gt;</c> with the SAME element type on both sides and a readable key member;
+    ///     anything else is refused with DWARF074 rather than silently ignored.
+    /// </summary>
+    private static void ApplyCollectionKeyUpserts(
+        IMethodSymbol method, ITypeSymbol srcType, INamedTypeSymbol tgtType, Compilation compilation,
+        LocationInfo? location, List<DiagnosticInfo> diagnostics, List<MemberMap> members)
+    {
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapCollectionKeyFqn
+                || attr.ConstructorArguments.Length < 2
+                || attr.ConstructorArguments[0].Value is not string collectionMember
+                || attr.ConstructorArguments[1].Value is not string keyMember)
+                continue;
+
+            var idx = members.FindIndex(m => StringComparer.Ordinal.Equals(m.TargetName, collectionMember));
+            if (idx < 0)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionKeyInvalid, location,
+                    $"[MapCollectionKey] target '{collectionMember}' is not a mapped destination member of this update-into method"));
+                continue;
+            }
+
+            var tgtMemberType = MemberTypeByName(tgtType, collectionMember);
+            var srcMemberType = MemberTypeByName(srcType, members[idx].SourceName);
+
+            if (!IsListOfT(tgtMemberType, out var tgtElem) || !IsListOfT(srcMemberType, out var srcElem))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionKeyInvalid, location,
+                    $"[MapCollectionKey] member '{collectionMember}' must be a List<T> on both source and destination (v1)"));
+                continue;
+            }
+
+            if (!SymbolEqualityComparer.Default.Equals(srcElem, tgtElem))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionKeyInvalid, location,
+                    $"[MapCollectionKey] member '{collectionMember}' requires the same element type on source and destination (v1); got '{srcElem!.ToDisplayString()}' and '{tgtElem!.ToDisplayString()}'"));
+                continue;
+            }
+
+            var keyType = ReadableMembers(tgtElem!, compilation)
+                .Where(m => StringComparer.Ordinal.Equals(m.Name, keyMember))
+                .Select(m => (ITypeSymbol?)m.Type)
+                .FirstOrDefault();
+            if (keyType is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionKeyInvalid, location,
+                    $"[MapCollectionKey] key '{keyMember}' is not a readable member of element type '{tgtElem!.ToDisplayString()}'"));
+                continue;
+            }
+
+            members[idx] = members[idx] with
+            {
+                UpsertKeyMember = keyMember,
+                UpsertKeyTypeFqn = keyType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            };
+        }
+    }
+
+    private static ITypeSymbol? MemberTypeByName(ITypeSymbol type, string name)
+    {
+        for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            foreach (var m in t.GetMembers(name))
+                switch (m)
+                {
+                    case IPropertySymbol p: return p.Type;
+                    case IFieldSymbol f: return f.Type;
+                }
+
+        return null;
+    }
+
+    private static bool IsListOfT(ITypeSymbol? type, out ITypeSymbol? element)
+    {
+        if (type is INamedTypeSymbol { Name: "List", TypeArguments.Length: 1 } nt
+            && nt.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+        {
+            element = nt.TypeArguments[0];
+            return true;
+        }
+
+        element = null;
+        return false;
     }
 
     /// <summary>
