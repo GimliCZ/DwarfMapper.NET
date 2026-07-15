@@ -77,3 +77,4 @@ DWARF068 | DwarfMapper | Error | MapConfigUnsupportedExpression
 DWARF069 | DwarfMapper | Error | MapConfigConflict
 DWARF070 | DwarfMapper | Warning | Nullable source member is assigned to a non-nullable target member
 DWARF071 | DwarfMapper | Info | Source type has derived types whose members would be dropped
+DWARF072 | DwarfMapper | Error | Member has a source match but auto-matching is disabled (explicit-only)

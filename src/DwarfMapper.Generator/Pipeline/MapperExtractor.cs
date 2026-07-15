@@ -153,6 +153,7 @@ internal static partial class MapperExtractor
         var enumStrategy = ReadEnumStrategy(ctx.Attributes);
         var nullStrategy = ReadNullStrategy(ctx.Attributes);
         var classAutoNest = ReadAutoNest(ctx.Attributes);
+        var explicitOnly = !ReadAutoMatchMembers(ctx.Attributes); // trust-boundary guard (DWARF072)
         var skipNullSrc = ReadSkipNullSourceMembers(ctx.Attributes);
         var allowNonPublic = ReadAllowNonPublic(ctx.Attributes);
         var nullCollections = ReadNullCollections(ctx.Attributes);
@@ -273,7 +274,8 @@ internal static partial class MapperExtractor
                     nullCollections == NullCollectionsBehavior.AsNull, false, false,
                     implicitConversions, updMapValues, valueProviders,
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
-                    skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
+                    skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
+                    explicitOnly: explicitOnly);
 
                 // Update-into assigns members post-construction, so init-only targets cannot be written
                 // (they would emit CS8852). Treat them as read-only here: drop them and surface DWARF007
@@ -847,7 +849,7 @@ internal static partial class MapperExtractor
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
-                nameConvention, mapPropExtras, skipNullSrc, allowNonPublic);
+                nameConvention, mapPropExtras, skipNullSrc, allowNonPublic, explicitOnly);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -1076,7 +1078,8 @@ internal static partial class MapperExtractor
                 genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 MatchPairValues(pairValues, genTgt), valueProviders,
-                mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
+                mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
+                explicitOnly: explicitOnly);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -1213,6 +1216,12 @@ internal static partial class MapperExtractor
                 pairAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 MatchPairValues(pairValues, nestedTgt), valueProviders,
+                // NOT explicitOnly: this is the auto-synthesized NESTED mapper. Explicit-only guards the
+                // TOP-LEVEL trust boundary; reaching a nested pair already required the developer to map that
+                // edge explicitly (top-level auto-nest is blocked by DWARF072), so the nested contents map
+                // normally. Propagating here would give every nested member DWARF072 — a synthesized mapper has
+                // no [MapProperty] to satisfy it — making nested objects unmappable. For a nested trust
+                // boundary, declare that pair's own [DwarfMapper(AutoMatchMembers = false)] mapper.
                 mapPropertyExtras: nestedExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic);
 
             nestedRegistry.ClearCurrentPair();
@@ -2210,7 +2219,8 @@ internal static partial class MapperExtractor
         int nameConvention = 0,
         IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
         bool skipNullSourceMembers = false,
-        bool allowNonPublic = false)
+        bool allowNonPublic = false,
+        bool explicitOnly = false)
     {
         var extrasByTarget =
             new Dictionary<string, (bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>(
@@ -2626,6 +2636,19 @@ internal static partial class MapperExtractor
                         target.Name));
                 }
 
+                continue;
+            }
+
+            // Explicit-only (trust boundary): a by-name match must NOT silently auto-wire. This is exactly the
+            // mass-assignment surface — the field lines up by name, so it WOULD be copied, and DWARF001 would
+            // never notice because the member is "mapped". Refuse it and make the developer decide, so an
+            // attacker-controlled same-named field (IsAdmin) cannot over-post onto a protected member. Explicit
+            // [MapProperty]/[MapValue]/[MapIgnore] and [Reinterpret] have already been honoured above; only the
+            // implicit by-name wire is blocked here.
+            if (explicitOnly)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.AutoMatchDisabled, location, target.Name));
                 continue;
             }
 
@@ -5868,6 +5891,21 @@ internal static partial class MapperExtractor
                 return b;
 
         return true; // default: auto-nesting enabled
+    }
+
+    /// <summary>
+    ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoMatchMembers" /> value.
+    ///     Defaults to <c>true</c>. When <c>false</c> the mapper is explicit-only (the trust-boundary guard) and
+    ///     nothing is auto-wired by name — see <see cref="DiagnosticDescriptors.AutoMatchDisabled" />.
+    /// </summary>
+    private static bool ReadAutoMatchMembers(ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "AutoMatchMembers" && named.Value.Value is bool b)
+                return b;
+
+        return true; // default: by-name auto-matching enabled
     }
 
     /// <summary>

@@ -36,6 +36,30 @@ public sealed class DwarfMapperAttribute : Attribute
     public bool AutoNest { get; set; } = true;
 
     /// <summary>
+    ///     When <c>true</c> (the default), destination members are matched to same-named source members
+    ///     automatically. Set to <c>false</c> for an <b>explicit-only</b> mapper: nothing is wired by name —
+    ///     every destination member must be mapped with <c>[MapProperty]</c>/<c>[MapValue]</c> or skipped with
+    ///     <c>[MapIgnore]</c>, or the build fails (<c>DWARF072</c>).
+    ///     <para>
+    ///         This is the <b>trust-boundary / anti-over-posting guard</b>. By-name auto-matching is convenient
+    ///         inside your own code, but at a trust boundary (mapping an untrusted input DTO onto a domain
+    ///         entity) it silently wires whatever names line up — so an attacker-controlled <c>IsAdmin</c> that
+    ///         happens to match a protected entity field is copied with no diagnostic, and the completeness gate
+    ///         still reports success. That is mass assignment (OWASP API6). With auto-matching off, adding a
+    ///         protected field to the entity forces a visible, reviewable <c>[MapProperty]</c>/<c>[MapIgnore]</c>
+    ///         decision instead of a silent auto-wire. Put untrusted-input maps in their own
+    ///         <c>[DwarfMapper(AutoMatchMembers = false)]</c> class; keep convenient auto-matching for output
+    ///         mapping elsewhere.
+    ///     </para>
+    ///     <para>
+    ///         Explicit <c>[MapProperty]</c>, <c>[MapValue]</c>, <c>[Flatten]</c>, additional mapping parameters,
+    ///         and constructor parameters still resolve — they are all explicit or structurally required. Only
+    ///         the implicit by-name matching of settable members is disabled.
+    ///     </para>
+    /// </summary>
+    public bool AutoMatchMembers { get; set; } = true;
+
+    /// <summary>
     ///     When <c>true</c>, a <b>null source member never overwrites the destination's default</b>: for every
     ///     nullable-source, post-construction-settable member the generator emits
     ///     <c>if (src.Member is not null) dest.Member = …;</c>, so a default set in the destination's field

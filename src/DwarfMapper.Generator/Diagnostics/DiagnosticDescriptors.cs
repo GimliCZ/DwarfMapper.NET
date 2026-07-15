@@ -602,6 +602,24 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf071");
 
+    // Trust-boundary / anti-over-posting guard. Under [DwarfMapper(AutoMatchMembers = false)] a destination
+    // member has a same-named SOURCE member — it WOULD have auto-wired — but auto-matching is off, so the
+    // generator refuses to wire it silently. This is the mass-assignment surface (OWASP API6) made visible:
+    // by-name auto-matching is exactly how an attacker-controlled `IsAdmin` reaches a protected entity field,
+    // and DWARF001 does NOT catch it because the field IS mapped. Distinct from DWARF001 (no source at all):
+    // here a source EXISTS and the message tells the developer to make the over-post an explicit decision.
+    // Error — it is the completeness gate applied at the trust boundary; the safe path (do nothing) leaves the
+    // member unmapped and forces a visible [MapProperty]/[MapIgnore] choice.
+    public static readonly DiagnosticDescriptor AutoMatchDisabled = new(
+        "DWARF072",
+        "Member has a source match but auto-matching is disabled",
+        "Destination member '{0}' has a same-named source member, but this mapper is explicit-only "
+        + "([DwarfMapper(AutoMatchMembers = false)]) so nothing is auto-wired across the trust boundary. Map it "
+        + "deliberately with [MapProperty] or skip it with [MapIgnore]. This is what stops an untrusted "
+        + "same-named field (e.g. IsAdmin) from silently over-posting onto a protected member.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf072");
+
     public static readonly DiagnosticDescriptor NullableRefSourceToNonNullableTarget = new(
         "DWARF070",
         "Nullable source member is assigned to a non-nullable target member",

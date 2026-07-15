@@ -29,14 +29,31 @@ mapper makes this "safe by default" — and per the
 input:
 
 1. **Map untrusted input into a narrow input DTO, never directly onto a domain entity.** If the DTO has no
-   `IsAdmin`/`Id` member, there is nothing for an attacker to set — the protected field cannot flow.
-2. **Lean on the completeness gate.** DwarfMapper requires every destination member be mapped
-   (`DWARF001`); a stray protected field surfaces as a **build error**, not a silent pass. Enable
-   `RequiredMapping = Both` to also flag *unused source* members (`DWARF039`) so a too-wide input DTO is
-   visible.
-3. **For update-into-existing entities**, map only the fields a request is allowed to change — use
+   `IsAdmin`/`Id` member, there is nothing for an attacker to set — the protected field cannot flow. This is
+   the primary mitigation, and it needs no special mode.
+2. **At a trust boundary, turn off by-name auto-matching:
+   `[DwarfMapper(AutoMatchMembers = false)]`.** Be clear about what the completeness gate does and does
+   *not* do here. `DWARF001` fires only for a destination that is mapped by **nothing** — it does **not**
+   catch a protected field that happens to share a name with a source member, because by-name auto-matching
+   *maps* it (silently, and the gate then reports success). By-name matching is exactly the mass-assignment
+   vector. With `AutoMatchMembers = false`, nothing is auto-wired: every member must be an explicit
+   `[MapProperty]`/`[MapValue]` or an explicit `[MapIgnore]`, and a member that would have auto-matched
+   raises **`DWARF072`** (build error) instead. Adding a protected field to the entity then forces a visible,
+   reviewable decision rather than a silent auto-wire. Put untrusted-input maps in their own explicit-only
+   mapper class; keep convenient auto-matching for output mapping elsewhere.
+3. **Enable `RequiredMapping = Both`** to additionally flag *unused source* members (`DWARF039`), so a
+   too-wide input DTO — one carrying fields nothing consumes — is visible rather than quietly ignored.
+4. **For update-into-existing entities**, map only the fields a request is allowed to change — use
    `[MapIgnore]` for protected members so they are never assigned, and prefer explicit `[MapProperty]`
-   over broad by-name auto-mapping for trust boundaries.
+   (or the explicit-only mode above) over broad by-name auto-mapping.
+
+> **Note on the completeness gate as an amplifier.** DwarfMapper's completeness gate is a correctness feature
+> — it stops you *forgetting* a field. At a trust boundary that same pressure ("map everything") points the
+> wrong way: the path of least resistance to a green build is to wire the field up, which is precisely
+> over-posting. `AutoMatchMembers = false` inverts the incentive so the easy path (do nothing → `DWARF072`)
+> forces an explicit, safe decision. Structurally, DwarfMapper is already *less* exposed than a reflective
+> binder — the source is a compile-time type, so an attacker cannot introduce new fields — but a field that
+> is *already* on the DTO and lines up by name is the real risk, and that is what this mode addresses.
 
 ## Caveat: `DwarfMapper.Testing`
 

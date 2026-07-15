@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF071`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF072`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -555,6 +555,44 @@ instance at run time, so the drop is certain, whereas a concrete base may genuin
 
 Deliberately quiet: it does not fire for a `sealed` source, nor for a non-sealed class that nothing in the
 compilation actually derives from.
+
+---
+
+## dwarf072
+**Member has a source match but auto-matching is disabled** · Error
+
+The mapper is declared `[DwarfMapper(AutoMatchMembers = false)]` (explicit-only), and this destination member
+has a **same-named source member** — so it *would* have auto-wired, but the mode refuses to do it silently.
+
+This is the **trust-boundary / anti-over-posting guard**. By-name auto-matching is how mass assignment
+([OWASP API6](https://owasp.org/API-Security/editions/2019/en/0xa6-mass-assignment/)) happens: an
+attacker-controlled field (`IsAdmin`, `Balance`, `Id`) that lines up by name with a protected entity member is
+copied with no diagnostic — and `DWARF001` never catches it, because the field *is* mapped. Turning
+auto-matching off makes every such wire an explicit, reviewable decision.
+
+```csharp
+[DwarfMapper(AutoMatchMembers = false)]        // explicit-only: nothing auto-wires
+[MapIgnore("IsAdmin")]                          // protected — never assigned
+public partial class AccountUpdateMapper
+{
+    [MapProperty(nameof(Input.DisplayName), nameof(Account.DisplayName))]  // allowed
+    public partial Account Map(Input input);
+}
+```
+
+**Fix** — for each member the mapper reports:
+
+| You want | Use |
+|---|---|
+| this field to be mapped | `[MapProperty(nameof(Src.X), nameof(Dst.X))]` |
+| this field to be a fixed/computed value | `[MapValue(nameof(Dst.X), …)]` |
+| this field left alone (protected) | `[MapIgnore("X")]` |
+
+Related: `DWARF001` is the *other* completeness case — a destination member that has **no** source at all.
+`DWARF072` is specifically "a source exists, but I won't auto-wire it here." Constructor parameters,
+`[Flatten]`, and additional mapping parameters still resolve in explicit-only mode — they are already explicit
+or structurally required; only the implicit by-name matching of settable members is disabled. See
+[`SECURITY.md`](SECURITY.md#over-posting--mass-assignment-guidance-consumer-responsibility).
 
 ---
 
