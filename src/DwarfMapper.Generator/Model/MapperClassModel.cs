@@ -36,7 +36,15 @@ public sealed record MapperClassModel(
     /// code, with no DwarfMapper diagnostic. So the containing chain has to be reproduced verbatim.
     /// </para>
     /// </summary>
-    EquatableArray<string> ContainingTypes = default) : IEquatable<MapperClassModel>
+    EquatableArray<string> ContainingTypes = default,
+    /// <summary>
+    /// Names of <c>MapConfig&lt;S,T&gt;</c> convention methods on this mapper. The generator reads them but never
+    /// calls them, so the emitter references each via <c>nameof</c> (in a generated static constructor) to keep
+    /// a consumer's IDE0051-as-error build from flagging its own compile-time config as an unused member. Empty
+    /// unless the class both declares convention methods AND has no user-declared static constructor (the
+    /// static-ctor slot is free).
+    /// </summary>
+    EquatableArray<string> ConventionMethodNames = default) : IEquatable<MapperClassModel>
 {
     /// <summary>
     /// Unique per generated file. Includes the containing types: <c>Outer.M</c> and a namespace-level <c>M</c>

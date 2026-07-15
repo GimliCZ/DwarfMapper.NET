@@ -54,6 +54,20 @@ internal static class MapEmitter
                 .Append(rt.ForwardName).Append(", ").Append(rt.BackwardName).AppendLine(", seed, iterations);");
         }
 
+        // A static constructor that nameof-references each MapConfig convention method. They are read by the
+        // generator but never called, so without this a consumer building with IDE0051-as-error would see its
+        // own compile-time config flagged as an unused private member. nameof is a compile-time constant, so
+        // the discards cost nothing at run time. Only emitted when the class has no static constructor of its
+        // own (see the extractor's guard), so this can never collide (CS0111).
+        if (model.ConventionMethodNames.Count > 0)
+        {
+            sb.Append("    static ").Append(model.ClassName).AppendLine("()");
+            sb.AppendLine("    {");
+            foreach (var cfg in model.ConventionMethodNames)
+                sb.Append("        _ = nameof(").Append(cfg).AppendLine(");");
+            sb.AppendLine("    }");
+        }
+
         sb.AppendLine("}");
 
         foreach (var _ in model.ContainingTypes) sb.AppendLine("}");

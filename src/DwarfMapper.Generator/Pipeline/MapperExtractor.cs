@@ -2172,6 +2172,16 @@ internal static partial class MapperExtractor
             ? new List<string>()
             : ContainingTypeDeclarations(classSymbol, classSyntax, diagnostics);
 
+        // nameof-reference the MapConfig convention methods so a consumer's IDE0051-as-error build does not flag
+        // its own compile-time config as an unused private member. Emitted in a generated static constructor —
+        // so only when the class declares no static constructor of its own (that slot must be free), and not for
+        // the co-located form (a brand-new emitted class, not the other half of the user's partial).
+        var conventionRefs =
+            !separateEmit && !classSymbol.StaticConstructors.Any(c => !c.IsImplicitlyDeclared)
+                ? mapConfig.ConventionMethodNames.Distinct(StringComparer.Ordinal)
+                    .OrderBy(n => n, StringComparer.Ordinal).ToList()
+                : new List<string>();
+
         return new MapperClassModel(
             classSymbol.ContainingNamespace.IsGlobalNamespace ? "" : classSymbol.ContainingNamespace.ToDisplayString(),
             emitClassName,
@@ -2182,7 +2192,8 @@ internal static partial class MapperExtractor
             EquatableArray.From(roundTrips),
             generateExtensions,
             hasParameterlessCtor,
-            EquatableArray.From(containingTypes));
+            EquatableArray.From(containingTypes),
+            EquatableArray.From(conventionRefs));
     }
 
     /// <summary>
@@ -3991,15 +4002,6 @@ internal static partial class MapperExtractor
         return type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated;
     }
 
-    /// <summary>
-    ///     Returns true when <paramref name="type" /> carries a nullable annotation
-    ///     (either a nullable reference type or a nullable value type like <c>ImmutableArray&lt;T&gt;?</c>).
-    ///     Used for value-type struct nullable targets such as <c>ImmutableArray&lt;T&gt;?</c> (A2/A3).
-    /// </summary>
-    private static bool IsNullableAnnotated(ITypeSymbol type)
-    {
-        return type.NullableAnnotation == NullableAnnotation.Annotated;
-    }
 
     /// <summary>
     ///     True when a source member of this type may be null from the compiler's point of view — a
@@ -4162,12 +4164,6 @@ internal static partial class MapperExtractor
         var writable = new HashSet<string>(WritableMembers(type, compilation, allowNonPublic).Select(m => m.Name),
             StringComparer.Ordinal);
         return ReadableMembers(type, compilation, allowNonPublic).Where(m => !writable.Contains(m.Name));
-    }
-
-    private static bool HasAccessibleParameterlessCtor(INamedTypeSymbol type)
-    {
-        return type.InstanceConstructors.Any(c =>
-            c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
     }
 
     /// <summary>

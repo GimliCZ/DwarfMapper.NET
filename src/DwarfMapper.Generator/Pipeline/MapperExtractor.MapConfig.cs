@@ -28,6 +28,14 @@ internal static partial class MapperExtractor
         public readonly List<PairValue> Values = new();
         public readonly List<PairConstructor> Constructors = new();
         public readonly List<string> IgnoreSources = new();
+
+        /// <summary>
+        ///     Names of the convention methods that were read. They are never CALLED (the generator reads them
+        ///     syntactically), so a consumer with IDE0051-as-error would see them flagged as unused private
+        ///     members. The emitter references each one via <c>nameof</c> in the generated half so they count as
+        ///     used — the mapper's own compile-time config surface must not break the mapper's build.
+        /// </summary>
+        public readonly List<string> ConventionMethodNames = new();
     }
 
     /// <summary>Dotted member path from a selector lambda `p => p.A.B`, or null when it is not a pure
@@ -97,6 +105,10 @@ internal static partial class MapperExtractor
             var syntaxRef = method.DeclaringSyntaxReferences.FirstOrDefault();
             if (syntaxRef?.GetSyntax() is not MethodDeclarationSyntax decl) continue;
             var model = compilation.GetSemanticModel(decl.SyntaxTree);
+
+            // This is a genuine convention method — record it so the emitter can nameof-reference it (the
+            // generator reads it but never calls it, so IDE0051-as-error would otherwise flag it as unused).
+            result.ConventionMethodNames.Add(method.Name);
 
             foreach (var inv in decl.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
