@@ -470,6 +470,38 @@ public sealed class AssemblyScanTests
             "TargetKind value(s) with no test reference:\n" + string.Join("\n", missing));
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCAN 7 — Every descriptor has a prose section in docs/diagnostics.md
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Scan7_Every_descriptor_is_documented_in_diagnostics_md()
+    {
+        // The descriptor <-> AnalyzerReleases sync (Scan1) is machine-checked, but the human-facing docs are
+        // not: a new diagnostic can ship with a helpLinkUri pointing at a "#dwarfNNN" anchor that does not
+        // exist. Every id the IDE "learn more" link targets must resolve to a real section. Reserved/retired
+        // ids have no descriptor and need no section.
+        var docPath = Path.Combine(RepoRoot, "docs", "diagnostics.md");
+        Assert.True(File.Exists(docPath), $"docs/diagnostics.md not found at {docPath}");
+        var docText = File.ReadAllText(docPath);
+
+        // Sections are written lowercase, e.g. "## dwarf070"; ids are uppercase "DWARF070".
+        var documented = Regex.Matches(docText, @"(?im)^##\s+dwarf(\d{3})\b")
+            .Select(m => "DWARF" + m.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var undocumented = GetAllDescriptors()
+            .Select(d => d.Descriptor.Id)
+            .Where(id => !ReservedIds.Ids.Contains(id))
+            .Where(id => !documented.Contains(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(undocumented.Count == 0,
+            "Diagnostic(s) have no '## dwarfNNN' section in docs/diagnostics.md (the IDE 'learn more' link "
+            + "would 404):\n" + string.Join("\n", undocumented));
+    }
+
     private static Dictionary<string, ReleaseRow> ParseAnalyzerReleases()
     {
         var result = new Dictionary<string, ReleaseRow>(StringComparer.Ordinal);
