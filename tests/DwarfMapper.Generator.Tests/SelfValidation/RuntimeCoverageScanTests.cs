@@ -120,4 +120,27 @@ public sealed class RuntimeCoverageScanTests
             + string.Join(", ", missing)
             + ". Add a runtime test that maps under that strategy, or add it to RuntimeCoverageExempt.");
     }
+
+    // SCAN R3 — every public enum VALUE (not just the type) is exercised at runtime. R2 only proves the enum
+    // TYPE is named somewhere; a new value (e.g. a future NullStrategy.X) would ship "covered" by the type name
+    // with no behavioural test. This requires each value to appear as the qualified `EnumType.Value` in an
+    // integration test — the form a mapper option or assertion actually uses.
+    [Fact]
+    public void Every_public_enum_value_has_a_runtime_test()
+    {
+        var blob = IntegrationTestText.Value;
+        var missing = new List<string>();
+        foreach (var t in DwarfMapperAssembly.GetTypes().Where(t => t.IsPublic && t.IsEnum))
+        {
+            if (RuntimeCoverageExempt.EnumTypeNames.Contains(t.Name)) continue;
+            foreach (var v in Enum.GetNames(t))
+                if (!blob.Contains($"{t.Name}.{v}", StringComparison.Ordinal))
+                    missing.Add($"{t.Name}.{v}");
+        }
+
+        Assert.True(missing.Count == 0,
+            "Public enum VALUE(s) with NO runtime test in DwarfMapper.IntegrationTests (as qualified "
+            + "`EnumType.Value`):\n  " + string.Join("\n  ", missing.OrderBy(x => x, StringComparer.Ordinal))
+            + "\nAdd a runtime test that maps under that value.");
+    }
 }
