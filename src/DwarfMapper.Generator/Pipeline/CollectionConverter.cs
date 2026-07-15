@@ -107,6 +107,17 @@ internal static class CollectionConverter
             tgtElem = he!;
             targetKind = TargetKind.HashSet;
         }
+        // ── Concrete Queue<T> / Stack<T> ─────────────────────────────────────
+        else if (IsExactNamedType(tgt, "Queue", "System.Collections.Generic", 1, out var qe))
+        {
+            tgtElem = qe!;
+            targetKind = TargetKind.Queue;
+        }
+        else if (IsExactNamedType(tgt, "Stack", "System.Collections.Generic", 1, out var ske))
+        {
+            tgtElem = ske!;
+            targetKind = TargetKind.Stack;
+        }
         // ── IEnumerable<T> (LAZY target) ─────────────────────────────────────
         else if (IsIEnumerableT(tgt, out var ee))
         {
@@ -254,6 +265,8 @@ internal static class CollectionConverter
             TargetKind.Array => elemFq + "[]",
             TargetKind.List => "List<" + elemFq + ">",
             TargetKind.HashSet => "HashSet<" + elemFq + ">",
+            TargetKind.Queue => "Queue<" + elemFq + ">",
+            TargetKind.Stack => "Stack<" + elemFq + ">",
             TargetKind.IEnumerable => "IEnumerable<" + elemFq + ">",
             TargetKind.ICollection => "ICollection<" + elemFq + ">",
             TargetKind.IList => "IList<" + elemFq + ">",
@@ -347,6 +360,12 @@ internal static class CollectionConverter
             case TargetKind.IReadOnlySet:
                 EmitHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, srcType, identity, shape.NullAsNull,
                     threadCtx, registerBeforeFill);
+                break;
+
+            case TargetKind.Queue:
+            case TargetKind.Stack:
+                EmitStackQueue(sb, name, srcParamType, elemFq, item, shape.Target == TargetKind.Stack, identity,
+                    shape.NullAsNull, threadCtx);
                 break;
 
             case TargetKind.IEnumerable:
@@ -685,6 +704,51 @@ internal static class CollectionConverter
         sb.Append("    }\n");
     }
 
+    /// <summary>
+    ///     Emits a <c>Queue&lt;T&gt;</c> or <c>Stack&lt;T&gt;</c> target.
+    ///     <para>
+    ///     Ordering is chosen so that <b>enumerating the result yields the same sequence as the source</b> — the
+    ///     only round-trip-safe reading of "map this collection", and the reason these were previously refused
+    ///     (DWARF027) rather than silently reversed. <c>Queue&lt;T&gt;</c> is FIFO, so
+    ///     <c>new Queue&lt;T&gt;(seq)</c> already enumerates in source order. <c>Stack&lt;T&gt;</c> is LIFO:
+    ///     <c>new Stack&lt;T&gt;(seq)</c> makes the LAST element the top, which would reverse the enumeration, so
+    ///     the input is reversed first — <c>List → Stack → List</c> then round-trips to the original.
+    ///     </para>
+    /// </summary>
+    private static void EmitStackQueue(
+        StringBuilder sb, string name, string srcParamType, string elem,
+        string item, bool isStack, bool identity, bool nullAsNull, bool elemNeedsCtx)
+    {
+        var concrete = isStack ? "Stack" : "Queue";
+        var tgtFq = "global::System.Collections.Generic." + concrete + "<" + elem + ">";
+        var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
+        var emptyExpr = nullAsNull ? "null" : "new " + tgtFq + "()";
+        var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
+
+        sb.Append("    private ").Append(retFq).Append(' ').Append(name)
+            .Append('(').Append(srcParamType).Append(" src").Append(ctxParams).Append(")\n    {\n");
+        sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
+
+        // Materialize the mapped elements in SOURCE enumeration order.
+        string seq;
+        if (identity && !elemNeedsCtx)
+        {
+            seq = "src";
+        }
+        else
+        {
+            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem)
+                .Append(">();\n");
+            sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
+            seq = "__buf";
+        }
+
+        // Stack pushes in order, so reverse the input to keep the result's top-first enumeration == source order.
+        var ctorArg = isStack ? "global::System.Linq.Enumerable.Reverse(" + seq + ")" : seq;
+        sb.Append("        return new ").Append(tgtFq).Append('(').Append(ctorArg).Append(");\n");
+        sb.Append("    }\n");
+    }
+
     private static void EmitImmutableHashSet(
         StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
@@ -983,6 +1047,8 @@ internal static class CollectionConverter
         Array, // T[]            — projection-translatable
         List, // List<T>        — projection-translatable
         HashSet, // HashSet<T>     — NOT translatable
+        Queue, // Queue<T>       — NOT translatable; FIFO, enumeration order = source order
+        Stack, // Stack<T>       — NOT translatable; LIFO, built reversed so enumeration order = source order
 
         // ── Interface → List<T> ──────────────────────────────────────
         IEnumerable, // IEnumerable<T> — projection-translatable (LAZY)

@@ -438,7 +438,7 @@ internal static class SyntheticSchema
 
     private static string PickType(Random rng)
     {
-        var category = rng.Next(0, 30);
+        var category = rng.Next(0, 32);
 
         return category switch
         {
@@ -505,6 +505,11 @@ internal static class SyntheticSchema
                 4 => "FuzzEnumL?",
                 _ => "FuzzEnumL[]"
             },
+
+            // 30 → Queue<T>, 31 → Stack<T> (previously DWARF027-refused; now supported with enumeration-order
+            // preservation, so they must be fuzzed like any other supported collection target).
+            30 => $"global::System.Collections.Generic.Queue<{PickScalarElement(rng)}>",
+            31 => $"global::System.Collections.Generic.Stack<{PickScalarElement(rng)}>",
 
             // 26 → FuzzInner or FuzzInner[]
             _ => rng.Next(2) == 0 ? "FuzzInner" : "FuzzInner[]"
@@ -628,6 +633,8 @@ internal static class SyntheticSchema
 
         if (type.StartsWith("global::System.Collections.Generic.List<", StringComparison.Ordinal) ||
             type.StartsWith("global::System.Collections.Generic.HashSet<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.Queue<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.Stack<", StringComparison.Ordinal) ||
             type.StartsWith("global::System.Collections.Generic.Dictionary<", StringComparison.Ordinal))
             return " = new();";
 

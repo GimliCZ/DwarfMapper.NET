@@ -93,6 +93,8 @@ internal static class CombinatorialSchema
         "List",
         "IReadOnlyList",
         "HashSet",
+        "Queue",
+        "Stack",
         "ImmutableArray",
 
         // The rest of the supported System.* collection surface. The combinatorial tier previously covered
@@ -376,6 +378,8 @@ internal static class CombinatorialSchema
             "List" => $"global::System.Collections.Generic.List<{elem}>",
             "IReadOnlyList" => $"global::System.Collections.Generic.IReadOnlyList<{elem}>",
             "HashSet" => $"global::System.Collections.Generic.HashSet<{elem}>",
+            "Queue" => $"global::System.Collections.Generic.Queue<{elem}>",
+            "Stack" => $"global::System.Collections.Generic.Stack<{elem}>",
             "ImmutableArray" => $"global::System.Collections.Immutable.ImmutableArray<{elem}>",
 
             "IEnumerable" => $"global::System.Collections.Generic.IEnumerable<{elem}>",
@@ -502,6 +506,8 @@ internal static class CombinatorialSchema
 
         if (type.StartsWith("global::System.Collections.Generic.List<", StringComparison.Ordinal) ||
             type.StartsWith("global::System.Collections.Generic.HashSet<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.Queue<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.Stack<", StringComparison.Ordinal) ||
             type.StartsWith("global::System.Collections.Generic.Dictionary<", StringComparison.Ordinal))
             return " = new();";
         // Interface collection types: cannot use new() — use concrete List<T> or new()

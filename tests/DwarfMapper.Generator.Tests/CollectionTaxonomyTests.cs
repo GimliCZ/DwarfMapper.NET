@@ -61,30 +61,33 @@ public class Dwarf027Tests
                         """);
     }
 
+    // Queue<T> and Stack<T> were formerly refused (DWARF027) to avoid a silently-reversed Stack. They are now
+    // SUPPORTED with a defined, round-trip-safe ordering (enumeration order preserved) — see G25 /
+    // StackQueueRuntimeTests. These pin that they are no longer refused and compile cleanly.
     [Fact]
-    public void Queue_target_emits_DWARF027()
+    public void Queue_target_is_supported()
     {
-        Col.HasDwarf027("""
-                        using DwarfMapper;
-                        using System.Collections.Generic;
-                        namespace Demo;
-                        public class A { public System.Collections.Generic.List<int> Xs { get; set; } = new(); }
-                        public class B { public System.Collections.Generic.Queue<int> Xs { get; set; } = new(); }
-                        [DwarfMapper] public partial class M { public partial B Map(A a); }
-                        """);
+        Col.NoErrors("""
+                     using DwarfMapper;
+                     using System.Collections.Generic;
+                     namespace Demo;
+                     public class A { public System.Collections.Generic.List<int> Xs { get; set; } = new(); }
+                     public class B { public System.Collections.Generic.Queue<int> Xs { get; set; } = new(); }
+                     [DwarfMapper] public partial class M { public partial B Map(A a); }
+                     """);
     }
 
     [Fact]
-    public void Stack_target_emits_DWARF027()
+    public void Stack_target_is_supported()
     {
-        Col.HasDwarf027("""
-                        using DwarfMapper;
-                        using System.Collections.Generic;
-                        namespace Demo;
-                        public class A { public System.Collections.Generic.List<int> Xs { get; set; } = new(); }
-                        public class B { public System.Collections.Generic.Stack<int> Xs { get; set; } = new(); }
-                        [DwarfMapper] public partial class M { public partial B Map(A a); }
-                        """);
+        Col.NoErrors("""
+                     using DwarfMapper;
+                     using System.Collections.Generic;
+                     namespace Demo;
+                     public class A { public System.Collections.Generic.List<int> Xs { get; set; } = new(); }
+                     public class B { public System.Collections.Generic.Stack<int> Xs { get; set; } = new(); }
+                     [DwarfMapper] public partial class M { public partial B Map(A a); }
+                     """);
     }
 
     [Fact]

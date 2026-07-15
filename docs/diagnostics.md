@@ -214,7 +214,12 @@ map to a different type.
 **Unsupported collection/dictionary target type** · Error
 
 The collection/dictionary target type isn't supported. **Fix:** use a supported target (`T[]`, `List<T>`,
-`HashSet<T>`, `Dictionary<K,V>`), supply `[MapProperty(Use = ...)]`, or map it manually.
+`HashSet<T>`, `Queue<T>`, `Stack<T>`, `Dictionary<K,V>`, the collection interfaces, and the immutable family),
+supply `[MapProperty(Use = ...)]`, or map it manually.
+
+> `Queue<T>` and `Stack<T>` map with their enumeration order preserved (mapping a sequence keeps the sequence).
+> `Queue<T>` is FIFO so this is natural; `Stack<T>` is LIFO, so the source is reversed on construction — which
+> means `List → Stack → List` round-trips to the original order, rather than silently reversing.
 
 ## dwarf028
 **Projection member cannot be translated to a database query** · Error
