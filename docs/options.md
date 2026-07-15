@@ -10,7 +10,7 @@ mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe,
 |---|---|---|---|
 | `CaseInsensitive` | `bool` | `false` | Match member names ordinal-ignore-case. Ambiguity → `DWARF010`. |
 | `NameConvention` | `NameConvention` | `Exact` | `Flexible` matches across `PascalCase` ↔ `camelCase` ↔ `snake_case` ↔ `UPPER_CASE`. Collision → `DWARF048`. |
-| `EnumStrategy` | `EnumStrategy` | `ByName` | Enum↔enum mapping by member name (`ByName`) or underlying value (`ByValue`). Missing by-name member → `DWARF015`. |
+| `EnumStrategy` | `EnumStrategy` | `ByName` | Enum↔enum mapping by member name (`ByName`) or underlying value (`ByValue`). Missing by-name member → `DWARF015`. For enum↔**string**, a member's `[EnumMember(Value="…")]` (else `[Description("…")]`, else its identifier) is used as the string form — so `InProgress` can serialize as `"in_progress"` with no custom converter. Non-`[Flags]` enums only. |
 | `NullStrategy` | `NullStrategy` | `Throw` | Nullable-value source → non-nullable target when null: `Throw`, or `SetDefault` (use the destination default). |
 | `NullCollections` | `NullCollectionStrategy` | `AsEmpty` | Null source collection → `AsEmpty` (never throws) or `AsNull` (propagates null **only** when the target member is nullable — a nullable reference or a nullable value-type collection like `ImmutableArray<T>?`; a non-nullable target silently degrades to `AsEmpty`). |
 | `AutoNest` | `bool` | `true` | Auto-synthesize a private mapper for a nested `(S,T)` pair with no declared method. `false` requires explicit declarations. |

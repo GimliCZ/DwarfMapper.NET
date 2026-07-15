@@ -289,11 +289,54 @@ internal static class EnumConverter
         return sb.ToString();
     }
 
+    /// <summary>
+    ///     The STRING form of an enum member for enum↔string mapping: <c>[EnumMember(Value = "…")]</c> wins,
+    ///     then <c>[Description("…")]</c>, else the C# member name. Lets an enum expose a serialization/display
+    ///     name that differs from its identifier (<c>InProgress → "in_progress"</c>) without a custom converter.
+    ///     <para>
+    ///     Applies to NON-flags enums only; a <c>[Flags]</c> enum keeps member-name semantics in both directions
+    ///     (its string form is a comma-joined list that <c>Enum.ToString</c> builds from identifiers).
+    ///     </para>
+    /// </summary>
+    private static string SerializedName(IFieldSymbol member)
+    {
+        foreach (var attribute in member.GetAttributes())
+        {
+            var cls = attribute.AttributeClass;
+            if (cls is { Name: "EnumMemberAttribute" }
+                && cls.ContainingNamespace?.ToDisplayString() == "System.Runtime.Serialization")
+                foreach (var na in attribute.NamedArguments)
+                    if (na.Key == "Value" && na.Value.Value is string v)
+                        return v;
+        }
+
+        foreach (var attribute in member.GetAttributes())
+        {
+            var cls = attribute.AttributeClass;
+            if (cls is { Name: "DescriptionAttribute" }
+                && cls.ContainingNamespace?.ToDisplayString() == "System.ComponentModel"
+                && attribute.ConstructorArguments.Length == 1
+                && attribute.ConstructorArguments[0].Value is string d)
+                return d;
+        }
+
+        return member.Name;
+    }
+
+    /// <summary>Escapes a serialized name for emission as a C# string literal.</summary>
+    private static string Escape(string s)
+    {
+        return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+
     private static string AddEnumToString(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol src)
     {
         var name = GeneratedNames.EnumToStr + Sanitize(src) + "_" + Hash("EnumStr|" + Fq(src));
         if (!synth.ContainsKey(name))
         {
+            // A [Flags] enum keeps Enum.ToString() (comma-joined identifiers) for combined values;
+            // [EnumMember]/[Description] custom names apply to non-flags enums only.
+            var flags = IsFlagsEnum(src);
             var sb = new StringBuilder();
             sb.Append("    private static string ").Append(name).Append('(').Append(Fq(src))
                 .Append(" v) => v switch\n    {\n");
@@ -301,8 +344,9 @@ internal static class EnumConverter
             foreach (var m in EnumMembers(src))
             {
                 if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue)) continue;
-                sb.Append("        ").Append(Fq(src)).Append('.').Append(m.Name).Append(" => \"").Append(m.Name)
-                    .Append("\",\n");
+                var text = flags ? m.Name : SerializedName(m);
+                sb.Append("        ").Append(Fq(src)).Append('.').Append(m.Name).Append(" => \"")
+                    .Append(Escape(text)).Append("\",\n");
             }
 
             sb.Append("        _ => v.ToString(),\n    };\n");
@@ -327,9 +371,17 @@ internal static class EnumConverter
         var sb = new StringBuilder();
         sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
             .Append("(string v) => v switch\n    {\n");
+        // Match on the serialized name ([EnumMember]/[Description] or the identifier). De-dup by that name so a
+        // duplicated [EnumMember(Value=…)] cannot emit two identical case labels (CS0152) — first member wins.
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var m in EnumMembers(tgt))
-            sb.Append("        \"").Append(m.Name).Append("\" => ").Append(Fq(tgt)).Append('.').Append(m.Name)
+        {
+            var text = SerializedName(m);
+            if (!seenNames.Add(text)) continue;
+            sb.Append("        \"").Append(Escape(text)).Append("\" => ").Append(Fq(tgt)).Append('.').Append(m.Name)
                 .Append(",\n");
+        }
+
         sb.Append(
             "        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),\n    };\n");
         return sb.ToString();
