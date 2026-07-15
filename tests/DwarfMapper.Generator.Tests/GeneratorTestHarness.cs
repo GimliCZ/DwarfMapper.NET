@@ -28,6 +28,11 @@ internal static class GeneratorTestHarness
             .Append(MetadataReference.CreateFromFile(typeof(RoundTrip).Assembly.Location))
             .Append(MetadataReference.CreateFromFile(typeof(Queryable).Assembly.Location))
             .Append(MetadataReference.CreateFromFile(typeof(IServiceCollection).Assembly.Location))
+            // System.Collections.Specialized is type-forwarded and not loaded by default, so a test source that
+            // names NameValueCollection/OrderedDictionary would otherwise hit CS1069 (missing reference) rather
+            // than exercising the generator. Reference it explicitly so those legacy System.* members compile.
+            .Append(MetadataReference.CreateFromFile(
+                typeof(System.Collections.Specialized.NameValueCollection).Assembly.Location))
             .ToArray());
 
     public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(string source,

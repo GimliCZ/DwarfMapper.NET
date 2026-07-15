@@ -145,7 +145,6 @@ public sealed class AssemblyScanTests
             .Select(f => Path.GetFileName(f)!)
             .Select(name => name[..^suffix.Length]) // strip ".verified.txt"
             .Select(stem => stem.Split('.').Last()) // "Class.Method" → "Method"
-            .Select(method => method.Split('_')[0] == method ? method : method) // keep full method name
             .Where(method => !testText.Contains(method, StringComparison.Ordinal))
             .Distinct()
             .OrderBy(m => m, StringComparer.Ordinal)
@@ -426,14 +425,19 @@ public sealed class AssemblyScanTests
             .Where(t => t.IsPublic && t.IsEnum)
             .ToList();
 
+        // Match the QUALIFIED form `EnumType.Value`, not the bare value name. A bare `Contains("Throw")`
+        // passes vacuously off any `Assert.Throws`, `Contains("None")` off any unrelated `None`, etc. — the
+        // gate would give false assurance for common-word values. Requiring `NullStrategy.Throw` proves the
+        // value is actually referenced as that enum member.
         var missing = new List<string>();
         foreach (var enumType in publicEnums)
         foreach (var valueName in Enum.GetNames(enumType))
-            if (!testText.Contains(valueName, StringComparison.Ordinal))
+            if (!testText.Contains($"{enumType.Name}.{valueName}", StringComparison.Ordinal))
                 missing.Add($"{enumType.Name}.{valueName}");
 
         Assert.True(missing.Count == 0,
-            "Public enum value(s) with no test reference:\n" + string.Join("\n", missing));
+            "Public enum value(s) with no test reference (as the qualified `EnumType.Value`):\n"
+            + string.Join("\n", missing));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

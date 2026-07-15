@@ -328,14 +328,16 @@ public sealed class TestTheTestsScanTests
             .Where(t => t.IsPublic && t.IsEnum)
             .ToList();
 
+        // Qualified `EnumType.Value`, not the bare value name — a bare Contains("Throw"/"None"/"Exact") passes
+        // vacuously off unrelated text, so the gate would falsely report common-word values as covered.
         var missing = new List<string>();
         foreach (var enumType in publicEnums)
         foreach (var valueName in Enum.GetNames(enumType))
-            if (!combinedText.Contains(valueName, StringComparison.Ordinal))
+            if (!combinedText.Contains($"{enumType.Name}.{valueName}", StringComparison.Ordinal))
                 missing.Add($"{enumType.Name}.{valueName}");
 
         Assert.True(missing.Count == 0,
-            "Public enum value(s) with no coverage in the FIM or any test file:\n" +
+            "Public enum value(s) with no coverage in the FIM or any test file (as qualified `EnumType.Value`):\n" +
             string.Join("\n", missing.Select(m => "  " + m)) +
             "\nFix: add a matrix case or test that uses the missing value.");
     }

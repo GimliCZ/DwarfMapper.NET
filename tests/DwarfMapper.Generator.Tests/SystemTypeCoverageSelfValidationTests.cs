@@ -66,6 +66,13 @@ public class SystemTypeCoverageSelfValidationTests
         "global::System.Collections.Generic.SortedDictionary<int, string>",
         "global::System.Collections.Generic.SortedList<int, string>",
 
+        // ── System.Collections.ObjectModel (all IEnumerable → must be refused, DWARF027) ────────
+        "global::System.Collections.ObjectModel.Collection<int>",
+        "global::System.Collections.ObjectModel.ReadOnlyCollection<int>",
+        "global::System.Collections.ObjectModel.ObservableCollection<int>",
+        "global::System.Collections.ObjectModel.ReadOnlyObservableCollection<int>",
+        "global::System.Collections.ObjectModel.ReadOnlyDictionary<int, string>",
+
         // ── System.Collections.Immutable ───────────────────────────────────────
         "global::System.Collections.Immutable.ImmutableArray<int>",
         "global::System.Collections.Immutable.ImmutableList<int>",
@@ -75,18 +82,39 @@ public class SystemTypeCoverageSelfValidationTests
         "global::System.Collections.Immutable.ImmutableSortedSet<int>",
         "global::System.Collections.Immutable.ImmutableDictionary<int, string>",
         "global::System.Collections.Immutable.IImmutableDictionary<int, string>",
+        "global::System.Collections.Immutable.ImmutableSortedDictionary<int, string>",
         "global::System.Collections.Immutable.ImmutableQueue<int>",
+        "global::System.Collections.Immutable.IImmutableQueue<int>",
         "global::System.Collections.Immutable.ImmutableStack<int>",
+        "global::System.Collections.Immutable.IImmutableStack<int>",
 
         // ── System.Collections.Concurrent ──────────────────────────────────────
         "global::System.Collections.Concurrent.ConcurrentBag<int>",
         "global::System.Collections.Concurrent.ConcurrentQueue<int>",
         "global::System.Collections.Concurrent.ConcurrentStack<int>",
         "global::System.Collections.Concurrent.ConcurrentDictionary<int, string>",
+        "global::System.Collections.Concurrent.BlockingCollection<int>",
+
+        // ── System.Collections + System.Collections.Specialized (non-generic; IEnumerable → refuse) ──
+        "global::System.Collections.ArrayList",
+        "global::System.Collections.Hashtable",
+        "global::System.Collections.BitArray",
+        "global::System.Collections.Specialized.NameValueCollection",
+        "global::System.Collections.Specialized.OrderedDictionary",
 
         // ── System.Collections.Frozen ──────────────────────────────────────────
         "global::System.Collections.Frozen.FrozenSet<int>",
         "global::System.Collections.Frozen.FrozenDictionary<int, string>",
+
+        // ── Tuples / pairs / Nullable / Lazy — NOT IEnumerable, so they identity-assign and COMPILE
+        // today. The docstring warns about exactly this blind spot: a future change routing same-type
+        // members through nested-object mapping instead of identity assignment would silently break them,
+        // and only a test that exercises them would notice.
+        "global::System.Collections.Generic.KeyValuePair<int, string>",
+        "global::System.Tuple<int, string>",
+        "(int, string)",
+        "int?",
+        "global::System.Lazy<int>",
 
         // ── The memory apparatus ───────────────────────────────────────────────
         "global::System.Memory<int>",
