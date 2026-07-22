@@ -111,6 +111,21 @@ internal static class GoldenCorpus
                                     [DwarfMapper(EnumStrategy = EnumStrategy.ByName)] public partial class M { public partial B Map(A a); }
                                     """, "DwarfGenerator");
 
+        // Non-default EnumStrategy: EnumStrategy.ByName is the documented default, so EnumByName above would
+        // emit byte-identical output even if attribute reading were completely broken. Source/destination
+        // members are deliberately named differently (A/B vs X/Y, same underlying values) so that if the
+        // strategy were NOT actually wired to ByValue and fell back to ByName, the by-name completeness check
+        // would report DWARF015 as a build error — a broken wiring is caught even before the marker check runs.
+        yield return ("EnumByValue", """
+                                     using DwarfMapper;
+                                     namespace Demo;
+                                     public enum SrcCode { A = 1, B = 2 }
+                                     public enum DstCode { X = 1, Y = 2 }
+                                     public class Src { public SrcCode C { get; set; } }
+                                     public class Dst { public DstCode C { get; set; } }
+                                     [DwarfMapper(EnumStrategy = EnumStrategy.ByValue)] public partial class M { public partial Dst Map(Src a); }
+                                     """, "DwarfGenerator");
+
         yield return ("FlagsEnumFromString", """
                                              using DwarfMapper;
                                              using System;
@@ -128,6 +143,18 @@ internal static class GoldenCorpus
                                            public class B { public int V { get; set; } }
                                            [DwarfMapper(NullStrategy = NullStrategy.Throw)] public partial class M { public partial B Map(A a); }
                                            """, "DwarfGenerator");
+
+        // Non-default NullStrategy: NullStrategy.Throw is the documented default, so NullStrategyThrow above
+        // would emit byte-identical output even if attribute reading were completely broken. This case pins
+        // the SetDefault codegen shape (.GetValueOrDefault()), which only fires when the strategy is actually
+        // read off the attribute.
+        yield return ("NullStrategySetDefault", """
+                                                using DwarfMapper;
+                                                namespace Demo;
+                                                public class A { public int? V { get; set; } }
+                                                public class B { public int V { get; set; } }
+                                                [DwarfMapper(NullStrategy = NullStrategy.SetDefault)] public partial class M { public partial B Map(A a); }
+                                                """, "DwarfGenerator");
 
         yield return ("PreserveReferences", """
                                             using DwarfMapper;
