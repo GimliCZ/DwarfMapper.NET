@@ -118,4 +118,34 @@ public class AttributeContractTests
         Assert.True(u.AllowMultiple);
         Assert.Equal(AttributeTargets.Class, u.ValidOn);
     }
+
+    // ISSUE-014 — the attribute gates compared `ContainingNamespace?.Name` against "DwarfMapper".
+    // INamespaceSymbol.Name is the LAST SEGMENT only, so a user's own `Acme.DwarfMapper` namespace satisfied the
+    // check and a same-named user attribute was treated as one of ours. Now compared against the full display
+    // string. Here `Acme.DwarfMapper.GenerateMap<,>` must NOT be picked up as a mapping directive.
+    [Fact]
+    public void A_user_attribute_in_a_namespace_ending_in_DwarfMapper_is_not_mistaken_for_ours()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Acme.DwarfMapper
+                         {
+                             [System.AttributeUsage(System.AttributeTargets.Class, AllowMultiple = true)]
+                             public sealed class GenerateMapAttribute<TSource, TTarget> : System.Attribute { }
+                         }
+                         namespace Demo
+                         {
+                             public class Src { public int A { get; set; } }
+                             public class Dst { public int A { get; set; } }
+
+                             [global::DwarfMapper.DwarfMapper]
+                             [Acme.DwarfMapper.GenerateMap<Src, Dst>]
+                             public partial class M { }
+                         }
+                         """;
+        var (_, generated) = GeneratorTestHarness.Run(s);
+
+        // The foreign attribute must not produce a Src->Dst map.
+        Assert.DoesNotContain("Dst Map(", generated, StringComparison.Ordinal);
+    }
 }

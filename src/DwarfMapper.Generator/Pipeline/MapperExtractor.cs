@@ -982,7 +982,7 @@ internal static partial class MapperExtractor
         {
             if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac
                 && ac.TypeArguments.Length == 2
-                && ac.ContainingNamespace?.Name == KnownNames.Ns
+                && ac.ContainingNamespace?.ToDisplayString() == KnownNames.Ns
                 && ac.TypeArguments[1] is INamedTypeSymbol gt)
                 genPairs.Add((ac.TypeArguments[0], gt));
         }
@@ -1182,14 +1182,12 @@ internal static partial class MapperExtractor
 
             // C3: use the first declared method's location as the diagnostic anchor for
             // nested diagnostics (not null, so DWARF030 has a non-null location).
+            // ISSUE-012: the loop that used to sit here scanned `methods` for the first partial one and then
+            // `break`-ed out of a comment-only body, discarding the index and never assigning nestedLocation —
+            // dead code that only implied a location was being computed. The method model does not carry a
+            // LocationInfo, so null is the actual contract here (DWARF030 only requires non-null at its own
+            // emission site).
             LocationInfo? nestedLocation = null;
-            for (var mi = 0; mi < methods.Count; mi++)
-                if (methods[mi].IsPartial)
-                    // We don't have the original method symbol here, but we can use
-                    // a null location — the requirement is only for DWARF030 to be non-null.
-                    // For DWARF001/005/007, the path prefix is more important than location.
-                    // (LocationInfo from method model is not stored; use null per existing contract.)
-                    break;
 
             // Choose construction strategy for the nested target type.
             var nestedCtor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, nestedTgt, diagnostics,
@@ -5830,7 +5828,7 @@ internal static partial class MapperExtractor
         {
             var ac = attr.AttributeClass;
             if (ac is null || ac.Name != KnownNames.MapConstructor || ac.TypeArguments.Length != 2
-                || ac.ContainingNamespace?.Name != KnownNames.Ns)
+                || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
                 continue;
             if (attr.ConstructorArguments.Length != 1 ||
                 attr.ConstructorArguments[0].Value is not string method) continue;
@@ -5879,7 +5877,7 @@ internal static partial class MapperExtractor
         {
             var ac = attr.AttributeClass;
             if (ac is null || ac.Name != KnownNames.MapProperty || ac.TypeArguments.Length != 2
-                || ac.ContainingNamespace?.Name != KnownNames.Ns)
+                || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
                 continue;
             if (attr.ConstructorArguments.Length != 2
                 || attr.ConstructorArguments[0].Value is not string src
@@ -5928,7 +5926,7 @@ internal static partial class MapperExtractor
         {
             var ac = attr.AttributeClass;
             if (ac is null || ac.Name != KnownNames.MapIgnore || ac.TypeArguments.Length != 1
-                || ac.ContainingNamespace?.Name != KnownNames.Ns)
+                || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
                 continue;
             if (attr.ConstructorArguments.Length != 1 ||
                 attr.ConstructorArguments[0].Value is not string member) continue;
@@ -5987,7 +5985,7 @@ internal static partial class MapperExtractor
         {
             var ac = attr.AttributeClass;
             if (ac is null || ac.Name != KnownNames.MapValue || ac.TypeArguments.Length != 1
-                || ac.ContainingNamespace?.Name != KnownNames.Ns)
+                || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
                 continue;
             if (attr.ConstructorArguments.Length == 0 ||
                 attr.ConstructorArguments[0].Value is not string target) continue;
@@ -7041,7 +7039,7 @@ internal static partial class MapperExtractor
         foreach (var attr in classSymbol.GetAttributes())
         {
             if (attr.AttributeClass is not { Name: KnownNames.GenerateWrapperMap }
-                || attr.AttributeClass.ContainingNamespace?.Name != KnownNames.Ns
+                || attr.AttributeClass.ContainingNamespace?.ToDisplayString() != KnownNames.Ns
                 || attr.ConstructorArguments.Length != 1
                 || attr.ConstructorArguments[0].Value is not INamedTypeSymbol wrapperArg)
                 continue;
