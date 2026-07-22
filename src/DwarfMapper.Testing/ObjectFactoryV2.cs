@@ -21,6 +21,48 @@ public static class ObjectFactoryV2
 {
     private const int DefaultMaxDepth = 6;
 
+    /// <summary>
+    ///     Probability that a nullable member comes back as <c>null</c>.
+    ///     <para>
+    ///     The factory used to unwrap <c>Nullable&lt;T&gt;</c> to <c>T</c> and always return a value, and never
+    ///     returned a null reference either — so the fuzz suites drove the mapper exclusively with fully
+    ///     populated graphs, and NONE of the null machinery (NullStrategy, NullSubstitute/DWARF049,
+    ///     nullable→non-nullable/DWARF070, SkipNullSourceMembers, nullAsNull, null-propagation in synthesized
+    ///     nested helpers) was ever exercised by a fuzzer. Null handling is exactly where subtle mapping bugs
+    ///     live, so that was the single largest blind spot in the suite.
+    ///     </para>
+    /// </summary>
+    public const double NullProbability = 0.15;
+
+    /// <summary>
+    ///     Probability that a numeric/char/string draw returns a boundary value (0, MinValue, MaxValue, -1, 1,
+    ///     empty/whitespace) instead of a "comfortable" one. Every integral draw used to be
+    ///     <c>rng.Next(1, MaxValue)</c> — never zero, never negative, never at a limit — so the narrowing and
+    ///     sign-conversion machinery (CreateChecked/H4) was only ever probed by <c>long</c>'s 1-in-4 escape.
+    /// </summary>
+    public const double EdgeProbability = 0.25;
+
+    /// <summary>Picks one of <paramref name="edges" /> with <see cref="EdgeProbability" />, else <paramref name="normal" />.</summary>
+    private static object EdgeOr(Random rng, Func<object> normal, params object[] edges)
+    {
+        return rng.NextDouble() < EdgeProbability ? edges[rng.Next(edges.Length)] : normal();
+    }
+
+    /// <summary>
+    ///     Element/member count for a generated collection. Empty (0) is drawn at any depth so the
+    ///     empty-collection paths (nullCollections AsEmpty/AsNull, the unknown-count buffer) get exercised; the
+    ///     LARGE draw is restricted to depth 0 because a large fan-out repeated at every nesting level would
+    ///     explode combinatorially (16^6) and make the fuzz suite unusable.
+    /// </summary>
+    private static int NextCollectionSize(Random rng, int depth)
+    {
+        if (depth >= DefaultMaxDepth) return 0;
+        var roll = rng.NextDouble();
+        if (roll < 0.15) return 0;
+        if (roll < 0.25 && depth == 0) return rng.Next(8, 17);
+        return rng.Next(1, 4);
+    }
+
     // ── Public entry points ──────────────────────────────────────────────────────
 
     /// <summary>Create a populated instance of <typeparamref name="T" /> for the given seed.</summary>
@@ -39,35 +81,74 @@ public static class ObjectFactoryV2
     /// </summary>
     public static object? Create(Type type, Random rng, int depth)
     {
+        return Create(type, rng, depth, true);
+    }
+
+    /// <summary>
+    ///     Create a populated instance of <paramref name="type" />, optionally allowing <c>null</c>.
+    /// </summary>
+    /// <param name="type">The type to materialise.</param>
+    /// <param name="rng">Seeded random source; the same seed always produces the same value.</param>
+    /// <param name="depth">Current nesting depth; recursion stops at the depth cap.</param>
+    /// <param name="allowNull">
+    ///     When false, never returns null. Used for positions where null is not a legal value regardless of the
+    ///     mapping contract — dictionary KEYS (a null key throws) and graph-fixture roots.
+    /// </param>
+    /// <returns>A populated instance, or <c>null</c> when a nullable position was drawn as null.</returns>
+    public static object? Create(Type type, Random rng, int depth, bool allowNull)
+    {
         if (rng is null) throw new ArgumentNullException(nameof(rng));
         if (type is null) throw new ArgumentNullException(nameof(type));
 
-        // Nullable<T> → unwrap and recurse
+        // Nullable<T> → sometimes null, else unwrap and recurse. Nullable<T> may be null at ANY depth
+        // (including a root `Create(typeof(int?), …)`), since that is the whole point of the type.
         var underlying = Nullable.GetUnderlyingType(type);
         if (underlying is not null)
-            return Create(underlying, rng, depth);
+            return allowNull && rng.NextDouble() < NullProbability ? null : Create(underlying, rng, depth);
+
+        // Reference types: sometimes null, but only BELOW the root — callers materialise roots with `!` and a
+        // null root would just be a broken fixture rather than an interesting input.
+        if (!type.IsValueType && depth > 0 && allowNull && rng.NextDouble() < NullProbability)
+            return null;
 
         // ── Scalars ──────────────────────────────────────────────────────────
         if (type == typeof(string))
-            return "s" + rng.Next(0, 1_000_000).ToString(CultureInfo.InvariantCulture);
+            return EdgeOr(rng,
+                () => "s" + rng.Next(0, 1_000_000).ToString(CultureInfo.InvariantCulture),
+                "", " ", "\t");
         if (type == typeof(bool)) return rng.Next(0, 2) == 1;
-        if (type == typeof(byte)) return (byte)rng.Next(1, 256);
-        if (type == typeof(sbyte)) return (sbyte)rng.Next(1, 127);
-        if (type == typeof(short)) return (short)rng.Next(1, short.MaxValue);
-        if (type == typeof(ushort)) return (ushort)rng.Next(1, ushort.MaxValue);
-        if (type == typeof(int)) return rng.Next(1, int.MaxValue);
-        if (type == typeof(uint)) return (uint)rng.Next(1, int.MaxValue);
+        if (type == typeof(byte))
+            return EdgeOr(rng, () => (byte)rng.Next(1, 256), (byte)0, byte.MinValue, byte.MaxValue, (byte)1);
+        if (type == typeof(sbyte))
+            return EdgeOr(rng, () => (sbyte)rng.Next(1, 127),
+                (sbyte)0, sbyte.MinValue, sbyte.MaxValue, (sbyte)-1, (sbyte)1);
+        if (type == typeof(short))
+            return EdgeOr(rng, () => (short)rng.Next(1, short.MaxValue),
+                (short)0, short.MinValue, short.MaxValue, (short)-1, (short)1);
+        if (type == typeof(ushort))
+            return EdgeOr(rng, () => (ushort)rng.Next(1, ushort.MaxValue),
+                (ushort)0, ushort.MinValue, ushort.MaxValue, (ushort)1);
+        if (type == typeof(int))
+            return EdgeOr(rng, () => rng.Next(1, int.MaxValue), 0, int.MinValue, int.MaxValue, -1, 1);
+        if (type == typeof(uint))
+            return EdgeOr(rng, () => (uint)rng.Next(1, int.MaxValue), 0u, uint.MinValue, uint.MaxValue, 1u);
         // C9: occasionally emit out-of-int-range long values so the long→int CreateChecked
-        // overflow path is exercised. 1-in-4 chance.
+        // overflow path is exercised.
         if (type == typeof(long))
-            return rng.Next(0, 4) == 0
-                ? rng.NextInt64(long.MinValue, long.MaxValue)
-                : rng.Next(1, int.MaxValue);
-        if (type == typeof(ulong)) return (ulong)rng.Next(1, int.MaxValue);
-        if (type == typeof(float)) return (float)(rng.NextDouble() * 1000);
-        if (type == typeof(double)) return rng.NextDouble() * 1000;
-        if (type == typeof(decimal)) return (decimal)(rng.NextDouble() * 1000);
-        if (type == typeof(char)) return (char)rng.Next('A', 'Z' + 1);
+            return EdgeOr(rng,
+                () => rng.Next(0, 4) == 0 ? rng.NextInt64(long.MinValue, long.MaxValue) : rng.Next(1, int.MaxValue),
+                0L, long.MinValue, long.MaxValue, -1L, 1L);
+        if (type == typeof(ulong))
+            return EdgeOr(rng, () => (ulong)rng.Next(1, int.MaxValue), 0ul, ulong.MinValue, ulong.MaxValue, 1ul);
+        if (type == typeof(float))
+            return EdgeOr(rng, () => (float)(rng.NextDouble() * 1000), 0f, -1f, 1f, float.MinValue, float.MaxValue);
+        if (type == typeof(double))
+            return EdgeOr(rng, () => rng.NextDouble() * 1000, 0d, -1d, 1d, double.MinValue, double.MaxValue);
+        if (type == typeof(decimal))
+            return EdgeOr(rng, () => (decimal)(rng.NextDouble() * 1000),
+                0m, -1m, 1m, decimal.MinValue, decimal.MaxValue);
+        if (type == typeof(char))
+            return EdgeOr(rng, () => (char)rng.Next('A', 'Z' + 1), '\0', char.MinValue, char.MaxValue);
         if (type == typeof(Guid))
         {
             var b = new byte[16];
@@ -93,7 +174,7 @@ public static class ObjectFactoryV2
         if (type.IsArray)
         {
             var elemType = type.GetElementType()!;
-            var n = depth >= DefaultMaxDepth ? 0 : rng.Next(1, 4);
+            var n = NextCollectionSize(rng, depth);
             var array = Array.CreateInstance(elemType, n);
             for (var i = 0; i < n; i++)
                 array.SetValue(Create(elemType, rng, depth + 1), i);
@@ -280,7 +361,7 @@ public static class ObjectFactoryV2
 
     /// <summary>
     ///     Build the owner graph fixture A→B, B⇄C, C⇄D, B⇄D using four types.
-    ///     Each type is constructed via <see cref="Create" />; then back-edges are wired.
+    ///     Each type is constructed via <see cref="Create(Type, Random, int)" />; then back-edges are wired.
     ///     Returns (a, b, c, d).
     /// </summary>
     public static (object A, object B, object C, object D) MakeOwnerGraph(
@@ -342,7 +423,7 @@ public static class ObjectFactoryV2
     {
         var listType = typeof(List<>).MakeGenericType(elemType);
         var list = (IList)Activator.CreateInstance(listType)!;
-        var n = depth >= DefaultMaxDepth ? 0 : rng.Next(1, 4);
+        var n = NextCollectionSize(rng, depth);
         for (var i = 0; i < n; i++)
             list.Add(Create(elemType, rng, depth + 1));
         return list;
@@ -353,7 +434,7 @@ public static class ObjectFactoryV2
         var setType = typeof(HashSet<>).MakeGenericType(elemType);
         var add = setType.GetMethod("Add")!;
         var set = Activator.CreateInstance(setType)!;
-        var n = depth >= DefaultMaxDepth ? 0 : rng.Next(1, 4);
+        var n = NextCollectionSize(rng, depth);
         for (var i = 0; i < n; i++)
             add.Invoke(set, new[] { Create(elemType, rng, depth + 1) });
         return set;
@@ -367,7 +448,7 @@ public static class ObjectFactoryV2
         var seen = new HashSet<object>();
         for (var i = 0; i < n; i++)
         {
-            var key = Create(keyType, rng, depth + 1);
+            var key = Create(keyType, rng, depth + 1, false); // a null dictionary key throws
             if (key is null || seen.Contains(key)) continue;
             seen.Add(key);
             var val = Create(valType, rng, depth + 1);
@@ -377,7 +458,7 @@ public static class ObjectFactoryV2
         // Guarantee at least one entry for non-depth-capped cases
         if (dict.Count == 0 && depth < DefaultMaxDepth)
         {
-            var key = Create(keyType, rng, depth + 1);
+            var key = Create(keyType, rng, depth + 1, false); // a null dictionary key throws
             if (key is not null)
                 dict[key] = Create(valType, rng, depth + 1);
         }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -306,8 +307,11 @@ public static class GraphOracleComparer
         // IEnumerable (including arrays, lists, sets, dicts)
         if (expected is IEnumerable ee && actual is IEnumerable ae)
         {
-            var el = ToSortedList(ee);
-            var al = ToSortedList(ae);
+            // Order matters only when BOTH sides are ordered; if either is a set/dict its iteration order is
+            // unspecified, so both get sorted (see ToComparableList).
+            var unordered = IsUnorderedCollection(ee) || IsUnorderedCollection(ae);
+            var el = ToComparableList(ee, unordered);
+            var al = ToComparableList(ae, unordered);
             if (el.Count != al.Count)
                 diffs.Add(path + ".Count: expected " + el.Count.ToString(CultureInfo.InvariantCulture) + ", actual " +
                           al.Count.ToString(CultureInfo.InvariantCulture));
@@ -424,6 +428,22 @@ public static class GraphOracleComparer
     // Implementation — cross-type compare
     // ─────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>True for an enumerable with no elements (a string is a value, not an empty collection).</summary>
+    private static bool IsEmptyEnumerable(IEnumerable e)
+    {
+        if (e is string) return false;
+        if (e is ICollection c) return c.Count == 0;
+        var it = e.GetEnumerator();
+        try
+        {
+            return !it.MoveNext();
+        }
+        finally
+        {
+            (it as IDisposable)?.Dispose();
+        }
+    }
+
     private static void CrossTypeCompare(
         string path, object? expected, Type? expectedType,
         object? actual, Type? actualType,
@@ -433,6 +453,17 @@ public static class GraphOracleComparer
         if (depth > MaxValueDepth) return;
 
         if (expected is null && actual is null) return;
+
+        // A NULL source collection maps to an EMPTY destination collection: that is DwarfMapper's documented
+        // default (NullCollections = NullCollectionStrategy.AsEmpty), not a value-preservation failure. The
+        // oracle has to model it, because until the fuzzers generated nulls at all this pair was unreachable and
+        // the rule never had to be encoded. (Under an explicit NullCollections = AsNull the mapper yields null,
+        // which the null==null case above already accepts — so this is correct for both settings; what it cannot
+        // catch is an AsNull mapper wrongly producing empty. Noted deliberately: the alternative is not fuzzing
+        // null collections at all, which is strictly worse.)
+        if (expected is null && actual is IEnumerable emptyCandidate && IsEmptyEnumerable(emptyCandidate))
+            return;
+
         if (expected is null || actual is null)
         {
             diffs.Add(path + ": expected " + Fmt(expected) + ", actual " + Fmt(actual));
@@ -511,8 +542,11 @@ public static class GraphOracleComparer
         // Collections
         if (expected is IEnumerable ee && actual is IEnumerable ae)
         {
-            var el = ToSortedList(ee);
-            var al = ToSortedList(ae);
+            // Order matters only when BOTH sides are ordered; if either is a set/dict its iteration order is
+            // unspecified, so both get sorted (see ToComparableList).
+            var unordered = IsUnorderedCollection(ee) || IsUnorderedCollection(ae);
+            var el = ToComparableList(ee, unordered);
+            var al = ToComparableList(ae, unordered);
             if (el.Count != al.Count)
                 diffs.Add(path + ".Count: expected " + el.Count.ToString(CultureInfo.InvariantCulture) + ", actual " +
                           al.Count.ToString(CultureInfo.InvariantCulture));
@@ -574,20 +608,48 @@ public static class GraphOracleComparer
         return Equals(a, b);
     }
 
-    // Convert IEnumerable to a deterministically-ordered list.
-    // For sets and dicts the order depends on iteration but for cross-type comparisons
-    // within a single mapping result we compare src vs dst in the same order.
-    // For stable assertions we sort scalar elements; for non-scalars we preserve order.
+    /// <summary>
+    ///     True when the collection's iteration order is genuinely unspecified (a set or a dictionary), so two
+    ///     equal instances may enumerate differently and comparing positionally would be wrong.
+    /// </summary>
+    private static bool IsUnorderedCollection(IEnumerable e)
+    {
+        if (e is IDictionary) return true;
+        foreach (var i in e.GetType().GetInterfaces())
+        {
+            if (!i.IsGenericType) continue;
+            var gtd = i.GetGenericTypeDefinition();
+            if (gtd == typeof(ISet<>) || gtd == typeof(IReadOnlySet<>) || gtd == typeof(IImmutableSet<>)
+                || gtd == typeof(IDictionary<,>) || gtd == typeof(IReadOnlyDictionary<,>)
+                || gtd == typeof(IImmutableDictionary<,>))
+                return true;
+        }
+
+        return false;
+    }
+
+    // Convert IEnumerable to a list for comparison, sorting ONLY when order is not part of the contract.
+    //
+    // This used to sort whenever the first element was scalar, which applied SET semantics to every
+    // scalar-element collection — including ordered List<T>/T[]. The oracle therefore could not tell a
+    // List<int> from a HashSet<int>, so a generator regression that REORDERED a scalar list during mapping
+    // still compared equal and the whole fuzz/property suite stayed green. Order preservation for List<T> is a
+    // real mapping contract, so "all tests pass" did not imply it held.
+    //
+    // The ordered/unordered decision must be made JOINTLY by the caller for both sides: mapping a
+    // HashSet<int> source to a List<int> destination has an unspecified source order, so both sides must be
+    // sorted or the comparison is meaningless. Only when BOTH sides are ordered is position significant.
+    //
     // C9: use a structural key for sorting that is float-precision stable — for floats/doubles,
     // format with a high-precision round-trip format ("R") rather than default ToString().
-    private static List<object?> ToSortedList(IEnumerable e)
+    private static List<object?> ToComparableList(IEnumerable e, bool unordered)
     {
         var list = new List<object?>();
         foreach (var item in e)
             list.Add(item);
 
-        // Sort scalars for stable set comparison
-        if (list.Count > 0 && list[0] is not null && IsScalar(list[0]!.GetType()))
+        // Sort scalars for stable set comparison — unordered collections only.
+        if (unordered && list.Count > 0 && list[0] is not null && IsScalar(list[0]!.GetType()))
             list.Sort((x, y) =>
             {
                 if (x is null && y is null) return 0;
