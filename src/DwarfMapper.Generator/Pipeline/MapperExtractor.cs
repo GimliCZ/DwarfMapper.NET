@@ -5514,18 +5514,34 @@ internal static partial class MapperExtractor
                         continue;
                     }
 
-                    // MF-D: if the converter is a synthesized COMPLEX helper (object mapper,
-                    // collection helper, or dict helper), skip this member (leave DTO default).
-                    // Complex helpers may be force-marked 3-param by the Preserve post-processing,
-                    // creating a signature mismatch when the flat-node helper calls them with 1 arg.
-                    // Safe helpers (numeric, enum, parsable, blit) are always single-arg and never
-                    // force-marked — they are allowed through.
+                    // MF-D: a synthesized COMPLEX helper (object mapper, collection helper, dict helper) may be
+                    // force-marked recursion-capable (3-param) by the Preserve post-processing, which would then
+                    // mismatch the single-argument call the flat-node helper emits.
                     // Unsafe prefixes: __DwarfMap_Obj_, __DwarfMap_Coll_, __DwarfMap_Dict_
                     // Safe prefixes:   __DwarfMap_Num_, __DwarfMap_Enum_, __DwarfMap_Pars_, __DwarfMap_Blit_
+                    //
+                    // That hazard is real ONLY under Preserve: the force-marking block is guarded by
+                    // `if (isPreserveMode)`, so in None/SetNull mode the helper stays single-arg and is safe to
+                    // call. This used to `continue` unconditionally, which silently left a data-bearing leaf
+                    // (a `List<string> Tags`, a nested `Money Price`) at the DTO's default with no diagnostic —
+                    // distinct from EDGE members, which are nulled deliberately as documented topology
+                    // degradation. So: flatten it when we can, and when we genuinely cannot, say so.
                     if (GeneratedNames.IsComplexHelper(leafConv))
-                        // Complex synthesized helper — skip to avoid future 3-param mismatch.
-                        // Don't register leafThrowAwaySynth entries in main dict.
-                        continue;
+                    {
+                        if (isPreserve)
+                        {
+                            diagnostics.Add(new DiagnosticInfo(
+                                DiagnosticDescriptors.FlattenGraphLeafNotFlattened, location,
+                                $"[FlattenGraph] cannot flatten member '{leaf.Name}' of type "
+                                + $"'{leaf.Type.ToDisplayString()}' under ReferenceHandling = Preserve; it is left "
+                                + "at the destination's default. Map the member explicitly, or use "
+                                + "ReferenceHandling = None for this mapper."));
+                            continue;
+                        }
+
+                        // Not Preserve — fall through and emit the leaf; the merge below registers the complex
+                        // helper in the main dict so the call resolves.
+                    }
 
                     // Safe: emit the leaf member.  Merge any non-complex throw-away entries
                     // (numeric, enum, parsable helpers that are never force-marked 3-param).

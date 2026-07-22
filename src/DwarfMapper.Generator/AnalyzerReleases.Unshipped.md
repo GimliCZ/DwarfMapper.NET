@@ -80,3 +80,4 @@ DWARF071 | DwarfMapper | Info | Source type has derived types whose members woul
 DWARF072 | DwarfMapper | Error | Member has a source match but auto-matching is disabled (explicit-only)
 DWARF073 | DwarfMapper | Error | [MapProperty(StringFormat=)] is not applicable here
 DWARF074 | DwarfMapper | Error | [MapCollectionKey] cannot be applied here
+DWARF075 | DwarfMapper | Warning | [FlattenGraph] leaf member was not flattened

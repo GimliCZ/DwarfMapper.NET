@@ -615,6 +615,18 @@ public static class DiagnosticDescriptors
     // [MapCollectionKey] used where the v1 key-based upsert cannot apply: not an update-into method, the named
     // member is not a List<T>, the element type differs between source and target, or the key member is not
     // found on the element type. Loud rather than silently falling back to whole-collection replacement.
+    // [FlattenGraph] could not flatten a data-bearing complex leaf (a nested object, collection or dictionary
+    // member of a graph node). Only reachable under ReferenceHandling = Preserve, where the synthesized helper
+    // for such a leaf may later be force-marked recursion-capable (3-param) and would then be called with one
+    // argument from the flat-node helper. Outside Preserve the leaf IS flattened. Loud rather than leaving the
+    // DTO member silently at its default — dropping data without a word is exactly what this library forbids.
+    public static readonly DiagnosticDescriptor FlattenGraphLeafNotFlattened = new(
+        "DWARF075",
+        "[FlattenGraph] leaf member was not flattened",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf075");
+
     public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
         "DWARF074",
         "[MapCollectionKey] cannot be applied here",

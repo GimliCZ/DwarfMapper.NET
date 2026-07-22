@@ -667,6 +667,24 @@ accept whole-collection replacement.
 
 ---
 
+## dwarf075
+**`[FlattenGraph]` leaf member was not flattened** · Warning
+
+A graph node carried a **data-bearing complex leaf** — a nested object, collection, or dictionary member such as
+`List<string> Tags` or `Money Price` — that could not be flattened, so the destination member is left at its
+default. This is reported only under `ReferenceHandling = Preserve`: there, the helper synthesized for such a
+leaf may later be force-marked recursion-capable (three parameters) while the flat-node helper calls it with
+one, so emitting the call would not compile. Outside Preserve the leaf **is** flattened normally.
+
+Note this is different from **edge** members (the navigation properties named in `[FlattenGraph(...)]`), which
+are deliberately set to `null` — that topology degradation is the whole point of flattening a graph. A *data*
+leaf going missing is not, which is why it is now said out loud instead of silently dropped.
+
+**Fix:** map the member explicitly (e.g. a `[MapProperty]` binding or a manual assignment in an `AfterMap` hook),
+or use `ReferenceHandling = None` for this mapper if the graph does not need reference preservation.
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather

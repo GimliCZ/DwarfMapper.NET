@@ -10,6 +10,61 @@ namespace DwarfMapper.Generator.Tests;
 /// </summary>
 public class FlattenGraphGeneratorTests
 {
+    // ── ISSUE-001: data-bearing complex leaves must not vanish ──────────────
+    // A node's complex leaf (List<string> Tags — a DATA member, not a topology edge) used to be dropped by an
+    // unconditional `continue`, leaving the DTO member at its default with no diagnostic. Edge members are
+    // nulled on purpose; data leaves going missing silently is the exact failure mode this library forbids.
+
+    private const string ComplexLeafGraph = """
+                                            using DwarfMapper;
+                                            using System.Collections.Generic;
+                                            namespace Demo;
+                                            public class Node    { public int Id { get; set; } public List<string> Tags { get; set; } = new(); public Node? Next { get; set; } }
+                                            public class NodeDto { public int Id { get; set; } public List<string> Tags { get; set; } = new(); }
+                                            public class Root    { public Node? Entry { get; set; } }
+                                            public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                                            """;
+
+    [Fact]
+    public void FlattenGraph_complex_data_leaf_is_flattened_not_silently_dropped()
+    {
+        const string src = ComplexLeafGraph + """
+                                              [DwarfMapper]
+                                              public partial class M
+                                              {
+                                                  [FlattenGraph("Entry", "Nodes")]
+                                                  public partial RootDto Map(Root r);
+                                              }
+                                              """;
+        var (diags, generated) = GeneratorTestHarness.Run(src);
+
+        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        // The leaf is actually assigned in the flat-node helper (previously absent entirely).
+        Assert.Contains("Tags = ", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FlattenGraph_complex_leaf_under_Preserve_is_loud_DWARF075()
+    {
+        // Under Preserve the helper may be force-marked 3-param, so the leaf genuinely cannot be emitted —
+        // but the user is told, instead of the member silently staying at its default.
+        const string src = ComplexLeafGraph + """
+                                              [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                                              public partial class M
+                                              {
+                                                  [FlattenGraph("Entry", "Nodes")]
+                                                  public partial RootDto Map(Root r);
+                                              }
+                                              """;
+        var (diags, _) = GeneratorTestHarness.Run(src);
+
+        var d075 = Assert.Single(diags, d => d.Id == "DWARF075");
+        Assert.Contains("Tags", d075.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+            StringComparison.Ordinal);
+        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+    }
+
     // ── 1. Basic: single-reference edge graph — compiles without error ──────
 
     [Fact]
