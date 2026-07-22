@@ -22,6 +22,16 @@ namespace DwarfMapper.Generator.Registry;
 [Generator(LanguageNames.CSharp)]
 public sealed class MapToGenerator : IIncrementalGenerator
 {
+    /// <summary>
+    ///     Tracking name for the extraction step. Without one the step is anonymous, so a test cannot address
+    ///     this pipeline at all — which is why DwarfGenerator had six incremental-caching tests and this
+    ///     generator had none. Its model could stop being value-equatable and nothing would notice.
+    /// </summary>
+    public const string ExtractStepName = "MapToExtract";
+
+    /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
+    public static readonly string[] AllStepNames = { ExtractStepName };
+
     private const string MapToAttr = "DwarfMapper.MapToAttribute";
     private const string MapPropAttr = "DwarfMapper.MapPropertyAttribute";
     private const string MapIgnoreAttr = "DwarfMapper.MapIgnoreAttribute";
@@ -30,9 +40,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var models = context.SyntaxProvider.ForAttributeWithMetadataName(
-            MapToAttr,
-            static (node, _) => node is TypeDeclarationSyntax,
-            static (ctx, _) => Extract(ctx));
+                MapToAttr,
+                static (node, _) => node is TypeDeclarationSyntax,
+                static (ctx, _) => Extract(ctx))
+            .WithTrackingName(ExtractStepName);
 
         context.RegisterSourceOutput(models, static (spc, model) =>
         {

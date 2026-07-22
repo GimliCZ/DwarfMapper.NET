@@ -42,6 +42,17 @@ public sealed class DwarfGenerator : IIncrementalGenerator
     /// <summary>Tracking name for the co-located ([GenerateMap]-on-plain-class) extraction step.</summary>
     internal const string CoLocatedExtractStepName = "DwarfMapperCoLocatedExtract";
 
+    internal const string AggregateStepName = "DwarfMapperAggregate";
+    internal const string RequiresManifestStepName = "DwarfMapperRequiresManifest";
+    internal const string AmbientRegistrationStepName = "DwarfMapperAmbientRegistration";
+
+    /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
+    internal static readonly string[] AllStepNames =
+    {
+        ExtractStepName, CoLocatedExtractStepName,
+        AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName,
+    };
+
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -90,7 +101,8 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         });
 
         context.RegisterSourceOutput(
-            mappers.Collect().Combine(coLocated.Collect()).Combine(aggregateOptions),
+            mappers.Collect().Combine(coLocated.Collect()).Combine(aggregateOptions)
+                .WithTrackingName(AggregateStepName),
             static (spc, pair) => EmitAggregates(
                 spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right.Di, pair.Right.PublicExtensions,
                 pair.Right.AsmNs));
@@ -141,7 +153,8 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                 return EquatableArray.From(all);
             });
 
-        context.RegisterSourceOutput(ownRequired, static (spc, pairs) => EmitRequiresManifest(spc, pairs));
+        context.RegisterSourceOutput(ownRequired.WithTrackingName(RequiresManifestStepName),
+            static (spc, pairs) => EmitRequiresManifest(spc, pairs));
 
         // This assembly's own provided (registered) ambient pairs — exactly what its module initializer registers.
         var ownProvided = mappers.Collect().Combine(coLocated.Collect())
@@ -172,7 +185,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         });
 
         context.RegisterSourceOutput(
-            ownProvided.Combine(ownRequired).Combine(rootInfo),
+            ownProvided.Combine(ownRequired).Combine(rootInfo).WithTrackingName(AmbientRegistrationStepName),
             static (spc, data) =>
             {
                 var ((own, req), root) = data;
