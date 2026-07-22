@@ -397,17 +397,40 @@ internal static class EnumConverter
     /// </summary>
     private static string EmitStringToFlags(string name, INamedTypeSymbol tgt)
     {
+        // Allocation-free split. The previous form was `foreach (var __part in v.Split(','))` plus
+        // `__part.Trim()`: one string[] and N substrings per call, plus another string per part that actually
+        // needed trimming — on a mapper run over many records that is pure garbage, and the doc comment
+        // claiming "allocation-light" was simply wrong. Slicing a ReadOnlySpan<char> allocates nothing.
+        //
+        // Every MemoryExtensions member is invoked STATICALLY: they are extension methods, and generated code
+        // deliberately emits no `using` directives, so `v.AsSpan()` / `span.Trim()` would not compile (CS1061).
+        // Span-vs-constant pattern matching is avoided for the same class of reason: it requires a recent
+        // LangVersion in the CONSUMER's project, which this generator does not control.
         var sb = new StringBuilder();
         sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name).Append("(string v)\n    {\n");
         sb.Append("        var __r = default(").Append(Fq(tgt)).Append(");\n");
-        sb.Append("        foreach (var __part in v.Split(','))\n");
-        sb.Append("        {\n");
-        sb.Append("            __r |= __part.Trim() switch\n            {\n");
+        sb.Append("        var __s = global::System.MemoryExtensions.AsSpan(v);\n");
+        sb.Append("        while (true)\n        {\n");
+        sb.Append("            var __i = global::System.MemoryExtensions.IndexOf(__s, ',');\n");
+        sb.Append("            var __part = global::System.MemoryExtensions.Trim(__i < 0 ? __s : __s.Slice(0, __i));\n");
+        sb.Append("            if (__part.Length > 0)\n            {\n");
+
+        var first = true;
         foreach (var m in EnumMembers(tgt))
-            sb.Append("                \"").Append(m.Name).Append("\" => ").Append(Fq(tgt)).Append('.')
-                .Append(m.Name).Append(",\n");
-        sb.Append("                _ => throw new global::System.ArgumentOutOfRangeException(")
-            .Append("nameof(v), v, \"Unrecognized enum name\"),\n            };\n");
+        {
+            sb.Append("                ").Append(first ? "if" : "else if")
+                .Append(" (global::System.MemoryExtensions.Equals(__part, global::System.MemoryExtensions.AsSpan(\"")
+                .Append(m.Name).Append("\"), global::System.StringComparison.Ordinal)) __r |= ")
+                .Append(Fq(tgt)).Append('.').Append(m.Name).Append(";\n");
+            first = false;
+        }
+
+        // Unknown names still throw — reflection-free and never silent.
+        sb.Append("                ").Append(first ? "" : "else ")
+            .Append("throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\");\n");
+        sb.Append("            }\n\n");
+        sb.Append("            if (__i < 0) break;\n");
+        sb.Append("            __s = __s.Slice(__i + 1);\n");
         sb.Append("        }\n\n        return __r;\n    }\n");
         return sb.ToString();
     }

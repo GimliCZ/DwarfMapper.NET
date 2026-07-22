@@ -2703,7 +2703,8 @@ internal static partial class MapperExtractor
                     continue;
                 }
 
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name));
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name,
+                    MemberName: target.Name));
                 continue;
             }
 
@@ -2747,7 +2748,7 @@ internal static partial class MapperExtractor
             if (explicitOnly)
             {
                 diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.AutoMatchDisabled, location, target.Name));
+                    DiagnosticDescriptors.AutoMatchDisabled, location, target.Name, MemberName: target.Name));
                 continue;
             }
 
@@ -6506,7 +6507,8 @@ internal static partial class MapperExtractor
             if (handled.Contains(target.Name) || ignores.Contains(target.Name)) continue;
             if (!sources.TryGetValue(target.Name, out var src))
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name));
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name,
+                    MemberName: target.Name));
                 continue;
             }
 

@@ -67,14 +67,13 @@ public sealed class AddMapIgnoreCodeFixProvider : CodeFixProvider
     // "Destination member 'Member' has no matching source member; …" → "Member" (null if dotted/nested).
     private static string? ExtractMemberName(Diagnostic diagnostic)
     {
-        var message = diagnostic.GetMessage(CultureInfo.InvariantCulture);
-        var open = message.IndexOf('\'');
-        if (open < 0) return null;
+        // ISSUE-028: read the member off the diagnostic's PROPERTY bag. This used to parse the text between
+        // the first pair of quotes in the human-readable message, so rewording (or localising) that message
+        // silently broke the fix — no compile error, no failing test, the lightbulb just stops appearing.
+        if (!diagnostic.Properties.TryGetValue("Member", out var name) || string.IsNullOrEmpty(name))
+            return null;
 
-        var close = message.IndexOf('\'', open + 1);
-        if (close < 0) return null;
-
-        var name = message.Substring(open + 1, close - open - 1);
-        return name.IndexOf('.') >= 0 ? null : name;
+        // A dotted path is a nested member; this fix only applies to a member on the mapped type itself.
+        return name!.IndexOf('.') >= 0 ? null : name;
     }
 }
