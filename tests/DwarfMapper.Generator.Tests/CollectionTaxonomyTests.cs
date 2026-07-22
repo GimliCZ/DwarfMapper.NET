@@ -403,7 +403,7 @@ public class DictionaryTaxonomyTests
     }
 
     [Fact]
-    public void ImmutableDictionary_target_emits_CreateRange()
+    public void ImmutableDictionary_target_emits_a_keyed_builder()
     {
         var gen = Col.GenOf("""
                             using DwarfMapper;
@@ -415,7 +415,11 @@ public class DictionaryTaxonomyTests
                             [DwarfMapper] public partial class M { public partial B Map(A a); }
                             """);
         Assert.Contains("ImmutableDictionary", gen, StringComparison.Ordinal);
-        Assert.Contains("CreateRange", gen, StringComparison.Ordinal);
+        // ISSUE-005: was CreateRange, which THROWS when a many-to-one key conversion collides — while the
+        // mutable path silently took last-write-wins for the same input. A keyed builder makes both agree.
+        Assert.Contains("CreateBuilder", gen, StringComparison.Ordinal);
+        Assert.Contains("ToImmutable()", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateRange", gen, StringComparison.Ordinal);
     }
 
     [Fact]

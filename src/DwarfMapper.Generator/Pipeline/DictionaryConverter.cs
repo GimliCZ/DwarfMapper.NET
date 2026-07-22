@@ -126,15 +126,17 @@ internal static class DictionaryConverter
 
             sb.Append("        if (src is null) return ").Append(emptyImm).Append(";\n");
             // Build a List<KeyValuePair<K,V>>, then CreateRange.
-            var kvpFq = "global::System.Collections.Generic.KeyValuePair<" + keyFq + ", " + valFq + ">";
-            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(kvpFq)
-                .Append(">();\n");
-            sb.Append("        foreach (var __kv in src)\n");
-            sb.Append("        {\n");
-            sb.Append("            __buf.Add(new ").Append(kvpFq).Append('(').Append(keyExpr).Append(", ")
-                .Append(valExpr).Append("));\n");
-            sb.Append("        }\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableDictionary.CreateRange(__buf);\n");
+            // Builder with INDEXER semantics, matching the mutable path exactly. CreateRange THROWS on a
+            // duplicate key, so the two dictionary paths disagreed on the same input: when the key CONVERSION
+            // collapses two source keys onto one target key (enum->string by name, a case change, a narrowing),
+            // a mutable target silently kept the last value while an immutable target threw ArgumentException.
+            // Same mapping, same data, opposite outcome decided only by the destination type. Last-write-wins
+            // matches Dictionary's own indexer and the majority path. (Also drops the intermediate List<KVP>.)
+            sb.Append("        var __b = global::System.Collections.Immutable.ImmutableDictionary.CreateBuilder<")
+                .Append(keyFq).Append(", ").Append(valFq).Append(">();\n");
+            sb.Append("        foreach (var __kv in src) { __b[").Append(keyExpr).Append("] = ").Append(valExpr)
+                .Append("; }\n");
+            sb.Append("        return __b.ToImmutable();\n");
         }
         else
         {
@@ -202,14 +204,17 @@ internal static class DictionaryConverter
                 ? "null"
                 : "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">.Empty";
             sb.Append("        if (src is null) return ").Append(emptyImm).Append(";\n");
-            var kvpFq = "global::System.Collections.Generic.KeyValuePair<" + keyFq + ", " + valFq + ">";
-            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(kvpFq)
-                .Append(">();\n");
-            sb.Append("        foreach (var __kv in src)\n        {\n");
-            sb.Append("            __buf.Add(new ").Append(kvpFq).Append('(').Append(keyExpr).Append(", ")
-                .Append(valExpr).Append("));\n");
-            sb.Append("        }\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableDictionary.CreateRange(__buf);\n");
+            // Builder with INDEXER semantics, matching the mutable path exactly. CreateRange THROWS on a
+            // duplicate key, so the two dictionary paths disagreed on the same input: when the key CONVERSION
+            // collapses two source keys onto one target key (enum->string by name, a case change, a narrowing),
+            // a mutable target silently kept the last value while an immutable target threw ArgumentException.
+            // Same mapping, same data, opposite outcome decided only by the destination type. Last-write-wins
+            // matches Dictionary's own indexer and the majority path. (Also drops the intermediate List<KVP>.)
+            sb.Append("        var __b = global::System.Collections.Immutable.ImmutableDictionary.CreateBuilder<")
+                .Append(keyFq).Append(", ").Append(valFq).Append(">();\n");
+            sb.Append("        foreach (var __kv in src) { __b[").Append(keyExpr).Append("] = ").Append(valExpr)
+                .Append("; }\n");
+            sb.Append("        return __b.ToImmutable();\n");
         }
         else
         {
