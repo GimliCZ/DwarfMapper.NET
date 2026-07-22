@@ -982,11 +982,11 @@ public class GoldenFingerprintTests
         // passes-by-equality the whole safety net is inert.
         var altered = Sample with
         {
-            Source = Sample.Source.Replace("public int X { get; set; } }\n[DwarfMapper]",
-                "public int X { get; set; } }\n[DwarfMapper]", StringComparison.Ordinal)
-                .Replace("public class B { public int X { get; set; } }",
-                    "public class B { public int X { get; set; } public int X2 { get; set; } }",
-                    StringComparison.Ordinal),
+            // Rename the mapped member on BOTH sides: the emitted assignment changes (X = -> Renamed =) while
+            // the mapping stays complete. That isolates OUTPUT sensitivity from DIAGNOSTIC sensitivity, which
+            // the next test covers separately.
+            Source = Sample.Source.Replace("int X { get; set; }", "int Renamed { get; set; }",
+                StringComparison.Ordinal),
         };
 
         Assert.NotEqual(GoldenFingerprint.Compute(Sample), GoldenFingerprint.Compute(altered));
