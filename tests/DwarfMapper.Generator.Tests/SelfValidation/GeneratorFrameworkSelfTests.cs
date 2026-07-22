@@ -68,11 +68,8 @@ public class GeneratorFrameworkSelfTests
     }
 
     /// <summary>
-    ///     A generator whose tracked step's own output value IS a raw <see cref="ISymbol" /> — the exact leak
-    ///     <see cref="GeneratorCacheAssert.NoSymbolsInPipeline" /> exists to catch. <c>IsSymbolFree</c> is a
-    ///     direct type-pattern match on the tracked step's output, not a reflective walk of its fields, so a
-    ///     model class that merely HOLDS a <see cref="Compilation" /> or <see cref="ISymbol" /> in a property
-    ///     would slip past undetected; the leak has to be the step's own value.
+    ///     A generator whose tracked step's own output value IS a raw <see cref="ISymbol" /> — the degenerate
+    ///     leak shape where the direct type match on the step's output alone is already enough to catch it.
     /// </summary>
     private sealed class LeakedSymbolGenerator : IIncrementalGenerator
     {
@@ -94,13 +91,52 @@ public class GeneratorFrameworkSelfTests
     }
 
     [Fact]
-    public void NoSymbolsInPipeline_FIRES_for_a_leaked_symbol()
+    public void NoSymbolsInPipeline_FIRES_for_a_symbol_returned_directly()
     {
         var ex = Assert.ThrowsAny<Exception>(() =>
             GeneratorCacheAssert.NoSymbolsInPipeline(
                 new LeakedSymbolGenerator(), Valid, new[] { LeakedSymbolGenerator.StepName }));
 
         Assert.Contains("must not hold", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     A generator whose tracked step's OUTPUT is a model record — not a raw symbol — but that model has a
+    ///     property typed <see cref="ISymbol" />. This is the realistic regression: a hand-written pipeline
+    ///     model (e.g. <c>record Model(string Name, EquatableArray&lt;Member&gt; Members)</c>) gaining a symbol-
+    ///     typed member. A direct type match on the step's own output value (<c>Model</c>) passes this trivially;
+    ///     only a reflective walk of the model's members catches it.
+    /// </summary>
+    private sealed class LeakedSymbolPropertyGenerator : IIncrementalGenerator
+    {
+        public const string StepName = "LeakedSymbolPropertyStep";
+
+        private sealed record Model(string Name, ISymbol? Symbol);
+
+        public void Initialize(IncrementalGeneratorInitializationContext context)
+        {
+            var models = context.SyntaxProvider
+                .CreateSyntaxProvider(
+                    static (node, _) => node is Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,
+                    // Deliberate leak: the step's OWN output value is `Model`, a plain record — but one of its
+                    // properties holds the declared symbol instead of a value-equatable projection of it.
+                    static (ctx, ct) => new Model(ctx.Node.ToString(), ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct)))
+                .WithTrackingName(StepName);
+
+            context.RegisterSourceOutput(models, static (spc, m) => spc.AddSource(
+                "LeakedProperty_" + m.Name.GetHashCode(StringComparison.Ordinal) + ".g.cs", "// x"));
+        }
+    }
+
+    [Fact]
+    public void NoSymbolsInPipeline_FIRES_for_a_symbol_held_in_a_model_property()
+    {
+        var ex = Assert.ThrowsAny<Exception>(() =>
+            GeneratorCacheAssert.NoSymbolsInPipeline(
+                new LeakedSymbolPropertyGenerator(), Valid, new[] { LeakedSymbolPropertyGenerator.StepName }));
+
+        Assert.Contains("must not hold", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Model.Symbol", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
