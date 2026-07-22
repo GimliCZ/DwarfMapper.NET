@@ -15,6 +15,58 @@ public class ProjectionTests
         Assert.Equal(DiagnosticSeverity.Error, d.DefaultSeverity);
     }
 
+    // ISSUE-002 — under CaseInsensitive the projection resolvers grouped source members by name and took
+    // g.First(), silently binding one of two case-only-distinct members. The runtime map path reports DWARF010
+    // for the identical input, so the same source gave a loud error via .Map(...) and a silent (and, for a
+    // partial source type, build-order-dependent) answer via projection. All three resolvers now share one
+    // lookup that reports DWARF010 and binds nothing.
+    private const string CaseCollisionSource = """
+                                               using DwarfMapper;
+                                               using System.Linq;
+                                               namespace Demo;
+                                               public class Src { public int Foo { get; set; } public int foo { get; set; } }
+                                               public class Dst { public int Foo { get; set; } }
+                                               """;
+
+    [Fact]
+    public void Projection_case_insensitive_member_collision_is_ambiguous_not_silent()
+    {
+        const string s = CaseCollisionSource + """
+                                               [DwarfMapper(CaseInsensitive = true)]
+                                               public partial class M
+                                               {
+                                                   public partial IQueryable<Dst> Project(IQueryable<Src> q);
+                                               }
+                                               """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF010");
+    }
+
+    // (A "both APIs on one mapper" test was considered and deliberately NOT added: the runtime path already
+    // emitted DWARF010, so such a test passes identically before and after this fix — it would look like a
+    // regression gate while proving nothing. The projection-only test above is the real gate.)
+
+    [Fact]
+    public void Projection_without_a_collision_still_binds_normally()
+    {
+        // Guards the fix against over-reach: a non-colliding case-insensitive match must still project.
+        const string s = """
+                         using DwarfMapper;
+                         using System.Linq;
+                         namespace Demo;
+                         public class Src { public int Foo { get; set; } }
+                         public class Dst { public int foo { get; set; } }
+                         [DwarfMapper(CaseInsensitive = true)]
+                         public partial class M
+                         {
+                             public partial IQueryable<Dst> Project(IQueryable<Src> q);
+                         }
+                         """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF010");
+        Assert.Contains("foo =", generated, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Projection_duplicate_MapProperty_reports_DWARF011_and_compiles()
     {

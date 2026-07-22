@@ -108,6 +108,37 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR06");
     }
 
+    // DWARFR07 — an implicit but precision-losing conversion. The class model reports DWARF038 for exactly this;
+    // the registry used to emit a silent direct assignment, so the SAME mapping was loud through [DwarfMapper]
+    // and quiet through [MapTo]. Both engines now share NumericConverter.IsCrossCategoryLossy.
+    [Theory]
+    [InlineData("long", "double")]
+    [InlineData("int", "float")]
+    [InlineData("long", "decimal")]
+    public void Lossy_implicit_numeric_conversion_reports_DWARFR07(string srcType, string dstType)
+    {
+        var s = $$"""
+                  using DwarfMapper;
+                  namespace Demo;
+                  [MapTo(typeof(Dto))] public class Src { public {{srcType}} V { get; set; } }
+                  public class Dto { public {{dstType}} V { get; set; } }
+                  """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR07");
+    }
+
+    [Fact]
+    public void Same_category_widening_does_not_report_DWARFR07()
+    {
+        // Guard against over-reach: int→long and float→double stay on the silent zero-cost path.
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int A { get; set; } public float B { get; set; } }
+                         public class Dto { public long A { get; set; } public double B { get; set; } }
+                         """;
+        Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR07");
+    }
+
     // ── the standing completeness gate ──────────────────────────────────────────
     // Mirrors AssemblyScanTests Scan3 (every id tested) + Scan7 (every id documented), but over the registry's
     // OWN descriptor class, which those scans deliberately skip. It does NOT assert AnalyzerReleases sync — the

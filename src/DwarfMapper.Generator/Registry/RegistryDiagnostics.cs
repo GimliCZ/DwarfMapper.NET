@@ -48,6 +48,15 @@ internal static class RegistryDiagnostics
         "No built-in conversion for {0}; the source and destination member types are incompatible (use the [DwarfMapper] class model for a custom converter)",
         Category, DiagnosticSeverity.Error, true);
 
+    // Info, mirroring DWARF038 in the class model: the conversion is legal and implicit in C#, so making it an
+    // error would reject code that compiles fine today — but it loses precision above the mantissa, and the
+    // whole point is that the registry must not be SILENT where the class model warns.
+    public static readonly DiagnosticDescriptor LossyImplicitConversion = new(
+        "DWARFR07",
+        "Lossy implicit numeric conversion",
+        "Implicit conversion {0} crosses numeric categories and loses precision for large magnitudes (the [DwarfMapper] class model reports this as DWARF038)",
+        Category, DiagnosticSeverity.Info, true);
+
     public static readonly DiagnosticDescriptor RecursiveNesting = new(
         "DWARFR06",
         "Recursive nested mapping is not supported by the registry",

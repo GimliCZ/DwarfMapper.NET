@@ -359,7 +359,18 @@ public sealed class MapToGenerator : IIncrementalGenerator
         public string? Resolve(ITypeSymbol srcType, ITypeSymbol tgtType, string srcExpr, string targetName)
         {
             var conv = _comp.ClassifyCommonConversion(srcType, tgtType);
-            if (conv.IsIdentity || conv.IsImplicit) return srcExpr;
+            if (conv.IsIdentity) return srcExpr;
+            if (conv.IsImplicit)
+            {
+                // An implicit conversion is a free direct assignment — EXCEPT across numeric categories
+                // (long→double, int→float, long→decimal), which the compiler accepts silently while losing
+                // precision. The class model reports DWARF038 here; without this the registry stayed silent, so
+                // the same mapping was loud through [DwarfMapper] and quiet through [MapTo].
+                if (NumericConverter.IsCrossCategoryLossy(srcType, tgtType))
+                    _diags.Add(new DiagnosticInfo(RegistryDiagnostics.LossyImplicitConversion, _loc,
+                        $"'{srcType.ToDisplayString()}' → '{tgtType.ToDisplayString()}' for '{targetName}'"));
+                return srcExpr;
+            }
 
             var n = NumericConverter.TryCreate(srcType, tgtType, Synth);
             if (n is not null) return $"{n}({srcExpr})";

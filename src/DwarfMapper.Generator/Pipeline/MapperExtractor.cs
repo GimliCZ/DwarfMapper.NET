@@ -3445,7 +3445,7 @@ internal static partial class MapperExtractor
             // Cross-category numeric (integer ↔ floating/decimal, e.g. int→double, int→float) is implicit
             // in C# but crosses kinds (and int→float / long→double silently lose precision). Same-category
             // widening (int→long, float→double) is NOT flagged. DWARF038: suggestion / strict-mode error.
-            if (IsCrossCategoryNumeric(srcType, tgtType))
+            if (NumericConverter.IsCrossCategoryLossy(srcType, tgtType))
                 EmitImplicitConversionDiag(diagnostics, location, targetName, srcType, tgtType,
                     "cross-category numeric", implicitConversions, lossy: true);
             return true; // direct assignment
@@ -6291,6 +6291,40 @@ internal static partial class MapperExtractor
     }
 
     /// <summary>
+    ///     Source-member lookup shared by all three projection resolvers.
+    ///     <para>
+    ///     Was <c>GroupBy(name, comparer).ToDictionary(g =&gt; g.Key, g =&gt; g.First())</c>, which under
+    ///     <c>CaseInsensitive = true</c> SILENTLY first-picked one of two members differing only in case
+    ///     (<c>Foo</c> / <c>foo</c> are distinct symbols and <c>ReadableMembers</c> de-duplicates by Ordinal, so
+    ///     both reach the group). Three defects in one: it was silent (the library's "never silent" tenet), it
+    ///     disagreed with the runtime map path — which reports <see cref="DiagnosticDescriptors.AmbiguousMatch" />
+    ///     for the very same input, so the answer depended on whether you called <c>.Map</c> or the projection —
+    ///     and the winner was whichever member <c>GetMembers()</c> yielded first, which for a partial source type
+    ///     split across files is not stable, so two builds could emit different expression trees (H1).
+    ///     </para>
+    ///     Reports DWARF010 and binds NOTHING for an ambiguous group, exactly like the runtime path.
+    /// </summary>
+    private static Dictionary<string, (string Name, ITypeSymbol Type)> BuildProjectionSourceLookup(
+        ITypeSymbol sourceType, StringComparer comparer, LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        var sources = new Dictionary<string, (string Name, ITypeSymbol Type)>(comparer);
+        foreach (var group in ReadableMembers(sourceType).GroupBy(m => m.Name, comparer))
+        {
+            var members = group.ToList();
+            if (members.Count > 1)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousMatch, location, group.Key));
+                continue;
+            }
+
+            sources[group.Key] = members[0];
+        }
+
+        return sources;
+    }
+
+    /// <summary>
     ///     New (Plan 19D) recursive projection resolver. Produces a list of
     ///     <see cref="ProjectionMemberMap" /> with inline expression fragments (no helper calls).
     ///     Projection translatability: every non-translatable projection member is reported as
@@ -6307,9 +6341,7 @@ internal static partial class MapperExtractor
         EnumStrategy enumStrategy, int referenceHandling, string paramExpr)
     {
         var comparer = caseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        var sources = ReadableMembers(sourceType)
-            .GroupBy(m => m.Name, comparer)
-            .ToDictionary(g => g.Key, g => g.First(), comparer);
+        var sources = BuildProjectionSourceLookup(sourceType, comparer, location, diagnostics);
         // C4: pass comparer to nested resolvers so CaseInsensitive propagates into nested objects.
         var writableByName = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
         foreach (var m in WritableMembers(targetType)) writableByName[m.Name] = m.Type;
@@ -6750,9 +6782,7 @@ internal static partial class MapperExtractor
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
         // C4: use the configured comparer for member lookup so CaseInsensitive applies here.
-        var srcReadable = ReadableMembers(srcType)
-            .GroupBy(m => m.Name, comparer)
-            .ToDictionary(g => g.Key, g => g.First(), comparer);
+        var srcReadable = BuildProjectionSourceLookup(srcType, comparer, location, diagnostics);
 
         // Build member-init or ctor expression for the nested object.
         // Mirror the decision logic in ResolveProjectionMembers:
@@ -6857,9 +6887,7 @@ internal static partial class MapperExtractor
         StringComparer comparer)
     {
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var srcReadable = ReadableMembers(srcType)
-            .GroupBy(m => m.Name, comparer)
-            .ToDictionary(g => g.Key, g => g.First(), comparer);
+        var srcReadable = BuildProjectionSourceLookup(srcType, comparer, location, diagnostics);
 
         var argParts = new List<string>();
         var anyFailed = false;
@@ -6977,28 +7005,6 @@ internal static partial class MapperExtractor
     ///     long↔float, int↔decimal) — a cross-category numeric conversion. Same-category pairs (int↔long,
     ///     float↔double) return false.
     /// </summary>
-    private static bool IsCrossCategoryNumeric(ITypeSymbol src, ITypeSymbol tgt)
-    {
-        static int Cat(ITypeSymbol t)
-        {
-            return t.SpecialType switch
-            {
-                SpecialType.System_SByte or SpecialType.System_Byte
-                    or SpecialType.System_Int16 or SpecialType.System_UInt16
-                    or SpecialType.System_Int32 or SpecialType.System_UInt32
-                    or SpecialType.System_Int64 or SpecialType.System_UInt64
-                    or SpecialType.System_Char => 1, // integer kind
-                SpecialType.System_Single or SpecialType.System_Double
-                    or SpecialType.System_Decimal => 2, // floating / decimal kind
-                _ => 0 // not a numeric basic type
-            };
-        }
-
-        var a = Cat(src);
-        var b = Cat(tgt);
-        return a != 0 && b != 0 && a != b;
-    }
-
     /// <summary>
     /// Item 20: for each <c>[GenerateWrapperMap(typeof(W&lt;&gt;))]</c>, append the closed wrapper instantiation
     /// <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> to <paramref name="genPairs"/> for every already-declared
