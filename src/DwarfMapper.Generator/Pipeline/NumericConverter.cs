@@ -31,6 +31,8 @@ internal static class NumericConverter
     ///     definition both engines call is what stops that drift recurring.
     ///     </para>
     /// </summary>
+    // NOTE (ISSUE-017): char counts as integer-kind HERE while TypeInterfaces.IsIntegral excludes it. That
+    // is deliberate, not drift — see the note there. This classifier only decides category crossing.
     public static bool IsCrossCategoryLossy(ITypeSymbol src, ITypeSymbol tgt)
     {
         static int Cat(ITypeSymbol t)

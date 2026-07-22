@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using System.Text;
 using DwarfMapper.Generator.Model;
 
@@ -348,7 +349,28 @@ internal static class AggregateEmitter
         var s = mapperFullName.StartsWith("global::", StringComparison.Ordinal)
             ? mapperFullName.Substring("global::".Length)
             : mapperFullName;
-        return "__" + s.Replace('.', '_');
+        // ISSUE-007: '.' -> '_' is not injective, so two DISTINCT mapper types can collapse onto one field
+        // name (A.B_C.M and A.B.C.M both give __A_B_C_M) and the aggregate would declare the field twice ->
+        // CS0102 out of generated code. Both call sites dedupe by exact FQN, so only a genuine collision of
+        // different names can reach here. A hash of the ORIGINAL name disambiguates while staying stable
+        // across processes (a GetHashCode would not be).
+        return "__" + s.Replace('.', '_') + "_" + Fnv1a(s);
+    }
+
+    /// <summary>FNV-1a 32-bit hash — deterministic across processes.</summary>
+    private static string Fnv1a(string s)
+    {
+        unchecked
+        {
+            var h = 2166136261u;
+            foreach (var c in s)
+            {
+                h ^= c;
+                h *= 16777619u;
+            }
+
+            return h.ToString("x8", CultureInfo.InvariantCulture);
+        }
     }
 
     /// <summary>One candidate convenience extension: <c>{ExtName}(this {Source}) => {Mapper}.{Method}(...)</c>.</summary>
