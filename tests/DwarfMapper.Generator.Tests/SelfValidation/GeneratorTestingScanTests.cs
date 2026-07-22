@@ -49,10 +49,13 @@ public class GeneratorTestingScanTests
                 .Select(f => (string)f.GetRawConstantValue()!)
                 .ToList();
 
-            var registered = GeneratorRegistry.All.Single(g => g.Name == registeredName).TrackingNames;
+            var registered = GeneratorRegistry.All.SingleOrDefault(g => g.Name == registeredName);
+            Assert.True(registered is not null,
+                $"'{registeredName}' has no entry in GeneratorRegistry.All — add it there, or update the "
+                + "(assemblyType, registeredName) tuple in this test if the generator was renamed or removed.");
 
             foreach (var name in declared)
-                Assert.True(registered.Contains(name),
+                Assert.True(registered!.TrackingNames.Contains(name),
                     $"{registeredName} declares step name '{name}' but AllStepNames does not include it, so the "
                     + "battery never asserts that step is cacheable.");
         }
