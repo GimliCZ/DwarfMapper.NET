@@ -63,7 +63,7 @@
 - Produces:
   - `internal sealed record GeneratorRun(ImmutableArray<Diagnostic> Diagnostics, ImmutableDictionary<string, string> OutputsByHintName)` with `string AllOutputsConcatenated { get; }`
   - `internal static GeneratorRun GeneratorRunner.Run(IIncrementalGenerator generator, string source, NullableContextOptions nullable = NullableContextOptions.Disable)`
-  - `internal static GeneratorDriver GeneratorRunner.RunTracked(IIncrementalGenerator generator, Compilation compilation)`
+  - `internal static GeneratorDriver GeneratorRunner.RunTracked(IIncrementalGenerator generator)`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -191,8 +191,12 @@ internal static class GeneratorRunner
         return new GeneratorRun(diagnostics, outputs);
     }
 
-    /// <summary>A driver with step tracking enabled, for the cacheability battery.</summary>
-    public static GeneratorDriver RunTracked(IIncrementalGenerator generator, Compilation compilation)
+    /// <summary>
+    ///     A driver with step tracking enabled, for the cacheability battery. Takes no Compilation on purpose —
+    ///     the caller drives it with RunGenerators(compilation), and an unused parameter would fail the build
+    ///     here (IDE0060 under AnalysisMode=All).
+    /// </summary>
+    public static GeneratorDriver RunTracked(IIncrementalGenerator generator)
     {
         ArgumentNullException.ThrowIfNull(generator);
 
@@ -289,7 +293,7 @@ public class GeneratorRegistryTests
         foreach (var g in GeneratorRegistry.All)
         {
             var compilation = GeneratorTestHarness.BuildCompilation("TrackAsm", src);
-            var driver = GeneratorRunner.RunTracked(g.Create(), compilation).RunGenerators(compilation);
+            var driver = GeneratorRunner.RunTracked(g.Create()).RunGenerators(compilation);
             var tracked = driver.GetRunResult().Results[0].TrackedSteps;
 
             foreach (var name in g.TrackingNames)
@@ -517,7 +521,7 @@ internal static class GeneratorCacheAssert
         IReadOnlyList<string> trackingNames)
     {
         var compilation = GeneratorTestHarness.BuildCompilation("CacheAsm", source);
-        var driver = GeneratorRunner.RunTracked(generator, compilation).RunGenerators(compilation);
+        var driver = GeneratorRunner.RunTracked(generator).RunGenerators(compilation);
         driver = driver.RunGenerators(compilation);
 
         AssertStepsCached(driver, trackingNames, "an identical re-run");
@@ -527,7 +531,7 @@ internal static class GeneratorCacheAssert
         IReadOnlyList<string> trackingNames)
     {
         var compilation = GeneratorTestHarness.BuildCompilation("CacheAsm", source);
-        var driver = GeneratorRunner.RunTracked(generator, compilation).RunGenerators(compilation);
+        var driver = GeneratorRunner.RunTracked(generator).RunGenerators(compilation);
 
         var modified = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(UnrelatedEdit));
         driver = driver.RunGenerators(modified);
@@ -539,7 +543,7 @@ internal static class GeneratorCacheAssert
         IReadOnlyList<string> trackingNames)
     {
         var compilation = GeneratorTestHarness.BuildCompilation("CacheAsm", source);
-        var driver = GeneratorRunner.RunTracked(generator, compilation).RunGenerators(compilation);
+        var driver = GeneratorRunner.RunTracked(generator).RunGenerators(compilation);
         var tracked = driver.GetRunResult().Results[0].TrackedSteps;
 
         foreach (var name in trackingNames)
@@ -1178,7 +1182,7 @@ public class GoldenCorpusTests
     ///     Floor for the manifest size. Lowering it is a deliberate act needing justification — a corpus that
     ///     silently shrinks is the "green but checking nothing" failure this repo keeps finding.
     /// </summary>
-    private const int MinimumCases = 100;
+    private const int MinimumCases = 850;
 
     [Fact]
     public void Generated_output_matches_the_golden_manifest()
@@ -1248,8 +1252,8 @@ public class GoldenCorpusTests
 
 Run: `dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj --nologo --filter "FullyQualifiedName~GoldenCorpusTests"`
 Expected: `Generated_output_matches_the_golden_manifest` FAILS with "No golden manifest at …".
-`The_corpus_has_not_silently_shrunk` should PASS. If it fails, the corpus is under 100 cases — report the actual
-count rather than lowering the floor silently.
+`The_corpus_has_not_silently_shrunk` should PASS (expected ~954 cases). If it fails, report the actual count
+rather than lowering the floor silently.
 
 - [ ] **Step 3: Generate the manifest**
 
