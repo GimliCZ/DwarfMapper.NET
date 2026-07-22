@@ -489,6 +489,16 @@ Expected: FAIL to compile — `GeneratorCacheAssert` does not exist.
 
 - [ ] **Step 3: Write the implementation**
 
+
+> **Correction (applied during execution, review of Task 3).** The two `continue`-on-missing-step lines below
+> made any declared tracking name whose pipeline did not run pass VACUOUSLY — `DwarfMapperCoLocatedExtract`
+> was never asserted at all, because the fixture had no `[GenerateMap<>]` usage and
+> `ForAttributeWithMetadataName` omits the step from `TrackedSteps` entirely in that case. 5 of 6 declared
+> steps were genuinely checked. This contradicted the spec's own "fail loud, never self-heal" and
+> per-source non-vacuity requirements, so the spec governed. The implemented code instead COLLECTS missing
+> names and asserts none are missing, and the fixture gained a co-located `[GenerateMap<,>]` host so the step
+> actually runs. Treat the shipped code as authoritative over the snippet below.
+
 Create `tests/DwarfMapper.Generator.Tests/Framework/GeneratorCacheAssert.cs`:
 
 ```csharp
@@ -925,6 +935,147 @@ Ids are pinned so schema growth shows as explicit added/removed lines rather tha
 feature axis exists because the combinatorial/fuzz schemas cover only the TYPE surface — without it the corpus
 would miss FlattenGraph, projection, span, async-stream, derived types, hooks, the ambient registry and the
 whole [MapTo] generator."
+```
+
+---
+
+### Task 4b: Prove every feature case actually triggers its feature
+
+**Why this task exists.** A feature case whose source does not actually trigger its feature still produces a
+perfectly valid fingerprint — of near-empty output — gets pinned into the manifest in Task 6, and passes
+forever. The corpus would then claim to cover projection, span maps and FlattenGraph while covering none of
+them, permanently and invisibly. This must run BEFORE the manifest is written, because pinning is what makes
+the gap invisible.
+
+**Known trap:** the repo's `[AfterMap]` precedent is an INSTANCE method
+(`tests/DwarfMapper.IntegrationTests/AutoMapperPatternsRuntimeTests.cs:131` — `private void FillDoc(S s, D d)`).
+If the `Hooks` case in `GoldenCorpus` uses `private static void`, and static hooks are not supported, this task
+will catch it. Fix the CASE SOURCE to match the supported form; do not delete the assertion.
+
+**Files:**
+- Test: `tests/DwarfMapper.Generator.Tests/Golden/GoldenFeatureCoverageTests.cs`
+- Possibly modify: `tests/DwarfMapper.Generator.Tests/Framework/GoldenCorpus.cs` (only to correct a case source
+  that fails to trigger its feature)
+
+**Interfaces:**
+- Consumes: `GoldenCorpus.Cases()`, `GeneratorRegistry.All`, `GeneratorRunner.Run`, `GeneratorRun.AllOutputsConcatenated`.
+- Produces: nothing later tasks consume.
+
+- [ ] **Step 1: Write the test**
+
+Create `tests/DwarfMapper.Generator.Tests/Golden/GoldenFeatureCoverageTests.cs`:
+
+```csharp
+// SPDX-License-Identifier: GPL-2.0-only
+
+using DwarfMapper.Generator.Tests.Framework;
+using Microsoft.CodeAnalysis;
+
+namespace DwarfMapper.Generator.Tests.Golden;
+
+/// <summary>
+///     Proves each feature case EXERCISES the feature it is named for. A case that silently generates nothing
+///     still yields a valid fingerprint, so once Task 6 pins it the gap becomes permanent and invisible — the
+///     corpus would advertise coverage it does not have.
+/// </summary>
+public class GoldenFeatureCoverageTests
+{
+    /// <summary>featureId -> a marker that can only appear if the feature actually fired.</summary>
+    public static TheoryData<string, string> FeatureMarkers() => new()
+    {
+        { "Basic", "Map(" },
+        { "UpdateInto", "void Update(" },
+        { "Projection", "IQueryable" },
+        { "SpanMap", "Span<" },
+        { "AsyncStream", "await foreach" },
+        { "FlattenGraph", "__DwarfMap_FlattenGraph" },
+        { "Flatten", "City = " },
+        { "ConstructorMapping", "new global::Demo.B(" },
+        { "EnumByName", "DstColor" },
+        { "FlagsEnumFromString", "MemoryExtensions" },
+        { "NullStrategyThrow", "throw" },
+        { "PreserveReferences", "ctx" },
+        { "DerivedTypes", "is global::Demo.ADerived" },
+        { "Hooks", "After" },
+        { "ReverseMap", "FromB" },
+        { "CoLocatedGenerateMap", "class B" },
+        { "RegistryBasic", "ToDto" },
+        { "RegistryCollection", "__DwarfMapColl_" },
+        { "RegistryNested", "__DwarfMapObj_" },
+    };
+
+    [Theory]
+    [MemberData(nameof(FeatureMarkers))]
+    public void Feature_case_generates_output_that_proves_the_feature_fired(string featureId, string marker)
+    {
+        var c = GoldenCorpus.Cases().Single(x => x.Id == "feat:" + featureId);
+        var generator = GeneratorRegistry.All.Single(g => g.Name == c.GeneratorName);
+        var run = GeneratorRunner.Run(generator.Create(), c.Source);
+        var output = run.AllOutputsConcatenated;
+
+        Assert.DoesNotContain(run.Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        Assert.False(string.IsNullOrWhiteSpace(output),
+            $"Feature case '{featureId}' generated NOTHING. Pinned into the manifest it would pass forever "
+            + "while covering nothing.");
+        Assert.True(output.Contains(marker, StringComparison.Ordinal),
+            $"Feature case '{featureId}' generated output that does not contain '{marker}', so the feature "
+            + "did not fire. Fix the CASE SOURCE (check the attribute/signature shape against the existing "
+            + "dedicated tests for that feature) — do not delete this assertion.\n\n--- generated ---\n"
+            + output);
+    }
+
+    [Fact]
+    public void Every_feature_case_in_the_corpus_has_a_marker()
+    {
+        // Otherwise a new feature case could be added and never proved to fire.
+        var corpusIds = GoldenCorpus.Cases()
+            .Where(c => c.Id.StartsWith("feat:", StringComparison.Ordinal))
+            .Select(c => c.Id["feat:".Length..])
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        var markered = FeatureMarkers().Select(row => (string)row[0])
+            .OrderBy(x => x, StringComparer.Ordinal).ToList();
+
+        Assert.True(corpusIds.SequenceEqual(markered, StringComparer.Ordinal),
+            "Feature cases and markers are out of sync.\n  corpus:  " + string.Join(", ", corpusIds)
+            + "\n  markers: " + string.Join(", ", markered));
+    }
+}
+```
+
+- [ ] **Step 2: Run it — expect real failures**
+
+Run: `dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj --nologo --filter "FullyQualifiedName~GoldenFeatureCoverageTests"`
+
+Some cases are EXPECTED to fail on the first run — that is the point of the task. For each failure, read the
+generated output in the assertion message and fix the CASE SOURCE in `GoldenCorpus.FeatureCases()` so the
+feature actually fires. Cross-check the shape against that feature's existing dedicated test file (e.g.
+`SpanMapGeneratorTests.cs`, `AsyncStreamMapGeneratorTests.cs`, `ProjectionTests.cs`,
+`FlattenGraphGeneratorTests.cs`, `ConstructorMappingTests.cs`, `RegistryDiagnosticsGenTests.cs`).
+
+If a marker itself is wrong (the feature fires but emits different text than I guessed), correct the MARKER —
+but only after confirming from the generated output that the feature genuinely fired.
+
+- [ ] **Step 3: Re-run until green**
+
+Run the same command. Expected: all 20 tests pass.
+
+- [ ] **Step 4: Run the full suite**
+
+Run: `dotnet test DwarfMapper.NET.sln --nologo`
+Expected: green, 0 warnings.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/DwarfMapper.Generator.Tests/Golden/ tests/DwarfMapper.Generator.Tests/Framework/
+git commit -m "test: prove every golden feature case actually triggers its feature
+
+A case whose source does not fire its feature still produces a valid fingerprint of near-empty output. Once the
+manifest pins it, it passes forever while covering nothing — the corpus would advertise projection, span and
+FlattenGraph coverage it does not have. Each case must now emit a feature-specific marker, and every case must
+have a marker, so a new case cannot skip the proof."
 ```
 
 ---
