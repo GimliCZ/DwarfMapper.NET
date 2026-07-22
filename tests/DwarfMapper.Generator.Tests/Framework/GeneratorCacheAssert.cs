@@ -52,9 +52,15 @@ internal static class GeneratorCacheAssert
         var driver = GeneratorRunner.RunTracked(generator).RunGenerators(compilation);
         var tracked = driver.GetRunResult().Results[0].TrackedSteps;
 
+        var missing = new List<string>();
+
         foreach (var name in trackingNames)
         {
-            if (!tracked.TryGetValue(name, out var steps)) continue;
+            if (!tracked.TryGetValue(name, out var steps))
+            {
+                missing.Add(name);
+                continue;
+            }
 
             foreach (var value in steps.SelectMany(s => s.Outputs).Select(o => o.Value))
                 Assert.True(IsSymbolFree(value),
@@ -62,6 +68,11 @@ internal static class GeneratorCacheAssert
                     + "ISymbol, SyntaxNode, Location or Compilation. They are never equatable (so caching dies) "
                     + "and they root old compilations, forcing Roslyn to retain memory it could free.");
         }
+
+        Assert.True(missing.Count == 0,
+            "Declared tracking name(s) never appeared in TrackedSteps: " + string.Join(", ", missing)
+            + ". Either the fixture does not trigger that pipeline, or the name in AllStepNames is stale. A step "
+            + "that never runs is not evidence of freedom from leaked symbols — it is an unasserted step.");
     }
 
     private static bool IsSymbolFree(object? value)
@@ -74,9 +85,15 @@ internal static class GeneratorCacheAssert
     {
         var tracked = driver.GetRunResult().Results[0].TrackedSteps;
 
+        var missing = new List<string>();
+
         foreach (var name in trackingNames)
         {
-            if (!tracked.TryGetValue(name, out var steps)) continue;
+            if (!tracked.TryGetValue(name, out var steps))
+            {
+                missing.Add(name);
+                continue;
+            }
 
             Assert.All(steps, step => Assert.All(step.Outputs, output =>
                 Assert.True(
@@ -85,5 +102,10 @@ internal static class GeneratorCacheAssert
                     + "non-value-equatable field (raw ImmutableArray, leaked symbol, unstable collection) "
                     + "likely broke the model's equality and disabled incremental caching.")));
         }
+
+        Assert.True(missing.Count == 0,
+            "Declared tracking name(s) never appeared in TrackedSteps: " + string.Join(", ", missing)
+            + ". Either the fixture does not trigger that pipeline, or the name in AllStepNames is stale. A step "
+            + "that never runs is not evidence of cacheability — it is an unasserted step.");
     }
 }

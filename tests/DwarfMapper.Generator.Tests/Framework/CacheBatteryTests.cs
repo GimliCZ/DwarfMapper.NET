@@ -19,6 +19,10 @@ public class CacheBatteryTests
                                                 [DwarfMapper] public partial class M { public partial B Map(A a); }
                                                 [MapTo(typeof(B2))] public class Src2 { public int X { get; set; } }
                                                 public class B2 { public int X { get; set; } }
+                                                public class Src3 { public int Id { get; set; } public string Name { get; set; } = ""; }
+                                                [GenerateMap<Src3, Dst3>]
+                                                [MapProperty<Src3, Dst3>("Name", "FullName")]
+                                                public sealed class Dst3 { public int Id { get; set; } public string FullName { get; set; } = ""; }
                                                 """;
 
     public static TheoryData<string> Generators()
