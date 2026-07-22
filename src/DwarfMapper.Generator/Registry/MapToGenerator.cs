@@ -261,24 +261,34 @@ public sealed class MapToGenerator : IIncrementalGenerator
     /// <summary>A member's [MapProperty]/[MapIgnore] directives in source order; i-th → i-th [MapTo] target.</summary>
     private static List<(bool Ignore, string? Name)> ParseDirectives(ISymbol member)
     {
-        var ordered = new List<(int Pos, bool Ignore, string? Name)>();
+        var ordered = new List<(string File, int Pos, bool Ignore, string? Name)>();
         foreach (var a in member.GetAttributes())
         {
             var cls = a.AttributeClass?.ToDisplayString();
             if (cls != MapPropAttr && cls != MapIgnoreAttr) continue;
-            var pos = a.ApplicationSyntaxReference?.Span.Start ?? 0;
+            var reference = a.ApplicationSyntaxReference;
+            // Span.Start alone orders attributes only within ONE file. A partial property (C# 13) can carry
+            // directives in two files, where the spans are independent offsets and the ordering — which decides
+            // WHICH [MapTo] target each directive binds to — would depend on GetAttributes()' cross-file order.
+            // Including the file path makes it total and stable across builds.
+            var file = reference?.SyntaxTree.FilePath ?? string.Empty;
+            var pos = reference?.Span.Start ?? 0;
             if (cls == MapIgnoreAttr)
             {
-                ordered.Add((pos, true, null));
+                ordered.Add((file, pos, true, null));
             }
             else
             {
                 var name = a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null;
-                ordered.Add((pos, false, name));
+                ordered.Add((file, pos, false, name));
             }
         }
 
-        ordered.Sort((x, y) => x.Pos.CompareTo(y.Pos));
+        ordered.Sort((x, y) =>
+        {
+            var byFile = string.CompareOrdinal(x.File, y.File);
+            return byFile != 0 ? byFile : x.Pos.CompareTo(y.Pos);
+        });
         return ordered.Select(x => (x.Ignore, x.Name)).ToList();
     }
 

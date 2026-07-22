@@ -7,6 +7,7 @@ using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DwarfMapper.Generator;
@@ -240,7 +241,19 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             foreach (var ch in segments[i]) sb.Append(char.IsLetterOrDigit(ch) || ch == '_' ? ch : '_');
 
             var s = sb.Length == 0 ? "_" : sb.ToString();
-            segments[i] = char.IsDigit(s[0]) ? "_" + s : s;
+            if (char.IsDigit(s[0])) s = "_" + s;
+
+            // A segment that is a RESERVED C# keyword is a legal assembly-name segment but not a legal namespace
+            // identifier: an assembly called "Acme.class" produced `namespace Acme.class;`, which does not parse.
+            // Non-identifier characters and leading digits were already handled; keywords were not. Prefixing
+            // "_" keeps the transform in the same shape as the other two (and stays a valid identifier, unlike a
+            // bare "@" escape inside a dotted namespace).
+            // Contextual keywords (value, record, from, …) are deliberately NOT escaped — they are perfectly
+            // valid identifiers, so renaming them would change the emitted namespace for no reason.
+            if (SyntaxFacts.GetKeywordKind(s) != SyntaxKind.None)
+                s = "_" + s;
+
+            segments[i] = s;
         }
 
         return string.Join(".", segments);

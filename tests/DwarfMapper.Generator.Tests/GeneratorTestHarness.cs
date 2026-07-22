@@ -97,9 +97,10 @@ internal static class GeneratorTestHarness
     ///     no such file was produced. Used to assert on the assembly-wide aggregate outputs.
     /// </summary>
     public static string RunAndGetSource(string source, string hintNameSuffix,
-        NullableContextOptions nullable = NullableContextOptions.Disable)
+        NullableContextOptions nullable = NullableContextOptions.Disable,
+        string assemblyName = "DwarfMapperTestAsm")
     {
-        var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
+        var compilation = BuildCompilation(assemblyName, source, nullable);
 
         var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
