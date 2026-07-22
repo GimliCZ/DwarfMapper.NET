@@ -101,9 +101,7 @@ public class ProjectionTests
                          [DwarfMapper]
                          public partial class M { public partial IQueryable<PersonDto> Project(IQueryable<Person> src); }
                          """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("global::System.Linq.Queryable.Select(", gen, StringComparison.Ordinal);
         Assert.Contains("Age = __s.Age", gen, StringComparison.Ordinal);
     }

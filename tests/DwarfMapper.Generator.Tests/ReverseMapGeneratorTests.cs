@@ -32,9 +32,7 @@ public class ReverseMapGeneratorTests
                                public partial Entity FromDto(Dto d);
                            }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         // The inverse inherited Name → FullName.
         Assert.Contains("FullName = d.Name", gen, StringComparison.Ordinal);
     }
@@ -62,7 +60,7 @@ public class ReverseMapGeneratorTests
         var (diags, gen) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF011"); // no DuplicateMapProperty
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.Contains("FullName = d.Name", gen, StringComparison.Ordinal);
     }
 

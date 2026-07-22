@@ -40,9 +40,7 @@ public class HeteroFlattenGraphGeneratorTests
                                      public partial TreeDto Map(Tree t);
                                  }
                                  """;
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ── 2. Hetero: emits FlattenGraph traversal helper, dispatch helper, per-type helpers ──
@@ -282,9 +280,7 @@ public class HeteroFlattenGraphGeneratorTests
                                public partial ScreenDto Map(Screen s);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("__DwarfMap_FlatNodeDispatch_", generated, StringComparison.Ordinal);
     }
 
@@ -315,9 +311,7 @@ public class HeteroFlattenGraphGeneratorTests
                                public partial TreeDto Map(Tree t);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Parent edge should appear in the switch arms (edge nulled + traversed)
         Assert.Contains("Parent", generated, StringComparison.Ordinal);
     }
@@ -345,9 +339,7 @@ public class HeteroFlattenGraphGeneratorTests
                                public partial TreeDto Map(Tree t);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("ToArray()", generated, StringComparison.Ordinal);
     }
 
@@ -378,6 +370,6 @@ public class HeteroFlattenGraphGeneratorTests
         Assert.Contains("__DwarfMap_FlatNode_", generated, StringComparison.Ordinal);
         // Must NOT emit dispatch helper for homogeneous path
         Assert.DoesNotContain("__DwarfMap_FlatNodeDispatch_", generated, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 }

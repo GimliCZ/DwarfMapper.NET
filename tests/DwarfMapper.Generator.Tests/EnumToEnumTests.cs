@@ -20,9 +20,7 @@ public class EnumToEnumTests
                            [DwarfMapper]
                            public partial class M { public partial B Map(A a); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("switch", generated, StringComparison.Ordinal);
     }
 
@@ -83,6 +81,6 @@ public class EnumToEnumTests
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF015");
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 }

@@ -33,9 +33,7 @@ public class DeepSourcePathGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         Assert.Contains("s.Customer.Name", gen, StringComparison.Ordinal);
     }
 
@@ -57,7 +55,7 @@ public class DeepSourcePathGeneratorTests
                            """;
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains("s.Address.City.Name", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -77,7 +75,7 @@ public class DeepSourcePathGeneratorTests
                            """;
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains("s.Customer.Age", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -98,7 +96,7 @@ public class DeepSourcePathGeneratorTests
                            """;
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains("Len(s.Customer.Name)", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -213,9 +211,7 @@ public class DeepSourcePathGeneratorTests
             $"[DwarfMapper] public partial class M {{ [MapProperty(\"{path}\", nameof(D.Leaf))] public partial D Map(S s); }}");
         var src = sb.ToString();
 
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 #pragma warning restore CA1305
 }

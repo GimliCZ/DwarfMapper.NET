@@ -24,9 +24,7 @@ public class RoundTripGenTests
                                     public partial Order FromDto(OrderDto d);
                                 }
                                 """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("public void VerifyRoundTrip_ToDto", gen, StringComparison.Ordinal);
         Assert.Contains("global::DwarfMapper.Testing.RoundTrip.Verify<", gen, StringComparison.Ordinal);
         Assert.Contains("(ToDto, FromDto, seed, iterations)", gen, StringComparison.Ordinal);

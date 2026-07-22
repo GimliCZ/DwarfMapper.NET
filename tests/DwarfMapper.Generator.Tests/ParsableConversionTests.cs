@@ -22,9 +22,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Parse", generated, StringComparison.Ordinal);
         Assert.Contains("InvariantCulture", generated, StringComparison.Ordinal);
     }
@@ -41,9 +39,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Parse", generated, StringComparison.Ordinal);
     }
 
@@ -58,9 +54,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Parse", generated, StringComparison.Ordinal);
     }
 
@@ -77,9 +71,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("ToString", generated, StringComparison.Ordinal);
         Assert.Contains("InvariantCulture", generated, StringComparison.Ordinal);
     }
@@ -96,9 +88,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("ToString", generated, StringComparison.Ordinal);
     }
 
@@ -115,7 +105,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
     }
@@ -132,7 +122,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("ToString", generated, StringComparison.Ordinal);
@@ -151,7 +141,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         // Must emit "o" format for lossless round-trip
@@ -171,7 +161,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("RoundtripKind", generated, StringComparison.Ordinal);
@@ -191,7 +181,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
@@ -209,7 +199,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
@@ -227,7 +217,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
     }
@@ -250,9 +240,7 @@ public class ParsableConversionTests
                                private static int Parse(string v) => int.Parse(v, System.Globalization.CultureInfo.InvariantCulture);
                            }
                            """;
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ── Enum↔string still routes by-name through EnumConverter ───────────────
@@ -269,9 +257,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // EnumConverter emits a switch statement for by-name
         Assert.Contains("switch", generated, StringComparison.Ordinal);
         // Must NOT use Parse (IParsable path) for enums
@@ -290,9 +276,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // EnumConverter emits a switch for enum→string
         Assert.Contains("switch", generated, StringComparison.Ordinal);
         // Must NOT use IFormattable path for enums
@@ -363,9 +347,7 @@ public class ParsableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // string→string is implicit — no synthesized method
         Assert.DoesNotContain(".Parse(", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("ToString(null", generated, StringComparison.Ordinal);

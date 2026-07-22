@@ -44,9 +44,7 @@ public class UnflattenGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         Assert.Contains("__dwarf_target.Address.City = s.City", gen, StringComparison.Ordinal);
         Assert.Contains("is null) __dwarf_target.Address = new global::Demo.Addr()", gen, StringComparison.Ordinal);
     }
@@ -68,9 +66,7 @@ public class UnflattenGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         Assert.Equal(1, Count(gen, "__dwarf_target.Address = new global::Demo.Addr()"));
         Assert.Contains("__dwarf_target.Address.City = s.City", gen, StringComparison.Ordinal);
         Assert.Contains("__dwarf_target.Address.Street = s.Street", gen, StringComparison.Ordinal);
@@ -91,7 +87,7 @@ public class UnflattenGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -113,7 +109,7 @@ public class UnflattenGeneratorTests
                            """;
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains("__dwarf_target.Address.City = s.Inner.Name", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]

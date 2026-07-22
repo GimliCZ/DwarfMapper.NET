@@ -33,7 +33,7 @@ public class CollectionKeyDiagnosticTests
             """;
 
         Assert.DoesNotContain(GeneratorTestHarness.Run(source).Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(source));
+        GeneratorAssert.EmitsCompilableCode(source);
     }
 
     [Fact]

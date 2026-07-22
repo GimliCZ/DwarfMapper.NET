@@ -44,6 +44,6 @@ public class InheritanceMappingTests
         // 'Id' (inherited) assigned exactly once
         var occurrences = generated.Split(IdEqualsToken, StringSplitOptions.None).Length - 1;
         Assert.Equal(1, occurrences);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 }

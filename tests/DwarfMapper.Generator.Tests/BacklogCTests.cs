@@ -47,7 +47,7 @@ public class BacklogCTests
         // Synthesized nested helpers must appear in generated code.
         Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
         // Must compile clean.
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public class BacklogCTests
                            """;
         var (diag, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Id == "DWARF033");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -199,7 +199,7 @@ public class BacklogCTests
         var errors = diag.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
         Assert.True(errors.Count == 0,
             $"Expected no errors with CaseInsensitive=true, got: {string.Join(", ", errors.Select(d => d.Id + " " + d.GetMessage(CultureInfo.InvariantCulture)))}");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -224,9 +224,7 @@ public class BacklogCTests
                                public partial IQueryable<Dst> Project(IQueryable<Src> src);
                            }
                            """;
-        var (diag, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     [Fact]
@@ -251,7 +249,7 @@ public class BacklogCTests
         var (diag, generated) = GeneratorTestHarness.Run(src);
         // Must not error.
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         // The generated code should contain "HasValue" for the null-preserving ternary.
         Assert.Contains("HasValue", generated, StringComparison.Ordinal);
     }
@@ -272,9 +270,7 @@ public class BacklogCTests
                                public partial IQueryable<Dst> Project(IQueryable<Src> src);
                            }
                            """;
-        var (diag, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // The generated code should contain ".Value" for the unwrap.
         Assert.Contains(".Value", generated, StringComparison.Ordinal);
     }
@@ -301,7 +297,7 @@ public class BacklogCTests
                            """;
         var (diag, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Id == "DWARF028");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         // Should use inline cast, not a __DwarfMap_ helper.
         Assert.DoesNotContain("__DwarfMap_", generated, StringComparison.Ordinal);
     }
@@ -324,7 +320,7 @@ public class BacklogCTests
                            """;
         var (diag, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Id == "DWARF028");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.DoesNotContain("__DwarfMap_", generated, StringComparison.Ordinal);
     }
 

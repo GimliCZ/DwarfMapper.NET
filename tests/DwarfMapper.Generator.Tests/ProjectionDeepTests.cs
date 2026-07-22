@@ -48,7 +48,7 @@ public class ProjectionDeepTests
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("new global::D.InnerDto", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public class ProjectionDeepTests
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
         // Null-nav ternary must appear for the nullable inner
         Assert.Contains("== null ? null :", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class ProjectionDeepTests
         Assert.Contains("new global::D.L2Dto", gen, StringComparison.Ordinal);
         Assert.Contains("new global::D.L3Dto", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public class ProjectionDeepTests
         Assert.Contains("Enumerable.ToList", gen, StringComparison.Ordinal);
         Assert.Contains("new global::D.ItemDto", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public class ProjectionDeepTests
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("Colour.Code", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public class ProjectionDeepTests
         var (diag, gen) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(gen, "== null ? null :", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public class ProjectionDeepTests
         Assert.Contains("Enumerable.Select", gen, StringComparison.Ordinal);
         Assert.Contains("Enumerable.ToArray", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -199,7 +199,7 @@ public class ProjectionDeepTests
         Assert.DoesNotContain("Enumerable.ToList", gen, StringComparison.Ordinal);
         Assert.DoesNotContain("Enumerable.ToArray", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -217,7 +217,7 @@ public class ProjectionDeepTests
         // Constructor projection → new DstRec(...)
         Assert.Contains("new global::D.DstRec(", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public class ProjectionDeepTests
         // int→long is an implicit widening — direct assignment, no cast needed
         Assert.Contains("X = __s.X", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -253,7 +253,7 @@ public class ProjectionDeepTests
         var (diag, gen) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -274,7 +274,7 @@ public class ProjectionDeepTests
         // By-value enum: cast inline (E2)__s.E
         Assert.Contains("(global::D.E2)", gen, StringComparison.Ordinal);
         Assert.DoesNotContain(gen, "__DwarfMap_", StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -530,9 +530,7 @@ public class ProjectionDeepTests
                          public class OrderDto { public CustRec Customer { get; set; } = null!; }
                          [DwarfMapper] public partial class M { public partial IQueryable<OrderDto> P(IQueryable<Order> q); }
                          """;
-        var (diag, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         // Must emit constructor call, NOT member-init (which would fail without parameterless ctor)
         Assert.Contains("new global::D.CustRec(", gen, StringComparison.Ordinal);
         Assert.DoesNotContain("new global::D.CustRec {", gen, StringComparison.Ordinal);
@@ -552,9 +550,7 @@ public class ProjectionDeepTests
                          public class OuterDto { public InnerDto Inner { get; set; } = null!; }
                          [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> P(IQueryable<Outer> q); }
                          """;
-        var (diag, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         // Settable class → member-init form
         Assert.Contains("new global::D.InnerDto {", gen, StringComparison.Ordinal);
         Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
@@ -575,9 +571,7 @@ public class ProjectionDeepTests
                          public class PersonDto { public AddressRec Addr { get; set; } = null!; }
                          [DwarfMapper] public partial class M { public partial IQueryable<PersonDto> P(IQueryable<Person> q); }
                          """;
-        var (diag, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("new global::D.CityRec(", gen, StringComparison.Ordinal);
         Assert.Contains("new global::D.AddressRec(", gen, StringComparison.Ordinal);
         Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
@@ -599,9 +593,7 @@ public class ProjectionDeepTests
                          public class OuterDto { public List<ItemDto>? Items { get; set; } }
                          [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> P(IQueryable<Outer> q); }
                          """;
-        var (diag, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         // The COLLECTION source expression (__s.Items) must be null-guarded before Select call.
         // Pattern: "__s.Items == null ? null : Enumerable..."
         Assert.Contains("__s.Items == null ? null :", gen, StringComparison.Ordinal);

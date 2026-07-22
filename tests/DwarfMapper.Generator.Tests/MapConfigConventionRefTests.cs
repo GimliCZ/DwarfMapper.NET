@@ -71,6 +71,6 @@ public class MapConfigConventionRefTests
             }
             """;
 
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(withStaticCtor));
+        GeneratorAssert.EmitsCompilableCode(withStaticCtor);
     }
 }

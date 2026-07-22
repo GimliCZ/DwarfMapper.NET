@@ -30,9 +30,7 @@ public class NamingConventionGeneratorTests
                     public class D { public string {{tgtName}} { get; set; } = ""; }
                     [DwarfMapper(NameConvention = NameConvention.Flexible)] public partial class M { public partial D Map(S s); }
                     """;
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     [Fact]
@@ -82,8 +80,6 @@ public class NamingConventionGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 }

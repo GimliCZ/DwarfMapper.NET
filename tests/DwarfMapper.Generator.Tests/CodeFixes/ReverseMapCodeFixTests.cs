@@ -68,7 +68,7 @@ public class ReverseMapCodeFixTests
         // The crucial assertion: the FIXED source now generates with no DWARF052 (and no errors).
         var (afterDiags, _) = GeneratorTestHarness.Run(fixedText);
         Assert.DoesNotContain(afterDiags, d => d.Id == "DWARF052");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(fixedText));
+        GeneratorAssert.EmitsCompilableCode(fixedText);
     }
 
     [Fact]
@@ -102,6 +102,6 @@ public class ReverseMapCodeFixTests
         // The fixed source must now compile with no DWARF001 and no errors.
         var (afterDiags, _) = GeneratorTestHarness.Run(fixedText);
         Assert.DoesNotContain(afterDiags, d => d.Id == "DWARF001");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(fixedText));
+        GeneratorAssert.EmitsCompilableCode(fixedText);
     }
 }

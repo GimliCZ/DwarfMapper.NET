@@ -187,7 +187,7 @@ public class DiagnosticTests
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("Age = p.Age", generated, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -228,7 +228,7 @@ public class DiagnosticTests
             """;
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── Item 12: DWARF064 — [MapValue] shadows a same-named source member ──────────
@@ -380,6 +380,6 @@ public class DiagnosticTests
         // The closed wrapper instantiation Env<A> -> Env<B> is emitted.
         Assert.Contains("Env<global::A>", generated, System.StringComparison.Ordinal);
         Assert.Contains("Env<global::B>", generated, System.StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 }

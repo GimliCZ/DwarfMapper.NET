@@ -22,9 +22,7 @@ public class AsyncStreamMapGeneratorTests
                            [DwarfMapper]
                            public partial class M { public partial IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // async iterator shape.
         Assert.Contains("async partial", generated, StringComparison.Ordinal);
         // ISSUE-025: library code must not capture the caller's synchronization context. This assertion used to
@@ -53,7 +51,7 @@ public class AsyncStreamMapGeneratorTests
         var (diags, generated) = GeneratorTestHarness.Run(src);
 
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.Contains("EnumeratorCancellation", generated, StringComparison.Ordinal);
         Assert.Contains("WithCancellation(src, ct).ConfigureAwait(false)", generated, StringComparison.Ordinal);
     }
@@ -68,9 +66,7 @@ public class AsyncStreamMapGeneratorTests
                            [DwarfMapper]
                            public partial class M { public partial IAsyncEnumerable<long> Map(IAsyncEnumerable<int> src); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("yield return __item;", generated, StringComparison.Ordinal); // implicit int→long
     }
 }

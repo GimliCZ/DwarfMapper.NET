@@ -11,9 +11,7 @@ file static class Col
 {
     public static void NoErrors(string src)
     {
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     public static void HasDwarf027(string src)

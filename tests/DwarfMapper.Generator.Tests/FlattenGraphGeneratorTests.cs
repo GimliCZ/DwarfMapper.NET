@@ -39,7 +39,7 @@ public class FlattenGraphGeneratorTests
         var (diags, generated) = GeneratorTestHarness.Run(src);
 
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         // The leaf is actually assigned in the flat-node helper (previously absent entirely).
         Assert.Contains("Tags = ", generated, StringComparison.Ordinal);
     }
@@ -62,7 +62,7 @@ public class FlattenGraphGeneratorTests
         var d075 = Assert.Single(diags, d => d.Id == "DWARF075");
         Assert.Contains("Tags", d075.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
             StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── 1. Basic: single-reference edge graph — compiles without error ──────
@@ -85,9 +85,7 @@ public class FlattenGraphGeneratorTests
                                public partial RootDto Map(Root r);
                            }
                            """;
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ── 2. BFS traversal helper and flat-node helper are emitted ────────────
@@ -114,7 +112,7 @@ public class FlattenGraphGeneratorTests
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("__DwarfMap_FlattenGraph_", generated, StringComparison.Ordinal);
         Assert.Contains("__DwarfMap_FlatNode_", generated, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── 3. DWARF034: unknown source navigation ───────────────────────────────
@@ -207,9 +205,7 @@ public class FlattenGraphGeneratorTests
                                public partial RootDto Map(Root r);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("ToArray()", generated, StringComparison.Ordinal);
     }
 
@@ -233,9 +229,7 @@ public class FlattenGraphGeneratorTests
                                public partial RootDto Map(Root r);
                            }
                            """;
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ── 8. Root's other members map normally alongside FlattenGraph ──────────
@@ -262,7 +256,7 @@ public class FlattenGraphGeneratorTests
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("Tag = r.Tag", generated, StringComparison.Ordinal);
         Assert.Contains("Count = r.Count", generated, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── 9. Edge members are nulled in FlatNode helper ────────────────────────
@@ -312,9 +306,7 @@ public class FlattenGraphGeneratorTests
                                public partial RootDto Map(Root r);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // BFS code must enumerate the Children collection edge
         Assert.Contains("foreach (var __", generated, StringComparison.Ordinal);
         Assert.Contains(".Children", generated, StringComparison.Ordinal);
@@ -368,8 +360,6 @@ public class FlattenGraphGeneratorTests
                                public partial RootDto Map(Root r);
                            }
                            """;
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 }

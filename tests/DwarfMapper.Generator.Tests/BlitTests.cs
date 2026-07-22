@@ -41,9 +41,7 @@ public class BlitTests
                          public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
                          [DwarfMapper] public partial class M { public partial B Map(A a); }
                          """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("MemoryMarshal.Cast<", gen, StringComparison.Ordinal);
         Assert.Contains("Unsafe.SizeOf<", gen, StringComparison.Ordinal);
     }
@@ -130,9 +128,7 @@ public class BlitTests
                          public class D { public DstN[] V { get; set; } = System.Array.Empty<DstN>(); }
                          [DwarfMapper] public partial class M { public partial D Map(C c); }
                          """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("MemoryMarshal.Cast<", gen, StringComparison.Ordinal);
     }
 
@@ -188,9 +184,7 @@ public class BlitTests
                              public partial D Map(C c);
                          }
                          """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("MemoryMarshal.Cast<", gen, StringComparison.Ordinal); // forced despite name mismatch
     }
 

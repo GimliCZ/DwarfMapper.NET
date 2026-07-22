@@ -8,9 +8,7 @@ public class CollectionTests
 {
     private static void NoErrors(string src)
     {
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     [Fact]
@@ -200,7 +198,7 @@ public class CollectionTests
                          """;
         var (diagnostics, _) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -220,7 +218,7 @@ public class CollectionTests
                          """;
         var (diagnostics, _) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -238,7 +236,7 @@ public class CollectionTests
                          """;
         var (diagnostics, _) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -256,7 +254,7 @@ public class CollectionTests
                          """;
         var (diagnostics, _) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -281,6 +279,6 @@ public class CollectionTests
                          """;
         var (diagnostics, _) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF007");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 }

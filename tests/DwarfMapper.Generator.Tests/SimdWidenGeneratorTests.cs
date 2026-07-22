@@ -20,9 +20,7 @@ public class SimdWidenGeneratorTests
                            public class D { public long[] V { get; set; } = System.Array.Empty<long>(); }
                            [DwarfMapper] public partial class M { public partial D Map(S s); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Vector.Widen", generated, StringComparison.Ordinal);
         Assert.Contains("Vector.IsHardwareAccelerated", generated, StringComparison.Ordinal);
         // Scalar tail / fallback (the implicit widen).

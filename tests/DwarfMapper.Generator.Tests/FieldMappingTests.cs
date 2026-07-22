@@ -20,7 +20,7 @@ public class FieldMappingTests
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("Count = s.Count", generated, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -34,9 +34,7 @@ public class FieldMappingTests
                            [DwarfMapper]
                            public partial class M { public partial Target Map(Source s); }
                            """;
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     [Fact]

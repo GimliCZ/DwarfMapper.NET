@@ -74,7 +74,7 @@ public sealed class PairScopedConfigGeneratorTests
                               [MapIgnore<B>("Extra")]
                               public partial class M { }
                               """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(mapped));
+        GeneratorAssert.EmitsCompilableCode(mapped);
 
         // Without the pair-scoped ignore, B.Extra is unmapped → DWARF001.
         const string unmapped = """

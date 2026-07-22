@@ -22,9 +22,7 @@ public class PreserveReferenceGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial NodeDto Map(Node n); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
     }
 
     // ── 2. Preserve mode emits TryGetReference check ─────────────────────────────
@@ -120,9 +118,7 @@ public class PreserveReferenceGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial CustomerDto Map(Customer c); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Under Preserve, the synthesized Address→AddressDto mapper must thread ctx
         // (uniform threading for faithful topology). TryGetReference must be present.
         Assert.Contains("TryGetReference", generated, StringComparison.Ordinal);
@@ -198,9 +194,7 @@ public class PreserveReferenceGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial ADto Map(A a); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Both synthesized methods should have TryGetReference
         var count = 0;
         var start = 0;
@@ -234,7 +228,7 @@ public class PreserveReferenceGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial RootDto Map(Root r); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diags, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
         // The public Map(Root) must create a DwarfRefContext (to pass ctx to the Holder mapper).
@@ -255,7 +249,7 @@ public class PreserveReferenceGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial DiamondRootDto Map(DiamondRoot r); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── 13. Preserve + record target: compiles cleanly ───────────────────────────
@@ -272,7 +266,7 @@ public class PreserveReferenceGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial OuterDto Map(Outer o); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── 14. Preserve + nested collection of objects: compiles cleanly ─────────────
@@ -292,7 +286,7 @@ public class PreserveReferenceGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial RootDto Map(Root r); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── 15. None mode: acyclic mapper has NO DwarfRefContext param (zero overhead) ─
@@ -308,7 +302,7 @@ public class PreserveReferenceGeneratorTests
                            public partial class M { public partial Dst Map(Src s); }
                            """;
         var (_, generated) = GeneratorTestHarness.Run(src);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         // None mode: no ctx parameter anywhere in the generated code.
         Assert.DoesNotContain("DwarfRefContext", generated, StringComparison.Ordinal);
     }
@@ -328,7 +322,7 @@ public class PreserveReferenceGeneratorTests
                            public partial class M { public partial OuterDto Map(Outer o); }
                            """;
         var (_, generated) = GeneratorTestHarness.Run(src);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.DoesNotContain("DwarfRefContext", generated, StringComparison.Ordinal);
     }
 
@@ -348,7 +342,7 @@ public class PreserveReferenceGeneratorTests
                            """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF030");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // MF1-b: non-cyclic reference ctor param — acyclic AddressDto is safe, no DWARF030
@@ -367,7 +361,7 @@ public class PreserveReferenceGeneratorTests
                            """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF030");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // MF1-c: genuine S==T self-cycle with ctor → DWARF030 still fires (regression guard)

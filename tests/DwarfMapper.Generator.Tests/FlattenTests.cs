@@ -44,9 +44,7 @@ public class FlattenTests
                              public partial CustomerDto ToDto(Customer c);
                          }
                          """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("City = c.Address.City", gen, StringComparison.Ordinal);
     }
 
@@ -114,6 +112,6 @@ public class FlattenTests
                          """;
         var (diagnostics, _) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s)); // enum->int on the flattened leaf
+        GeneratorAssert.EmitsCompilableCode(s); // enum->int on the flattened leaf
     }
 }

@@ -60,7 +60,7 @@ public class ExplicitOnlyCodeFixTests
         var (afterDiags, _) = GeneratorTestHarness.Run(fixedText);
         Assert.DoesNotContain(afterDiags, x => x.Id == "DWARF072" &&
             x.GetMessage(CultureInfo.InvariantCulture).Contains("IsAdmin", System.StringComparison.Ordinal));
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(fixedText));
+        GeneratorAssert.EmitsCompilableCode(fixedText);
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public class ExplicitOnlyCodeFixTests
         var (afterDiags, _) = GeneratorTestHarness.Run(fixedText);
         Assert.DoesNotContain(afterDiags, x => x.Id == "DWARF072" &&
             x.GetMessage(CultureInfo.InvariantCulture).Contains("IsAdmin", System.StringComparison.Ordinal));
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(fixedText));
+        GeneratorAssert.EmitsCompilableCode(fixedText);
     }
 
     [Fact]

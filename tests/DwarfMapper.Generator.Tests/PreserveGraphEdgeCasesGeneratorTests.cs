@@ -32,9 +32,7 @@ public class PreserveGraphEdgeCasesGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial NodeDto Map(Node n); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         // In the synthesized method body the TryGetReference must appear before the depth-guard throw.
         var tryGetIdx = generated.IndexOf("TryGetReference", StringComparison.Ordinal);
@@ -60,7 +58,7 @@ public class PreserveGraphEdgeCasesGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve, MaxDepth = 4)]
                            public partial class M { public partial NodeDto Map(Node n); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -87,9 +85,7 @@ public class PreserveGraphEdgeCasesGeneratorTests
                                [BeforeMap] private static void Before(Node n) { }
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         // The TryGetReference (identity check) must appear BEFORE the Before(n) hook call.
         var tryGetIdx = generated.IndexOf("TryGetReference", StringComparison.Ordinal);
@@ -119,9 +115,7 @@ public class PreserveGraphEdgeCasesGeneratorTests
                                [AfterMap] private static void After(Node n, NodeDto d) { }
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         var tryGetIdx = generated.IndexOf("TryGetReference", StringComparison.Ordinal);
         var setRefIdx = generated.IndexOf("SetReference", StringComparison.Ordinal);
@@ -159,9 +153,7 @@ public class PreserveGraphEdgeCasesGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial Dst Map(Src s); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         // Should contain TryGetReference in the array helper (before the buffer loop).
         Assert.Contains("TryGetReference", generated, StringComparison.Ordinal);
@@ -190,7 +182,7 @@ public class PreserveGraphEdgeCasesGeneratorTests
                            [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                            public partial class M { public partial ContainerDto Map(Container c); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -247,7 +239,7 @@ public class PreserveGraphEdgeCasesGeneratorTests
                            """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF032");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     /// <summary>
@@ -274,7 +266,7 @@ public class PreserveGraphEdgeCasesGeneratorTests
                            """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF032");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     /// <summary>

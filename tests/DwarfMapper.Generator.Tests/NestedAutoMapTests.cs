@@ -32,9 +32,7 @@ public class NestedAutoMapTests
                                public partial PersonDto Map(Person p);
                            }
                            """;
-        var (diag, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Generated code must contain synthesized private nested mappers
         Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
         // Specifically, the root method uses a synthesized call for Home
@@ -61,7 +59,7 @@ public class NestedAutoMapTests
                                public partial OuterDto Map(Outer o);
                            }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -83,7 +81,7 @@ public class NestedAutoMapTests
                                public partial ItemDto Map(Item i);
                            }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -105,9 +103,7 @@ public class NestedAutoMapTests
                                public partial LineDto Map(Line l);
                            }
                            """;
-        var (diag, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         // Count occurrences of the synthesized method DEFINITION (private ... __DwarfMap_Obj_)
         // There should be exactly one definition for the Pt→PtDto pair.
@@ -135,9 +131,7 @@ public class NestedAutoMapTests
                                public partial InnerDto MapInner(Inner i);   // explicit sub-mapper
                            }
                            """;
-        var (diag, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Root method should call the user-declared MapInner, not a synthesized __DwarfMap_Obj_
         Assert.Contains("Sub = MapInner(", generated, StringComparison.Ordinal);
         // No synthesized method should exist for Inner→InnerDto
@@ -213,7 +207,7 @@ public class NestedAutoMapTests
         var (diag, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
         Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -285,9 +279,7 @@ public class NestedAutoMapTests
                            }
                            """;
         // Generator must complete quickly (not hang). If it hangs, the test will time out.
-        var (diag, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -307,9 +299,7 @@ public class NestedAutoMapTests
                                public partial NodeDto Map(Node n);
                            }
                            """;
-        var (diag, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diag, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -331,7 +321,7 @@ public class NestedAutoMapTests
                                public partial OuterDst Map(OuterSrc s);
                            }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -359,7 +349,7 @@ public class NestedAutoMapTests
         Assert.Contains("Home = ToDto(p.Home)", generated, StringComparison.Ordinal);
         // No synthesized method — the user declared one
         Assert.DoesNotContain("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -381,7 +371,7 @@ public class NestedAutoMapTests
                                public partial OuterDst Map(Outer o);
                            }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -410,7 +400,7 @@ public class NestedAutoMapTests
                            }
                            """;
         // Must compile without error — no DWARF031 for this simple case.
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
 
         // Verify the descriptor is accessible from the generator assembly.
         var descriptor = DiagnosticDescriptors.DeepNestingLimit;

@@ -44,9 +44,7 @@ public class NullSubstituteWhenGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
         Assert.Contains("s.Name ?? \"(none)\"", gen, StringComparison.Ordinal);
     }
 
@@ -65,9 +63,7 @@ public class NullSubstituteWhenGeneratorTests
                                private static bool Eligible(S s) => s.Tier > 0;
                            }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         Assert.Contains("if (Eligible(s)) __dwarf_target.Bonus = s.Bonus", gen, StringComparison.Ordinal);
         // The guarded member must NOT also be assigned unconditionally in the initializer.
         Assert.Equal(1, Count(gen, "Bonus = s.Bonus"));

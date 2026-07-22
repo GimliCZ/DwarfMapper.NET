@@ -27,9 +27,7 @@ public class EnumUnderlyingTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // By-name emits a switch statement
         Assert.Contains("switch", generated, StringComparison.Ordinal);
     }
@@ -47,9 +45,7 @@ public class EnumUnderlyingTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     [Fact]
@@ -64,9 +60,7 @@ public class EnumUnderlyingTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ── Safe paths: enum → wider numeric ─────────────────────────────────────
@@ -83,9 +77,7 @@ public class EnumUnderlyingTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Emits CreateChecked (widening is safe; no overflow possible)
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
@@ -102,9 +94,7 @@ public class EnumUnderlyingTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ── Enum→numeric narrowing: now emits CreateChecked (throws on overflow) ──
@@ -133,7 +123,7 @@ public class EnumUnderlyingTests
                                                 || d.Severity == DiagnosticSeverity.Error);
 
         // Confirm it compiles.
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
 
         // Now emits CreateChecked, not a plain cast.
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
@@ -163,7 +153,7 @@ public class EnumUnderlyingTests
 
         // No diagnostic emitted.
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
 
         // Now emits CreateChecked instead of a plain cast.
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);

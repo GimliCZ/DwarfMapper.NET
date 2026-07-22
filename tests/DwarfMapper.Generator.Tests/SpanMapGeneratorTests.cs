@@ -20,9 +20,7 @@ public class SpanMapGeneratorTests
                            [DwarfMapper]
                            public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Defensive length guard (no silent truncation).
         Assert.Contains("dst.Length < src.Length", generated, StringComparison.Ordinal);
         Assert.Contains("ArgumentException", generated, StringComparison.Ordinal);
@@ -43,9 +41,7 @@ public class SpanMapGeneratorTests
                            [DwarfMapper]
                            public partial class M { public partial void Map(ReadOnlySpan<P> src, Span<Q> dst); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Element goes through a synthesized nested mapper applied to src[__i].
         Assert.Contains("dst[__i] = __DwarfMap_Obj_", generated, StringComparison.Ordinal);
         Assert.Contains("(src[__i])", generated, StringComparison.Ordinal);

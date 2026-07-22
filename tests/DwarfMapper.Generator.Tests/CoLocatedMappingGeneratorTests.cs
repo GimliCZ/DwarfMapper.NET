@@ -22,7 +22,7 @@ public sealed class CoLocatedMappingGeneratorTests
                          """;
 
         // The whole compilation (host + generated PersonDtoMapper + facade) builds clean — no DWARF001, etc.
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
 
         // The mapping is emitted into a SEPARATE PersonDtoMapper type, not into PersonDto.
         var mapper = GeneratorTestHarness.RunAndGetSource(s, "PersonDtoMapper.g.cs");
@@ -48,7 +48,7 @@ public sealed class CoLocatedMappingGeneratorTests
                          [MapProperty<Person, PersonDto>("Name", "FullName")]
                          public sealed class PersonDto { public string FullName { get; set; } }
                          """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public sealed class CoLocatedMappingGeneratorTests
                          [GenerateMap<PersonDto, Person>]
                          public sealed class PersonDto { public string FullName { get; set; } }
                          """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
 
         var mapper = GeneratorTestHarness.RunAndGetSource(s, "PersonDtoMapper.g.cs");
         Assert.Contains("Map(global::Demo.Person", mapper, StringComparison.Ordinal);
@@ -83,7 +83,7 @@ public sealed class CoLocatedMappingGeneratorTests
                          public partial class M { }
                          """;
 
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
         var extra = GeneratorTestHarness.RunAndGetSource(s, "MMapper.g.cs");
         Assert.True(string.IsNullOrEmpty(extra), "co-located pipeline must skip a [DwarfMapper] class");
     }
@@ -149,7 +149,7 @@ public sealed class CoLocatedMappingGeneratorTests
                          public sealed class C { public int W { get; set; } }
                          """;
 
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
         Assert.Contains("Map(global::Demo.A", GeneratorTestHarness.RunAndGetSource(s, "CMapper.g.cs"),
             StringComparison.Ordinal);
         Assert.Contains("ToB(this global::Demo.A",

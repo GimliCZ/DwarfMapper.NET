@@ -17,9 +17,7 @@ public class NullHandlingTests
                            [DwarfMapper]
                            public partial class M { public partial B Map(A a); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("?? throw", generated, StringComparison.Ordinal);
     }
 
@@ -34,9 +32,7 @@ public class NullHandlingTests
                            [DwarfMapper(NullStrategy = NullStrategy.SetDefault)]
                            public partial class M { public partial B Map(A a); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("GetValueOrDefault()", generated, StringComparison.Ordinal);
     }
 
@@ -68,7 +64,7 @@ public class NullHandlingTests
                            [DwarfMapper]
                            public partial class M { public partial B Map(A a); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -82,9 +78,7 @@ public class NullHandlingTests
                          public class B { public E2 S { get; set; } }
                          [DwarfMapper] public partial class M { public partial B Map(A a); }
                          """;
-        var (diagnostics, _) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.CompilesClean(s);
     }
 
     [Fact]
@@ -98,6 +92,6 @@ public class NullHandlingTests
                          public class B { public int S { get; set; } }
                          [DwarfMapper] public partial class M { public partial B Map(A a); }
                          """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 }

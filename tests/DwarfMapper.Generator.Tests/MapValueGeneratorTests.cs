@@ -33,9 +33,7 @@ public class MapValueGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Source = \"api-v2\"", gen, StringComparison.Ordinal);
     }
 
@@ -53,7 +51,7 @@ public class MapValueGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -72,7 +70,7 @@ public class MapValueGeneratorTests
                            """;
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains("(float)(1.5)", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -92,7 +90,7 @@ public class MapValueGeneratorTests
                            """;
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains(")(1)", gen, StringComparison.Ordinal); // (global::Demo.Color)(1)
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -131,7 +129,7 @@ public class MapValueGeneratorTests
                            """;
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains("CreatedAt = Now()", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── Adversarial / diagnostics ───────────────────────────────────────────────
@@ -270,9 +268,7 @@ public class MapValueGeneratorTests
                                public partial D Map(S s);
                            }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Source = \"api-v2\"", gen, StringComparison.Ordinal);
     }
 
@@ -323,8 +319,6 @@ public class MapValueGeneratorTests
                         public partial D Map(S s);
                     }
                     """;
-        var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
     }
 }

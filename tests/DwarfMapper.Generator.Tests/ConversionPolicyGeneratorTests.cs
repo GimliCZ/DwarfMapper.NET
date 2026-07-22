@@ -52,7 +52,7 @@ public class ConversionPolicyGeneratorTests
         // Item 8: a lossy (narrowing) implicit conversion is a Warning (data-losing behaviour), not a mere Info.
         Assert.Equal(DiagnosticSeverity.Warning, d!.Severity);
         Assert.DoesNotContain(diags, x => x.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src)); // still maps (CreateChecked)
+        GeneratorAssert.EmitsCompilableCode(src); // still maps (CreateChecked)
     }
 
     [Fact]
@@ -118,6 +118,6 @@ public class ConversionPolicyGeneratorTests
                            """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.Null(D038(diags)); // explicit conversion → no DWARF038, even in strict mode
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 }

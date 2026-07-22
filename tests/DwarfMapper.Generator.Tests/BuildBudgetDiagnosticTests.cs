@@ -38,7 +38,7 @@ public class BuildBudgetDiagnosticTests
         Assert.NotNull(d);
         Assert.Equal(DiagnosticSeverity.Info, d!.Severity);
         // It is a heads-up, never a build break.
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(MapperWith(320)));
+        GeneratorAssert.EmitsCompilableCode(MapperWith(320));
     }
 
     [Fact]

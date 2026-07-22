@@ -22,9 +22,7 @@ public class GenerateMapAttributeGeneratorTests
                            [GenerateMap<A, B>]
                            public partial class M { }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Emitted as a full public method (NOT `public partial`), since no partial was declared.
         Assert.Contains("public global::Demo.B Map(global::Demo.A src)", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("public partial global::Demo.B Map", generated, StringComparison.Ordinal);
@@ -62,9 +60,7 @@ public class GenerateMapAttributeGeneratorTests
                            [GenerateMap<C, CDto>]
                            public partial class M { }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Map(global::Demo.A src)", generated, StringComparison.Ordinal);
         Assert.Contains("Map(global::Demo.C src)", generated, StringComparison.Ordinal);
     }

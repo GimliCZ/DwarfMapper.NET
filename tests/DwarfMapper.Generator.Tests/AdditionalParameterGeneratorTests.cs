@@ -27,9 +27,7 @@ public class AdditionalParameterGeneratorTests
                            public class D { public int Id { get; set; } public string Tenant { get; set; } = ""; }
                            [DwarfMapper] public partial class M { public partial D Map(S s, string tenant); }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Map(global::Demo.S s, string tenant)", gen, StringComparison.Ordinal);
         Assert.Contains("Tenant = tenant", gen, StringComparison.Ordinal);
     }
@@ -46,7 +44,7 @@ public class AdditionalParameterGeneratorTests
                            """;
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains("Tenant = TENANT", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -98,7 +96,7 @@ public class AdditionalParameterGeneratorTests
                            public class D { public int Id { get; set; } public long Seq { get; set; } }
                            [DwarfMapper] public partial class M { public partial D Map(S s, int seq); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -114,7 +112,7 @@ public class AdditionalParameterGeneratorTests
         var (_, gen) = GeneratorTestHarness.Run(src);
         Assert.Contains("Tenant = tenant", gen, StringComparison.Ordinal);
         Assert.Contains("Version = version", gen, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -146,9 +144,7 @@ public class AdditionalParameterGeneratorTests
                            public class D { public int Id { get; set; } public InnerD Inner { get; set; } = new(); public string Tenant { get; set; } = ""; }
                            [DwarfMapper] public partial class M { public partial D Map(S s, string tenant); }
                            """;
-        var (diags, gen) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var gen = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Tenant = tenant", gen, StringComparison.Ordinal);
         // The synthesized nested mapper takes only the Inner source — the tenant param is not threaded in.
         Assert.DoesNotContain("global::Demo.Inner s, string tenant", gen, StringComparison.Ordinal);
