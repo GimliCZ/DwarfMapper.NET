@@ -149,8 +149,10 @@ public class GeneratorFrameworkSelfTests
     {
         public const string StepName = "DeepNoLeakStep";
 
-        // Depth 10 of chained nodes comfortably clears the depth-8 cap: no ISymbol/SyntaxNode/Location/
-        // Compilation anywhere in the chain, so the only thing that can make this walk fail is truncation.
+        // Chained two nodes deeper than GeneratorCacheAssert.MaxWalkDepth (rather than a hardcoded number) so
+        // this fixture keeps comfortably clearing the cap however that constant is retuned: no ISymbol/
+        // SyntaxNode/Location/Compilation anywhere in the chain, so the only thing that can make this walk fail
+        // is truncation.
         private sealed record Node(string Name, Node? Next);
 
         public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -158,7 +160,7 @@ public class GeneratorFrameworkSelfTests
             var models = context.SyntaxProvider
                 .CreateSyntaxProvider(
                     static (node, _) => node is Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,
-                    static (ctx, _) => BuildChain(ctx.Node.ToString(), 10))
+                    static (ctx, _) => BuildChain(ctx.Node.ToString(), GeneratorCacheAssert.MaxWalkDepth + 2))
                 .WithTrackingName(StepName);
 
             context.RegisterSourceOutput(models, static (spc, m) => spc.AddSource(

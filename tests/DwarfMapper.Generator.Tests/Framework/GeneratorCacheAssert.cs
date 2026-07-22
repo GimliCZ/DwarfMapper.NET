@@ -106,13 +106,16 @@ internal static class GeneratorCacheAssert
     private readonly record struct SymbolLeak(string Path, string TypeName);
 
     // Bounds the reflective walk below: pipeline models are small hand-written records/EquatableArray wrappers,
-    // not deep object graphs — but the real graph already lands at exactly depth 4 (e.g.
-    // MapperClassModel.Methods[i].Members[j]), which left zero headroom. 8 levels gives real headroom over the
-    // traced graph without risking a runaway walk over an unrelated deep type (BCL collections, Roslyn-adjacent
-    // types reachable off some unrelated property, etc) — the cycle guard below already stops those from
-    // running away regardless of depth. If the walk ever DOES hit this cap on a real run, that is surfaced as a
-    // hard failure below (see TruncationTracker) rather than silently passing.
-    private const int MaxWalkDepth = 8;
+    // not deep object graphs — but DwarfGenerator's DwarfMapperAggregate step nests two levels of `.Combine()`
+    // tuple (`.Item1.Item1[0]...`) before the model is even reached, and a depth-8 cap still truncated partway
+    // through that step's own `Diagnostics[0].Location.LineSpan.Start` chain. 16 levels gives real headroom over
+    // both the traced model graph and that tuple-nesting prefix, without risking a runaway walk over an
+    // unrelated deep type (BCL collections, Roslyn-adjacent types reachable off some unrelated property, etc) —
+    // the cycle guard below already stops those from running away regardless of depth. If the walk ever DOES hit
+    // this cap on a real run, that is surfaced as a hard failure below (see TruncationTracker) rather than
+    // silently passing. Internal (not private) so the self-tests in GeneratorFrameworkSelfTests can build a
+    // fixture that provably clears the cap instead of hardcoding a second copy of the number.
+    internal const int MaxWalkDepth = 16;
 
     /// <summary>
     ///     Records whether <see cref="FindSymbolLeak" /> ever backed off because it hit <see cref="MaxWalkDepth" />
