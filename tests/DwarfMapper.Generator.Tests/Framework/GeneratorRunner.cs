@@ -22,13 +22,20 @@ internal static class GeneratorRunner
 
         var compilation = GeneratorTestHarness.BuildCompilation("DwarfMapperRunnerAsm", source, nullable);
         var driver = CSharpGeneratorDriver.Create(generator);
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+        var ranDriver = driver.RunGeneratorsAndUpdateCompilation(compilation, out _, out var diagnostics);
 
-        var outputs = output.SyntaxTrees
-            .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+        // Take outputs from the run result (HintName + SourceText) rather than filtering
+        // syntax-tree paths: Roslyn derives a tree's path from the hint name plus ".cs", not
+        // ".g.cs", so any emitter whose hint name doesn't already end in ".g" was silently
+        // dropped from every golden fingerprint under the old path-filter approach. Note that
+        // RunGeneratorsAndUpdateCompilation returns the UPDATED driver (GeneratorDriver is immutable) —
+        // GetRunResult must be called on that return value, not on the pre-run "driver".
+        var result = ranDriver.GetRunResult();
+        var outputs = result.Results
+            .SelectMany(r => r.GeneratedSources)
             .ToImmutableDictionary(
-                t => Path.GetFileName(t.FilePath),
-                t => t.ToString(),
+                g => g.HintName,
+                g => g.SourceText.ToString(),
                 StringComparer.Ordinal);
 
         return new GeneratorRun(diagnostics, outputs);

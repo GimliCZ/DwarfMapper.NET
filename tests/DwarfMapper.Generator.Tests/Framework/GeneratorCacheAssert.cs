@@ -84,6 +84,15 @@ internal static class GeneratorCacheAssert
                         + "forcing Roslyn to retain memory it could free.");
                 }
 
+                // A skipped member (getter threw) and a genuinely clean one both return "no leak" from
+                // FindSymbolLeak — "could not look" must not be reported as "found nothing". Fail loudly and
+                // name every skipped path, the same way a depth-capped truncation is surfaced below.
+                if (truncation.SkippedMembers.Count > 0)
+                    Assert.Fail($"Symbol-leak walk could not inspect {truncation.SkippedMembers.Count} "
+                        + $"member(s) while checking step '{name}' — a getter threw, so the walk skipped it "
+                        + "instead of seeing its value. A member that could not be inspected is not evidence of "
+                        + "a clean model:\n  " + string.Join("\n  ", truncation.SkippedMembers));
+
                 // A cut-off branch and a genuinely clean one both return "no leak" from FindSymbolLeak — so
                 // truncation must be surfaced as a hard failure, never folded silently into "no leak found".
                 // Otherwise the exact failure this framework exists to prevent (a check that silently asserts
@@ -123,17 +132,25 @@ internal static class GeneratorCacheAssert
     ///     walk both return a null <see cref="SymbolLeak" />; without this, growing the model graph by one more
     ///     level would silently stop being covered while every test stayed green — which is exactly the failure
     ///     mode this framework exists to catch.
+    ///     Also records every member path skipped because its getter threw: a member the walk could not read is
+    ///     not evidence that member is clean, so it must be reported rather than silently treated as "no leak".
     /// </summary>
     private sealed class TruncationTracker
     {
         public bool Hit { get; private set; }
         public string Path { get; private set; } = "";
+        public List<string> SkippedMembers { get; } = new();
 
         public void Record(string path)
         {
             if (Hit) return;
             Hit = true;
             Path = path;
+        }
+
+        public void RecordSkip(string path, Exception exception)
+        {
+            SkippedMembers.Add($"{path} (getter threw {exception.GetType().Name}: {exception.Message})");
         }
     }
 
@@ -197,10 +214,12 @@ internal static class GeneratorCacheAssert
             {
                 propertyValue = property.GetValue(value);
             }
-            catch
+            catch (Exception ex)
             {
-                // A getter throwing (e.g. a property that is only valid in some state) is not this helper's
-                // problem to diagnose — skip it rather than fail the cacheability check for an unrelated reason.
+                // A getter throwing (e.g. a property that is only valid in some state) means this walk COULD
+                // NOT LOOK at that member — not that the member is clean. Record it so the caller fails loudly
+                // instead of a swallowed exception quietly reading as "no leak found".
+                truncation.RecordSkip($"{path}.{property.Name}", ex);
                 continue;
             }
 
@@ -216,8 +235,11 @@ internal static class GeneratorCacheAssert
             {
                 fieldValue = field.GetValue(value);
             }
-            catch
+            catch (Exception ex)
             {
+                // Same reasoning as the property-getter catch above: record the skipped path rather than
+                // silently treating an unreadable field as evidence of a clean model.
+                truncation.RecordSkip($"{path}.{field.Name}", ex);
                 continue;
             }
 

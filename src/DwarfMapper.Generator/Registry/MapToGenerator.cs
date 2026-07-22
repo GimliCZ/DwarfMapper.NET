@@ -27,10 +27,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
     ///     this pipeline at all — which is why DwarfGenerator had six incremental-caching tests and this
     ///     generator had none. Its model could stop being value-equatable and nothing would notice.
     /// </summary>
-    public const string ExtractStepName = "MapToExtract";
+    internal const string ExtractStepName = "MapToExtract";
 
     /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
-    public static readonly string[] AllStepNames = { ExtractStepName };
+    internal static readonly string[] AllStepNames = { ExtractStepName };
 
     private const string MapToAttr = "DwarfMapper.MapToAttribute";
     private const string MapPropAttr = "DwarfMapper.MapPropertyAttribute";

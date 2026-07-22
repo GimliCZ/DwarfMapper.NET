@@ -37,6 +37,11 @@ public class GoldenCorpusTests
 
         if (Environment.GetEnvironmentVariable(GoldenManifest.UpdateEnvVar) == "1")
         {
+            Assert.False(IsRunningInCi(),
+                $"{GoldenManifest.UpdateEnvVar}=1 was set in a CI environment. CI must not be able to bless a "
+                + "regenerated manifest — that silently rubber-stamps whatever the generator currently produces. "
+                + "Regenerate the manifest locally, review the diff, and commit it deliberately.");
+
             GoldenManifest.Write(actual);
             return;
         }
@@ -77,6 +82,18 @@ public class GoldenCorpusTests
             MinimumDwarfGeneratorCases, "generator \"DwarfGenerator\"");
         AssertAtLeast(cases.Count(c => c.GeneratorName == "MapToGenerator"),
             MinimumMapToGeneratorCases, "generator \"MapToGenerator\"");
+    }
+
+    /// <summary>
+    ///     Best-effort CI detection. These three env vars are set unconditionally by GitHub Actions, Azure
+    ///     Pipelines, and effectively every other CI provider (the generic "CI" convention); checking all three
+    ///     covers this repo's actual and plausible future CI hosts without depending on any one of them.
+    /// </summary>
+    private static bool IsRunningInCi()
+    {
+        return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"))
+               || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TF_BUILD"))
+               || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"));
     }
 
     private static void AssertAtLeast(int actual, int floor, string axisName)

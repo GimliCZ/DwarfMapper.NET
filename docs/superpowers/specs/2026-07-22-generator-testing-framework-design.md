@@ -119,13 +119,17 @@ Pinned, deterministic cases across three axes, fingerprinted and recorded in one
 |---|---|---|
 | Type | `CombinatorialSchema.DepthOneMatrix()` + `DepthTwoMatrix()` | `cmb:int\|Dictionary\|Identity` |
 | Type (fuzz) | `SyntheticSchema` over a **fixed** seed range | `syn:seed-0042` |
-| Feature | derived from already-gated taxonomies (below) | `feat:FlattenGraph`, `feat:NullStrategy.Throw` |
+| Feature | hand-curated list in `GoldenCorpus.FeatureCases()`, guarded by a taxonomy-growth ratchet | `feat:FlattenGraph`, `feat:NullStrategy.Throw` |
 
-The **feature axis is derived, not hand-listed** — from the same taxonomies the self-validation gates already
-prove complete: the public attribute set (Scan4/R1), public enum values (Scan5/R2/R3),
-`CollectionConverter.TargetKind`, `DictionaryConverter.DictTargetKind`, and the `MapMethodModel` mode flags
-(projection / span / async-stream). The corpus therefore inherits proven completeness, and adding a feature
-forces a new pinned case — the same ratchet logic used elsewhere in this repo.
+The **feature axis is a curated list, not a derivation** — `GoldenCorpus.FeatureCases()` is hand-written, and
+nothing ties its cases mechanically to the attribute/enum taxonomies it covers. What keeps the curation honest
+is `GeneratorTestingScanTests.The_feature_taxonomy_has_not_grown_past_its_recorded_baseline`: it counts the
+public attribute types and public enum values on `typeof(DwarfMapperAttribute).Assembly` and asserts those
+counts equal recorded baseline constants. If either taxonomy grows, the ratchet fails with a message saying a
+taxonomy grew and the feature list should be reviewed, then the baseline updated deliberately. This is weaker
+than true derivation — it cannot force the SPECIFIC new case the way generation from the taxonomy would — but
+it does force a human to notice growth and decide, rather than the corpus silently going stale next to an
+attribute or enum value nobody golden-tested.
 
 **Both generators** contribute cases; `[MapTo]` is a separate `IIncrementalGenerator` with its own emission.
 
@@ -160,6 +164,10 @@ tests/DwarfMapper.Generator.Tests/Golden/
 - **Every case source contributes** at least one case: the type axis, the fuzz axis, the feature axis, and each
   registered generator. A corpus that silently loses a whole source is the vacuity failure mode this repo keeps
   encountering, and the count floor alone would not catch it (one source growing can mask another vanishing).
+- **Feature-axis taxonomy has not grown past a recorded baseline.** `FeatureCases()` is hand-curated, not
+  derived, so nothing mechanically ties it to the attribute/enum taxonomies it covers; this ratchet counts
+  public attribute types and public enum values on the runtime assembly and fails when either count exceeds the
+  recorded baseline, forcing a deliberate look at whether the new shape needs a pinned case.
 
 ## 5. Determinism prerequisites
 
@@ -211,7 +219,7 @@ A helper that silently passes everything would neuter the entire net while the s
 |---|---|
 | Manifest churn on message rewording | Curated snapshots carry the readable diff; one-command regeneration. Accepted cost of the chosen strictness. |
 | Corpus adds meaningful runtime | Generator-only (no compile/emit); measure and report; seed range is the dial. |
-| Feature-axis corpus drifts from the taxonomy | Derived from already-gated taxonomies, not hand-listed; ratchet requires each axis to contribute. |
+| Feature-axis corpus drifts from the taxonomy | Curated, not derived; a taxonomy-growth ratchet (recorded attribute-type/enum-value counts) fails when the taxonomy outgrows what the corpus was reviewed against, forcing a deliberate look. |
 | Ratchets become noise | They fail only on structural regressions (new generator/pipeline unregistered, corpus shrinkage), not on ordinary edits. |
 
 ## 9. Out of scope

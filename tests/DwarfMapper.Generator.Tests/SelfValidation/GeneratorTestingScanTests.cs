@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Reflection;
+using DwarfMapper;
 using DwarfMapper.Generator.Tests.Framework;
 using Microsoft.CodeAnalysis;
 
@@ -35,13 +36,21 @@ public class GeneratorTestingScanTests
     [Fact]
     public void Every_tracking_name_constant_is_registered_in_the_battery()
     {
-        // A WithTrackingName the battery never asserts is decoration.
-        foreach (var (assemblyType, registeredName) in new[]
-                 {
-                     (typeof(DwarfGenerator), "DwarfGenerator"),
-                     (typeof(DwarfMapper.Generator.Registry.MapToGenerator), "MapToGenerator"),
-                 })
+        // A WithTrackingName the battery never asserts is decoration. Enumerate every IIncrementalGenerator
+        // type actually present in src/ — rather than a hardcoded two-tuple — so a third generator is checked
+        // automatically instead of being silently exempt. The sibling ratchet above forces a new generator
+        // into GeneratorRegistry, but that alone proves nothing about whether ITS step names are covered.
+        var generatorTypes = typeof(DwarfGenerator).Assembly.GetTypes()
+            .Where(t => t is { IsAbstract: false, IsInterface: false }
+                        && typeof(IIncrementalGenerator).IsAssignableFrom(t));
+
+        foreach (var assemblyType in generatorTypes)
         {
+            var registered = GeneratorRegistry.All.SingleOrDefault(g => g.Name == assemblyType.Name);
+            Assert.True(registered is not null,
+                $"'{assemblyType.Name}' has no entry in GeneratorRegistry.All — add it there, or the "
+                + "battery never asserts any of its step names are cacheable.");
+
             var declared = assemblyType
                 .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
                 .Where(f => f.IsLiteral && f.FieldType == typeof(string)
@@ -49,15 +58,10 @@ public class GeneratorTestingScanTests
                 .Select(f => (string)f.GetRawConstantValue()!)
                 .ToList();
 
-            var registered = GeneratorRegistry.All.SingleOrDefault(g => g.Name == registeredName);
-            Assert.True(registered is not null,
-                $"'{registeredName}' has no entry in GeneratorRegistry.All — add it there, or update the "
-                + "(assemblyType, registeredName) tuple in this test if the generator was renamed or removed.");
-
             foreach (var name in declared)
                 Assert.True(registered!.TrackingNames.Contains(name),
-                    $"{registeredName} declares step name '{name}' but AllStepNames does not include it, so the "
-                    + "battery never asserts that step is cacheable.");
+                    $"{assemblyType.Name} declares step name '{name}' but AllStepNames does not include it, so "
+                    + "the battery never asserts that step is cacheable.");
         }
     }
 
@@ -70,5 +74,37 @@ public class GeneratorTestingScanTests
             Assert.True(covered.Contains(g.Name, StringComparer.Ordinal),
                 $"Generator '{g.Name}' contributes no golden cases, so a refactor could change its output "
                 + "undetected. Add feature cases for it to GoldenCorpus.FeatureCases().");
+    }
+
+    // Baselines recorded against DwarfMapper.dll on 2026-07-22: 31 public attribute types, 14 public enum
+    // values (7 enums, 2 values each). GoldenCorpus.FeatureCases() is a hand-curated list, NOT derived from
+    // these taxonomies — see the design spec's Known Limitations note. This ratchet is the honest substitute:
+    // it cannot force a specific new case the way true derivation would, but it forces a human to notice
+    // growth and decide whether the feature axis needs a new pinned case, rather than the corpus silently
+    // going stale next to an attribute or enum value nobody golden-tested.
+    private const int BaselineAttributeTypeCount = 31;
+    private const int BaselineEnumValueCount = 14;
+
+    [Fact]
+    public void The_feature_taxonomy_has_not_grown_past_its_recorded_baseline()
+    {
+        var runtimeAssembly = typeof(DwarfMapperAttribute).Assembly;
+
+        var attributeTypeCount = runtimeAssembly.GetTypes()
+            .Count(t => t.IsPublic && typeof(Attribute).IsAssignableFrom(t));
+
+        Assert.True(attributeTypeCount == BaselineAttributeTypeCount,
+            $"{runtimeAssembly.GetName().Name} now has {attributeTypeCount} public attribute types; the "
+            + $"recorded baseline is {BaselineAttributeTypeCount}. A taxonomy grew, so consider adding a "
+            + "golden feature case, then update the baseline deliberately.");
+
+        var enumValueCount = runtimeAssembly.GetTypes()
+            .Where(t => t.IsPublic && t.IsEnum)
+            .Sum(t => Enum.GetValues(t).Length);
+
+        Assert.True(enumValueCount == BaselineEnumValueCount,
+            $"{runtimeAssembly.GetName().Name} now has {enumValueCount} public enum values across its public "
+            + $"enums; the recorded baseline is {BaselineEnumValueCount}. A taxonomy grew, so consider adding "
+            + "a golden feature case, then update the baseline deliberately.");
     }
 }
