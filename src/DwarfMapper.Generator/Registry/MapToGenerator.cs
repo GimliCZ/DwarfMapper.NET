@@ -40,7 +40,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             if (model.HasError || model.Targets.Count == 0) return;
 
-            spc.AddSource($"{model.ExtClassName}.g.cs", Emit(model));
+            spc.AddNormalizedSource($"{model.ExtClassName}.g.cs", Emit(model));
         });
     }
 

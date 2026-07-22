@@ -269,6 +269,9 @@ internal static class AggregateEmitter
         if (!(m.IsPartial || m.EmitAsNonPartial)) return false;
         if (m.Accessibility != "public" && m.Accessibility != "internal") return false;
         if (m.IsProjection || m.IsUpdateInto || m.IsSpanMap) return false;
+        // An async-stream map that declares a CancellationToken takes two arguments, so it cannot be invoked by
+        // the single-argument `Map(src)` shape this aggregate emits (nor registered as a Func<object, object>).
+        if (m.AsyncCancellationParam is not null) return false;
         if (m.DerivedTypeArms.Count > 0 || m.ExtraParameters.Count > 0) return false;
         return m.ParameterIsPublicType && m.ReturnIsPublicType;
     }

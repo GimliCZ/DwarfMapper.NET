@@ -389,7 +389,14 @@ internal static partial class MapperExtractor
             // ── Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src) ──
             // Emitted as an async iterator (await foreach … yield return conv(item)) that lazily
             // transforms the source sequence — preserves streaming/back-pressure, no buffering.
-            if (method.Parameters.Length == 1 && !method.ReturnsVoid
+            // A trailing CancellationToken is accepted (and required to be honoured): without it, nothing the
+            // consumer passes to `WithCancellation` can ever reach this iterator, so the stream is uncancellable.
+            // The generated half must match the user's partial signature exactly, so the token only exists when
+            // the user declared it.
+            var asCtParam = method.Parameters.Length == 2 && IsCancellationToken(method.Parameters[1].Type)
+                ? method.Parameters[1].Name
+                : null;
+            if ((method.Parameters.Length == 1 || asCtParam is not null) && !method.ReturnsVoid
                                               && TryGetAsyncEnumerableElement(method.Parameters[0].Type,
                                                   out var asSrcElem)
                                               && TryGetAsyncEnumerableElement(method.ReturnType, out var asDstElem))
@@ -418,6 +425,7 @@ internal static partial class MapperExtractor
                     false,
                     "",
                     IsAsyncStreamMap: true,
+                    AsyncCancellationParam: asCtParam,
                     ParameterIsPublicType: IsEffectivelyPublic(method.Parameters[0].Type),
                     ReturnIsPublicType: IsEffectivelyPublic(method.ReturnType)));
                 continue;
@@ -7031,6 +7039,13 @@ internal static partial class MapperExtractor
     ///     long↔float, int↔decimal) — a cross-category numeric conversion. Same-category pairs (int↔long,
     ///     float↔double) return false.
     /// </summary>
+    /// <summary>True for <c>System.Threading.CancellationToken</c>.</summary>
+    private static bool IsCancellationToken(ITypeSymbol t)
+    {
+        return t is INamedTypeSymbol { Name: "CancellationToken" } n
+               && n.ContainingNamespace?.ToDisplayString() == "System.Threading";
+    }
+
     /// <summary>
     /// Item 20: for each <c>[GenerateWrapperMap(typeof(W&lt;&gt;))]</c>, append the closed wrapper instantiation
     /// <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> to <paramref name="genPairs"/> for every already-declared

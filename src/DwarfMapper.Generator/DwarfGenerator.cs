@@ -195,14 +195,14 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                 var validate = AmbientValidator.EmitValidateMethod(consumed, root.AutoValidate, own.Length > 0);
                 if (validate.Length != 0)
                 {
-                    spc.AddSource("DwarfMapper.Validate.g.cs", validate);
+                    spc.AddNormalizedSource("DwarfMapper.Validate.g.cs", validate);
 
                     // DI-configurable counterpart: services.AddDwarfMappers().ValidateDwarfMaps() runs the
                     // check synchronously at the call site (chain it after the AddDwarfMappers that load providers).
                     if (root.DiAvailable)
                     {
                         var di = AmbientValidator.EmitValidateDiExtension(consumed);
-                        if (di.Length != 0) spc.AddSource("DwarfMapper.ValidateDi.g.cs", di);
+                        if (di.Length != 0) spc.AddNormalizedSource("DwarfMapper.ValidateDi.g.cs", di);
                     }
                 }
             });
@@ -219,7 +219,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             sb.Append("[assembly: global::DwarfMapper.DwarfRequiresMap(typeof(")
                 .Append(source).Append("), typeof(").Append(destination).Append("))]\n");
 
-        spc.AddSource("DwarfMapper.AmbientRequires.g.cs", sb.ToString());
+        spc.AddNormalizedSource("DwarfMapper.AmbientRequires.g.cs", sb.ToString());
     }
 
     /// <summary>
@@ -256,7 +256,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         if (usable.Count == 0) return;
 
         var (facade, facadeCollisions) = AggregateEmitter.EmitExtensions(usable, publicExtensions);
-        if (facade is not null) spc.AddSource("DwarfMapper.Extensions.g.cs", facade);
+        if (facade is not null) spc.AddNormalizedSource("DwarfMapper.Extensions.g.cs", facade);
         foreach (var (sourceType, extName) in facadeCollisions)
             // DWARF058 (Info): two mappers would produce the same x.ToTarget() extension, so it was dropped.
             spc.ReportDiagnostic(Diagnostic.Create(
@@ -268,13 +268,13 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         if (diAvailable)
         {
             var di = AggregateEmitter.EmitServiceCollection(usable, assemblyNamespace);
-            if (di is not null) spc.AddSource("DwarfMapper.ServiceCollectionExtensions.g.cs", di);
+            if (di is not null) spc.AddNormalizedSource("DwarfMapper.ServiceCollectionExtensions.g.cs", di);
         }
 
         // Ambient cross-assembly registry: a module initializer self-registers this assembly's stateless,
         // public-typed create-maps into DwarfMapperRegistry, plus the [assembly: DwarfProvidesMap] manifest.
         var (ambient, unregisterable) = AggregateEmitter.EmitAmbientRegistration(usable);
-        if (ambient is not null) spc.AddSource("DwarfMapper.AmbientRegistration.g.cs", ambient);
+        if (ambient is not null) spc.AddNormalizedSource("DwarfMapper.AmbientRegistration.g.cs", ambient);
         foreach (var mapper in unregisterable)
             spc.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.AmbientMapperNotRegistered, Location.None, mapper));
@@ -287,6 +287,6 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         if (model.HasBlockingError) return;
 
         var source = MapEmitter.Emit(model);
-        spc.AddSource($"{model.HintName}.g.cs", source);
+        spc.AddNormalizedSource($"{model.HintName}.g.cs", source);
     }
 }

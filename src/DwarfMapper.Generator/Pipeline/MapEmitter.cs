@@ -622,11 +622,35 @@ internal static class MapEmitter
     {
         var src = method.ParameterName;
 
+        var ct = method.AsyncCancellationParam;
+
         sb.Append(indent).Append(method.Accessibility).Append(" async partial ")
             .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-            .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src).AppendLine(")");
+            .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src);
+        if (ct is not null)
+            // [EnumeratorCancellation] is what links the parameter to the token a consumer passes to
+            // WithCancellation on the RESULT; without it the token is inert and the stream is uncancellable.
+            sb.Append(", [global::System.Runtime.CompilerServices.EnumeratorCancellation] ")
+                .Append("global::System.Threading.CancellationToken ").Append(ct);
+        sb.AppendLine(")");
         sb.Append(indent).AppendLine("{");
-        sb.Append(indent).Append("    await foreach (var __item in ").Append(src).AppendLine(")");
+        // ConfigureAwait(false) unconditionally: this is library code and must not capture the caller's
+        // synchronization context (a UI context turns every element into a post back to the UI thread, and is a
+        // classic deadlock source). WithCancellation only when the user declared a token to thread.
+        //
+        // Both are EXTENSION methods on IAsyncEnumerable<T> (System.Threading.Tasks.TaskAsyncEnumerableExtensions)
+        // and generated code deliberately carries no `using` directives, so they must be called in static form or
+        // the emitted file does not compile. WithCancellation already yields a
+        // ConfiguredCancelableAsyncEnumerable<T>, whose ConfigureAwait IS an instance method — hence the two
+        // shapes below.
+        const string ext = "global::System.Threading.Tasks.TaskAsyncEnumerableExtensions.";
+        sb.Append(indent).Append("    await foreach (var __item in ");
+        if (ct is not null)
+            sb.Append(ext).Append("WithCancellation(").Append(src).Append(", ").Append(ct)
+                .Append(").ConfigureAwait(false)");
+        else
+            sb.Append(ext).Append("ConfigureAwait(").Append(src).Append(", false)");
+        sb.AppendLine(")");
 
         var elem = method.Members.Count > 0 ? method.Members[0] : null;
         sb.Append(indent).Append("        yield return ");
