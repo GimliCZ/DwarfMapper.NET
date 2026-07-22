@@ -67,6 +67,8 @@ category `DwarfMapper.Registry`, distinct from the `[DwarfMapper]` class-model `
 | `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. |
 | `DWARFR05` | **No conversion between mapped members** — the member types are incompatible; use the `[DwarfMapper]` class model for a custom `Use=` converter. |
 | `DWARFR06` | **Recursive nested mapping is not supported by the registry** — the front door threads no reference context; use the `[DwarfMapper]` class model (`ReferenceHandling`/`OnCycle`) for cyclic graphs. |
+| `DWARFR08` | **Two `[MapTo]` targets generate the same method name** — targets whose *simple* names collide (`Foo.Order` and `Bar.Order`) would each emit `ToOrder(this Src)` into one static class (CS0111). Rename a target, or use the `[DwarfMapper]` class model where every method is named explicitly. |
+| `DWARFR09` | **`[MapTo]` target has no accessible parameterless constructor** — the registry constructs targets with `new T { … }`. Add a public parameterless constructor, or use the `[DwarfMapper]` class model, which supports constructor mapping. |
 | `DWARFR07` | **Lossy implicit numeric conversion** (Info) — the conversion is implicit in C# but crosses numeric categories (`long`→`double`, `int`→`float`, `long`→`decimal`) and loses precision for large magnitudes. The `[DwarfMapper]` class model reports the same thing as `DWARF038`; map through an explicit member type if the precision matters. |
 
 ---

@@ -48,6 +48,24 @@ internal static class RegistryDiagnostics
         "No built-in conversion for {0}; the source and destination member types are incompatible (use the [DwarfMapper] class model for a custom converter)",
         Category, DiagnosticSeverity.Error, true);
 
+    // Two [MapTo] targets whose SIMPLE names collide (Foo.Order and Bar.Order) both generate `ToOrder(this Src)`
+    // in one static class → CS0111 out of generated code. The MapTo<TTarget>() dispatcher is fine (it keys on
+    // typeof), so only the per-target convenience methods clash.
+    public static readonly DiagnosticDescriptor DuplicateTargetMethodName = new(
+        "DWARFR08",
+        "Two [MapTo] targets generate the same method name",
+        "{0}",
+        Category, DiagnosticSeverity.Error, true);
+
+    // The registry constructs targets with `new T { … }`, which requires an accessible parameterless ctor. A
+    // ctor-only target also has no writable members, so the completeness gate stays silent and the failure
+    // surfaced only as CS1729 out of generated code.
+    public static readonly DiagnosticDescriptor NoParameterlessConstructor = new(
+        "DWARFR09",
+        "[MapTo] target has no accessible parameterless constructor",
+        "[MapTo] target {0} has no public parameterless constructor; the registry constructs targets with an object initializer — add one, or use the [DwarfMapper] class model (which supports constructor mapping)",
+        Category, DiagnosticSeverity.Error, true);
+
     // Info, mirroring DWARF038 in the class model: the conversion is legal and implicit in C#, so making it an
     // error would reject code that compiles fine today — but it loses precision above the mantissa, and the
     // whole point is that the registry must not be SILENT where the class model warns.

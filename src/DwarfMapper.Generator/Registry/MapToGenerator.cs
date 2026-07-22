@@ -92,6 +92,14 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 continue;
             }
 
+            if (!HasParameterlessCtor(target))
+            {
+                diags.Add(new DiagnosticInfo(RegistryDiagnostics.NoParameterlessConstructor, location,
+                    target.ToDisplayString()));
+                hasError = true;
+                continue;
+            }
+
             var targetFqn = target.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var writables = WritableMembers(target).ToList();
 
@@ -155,6 +163,17 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 new EquatableArray<Assignment>(assignments.ToArray())));
         }
 
+        // Two targets with the same SIMPLE name (Foo.Order + Bar.Order) both yield `ToOrder(this Src)` in one
+        // static class → CS0111 out of generated code. Say so instead.
+        foreach (var dup in plans.GroupBy(p => p.MethodName, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        {
+            diags.Add(new DiagnosticInfo(RegistryDiagnostics.DuplicateTargetMethodName, location,
+                $"[MapTo] targets {string.Join(", ", dup.Select(p => p.TargetFqn))} share a simple name, so each "
+                + $"would generate '{dup.Key}(this …)' — rename one target, or use the [DwarfMapper] class model "
+                + "where every method is named explicitly"));
+            hasError = true;
+        }
+
         var ns = source.ContainingNamespace is { IsGlobalNamespace: false } n ? n.ToDisplayString() : null;
         var helpers = resolver.Synth.Values.OrderBy(h => h.Name, StringComparer.Ordinal).ToArray();
         // Public extension class when the source and every target are effectively public, so callers in
@@ -186,6 +205,18 @@ public sealed class MapToGenerator : IIncrementalGenerator
         return !SymbolEqualityComparer.Default.Equals(target, source)
                && (target.TypeKind == TypeKind.Class || target.TypeKind == TypeKind.Struct)
                && !target.IsAbstract;
+    }
+
+    /// <summary>
+    ///     The registry emits <c>new T { … }</c>, so the target needs an accessible parameterless constructor.
+    ///     A struct always has one. Reported as DWARFR09 rather than left to CS1729, which is what a ctor-only
+    ///     target produced before: it has no writable members either, so the completeness gate never fired.
+    /// </summary>
+    private static bool HasParameterlessCtor(INamedTypeSymbol target)
+    {
+        return target.TypeKind == TypeKind.Struct
+               || target.InstanceConstructors.Any(c =>
+                   c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
     }
 
     private static bool IsObjectType(INamedTypeSymbol t)

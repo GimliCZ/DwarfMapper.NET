@@ -175,6 +175,51 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR02");
     }
 
+    // ISSUE-010 — two targets whose SIMPLE names collide both generate `ToOrder(this Src)` in one static class,
+    // which the compiler rejects with CS0111 out of generated code.
+    [Fact]
+    public void Targets_with_the_same_simple_name_report_DWARFR08()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           namespace A { public class Order { public int Id { get; set; } } }
+                           namespace B { public class Order { public int Id { get; set; } } }
+                           namespace Demo
+                           {
+                               [MapTo(typeof(A.Order), typeof(B.Order))]
+                               public class Src { public int Id { get; set; } }
+                           }
+                           """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(src), d => d.Id == "DWARFR08");
+    }
+
+    // ISSUE-011 — the registry builds targets with `new T { … }`. A ctor-only target also has no writable
+    // members, so the completeness gate stayed silent and the only signal was CS1729 out of generated code.
+    [Fact]
+    public void Target_without_a_parameterless_constructor_reports_DWARFR09()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto { public Dto(int id) { Id = id; } public int Id { get; } }
+                         """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR09");
+    }
+
+    [Fact]
+    public void A_struct_target_is_not_flagged_by_DWARFR09()
+    {
+        // Over-reach guard: every struct has a parameterless constructor.
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public struct Dto { public int Id { get; set; } }
+                         """;
+        Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR09");
+    }
+
     // ── the standing completeness gate ──────────────────────────────────────────
     // Mirrors AssemblyScanTests Scan3 (every id tested) + Scan7 (every id documented), but over the registry's
     // OWN descriptor class, which those scans deliberately skip. It does NOT assert AnalyzerReleases sync — the
