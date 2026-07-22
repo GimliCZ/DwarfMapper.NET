@@ -139,6 +139,89 @@ public class GeneratorFrameworkSelfTests
         Assert.Contains("Model.Symbol", ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    ///     A generator whose tracked step's output is a chain of plain records nested one level deeper than
+    ///     GeneratorCacheAssert's walk cap, with NO leak anywhere in the chain. A depth-capped walk and a
+    ///     genuinely clean walk both return "no leak found" unless truncation is tracked separately — this proves
+    ///     that a real truncation is reported as a hard failure rather than being mistaken for a clean pass.
+    /// </summary>
+    private sealed class DeepNoLeakGenerator : IIncrementalGenerator
+    {
+        public const string StepName = "DeepNoLeakStep";
+
+        // Depth 10 of chained nodes comfortably clears the depth-8 cap: no ISymbol/SyntaxNode/Location/
+        // Compilation anywhere in the chain, so the only thing that can make this walk fail is truncation.
+        private sealed record Node(string Name, Node? Next);
+
+        public void Initialize(IncrementalGeneratorInitializationContext context)
+        {
+            var models = context.SyntaxProvider
+                .CreateSyntaxProvider(
+                    static (node, _) => node is Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,
+                    static (ctx, _) => BuildChain(ctx.Node.ToString(), 10))
+                .WithTrackingName(StepName);
+
+            context.RegisterSourceOutput(models, static (spc, m) => spc.AddSource(
+                "DeepNoLeak_" + m.Name.GetHashCode(StringComparison.Ordinal) + ".g.cs", "// x"));
+        }
+
+        private static Node BuildChain(string name, int depth) =>
+            depth == 0 ? new Node(name, null) : new Node(name, BuildChain(name, depth - 1));
+    }
+
+    [Fact]
+    public void Symbol_leak_walk_reports_truncation_rather_than_passing_silently()
+    {
+        var ex = Assert.ThrowsAny<Exception>(() =>
+            GeneratorCacheAssert.NoSymbolsInPipeline(
+                new DeepNoLeakGenerator(), Valid, new[] { DeepNoLeakGenerator.StepName }));
+
+        Assert.Contains("depth cap", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("NOT evidence of a clean model", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     A generator whose tracked step's output holds a reference cycle: a node whose own <c>Next</c> property
+    ///     points back to itself. The walk's reference-equality cycle guard must stop this from hanging or
+    ///     stack-overflowing — and, since nothing in the cycle is a leak, the check must still pass cleanly.
+    /// </summary>
+    private sealed class CyclicModelGenerator : IIncrementalGenerator
+    {
+        public const string StepName = "CyclicModelStep";
+
+        private sealed class Node
+        {
+            public string Name { get; set; } = "";
+            public Node? Next { get; set; }
+        }
+
+        public void Initialize(IncrementalGeneratorInitializationContext context)
+        {
+            var models = context.SyntaxProvider
+                .CreateSyntaxProvider(
+                    static (node, _) => node is Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,
+                    static (ctx, _) =>
+                    {
+                        var node = new Node { Name = ctx.Node.ToString() };
+                        node.Next = node;
+                        return node;
+                    })
+                .WithTrackingName(StepName);
+
+            context.RegisterSourceOutput(models, static (spc, m) => spc.AddSource(
+                "Cyclic_" + m.Name.GetHashCode(StringComparison.Ordinal) + ".g.cs", "// x"));
+        }
+    }
+
+    [Fact]
+    public void Symbol_leak_walk_terminates_on_a_cyclic_model()
+    {
+        // No wrapping ThrowsAny: the point being proven is that this returns at all (rather than hanging or
+        // stack-overflowing on the self-reference) AND that it does not misreport the cycle as a leak.
+        GeneratorCacheAssert.NoSymbolsInPipeline(
+            new CyclicModelGenerator(), Valid, new[] { CyclicModelGenerator.StepName });
+    }
+
     [Fact]
     public void CachedAfterUnrelatedEdit_FIRES_for_a_non_equatable_model()
     {

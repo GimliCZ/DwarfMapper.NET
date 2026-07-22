@@ -66,20 +66,32 @@ internal static class GeneratorCacheAssert
 
             foreach (var value in steps.SelectMany(s => s.Outputs).Select(o => o.Value))
             {
-                var leak = FindSymbolLeak(value, "", 0, new HashSet<object>(ReferenceEqualityComparer.Instance));
+                var truncation = new TruncationTracker();
+                var leak = FindSymbolLeak(value, "", 0, new HashSet<object>(ReferenceEqualityComparer.Instance),
+                    truncation);
 
-                if (leak is null) continue;
+                if (leak is not null)
+                {
+                    // The root value IS the leak (no member path) versus the leak is reachable through one or
+                    // more members of the root value — the two get worded differently so the failure names
+                    // exactly what the reviewer needs to look at.
+                    var where = leak.Value.Path.Length == 0
+                        ? $"Step '{name}' produced a {leak.Value.TypeName}"
+                        : $"Step '{name}' output {value?.GetType().Name}{leak.Value.Path} holds a {leak.Value.TypeName}";
 
-                // The root value IS the leak (no member path) versus the leak is reachable through one or
-                // more members of the root value — the two get worded differently so the failure names
-                // exactly what the reviewer needs to look at.
-                var where = leak.Value.Path.Length == 0
-                    ? $"Step '{name}' produced a {leak.Value.TypeName}"
-                    : $"Step '{name}' output {value?.GetType().Name}{leak.Value.Path} holds a {leak.Value.TypeName}";
+                    Assert.Fail(where + " — pipeline models must not hold ISymbol, SyntaxNode, Location or "
+                        + "Compilation. They are never equatable (so caching dies) and they root old compilations, "
+                        + "forcing Roslyn to retain memory it could free.");
+                }
 
-                Assert.Fail(where + " — pipeline models must not hold ISymbol, SyntaxNode, Location or "
-                    + "Compilation. They are never equatable (so caching dies) and they root old compilations, "
-                    + "forcing Roslyn to retain memory it could free.");
+                // A cut-off branch and a genuinely clean one both return "no leak" from FindSymbolLeak — so
+                // truncation must be surfaced as a hard failure, never folded silently into "no leak found".
+                // Otherwise the exact failure this framework exists to prevent (a check that silently asserts
+                // less than it claims) happens to itself.
+                if (truncation.Hit)
+                    Assert.Fail($"Symbol-leak walk hit its depth cap ({MaxWalkDepth}) at {truncation.Path} "
+                        + $"while checking step '{name}'. A truncated branch is NOT evidence of a clean model "
+                        + "— the model graph grew deeper than the walk. Raise MaxWalkDepth and re-run.");
             }
         }
 
@@ -94,10 +106,33 @@ internal static class GeneratorCacheAssert
     private readonly record struct SymbolLeak(string Path, string TypeName);
 
     // Bounds the reflective walk below: pipeline models are small hand-written records/EquatableArray wrappers,
-    // not deep object graphs, so 4 levels comfortably covers a realistic leak (e.g. Model -> EquatableArray
-    // element -> a property on that element) without risking a runaway walk over an unrelated deep type (BCL
-    // collections, Roslyn-adjacent types reachable off some unrelated property, etc).
-    private const int MaxWalkDepth = 4;
+    // not deep object graphs — but the real graph already lands at exactly depth 4 (e.g.
+    // MapperClassModel.Methods[i].Members[j]), which left zero headroom. 8 levels gives real headroom over the
+    // traced graph without risking a runaway walk over an unrelated deep type (BCL collections, Roslyn-adjacent
+    // types reachable off some unrelated property, etc) — the cycle guard below already stops those from
+    // running away regardless of depth. If the walk ever DOES hit this cap on a real run, that is surfaced as a
+    // hard failure below (see TruncationTracker) rather than silently passing.
+    private const int MaxWalkDepth = 8;
+
+    /// <summary>
+    ///     Records whether <see cref="FindSymbolLeak" /> ever backed off because it hit <see cref="MaxWalkDepth" />
+    ///     — and, if so, the path of the first place that happened. A depth-capped walk and a genuinely clean
+    ///     walk both return a null <see cref="SymbolLeak" />; without this, growing the model graph by one more
+    ///     level would silently stop being covered while every test stayed green — which is exactly the failure
+    ///     mode this framework exists to catch.
+    /// </summary>
+    private sealed class TruncationTracker
+    {
+        public bool Hit { get; private set; }
+        public string Path { get; private set; } = "";
+
+        public void Record(string path)
+        {
+            if (Hit) return;
+            Hit = true;
+            Path = path;
+        }
+    }
 
     /// <summary>
     ///     Recursively inspects <paramref name="value" /> — and, up to <see cref="MaxWalkDepth" /> levels, its
@@ -111,7 +146,8 @@ internal static class GeneratorCacheAssert
         Justification = "A property getter here is arbitrary third-party/generator model code; any exception "
         + "it throws must be swallowed so this test helper fails for the leak it's checking, not for an "
         + "unrelated getter side effect.")]
-    private static SymbolLeak? FindSymbolLeak(object? value, string path, int depth, HashSet<object> visited)
+    private static SymbolLeak? FindSymbolLeak(object? value, string path, int depth, HashSet<object> visited,
+        TruncationTracker truncation)
     {
         if (value is null) return null;
 
@@ -125,7 +161,11 @@ internal static class GeneratorCacheAssert
         var type = value.GetType();
         if (type.IsPrimitive || type.IsEnum || value is decimal) return null;
 
-        if (depth >= MaxWalkDepth) return null;
+        if (depth >= MaxWalkDepth)
+        {
+            truncation.Record(path);
+            return null;
+        }
 
         // Reference-equality cycle guard: a model that (accidentally or by design) references an ancestor
         // must not send this walk into an infinite loop or a stack overflow.
@@ -136,7 +176,7 @@ internal static class GeneratorCacheAssert
             var index = 0;
             foreach (var item in enumerable)
             {
-                var elementLeak = FindSymbolLeak(item, $"{path}[{index}]", depth + 1, visited);
+                var elementLeak = FindSymbolLeak(item, $"{path}[{index}]", depth + 1, visited, truncation);
                 if (elementLeak is not null) return elementLeak;
                 index++;
             }
@@ -161,7 +201,8 @@ internal static class GeneratorCacheAssert
                 continue;
             }
 
-            var propertyLeak = FindSymbolLeak(propertyValue, $"{path}.{property.Name}", depth + 1, visited);
+            var propertyLeak = FindSymbolLeak(propertyValue, $"{path}.{property.Name}", depth + 1, visited,
+                truncation);
             if (propertyLeak is not null) return propertyLeak;
         }
 
@@ -177,7 +218,7 @@ internal static class GeneratorCacheAssert
                 continue;
             }
 
-            var fieldLeak = FindSymbolLeak(fieldValue, $"{path}.{field.Name}", depth + 1, visited);
+            var fieldLeak = FindSymbolLeak(fieldValue, $"{path}.{field.Name}", depth + 1, visited, truncation);
             if (fieldLeak is not null) return fieldLeak;
         }
 
