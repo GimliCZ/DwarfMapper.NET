@@ -516,7 +516,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             if (dElem is null) return null;
 
-            if (!CollectionConverter.TryGetEnumerableElement(srcType, out var sElem, out _)) return null;
+            if (!CollectionConverter.TryGetEnumerableElement(srcType, out var sElem, out var sCount)) return null;
 
             var elemConv = Resolve(sElem, dElem, "x", targetName);
             if (elemConv is null) return null;
@@ -535,8 +535,11 @@ public sealed class MapToGenerator : IIncrementalGenerator
                         ? $"global::System.Array.Empty<{fqDElem}>()"
                         : $"new global::System.Collections.Generic.List<{fqDElem}>()")
                     .Append(";\n");
+                // ISSUE-020: the element count was available from TryGetEnumerableElement and thrown away, so this
+                // buffer grew by repeated reallocation even when the source's size was known up front. The class
+                // engine pre-sizes from that very helper; the registry simply never used the value it asked for.
                 sb.Append("        var __r = new global::System.Collections.Generic.List<").Append(fqDElem)
-                    .Append(">();\n");
+                    .Append(">(").Append(CountExpr(sCount)).Append(");\n");
                 sb.Append("        foreach (var x in s) __r.Add(").Append(elemConv).Append(");\n");
                 sb.Append("        return __r").Append(dstArray ? ".ToArray()" : "").Append(";\n");
                 sb.Append("    }\n");
@@ -544,6 +547,17 @@ public sealed class MapToGenerator : IIncrementalGenerator
             }
 
             return $"{name}({srcExpr})";
+        }
+
+        /// <summary>Capacity argument for a pre-sized buffer, or empty when the source size is unknown.</summary>
+        private static string CountExpr(CollectionConverter.CountKind count)
+        {
+            return count switch
+            {
+                CollectionConverter.CountKind.Length => "s.Length",
+                CollectionConverter.CountKind.Count => "s.Count",
+                _ => string.Empty,
+            };
         }
 
         private static string Key(ITypeSymbol a, ITypeSymbol b)
