@@ -67,6 +67,49 @@ public class NestedMapperClassTests
         }
         """;
 
+    // ISSUE-006 — the re-declared partial must use the SAME type keyword as the outer type. The keyword was
+    // computed as `struct` or `class`, collapsing every non-struct to "class", so a mapper nested in a RECORD
+    // (or an interface, or a record struct) emitted `partial class Outer` over a `record Outer` → CS0261, again
+    // a raw compiler error out of generated code with no DwarfMapper diagnostic.
+    private static string OuterOfKind(string declaration)
+    {
+        return $$"""
+                 using DwarfMapper;
+                 namespace Demo;
+                 public partial {{declaration}} Outer
+                 {
+                     public class A { public int X { get; set; } }
+                     public class B { public int X { get; set; } }
+
+                     [DwarfMapper]
+                     public partial class M { public partial B Map(A a); }
+                 }
+                 """;
+    }
+
+    [Theory]
+    [InlineData("record")]
+    [InlineData("record struct")]
+    [InlineData("struct")]
+    [InlineData("interface")]
+    [InlineData("class")]
+    public void Mapper_nested_in_any_type_kind_emits_code_that_compiles(string kind)
+    {
+        var source = OuterOfKind(kind);
+
+        var (diagnostics, generated) = GeneratorTestHarness.Run(source);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+
+        var compileErrors = GeneratorTestHarness.RunAndGetCompilationErrors(source).ToList();
+        Assert.True(
+            compileErrors.Count == 0,
+            $"A [DwarfMapper] class nested inside a '{kind}' was accepted, but the emitted code does not "
+            + "compile:\n  "
+            + string.Join("\n  ",
+                compileErrors.Select(e => $"{e.Id}: {e.GetMessage(CultureInfo.InvariantCulture)}"))
+            + "\n\nThe re-declared partial must repeat the outer type's own keyword.\n\nGenerated:\n" + generated);
+    }
+
     [Theory]
     [InlineData(nameof(NestedMapper))]
     [InlineData(nameof(DoublyNestedMapper))]

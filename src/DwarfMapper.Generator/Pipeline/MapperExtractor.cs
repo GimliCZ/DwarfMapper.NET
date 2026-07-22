@@ -2225,7 +2225,19 @@ internal static partial class MapperExtractor
                 return new List<string>();
             }
 
-            var keyword = outer.TypeKind == TypeKind.Struct ? "struct" : "class";
+            // The reopened partial declaration must use the SAME type keyword as the original, otherwise the
+            // compiler rejects it with CS0261 ("partial declarations must be all classes, all record classes,
+            // all structs, all record structs, or all interfaces"). This used to collapse everything that was
+            // not a struct to "class", so a mapper nested in a record — or in an interface — emitted
+            // `partial class Outer` over a `record Outer` and the generated file simply did not compile.
+            var keyword = outer switch
+            {
+                { TypeKind: TypeKind.Interface } => "interface",
+                { IsRecord: true, TypeKind: TypeKind.Struct } => "record struct",
+                { IsRecord: true } => "record",
+                { TypeKind: TypeKind.Struct } => "struct",
+                _ => "class",
+            };
             var accessibility = SyntaxFacts.GetText(outer.DeclaredAccessibility);
             chain.Add($"{accessibility} partial {keyword} {outer.Name}");
         }

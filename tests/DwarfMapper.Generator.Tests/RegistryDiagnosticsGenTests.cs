@@ -139,6 +139,42 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR07");
     }
 
+    // ISSUE-009 — the registry filtered on the PROPERTY's accessibility but never the ACCESSOR's, so
+    // `public int X { get; private set; }` counted as writable and emitted `new Dto { X = … }` → CS0272, and a
+    // `private get` emitted `source.X` → CS0271: raw compiler errors out of generated code. Such a member is now
+    // simply not writable/readable, which the completeness gate turns into a proper DWARFR02.
+    [Fact]
+    public void Private_setter_on_the_target_is_never_assigned()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int A { get; set; } public int B { get; set; } }
+                         public class Dto { public int A { get; set; } public int B { get; private set; } }
+                         """;
+        var (diags, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+
+        // A private-set property is not an assignable destination at all (same as the class model treats it), so
+        // it is simply not a mapping target — the point is that the registry no longer EMITS `B = …`, which the
+        // compiler rejected with CS0272 out of generated code.
+        Assert.DoesNotContain("B =", generated, StringComparison.Ordinal);
+        Assert.Contains("A =", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void Private_getter_on_the_source_is_not_read()
+    {
+        // Src.B is unreadable, so Dto.B has no source → DWARFR02 rather than an emitted `source.B` (CS0271).
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int A { get; set; } public int B { private get; set; } }
+                         public class Dto { public int A { get; set; } public int B { get; set; } }
+                         """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR02");
+    }
+
     // ── the standing completeness gate ──────────────────────────────────────────
     // Mirrors AssemblyScanTests Scan3 (every id tested) + Scan7 (every id documented), but over the registry's
     // OWN descriptor class, which those scans deliberately skip. It does NOT assert AnalyzerReleases sync — the

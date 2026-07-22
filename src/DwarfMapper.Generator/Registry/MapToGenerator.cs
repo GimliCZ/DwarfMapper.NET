@@ -202,7 +202,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
         foreach (var m in type.GetMembers())
         {
             if (m.IsStatic || m.DeclaredAccessibility != Accessibility.Public) continue;
-            if (m is IPropertySymbol { GetMethod: not null, IsIndexer: false } p) yield return (p, p.Type);
+            // As in WritableMembers: the GETTER's own accessibility decides readability. `public int X
+            // { private get; set; }` cannot be read from here, and emitting `source.X` gave CS0271.
+            if (m is IPropertySymbol { GetMethod.DeclaredAccessibility: Accessibility.Public, IsIndexer: false } p)
+                yield return (p, p.Type);
             else if (m is IFieldSymbol { IsConst: false, IsImplicitlyDeclared: false } f) yield return (f, f.Type);
         }
     }
@@ -212,7 +215,13 @@ public sealed class MapToGenerator : IIncrementalGenerator
         foreach (var m in type.GetMembers())
         {
             if (m.IsStatic || m.DeclaredAccessibility != Accessibility.Public) continue;
-            if (m is IPropertySymbol { SetMethod: not null, IsIndexer: false } p) yield return (p, p.Name, p.Type);
+            // The SETTER's own accessibility matters, not just the property's: `public int X { get; private set; }`
+            // is a public property that cannot be assigned from here, and treating it as writable emitted
+            // `new T { X = … }` → CS0272 out of generated code. Excluding it makes the destination member
+            // unmapped instead, which the completeness gate reports as DWARFR02 — loud, and actionable.
+            // (init-only setters stay allowed: the registry assigns through an object initializer.)
+            if (m is IPropertySymbol { SetMethod.DeclaredAccessibility: Accessibility.Public, IsIndexer: false } p)
+                yield return (p, p.Name, p.Type);
             else if (m is IFieldSymbol { IsConst: false, IsReadOnly: false, IsImplicitlyDeclared: false } f)
                 yield return (f, f.Name, f.Type);
         }

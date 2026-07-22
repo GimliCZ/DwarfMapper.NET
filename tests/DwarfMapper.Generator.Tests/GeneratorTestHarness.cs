@@ -68,12 +68,27 @@ internal static class GeneratorTestHarness
     public static ImmutableArray<Diagnostic> RunMapTo(string source,
         NullableContextOptions nullable = NullableContextOptions.Disable)
     {
+        return RunMapToWithSource(source, nullable).Diagnostics;
+    }
+
+    /// <summary>
+    ///     As <see cref="RunMapTo" />, but also returns the generated registry extension source — needed to
+    ///     assert on what the registry DID emit (e.g. that an unassignable member is not assigned at all).
+    /// </summary>
+    public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) RunMapToWithSource(
+        string source, NullableContextOptions nullable = NullableContextOptions.Disable)
+    {
         var compilation = BuildCompilation("DwarfMapperMapToTestAsm", source, nullable);
 
         var driver = CSharpGeneratorDriver.Create(new DwarfMapper.Generator.Registry.MapToGenerator());
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out _, out var genDiagnostics);
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
 
-        return genDiagnostics;
+        var generated = output.SyntaxTrees
+            .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+            .Select(t => t.ToString())
+            .FirstOrDefault() ?? string.Empty;
+
+        return (genDiagnostics, generated);
     }
 
     /// <summary>
