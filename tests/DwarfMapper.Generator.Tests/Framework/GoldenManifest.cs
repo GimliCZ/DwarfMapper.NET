@@ -6,8 +6,11 @@ using System.Text;
 namespace DwarfMapper.Generator.Tests.Framework;
 
 /// <summary>
-///     The manifest file: one sorted line per case, "<id> <sha256>". Never auto-created — a missing manifest
-///     fails with instructions, because a self-healing golden file lets CI silently bless whatever it produced.
+///     The manifest file: one sorted line per case, "<id> <sha256>". <see cref="Load" /> never auto-creates it —
+///     a missing file simply comes back as an empty dictionary; it is the caller's job (see
+///     <c>GoldenCorpusTests.Generated_output_matches_the_golden_manifest</c>) to treat that as a failure with
+///     instructions, because a self-healing golden file lets CI silently bless whatever it produced. A malformed
+///     line is never silently dropped either — it throws, so the manifest can never shrink unnoticed.
 /// </summary>
 internal static class GoldenManifest
 {
@@ -19,15 +22,33 @@ internal static class GoldenManifest
 
     public static IReadOnlyDictionary<string, string> Load()
     {
-        var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (!File.Exists(Path)) return result;
+        if (!File.Exists(Path)) return new Dictionary<string, string>(StringComparer.Ordinal);
 
-        foreach (var line in File.ReadAllLines(Path))
+        return ParseLines(File.ReadAllLines(Path));
+    }
+
+    /// <summary>
+    ///     The line parser, split out from <see cref="Load" /> so it can be exercised directly against in-memory
+    ///     lines instead of the real, shared manifest file on disk (tests run in parallel across classes).
+    ///     Blank lines and '#' comments are skipped; anything else without a space separator is malformed and
+    ///     throws rather than being silently dropped — a manifest that quietly shrinks would be misread as a
+    ///     legitimate corpus change by the added/removed detection in <c>GoldenCorpusTests</c>.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> ParseLines(IReadOnlyList<string> lines)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < lines.Count; i++)
         {
+            var line = lines[i];
             if (line.Length == 0 || line[0] == '#') continue;
 
             var space = line.LastIndexOf(' ');
-            if (space <= 0) continue;
+            if (space <= 0)
+                throw new InvalidDataException(
+                    $"Malformed manifest line {i + 1}: '{line}'. Never edit the manifest by hand; regenerate it "
+                    + $"deliberately with {UpdateEnvVar}=1.");
 
             result[line[..space]] = line[(space + 1)..];
         }
