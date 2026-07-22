@@ -67,6 +67,62 @@ public class GeneratorFrameworkSelfTests
         Assert.Contains("Cached/Unchanged", ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    ///     A generator whose tracked step's own output value IS a raw <see cref="ISymbol" /> — the exact leak
+    ///     <see cref="GeneratorCacheAssert.NoSymbolsInPipeline" /> exists to catch. <c>IsSymbolFree</c> is a
+    ///     direct type-pattern match on the tracked step's output, not a reflective walk of its fields, so a
+    ///     model class that merely HOLDS a <see cref="Compilation" /> or <see cref="ISymbol" /> in a property
+    ///     would slip past undetected; the leak has to be the step's own value.
+    /// </summary>
+    private sealed class LeakedSymbolGenerator : IIncrementalGenerator
+    {
+        public const string StepName = "LeakedSymbolStep";
+
+        public void Initialize(IncrementalGeneratorInitializationContext context)
+        {
+            var symbols = context.SyntaxProvider
+                .CreateSyntaxProvider(
+                    static (node, _) => node is Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,
+                    // Deliberate leak: rooting the declared symbol instead of projecting a value-equatable
+                    // snapshot off of it.
+                    static (ctx, ct) => ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct))
+                .WithTrackingName(StepName);
+
+            context.RegisterSourceOutput(symbols, static (spc, symbol) => spc.AddSource(
+                (symbol?.Name ?? "Unknown") + "_Leaked.g.cs", "// x"));
+        }
+    }
+
+    [Fact]
+    public void NoSymbolsInPipeline_FIRES_for_a_leaked_symbol()
+    {
+        var ex = Assert.ThrowsAny<Exception>(() =>
+            GeneratorCacheAssert.NoSymbolsInPipeline(
+                new LeakedSymbolGenerator(), Valid, new[] { LeakedSymbolGenerator.StepName }));
+
+        Assert.Contains("must not hold", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CachedAfterUnrelatedEdit_FIRES_for_a_non_equatable_model()
+    {
+        var ex = Assert.ThrowsAny<Exception>(() =>
+            GeneratorCacheAssert.CachedAfterUnrelatedEdit(
+                new NonEquatableGenerator(), Valid, new[] { NonEquatableGenerator.StepName }));
+
+        Assert.Contains("Cached/Unchanged", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_declared_tracking_name_that_never_runs_is_a_failure()
+    {
+        var ex = Assert.ThrowsAny<Exception>(() =>
+            GeneratorCacheAssert.FullyCachedOnRerun(
+                new DwarfGenerator(), Valid, new[] { "NoSuchStepName" }));
+
+        Assert.Contains("never appeared", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void FullyCachedOnRerun_passes_for_the_real_generator()
     {
