@@ -24,12 +24,17 @@ public readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IEnume
 
     public bool Equals(EquatableArray<T> other)
     {
-        if (_array is null || other._array is null) return _array is null && other._array is null;
+        // A default(EquatableArray<T>) and an explicitly-empty one are the SAME VALUE — both are "no items".
+        // Treating them as unequal (and hashing them differently, below) made two structurally identical
+        // generator models compare unequal, so Roslyn's incremental cache missed and re-ran downstream stages
+        // for no reason. Coalescing to Array.Empty<T>() removes the distinction at both ends.
+        var mine = _array ?? Array.Empty<T>();
+        var theirs = other._array ?? Array.Empty<T>();
 
-        if (_array.Length != other._array.Length) return false;
+        if (mine.Length != theirs.Length) return false;
 
-        for (var i = 0; i < _array.Length; i++)
-            if (!EqualityComparer<T>.Default.Equals(_array[i], other._array[i]))
+        for (var i = 0; i < mine.Length; i++)
+            if (!EqualityComparer<T>.Default.Equals(mine[i], theirs[i]))
                 return false;
 
         return true;
@@ -42,10 +47,10 @@ public readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IEnume
 
     public override int GetHashCode()
     {
-        if (_array is null) return 0;
-
+        // Must agree with Equals: default and empty are one value, so they must hash alike (the old `null -> 0`
+        // vs `empty -> 17` split broke the equals/hashcode contract).
         var hash = 17;
-        foreach (var item in _array) hash = hash * 31 + (item?.GetHashCode() ?? 0);
+        foreach (var item in _array ?? Array.Empty<T>()) hash = hash * 31 + (item?.GetHashCode() ?? 0);
 
         return hash;
     }

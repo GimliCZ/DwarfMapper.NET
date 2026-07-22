@@ -119,6 +119,29 @@ public class AttributeContractTests
         Assert.Equal(AttributeTargets.Class, u.ValidOn);
     }
 
+    // ISSUE-027 — the extractor reads these option enums as raw ints (`referenceHandling == 1`,
+    // `onCycle == 1`, `nameConvention == 1`, `requiredMapping == 1`) because the generator cannot reference the
+    // runtime assembly's types. That coupling is invisible to the compiler: nothing links the literal to the
+    // member. Reordering or renumbering a member would silently repoint every one of those comparisons at the
+    // wrong strategy — a mapper would quietly switch from Throw to SetNull, or Exact to Flexible, with the whole
+    // suite still green. The values ARE explicitly assigned today, so the realistic failure is someone editing
+    // an explicit `= 1`; this pins the exact contract the extractor depends on.
+    [Fact]
+    public void Option_enum_integer_values_match_the_extractors_magic_ints()
+    {
+        Assert.Equal(0, (int)ReferenceHandlingStrategy.None);
+        Assert.Equal(1, (int)ReferenceHandlingStrategy.Preserve);
+
+        Assert.Equal(0, (int)OnCycleStrategy.Throw);
+        Assert.Equal(1, (int)OnCycleStrategy.SetNull);
+
+        Assert.Equal(0, (int)NameConvention.Exact);
+        Assert.Equal(1, (int)NameConvention.Flexible);
+
+        Assert.Equal(0, (int)RequiredMappingStrategy.Target);
+        Assert.Equal(1, (int)RequiredMappingStrategy.Both);
+    }
+
     // ISSUE-014 — the attribute gates compared `ContainingNamespace?.Name` against "DwarfMapper".
     // INamespaceSymbol.Name is the LAST SEGMENT only, so a user's own `Acme.DwarfMapper` namespace satisfied the
     // check and a same-named user attribute was treated as one of ours. Now compared against the full display

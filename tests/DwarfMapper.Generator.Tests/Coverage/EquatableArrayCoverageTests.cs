@@ -94,14 +94,16 @@ public class EquatableArrayCoverageTests
     }
 
     [Fact]
-    public void Not_equal_when_one_null_one_empty()
+    public void Equal_when_one_null_one_empty()
     {
         var nullBacked = new EquatableArray<int>(null);
         var emptyBacked = new EquatableArray<int>(Array.Empty<int>());
-        // null array vs empty array: both Count==0 but Equals follows the null-guard branch.
-        // if (_array is null || other._array is null) → return _array is null && other._array is null
-        // → false (one is null, other is empty array).
-        Assert.False(nullBacked.Equals(emptyBacked));
+
+        // ISSUE-029. This test previously asserted the OPPOSITE — it pinned the defect. A null-backed and an
+        // empty-backed array are both "no items", i.e. the same VALUE; declaring them unequal made two
+        // structurally identical generator models compare unequal and cost a spurious incremental-cache miss.
+        Assert.True(nullBacked.Equals(emptyBacked));
+        Assert.Equal(nullBacked.GetHashCode(), emptyBacked.GetHashCode());
     }
 
     [Fact]
@@ -148,10 +150,11 @@ public class EquatableArrayCoverageTests
     }
 
     [Fact]
-    public void GetHashCode_null_backed_returns_zero()
+    public void GetHashCode_null_backed_matches_empty()
     {
+        // ISSUE-029: third test that pinned the old `null -> 0` hash. Null-backed and empty are one value now.
         var a = new EquatableArray<int>(null);
-        Assert.Equal(0, a.GetHashCode());
+        Assert.Equal(new EquatableArray<int>(Array.Empty<int>()).GetHashCode(), a.GetHashCode());
     }
 
     [Fact]
@@ -234,10 +237,12 @@ public class EquatableArrayCoverageTests
     }
 
     [Fact]
-    public void Default_struct_GetHashCode_returns_zero()
+    public void Default_struct_hashes_like_an_empty_array()
     {
+        // Also previously pinned the defect (`Assert.Equal(0, …)`). Equals now treats default and empty as one
+        // value, so GetHashCode MUST agree or the equals/hashcode contract is broken.
         var d = default(EquatableArray<int>);
-        Assert.Equal(0, d.GetHashCode());
+        Assert.Equal(new EquatableArray<int>(Array.Empty<int>()).GetHashCode(), d.GetHashCode());
     }
 
     [Fact]

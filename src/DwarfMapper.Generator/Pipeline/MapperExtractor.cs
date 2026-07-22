@@ -2,6 +2,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using DwarfMapper.Generator.Collections;
 using DwarfMapper.Generator.Diagnostics;
@@ -3789,22 +3790,42 @@ internal static partial class MapperExtractor
     ///       that basis would fire on essentially every DTO in existence.</description></item>
     ///     </list>
     /// </summary>
+    /// <summary>
+    ///     Every type that is a base of some other type declared in this assembly, computed in ONE pass and
+    ///     cached per <see cref="Compilation" />.
+    ///     <para>
+    ///     <see cref="HasDerivedTypesInCompilation" /> used to walk every type in the assembly on each call, and
+    ///     its call site sits in per-MEMBER auto-nest resolution — before the nested-registry dedupes the pair —
+    ///     so the full walk repeated for every member that reached that branch, not merely once per distinct
+    ///     type pair. On a large assembly that is O(members x types) of pure re-derivation at compile time.
+    ///     </para>
+    ///     Keyed by a <see cref="ConditionalWeakTable{TKey,TValue}" /> so the entry (and the symbols it holds)
+    ///     dies with the compilation — a plain static dictionary in a long-lived generator host would pin
+    ///     symbols from every compilation it ever saw.
+    /// </summary>
+    private static readonly ConditionalWeakTable<Compilation, HashSet<ISymbol>> BaseTypesByCompilation = new();
+
+    private static HashSet<ISymbol> BaseTypesInAssembly(Compilation compilation)
+    {
+        return BaseTypesByCompilation.GetValue(compilation, static c =>
+        {
+            var set = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+            foreach (var type in AllTypesIn(c.Assembly.GlobalNamespace))
+                for (var b = type.BaseType; b is not null; b = b.BaseType)
+                    set.Add(b.OriginalDefinition);
+            return set;
+        });
+    }
+
     private static bool HasDerivedTypesInCompilation(Compilation compilation, ITypeSymbol src)
     {
         if (src is not INamedTypeSymbol { TypeKind: TypeKind.Class } namedSrc) return false;
         if (namedSrc.IsSealed || namedSrc.IsAbstract) return false;
         if (namedSrc.SpecialType != SpecialType.None) return false;
 
-        foreach (var type in AllTypesIn(compilation.Assembly.GlobalNamespace))
-        {
-            if (SymbolEqualityComparer.Default.Equals(type, namedSrc)) continue;
-
-            for (var b = type.BaseType; b is not null; b = b.BaseType)
-                if (SymbolEqualityComparer.Default.Equals(b.OriginalDefinition, namedSrc.OriginalDefinition))
-                    return true;
-        }
-
-        return false;
+        // "Something derives from namedSrc" — a type is never its own BaseType, so the self-comparison the old
+        // loop had to make is structurally impossible here.
+        return BaseTypesInAssembly(compilation).Contains(namedSrc.OriginalDefinition);
     }
 
     /// <summary>Every named type declared in this assembly, walking nested types too.</summary>
@@ -3870,7 +3891,7 @@ internal static partial class MapperExtractor
         {
             if (iface.SpecialType == SpecialType.System_Collections_IEnumerable)
                 return true;
-            if (iface.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
+            if (iface.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
                 return true;
         }
 
