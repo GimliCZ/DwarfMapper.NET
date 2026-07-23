@@ -39,4 +39,6 @@ public partial class SnapshotSuite
     [Fact] public Task Snap_Golden_RegistryBasic() { return Verify(GoldenFeature("RegistryBasic")); }
     [Fact] public Task Snap_Golden_RegistryCollection() { return Verify(GoldenFeature("RegistryCollection")); }
     [Fact] public Task Snap_Golden_RegistryNested() { return Verify(GoldenFeature("RegistryNested")); }
+    [Fact] public Task Snap_Golden_RegistryInheritedDestination() { return Verify(GoldenFeature("RegistryInheritedDestination")); }
+    [Fact] public Task Snap_Golden_RegistryInheritedSource() { return Verify(GoldenFeature("RegistryInheritedSource")); }
 }

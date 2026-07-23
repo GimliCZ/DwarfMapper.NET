@@ -107,4 +107,44 @@ public class GeneratorTestingScanTests
             + $"enums; the recorded baseline is {BaselineEnumValueCount}. A taxonomy grew, so consider adding "
             + "a golden feature case, then update the baseline deliberately.");
     }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && dir.GetFiles("DwarfMapper.NET.sln").Length == 0)
+            dir = dir.Parent;
+        Assert.True(dir is not null, "Could not locate the repository root (DwarfMapper.NET.sln).");
+        return dir!.FullName;
+    }
+
+    /// <summary>
+    ///     Keeps the shared engine core actually shared. Two-engine drift caused 5 of the 32 audit issues, and
+    ///     the divergence this ratchet guards — the registry enumerating members without walking base types —
+    ///     silently dropped data for years because nothing forced the two engines to agree.
+    /// </summary>
+    [Fact]
+    public void Neither_engine_re_implements_the_shared_core()
+    {
+        var root = RepoRoot();
+        var extractor = File.ReadAllText(Path.Combine(root, "src", "DwarfMapper.Generator", "Pipeline",
+            "MapperExtractor.cs"));
+        var registry = File.ReadAllText(Path.Combine(root, "src", "DwarfMapper.Generator", "Registry",
+            "MapToGenerator.cs"));
+
+        // The registry must enumerate members only through MemberFacts. Both of its former GetMembers() calls
+        // were inside its own shallow ReadableMembers/WritableMembers.
+        Assert.False(registry.Contains("GetMembers()", StringComparison.Ordinal),
+            "MapToGenerator calls GetMembers() directly again. Member enumeration must go through "
+            + "Core.MemberFacts, or the registry silently loses inherited members as it did before.");
+
+        // FNV-1a lives in Core.StableHash and nowhere else.
+        foreach (var (name, text) in new[] { ("MapperExtractor", extractor), ("MapToGenerator", registry) })
+            Assert.False(text.Contains("2166136261", StringComparison.Ordinal),
+                $"{name} declares its own FNV-1a constant again. Hashing belongs to Core.StableHash — ten "
+                + "copies of it is what ISSUE-015 was.");
+
+        // Both engines must actually reference the shared core.
+        Assert.Contains("MemberFacts", extractor, StringComparison.Ordinal);
+        Assert.Contains("MemberFacts", registry, StringComparison.Ordinal);
+    }
 }

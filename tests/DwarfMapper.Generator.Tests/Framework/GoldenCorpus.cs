@@ -228,6 +228,24 @@ internal static class GoldenCorpus
                                         [MapTo(typeof(Dto))] public class Src { public Inner I { get; set; } = new(); }
                                         public class Dto { public InnerDto I { get; set; } = new(); }
                                         """, "MapToGenerator");
+
+        yield return ("RegistryInheritedDestination", """
+                                                      using DwarfMapper;
+                                                      namespace Demo;
+                                                      public class DtoBase { public int Id { get; set; } }
+                                                      public class Dto : DtoBase { public string Name { get; set; } = ""; }
+                                                      [MapTo(typeof(Dto))]
+                                                      public class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
+                                                      """, "MapToGenerator");
+
+        yield return ("RegistryInheritedSource", """
+                                                 using DwarfMapper;
+                                                 namespace Demo;
+                                                 public class SrcBase { public int Id { get; set; } }
+                                                 [MapTo(typeof(Dto))]
+                                                 public class Src : SrcBase { public string Name { get; set; } = ""; }
+                                                 public class Dto { public int Id { get; set; } public string Name { get; set; } = ""; }
+                                                 """, "MapToGenerator");
     }
 
     private static string Mapper(string methodDeclaration)

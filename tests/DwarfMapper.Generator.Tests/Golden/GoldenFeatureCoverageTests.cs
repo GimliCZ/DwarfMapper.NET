@@ -36,6 +36,8 @@ public class GoldenFeatureCoverageTests
         { "RegistryBasic", "ToDto" },
         { "RegistryCollection", "__DwarfMapColl_" },
         { "RegistryNested", "__DwarfMapObj_" },
+        { "RegistryInheritedDestination", "Id = source.Id" },
+        { "RegistryInheritedSource", "Id = source.Id" },
     };
 
     [Theory]
