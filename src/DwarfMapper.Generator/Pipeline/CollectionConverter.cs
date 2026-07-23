@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
@@ -281,7 +281,7 @@ internal static class CollectionConverter
             _ => "IImmutableSet<" + elemFq + ">"
         };
 
-        var name = GeneratedNames.Collection + Hash(srcFq + "=>" + targetTag + nullTag + preserveTag);
+        var name = GeneratedNames.Collection + StableHash.Fnv1a(srcFq + "=>" + targetTag + nullTag + preserveTag);
         if (synth.ContainsKey(name))
             return name;
 
@@ -789,7 +789,7 @@ internal static class CollectionConverter
         var elem = Fq(tgtElem);
         var srcE = Fq(srcElem);
         var srcFq = Fq(srcArrayType);
-        var name = "__DwarfBlit_" + Hash(srcFq + "=>" + elem + "[]");
+        var name = "__DwarfBlit_" + StableHash.Fnv1a(srcFq + "=>" + elem + "[]");
         if (synth.ContainsKey(name))
             return name;
         var sb = new StringBuilder();
@@ -833,7 +833,7 @@ internal static class CollectionConverter
         var dst = Fq(tgtElem);
         var srcE = Fq(srcElem);
         var srcFq = Fq(srcArrayType);
-        var name = "__DwarfWiden_" + Hash(srcFq + "=>" + dst + "[]");
+        var name = "__DwarfWiden_" + StableHash.Fnv1a(srcFq + "=>" + dst + "[]");
         if (synth.ContainsKey(name))
             return name;
 
@@ -1023,21 +1023,6 @@ internal static class CollectionConverter
         // Inner annotations on type arguments are preserved by the nullable format.
         var stripped = t.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
         return stripped.ToDisplayString(NullableFullyQualifiedFormat) + "?";
-    }
-
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
     }
 
     // ─── Target kinds ─────────────────────────────────────────────────────────

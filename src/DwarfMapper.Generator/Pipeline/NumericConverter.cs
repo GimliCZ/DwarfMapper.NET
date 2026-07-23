@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
@@ -88,23 +88,7 @@ internal static class NumericConverter
     private static string MethodName(ITypeSymbol src, ITypeSymbol tgt)
     {
         return GeneratedNames.Numeric + Sanitize(src) + "__" + Sanitize(tgt)
-               + "_" + Hash("Num|" + Fq(src) + "|" + Fq(tgt));
-    }
-
-    /// <summary>FNV-1a 32-bit hash — deterministic across processes.</summary>
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
+               + "_" + StableHash.Fnv1a("Num|" + Fq(src) + "|" + Fq(tgt));
     }
 
     private static string Sanitize(ITypeSymbol t)

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -4767,25 +4767,6 @@ internal static partial class MapperExtractor
     }
 
     /// <summary>
-    ///     FNV-1a hash for generating unique helper method name suffixes.
-    ///     Same algorithm as CollectionConverter.
-    /// </summary>
-    private static string FlattenGraphHash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
-    }
-
-    /// <summary>
     ///     Checks whether <paramref name="t" /> is a named generic type with the given
     ///     <paramref name="name" /> and <paramref name="ns" /> with exactly <paramref name="arity" />
     ///     type arguments. Returns the first type argument via <paramref name="firstArg" /> if matched.
@@ -5099,7 +5080,7 @@ internal static partial class MapperExtractor
                                      + "=>"
                                      + derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
                                      + "@FG";
-                    var armHash = FlattenGraphHash(armHashKey);
+                    var armHash = StableHash.Fnv1a(armHashKey);
                     var typeName = derivedSrc.Name;
                     var perTypeHelperName = GeneratedNames.FlatNode + typeName + "_" + armHash;
 
@@ -5181,7 +5162,7 @@ internal static partial class MapperExtractor
                                     + "=>"
                                     + nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
                                     + "@Hetero";
-                var heteroHash = FlattenGraphHash(heteroHashKey);
+                var heteroHash = StableHash.Fnv1a(heteroHashKey);
 
                 var dispatchHelperName = GeneratedNames.FlatNodeDispatch + heteroHash;
                 var traversalHelperNameH = GeneratedNames.FlattenGraph + heteroHash;
@@ -5499,7 +5480,7 @@ internal static partial class MapperExtractor
             var hashKey = nodeType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
                           + "=>"
                           + nodeDtoType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var hash = FlattenGraphHash(hashKey);
+            var hash = StableHash.Fnv1a(hashKey);
 
             var flatNodeHelperName = GeneratedNames.FlatNode + hash;
             var traversalHelperName = GeneratedNames.FlattenGraph + hash;

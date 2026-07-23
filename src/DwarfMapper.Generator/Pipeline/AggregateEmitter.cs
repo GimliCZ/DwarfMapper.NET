@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 
 namespace DwarfMapper.Generator.Pipeline;
@@ -354,23 +354,7 @@ internal static class AggregateEmitter
         // CS0102 out of generated code. Both call sites dedupe by exact FQN, so only a genuine collision of
         // different names can reach here. A hash of the ORIGINAL name disambiguates while staying stable
         // across processes (a GetHashCode would not be).
-        return "__" + s.Replace('.', '_') + "_" + Fnv1a(s);
-    }
-
-    /// <summary>FNV-1a 32-bit hash — deterministic across processes.</summary>
-    private static string Fnv1a(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
+        return "__" + s.Replace('.', '_') + "_" + StableHash.Fnv1a(s);
     }
 
     /// <summary>One candidate convenience extension: <c>{ExtName}(this {Source}) => {Mapper}.{Method}(...)</c>.</summary>

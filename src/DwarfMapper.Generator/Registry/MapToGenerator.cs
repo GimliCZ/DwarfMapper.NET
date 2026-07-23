@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
 using System.Text;
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;
@@ -308,21 +308,6 @@ public sealed class MapToGenerator : IIncrementalGenerator
         return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
     }
 
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
-    }
-
     private static string Emit(Model model)
     {
         var sb = new StringBuilder();
@@ -458,7 +443,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
         private string? SynthNested(INamedTypeSymbol src, INamedTypeSymbol tgt, string targetName)
         {
             var key = Key(src, tgt);
-            var name = "__DwarfMapObj_" + Hash(key);
+            var name = "__DwarfMapObj_" + StableHash.Fnv1a(key);
             if (Synth.ContainsKey(name)) return name;
             if (!_inProgress.Add(key))
             {
@@ -533,7 +518,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
             if (elemConv is null) return null;
 
             var key = "Coll|" + Fq(srcType) + "|" + Fq(tgtType);
-            var name = "__DwarfMapColl_" + Hash(key);
+            var name = "__DwarfMapColl_" + StableHash.Fnv1a(key);
             if (!Synth.ContainsKey(name))
             {
                 var fqSrc = Fq(srcType);

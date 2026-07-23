@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
@@ -195,7 +195,8 @@ internal static class ParsableConverter
         Dictionary<string, SynthesizedMethod> synth, ITypeSymbol src, string format)
     {
         // Format is part of the identity so two different formats on the same type get distinct methods.
-        var name = GeneratedNames.Base + "FmtStrF_" + Sanitize(src) + "_" + Hash("FmtStrF|" + Fq(src) + "|" + format);
+        var name = GeneratedNames.Base + "FmtStrF_" + Sanitize(src) + "_" +
+                   StableHash.Fnv1a("FmtStrF|" + Fq(src) + "|" + format);
         if (!synth.ContainsKey(name))
         {
             var escaped = format.Replace("\\", "\\\\").Replace("\"", "\\\"");
@@ -214,23 +215,7 @@ internal static class ParsableConverter
 
     private static string MethodName(string prefix, ITypeSymbol t)
     {
-        return GeneratedNames.Base + prefix + "_" + Sanitize(t) + "_" + Hash(prefix + "|" + Fq(t));
-    }
-
-    /// <summary>FNV-1a 32-bit hash — deterministic across processes.</summary>
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
+        return GeneratedNames.Base + prefix + "_" + Sanitize(t) + "_" + StableHash.Fnv1a(prefix + "|" + Fq(t));
     }
 
     private static string Sanitize(ITypeSymbol t)

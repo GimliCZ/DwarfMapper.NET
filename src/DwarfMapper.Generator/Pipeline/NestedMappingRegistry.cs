@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 
@@ -264,47 +265,6 @@ internal sealed class NestedMappingRegistry
     /// <summary>
     ///     Produces a deterministic, collision-resistant private method name for the given pair.
     ///     Format: __DwarfMap_Obj_{SanitizedSrc}_{SanitizedTgt}_{Fnv1aHash}
-    /// </summary>
-    private static string BuildMethodName(string srcFqn, string tgtFqn)
-    {
-        var srcSan = Sanitize(srcFqn);
-        var tgtSan = Sanitize(tgtFqn);
-        var hash = Fnv1a32(srcFqn + "\x00" + tgtFqn);
-        return $"{GeneratedNames.ObjectMap}{srcSan}_{tgtSan}_{hash:X8}";
-    }
-
-    /// <summary>
-    ///     Produces a deterministic private name for a Preserve-mode dispatch wrapper for the given
-    ///     (source, target) pair. Uses prefix <c>__DwarfMap_Disp_</c> to distinguish it from the
-    ///     regular auto-nest <c>__DwarfMap_Obj_</c> helpers.
-    ///     Called by MapperExtractor after the MF-A fix to synthesize ctx-threading wrappers for
-    ///     [MapDerivedType] dispatch methods under ReferenceHandling=Preserve.
-    /// </summary>
-    internal static string BuildDispatchWrapperName(string srcFqn, string tgtFqn)
-    {
-        var srcSan = Sanitize(srcFqn);
-        var tgtSan = Sanitize(tgtFqn);
-        var hash = Fnv1a32(srcFqn + "\x00" + tgtFqn);
-        return $"{GeneratedNames.Dispatch}{srcSan}_{tgtSan}_{hash:X8}";
-    }
-
-    /// <summary>Strips non-identifier characters, keeping only letters, digits, underscores.</summary>
-    private static string Sanitize(string fqn)
-    {
-        var sb = new StringBuilder(fqn.Length);
-        foreach (var c in fqn)
-            if (char.IsLetterOrDigit(c))
-                sb.Append(c);
-            else if (c == '.' || c == ':' || c == '<' || c == '>' || c == ',')
-                sb.Append('_');
-        // Cap length so generated identifiers stay manageable
-        const int max = 48;
-        if (sb.Length > max) sb.Length = max;
-        return sb.ToString();
-    }
-
-    /// <summary>
-    ///     FNV-1a 32-bit hash — fast, deterministic, good dispersion for type names.
     ///     <para>
     ///         <b>Collision analysis (Item 3 audit finding)</b>: two distinct (srcFqn, tgtFqn) pairs
     ///         could theoretically produce the same 32-bit hash, yielding the same method name. A collision
@@ -329,19 +289,45 @@ internal sealed class NestedMappingRegistry
     ///         would be the appropriate fix.
     ///     </para>
     /// </summary>
-    private static uint Fnv1a32(string s)
+    private static string BuildMethodName(string srcFqn, string tgtFqn)
     {
-        const uint Offset = 2166136261u;
-        const uint Prime = 16777619u;
-        var hash = Offset;
-        foreach (var c in s)
-        {
-            hash ^= (byte)(c & 0xFF);
-            hash *= Prime;
-            hash ^= (byte)(c >> 8);
-            hash *= Prime;
-        }
+        var srcSan = Sanitize(srcFqn);
+        var tgtSan = Sanitize(tgtFqn);
+        // Uppercased to match the historical "{hash:X8}" formatting of the uint this once was —
+        // StableHash.Fnv1aPerByte returns lowercase, and changing case here would rename every
+        // generated helper (and move the golden fingerprint) for zero behavioural benefit.
+        var hash = StableHash.Fnv1aPerByte(srcFqn + "\x00" + tgtFqn).ToUpperInvariant();
+        return $"{GeneratedNames.ObjectMap}{srcSan}_{tgtSan}_{hash}";
+    }
 
-        return hash;
+    /// <summary>
+    ///     Produces a deterministic private name for a Preserve-mode dispatch wrapper for the given
+    ///     (source, target) pair. Uses prefix <c>__DwarfMap_Disp_</c> to distinguish it from the
+    ///     regular auto-nest <c>__DwarfMap_Obj_</c> helpers.
+    ///     Called by MapperExtractor after the MF-A fix to synthesize ctx-threading wrappers for
+    ///     [MapDerivedType] dispatch methods under ReferenceHandling=Preserve.
+    /// </summary>
+    internal static string BuildDispatchWrapperName(string srcFqn, string tgtFqn)
+    {
+        var srcSan = Sanitize(srcFqn);
+        var tgtSan = Sanitize(tgtFqn);
+        // Uppercased — see BuildMethodName's remarks: this is the historical "{hash:X8}" case, preserved.
+        var hash = StableHash.Fnv1aPerByte(srcFqn + "\x00" + tgtFqn).ToUpperInvariant();
+        return $"{GeneratedNames.Dispatch}{srcSan}_{tgtSan}_{hash}";
+    }
+
+    /// <summary>Strips non-identifier characters, keeping only letters, digits, underscores.</summary>
+    private static string Sanitize(string fqn)
+    {
+        var sb = new StringBuilder(fqn.Length);
+        foreach (var c in fqn)
+            if (char.IsLetterOrDigit(c))
+                sb.Append(c);
+            else if (c == '.' || c == ':' || c == '<' || c == '>' || c == ',')
+                sb.Append('_');
+        // Cap length so generated identifiers stay manageable
+        const int max = 48;
+        if (sb.Length > max) sb.Length = max;
+        return sb.ToString();
     }
 }

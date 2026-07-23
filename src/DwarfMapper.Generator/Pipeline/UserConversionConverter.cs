@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -63,7 +63,7 @@ internal static class UserConversionConverter
 
     private static string MethodName(ITypeSymbol src, ITypeSymbol tgt)
     {
-        return GeneratedNames.UserConv + Short(src) + "_To_" + Short(tgt) + "_" + Hash(Fq(src) + "|" + Fq(tgt));
+        return GeneratedNames.UserConv + Short(src) + "_To_" + Short(tgt) + "_" + StableHash.Fnv1a(Fq(src) + "|" + Fq(tgt));
     }
 
     private static string Short(ITypeSymbol t)
@@ -71,21 +71,5 @@ internal static class UserConversionConverter
         var sb = new StringBuilder(t.Name.Length);
         foreach (var ch in t.Name) sb.Append(char.IsLetterOrDigit(ch) ? ch : '_');
         return sb.Length == 0 ? "_" : sb.ToString();
-    }
-
-    /// <summary>FNV-1a 32-bit hash — deterministic across processes.</summary>
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
     }
 }

@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -260,25 +261,7 @@ internal static class EnumConverter
     private static string MethodName(string prefix, ITypeSymbol a, ITypeSymbol b)
     {
         return GeneratedNames.Base + prefix + "_" + Sanitize(a) + "__" + Sanitize(b) + "_" +
-               Hash(prefix + "|" + Fq(a) + "|" + Fq(b));
-    }
-
-    /// <summary>
-    ///     FNV-1a 32-bit hash — deterministic across processes (does NOT use string.GetHashCode).
-    /// </summary>
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
+               StableHash.Fnv1a(prefix + "|" + Fq(a) + "|" + Fq(b));
     }
 
     private static string Sanitize(ITypeSymbol t)
@@ -331,7 +314,7 @@ internal static class EnumConverter
 
     private static string AddEnumToString(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol src)
     {
-        var name = GeneratedNames.EnumToStr + Sanitize(src) + "_" + Hash("EnumStr|" + Fq(src));
+        var name = GeneratedNames.EnumToStr + Sanitize(src) + "_" + StableHash.Fnv1a("EnumStr|" + Fq(src));
         if (!synth.ContainsKey(name))
         {
             // A [Flags] enum keeps Enum.ToString() (comma-joined identifiers) for combined values;
@@ -358,7 +341,7 @@ internal static class EnumConverter
 
     private static string AddStringToEnum(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol tgt)
     {
-        var name = GeneratedNames.StrToEnum + Sanitize(tgt) + "_" + Hash("StrEnum|" + Fq(tgt));
+        var name = GeneratedNames.StrToEnum + Sanitize(tgt) + "_" + StableHash.Fnv1a("StrEnum|" + Fq(tgt));
         if (!synth.ContainsKey(name))
             synth[name] = new SynthesizedMethod(name,
                 IsFlagsEnum(tgt) ? EmitStringToFlags(name, tgt) : EmitStringToEnum(name, tgt));

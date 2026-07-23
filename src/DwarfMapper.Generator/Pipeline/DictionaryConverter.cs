@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
@@ -99,7 +99,7 @@ internal static class DictionaryConverter
                 break;
         }
 
-        var name = GeneratedNames.Dictionary + Hash(Fq(srcType) + "=>" + retTypeFq + nullTag + preserveTag);
+        var name = GeneratedNames.Dictionary + StableHash.Fnv1a(Fq(srcType) + "=>" + retTypeFq + nullTag + preserveTag);
         if (synth.ContainsKey(name))
             return name;
 
@@ -385,21 +385,6 @@ internal static class DictionaryConverter
     {
         var stripped = t.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
         return stripped.ToDisplayString(NullableFullyQualifiedFormat) + "?";
-    }
-
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
     }
 
     internal enum DictTargetKind
