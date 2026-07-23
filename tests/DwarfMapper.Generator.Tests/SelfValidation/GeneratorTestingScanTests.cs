@@ -117,34 +117,62 @@ public class GeneratorTestingScanTests
         return dir!.FullName;
     }
 
-    /// <summary>
-    ///     Keeps the shared engine core actually shared. Two-engine drift caused 5 of the 32 audit issues, and
-    ///     the divergence this ratchet guards — the registry enumerating members without walking base types —
-    ///     silently dropped data for years because nothing forced the two engines to agree.
-    /// </summary>
-    [Fact]
-    public void Neither_engine_re_implements_the_shared_core()
-    {
-        var root = RepoRoot();
-        var extractor = File.ReadAllText(Path.Combine(root, "src", "DwarfMapper.Generator", "Pipeline",
+    // Keeps the shared engine core actually shared. Two-engine drift caused 5 of the 32 audit issues, and the
+    // divergence this trio of ratchets guards — the registry enumerating members without walking base types —
+    // silently dropped data for years because nothing forced the two engines to agree. Split into three [Fact]s
+    // (rather than one bundled assertion) so each clause fails independently instead of the first assertion
+    // masking whether the other two would ever have caught anything.
+
+    private static string ExtractorText() =>
+        File.ReadAllText(Path.Combine(RepoRoot(), "src", "DwarfMapper.Generator", "Pipeline",
             "MapperExtractor.cs"));
-        var registry = File.ReadAllText(Path.Combine(root, "src", "DwarfMapper.Generator", "Registry",
+
+    private static string RegistryText() =>
+        File.ReadAllText(Path.Combine(RepoRoot(), "src", "DwarfMapper.Generator", "Registry",
             "MapToGenerator.cs"));
+
+    [Fact]
+    public void MapToGenerator_does_not_call_GetMembers_directly()
+    {
+        var registry = RegistryText();
 
         // The registry must enumerate members only through MemberFacts. Both of its former GetMembers() calls
         // were inside its own shallow ReadableMembers/WritableMembers.
         Assert.False(registry.Contains("GetMembers()", StringComparison.Ordinal),
             "MapToGenerator calls GetMembers() directly again. Member enumeration must go through "
             + "Core.MemberFacts, or the registry silently loses inherited members as it did before.");
+    }
+
+    [Fact]
+    public void Neither_engine_declares_its_own_FNV_constant()
+    {
+        var extractor = ExtractorText();
+        var registry = RegistryText();
 
         // FNV-1a lives in Core.StableHash and nowhere else.
         foreach (var (name, text) in new[] { ("MapperExtractor", extractor), ("MapToGenerator", registry) })
             Assert.False(text.Contains("2166136261", StringComparison.Ordinal),
                 $"{name} declares its own FNV-1a constant again. Hashing belongs to Core.StableHash — ten "
                 + "copies of it is what ISSUE-015 was.");
+    }
 
-        // Both engines must actually reference the shared core.
-        Assert.Contains("MemberFacts", extractor, StringComparison.Ordinal);
-        Assert.Contains("MemberFacts", registry, StringComparison.Ordinal);
+    [Fact]
+    public void Both_engines_call_MemberFacts_Readable_and_Writable()
+    {
+        var extractor = ExtractorText();
+        var registry = RegistryText();
+
+        // A bare mention of "MemberFacts" — a stray comment, a dead using — proves nothing. Require the actual
+        // call syntax for both the readable- and writable-member entry points, so a regression that keeps a
+        // dead reference while re-implementing enumeration elsewhere still fails this.
+        foreach (var (name, text) in new[] { ("MapperExtractor", extractor), ("MapToGenerator", registry) })
+        {
+            Assert.True(text.Contains("MemberFacts.Readable(", StringComparison.Ordinal),
+                $"{name} no longer calls MemberFacts.Readable(...) — member enumeration may have been "
+                + "re-implemented locally instead of routed through the shared core.");
+            Assert.True(text.Contains("MemberFacts.Writable(", StringComparison.Ordinal),
+                $"{name} no longer calls MemberFacts.Writable(...) — member enumeration may have been "
+                + "re-implemented locally instead of routed through the shared core.");
+        }
     }
 }
