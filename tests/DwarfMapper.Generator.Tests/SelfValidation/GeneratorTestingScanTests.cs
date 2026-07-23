@@ -199,4 +199,39 @@ public class GeneratorTestingScanTests
                 + "re-implemented locally instead of routed through the shared core.");
         }
     }
+
+    /// <summary>
+    ///     Keeps the migrated emitters on CodeWriter. Hand-counted indentation and \n escapes inside emitted
+    ///     strings are what made these files hard to edit correctly — the same layering produced two
+    ///     extension-method-in-instance-form bugs that could not compile. A migrated file must not regress.
+    /// </summary>
+    [Fact]
+    public void Migrated_emitters_do_not_reintroduce_hand_rolled_emission()
+    {
+        var migrated = new[]
+        {
+            Path.Combine("Pipeline", "CollectionConverter.cs"),
+            Path.Combine("Pipeline", "EnumConverter.cs"),
+            Path.Combine("Pipeline", "DictionaryConverter.cs"),
+            Path.Combine("Registry", "MapToGenerator.cs"),
+        };
+
+        var offenders = new List<string>();
+        foreach (var relative in migrated)
+        {
+            var path = Path.Combine(RepoRoot(), "src", "DwarfMapper.Generator", relative);
+            Assert.True(File.Exists(path), $"Migrated emitter not found: {relative}. If it moved, update this list.");
+
+            var text = File.ReadAllText(path);
+
+            // A literal \n inside a string argument is the hand-rolled form CodeWriter replaces.
+            var newlineEscapes = System.Text.RegularExpressions.Regex.Matches(text, @"\\n""").Count;
+            if (newlineEscapes > 0) offenders.Add($"{relative}: {newlineEscapes} literal \\n escape(s)");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "Migrated emitter(s) reintroduced hand-rolled emission:\n  " + string.Join("\n  ", offenders)
+            + "\nUse CodeWriter (Line/Block/Indent) — hand-counted indentation and \\n escapes are what this "
+            + "migration removed.");
+    }
 }
