@@ -200,6 +200,44 @@ public class GeneratorTestingScanTests
         }
     }
 
+    // A real \n ESCAPE, anywhere in the line. The negative lookbehind excludes `\\n` (an escaped backslash then
+    // an n, which emits a literal backslash-n and is not a line break) and `'\n'` (a char literal closing an
+    // Append chain — not a multi-line string payload). The previous pattern was @"\\n""" — an escape only counted
+    // when it was immediately followed by the closing quote, so every MID-string break, the common form, was
+    // invisible: `w.Line("if (x)\n{\n}")` scored zero and the ratchet reported PASS. Measured pre-migration, it
+    // saw 106/35/22/9 of the 121/50/24/13 escapes actually present.
+    private const string NewlineEscapePattern = @"(?<![\\'])\\n";
+
+    // A quote followed by four or more spaces: the hand-counted indent run. 439 of these were the headline
+    // measure of the problem this sub-project removed, and nothing guarded them — `w.Line("        foo")` passed.
+    private const string IndentRunPattern = @"""[ ]{4,}";
+
+    // Deliberately unmigrated (spec §4.2): each emits a single-line body and is below the density where a writer
+    // earns its change-risk — ParsableConverter 6 escapes, NumericConverter 1, UserConversionConverter 1. Exempt
+    // BY NAME rather than by narrowing the glob, so migrating one is a one-line deletion here and any NEW
+    // converter is scanned by default. (UserConversionConverter is absent from the spec's file table but is the
+    // same species as NumericConverter; it is recorded here so the exemption is a decision, not an accident.)
+    private static readonly string[] UnmigratedConverters =
+    {
+        "ParsableConverter.cs",
+        "NumericConverter.cs",
+        "UserConversionConverter.cs"
+    };
+
+    // Glob, not a path list (spec §5). File.Exists catches a RENAME but not a SPLIT: when sub-project 4 splits
+    // CollectionConverter.cs, a hard-coded list leaves the new sibling silently unratcheted — the same coverage
+    // drain the ClassModelFiles() note above describes.
+    private static IEnumerable<string> MigratedEmitterFiles()
+    {
+        var root = RepoRoot();
+        return Directory
+            .EnumerateFiles(Path.Combine(root, GeneratorSrcRoot, "Pipeline"), "*Converter.cs",
+                SearchOption.TopDirectoryOnly)
+            .Concat(Directory.EnumerateFiles(Path.Combine(root, GeneratorSrcRoot, "Registry"), "*.cs",
+                SearchOption.TopDirectoryOnly))
+            .Where(p => !UnmigratedConverters.Contains(Path.GetFileName(p), StringComparer.Ordinal));
+    }
+
     /// <summary>
     ///     Keeps the migrated emitters on CodeWriter. Hand-counted indentation and \n escapes inside emitted
     ///     strings are what made these files hard to edit correctly — the same layering produced two
@@ -208,26 +246,29 @@ public class GeneratorTestingScanTests
     [Fact]
     public void Migrated_emitters_do_not_reintroduce_hand_rolled_emission()
     {
-        var migrated = new[]
-        {
-            Path.Combine("Pipeline", "CollectionConverter.cs"),
-            Path.Combine("Pipeline", "EnumConverter.cs"),
-            Path.Combine("Pipeline", "DictionaryConverter.cs"),
-            Path.Combine("Registry", "MapToGenerator.cs"),
-        };
-
         var offenders = new List<string>();
-        foreach (var relative in migrated)
-        {
-            var path = Path.Combine(RepoRoot(), "src", "DwarfMapper.Generator", relative);
-            Assert.True(File.Exists(path), $"Migrated emitter not found: {relative}. If it moved, update this list.");
+        var scanned = 0;
 
+        foreach (var path in MigratedEmitterFiles())
+        {
+            scanned++;
+            var name = Path.GetFileName(path);
             var text = File.ReadAllText(path);
 
-            // A literal \n inside a string argument is the hand-rolled form CodeWriter replaces.
-            var newlineEscapes = System.Text.RegularExpressions.Regex.Matches(text, @"\\n""").Count;
-            if (newlineEscapes > 0) offenders.Add($"{relative}: {newlineEscapes} literal \\n escape(s)");
+            // Both halves of the spec'd assertion, reported as distinct kinds: a \n escape and a hand-counted
+            // indent run are different regressions and a reader should not have to guess which one fired.
+            var newlineEscapes = System.Text.RegularExpressions.Regex.Matches(text, NewlineEscapePattern).Count;
+            if (newlineEscapes > 0) offenders.Add($"{name}: {newlineEscapes} literal \\n escape(s)");
+
+            var indentRuns = System.Text.RegularExpressions.Regex.Matches(text, IndentRunPattern).Count;
+            if (indentRuns > 0) offenders.Add($"{name}: {indentRuns} hard-coded indent run(s)");
         }
+
+        // A glob that matches nothing scans nothing and passes green — the same defect species as the path list
+        // this replaced. Five files are in scope today (3 converters + 2 registry files); splits only raise that.
+        Assert.True(scanned >= 5,
+            $"The migrated-emitter glob matched only {scanned} file(s) — it is broken or the files moved, and a "
+            + "ratchet that scans nothing is worse than none. Fix the glob, do not lower this floor.");
 
         Assert.True(offenders.Count == 0,
             "Migrated emitter(s) reintroduced hand-rolled emission:\n  " + string.Join("\n  ", offenders)

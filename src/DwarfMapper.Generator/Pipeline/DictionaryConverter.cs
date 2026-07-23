@@ -123,8 +123,8 @@ internal static class DictionaryConverter
                     : "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">.Empty";
 
                 w.Line("if (src is null) return " + emptyImm + ";");
-                // Build a List<KeyValuePair<K,V>>, then CreateRange.
-                // Builder with INDEXER semantics, matching the mutable path exactly. CreateRange THROWS on a
+                // Build through ImmutableDictionary.CreateBuilder and assign by INDEXER — deliberately NOT
+                // CreateRange (audit ISSUE-005), matching the mutable path exactly. CreateRange THROWS on a
                 // duplicate key, so the two dictionary paths disagreed on the same input: when the key CONVERSION
                 // collapses two source keys onto one target key (enum->string by name, a case change, a narrowing),
                 // a mutable target silently kept the last value while an immutable target threw ArgumentException.

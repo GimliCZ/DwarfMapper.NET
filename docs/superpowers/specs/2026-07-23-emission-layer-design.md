@@ -74,6 +74,13 @@ assumed.
   `AppendLine` (which already handles line breaks) rather than dense `\n` literals. Migrating it now means
   migrating it again after the split — waste, and it enlarges the riskiest diff in the programme. Deferred
   deliberately; recorded so it is not read as an oversight.
+- **Migrating `Pipeline/AggregateEmitter.cs`.** Absent from the file table above, which counted 215 of the 247
+  escapes across six files; this one holds 14 more. It is out of scope on the merits, not by oversight: 3 of
+  its escapes are in the `Header` const (`AggregateEmitter.cs:26`) and the other 11 are `.Append('\n')` **char**
+  literals closing `Append` chains, not multi-line string payloads. Its indentation never exceeds two levels and
+  every emitted name is `global::`-qualified, so the extension-method-in-instance-form trap that motivated this
+  sub-project structurally cannot occur there. Same species as the deferred `MapEmitter`: a writer would buy
+  change-risk and no safety.
 - Generating `SyntaxNode`s. The cookbook advises against it and `NormalizeWhitespace()` is prohibitively
   expensive.
 - Any change to emitted output. This sub-project is behaviour-neutral by construction.

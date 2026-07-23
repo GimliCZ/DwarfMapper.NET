@@ -63,12 +63,30 @@ public class CodeWriterTests
     [Fact]
     public void Raw_bypasses_indentation_and_adds_no_newline()
     {
-        // Helper bodies are spliced pre-formatted (MapEmitter.cs:44 appends synth.Code verbatim), so Raw must
-        // not re-indent or terminate them.
+        // Helper bodies are spliced pre-formatted (MapEmitter.Emit appends each SynthesizedMethods entry's Code
+        // verbatim), so Raw must not re-indent or terminate them. Cited by member rather than line number: the
+        // line moves, and sub-project 4 splits that file.
         var w = new CodeWriter();
         using (w.Indent()) w.Raw("already   formatted\n");
 
         Assert.Equal("already   formatted\n", w.ToString());
+    }
+
+    [Fact]
+    public void Disposing_a_scope_twice_does_not_dedent_or_close_twice()
+    {
+        // Scope guards re-entry with a _disposed flag. Nothing proved the guard, and a `using` nested inside an
+        // explicit Dispose() — or any double-dispose an emitter refactor introduces — would otherwise underflow
+        // the indent level and emit a second closing brace, corrupting every line that follows.
+        var w = new CodeWriter();
+        var scope = w.Block("if (x)");
+        w.Line("y();");
+        scope.Dispose();
+        scope.Dispose();
+
+        w.Line("after");
+
+        Assert.Equal("if (x)\n{\n    y();\n}\nafter\n", w.ToString());
     }
 
     [Fact]

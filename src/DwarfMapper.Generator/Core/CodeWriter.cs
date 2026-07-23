@@ -46,7 +46,8 @@ internal sealed class CodeWriter
 
     /// <summary>
     ///     Appends text verbatim: no indentation, no terminator. For splicing blocks that already carry their
-    ///     own formatting, such as the synthesized helper bodies appended at <c>MapEmitter.cs:44</c>.
+    ///     own formatting, such as the synthesized helper bodies <c>MapEmitter.Emit</c> appends from
+    ///     <c>MapperClassModel.SynthesizedMethods</c>. (Named by member, not line: sub-project 4 splits that file.)
     /// </summary>
     public CodeWriter Raw(string text)
     {
