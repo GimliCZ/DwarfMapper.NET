@@ -70,8 +70,8 @@ owns it.
 ```
 Core/
   StableHash.cs      FNV-1a, one home, algorithms named (§4.1)
-  TypeFacts.cs       fully-qualified display, object-type classification, target validity (§4.2)
   MemberFacts.cs     readable/writable member enumeration incl. base walk + accessor rules (§4.3)
+                     (a third file, TypeFacts.cs, was specified and then CUT — see §4.2)
         ▲                                   ▲
         │                                   │
   MapperExtractor (class model)      MapToGenerator (registry)
@@ -96,15 +96,20 @@ Hashes feed **generated helper names** (`__DwarfMapObj_<hash>`, `__DwarfMap_Coll
 This closes ISSUE-015 as *"one home, both algorithms named and visible"* rather than as a rename storm that
 would produce a large manifest diff for no behavioural benefit. The divergence stops being accidental.
 
-### 4.2 `TypeFacts`
+### 4.2 `TypeFacts` — **CUT** (measured 2026-07-23, before planning)
 
-Engine-agnostic type questions, today duplicated or engine-private:
+This component was specified from the audit's framing and does not survive contact with the code. Measuring each
+candidate:
 
-- `Fq(ITypeSymbol)` — fully-qualified display (duplicated verbatim in both engines).
-- `IsObjectType(INamedTypeSymbol)` — "is this a mappable object rather than a scalar/collection".
-- `IsMappableTarget(INamedTypeSymbol target, INamedTypeSymbol source)` and
-  `HasAccessibleParameterlessCtor(INamedTypeSymbol)` — the target-validity rules whose absence produced
-  ISSUE-011.
+| Candidate | Finding | Decision |
+|---|---|---|
+| `Fq(ITypeSymbol)` | Not cross-engine duplication. The registry has an `Fq` helper; `MapperExtractor` has **74 inline** `ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)` calls and no helper. Both already produce the same string — there is no divergence to close. | **Skip.** Extracting it means 74 mechanical edits for zero behavioural benefit, with real typo risk across those edits. |
+| `IsObjectType` | Registry-only. The class model decides object-ness **inline inside `TryResolveConversion`** — i.e. within the conversion chain that §2 defers to sub-project 3. | **Skip.** Unifying it requires the deferred work. |
+| `IsMappableTarget`, `HasAccessibleParameterlessCtor` | Registry-only. The class model routes constructor decisions through `ConstructorSelector`, which does substantially more (selection policy, DWARF025/026). There is no second implementation to converge with. | **Skip.** Nothing to unify; they are correct where they live. |
+
+Cutting this leaves two components, each closing a **named** defect rather than performing generic tidying. That
+is the intended outcome of measuring before planning: the audit's framing suggested three shared concepts, and
+only two of them are real.
 
 ### 4.3 `MemberFacts` — the substantive change
 
@@ -142,7 +147,6 @@ code move are indistinguishable.
 | Change | Manifest effect |
 |---|---|
 | `StableHash` consolidation (9 identical copies) | none — same algorithm, same names |
-| `TypeFacts` extraction | none — pure moves |
 | `MemberFacts` adoption by the class model | none — same semantics, same implementation |
 | `MemberFacts` adoption by the registry | **only** cases whose types have base classes — none exist in the corpus today |
 
