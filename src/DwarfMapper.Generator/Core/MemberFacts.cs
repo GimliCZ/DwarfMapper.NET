@@ -6,9 +6,11 @@ namespace DwarfMapper.Generator.Core;
 
 /// <summary>
 ///     The single implementation of "which members can be read from / written to a type", shared by both
-///     engines. It walks the base-type chain (and, for interfaces, all transitively inherited interfaces),
-///     de-duplicates by name so a shadowing override yields once, and applies ACCESSOR-level usability rather
-///     than merely property-level.
+///     engines. Both <see cref="Readable" /> and <see cref="Writable" /> walk the base-type chain and
+///     de-duplicate by name so a shadowing override yields once, and both apply ACCESSOR-level usability rather
+///     than merely property-level. Only <see cref="Readable" /> has the extra interface branch — for an
+///     interface type it walks that interface plus all transitively inherited interfaces, since interfaces have
+///     no <c>BaseType</c> chain to fall back on; <see cref="Writable" /> walks <c>BaseType</c> only.
 ///     <para>
 ///     This lived privately inside <c>MapperExtractor</c> while <c>MapToGenerator</c> had its own shallower
 ///     copy that never walked base types — so inherited members were invisible to the registry, silently
@@ -20,20 +22,20 @@ internal static class MemberFacts
     // A property accessor / field is usable by the generated mapper when it is public, or — when the mapper
     // opted in via [DwarfMapper(AllowNonPublic = true)] — an internal/protected-internal accessor the mapper's
     // assembly can reach (same assembly or via [InternalsVisibleTo]). private/protected stay unreachable.
-    internal static bool AccessorUsable(IMethodSymbol? accessor, Compilation? compilation, bool allowNonPublic)
+    private static bool AccessorUsable(IMethodSymbol? accessor, Compilation? compilation, bool allowNonPublic)
     {
         return accessor is not null &&
                IsMemberReachable(accessor, accessor.DeclaredAccessibility, compilation, allowNonPublic);
     }
 
-    internal static bool FieldUsable(IFieldSymbol field, Compilation? compilation, bool allowNonPublic)
+    private static bool FieldUsable(IFieldSymbol field, Compilation? compilation, bool allowNonPublic)
     {
         return IsMemberReachable(field, field.DeclaredAccessibility, compilation, allowNonPublic);
     }
 
     // public is always reachable; internal / protected-internal is reachable when the mapper opted in AND the
     // mapper's own assembly can see it (same assembly, or [InternalsVisibleTo]). protected / private never are.
-    internal static bool IsMemberReachable(ISymbol member, Accessibility accessibility, Compilation? compilation,
+    private static bool IsMemberReachable(ISymbol member, Accessibility accessibility, Compilation? compilation,
         bool allowNonPublic)
     {
         if (accessibility == Accessibility.Public) return true;

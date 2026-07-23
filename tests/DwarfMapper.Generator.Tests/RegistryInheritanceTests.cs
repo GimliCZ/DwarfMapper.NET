@@ -49,8 +49,12 @@ public class RegistryInheritanceTests
     [Fact]
     public void An_inherited_source_member_does_not_produce_a_spurious_DWARFR02()
     {
-        var diagnostics = GeneratorTestHarness.RunMapTo(InheritedSourceMember);
+        var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(InheritedSourceMember);
 
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARFR02");
+        Assert.True(generated.Contains("Id = source.Id,", StringComparison.Ordinal),
+            "The inherited source member 'Id' was never read, so Dto.Id was never assigned. "
+            + "Absence of DWARFR02 alone doesn't prove the mapping happened — nothing being generated at all "
+            + "would also pass that assertion.\n\n--- generated ---\n" + generated);
     }
 }

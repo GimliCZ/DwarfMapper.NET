@@ -123,55 +123,79 @@ public class GeneratorTestingScanTests
     // (rather than one bundled assertion) so each clause fails independently instead of the first assertion
     // masking whether the other two would ever have caught anything.
 
-    private static string ExtractorText() =>
-        File.ReadAllText(Path.Combine(RepoRoot(), "src", "DwarfMapper.Generator", "Pipeline",
-            "MapperExtractor.cs"));
+    private static readonly string GeneratorSrcRoot = Path.Combine("src", "DwarfMapper.Generator");
 
-    private static string RegistryText() =>
-        File.ReadAllText(Path.Combine(RepoRoot(), "src", "DwarfMapper.Generator", "Registry",
-            "MapToGenerator.cs"));
+    // Glob rather than hard-code a single file: MapperExtractor is a PARTIAL class (MapperExtractor.cs +
+    // MapperExtractor.MapConfig.cs today, more once sub-project 4 splits it further), and the registry may grow
+    // additional files under Registry/. A path literal silently drains coverage the moment either happens.
+    private static IEnumerable<string> ClassModelFiles() =>
+        Directory.EnumerateFiles(Path.Combine(RepoRoot(), GeneratorSrcRoot, "Pipeline"), "MapperExtractor*.cs",
+            SearchOption.TopDirectoryOnly);
+
+    private static IEnumerable<string> RegistryFiles() =>
+        Directory.EnumerateFiles(Path.Combine(RepoRoot(), GeneratorSrcRoot, "Registry"), "*.cs",
+            SearchOption.TopDirectoryOnly);
+
+    private static IEnumerable<string> AllGeneratorFiles() =>
+        Directory.EnumerateFiles(Path.Combine(RepoRoot(), GeneratorSrcRoot), "*.cs", SearchOption.AllDirectories)
+            .Where(p => !p.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(seg => seg is "obj" or "bin"));
 
     [Fact]
     public void MapToGenerator_does_not_call_GetMembers_directly()
     {
-        var registry = RegistryText();
-
-        // The registry must enumerate members only through MemberFacts. Both of its former GetMembers() calls
-        // were inside its own shallow ReadableMembers/WritableMembers.
-        Assert.False(registry.Contains("GetMembers()", StringComparison.Ordinal),
-            "MapToGenerator calls GetMembers() directly again. Member enumeration must go through "
-            + "Core.MemberFacts, or the registry silently loses inherited members as it did before.");
+        // Registry-scoped on purpose: MapperExtractor.MapConfig.cs legitimately calls GetMembers() (enumerating
+        // methods, not class-model members), so a class-model ban would fail immediately and isn't what this
+        // ratchet guards. The divergence being guarded is the REGISTRY re-growing its own shallow member
+        // enumeration instead of going through Core.MemberFacts.
+        foreach (var path in RegistryFiles())
+        {
+            var text = File.ReadAllText(path);
+            Assert.False(text.Contains("GetMembers()", StringComparison.Ordinal),
+                $"{Path.GetFileName(path)} calls GetMembers() directly again. Member enumeration must go "
+                + "through Core.MemberFacts, or the registry silently loses inherited members as it did before.");
+        }
     }
 
     [Fact]
     public void Neither_engine_declares_its_own_FNV_constant()
     {
-        var extractor = ExtractorText();
-        var registry = RegistryText();
+        // ISSUE-015 was a TEN-file problem — the FNV-1a constant copied into converter after converter. Guarding
+        // two hard-coded files only catches a regression in those two; scan every generator source file so a
+        // NEW file copying the constant is caught too.
+        foreach (var path in AllGeneratorFiles())
+        {
+            var text = File.ReadAllText(path);
+            var isCanonicalHome = path.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+                .EndsWith(Path.Combine("Core", "StableHash.cs"), StringComparison.Ordinal);
+            if (isCanonicalHome) continue;
 
-        // FNV-1a lives in Core.StableHash and nowhere else.
-        foreach (var (name, text) in new[] { ("MapperExtractor", extractor), ("MapToGenerator", registry) })
             Assert.False(text.Contains("2166136261", StringComparison.Ordinal),
-                $"{name} declares its own FNV-1a constant again. Hashing belongs to Core.StableHash — ten "
-                + "copies of it is what ISSUE-015 was.");
+                $"{Path.GetFileName(path)} contains the FNV-1a offset basis constant. Hashing belongs solely to "
+                + "Core.StableHash — ten copies of it is what ISSUE-015 was.");
+        }
     }
 
     [Fact]
     public void Both_engines_call_MemberFacts_Readable_and_Writable()
     {
-        var extractor = ExtractorText();
-        var registry = RegistryText();
-
         // A bare mention of "MemberFacts" — a stray comment, a dead using — proves nothing. Require the actual
         // call syntax for both the readable- and writable-member entry points, so a regression that keeps a
-        // dead reference while re-implementing enumeration elsewhere still fails this.
-        foreach (var (name, text) in new[] { ("MapperExtractor", extractor), ("MapToGenerator", registry) })
+        // dead reference while re-implementing enumeration elsewhere still fails this. Globbed so a partial-class
+        // split (class model) or a new file (registry) stays covered.
+        foreach (var (engineName, files) in new[]
+                 {
+                     ("[DwarfMapper] class model", ClassModelFiles()),
+                     ("[MapTo] registry", RegistryFiles())
+                 })
         {
-            Assert.True(text.Contains("MemberFacts.Readable(", StringComparison.Ordinal),
-                $"{name} no longer calls MemberFacts.Readable(...) — member enumeration may have been "
+            var combined = string.Join("\n", files.Select(File.ReadAllText));
+
+            Assert.True(combined.Contains("MemberFacts.Readable(", StringComparison.Ordinal),
+                $"The {engineName} no longer calls MemberFacts.Readable(...) — member enumeration may have been "
                 + "re-implemented locally instead of routed through the shared core.");
-            Assert.True(text.Contains("MemberFacts.Writable(", StringComparison.Ordinal),
-                $"{name} no longer calls MemberFacts.Writable(...) — member enumeration may have been "
+            Assert.True(combined.Contains("MemberFacts.Writable(", StringComparison.Ordinal),
+                $"The {engineName} no longer calls MemberFacts.Writable(...) — member enumeration may have been "
                 + "re-implemented locally instead of routed through the shared core.");
         }
     }
