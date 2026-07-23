@@ -60,9 +60,10 @@ internal static class EnumConverter
             // Throws OverflowException when the source value does not fit the target underlying.
             var srcUnderlying = Fq(src.EnumUnderlyingType!);
             var tgtUnderlying = Fq(tgt.EnumUnderlyingType!);
-            var code =
-                $"    private static {Fq(tgt)} {name}({Fq(src)} v) => ({Fq(tgt)}){tgtUnderlying}.CreateChecked(({srcUnderlying})v);\n";
-            synth[name] = new SynthesizedMethod(name, code);
+            var w = new CodeWriter(1);
+            w.Line("private static " + Fq(tgt) + " " + name + "(" + Fq(src) + " v) => (" + Fq(tgt) + ")"
+                   + tgtUnderlying + ".CreateChecked((" + srcUnderlying + ")v);");
+            synth[name] = new SynthesizedMethod(name, w.ToString());
         }
 
         return name;
@@ -80,9 +81,10 @@ internal static class EnumConverter
         {
             var srcUnderlying = Fq(srcEnum.EnumUnderlyingType!);
             // e.g.: global::System.Int32.CreateChecked((global::System.Int64)v)
-            var code =
-                $"    private static {Fq(tgtNum)} {name}({Fq(srcEnum)} v) => {Fq(tgtNum)}.CreateChecked(({srcUnderlying})v);\n";
-            synth[name] = new SynthesizedMethod(name, code);
+            var w = new CodeWriter(1);
+            w.Line("private static " + Fq(tgtNum) + " " + name + "(" + Fq(srcEnum) + " v) => " + Fq(tgtNum)
+                   + ".CreateChecked((" + srcUnderlying + ")v);");
+            synth[name] = new SynthesizedMethod(name, w.ToString());
         }
 
         return name;
@@ -100,9 +102,10 @@ internal static class EnumConverter
         {
             var tgtUnderlying = Fq(tgtEnum.EnumUnderlyingType!);
             // e.g.: (global::Demo.Color)global::System.Int32.CreateChecked(v)
-            var code =
-                $"    private static {Fq(tgtEnum)} {name}({Fq(srcNum)} v) => ({Fq(tgtEnum)}){tgtUnderlying}.CreateChecked(v);\n";
-            synth[name] = new SynthesizedMethod(name, code);
+            var w = new CodeWriter(1);
+            w.Line("private static " + Fq(tgtEnum) + " " + name + "(" + Fq(srcNum) + " v) => (" + Fq(tgtEnum) + ")"
+                   + tgtUnderlying + ".CreateChecked(v);");
+            synth[name] = new SynthesizedMethod(name, w.ToString());
         }
 
         return name;
@@ -140,22 +143,25 @@ internal static class EnumConverter
     private static string EmitSwitchByName(
         string name, INamedTypeSymbol src, INamedTypeSymbol tgt, HashSet<string> targetNames)
     {
-        var sb = new StringBuilder();
-        sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
-            .Append('(').Append(Fq(src)).Append(" v) => v switch\n    {\n");
-        var seenValues = new HashSet<object>();
-        foreach (var m in EnumMembers(src))
+        var w = new CodeWriter(1);
+        w.Line("private static " + Fq(tgt) + " " + name + "(" + Fq(src) + " v) => v switch");
+        w.Line("{");
+        using (w.Indent())
         {
-            if (m.ConstantValue is null ||
-                !seenValues.Add(m.ConstantValue)) continue; // alias of an already-emitted value
-            if (targetNames.Contains(m.Name))
-                sb.Append("        ").Append(Fq(src)).Append('.').Append(m.Name)
-                    .Append(" => ").Append(Fq(tgt)).Append('.').Append(m.Name).Append(",\n");
+            var seenValues = new HashSet<object>();
+            foreach (var m in EnumMembers(src))
+            {
+                if (m.ConstantValue is null ||
+                    !seenValues.Add(m.ConstantValue)) continue; // alias of an already-emitted value
+                if (targetNames.Contains(m.Name))
+                    w.Line(Fq(src) + "." + m.Name + " => " + Fq(tgt) + "." + m.Name + ",");
+            }
+
+            w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unmapped enum value\"),");
         }
 
-        sb.Append(
-            "        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unmapped enum value\"),\n    };\n");
-        return sb.ToString();
+        w.Line("};");
+        return w.ToString();
     }
 
     /// <summary>
@@ -179,35 +185,36 @@ internal static class EnumConverter
     {
         var underlying = Fq(src.EnumUnderlyingType!);
 
-        var sb = new StringBuilder();
-        sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
-            .Append('(').Append(Fq(src)).Append(" v)\n    {\n");
-        sb.Append("        var __r = default(").Append(Fq(tgt)).Append(");\n");
-        sb.Append("        var __rest = (").Append(underlying).Append(")v;\n");
-
-        var seenValues = new HashSet<object>();
-        foreach (var m in EnumMembers(src))
+        var w = new CodeWriter(1);
+        using (w.Block("private static " + Fq(tgt) + " " + name + "(" + Fq(src) + " v)"))
         {
-            if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue)) continue;
-            if (!targetNames.Contains(m.Name)) continue;
+            w.Line("var __r = default(" + Fq(tgt) + ");");
+            w.Line("var __rest = (" + underlying + ")v;");
 
-            // The zero member (None = 0) carries no bit: `(v & None) == None` is true for every value, so
-            // testing it would be meaningless. It needs no arm — default(TTarget) already IS zero.
-            if (IsZero(m.ConstantValue)) continue;
+            var seenValues = new HashSet<object>();
+            foreach (var m in EnumMembers(src))
+            {
+                if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue)) continue;
+                if (!targetNames.Contains(m.Name)) continue;
 
-            var srcMember = Fq(src) + "." + m.Name;
-            sb.Append("        if ((v & ").Append(srcMember).Append(") == ").Append(srcMember).Append(")\n");
-            sb.Append("        {\n");
-            sb.Append("            __r |= ").Append(Fq(tgt)).Append('.').Append(m.Name).Append(";\n");
-            sb.Append("            __rest &= unchecked((").Append(underlying).Append(")~(")
-                .Append(underlying).Append(')').Append(srcMember).Append(");\n");
-            sb.Append("        }\n");
+                // The zero member (None = 0) carries no bit: `(v & None) == None` is true for every value, so
+                // testing it would be meaningless. It needs no arm — default(TTarget) already IS zero.
+                if (IsZero(m.ConstantValue)) continue;
+
+                var srcMember = Fq(src) + "." + m.Name;
+                using (w.Block("if ((v & " + srcMember + ") == " + srcMember + ")"))
+                {
+                    w.Line("__r |= " + Fq(tgt) + "." + m.Name + ";");
+                    w.Line("__rest &= unchecked((" + underlying + ")~(" + underlying + ")" + srcMember + ");");
+                }
+            }
+
+            w.Line("if (__rest != 0) throw new global::System.ArgumentOutOfRangeException("
+                   + "nameof(v), v, \"Unmapped enum flag\");");
+            w.Line("return __r;");
         }
 
-        sb.Append("        if (__rest != 0) throw new global::System.ArgumentOutOfRangeException(")
-            .Append("nameof(v), v, \"Unmapped enum flag\");\n");
-        sb.Append("        return __r;\n    }\n");
-        return sb.ToString();
+        return w.ToString();
     }
 
     /// <summary>True when the enum carries <c>[Flags]</c>, so combined values are legal by design.</summary>
@@ -320,20 +327,24 @@ internal static class EnumConverter
             // A [Flags] enum keeps Enum.ToString() (comma-joined identifiers) for combined values;
             // [EnumMember]/[Description] custom names apply to non-flags enums only.
             var flags = IsFlagsEnum(src);
-            var sb = new StringBuilder();
-            sb.Append("    private static string ").Append(name).Append('(').Append(Fq(src))
-                .Append(" v) => v switch\n    {\n");
-            var seenValues = new HashSet<object>();
-            foreach (var m in EnumMembers(src))
+            var w = new CodeWriter(1);
+            w.Line("private static string " + name + "(" + Fq(src) + " v) => v switch");
+            w.Line("{");
+            using (w.Indent())
             {
-                if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue)) continue;
-                var text = flags ? m.Name : SerializedName(m);
-                sb.Append("        ").Append(Fq(src)).Append('.').Append(m.Name).Append(" => \"")
-                    .Append(Escape(text)).Append("\",\n");
+                var seenValues = new HashSet<object>();
+                foreach (var m in EnumMembers(src))
+                {
+                    if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue)) continue;
+                    var text = flags ? m.Name : SerializedName(m);
+                    w.Line(Fq(src) + "." + m.Name + " => \"" + Escape(text) + "\",");
+                }
+
+                w.Line("_ => v.ToString(),");
             }
 
-            sb.Append("        _ => v.ToString(),\n    };\n");
-            synth[name] = new SynthesizedMethod(name, sb.ToString());
+            w.Line("};");
+            synth[name] = new SynthesizedMethod(name, w.ToString());
         }
 
         return name;
@@ -351,23 +362,26 @@ internal static class EnumConverter
 
     private static string EmitStringToEnum(string name, INamedTypeSymbol tgt)
     {
-        var sb = new StringBuilder();
-        sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name)
-            .Append("(string v) => v switch\n    {\n");
-        // Match on the serialized name ([EnumMember]/[Description] or the identifier). De-dup by that name so a
-        // duplicated [EnumMember(Value=…)] cannot emit two identical case labels (CS0152) — first member wins.
-        var seenNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var m in EnumMembers(tgt))
+        var w = new CodeWriter(1);
+        w.Line("private static " + Fq(tgt) + " " + name + "(string v) => v switch");
+        w.Line("{");
+        using (w.Indent())
         {
-            var text = SerializedName(m);
-            if (!seenNames.Add(text)) continue;
-            sb.Append("        \"").Append(Escape(text)).Append("\" => ").Append(Fq(tgt)).Append('.').Append(m.Name)
-                .Append(",\n");
+            // Match on the serialized name ([EnumMember]/[Description] or the identifier). De-dup by that name so a
+            // duplicated [EnumMember(Value=…)] cannot emit two identical case labels (CS0152) — first member wins.
+            var seenNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var m in EnumMembers(tgt))
+            {
+                var text = SerializedName(m);
+                if (!seenNames.Add(text)) continue;
+                w.Line("\"" + Escape(text) + "\" => " + Fq(tgt) + "." + m.Name + ",");
+            }
+
+            w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),");
         }
 
-        sb.Append(
-            "        _ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),\n    };\n");
-        return sb.ToString();
+        w.Line("};");
+        return w.ToString();
     }
 
     /// <summary>
@@ -389,32 +403,41 @@ internal static class EnumConverter
         // deliberately emits no `using` directives, so `v.AsSpan()` / `span.Trim()` would not compile (CS1061).
         // Span-vs-constant pattern matching is avoided for the same class of reason: it requires a recent
         // LangVersion in the CONSUMER's project, which this generator does not control.
-        var sb = new StringBuilder();
-        sb.Append("    private static ").Append(Fq(tgt)).Append(' ').Append(name).Append("(string v)\n    {\n");
-        sb.Append("        var __r = default(").Append(Fq(tgt)).Append(");\n");
-        sb.Append("        var __s = global::System.MemoryExtensions.AsSpan(v);\n");
-        sb.Append("        while (true)\n        {\n");
-        sb.Append("            var __i = global::System.MemoryExtensions.IndexOf(__s, ',');\n");
-        sb.Append("            var __part = global::System.MemoryExtensions.Trim(__i < 0 ? __s : __s.Slice(0, __i));\n");
-        sb.Append("            if (__part.Length > 0)\n            {\n");
-
-        var first = true;
-        foreach (var m in EnumMembers(tgt))
+        var w = new CodeWriter(1);
+        using (w.Block("private static " + Fq(tgt) + " " + name + "(string v)"))
         {
-            sb.Append("                ").Append(first ? "if" : "else if")
-                .Append(" (global::System.MemoryExtensions.Equals(__part, global::System.MemoryExtensions.AsSpan(\"")
-                .Append(m.Name).Append("\"), global::System.StringComparison.Ordinal)) __r |= ")
-                .Append(Fq(tgt)).Append('.').Append(m.Name).Append(";\n");
-            first = false;
+            w.Line("var __r = default(" + Fq(tgt) + ");");
+            w.Line("var __s = global::System.MemoryExtensions.AsSpan(v);");
+            using (w.Block("while (true)"))
+            {
+                w.Line("var __i = global::System.MemoryExtensions.IndexOf(__s, ',');");
+                w.Line("var __part = global::System.MemoryExtensions.Trim(__i < 0 ? __s : __s.Slice(0, __i));");
+                using (w.Block("if (__part.Length > 0)"))
+                {
+                    var first = true;
+                    foreach (var m in EnumMembers(tgt))
+                    {
+                        w.Line((first ? "if" : "else if")
+                               + " (global::System.MemoryExtensions.Equals(__part, global::System.MemoryExtensions.AsSpan(\""
+                               + m.Name + "\"), global::System.StringComparison.Ordinal)) __r |= "
+                               + Fq(tgt) + "." + m.Name + ";");
+                        first = false;
+                    }
+
+                    // Unknown names still throw — reflection-free and never silent.
+                    w.Line((first ? "" : "else ")
+                           + "throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\");");
+                }
+
+                w.Line();
+                w.Line("if (__i < 0) break;");
+                w.Line("__s = __s.Slice(__i + 1);");
+            }
+
+            w.Line();
+            w.Line("return __r;");
         }
 
-        // Unknown names still throw — reflection-free and never silent.
-        sb.Append("                ").Append(first ? "" : "else ")
-            .Append("throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\");\n");
-        sb.Append("            }\n\n");
-        sb.Append("            if (__i < 0) break;\n");
-        sb.Append("            __s = __s.Slice(__i + 1);\n");
-        sb.Append("        }\n\n        return __r;\n    }\n");
-        return sb.ToString();
+        return w.ToString();
     }
 }
