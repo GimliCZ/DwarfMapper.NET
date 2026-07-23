@@ -78,7 +78,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
         // Per-member directives in source order; each aligns positionally to a [MapTo] target.
         var members = new List<(ISymbol Sym, ITypeSymbol Type, List<(bool Ignore, string? Name)> Directives)>();
-        foreach (var (srcSym, srcType) in ReadableMembers(source))
+        foreach (var (srcSym, _, srcType) in MemberFacts.Readable(source))
         {
             var directives = ParseDirectives(srcSym);
             if (directives.Count > 1 && targetCount > 0 && directives.Count != targetCount)
@@ -112,7 +112,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
             }
 
             var targetFqn = target.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var writables = WritableMembers(target).ToList();
+            var writables = MemberFacts.Writable(target).ToList();
 
             // destName -> chosen source member (resolved per target, independently).
             var chosen = new Dictionary<string, (ISymbol Sym, ITypeSymbol Type)>();
@@ -237,36 +237,6 @@ public sealed class MapToGenerator : IIncrementalGenerator
                && !t.IsAbstract
                && !t.AllInterfaces.Any(i =>
                    i.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T);
-    }
-
-    private static IEnumerable<(ISymbol Symbol, ITypeSymbol Type)> ReadableMembers(INamedTypeSymbol type)
-    {
-        foreach (var m in type.GetMembers())
-        {
-            if (m.IsStatic || m.DeclaredAccessibility != Accessibility.Public) continue;
-            // As in WritableMembers: the GETTER's own accessibility decides readability. `public int X
-            // { private get; set; }` cannot be read from here, and emitting `source.X` gave CS0271.
-            if (m is IPropertySymbol { GetMethod.DeclaredAccessibility: Accessibility.Public, IsIndexer: false } p)
-                yield return (p, p.Type);
-            else if (m is IFieldSymbol { IsConst: false, IsImplicitlyDeclared: false } f) yield return (f, f.Type);
-        }
-    }
-
-    private static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> WritableMembers(INamedTypeSymbol type)
-    {
-        foreach (var m in type.GetMembers())
-        {
-            if (m.IsStatic || m.DeclaredAccessibility != Accessibility.Public) continue;
-            // The SETTER's own accessibility matters, not just the property's: `public int X { get; private set; }`
-            // is a public property that cannot be assigned from here, and treating it as writable emitted
-            // `new T { X = … }` → CS0272 out of generated code. Excluding it makes the destination member
-            // unmapped instead, which the completeness gate reports as DWARFR02 — loud, and actionable.
-            // (init-only setters stay allowed: the registry assigns through an object initializer.)
-            if (m is IPropertySymbol { SetMethod.DeclaredAccessibility: Accessibility.Public, IsIndexer: false } p)
-                yield return (p, p.Name, p.Type);
-            else if (m is IFieldSymbol { IsConst: false, IsReadOnly: false, IsImplicitlyDeclared: false } f)
-                yield return (f, f.Name, f.Type);
-        }
     }
 
     /// <summary>A member's [MapProperty]/[MapIgnore] directives in source order; i-th → i-th [MapTo] target.</summary>
@@ -454,8 +424,8 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             var lines = new List<string>();
             var ok = true;
-            var readable = ReadableMembers(src).ToList();
-            foreach (var w in WritableMembers(tgt))
+            var readable = MemberFacts.Readable(src).ToList();
+            foreach (var w in MemberFacts.Writable(tgt))
             {
                 var sm = readable.FirstOrDefault(r => r.Symbol.Name == w.Name);
                 if (sm.Symbol is null)

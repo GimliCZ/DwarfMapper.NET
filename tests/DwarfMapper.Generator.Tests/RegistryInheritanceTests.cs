@@ -40,7 +40,7 @@ public class RegistryInheritanceTests
         var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(InheritedDestinationMember);
 
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.True(generated.Contains("Id = ", StringComparison.Ordinal),
+        Assert.True(generated.Contains("Id = source.Id,", StringComparison.Ordinal),
             "The inherited destination member 'Id' was never assigned, so it silently stays at its default. "
             + "The registry enumerates only type.GetMembers() and does not walk the base-type chain.\n\n"
             + "--- generated ---\n" + generated);
