@@ -1,6 +1,6 @@
 # Design: shared engine core — ending the two-engine drift
 
-- **Date:** 2026-07-22
+- **Date:** 2026-07-23
 - **Status:** Approved (design); ready for implementation planning
 - **Component:** `DwarfMapper.Generator` (both engines) + tests
 

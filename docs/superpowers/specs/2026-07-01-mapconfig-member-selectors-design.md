@@ -1,7 +1,11 @@
 # Design: `MapConfig<S,T>` — type-safe, refactor-safe member-selector configuration
 
 - **Date:** 2026-07-01
-- **Status:** Approved (design); ready for implementation planning
+- **Status:** **IMPLEMENTED** (status corrected 2026-07-23). `MapConfig<S,T>` ships in `src/DwarfMapper/MapConfig.cs`
+  with all nine fluent operations; the plan `docs/superpowers/plans/2026-07-01-mapconfig-member-selectors.md`
+  was executed to completion. A completeness gate
+  (`SelfValidation/StructuralSurfaceCoverageTests.Every_public_MapConfig_method_is_exercised_by_a_MapConfig_test`)
+  now requires every public `MapConfig` method to be exercised by a test, so a new fluent op cannot ship untested.
 - **Component:** `DwarfMapper` (runtime attributes/API) + `DwarfMapper.Generator` (Roslyn source generator)
 
 ## 1. Problem

@@ -1,7 +1,11 @@
 # Design: generator testing framework — refactoring safety net + reusable kit
 
 - **Date:** 2026-07-22
-- **Status:** Approved (design); ready for implementation planning
+- **Status:** **IMPLEMENTED and MERGED** (status corrected 2026-07-23) — `4e79370` on `master`. Delivered: a
+  971-case golden manifest, the cacheability battery over both generators, 21 corpus-derived snapshots,
+  framework self-tests, and four ratchets. Suite 5,561 green, 0 warnings.
+  Post-merge correction: §4.3's claim that the feature axis is *derived* from the gated taxonomies was
+  amended during implementation — it is a **curated** list guarded by a taxonomy-growth ratchet. See §4.3.
 - **Component:** `DwarfMapper.Generator.Tests` (test infrastructure) + minimal non-behavioural additions to `DwarfMapper.Generator`
 
 ## 1. Problem
@@ -88,7 +92,9 @@ internal static class GeneratorRunner
     static GeneratorRun Run(IIncrementalGenerator generator, string source,
                             NullableContextOptions nullable = NullableContextOptions.Disable);
 
-    static GeneratorDriver RunTracked(IIncrementalGenerator generator, Compilation compilation);
+    // NOTE: takes no Compilation — the caller drives it with .RunGenerators(compilation).
+    // An unused parameter is IDE0060, which is a build error under AnalysisMode=All.
+    static GeneratorDriver RunTracked(IIncrementalGenerator generator);
 }
 ```
 
@@ -105,9 +111,15 @@ Three assertions, runnable against any generator and any set of tracking names:
 - `CachedAfterUnrelatedEdit` — adding an unrelated type must not recompute the mapper pipeline.
 - `NoSymbolsInPipeline` — no tracked step output holds `ISymbol`, `SyntaxNode`, `Location`, or `Compilation`.
   Built-in steps (which legitimately carry a `Compilation`) are excluded by inspecting only the generator's own
-  named steps.
+  named steps. **As implemented this walks the output's members recursively** (properties and fields,
+  `IEnumerable` elements, depth cap 16, reference-equality cycle guard) and reports the offending member path —
+  a top-level type check would miss the realistic leak, `record Model(..., ISymbol Sym)`, whose *output* is the
+  record. Hitting the depth cap **fails loudly**: a truncated branch must never be mistakable for a clean one.
+  Complements the pre-existing `ModelCacheSafetyTests`, which enforces the same rule *structurally* over declared
+  types in the `Model` namespace — see the reconciliation note in the correctness-first design.
 
-`Battery(generator, source, unrelatedEdit, trackingNames)` runs all three.
+`Battery(GeneratorUnderTest generator, string source)` runs all three; the unrelated edit and the tracking names
+come from the registry entry rather than being passed separately.
 
 ### 4.3 `GoldenCorpus`
 
