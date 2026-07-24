@@ -10,10 +10,13 @@ using Mapster;
 BenchmarkRunner.Run<MapperBenchmarks>();
 
 // ── Shared benchmark types (auto-properties → every mapper handles them) ───────
+// Nullable on BOTH sides. The payload factory draws null for a nullable position ~15% of the time; a
+// non-nullable annotation would be a lie reflection assigns straight through, and the mapper would emit no
+// null handling — i.e. we would measure the branch-free path while feeding it nullable data.
 public sealed class FlatSrc
 {
     public int Id { get; set; }
-    public string Name { get; set; } = "";
+    public string? Name { get; set; } = "";
     public long Score { get; set; }
     public bool Active { get; set; }
 }
@@ -21,11 +24,16 @@ public sealed class FlatSrc
 public sealed class FlatDst
 {
     public int Id { get; set; }
-    public string Name { get; set; } = "";
+    public string? Name { get; set; } = "";
     public long Score { get; set; }
     public bool Active { get; set; }
 }
 
+// Inner stays NON-nullable, and the payload builder guarantees it. Making it nullable is what a realistic
+// graph would do, but it makes the generated MapNested pass `s.Inner` into the user-declared
+// `MapFlat(FlatSrc s)` — CS8604, with no DWARF diagnostic explaining it. That is a mapper-contract question
+// (what should a nullable nested reference into a non-nullable partial-method parameter do?) and does not
+// belong in a throughput benchmark. Null MEMBERS still flow: FlatSrc.Name inside Inner can be null.
 public sealed class NestedSrc
 {
     public int Id { get; set; }
@@ -114,8 +122,8 @@ public sealed class WidenDst
 // Flatten: Order.Customer.Name → OrderDto.CustomerName (real-world Entity→DTO; eShopOnWeb-style).
 public sealed class FlCustomer
 {
-    public string Name { get; set; } = "";
-    public string Email { get; set; } = "";
+    public string? Name { get; set; } = "";
+    public string? Email { get; set; } = "";
 }
 
 public sealed class FlOrder
@@ -128,7 +136,7 @@ public sealed class FlOrder
 public sealed class FlOrderDto
 {
     public int Id { get; set; }
-    public string CustomerName { get; set; } = "";
+    public string? CustomerName { get; set; } = "";
     public decimal Amount { get; set; }
 }
 
@@ -229,30 +237,39 @@ public class MapperBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _flat = new FlatSrc { Id = 7, Name = "vein", Score = 42, Active = true };
-        _nested = new NestedSrc { Id = 1, Inner = _flat };
+        // Payloads come from ObjectFactoryV2 — the same fixture/fuzz source the test suites use — so the
+        // measured distribution includes nulls, boundary numerics and varied string lengths instead of the
+        // uniform literals this setup used to hand-build. Each shape gets a distinct salt so categories are
+        // not correlated draws of one another. Setup is not measured by BenchmarkDotNet.
+        _flat = RealisticPayloads.One<FlatSrc>(1);
 
-        var items = new FlatSrc[N];
-        for (var i = 0; i < N; i++) items[i] = new FlatSrc { Id = i, Name = "n" + i, Score = i, Active = i % 2 == 0 };
+        // The factory assigns through reflection, which does not see nullable annotations — it can null ANY
+        // reference member below the root. For the two shapes whose nested reference is declared non-nullable
+        // (see the NestedSrc note), materialise it so the benchmark measures nesting rather than dying on an
+        // NRE. Their MEMBERS still carry the factory's nulls and boundary values.
+        _nested = RealisticPayloads.One<NestedSrc>(2);
+        _nested.Inner ??= RealisticPayloads.One<FlatSrc>(21);
+
+        // Element CONTENT is factory-drawn; element COUNT stays pinned to N. The factory builds 1-3 element
+        // collections, so letting it size these would quietly turn an N=1000 benchmark into N≈2.
+        var items = RealisticPayloads.Elements<FlatSrc>(N, 3);
         _array = new ArraySrc { Items = items };
         _list = new ListSrc { Items = new List<FlatSrc>(items) };
         // Statically IEnumerable<T>, a List at runtime — the probe hits, which is the common real-world case.
         _seq = new SeqSrc { Items = new List<FlatSrc>(items) };
 
-        var vecs = new Vec3Src[N];
-        for (var i = 0; i < N; i++) vecs[i] = new Vec3Src { X = i, Y = i + 1, Z = i + 2 };
-        _blit = new BlitSrc { Items = vecs };
+        _blit = new BlitSrc { Items = RealisticPayloads.Elements<Vec3Src>(N, 4) };
+        _widen = new WidenSrc { V = RealisticPayloads.Elements<int>(N, 5) };
 
-        var ints = new int[N];
-        for (var i = 0; i < N; i++) ints[i] = i - N / 2;
-        _widen = new WidenSrc { V = ints };
+        _flOrder = RealisticPayloads.One<FlOrder>(6);
+        _flOrder.Customer ??= RealisticPayloads.One<FlCustomer>(61);
+        _enum = RealisticPayloads.One<EnumSrc>(7);
+        _dict = new DictSrc { M = RealisticPayloads.Map(N, 8) };
 
-        _flOrder = new FlOrder
-            { Id = 9, Customer = new FlCustomer { Name = "Ada Lovelace", Email = "ada@x.io" }, Amount = 42.50m };
-        _enum = new EnumSrc { Id = 1, Status = BenchStatus.Active };
-        var dict = new Dictionary<string, int>();
-        for (var i = 0; i < N; i++) dict["k" + i] = i;
-        _dict = new DictSrc { M = dict };
+        // Fail loudly if the draw came back degenerate. Without this, a change to the factory's probabilities
+        // (or an unlucky seed) would silently restore the old flat distribution while every benchmark still
+        // reported a healthy-looking number.
+        RealisticPayloads.AssertRealistic(items, nameof(FlatSrc));
 
         var cfg = new MapperConfiguration(c =>
         {
