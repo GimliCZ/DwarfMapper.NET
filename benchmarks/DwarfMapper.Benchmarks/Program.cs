@@ -48,6 +48,20 @@ public sealed class ArrayDst
     public FlatDst[] Items { get; set; } = Array.Empty<FlatDst>();
 }
 
+// ISSUE-019: the source member is typed IEnumerable<T>, so the count is not knowable at compile time. The
+// old emission buffered into a growing List<T> and copied it out with ToArray(); the fix probes the RUNTIME
+// count and fills one exactly-sized array. The runtime value here is a List, so the probe succeeds. No
+// existing benchmark covered this shape — the Array category uses an ARRAY source, whose count is static.
+public sealed class SeqSrc
+{
+    public IEnumerable<FlatSrc> Items { get; set; } = Array.Empty<FlatSrc>();
+}
+
+public sealed class SeqDst
+{
+    public FlatDst[] Items { get; set; } = Array.Empty<FlatDst>();
+}
+
 // List<T> target with element conversion → DwarfMapper's plain-fill path (now pre-sized from
 // src.Count). Isolates the capacity win: Add() into a pre-sized List never re-grows the backing array.
 public sealed class ListSrc
@@ -163,6 +177,7 @@ public partial class DwarfM
     public partial FlatDst MapFlat(FlatSrc s); // also used for NestedDst.Inner
     public partial NestedDst MapNested(NestedSrc s);
     public partial ArrayDst MapArray(ArraySrc s);
+    public partial SeqDst MapSeq(SeqSrc s); // IEnumerable<T> source → unknown count (ISSUE-019)
     public partial ListDst MapList(ListSrc s); // List<T> → List<T> (pre-sized plain fill)
     public partial BlitDst MapBlit(BlitSrc s); // Vec3[] → SIMD blit
     public partial WidenDst MapWiden(WidenSrc s); // int[] → long[] → SIMD widen
@@ -197,6 +212,7 @@ public class MapperBenchmarks
     private readonly DwarfM _dwarf = new();
     private readonly MapperlyM _mapperly = new();
     private ArraySrc _array = null!;
+    private SeqSrc _seq = null!;
     private IMapper _auto = null!;
     private BlitSrc _blit = null!;
     private DictSrc _dict = null!;
@@ -220,6 +236,8 @@ public class MapperBenchmarks
         for (var i = 0; i < N; i++) items[i] = new FlatSrc { Id = i, Name = "n" + i, Score = i, Active = i % 2 == 0 };
         _array = new ArraySrc { Items = items };
         _list = new ListSrc { Items = new List<FlatSrc>(items) };
+        // Statically IEnumerable<T>, a List at runtime — the probe hits, which is the common real-world case.
+        _seq = new SeqSrc { Items = new List<FlatSrc>(items) };
 
         var vecs = new Vec3Src[N];
         for (var i = 0; i < N; i++) vecs[i] = new Vec3Src { X = i, Y = i + 1, Z = i + 2 };
@@ -323,6 +341,13 @@ public class MapperBenchmarks
     public ArrayDst Array_Dwarf()
     {
         return _dwarf.MapArray(_array);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Seq")]
+    public SeqDst Seq_Dwarf()
+    {
+        return _dwarf.MapSeq(_seq);
     }
 
     [Benchmark]
