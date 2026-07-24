@@ -7,7 +7,11 @@ using BenchmarkDotNet.Running;
 using DwarfMapper;
 using Mapster;
 
-BenchmarkRunner.Run<MapperBenchmarks>();
+// `args` MUST be forwarded. Without it BenchmarkRunner silently ignores every command-line switch, so
+// `--filter`, `--anyCategories` and `--job` do nothing and the FULL suite runs every time — a targeted
+// re-measurement of one category quietly becomes a ~40-minute sweep, and the operator has no signal that
+// their filter was dropped. This cost several timed-out runs before it was spotted.
+BenchmarkRunner.Run<MapperBenchmarks>(args: args);
 
 // ── Shared benchmark types (auto-properties → every mapper handles them) ───────
 // Nullable on BOTH sides. The payload factory draws null for a nullable position ~15% of the time; a
