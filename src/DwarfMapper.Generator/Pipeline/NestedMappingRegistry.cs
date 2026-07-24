@@ -190,16 +190,13 @@ internal sealed class NestedMappingRegistry
     ///     queue is fully drained.
     /// </summary>
     /// <remarks>
-    ///     Uses a simple DFS reachability check: method M is recursion-capable if M can
-    ///     reach M in the directed call graph. This is equivalent to M being on a cycle.
+    ///     Method M is recursion-capable when M can reach M in the directed call graph — equivalently, when M
+    ///     lies on a cycle. ISSUE-023: that used to be answered by a fresh DFS per node, O(V·(V+E)); a single
+    ///     Tarjan SCC pass answers it for every node in O(V+E). Same set, one traversal.
     /// </remarks>
     public void ComputeRecursionCapability()
     {
-        _recursionCapable = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var start in _edges.Keys)
-            if (CanReachSelf(start))
-                _recursionCapable.Add(start);
+        _recursionCapable = StronglyConnected.NodesOnACycle(_edges);
 
         // Also include any method that was force-marked as recursion-capable
         // (e.g. object mappers that serve as element converters in Preserve collections).
@@ -235,29 +232,6 @@ internal sealed class NestedMappingRegistry
     public void RecordCtxUpgradeCandidate(string helperName, string[] elemMethods, Action<Func<string, string>> reSynth)
     {
         _ctxUpgradeCandidates.Add((helperName, elemMethods, reSynth));
-    }
-
-    private bool CanReachSelf(string start)
-    {
-        // DFS: can we return to 'start' following outgoing edges?
-        var visited = new HashSet<string>(StringComparer.Ordinal);
-        var stack = new Stack<string>();
-
-        if (!_edges.TryGetValue(start, out var startDeps)) return false;
-        foreach (var dep in startDeps)
-            stack.Push(dep);
-
-        while (stack.Count > 0)
-        {
-            var current = stack.Pop();
-            if (current == start) return true;
-            if (!visited.Add(current)) continue;
-            if (_edges.TryGetValue(current, out var deps))
-                foreach (var dep in deps)
-                    stack.Push(dep);
-        }
-
-        return false;
     }
 
     // ── Name synthesis ────────────────────────────────────────────────────────

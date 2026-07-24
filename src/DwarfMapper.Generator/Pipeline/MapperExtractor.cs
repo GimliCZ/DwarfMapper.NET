@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -1556,6 +1557,13 @@ internal static partial class MapperExtractor
         }
 
         // Find which declared methods are on a cycle (can reach themselves in allCallGraph).
+        // ISSUE-023: one Tarjan SCC pass answers "is this node on a cycle?" for EVERY node, replacing a
+        // per-node DFS here and again in the synthesized-method re-check below. allCallGraph is complete at
+        // this point — the edge-expansion loop above is its last mutation — so a single pass stays valid for
+        // both. The general reachability query further down (converter → outer method, a DIFFERENT question)
+        // keeps its DFS: SCC membership cannot answer reachability between distinct nodes.
+        var nodesOnCycle = StronglyConnected.NodesOnACycle(allCallGraph);
+
         var selfRecursivePublicMethods = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < methods.Count; i++)
         {
@@ -1563,7 +1571,7 @@ internal static partial class MapperExtractor
             if (!m.IsPartial) continue;
 
             var key = DeclKey(m);
-            if (CanReach(allCallGraph, key, key))
+            if (nodesOnCycle.Contains(key))
             {
                 selfRecursivePublicMethods.Add(m.MethodName);
                 // Add the companion name so call-sites in synthesized methods can reference it.
@@ -1621,7 +1629,7 @@ internal static partial class MapperExtractor
             if (m.IsPartial) continue; // only synthesized methods
 
             if (!recursionCapableNames.Contains(m.MethodName)
-                && CanReach(allCallGraph, m.MethodName, m.MethodName))
+                && nodesOnCycle.Contains(m.MethodName))
             {
                 recursionCapableNames.Add(m.MethodName);
                 // Re-mark the method model as recursion-capable.
