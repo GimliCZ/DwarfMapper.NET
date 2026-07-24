@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Collections.Immutable;
-using System.Runtime.CompilerServices;
-using System.Text;
 using DwarfMapper.Generator.Collections;
-using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
