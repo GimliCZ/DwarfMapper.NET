@@ -1,7 +1,8 @@
 # Design: emission layer — an indenting writer for synthesized helpers
 
 - **Date:** 2026-07-23
-- **Status:** Approved (design); ready for implementation planning
+- **Status:** **IMPLEMENTED and MERGED** (status corrected 2026-07-24) — `48b392b` on `master`. Core/CodeWriter landed; CollectionConverter, EnumConverter, DictionaryConverter and Registry/MapToGenerator all migrated to zero hand-rolled `
+`; ratchet added and sabotage-proven. All 973 golden fingerprints unmoved. AggregateEmitter recorded as an explicit non-goal (§3).
 - **Component:** `DwarfMapper.Generator` (converters that emit helper bodies) + tests
 
 ## 1. Problem

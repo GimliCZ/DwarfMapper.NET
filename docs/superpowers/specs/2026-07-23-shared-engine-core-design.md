@@ -1,7 +1,7 @@
 # Design: shared engine core — ending the two-engine drift
 
 - **Date:** 2026-07-23
-- **Status:** Approved (design); ready for implementation planning
+- **Status:** **IMPLEMENTED and MERGED** (status corrected 2026-07-24) — `3b62b1a` on `master`. Core/StableHash + Core/MemberFacts landed; both engines route through them; the registry thereby gained base-type walking, fixing silent inherited-member data loss. TypeFacts was CUT during design after measurement (see §4.2).
 - **Component:** `DwarfMapper.Generator` (both engines) + tests
 
 ## 1. Problem
