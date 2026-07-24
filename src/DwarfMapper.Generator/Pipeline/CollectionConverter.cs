@@ -469,6 +469,26 @@ internal static class CollectionConverter
                 w.Line("if (src is null) return " + emptyExpr + ";");
                 if (registerBeforeFill)
                     w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + elem + "[])__cc;");
+                // ISSUE-019: the count is not knowable from the STATIC type, but the runtime value very often
+                // is — an IEnumerable<T> parameter is usually handed a List<T>/T[]/HashSet<T>. Probe for it and
+                // fill an exactly-sized array, so the common case costs one allocation instead of a growing
+                // List plus a ToArray copy. TryGetNonEnumeratedCount covers ICollection<T>, IReadOnlyCollection<T>
+                // and non-generic ICollection in one call, so it catches HashSet<T> — which an `is ICollection`
+                // probe would miss. Every source reaching here implements IEnumerable<T> (TryGetEnumerableElement
+                // returns false otherwise), so the call always binds.
+                // Called in STATIC form: generated files carry no using directives, so the extension-method
+                // instance form would not compile.
+                using (w.Block("if (global::System.Linq.Enumerable.TryGetNonEnumeratedCount(src, out var __n))"))
+                {
+                    w.Line("var __ra = " + ArrayNewExpr(elem, "__n") + ";");
+                    w.Line("var __ai = 0;");
+                    w.Line("foreach (var __item in src) { __ra[__ai++] = " + item + "; }");
+                    // Registered AFTER the fill, exactly as the buffered path below does: the probe must not
+                    // change Preserve semantics depending on the source's runtime type.
+                    if (registerBeforeFill) w.Line("ctx.SetReference(src, __ra);");
+                    w.Line("return __ra;");
+                }
+
                 w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
                 w.Line("foreach (var __item in src) { __buf.Add(" + item + "); }");
                 w.Line("var __r = __buf.ToArray();");
