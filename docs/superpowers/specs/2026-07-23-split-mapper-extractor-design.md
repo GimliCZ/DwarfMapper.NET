@@ -1,7 +1,7 @@
 # Design: split `MapperExtractor.cs` into partial-class files
 
 - **Date:** 2026-07-23
-- **Status:** Approved (design); measured before designing
+- **Status:** IMPLEMENTED and MERGED
 - **Component:** `DwarfMapper.Generator` (the `[DwarfMapper]` class-model engine)
 
 ## 1. Problem
