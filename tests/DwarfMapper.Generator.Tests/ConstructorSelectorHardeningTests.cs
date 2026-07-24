@@ -160,6 +160,77 @@ public class ConstructorSelectorHardeningTests
         Assert.Contains("y:", source, StringComparison.Ordinal); // the 2-arg ctor was chosen, not the 1-arg one
     }
 
+    // ── ISSUE-016: selection ranked by arity alone, ignoring whether the parameters can be satisfied ──
+
+    /// <summary>
+    ///     A target with two usable constructors where only the NARROWER one can be satisfied from the source.
+    ///     Selecting purely by arity picks the wider ctor and reports DWARF024 for a parameter the user never
+    ///     asked to bind, even though a fully mappable constructor was sitting right there.
+    /// </summary>
+    private const string TwoCtorsOnlyNarrowMappable = """
+                                                      using DwarfMapper;
+                                                      namespace Demo;
+                                                      public class Extra { public string Name { get; set; } = ""; }
+                                                      public class Src { public int Id { get; set; } }
+                                                      public class Dst
+                                                      {
+                                                          public Dst(int id) { Id = id; }
+                                                          public Dst(int id, Extra extra) { Id = id; Extra = extra; }
+                                                          public int Id { get; }
+                                                          public Extra? Extra { get; }
+                                                      }
+                                                      [DwarfMapper]
+                                                      [GenerateMap<Src, Dst>]
+                                                      public partial class M { }
+                                                      """;
+
+    [Fact]
+    public void Prefers_a_mappable_ctor_over_a_wider_unmappable_one()
+    {
+        var (diags, _) = GeneratorTestHarness.Run(TwoCtorsOnlyNarrowMappable);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF024");
+    }
+
+    /// <summary>
+    ///     Asserting "it compiles" would prove nothing here: on the arity-only selector the method is skipped
+    ///     after DWARF024, so the output compiles either way. The discriminating fact is that a Dst is actually
+    ///     constructed — via the one-argument form.
+    /// </summary>
+    [Fact]
+    public void Prefers_a_mappable_ctor_and_actually_emits_the_construction()
+    {
+        var (_, gen) = GeneratorTestHarness.Run(TwoCtorsOnlyNarrowMappable);
+        Assert.Contains("new global::Demo.Dst(", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("extra:", gen, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The genuinely-unmappable case must stay loud: when NO constructor can be satisfied, DWARF024 is still
+    ///     reported rather than silently picking one and emitting broken code.
+    /// </summary>
+    [Fact]
+    public void No_mappable_ctor_still_reports_DWARF024()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Extra { public string Name { get; set; } = ""; }
+                         public class Src { public int Id { get; set; } }
+                         public class Dst
+                         {
+                             public Dst(Extra extra) { Extra = extra; }
+                             public Dst(Extra extra, Extra other) { Extra = extra; }
+                             public Extra? Extra { get; }
+                         }
+                         [DwarfMapper]
+                         [GenerateMap<Src, Dst>]
+                         public partial class M { }
+                         """;
+
+        var (diags, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diags, d => d.Id == "DWARF024");
+    }
+
     private static string Internal(string ctorAccessibility, bool flag)
     {
         return OnlyCtor(ctorAccessibility, flag,

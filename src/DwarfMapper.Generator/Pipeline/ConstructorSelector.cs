@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 
@@ -33,7 +34,9 @@ internal static class ConstructorSelector
         List<DiagnosticInfo> diagnostics,
         LocationInfo? location,
         out bool useObjectInitializerOnly,
-        bool allowNonPublicConstructors = false)
+        bool allowNonPublicConstructors = false,
+        ITypeSymbol? sourceType = null,
+        IReadOnlyList<(string Source, string Target, string? Use)>? explicitMaps = null)
     {
         useObjectInitializerOnly = false;
 
@@ -133,7 +136,22 @@ internal static class ConstructorSelector
         // ── Policy 4: exactly one non-parameterless candidate ─────────────────
         if (candidates.Count == 1) return candidates[0];
 
-        // ── Policy 5: multiple candidates → most params; tie → DWARF025 ───────
+        // ── Policy 5: multiple candidates → widest SATISFIABLE; tie → DWARF025 ───────
+        // ISSUE-016: ranking by arity alone picks a wide constructor whose parameters cannot be bound at all,
+        // reporting DWARF024 for a parameter the user never asked to bind while a fully mappable constructor
+        // sat unused. Narrow the field to constructors every parameter of which HAS a source, then apply the
+        // established widest-wins rule inside that field. When the source is unknown (callers that cannot
+        // supply it) or NO candidate qualifies, the field is left untouched so the genuinely-unmappable case
+        // still selects the widest and fails loudly downstream — this makes selection less surprising, never
+        // quieter.
+        if (sourceType is not null)
+        {
+            var satisfiable = candidates
+                .Where(c => AllParametersHaveASource(c, sourceType, explicitMaps))
+                .ToList();
+            if (satisfiable.Count > 0) candidates = satisfiable;
+        }
+
         var maxParams = candidates.Max(c => c.Parameters.Length);
         var withMax = candidates.Where(c => c.Parameters.Length == maxParams).ToList();
 
@@ -144,6 +162,50 @@ internal static class ConstructorSelector
         }
 
         return withMax[0];
+    }
+
+    /// <summary>
+    ///     True when every parameter of <paramref name="ctor" /> has somewhere to come from: an author-declared
+    ///     default (or <c>params</c>), an explicit <c>[MapProperty(src, paramName)]</c> naming a real source
+    ///     member, or a readable source member matching the parameter name.
+    ///     <para>
+    ///     This deliberately mirrors the NAME-binding rules of <c>ResolveConstructorArguments</c> — same
+    ///     <see cref="MemberFacts.Readable" /> enumeration, same ordinal-ignore-case parameter matching, same
+    ///     optional/params exemption — so selection and resolution cannot disagree about which parameters have
+    ///     a source. It stops at name binding and does NOT attempt conversion resolution: doing that here would
+    ///     mean running the converter pipeline with a throw-away <c>synthesized</c> dictionary and a null
+    ///     nested-mapping registry, and a dry run under different state than the real one is itself a drift
+    ///     source. A parameter that binds by name but whose CONVERSION fails still fails loudly downstream,
+    ///     exactly as before.
+    ///     </para>
+    /// </summary>
+    private static bool AllParametersHaveASource(
+        IMethodSymbol ctor,
+        ITypeSymbol sourceType,
+        IReadOnlyList<(string Source, string Target, string? Use)>? explicitMaps)
+    {
+        var readable = MemberFacts.Readable(sourceType).Select(m => m.Name).ToList();
+        var byName = new HashSet<string>(readable, StringComparer.OrdinalIgnoreCase);
+        var exact = new HashSet<string>(readable, StringComparer.Ordinal);
+
+        foreach (var param in ctor.Parameters)
+        {
+            // An omitted optional / params parameter is satisfied by the language, not by the source.
+            if (param.HasExplicitDefaultValue || param.IsParams) continue;
+
+            // An explicit [MapProperty(src, paramName)] wins, but only when `src` names a real source member —
+            // otherwise resolution reports DWARF012 and this ctor is not actually satisfiable.
+            var mapped = explicitMaps?.FirstOrDefault(m => StringComparer.Ordinal.Equals(m.Target, param.Name));
+            if (mapped is { Target: not null })
+            {
+                if (!exact.Contains(mapped.Value.Source)) return false;
+                continue;
+            }
+
+            if (!byName.Contains(param.Name)) return false;
+        }
+
+        return true;
     }
 
     // Public ctors are always usable. A non-public ctor is usable only when the mapper opted in via

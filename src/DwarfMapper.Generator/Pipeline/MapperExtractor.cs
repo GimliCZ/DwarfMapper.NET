@@ -750,15 +750,19 @@ internal static partial class MapperExtractor
             }
             // ── End Fix 1 ────────────────────────────────────────────────────────────────
 
+            // Read the explicit renames BEFORE choosing a constructor: selection consults them so a ctor whose
+            // parameter is bound only by [MapProperty(src, paramName)] still counts as satisfiable (ISSUE-016).
+            // ReadExplicitMaps is a pure attribute read with no diagnostic sink, so hoisting it above Select
+            // cannot change diagnostic ordering.
+            var explicitMaps = ReadExplicitMaps(method);
+
             // Choose construction strategy for the target type.
             var ctor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, targetType, diagnostics,
-                methodLocation, out var objInitOnly, allowNonPublic);
+                methodLocation, out var objInitOnly, allowNonPublic, sourceType, explicitMaps);
             if (ctor is null) continue;
 
             var ignores = new HashSet<string>(classIgnores);
             foreach (var i in ReadIgnores(method)) ignores.Add(i);
-
-            var explicitMaps = ReadExplicitMaps(method);
             // [ReverseMap]: if this method is the inverse of a forward [ReverseMap] method, inherit the
             // inverted simple renames (A→B becomes B→A). Non-invertible forward config → DWARF051.
             var reverseAdds = CollectReverseRenames(classSymbol, method, sourceType, targetType, explicitMaps,
@@ -1080,7 +1084,7 @@ internal static partial class MapperExtractor
                 genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
             else if (ConstructorSelector.Select(ctx.SemanticModel.Compilation, genTgt, diagnostics, genLoc,
-                         out var genObjInitOnly, allowNonPublic) is not { } genCtor)
+                         out var genObjInitOnly, allowNonPublic, genSrc, genExplicit) is not { } genCtor)
             {
                 continue;
             }
@@ -1196,7 +1200,7 @@ internal static partial class MapperExtractor
 
             // Choose construction strategy for the nested target type.
             var nestedCtor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, nestedTgt, diagnostics,
-                nestedLocation, out var nestedObjInitOnly, allowNonPublic);
+                nestedLocation, out var nestedObjInitOnly, allowNonPublic, nestedSrc, nestedExplicit);
             if (nestedCtor is null)
             {
                 // DWARF025/026 already reported; skip body emission for this pair.
