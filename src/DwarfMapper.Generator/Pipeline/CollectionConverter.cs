@@ -192,7 +192,7 @@ internal static class CollectionConverter
         if (!TryGetEnumerableElement(src, out srcElem, out var count))
             return false;
 
-        shape = new Shape(targetKind, src is IArrayTypeSymbol, count, nullAsNull);
+        shape = new Shape(targetKind, src is IArrayTypeSymbol, count, nullAsNull, src.IsValueType);
         return true;
     }
 
@@ -364,7 +364,7 @@ internal static class CollectionConverter
             case TargetKind.Queue:
             case TargetKind.Stack:
                 EmitStackQueue(w, name, srcParamType, elemFq, item, shape.Target == TargetKind.Stack, identity,
-                    shape.NullAsNull, threadCtx);
+                    shape.NullAsNull, threadCtx, shape.SourceExpr);
                 break;
 
             case TargetKind.IEnumerable:
@@ -384,13 +384,13 @@ internal static class CollectionConverter
             case TargetKind.ImmutableList:
             case TargetKind.IImmutableList:
                 EmitImmutableCollection(w, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
-                    threadCtx, "ImmutableList");
+                    threadCtx, "ImmutableList", shape.SourceExpr);
                 break;
 
             case TargetKind.ImmutableHashSet:
             case TargetKind.IImmutableSet:
                 EmitImmutableCollection(w, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
-                    threadCtx, "ImmutableHashSet");
+                    threadCtx, "ImmutableHashSet", shape.SourceExpr);
                 break;
         }
     }
@@ -451,7 +451,7 @@ internal static class CollectionConverter
                 else
                 {
                     w.Line("var __i = 0;");
-                    w.Line("foreach (var __item in src) { __r[__i++] = " + item + "; }");
+                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r[__i++] = " + item + "; }");
                 }
 
                 w.Line("return __r;");
@@ -478,11 +478,12 @@ internal static class CollectionConverter
                 // returns false otherwise), so the call always binds.
                 // Called in STATIC form: generated files carry no using directives, so the extension-method
                 // instance form would not compile.
-                using (w.Block("if (global::System.Linq.Enumerable.TryGetNonEnumeratedCount(src, out var __n))"))
+                using (w.Block("if (global::System.Linq.Enumerable.TryGetNonEnumeratedCount("
+                               + shape.SourceExpr + ", out var __n))"))
                 {
                     w.Line("var __ra = " + ArrayNewExpr(elem, "__n") + ";");
                     w.Line("var __ai = 0;");
-                    w.Line("foreach (var __item in src) { __ra[__ai++] = " + item + "; }");
+                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __ra[__ai++] = " + item + "; }");
                     // Registered AFTER the fill, exactly as the buffered path below does: the probe must not
                     // change Preserve semantics depending on the source's runtime type.
                     if (registerBeforeFill) w.Line("ctx.SetReference(src, __ra);");
@@ -490,7 +491,7 @@ internal static class CollectionConverter
                 }
 
                 w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
-                w.Line("foreach (var __item in src) { __buf.Add(" + item + "); }");
+                w.Line("foreach (var __item in " + shape.SourceExpr + ") { __buf.Add(" + item + "); }");
                 w.Line("var __r = __buf.ToArray();");
                 if (registerBeforeFill) w.Line("ctx.SetReference(src, __r);");
                 w.Line("return __r;");
@@ -513,7 +514,7 @@ internal static class CollectionConverter
         {
             if (identity && !registerBeforeFill && !threadCtx)
             {
-                w.Line("return src is null ? " + emptyExpr + " : new " + listFq + "(src);");
+                w.Line("return src is null ? " + emptyExpr + " : new " + listFq + "(" + shape.SourceExpr + ");");
             }
             else if (registerBeforeFill)
             {
@@ -521,7 +522,7 @@ internal static class CollectionConverter
                 w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + listFq + ")__cc;");
                 w.Line("var __r = new " + listFq + "(" + CapacityArg(shape) + ");");
                 w.Line("ctx.SetReference(src, __r);");
-                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
                 w.Line("return __r;");
             }
             else
@@ -532,7 +533,7 @@ internal static class CollectionConverter
                 // double+copy their backing array — same rationale as the array/dictionary paths.
                 w.Line("if (src is null) return " + emptyExpr + ";");
                 w.Line("var __r = new " + listFq + "(" + CapacityArg(shape) + ");");
-                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
                 w.Line("return __r;");
             }
         }
@@ -553,7 +554,7 @@ internal static class CollectionConverter
         {
             if (identity && IsHashSetType(srcType) && !registerBeforeFill && !threadCtx)
             {
-                w.Line("return src is null ? " + emptyExpr + " : new " + setFq + "(src);");
+                w.Line("return src is null ? " + emptyExpr + " : new " + setFq + "(" + shape.SourceExpr + ");");
             }
             else if (registerBeforeFill)
             {
@@ -561,14 +562,14 @@ internal static class CollectionConverter
                 w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + setFq + ")__cc;");
                 w.Line("var __r = new " + setFq + "(" + CapacityArg(shape) + ");");
                 w.Line("ctx.SetReference(src, __r);");
-                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
                 w.Line("return __r;");
             }
             else
             {
                 w.Line("if (src is null) return " + emptyExpr + ";");
                 w.Line("var __r = new " + setFq + "(" + CapacityArg(shape) + ");");
-                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
                 w.Line("return __r;");
             }
         }
@@ -616,7 +617,7 @@ internal static class CollectionConverter
                 // per-Add bounds+version checks — and the source is enumerated exactly ONCE.
                 w.Line("var __a = new " + elem + "[" + cap + "];");
                 w.Line("var __i = 0;");
-                w.Line("foreach (var __item in src) { __a[__i++] = " + item + "; }");
+                w.Line("foreach (var __item in " + shape.SourceExpr + ") { __a[__i++] = " + item + "; }");
                 w.Line("return __a;");
             }
             else
@@ -624,7 +625,7 @@ internal static class CollectionConverter
                 // Size unknown (a bare IEnumerable<T>): a single growing pass. Still exactly one enumeration —
                 // we must never count-then-enumerate, which would double-enumerate a side-effecting sequence.
                 w.Line("var __r = new global::System.Collections.Generic.List<" + elem + ">();");
-                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
                 w.Line("return __r;");
             }
         }
@@ -682,7 +683,7 @@ internal static class CollectionConverter
     /// </summary>
     private static void EmitImmutableCollection(
         CodeWriter w, string name, string srcParamType, string elem, string item,
-        bool identity, bool nullAsNull, bool elemNeedsCtx, string immutableType)
+        bool identity, bool nullAsNull, bool elemNeedsCtx, string immutableType, string srcExpr)
     {
         var tgtFq = "global::System.Collections.Immutable." + immutableType + "<" + elem + ">";
         var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
@@ -695,13 +696,13 @@ internal static class CollectionConverter
             if (identity && !elemNeedsCtx)
             {
                 w.Line("if (src is null) return " + emptyExpr + ";");
-                w.Line("return " + createRange + "(src);");
+                w.Line("return " + createRange + "(" + srcExpr + ");");
             }
             else
             {
                 w.Line("if (src is null) return " + emptyExpr + ";");
                 w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
-                w.Line("foreach (var __item in src) { __buf.Add(" + item + "); }");
+                w.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + item + "); }");
                 w.Line("return " + createRange + "(__buf);");
             }
         }
@@ -720,7 +721,7 @@ internal static class CollectionConverter
     /// </summary>
     private static void EmitStackQueue(
         CodeWriter w, string name, string srcParamType, string elem,
-        string item, bool isStack, bool identity, bool nullAsNull, bool elemNeedsCtx)
+        string item, bool isStack, bool identity, bool nullAsNull, bool elemNeedsCtx, string srcExpr)
     {
         var concrete = isStack ? "Stack" : "Queue";
         var tgtFq = "global::System.Collections.Generic." + concrete + "<" + elem + ">";
@@ -736,12 +737,12 @@ internal static class CollectionConverter
             string seq;
             if (identity && !elemNeedsCtx)
             {
-                seq = "src";
+                seq = srcExpr;
             }
             else
             {
                 w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
-                w.Line("foreach (var __item in src) { __buf.Add(" + item + "); }");
+                w.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + item + "); }");
                 seq = "__buf";
             }
 
@@ -1044,17 +1045,39 @@ internal static class CollectionConverter
 
     internal readonly struct Shape
     {
-        public Shape(TargetKind target, bool sourceIsArray, CountKind count, bool nullAsNull)
+        public Shape(TargetKind target, bool sourceIsArray, CountKind count, bool nullAsNull,
+            bool sourceIsValueType = false)
         {
             Target = target;
             SourceIsArray = sourceIsArray;
-            Count = count;
+            // A struct source is wrapped as Nullable<T> by the emitted parameter type, and Nullable<T> exposes
+            // neither Count nor Length — so no cheap count is reachable. Downgrade to None and let the emitters
+            // take their buffered unknown-count path. Costs one buffer for a rare shape; the alternative emits
+            // `src.Count` on a Nullable<> and does not compile (CS1061).
+            Count = sourceIsValueType ? CountKind.None : count;
             NullAsNull = nullAsNull;
+            SourceIsValueType = sourceIsValueType;
         }
 
         public TargetKind Target { get; }
         public bool SourceIsArray { get; }
         public CountKind Count { get; }
+
+        /// <summary>
+        ///     True when the SOURCE collection is a value type (e.g. <c>ImmutableArray&lt;T&gt;</c>). The emitted
+        ///     parameter is then <c>Nullable&lt;TSource&gt;</c>, which implements neither
+        ///     <c>IEnumerable&lt;T&gt;</c> nor <c>Count</c>/<c>Length</c>, so every use of <c>src</c> that
+        ///     enumerates or counts must go through <see cref="SourceExpr" /> instead.
+        /// </summary>
+        public bool SourceIsValueType { get; }
+
+        /// <summary>
+        ///     The expression to enumerate the source with — <c>src</c>, or <c>src.GetValueOrDefault()</c> when
+        ///     the source is a struct collection lifted to <c>Nullable&lt;T&gt;</c>. The preceding
+        ///     <c>if (src is null)</c> guard still runs on the nullable itself, so the unwrap is only reached
+        ///     when a value is present.
+        /// </summary>
+        public string SourceExpr => SourceIsValueType ? "src.GetValueOrDefault()" : "src";
 
         /// <summary>When true, a null source is mapped as null (AsNull strategy).</summary>
         public bool NullAsNull { get; }
