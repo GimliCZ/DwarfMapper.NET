@@ -50,6 +50,40 @@ internal static partial class MapperExtractor
     ///     </para>
     ///     Reports DWARF010 and binds NOTHING for an ambiguous group, exactly like the runtime path.
     /// </summary>
+    /// <summary>
+    ///     Name comparer for <see cref="NameConvention.Flexible" />: two names are equal when their normalized
+    ///     forms are (<c>NormalizeName</c> strips <c>_</c> and lowercases), so <c>user_id</c> and <c>UserId</c>
+    ///     match.
+    ///     <para>
+    ///         Projection resolution already threads a <see cref="StringComparer" /> through every nested and
+    ///         constructor resolver (the C4 case-insensitivity fix), so expressing Flexible AS a comparer makes
+    ///         it propagate everywhere that case-insensitivity already does — including the DWARF010 ambiguity
+    ///         grouping, which then reports two source members that collide only after normalization, exactly
+    ///         as the runtime path does.
+    ///     </para>
+    /// </summary>
+    private sealed class FlexibleNameComparer : StringComparer
+    {
+        public static readonly FlexibleNameComparer Instance = new();
+
+        public override int Compare(string? x, string? y)
+        {
+            return string.CompareOrdinal(x is null ? null : NormalizeName(x), y is null ? null : NormalizeName(y));
+        }
+
+        public override bool Equals(string? x, string? y)
+        {
+            if (ReferenceEquals(x, y)) return true;
+            if (x is null || y is null) return false;
+            return string.Equals(NormalizeName(x), NormalizeName(y), StringComparison.Ordinal);
+        }
+
+        public override int GetHashCode(string obj)
+        {
+            return obj is null ? 0 : NormalizeName(obj).GetHashCode();
+        }
+    }
+
     private static Dictionary<string, (string Name, ITypeSymbol Type)> BuildProjectionSourceLookup(
         ITypeSymbol sourceType, StringComparer comparer, LocationInfo? location,
         List<DiagnosticInfo> diagnostics)
@@ -84,9 +118,16 @@ internal static partial class MapperExtractor
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
-        EnumStrategy enumStrategy, int referenceHandling, string paramExpr)
+        EnumStrategy enumStrategy, int referenceHandling, string paramExpr, int nameConvention = 0)
     {
-        var comparer = caseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        // NameConvention.Flexible (1) must reach the projection path too, or the SAME mapper resolves members
+        // one way through .Map and another through .Project — the divergence the ambiguity fix below exists to
+        // prevent. Expressed as a comparer so it rides the existing propagation into nested/ctor resolvers.
+        var comparer = nameConvention == 1
+            ? FlexibleNameComparer.Instance
+            : caseInsensitive
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
         var sources = BuildProjectionSourceLookup(sourceType, comparer, location, diagnostics);
         // C4: pass comparer to nested resolvers so CaseInsensitive propagates into nested objects.
         var writableByName = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
