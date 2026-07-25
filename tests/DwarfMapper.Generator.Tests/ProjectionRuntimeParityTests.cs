@@ -138,6 +138,33 @@ public class ProjectionRuntimeParityTests
     }
 
     [Fact]
+    public void AllowNonPublic_source_reports_the_real_reason_not_a_missing_member()
+    {
+        // AllowNonPublic is honoured by .Map and not by projection. That part fails loudly either way, so the
+        // defect here is the MESSAGE: the generic DWARF001 ("no matching source member") is untrue — Src.Secret
+        // plainly exists — and sends the reader hunting for a member that is right in front of them.
+        // A diagnostic that misdirects costs more than one that simply refuses.
+        const string src = """
+            using System.Linq;
+            using DwarfMapper;
+            namespace Demo;
+            public sealed class Src { public int Id { get; set; } internal string Secret { get; set; } = "s"; }
+            public sealed class Dto { public int Id { get; set; } public string Secret { get; set; } = ""; }
+
+            [DwarfMapper(AllowNonPublic = true)]
+            public partial class M
+            {
+                public partial IQueryable<Dto> Project(IQueryable<Src> q);
+            }
+            """;
+
+        var reported = GeneratorAssert.Reports(src, "DWARF028");
+
+        Assert.Contains(reported, d =>
+            d.GetMessage(CultureInfo.InvariantCulture).Contains("non-public", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void The_same_modifiers_remain_legal_on_the_runtime_path()
     {
         // The rule is "untranslatable in a projection", not "unsupported". Refusing them on .Map too would be

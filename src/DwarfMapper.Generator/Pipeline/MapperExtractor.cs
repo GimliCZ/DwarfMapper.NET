@@ -503,7 +503,7 @@ internal static partial class MapperExtractor
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumStrategy,
                     referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method),
-                    skipNullSrc);
+                    skipNullSrc, allowNonPublic);
 
                 methods.Add(new MapMethodModel(
                     method.Name,

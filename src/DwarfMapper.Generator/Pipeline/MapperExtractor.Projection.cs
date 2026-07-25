@@ -121,7 +121,7 @@ internal static partial class MapperExtractor
         EnumStrategy enumStrategy, int referenceHandling, string paramExpr, int nameConvention = 0,
         IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
             mapPropertyExtras = null,
-        bool skipNullSourceMembers = false)
+        bool skipNullSourceMembers = false, bool allowNonPublic = false)
     {
         // Targets the runtime COULD have deferred under SkipNullSourceMembers (settable, not init-only, not
         // required). Mirrors ResolveMembers' rule so the projection diagnostic fires on exactly the members the
@@ -283,6 +283,20 @@ internal static partial class MapperExtractor
             if (handled.Contains(target.Name) || ignores.Contains(target.Name)) continue;
             if (!sources.TryGetValue(target.Name, out var src))
             {
+                // A source member MAY exist and simply be non-public. The runtime path would bind it under
+                // [DwarfMapper(AllowNonPublic = true)]; projection enumerates public members only, so the
+                // generic "no matching source member" would send the reader hunting for a member that is
+                // plainly there. Name the real reason instead.
+                if (allowNonPublic
+                    && ReadableMembers(sourceType, compilation, true).Any(m => comparer.Equals(m.Name, target.Name)))
+                {
+                    EmitDWARF028(diagnostics, location, target.Name,
+                        "the matching source member is non-public and AllowNonPublic is not honoured by "
+                        + "projection (an expression tree is built from the public surface); map this member "
+                        + "at runtime, or make the source member public");
+                    continue;
+                }
+
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name,
                     MemberName: target.Name));
                 continue;
