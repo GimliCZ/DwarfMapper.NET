@@ -1,7 +1,7 @@
 # Investigation: nullable nested reference → user-declared map method emits CS8604 with no diagnostic
 
 - **Date:** 2026-07-25
-- **Status:** IMPLEMENTED — `ConverterParamIsNonNullableRef` threaded onto `MemberMap`, emitter null-forgives
+- **Status:** IMPLEMENTED and MERGED — completed across ALL five MemberMap construction sites (auto-match, explicit [MapProperty], flatten, and both ctor-arg paths) via the shared ForgiveNestedNullableArg helper after an audit found the first cut only covered the auto-match path. DWARF070 dest-nullability-gated; 0 warnings solution-wide; 973 fingerprints unmoved.
   the user-declared nested-map argument, DWARF070 emitted for the nested nullable→non-nullable member. All 973
   golden fingerprints unmoved; the two red-phase tests now pass, plus a null-tolerant-user-converter guard.
 - **Branch:** `investigate/nested-nullable-cs8604`
