@@ -599,7 +599,11 @@ internal static partial class MapperExtractor
             if (handledTargets.Contains(readOnly.Name) || ignores.Contains(readOnly.Name)) continue;
             // Satisfied via ctor param → not a silent loss.
             if (consumedCtorParams is not null && consumedCtorParams.Contains(readOnly.Name)) continue;
-            if (sourceGroups.ContainsKey(readOnly.Name))
+            // sourceGroups is keyed by NormalizeName under flexible mode (Ordinal comparer), so the lookup must
+            // normalize too — every other sourceGroups lookup does (mvTgt, auto-match). Without this the read-only
+            // silent-loss guard NEVER fires under flexible, dropping source data into a get-only destination with
+            // no diagnostic (a "never silent" violation). Audit R7.
+            if (sourceGroups.ContainsKey(flexible ? NormalizeName(readOnly.Name) : readOnly.Name))
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReadOnlyDestinationMember, location,
                     readOnly.Name));
         }
