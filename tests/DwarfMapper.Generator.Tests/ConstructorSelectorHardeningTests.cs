@@ -231,6 +231,39 @@ public class ConstructorSelectorHardeningTests
         Assert.Contains(diags, d => d.Id == "DWARF024");
     }
 
+    /// <summary>
+    ///     ISSUE-016 audit regression: a ctor parameter bound ONLY via a pair-scoped [MapProperty&lt;S,T&gt;]
+    ///     rename must count as satisfiable. The satisfiability check runs during constructor selection, which
+    ///     used to see only method-level renames — so the wide ctor's 'code' param (bound by the class-level
+    ///     rename, not a same-named source member) looked unsatisfiable, the narrow ctor was chosen, and the
+    ///     get-only Code member then surfaced DWARF008. The fix merges reverse/pair renames before selection.
+    /// </summary>
+    [Fact]
+    public void Pair_scoped_rename_into_ctor_param_keeps_the_wide_ctor()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int Id { get; set; } public int LegacyCode { get; set; } }
+                         public class Dst
+                         {
+                             public Dst(int id) { Id = id; }
+                             public Dst(int id, int code) { Id = id; Code = code; }
+                             public int Id { get; }
+                             public int Code { get; }
+                         }
+                         [DwarfMapper]
+                         [MapProperty<Src, Dst>("LegacyCode", "code")]
+                         public partial class M { public partial Dst Map(Src s); }
+                         """;
+
+        var (diags, gen) = GeneratorTestHarness.Run(s);
+
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF008"); // was blocked with empty output pre-fix
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF024");
+        Assert.Contains("code:", gen, StringComparison.Ordinal); // the WIDE ctor was chosen and fed the rename
+    }
+
     private static string Internal(string ctorAccessibility, bool flag)
     {
         return OnlyCtor(ctorAccessibility, flag,

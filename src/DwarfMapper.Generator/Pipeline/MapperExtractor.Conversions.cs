@@ -961,6 +961,31 @@ internal static partial class MapperExtractor
         return false;
     }
 
+    /// <summary>
+    ///     The single decision for EVERY <see cref="MemberMap" /> construction site (auto-match member, explicit
+    ///     [MapProperty], flatten, and both constructor-argument paths): does a nullable-reference source flowing
+    ///     into a user-declared converter with a non-nullable parameter need null-forgiving, AND — coupled here so
+    ///     no site can forgive without also signalling — does it warrant DWARF070? Gated on the DESTINATION being
+    ///     non-nullable (<see cref="NullRefIntoNonNullableRef" />): a nullable destination legitimately propagates
+    ///     the null. Emits DWARF070 exactly when it returns true, so the emitter's <c>!</c> and the diagnostic can
+    ///     never diverge across sites. Returning the flag is what the emitter reads via
+    ///     <c>MemberMap.ConverterParamIsNonNullableRef</c>.
+    ///     See docs/superpowers/specs/2026-07-25-nested-nullable-parameter.md.
+    /// </summary>
+    private static bool ForgiveNestedNullableArg(
+        string? converterMethod, ITypeSymbol srcType, ITypeSymbol tgtType,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
+        string sourceName, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+    {
+        var forgive = NullRefIntoNonNullableRef(srcType, tgtType)
+                      && ConverterParamIsNonNullableRef(converterMethod, autoCandidates, allMethods);
+        if (forgive)
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.NullableRefSourceToNonNullableTarget, location, sourceName));
+        return forgive;
+    }
+
     // Enumeration lives in Core.MemberFacts so both engines share one implementation. These wrappers keep the
     // class model's existing (Name, Type) shape so its 31 call sites are untouched by the move.
     private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type,

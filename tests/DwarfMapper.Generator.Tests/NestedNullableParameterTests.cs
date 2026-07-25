@@ -98,6 +98,65 @@ public class NestedNullableParameterTests
     ///     converter parameter and wrongly fired DWARF070 here, breaking three sample projects that map such
     ///     nodes. This pins that gate so the over-broad form cannot return.
     /// </summary>
+    /// <summary>
+    ///     Audit follow-up: the fix must cover the CONSTRUCTOR-argument path too, not just member assignment. A
+    ///     nullable nested source passed into a non-nullable ctor parameter via a user-declared map emitted
+    ///     CS8604 with no diagnostic on this path.
+    /// </summary>
+    [Fact]
+    public void Nullable_nested_source_into_ctor_param_emits_no_CS8604()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           #nullable enable
+                           namespace Demo;
+                           public class FlatSrc { public int Id { get; set; } }
+                           public class FlatDst { public int Id { get; set; } }
+                           public class NestedSrc { public FlatSrc? Inner { get; set; } }
+                           public class NestedDst { public NestedDst(FlatDst inner) { Inner = inner; } public FlatDst Inner { get; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial FlatDst MapFlat(FlatSrc s);
+                               public partial NestedDst MapNested(NestedSrc s);
+                           }
+                           """;
+
+        var warnings = GeneratorTestHarness.GeneratedCodeWarnings(src);
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(warnings, d => d.Id == "CS8604");
+        Assert.Contains(diags, d => d.Id == "DWARF070");
+    }
+
+    /// <summary>
+    ///     Audit follow-up: the explicit-[MapProperty] member path, likewise.
+    /// </summary>
+    [Fact]
+    public void Nullable_nested_source_via_explicit_MapProperty_emits_no_CS8604()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           #nullable enable
+                           namespace Demo;
+                           public class FlatSrc { public int Id { get; set; } }
+                           public class FlatDst { public int Id { get; set; } }
+                           public class NestedSrc { public FlatSrc? Node { get; set; } }
+                           public class NestedDst { public FlatDst Inner { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial FlatDst MapFlat(FlatSrc s);
+                               [MapProperty(nameof(NestedSrc.Node), nameof(NestedDst.Inner))]
+                               public partial NestedDst MapNested(NestedSrc s);
+                           }
+                           """;
+
+        var warnings = GeneratorTestHarness.GeneratedCodeWarnings(src);
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        Assert.DoesNotContain(warnings, d => d.Id == "CS8604");
+        Assert.Contains(diags, d => d.Id == "DWARF070");
+    }
+
     [Fact]
     public void Nullable_nested_source_into_nullable_dest_reports_no_DWARF070_and_compiles()
     {

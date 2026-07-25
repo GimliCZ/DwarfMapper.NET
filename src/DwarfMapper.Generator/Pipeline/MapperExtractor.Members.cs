@@ -346,7 +346,12 @@ internal static partial class MapperExtractor
                     // NullSubstitute already coalesces the null away (`src.X ?? literal`), so the assignment
                     // is provably non-null and needs neither the '!' nor DWARF070.
                     NullRefIntoNonNullable: nullSubLit is null
-                                            && IsDirectNullRefAssign(conv, nullH, srcMatch, tgtType)));
+                                            && IsDirectNullRefAssign(conv, nullH, srcMatch, tgtType),
+                    // Same nested nullable→non-nullable forgiveness as the auto-match path; skipped when
+                    // NullSubstitute already handled the null.
+                    ConverterParamIsNonNullableRef: nullSubLit is null
+                                                    && ForgiveNestedNullableArg(conv, srcMatch, tgtType,
+                                                        autoCandidates, allMethods, srcName, location, diagnostics)));
             }
         }
 
@@ -507,7 +512,10 @@ internal static partial class MapperExtractor
                         result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, fneedsCtx,
                             SourceMayBeNullRef(fm.LeafType),
                             NullRefIntoNonNullable:
-                            IsDirectNullRefAssign(fconv, fnull, fm.LeafType, target.Type)));
+                            IsDirectNullRefAssign(fconv, fnull, fm.LeafType, target.Type),
+                            ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(fconv, fm.LeafType,
+                                target.Type, autoCandidates, allMethods, fm.Root + "." + fm.Leaf, location,
+                                diagnostics)));
                     continue;
                 }
 
@@ -574,17 +582,12 @@ internal static partial class MapperExtractor
                 // DWARF070 — the same actionable signal the scalar raw-assign path gives against the user's DTO.
                 // Synthesized nested mappers flow through IsSynthesized; a null-tolerant user converter (nullable
                 // param) is excluded by ConverterParamIsNonNullableRef and keeps its null.
-                var srcNullableRef = SourceMayBeNullRef(source.Type);
-                var convParamNonNullRef = NullRefIntoNonNullableRef(source.Type, target.Type)
-                                          && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods);
-                if (convParamNonNullRef)
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.NullableRefSourceToNonNullableTarget, location, source.Name));
-
                 result.Add(new MemberMap(target.Name, source.Name, conv, nullH, needsCtx,
-                    srcNullableRef,
+                    SourceMayBeNullRef(source.Type),
                     NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type),
-                    ConverterParamIsNonNullableRef: convParamNonNullRef));
+                    ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(
+                        conv, source.Type, target.Type, autoCandidates, allMethods, source.Name, location,
+                        diagnostics)));
             }
         }
 
@@ -742,7 +745,9 @@ internal static partial class MapperExtractor
                         implicitConversions: implicitConversions))
                 {
                     args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull, eNeedsCtx,
-                        SourceMayBeNullRef(srcType)));
+                        SourceMayBeNullRef(srcType),
+                        ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(eConv, srcType, param.Type,
+                            autoCandidates, allMethods, explicitInfo.Source, location, diagnostics)));
                     consumedParams.Add(param.Name);
                 }
                 else
@@ -793,7 +798,9 @@ internal static partial class MapperExtractor
                     implicitConversions: implicitConversions))
             {
                 args.Add(new MemberMap(param.Name, srcMember.Name, conv, nullH, needsCtx,
-                    SourceMayBeNullRef(srcMember.Type)));
+                    SourceMayBeNullRef(srcMember.Type),
+                    ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(conv, srcMember.Type, param.Type,
+                        autoCandidates, allMethods, srcMember.Name, location, diagnostics)));
                 consumedParams.Add(param.Name);
             }
             else
