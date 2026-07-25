@@ -69,7 +69,7 @@ public class FixtureAdoptionScanTests
     public void Direct_compile_error_calls_have_not_grown()
     {
         var count = TestSources()
-            .Sum(t => Regex.Matches(t.Text, @"GeneratorTestHarness\.RunAndGetCompilationErrors\(").Count);
+            .Sum(t => Regex.Count(t.Text, @"GeneratorTestHarness\.RunAndGetCompilationErrors\("));
 
         Assert.True(count <= DirectCompileErrorCallBaseline,
             $"Direct GeneratorTestHarness.RunAndGetCompilationErrors calls rose to {count} (baseline "
@@ -84,8 +84,8 @@ public class FixtureAdoptionScanTests
         // The mirror image: a ratchet on the raw forms is satisfied trivially if everyone stops asserting at
         // all. This fails if adoption collapses (e.g. someone reverts the migration wholesale).
         var uses = TestSources()
-            .Sum(t => Regex.Matches(t.Text,
-                @"GeneratorAssert\.(CompilesClean|EmitsCompilableCode|Reports|DoesNotReport)\(").Count);
+            .Sum(t => Regex.Count(t.Text,
+                @"GeneratorAssert\.(CompilesClean|EmitsCompilableCode|Reports|DoesNotReport)\("));
 
         Assert.True(uses >= 200,
             $"Only {uses} GeneratorAssert call sites found (expected 200+). The shared fixture was bypassed or "

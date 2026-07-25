@@ -257,10 +257,10 @@ public class GeneratorTestingScanTests
 
             // Both halves of the spec'd assertion, reported as distinct kinds: a \n escape and a hand-counted
             // indent run are different regressions and a reader should not have to guess which one fired.
-            var newlineEscapes = System.Text.RegularExpressions.Regex.Matches(text, NewlineEscapePattern).Count;
+            var newlineEscapes = System.Text.RegularExpressions.Regex.Count(text, NewlineEscapePattern);
             if (newlineEscapes > 0) offenders.Add($"{name}: {newlineEscapes} literal \\n escape(s)");
 
-            var indentRuns = System.Text.RegularExpressions.Regex.Matches(text, IndentRunPattern).Count;
+            var indentRuns = System.Text.RegularExpressions.Regex.Count(text, IndentRunPattern);
             if (indentRuns > 0) offenders.Add($"{name}: {indentRuns} hard-coded indent run(s)");
         }
 
