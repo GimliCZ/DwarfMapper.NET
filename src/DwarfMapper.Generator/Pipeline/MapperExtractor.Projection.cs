@@ -518,14 +518,16 @@ internal static partial class MapperExtractor
                 var tgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 return $"{srcExpr}.HasValue ? ({tgtNullableFqn}){innerExpr} : null";
             }
-            else
-            {
-                // int?→long (non-nullable target): keep .Value (user asked for non-null; throws on null).
-                var innerExpr = ResolveProjectionExpr(
-                    srcUnderlying, tgtType, srcExpr + ".Value", depth,
-                    compilation, location, diagnostics, targetMemberName, enumStrategy, comparer);
-                return innerExpr;
-            }
+            // int?→long (non-nullable target): REFUSED. This link needs a null decision, and NullStrategy —
+            // the option that makes it — never reaches the projection engine, so the emitted `.Value` ignored
+            // it: a mapper configured NullStrategy.SetDefault returned 0 from .Map and threw
+            // InvalidOperationException from .Project for the same input. Emitting `.Value` also pushes the
+            // failure to runtime inside a provider-translated query, where NULL semantics are the provider's,
+            // not ours. Refusing at build time keeps the null decision explicit and the two paths honest.
+            EmitDWARF028(diagnostics, location, targetMemberName,
+                "a nullable source mapped to a non-nullable target needs a null decision, and NullStrategy is "
+                + "not translatable in projection; make the target nullable, or map this member at runtime");
+            return null;
         }
 
         // ── Fallback: no translatable conversion found ────────────────────────

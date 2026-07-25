@@ -255,9 +255,21 @@ public class BacklogCTests
     }
 
     [Fact]
-    public void C5_nullable_int_to_nonnullable_long_projection_keeps_Value()
+    public void C5_nullable_int_to_nonnullable_long_projection_is_now_refused()
     {
-        // int?→long (non-nullable target): .Value is kept (user accepts that null throws).
+        // SUPERSEDED DECISION. This originally asserted that int?→long keeps `.Value`, on the reading that a
+        // non-nullable target means "the user accepts that null throws".
+        //
+        // That reading did not survive contact with NullStrategy. The option that decides what a null becomes
+        // never reaches the projection engine, so `.Value` silently ignored it: a mapper declared
+        // [DwarfMapper(NullStrategy = NullStrategy.SetDefault)] returned 0 from .Map and threw
+        // InvalidOperationException from .Project for the same input — the user had made a null decision and
+        // got it honoured on only one path. `.Value` also defers the failure to runtime inside a
+        // provider-translated query, where NULL semantics belong to the provider rather than to us.
+        //
+        // The link is now refused at build time (DWARF028) so the null decision stays explicit: widen the
+        // target to long?, or map the member at runtime. The null-PRESERVING case (int?→long?) is unaffected
+        // and still emits the HasValue ternary — see the test above.
         const string src = """
                            using DwarfMapper;
                            using System.Linq;
@@ -270,9 +282,8 @@ public class BacklogCTests
                                public partial IQueryable<Dst> Project(IQueryable<Src> src);
                            }
                            """;
-        var generated = GeneratorAssert.CompilesClean(src);
-        // The generated code should contain ".Value" for the unwrap.
-        Assert.Contains(".Value", generated, StringComparison.Ordinal);
+
+        Assert.NotEmpty(GeneratorAssert.Reports(src, "DWARF028"));
     }
 
     // ────────────────────────────────────────────────────────────────────────────
