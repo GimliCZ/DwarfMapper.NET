@@ -75,6 +75,57 @@ public class ProjectionRuntimeParityTests
         GeneratorAssert.CompilesClean(BothPaths(options, sourceMembers, targetMembers));
     }
 
+    [Theory]
+    // Per-member [MapProperty] modifiers that the projection engine cannot honour. Each one used to bind the
+    // rename (satisfying completeness) while silently dropping the modifier, so .Map applied it and .Project
+    // did not — verified: NullSubstitute yielded "<sub>" through Map and null through Project; When=false kept
+    // the target's initializer through Map and assigned null through Project. Same mapper, different data, no
+    // diagnostic. They now take the same route Use= already took: DWARF028 with a reason.
+    [InlineData("NullSubstitute = \"<sub>\"")]
+    [InlineData("When = nameof(Never)")]
+    public void Untranslatable_per_member_modifiers_are_refused_by_projection(string modifier)
+    {
+        var src = $$"""
+            using System.Linq;
+            using DwarfMapper;
+            namespace Demo;
+            public sealed class Src { public int Id { get; set; } public string? Name { get; set; } }
+            public sealed class Dto { public int Id { get; set; } public string? Name { get; set; } = "KEEP"; }
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapProperty(nameof(Src.Name), nameof(Dto.Name), {{modifier}})]
+                public partial IQueryable<Dto> Project(IQueryable<Src> q);
+                private static bool Never(Src s) => false;
+            }
+            """;
+
+        Assert.NotEmpty(GeneratorAssert.Reports(src, "DWARF028"));
+    }
+
+    [Fact]
+    public void The_same_modifiers_remain_legal_on_the_runtime_path()
+    {
+        // The rule is "untranslatable in a projection", not "unsupported". Refusing them on .Map too would be
+        // the opposite defect, so the negative half is pinned as well.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public sealed class Src { public int Id { get; set; } public string? Name { get; set; } }
+            public sealed class Dto { public int Id { get; set; } public string? Name { get; set; } = "KEEP"; }
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapProperty(nameof(Src.Name), nameof(Dto.Name), NullSubstitute = "<sub>")]
+                public partial Dto Map(Src s);
+            }
+            """;
+
+        GeneratorAssert.CompilesClean(src);
+    }
+
     [Fact]
     public void Projection_reports_ambiguity_under_Flexible_just_like_the_runtime_path()
     {

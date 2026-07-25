@@ -118,8 +118,17 @@ internal static partial class MapperExtractor
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
-        EnumStrategy enumStrategy, int referenceHandling, string paramExpr, int nameConvention = 0)
+        EnumStrategy enumStrategy, int referenceHandling, string paramExpr, int nameConvention = 0,
+        IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
+            mapPropertyExtras = null)
     {
+        // Per-member [MapProperty] modifiers, keyed by target — checked against the translatable set below.
+        var extrasByTarget =
+            new Dictionary<string, (bool HasNullSub, string? When)>(StringComparer.Ordinal);
+        if (mapPropertyExtras is not null)
+            foreach (var e in mapPropertyExtras)
+                extrasByTarget[e.Target] = (e.HasNullSub, e.When);
+
         // NameConvention.Flexible (1) must reach the projection path too, or the SAME mapper resolves members
         // one way through .Map and another through .Project — the divergence the ambiguity fix below exists to
         // prevent. Expressed as a comparer so it rides the existing propagation into nested/ctor resolvers.
@@ -165,6 +174,29 @@ internal static partial class MapperExtractor
                 EmitDWARF028(diagnostics, location, tgtName,
                     "custom converter (Use=) is not translatable in projection; remove Use= or map at runtime");
                 continue;
+            }
+
+            // The OTHER [MapProperty] per-member modifiers are equally untranslatable, and were previously
+            // dropped in silence: the rename still bound, so completeness was satisfied and nothing was
+            // reported, while .Map applied the modifier and .Project did not — the same mapper yielding
+            // different data depending on which method you called. Same rule as Use= above.
+            if (extrasByTarget.TryGetValue(tgtName, out var extra))
+            {
+                if (extra.HasNullSub)
+                {
+                    EmitDWARF028(diagnostics, location, tgtName,
+                        "NullSubstitute is not translatable in projection (the substitution would be silently "
+                        + "dropped and a null stored instead); remove it or map this member at runtime");
+                    continue;
+                }
+
+                if (extra.When is not null)
+                {
+                    EmitDWARF028(diagnostics, location, tgtName,
+                        "When= is not translatable in projection (the predicate cannot run inside an expression "
+                        + "tree, so the member would always be assigned); remove it or map this member at runtime");
+                    continue;
+                }
             }
 
             // Resolve the source, supporting a dotted path (e.g. "Colour.Code") for value-object /
