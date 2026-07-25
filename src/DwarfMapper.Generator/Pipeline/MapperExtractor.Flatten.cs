@@ -740,7 +740,8 @@ internal static partial class MapperExtractor
                                 if (!synthesized.ContainsKey(kv.Key))
                                     synthesized[kv.Key] = kv.Value;
                             sbArm.Append("            ").Append(leaf.Name).Append(" = ");
-                            AppendFlatNodeMemberExpr(sbArm, "n", leaf.Name, leafConv, leafNull);
+                            AppendFlatNodeMemberExpr(sbArm, "n", leaf.Name, leafConv, leafNull,
+                                FlatLeafNeedsBang(leafConv, leaf.Type, dtoMemberType, autoCandidates, allMethods));
                             sbArm.AppendLine(",");
                         }
 
@@ -1185,7 +1186,8 @@ internal static partial class MapperExtractor
                             synthesized[kv.Key] = kv.Value;
 
                     sb.Append("            ").Append(leaf.Name).Append(" = ");
-                    AppendFlatNodeMemberExpr(sb, "n", leaf.Name, leafConv, leafNull);
+                    AppendFlatNodeMemberExpr(sb, "n", leaf.Name, leafConv, leafNull,
+                        FlatLeafNeedsBang(leafConv, leaf.Type, dtoMemberType, autoCandidates, allMethods));
                     sb.AppendLine(",");
                 }
 
@@ -1375,12 +1377,12 @@ internal static partial class MapperExtractor
         string paramName,
         string memberName,
         string? conv,
-        NullHandling nh)
+        NullHandling nh,
+        bool needsBang)
     {
         var access = paramName + "." + memberName;
         if (conv is not null)
         {
-            var needsBang = GeneratedNames.IsSynthesized(conv);
             sb.Append(conv).Append('(').Append(access).Append(needsBang ? "!" : "").Append(')');
         }
         else
@@ -1396,9 +1398,33 @@ internal static partial class MapperExtractor
                     sb.Append(access).Append(".GetValueOrDefault()");
                     break;
                 default:
-                    sb.Append(access);
+                    // Direct assignment of a nullable-ref leaf into a non-nullable DTO member emits CS8601 from
+                    // inside the generated (#nullable enable) file — an unfixable warning that TreatWarningsAsErrors
+                    // turns into a hard build break, exactly like the main emitter's NullRefIntoNonNullable path.
+                    // Null-forgive it (audit R7). needsBang was computed by the caller from leaf/DTO nullability.
+                    sb.Append(access).Append(needsBang ? "!" : "");
                     break;
             }
         }
+    }
+
+    /// <summary>
+    ///     Whether a flat-node leaf value must be null-forgiven — the flatten-path analogue of the main emitter's
+    ///     needsBang. For a DIRECT assignment (<paramref name="conv" /> null): forgive a nullable-ref leaf going
+    ///     into a non-nullable DTO member (CS8601). For a CONVERTER: forgive a synthesized converter's argument
+    ///     (which null-guards internally), OR a nullable-ref leaf into a USER-declared converter with a
+    ///     non-nullable ref parameter (CS8604) — recovering, via <see cref="ConverterParamIsNonNullableRef" />,
+    ///     the fact the bare <c>IsSynthesized</c> proxy discarded. A null-tolerant user converter (nullable
+    ///     parameter) is not forgiven and keeps its null.
+    /// </summary>
+    private static bool FlatLeafNeedsBang(
+        string? conv, ITypeSymbol leafType, ITypeSymbol dtoMemberType,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
+    {
+        return conv is null
+            ? NullRefIntoNonNullableRef(leafType, dtoMemberType)
+            : GeneratedNames.IsSynthesized(conv)
+              || (SourceMayBeNullRef(leafType) && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods));
     }
 }
