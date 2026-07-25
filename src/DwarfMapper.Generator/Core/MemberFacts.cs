@@ -56,28 +56,31 @@ internal static class MemberFacts
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
+        // ONE classification for both branches, so the interface path and the class path cannot answer the same
+        // "is this member readable?" question differently. ISSUE-040: the interface branch used to gate only on
+        // `GetMethod is not null` and skipped the accessor-usability check the class branch applied, so a C# 8+
+        // non-public default interface member leaked into generated code (CS0122) — the exact engine divergence
+        // this shared class was extracted to end, reintroduced within one method.
+        (ISymbol Symbol, string Name, ITypeSymbol Type)? Classify(ISymbol m) => m switch
+        {
+            IPropertySymbol p when !p.IsIndexer && AccessorUsable(p.GetMethod, compilation, allowNonPublic)
+                => (p, p.Name, p.Type),
+            IFieldSymbol f when !f.IsImplicitlyDeclared && FieldUsable(f, compilation, allowNonPublic)
+                => (f, f.Name, f.Type),
+            _ => null
+        };
+
         // Interface types: walk the interface itself plus all transitively inherited interfaces.
         // Interfaces don't have a BaseType class chain, so the normal loop would only see
         // the interface's own members and miss parent-interface properties.
         if (type.TypeKind == TypeKind.Interface && type is INamedTypeSymbol ifaceType)
         {
-            var ifacesToWalk = new[] { type }
-                .Concat(ifaceType.AllInterfaces);
-            foreach (var iface in ifacesToWalk)
+            foreach (var iface in new[] { type }.Concat(ifaceType.AllInterfaces))
             foreach (var m in iface.GetMembers())
             {
                 if (m.IsStatic) continue;
-                switch (m)
-                {
-                    case IPropertySymbol p when !p.IsIndexer && p.GetMethod is not null:
-                        if (seen.Add(p.Name))
-                            yield return (p, p.Name, p.Type);
-                        break;
-                    case IFieldSymbol f when !f.IsImplicitlyDeclared:
-                        if (seen.Add(f.Name))
-                            yield return (f, f.Name, f.Type);
-                        break;
-                }
+                if (Classify(m) is { } r && seen.Add(r.Name))
+                    yield return r;
             }
 
             yield break;
@@ -90,16 +93,8 @@ internal static class MemberFacts
             foreach (var m in current.GetMembers())
             {
                 if (m.IsStatic) continue;
-                switch (m)
-                {
-                    case IPropertySymbol p
-                        when !p.IsIndexer && AccessorUsable(p.GetMethod, compilation, allowNonPublic):
-                        if (seen.Add(p.Name)) yield return (p, p.Name, p.Type);
-                        break;
-                    case IFieldSymbol f when !f.IsImplicitlyDeclared && FieldUsable(f, compilation, allowNonPublic):
-                        if (seen.Add(f.Name)) yield return (f, f.Name, f.Type);
-                        break;
-                }
+                if (Classify(m) is { } r && seen.Add(r.Name))
+                    yield return r;
             }
     }
 
