@@ -1167,9 +1167,15 @@ internal static class MapEmitter
                 //       distinguishes the former from the latter.
                 // Recursion-capable converters always receive the source through a null-guarded
                 // helper, hence the ConverterNeedsDepthCtx clause forces '!' regardless.
+                // IsSynthesized is a proxy for "converter parameter is non-nullable" — true for synthesized
+                // object mappers, but blind to USER-declared nested maps, whose parameter is equally
+                // non-nullable. ConverterParamIsNonNullableRef carries that fact for the user-declared case
+                // (resolved from the user's own method signatures), so both get the '!' and CS8604 cannot
+                // survive. A null-tolerant user converter sets neither and is correctly left un-forgiven.
                 var needsBang = member.ConverterNeedsDepthCtx
                                 || (member.SourceIsNullableRef
-                                    && GeneratedNames.IsSynthesized(member.ConverterMethod));
+                                    && (GeneratedNames.IsSynthesized(member.ConverterMethod)
+                                        || member.ConverterParamIsNonNullableRef));
                 if (member.ConverterNeedsDepthCtx)
                     sb.Append(member.ConverterMethod).Append('(')
                         .Append(paramName).Append('.').Append(member.SourceName)

@@ -81,4 +81,16 @@ public sealed record MemberMap(
     /// its type (for the index dictionary). v1: element type identical on both sides.
     /// </summary>
     string? UpsertKeyMember = null,
-    string? UpsertKeyTypeFqn = null) : IEquatable<MemberMap>;
+    string? UpsertKeyTypeFqn = null,
+    /// <summary>
+    /// When <c>true</c>, <see cref="ConverterMethod"/> is a user-declared map/converter method whose parameter
+    /// is a NON-nullable reference type, and <see cref="SourceIsNullableRef"/> is true — i.e. a possibly-null
+    /// source is being passed into a converter that cannot accept null. The emitter must null-forgive the
+    /// argument (<c>Conv(s.X!)</c>) so the call compiles (else CS8604), exactly as it already does for
+    /// synthesized nested mappers via <c>IsSynthesized</c>. A genuine null then throws loudly inside the
+    /// callee's own <c>ArgumentNullException.ThrowIfNull</c> rather than being smuggled in. Distinguished from a
+    /// null-TOLERANT user converter (one declared with a nullable parameter), which does NOT set this and so is
+    /// never forgiven — dropping a null it was written to accept. Set only for the user-declared converter path;
+    /// synthesized helpers keep flowing through <c>IsSynthesized</c>.
+    /// </summary>
+    bool ConverterParamIsNonNullableRef = false) : IEquatable<MemberMap>;

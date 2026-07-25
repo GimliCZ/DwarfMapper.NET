@@ -564,9 +564,28 @@ internal static partial class MapperExtractor
                     enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv,
                     out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                     isSetNull: isSetNull, implicitConversions: implicitConversions))
+            {
+                // A nullable-reference source passed into a user-declared converter/map whose parameter is
+                // non-nullable would emit CS8604. This only matters when the null would actually reach a
+                // NON-nullable DESTINATION member: NullRefIntoNonNullableRef gates on exactly that. When the
+                // destination is nullable, a null legitimately propagates (e.g. a linked list's terminal
+                // Next) — no forgiving, no diagnostic, behaviour unchanged. When the destination IS
+                // non-nullable, null-forgive the argument (below, via the emitter) so it compiles, and report
+                // DWARF070 — the same actionable signal the scalar raw-assign path gives against the user's DTO.
+                // Synthesized nested mappers flow through IsSynthesized; a null-tolerant user converter (nullable
+                // param) is excluded by ConverterParamIsNonNullableRef and keeps its null.
+                var srcNullableRef = SourceMayBeNullRef(source.Type);
+                var convParamNonNullRef = NullRefIntoNonNullableRef(source.Type, target.Type)
+                                          && ConverterParamIsNonNullableRef(conv, autoCandidates, allMethods);
+                if (convParamNonNullRef)
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.NullableRefSourceToNonNullableTarget, location, source.Name));
+
                 result.Add(new MemberMap(target.Name, source.Name, conv, nullH, needsCtx,
-                    SourceMayBeNullRef(source.Type),
-                    NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type)));
+                    srcNullableRef,
+                    NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type),
+                    ConverterParamIsNonNullableRef: convParamNonNullRef));
+            }
         }
 
         // READ-ONLY destinations with a matching source (silent-loss guard).

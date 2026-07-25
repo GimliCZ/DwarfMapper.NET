@@ -45,21 +45,76 @@ public class NestedNullableParameterTests
                                                        }
                                                        """;
 
-    [Fact(Skip = "Open: investigate/nested-nullable-cs8604 — generated MapNested emits MapFlat(s.Inner), a "
-                 + "CS8604 nullable WARNING (a build error under TreatWarningsAsErrors). Verified present today "
-                 + "via GeneratedCodeWarnings. Un-skip when the emitter null-forgives non-nullable converter "
-                 + "parameters.")]
+    [Fact]
     public void Nullable_nested_source_via_user_method_emits_no_CS8604()
     {
         var warnings = GeneratorTestHarness.GeneratedCodeWarnings(NullableNestedViaUserMethod);
         Assert.DoesNotContain(warnings, d => d.Id == "CS8604");
     }
 
-    [Fact(Skip = "Open: investigate/nested-nullable-cs8604 — no diagnostic currently explains the nullable nested "
-                 + "reference. Un-skip when DWARF070 is emitted for the nested nullable→non-nullable case.")]
+    [Fact]
     public void Nullable_nested_source_reports_DWARF070_not_a_bare_CS8604()
     {
         var (diags, _) = GeneratorTestHarness.Run(NullableNestedViaUserMethod);
         Assert.Contains(diags, d => d.Id == "DWARF070");
+    }
+
+    /// <summary>
+    ///     The other side of the fix: a user conversion method DECLARED to take a nullable parameter is
+    ///     null-tolerant, so its argument must NOT be null-forgiven (that would drop a null it was written to
+    ///     accept) and no DWARF070 should fire. Guards against the fix over-reaching into a blanket `!`.
+    /// </summary>
+    [Fact]
+    public void Null_tolerant_user_converter_is_not_forgiven_and_reports_no_DWARF070()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           #nullable enable
+                           namespace Demo;
+                           public class Src { public string? Name { get; set; } }
+                           public class Dst { public int Len { get; set; } }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               private static int NameLen(string? n) => n?.Length ?? 0;   // null-tolerant
+                               [MapProperty(nameof(Src.Name), nameof(Dst.Len), Use = nameof(NameLen))]
+                               public partial Dst Map(Src s);
+                           }
+                           """;
+
+        var (diags, gen) = GeneratorTestHarness.Run(src);
+        var errors = GeneratorTestHarness.RunAndGetCompilationErrors(src);
+
+        Assert.Empty(errors);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF070");
+        // The null-tolerant converter must receive s.Name, NOT s.Name! — forgiving would strip its null.
+        Assert.DoesNotContain("NameLen(s.Name!)", gen, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The destination-nullability gate: a nullable nested source into a NULLABLE destination member (a
+    ///     self-referential linked-list node's terminal <c>Next</c>) must NOT report DWARF070 — the null
+    ///     legitimately propagates into a nullable slot. An earlier version of the fix looked only at the
+    ///     converter parameter and wrongly fired DWARF070 here, breaking three sample projects that map such
+    ///     nodes. This pins that gate so the over-broad form cannot return.
+    /// </summary>
+    [Fact]
+    public void Nullable_nested_source_into_nullable_dest_reports_no_DWARF070_and_compiles()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           #nullable enable
+                           namespace Demo;
+                           public class Node { public int V { get; set; } public Node? Next { get; set; } }
+                           public class NodeDto { public int V { get; set; } public NodeDto? Next { get; set; } }
+                           [DwarfMapper(MaxDepth = 8)]
+                           public partial class M { public partial NodeDto Map(Node n); }
+                           """;
+
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        var warnings = GeneratorTestHarness.GeneratedCodeWarnings(src);
+
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF070");
+        Assert.DoesNotContain(warnings, d => d.Id == "CS8604");
     }
 }

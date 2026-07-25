@@ -1,7 +1,9 @@
 # Investigation: nullable nested reference → user-declared map method emits CS8604 with no diagnostic
 
 - **Date:** 2026-07-25
-- **Status:** Characterized; fix designed; NOT yet implemented
+- **Status:** IMPLEMENTED — `ConverterParamIsNonNullableRef` threaded onto `MemberMap`, emitter null-forgives
+  the user-declared nested-map argument, DWARF070 emitted for the nested nullable→non-nullable member. All 973
+  golden fingerprints unmoved; the two red-phase tests now pass, plus a null-tolerant-user-converter guard.
 - **Branch:** `investigate/nested-nullable-cs8604`
 - **Component:** `DwarfMapper.Generator` — `MapEmitter` + member resolution
 - **Severity:** Medium correctness (a "never silent" violation: uncompilable output, no DWARF signal)
@@ -96,6 +98,16 @@ changing behavior. `IsSynthesized` was conservative precisely to avoid this. So 
    as the scalar raw-assign path already does. The existing message fits verbatim ("make the destination member
    nullable / SkipNullSourceMembers / NullSubstitute"). At runtime a genuine null then throws
    `ArgumentNullException` loudly inside the callee's `ThrowIfNull`, rather than corrupting silently.
+
+**Destination-nullability gate (added during implementation — the samples forced it).** The fix fires ONLY when
+the null would reach a NON-nullable destination member (`NullRefIntoNonNullableRef(source, target)`), not merely
+when the converter parameter is non-nullable. A first cut gated on the converter parameter alone and wrongly
+fired DWARF070 on `Node? Next → NodeDto? Next` — a self-referential linked-list node whose destination `Next`
+is nullable, so a terminal null legitimately propagates. That broke three sample projects
+(`AotBench`/`AotSample`/`Conformance`) under warnings-as-errors. The golden manifest stayed clean throughout —
+none of those shapes are pinned — so the samples, not the corpus, were the safety net here. When the destination
+is nullable the behaviour is now unchanged (the recursion path already null-forgives self-references), and the
+gate is pinned by a regression test.
 
 ## 6. Verification plan
 

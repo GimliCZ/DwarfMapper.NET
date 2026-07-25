@@ -929,6 +929,38 @@ internal static partial class MapperExtractor
                && NullRefIntoNonNullableRef(srcType, tgtType);
     }
 
+    /// <summary>
+    ///     True when <paramref name="converterMethod" /> resolves to a USER-declared map/converter method whose
+    ///     parameter is a non-nullable reference type. This is the fact the emitter's <c>IsSynthesized</c> proxy
+    ///     stood in for: a synthesized nested mapper (<c>__DwarfMap_Obj_</c>) has a non-nullable parameter and
+    ///     null-guards internally, so a nullable source argument is null-forgiven; a user-declared nested map
+    ///     (<c>MapFlat(FlatSrc s)</c>) has the same non-nullable parameter but is invisible to
+    ///     <c>IsSynthesized</c>, so its call was left as <c>MapFlat(s.Inner)</c> — CS8604. Looking the converter
+    ///     up in the user's own method lists recovers the parameter nullability the proxy discarded.
+    ///     <para>
+    ///     A null-TOLERANT user converter (declared with a nullable parameter) returns false here, so it is never
+    ///     forgiven and keeps receiving the null it was written to accept.
+    ///     </para>
+    /// </summary>
+    private static bool ConverterParamIsNonNullableRef(
+        string? converterMethod,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods)
+    {
+        if (converterMethod is null) return false;
+
+        static bool IsNonNullableRefParam(ITypeSymbol p) =>
+            p.IsReferenceType && p.NullableAnnotation == NullableAnnotation.NotAnnotated;
+
+        foreach (var m in autoCandidates)
+            if (string.Equals(m.Name, converterMethod, StringComparison.Ordinal) && IsNonNullableRefParam(m.ParamType))
+                return true;
+        foreach (var m in allMethods)
+            if (string.Equals(m.Name, converterMethod, StringComparison.Ordinal) && IsNonNullableRefParam(m.ParamType))
+                return true;
+        return false;
+    }
+
     // Enumeration lives in Core.MemberFacts so both engines share one implementation. These wrappers keep the
     // class model's existing (Name, Type) shape so its 31 call sites are untouched by the move.
     private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type,
