@@ -751,24 +751,35 @@ internal static partial class MapperExtractor
             }
             // ── End Fix 1 ────────────────────────────────────────────────────────────────
 
-            // Read the explicit renames BEFORE choosing a constructor: selection consults them so a ctor whose
-            // parameter is bound only by [MapProperty(src, paramName)] still counts as satisfiable (ISSUE-016).
-            // ReadExplicitMaps is a pure attribute read with no diagnostic sink, so hoisting it above Select
-            // cannot change diagnostic ordering.
+            // Selection must see the FULL explicit-rename set — method-level [MapProperty] PLUS the
+            // [ReverseMap]-inherited renames and pair-scoped [MapProperty<S,T>] renames — so a ctor parameter
+            // bound ONLY via a rename still counts as satisfiable. Previously reverse/pair renames were merged
+            // AFTER Select, so Select saw method-level maps alone and could reject a satisfiable wide ctor,
+            // picking a narrower one — or emitting DWARF008 — for a mapping resolution would have completed
+            // (ISSUE-016 audit regression). The [GenerateMap] path already passes its full genExplicit to
+            // Select; this makes the declared-method path consistent. The golden fingerprint sorts diagnostics
+            // by Id, so moving CollectReverseRenames' emission earlier cannot move the manifest.
             var explicitMaps = ReadExplicitMaps(method);
+            // [ReverseMap]: inherit the inverted simple renames (A→B becomes B→A). Non-invertible → DWARF051.
+            var reverseAdds = CollectReverseRenames(classSymbol, method, sourceType, targetType, explicitMaps,
+                diagnostics, methodLocation);
+            if (reverseAdds.Count > 0) explicitMaps.AddRange(reverseAdds);
+            // Pair-scoped class-level config ([MapProperty<S,T>]) also applies to a DECLARED partial method for
+            // the same pair; method-level config wins, pair-scoped fills the gaps, and MatchPairProps marks them
+            // consumed so DWARF056 does not fire for a pair this method already maps.
+            var (pairExplicit, pairExtras) = MatchPairProps(pairProps, sourceType, targetType);
+            var methodExplicitTargets = new HashSet<string>(explicitMaps.Select(m => m.Target), StringComparer.Ordinal);
+            foreach (var pe in pairExplicit)
+                if (methodExplicitTargets.Add(pe.Target))
+                    explicitMaps.Add(pe);
 
-            // Choose construction strategy for the target type.
+            // Choose construction strategy for the target type, now with the full rename set visible.
             var ctor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, targetType, diagnostics,
                 methodLocation, out var objInitOnly, allowNonPublic, sourceType, explicitMaps);
             if (ctor is null) continue;
 
             var ignores = new HashSet<string>(classIgnores);
             foreach (var i in ReadIgnores(method)) ignores.Add(i);
-            // [ReverseMap]: if this method is the inverse of a forward [ReverseMap] method, inherit the
-            // inverted simple renames (A→B becomes B→A). Non-invertible forward config → DWARF051.
-            var reverseAdds = CollectReverseRenames(classSymbol, method, sourceType, targetType, explicitMaps,
-                diagnostics, methodLocation);
-            if (reverseAdds.Count > 0) explicitMaps.AddRange(reverseAdds);
             // A forward [ReverseMap] method with no inverse declared → DWARF052.
             if (HasReverseMap(method))
             {
@@ -789,15 +800,8 @@ internal static partial class MapperExtractor
             var stringFormats = ReadStringFormats(method);
             var mapValues = ReadMapValues(method);
 
-            // Pair-scoped class-level config ([MapProperty<S,T>] / [MapIgnore<T>]) also applies to a DECLARED
-            // partial method for the same pair: method-level config wins, the pair-scoped attrs fill the gaps,
-            // and — crucially — MatchPairProps marks them consumed so DWARF056 does not fire its "matches no
-            // mapped pair; add [GenerateMap]" advice for a pair this partial method already maps.
-            var (pairExplicit, pairExtras) = MatchPairProps(pairProps, sourceType, targetType);
-            var methodExplicitTargets = new HashSet<string>(explicitMaps.Select(m => m.Target), StringComparer.Ordinal);
-            foreach (var pe in pairExplicit)
-                if (methodExplicitTargets.Add(pe.Target))
-                    explicitMaps.Add(pe);
+            // pairExplicit / pairExtras were computed above (before Select) so the constructor selector could see
+            // the pair-scoped renames; pairExtras is merged into the extras set here.
             var methodExtraTargets = new HashSet<string>(mapPropExtras.Select(e => e.Target), StringComparer.Ordinal);
             foreach (var pe in pairExtras)
                 if (methodExtraTargets.Add(pe.Target))
