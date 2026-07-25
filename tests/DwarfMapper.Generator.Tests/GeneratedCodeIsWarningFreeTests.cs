@@ -162,6 +162,42 @@ public class GeneratedCodeIsWarningFreeTests
                 """
         ];
 
+        // [GenerateWrapperMap] — synthesizes Envelope<A>->Envelope<B> for every declared payload pair, an
+        // emitter driven purely by an attribute and reached by no schema.
+        yield return
+        [
+            "GenerateWrapperMap", """
+                using DwarfMapper;
+                namespace Demo;
+                public sealed class Env<T> { public T Payload { get; set; } = default!; public int Status { get; set; } public string? Note { get; set; } }
+                public sealed class User { public int Id { get; set; } public string? Name { get; set; } }
+                public sealed class UserDto { public int Id { get; set; } public string? Name { get; set; } }
+                [DwarfMapper]
+                [GenerateMap<User, UserDto>]
+                [GenerateWrapperMap(typeof(Env<>))]
+                public partial class M { }
+                """
+        ];
+
+        // [MapCollectionKey] — key-correlated upsert into an existing list (update-into only).
+        yield return
+        [
+            "MapCollectionKey", """
+                using System.Collections.Generic;
+                using DwarfMapper;
+                namespace Demo;
+                public sealed class Item { public int Id { get; set; } public string? Text { get; set; } }
+                public sealed class Entity { public List<Item> Items { get; set; } = new(); }
+                public sealed class Update { public List<Item> Items { get; set; } = new(); }
+                [DwarfMapper]
+                public partial class M
+                {
+                    [MapCollectionKey(nameof(Entity.Items), nameof(Item.Id))]
+                    public partial void Merge(Update src, Entity dst);
+                }
+                """
+        ];
+
         // Flexible naming — exercised on BOTH the runtime and projection emitters.
         yield return
         [
