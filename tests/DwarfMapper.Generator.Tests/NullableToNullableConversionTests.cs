@@ -24,7 +24,7 @@ public class NullableToNullableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class NullableToNullableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     [Fact]
@@ -98,9 +98,7 @@ public class NullableToNullableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Identity path: no special handling needed
         Assert.DoesNotContain("?? throw", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("GetValueOrDefault", generated, StringComparison.Ordinal);
@@ -119,9 +117,7 @@ public class NullableToNullableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Non-nullable target: null source must throw
         Assert.Contains("?? throw", generated, StringComparison.Ordinal);
     }
@@ -139,9 +135,7 @@ public class NullableToNullableConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Source is non-null — no throw/default needed, just the converter
         Assert.DoesNotContain("?? throw", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("GetValueOrDefault", generated, StringComparison.Ordinal);

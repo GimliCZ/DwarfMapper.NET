@@ -70,6 +70,23 @@ internal static class BlittableProof
             if (m is IFieldSymbol f && !f.IsStatic && !f.IsConst)
                 fields.Add(f);
 
+        // GetMembers() order is declaration order, which for a struct split across PARTIAL files depends on the
+        // order the compiler happened to see the files. The blit proof compares fields POSITIONALLY, so an
+        // unstable order can flip a struct pair between "provably blittable" and "not" from build to build.
+        // (It cannot make an unsafe ACCEPT: for a sequential-layout struct the declaration order is also the
+        // emitted layout, so a reordering is a genuine layout change. This is purely about determinism.)
+        fields.Sort((a, b) =>
+        {
+            var pathA = a.Locations.Length > 0 ? a.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty;
+            var pathB = b.Locations.Length > 0 ? b.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty;
+            var byFile = string.CompareOrdinal(pathA, pathB);
+            if (byFile != 0) return byFile;
+
+            var posA = a.Locations.Length > 0 ? a.Locations[0].SourceSpan.Start : 0;
+            var posB = b.Locations.Length > 0 ? b.Locations[0].SourceSpan.Start : 0;
+            return posA.CompareTo(posB);
+        });
+
         return fields;
     }
 

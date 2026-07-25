@@ -22,6 +22,17 @@ internal static class MapEmitter
             sb.AppendLine();
         }
 
+        // Re-open every type this mapper is nested inside. A partial class is only completed within the SAME
+        // containing type(s); declaring our half at namespace scope while the user's half lives inside `Outer`
+        // yields two unrelated types, not a partial pair (CS0759 / CS8795 out of generated code). The body
+        // below keeps its own indentation — cosmetic in a generated file, and re-indenting it would churn
+        // every snapshot for no benefit.
+        foreach (var containing in model.ContainingTypes)
+        {
+            sb.AppendLine(containing);
+            sb.AppendLine("{");
+        }
+
         sb.Append(model.Accessibility).Append(" partial class ").AppendLine(model.ClassName);
         sb.AppendLine("{");
 
@@ -43,7 +54,24 @@ internal static class MapEmitter
                 .Append(rt.ForwardName).Append(", ").Append(rt.BackwardName).AppendLine(", seed, iterations);");
         }
 
+        // A static constructor that nameof-references each MapConfig convention method. They are read by the
+        // generator but never called, so without this a consumer building with IDE0051-as-error would see its
+        // own compile-time config flagged as an unused private member. nameof is a compile-time constant, so
+        // the discards cost nothing at run time. Only emitted when the class has no static constructor of its
+        // own (see the extractor's guard), so this can never collide (CS0111).
+        if (model.ConventionMethodNames.Count > 0)
+        {
+            sb.Append("    static ").Append(model.ClassName).AppendLine("()");
+            sb.AppendLine("    {");
+            foreach (var cfg in model.ConventionMethodNames)
+                sb.Append("        _ = nameof(").Append(cfg).AppendLine(");");
+            sb.AppendLine("    }");
+        }
+
         sb.AppendLine("}");
+
+        foreach (var _ in model.ContainingTypes) sb.AppendLine("}");
+
         return sb.ToString();
     }
 
@@ -594,11 +622,35 @@ internal static class MapEmitter
     {
         var src = method.ParameterName;
 
+        var ct = method.AsyncCancellationParam;
+
         sb.Append(indent).Append(method.Accessibility).Append(" async partial ")
             .Append(method.ReturnTypeFullName).Append(' ').Append(method.MethodName)
-            .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src).AppendLine(")");
+            .Append('(').Append(method.ParameterTypeFullName).Append(' ').Append(src);
+        if (ct is not null)
+            // [EnumeratorCancellation] is what links the parameter to the token a consumer passes to
+            // WithCancellation on the RESULT; without it the token is inert and the stream is uncancellable.
+            sb.Append(", [global::System.Runtime.CompilerServices.EnumeratorCancellation] ")
+                .Append("global::System.Threading.CancellationToken ").Append(ct);
+        sb.AppendLine(")");
         sb.Append(indent).AppendLine("{");
-        sb.Append(indent).Append("    await foreach (var __item in ").Append(src).AppendLine(")");
+        // ConfigureAwait(false) unconditionally: this is library code and must not capture the caller's
+        // synchronization context (a UI context turns every element into a post back to the UI thread, and is a
+        // classic deadlock source). WithCancellation only when the user declared a token to thread.
+        //
+        // Both are EXTENSION methods on IAsyncEnumerable<T> (System.Threading.Tasks.TaskAsyncEnumerableExtensions)
+        // and generated code deliberately carries no `using` directives, so they must be called in static form or
+        // the emitted file does not compile. WithCancellation already yields a
+        // ConfiguredCancelableAsyncEnumerable<T>, whose ConfigureAwait IS an instance method — hence the two
+        // shapes below.
+        const string ext = "global::System.Threading.Tasks.TaskAsyncEnumerableExtensions.";
+        sb.Append(indent).Append("    await foreach (var __item in ");
+        if (ct is not null)
+            sb.Append(ext).Append("WithCancellation(").Append(src).Append(", ").Append(ct)
+                .Append(").ConfigureAwait(false)");
+        else
+            sb.Append(ext).Append("ConfigureAwait(").Append(src).Append(", false)");
+        sb.AppendLine(")");
 
         var elem = method.Members.Count > 0 ? method.Members[0] : null;
         sb.Append(indent).Append("        yield return ");
@@ -696,6 +748,15 @@ internal static class MapEmitter
         {
             if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null ||
                 member.SkipIfSourceNull) continue; // deferred
+
+            // [MapCollectionKey]: merge the source List<T> into the existing one by key instead of replacing
+            // it. Same element type on both sides (v1), so a matched source element is assigned directly.
+            if (member.UpsertKeyMember is not null)
+            {
+                EmitCollectionKeyUpsert(sb, member, src, dst, indent + "    ");
+                continue;
+            }
+
             sb.Append(indent).Append("    ").Append(dst).Append('.').Append(member.TargetName).Append(" = ");
             AppendValueExpression(sb, member, src, ctxVar);
             sb.AppendLine(";");
@@ -716,6 +777,42 @@ internal static class MapEmitter
         if (!method.UpdateReturnsVoid)
             sb.Append(indent).Append("    return ").Append(dst).AppendLine(";");
 
+        sb.Append(indent).AppendLine("}");
+    }
+
+    /// <summary>
+    ///     Emits a key-based in-place upsert of a <c>List&lt;T&gt;</c> member ([MapCollectionKey]). The existing
+    ///     list instance is kept: an existing element whose key matches a source element's key has its slot
+    ///     replaced by that (same-type) source element; a source element with a new key is appended; existing
+    ///     elements whose key is absent from the source are left as-is. A null source collection leaves the
+    ///     destination unchanged. Wrapped in its own block so its locals don't collide with a second upsert.
+    /// </summary>
+    private static void EmitCollectionKeyUpsert(StringBuilder sb, MemberMap member, string src, string dst,
+        string indent)
+    {
+        var srcAccess = src + "." + member.SourceName;
+        var dstAccess = dst + "." + member.TargetName;
+        var key = member.UpsertKeyMember;
+        var keyType = member.UpsertKeyTypeFqn;
+
+        sb.Append(indent).Append("if (").Append(srcAccess).AppendLine(" is not null)");
+        sb.Append(indent).AppendLine("{");
+        sb.Append(indent).Append("    var __idx = new global::System.Collections.Generic.Dictionary<")
+            .Append(keyType).AppendLine(", int>();");
+        sb.Append(indent).Append("    for (var __i = 0; __i < ").Append(dstAccess).AppendLine(".Count; __i++)");
+        sb.Append(indent).Append("        __idx[").Append(dstAccess).Append("[__i].").Append(key)
+            .AppendLine("] = __i;");
+        sb.Append(indent).Append("    foreach (var __e in ").Append(srcAccess).AppendLine(")");
+        sb.Append(indent).AppendLine("    {");
+        sb.Append(indent).Append("        if (__idx.TryGetValue(__e.").Append(key).AppendLine(", out var __j))");
+        sb.Append(indent).Append("            ").Append(dstAccess).AppendLine("[__j] = __e;");
+        sb.Append(indent).AppendLine("        else");
+        sb.Append(indent).AppendLine("        {");
+        sb.Append(indent).Append("            __idx[__e.").Append(key).Append("] = ").Append(dstAccess)
+            .AppendLine(".Count;");
+        sb.Append(indent).Append("            ").Append(dstAccess).AppendLine(".Add(__e);");
+        sb.Append(indent).AppendLine("        }");
+        sb.Append(indent).AppendLine("    }");
         sb.Append(indent).AppendLine("}");
     }
 
@@ -1070,9 +1167,15 @@ internal static class MapEmitter
                 //       distinguishes the former from the latter.
                 // Recursion-capable converters always receive the source through a null-guarded
                 // helper, hence the ConverterNeedsDepthCtx clause forces '!' regardless.
+                // IsSynthesized is a proxy for "converter parameter is non-nullable" — true for synthesized
+                // object mappers, but blind to USER-declared nested maps, whose parameter is equally
+                // non-nullable. ConverterParamIsNonNullableRef carries that fact for the user-declared case
+                // (resolved from the user's own method signatures), so both get the '!' and CS8604 cannot
+                // survive. A null-tolerant user converter sets neither and is correctly left un-forgiven.
                 var needsBang = member.ConverterNeedsDepthCtx
                                 || (member.SourceIsNullableRef
-                                    && member.ConverterMethod!.StartsWith("__DwarfMap_", StringComparison.Ordinal));
+                                    && (GeneratedNames.IsSynthesized(member.ConverterMethod)
+                                        || member.ConverterParamIsNonNullableRef));
                 if (member.ConverterNeedsDepthCtx)
                     sb.Append(member.ConverterMethod).Append('(')
                         .Append(paramName).Append('.').Append(member.SourceName)
@@ -1087,6 +1190,13 @@ internal static class MapEmitter
         else
         {
             sb.Append(innerAccess);
+
+            // Direct assignment of a nullable reference into a non-nullable one. The raw assign is the
+            // documented NullStrategy contract (it governs nullable VALUE types only), but it makes the
+            // compiler emit CS8601 from inside THIS generated file — a warning the consumer cannot fix,
+            // in code they cannot edit, and a build break under TreatWarningsAsErrors. Suppress it here and
+            // let DWARF070 carry the signal against the user's own DTO instead, where it is actionable.
+            if (member.NullRefIntoNonNullable) sb.Append('!');
         }
     }
 }

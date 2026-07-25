@@ -25,9 +25,7 @@ public class SetNullCycleGeneratorTests
                                 [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
                                 public partial class M { public partial NodeDto Map(Node n); }
                                 """;
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ── 2. Emits the on-stack guard (TryEnterNode + ExitNode + try/finally) ──────
@@ -149,9 +147,7 @@ public class SetNullCycleGeneratorTests
                            [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
                            public partial class M { public partial TreeDto Map(Tree t); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // The collection helper must accept (ctx, depth) and forward them to the element mapper —
         // proving one shared context flows across the collection edge (no fresh-context re-entry).
         Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
@@ -174,9 +170,7 @@ public class SetNullCycleGeneratorTests
                            [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
                            public partial class M { public partial NodeDto Map(Node n); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
         Assert.Contains("TryEnterNode", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("SetReference", generated, StringComparison.Ordinal);

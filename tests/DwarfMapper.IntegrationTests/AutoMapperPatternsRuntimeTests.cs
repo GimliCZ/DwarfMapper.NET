@@ -4,10 +4,10 @@ using System.Collections;
 
 namespace DwarfMapper.IntegrationTests;
 
-// Proof that the constructs a real AutoMapper codebase (FusedChat / MedbotOmega) leans on — which look
-// like "AutoMapper-only" features — are all compile-time solvable with DwarfMapper. One region per
-// contested construct. If this file compiles, the generator accepted every pattern; the asserts prove the
-// runtime behaviour matches AutoMapper's.
+// Proof that the constructs a real-world AutoMapper codebase leans on — which look like "AutoMapper-only"
+// features — are all compile-time solvable with DwarfMapper. One region per contested construct. If this
+// file compiles, the generator accepted every pattern; the asserts prove the runtime behaviour matches
+// AutoMapper's.
 
 // ───────────────────────── Pattern 1: Map(src, dst, typeof(A), typeof(B)) == update-into ─────────────────
 // AutoMapper: _mapper.Map(item, existingItem, typeof(StoreItem), typeof(StoreItem)) — the types are literal,
@@ -183,7 +183,7 @@ public partial class FcNoteMapper
     public partial FcEmbedDto Map(FcEmbed e);
 }
 
-public sealed class FusedChatPatternsRuntimeTests
+public sealed class AutoMapperPatternsRuntimeTests
 {
     [Fact]
     public void Pattern1_UpdateInto_SameType_mutates_existing_instance()

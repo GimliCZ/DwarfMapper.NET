@@ -14,9 +14,7 @@ public class NullForgivingCodegenTests
 {
     private static string Gen(string src)
     {
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         return generated;
     }
 

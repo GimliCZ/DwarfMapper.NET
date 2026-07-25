@@ -4,13 +4,19 @@
 Every knob in one place. Class-level options go on `[DwarfMapper(...)]`; per-member attributes go on the
 mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe, strict one (completeness enforced, null/cycle throw by default).
 
+Set a house style once for the whole assembly with `[assembly: DwarfMapperDefaults(...)]` — every mapper
+inherits those values unless it sets its own. **Precedence: mapper > assembly defaults > built-in default.**
+The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `NullStrategy`, `NullCollections`,
+`ImplicitConversions`, `RequiredMapping`, `AllowNonPublic`, `AutoNest`, `AutoMatchMembers`, `IgnoreObsoleteMembers`,
+`SkipNullSourceMembers`); per-graph knobs (`MaxDepth`, `ReferenceHandling`, `OnCycle`) stay per-mapper.
+
 ## Class-level options — `[DwarfMapper(...)]`
 
 | Option | Type | Default | What it does |
 |---|---|---|---|
 | `CaseInsensitive` | `bool` | `false` | Match member names ordinal-ignore-case. Ambiguity → `DWARF010`. |
 | `NameConvention` | `NameConvention` | `Exact` | `Flexible` matches across `PascalCase` ↔ `camelCase` ↔ `snake_case` ↔ `UPPER_CASE`. Collision → `DWARF048`. |
-| `EnumStrategy` | `EnumStrategy` | `ByName` | Enum↔enum mapping by member name (`ByName`) or underlying value (`ByValue`). Missing by-name member → `DWARF015`. |
+| `EnumStrategy` | `EnumStrategy` | `ByName` | Enum↔enum mapping by member name (`ByName`) or underlying value (`ByValue`). Missing by-name member → `DWARF015`. For enum↔**string**, a member's `[EnumMember(Value="…")]` (else `[Description("…")]`, else its identifier) is used as the string form — so `InProgress` can serialize as `"in_progress"` with no custom converter. Non-`[Flags]` enums only. |
 | `NullStrategy` | `NullStrategy` | `Throw` | Nullable-value source → non-nullable target when null: `Throw`, or `SetDefault` (use the destination default). |
 | `NullCollections` | `NullCollectionStrategy` | `AsEmpty` | Null source collection → `AsEmpty` (never throws) or `AsNull` (propagates null **only** when the target member is nullable — a nullable reference or a nullable value-type collection like `ImmutableArray<T>?`; a non-nullable target silently degrades to `AsEmpty`). |
 | `AutoNest` | `bool` | `true` | Auto-synthesize a private mapper for a nested `(S,T)` pair with no declared method. `false` requires explicit declarations. |
@@ -22,6 +28,8 @@ mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe,
 | `ImplicitConversions` | `bool` | `true` | `true`: non-lossless conversions are applied but surface `DWARF038` (Info). `false`: they become build errors (Mapperly-strict). |
 | `RequiredMapping` | `RequiredMappingStrategy` | `Target` | `Target`: every destination member must be mapped. `Both`: also require every source member to be read (`DWARF039`). |
 | `GenerateExtensions` | `bool` | `true` | Emit `source.ToTarget()` convenience extension methods (namespace `DwarfMapper.Extensions`). `false` suppresses them for this mapper. |
+| `AutoMatchMembers` | `bool` | `true` | `false` = explicit-only (trust-boundary guard): nothing is wired by name, every member needs `[MapProperty]`/`[MapValue]` or `[MapIgnore]`, and a would-be auto-match raises `DWARF072`. Stops an untrusted same-named field (e.g. `IsAdmin`) over-posting onto a protected member. |
+| `IgnoreObsoleteMembers` | `bool` | `false` | Drop `[Obsolete]` members from mapping: an obsolete destination is neither required nor auto-populated, an obsolete source needn't be consumed (no `DWARF039`). An explicit `[MapProperty]`/`[MapValue]` still opts a specific one back in. |
 
 > **`CaseInsensitive` and `NameConvention` interact** — they both govern how member names are matched, so set
 > one or the other. `NameConvention.Exact` honours `CaseInsensitive` (`Exact` + `CaseInsensitive=true` =
@@ -64,7 +72,9 @@ Put these on the mapping method (or the class, where noted).
 | `[MapProperty(src, tgt, Use = nameof(M))]` | Custom conversion via a named method (`M(srcType) → tgtType`). |
 | `[MapProperty(src, tgt, NullSubstitute = v)]` | Emit `src ?? v` for a nullable source. |
 | `[MapProperty(src, tgt, When = nameof(P))]` | Guard the assignment with `bool P(S)`. |
+| `[MapProperty(src, tgt, StringFormat = "F2")]` | Format an `IFormattable` source into a `string` member: `src.ToString("F2", InvariantCulture)`. Non-string target / non-formattable source / with `Use=` → `DWARF073`. |
 | `[MapValue(tgt, "const")]` / `[MapValue(tgt, Use = nameof(M))]` | Constant or computed (parameterless `M`) value for a source-less member. |
+| `[MapCollectionKey("Items", "Id")]` | **Update-into only.** Merge a `List<T>` member by key instead of replacing it: matched keys update the slot, new keys are added, unmatched existing elements are kept. v1: same element type both sides. Out of scope → `DWARF074`. |
 | `[MapIgnore("Member")]` | Intentionally drop a destination member (suppresses `DWARF001`). Class- or method-level. |
 | `[MapIgnoreSource("Member")]` | Source-side mirror (under `RequiredMapping = Both`). |
 | `[MapProperty<TSource, TTarget>(src, tgt)]` | **Class-level, pair-scoped** rename/convert (`Use`/`NullSubstitute`/`When` too). Configures a `[GenerateMap]` pair — or an auto-synthesized nested/collection-element pair — with **no partial method**. Matches nothing → `DWARF056`. |

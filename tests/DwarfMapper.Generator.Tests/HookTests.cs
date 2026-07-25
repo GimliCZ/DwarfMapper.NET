@@ -21,9 +21,7 @@ public class HookTests
                              [BeforeMap] private static void Check(Src s) { }
                          }
                          """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("Check(s);", gen, StringComparison.Ordinal);
     }
 
@@ -42,9 +40,7 @@ public class HookTests
                              [AfterMap] private static void Finish(Src s, Dst d) { }
                          }
                          """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("__dwarf_target", gen, StringComparison.Ordinal);
         Assert.Contains("Finish(s, __dwarf_target);", gen, StringComparison.Ordinal);
         Assert.Contains("return __dwarf_target;", gen, StringComparison.Ordinal);
@@ -66,7 +62,7 @@ public class HookTests
                          }
                          """;
         var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
         Assert.Contains("Touch(__dwarf_target);", gen, StringComparison.Ordinal);
     }
 
@@ -140,9 +136,7 @@ public class HookTests
                              [AfterMap] private static void Fix(ref Dst d) { }
                          }
                          """;
-        var (diagnostics, gen) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        var gen = GeneratorAssert.CompilesClean(s);
         Assert.Contains("Fix(ref __dwarf_target)", gen, StringComparison.Ordinal);
     }
 
@@ -162,7 +156,7 @@ public class HookTests
                          """;
         var (diagnostics, gen) = GeneratorTestHarness.Run(s);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF023");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
         Assert.Contains("Fix(__dwarf_target)", gen, StringComparison.Ordinal);
     }
 }

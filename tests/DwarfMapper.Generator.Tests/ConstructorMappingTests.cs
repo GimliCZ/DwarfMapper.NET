@@ -26,9 +26,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial R Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Must use named constructor args
         Assert.Contains("x:", generated, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("y:", generated, StringComparison.OrdinalIgnoreCase);
@@ -93,9 +91,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("X:", generated, StringComparison.Ordinal);
         // The annotated 2-param ctor is selected, not the longer 3-param ctor
         Assert.DoesNotContain("Z:", generated, StringComparison.Ordinal);
@@ -114,7 +110,7 @@ public class ConstructorMappingTests
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         // Must not pick the copy constructor — should use positional ctor
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.Contains("x:", generated, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -129,9 +125,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial R Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // X and Y should appear as ctor args (named), Z in initializer
         Assert.Contains("x:", generated, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("y:", generated, StringComparison.OrdinalIgnoreCase);
@@ -207,9 +201,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Object-initializer form: no ctor args, has initializer
         Assert.Contains("new ", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("DWARF024", generated, StringComparison.Ordinal);
@@ -258,9 +250,7 @@ public class ConstructorMappingTests
                                public partial R Map(S s);
                            }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Years:", generated, StringComparison.Ordinal);
         Assert.Contains("Age", generated, StringComparison.Ordinal);
     }
@@ -282,14 +272,12 @@ public class ConstructorMappingTests
                            [DwarfMapper(CaseInsensitive = true)]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("MyValue:", generated, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void CaseSensitive_does_not_match_ctor_param_different_case()
+    public void Ctor_param_matches_source_member_case_insensitively_by_default()
     {
         const string src = """
                            using DwarfMapper;
@@ -304,8 +292,11 @@ public class ConstructorMappingTests
                            public partial class M { public partial D Map(S s); }
                            """;
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        // Without CaseInsensitive, "myValue" source ≠ "MyValue" param → DWARF024
-        Assert.Contains(diagnostics, d => d.Id == "DWARF024");
+        // Constructor parameters bind case-insensitively by default (C# camelCase-param convention):
+        // source "myValue" -> ctor param "MyValue". No CaseInsensitive flag required.
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF024");
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── Completeness still holds: unmapped settable non-ctor member → error ───
@@ -341,9 +332,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial RS Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("X:", generated, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -360,9 +349,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial RRS Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("X:", generated, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -436,9 +423,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial C Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // With [SetsRequiredMembers], X is consumed by ctor — should NOT appear in initializer.
         var parenClose = generated.IndexOf(')', StringComparison.Ordinal);
         var afterParen = parenClose >= 0 ? generated.Substring(parenClose) : generated;
@@ -461,9 +446,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial R Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // X and Y in ctor args, must NOT appear in an object-initializer redundantly.
         var parenClose = generated.IndexOf(')', StringComparison.Ordinal);
         var afterParen = parenClose >= 0 ? generated.Substring(parenClose) : generated;
@@ -548,9 +531,7 @@ public class ConstructorMappingTests
                            [DwarfMapper]
                            public partial class M { public partial T Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("X:", generated, StringComparison.OrdinalIgnoreCase);
     }
 

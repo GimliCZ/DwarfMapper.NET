@@ -29,7 +29,7 @@ public class ProjectionMatrixSafeTests
                            """;
         var (diags, gen) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF028");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
         Assert.Contains("new global::Demo.CityDto", gen, StringComparison.Ordinal);
     }
@@ -54,7 +54,7 @@ public class ProjectionMatrixSafeTests
                            """;
         var (diags, gen) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF028");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
     }
 
@@ -77,7 +77,7 @@ public class ProjectionMatrixSafeTests
                            """;
         var (diags, gen) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF028");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
         // The generator emits fully-qualified Enumerable.Select + Enumerable.ToList
         // (not extension-method syntax) to avoid requiring 'using System.Linq' in the generated file.
@@ -103,7 +103,7 @@ public class ProjectionMatrixSafeTests
                            """;
         var (diags, gen) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF028");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
     }
 
@@ -123,7 +123,7 @@ public class ProjectionMatrixSafeTests
                            """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF028");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 
     // ── SAFE: enum by-value in projection (requires EnumStrategy.ByValue) ────
@@ -148,7 +148,7 @@ public class ProjectionMatrixSafeTests
                            """;
         var (diags, gen) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diags, d => d.Id == "DWARF028");
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         // Must emit a direct cast expression, not a switch helper.
         Assert.DoesNotContain("__DwarfMap_", gen, StringComparison.Ordinal);
         Assert.Contains("(global::Demo.StatusDto)", gen, StringComparison.Ordinal);

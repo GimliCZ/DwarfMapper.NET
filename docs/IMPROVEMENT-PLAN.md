@@ -7,13 +7,53 @@ marked **[DONE]** (landed this round) or **[PLANNED]** with effort (S/M/L) and r
 with the library's stated stances (resilience-first, reflection-free/AOT-safe, no-silent-surprises,
 open-generics non-goal) were dropped during synthesis and are listed at the end with the reason.
 
-## Diagnostic ID allocation
+## Status refresh — 2026-06-28 (all ranked items now landed)
+
+**Every ranked plan item below is now implemented** (each with tests; full self-test suite green). Summary of
+this round's additions on top of the five migration-hardening fixes:
+- **Item 5** — metamorphic all-emit-paths-agree value oracle (`AllEmitPathsAgreeFuzzTests`).
+- **Item 6** — SetNull-yields-a-DAG + Preserve distinct-node-count fuzz properties.
+- **Item 8** — lossy DWARF038 sub-cases and DWARF044 re-tiered to Warning (downgradable in `.editorconfig`).
+- **Item 9** — non-trivial type-shape coverage (`NonTrivialShapeRuntimeTests`).
+- **Item 11** — round-trip + update-into idempotence properties (`MetamorphicPropertyFuzzTests`).
+- **Item 12** — DWARF064 ([MapValue] shadows a source member).
+- **Item 13** — DWARF065 (update-into nested-member replacement).
+- **Item 14** — DWARF066 ([MapProperty(When=)] leaves a non-nullable member at default).
+- **Item 15** — DWARF038 parse/format message names FormatException/OverflowException.
+- **Item 16** — allocation-bound zero-alloc invariant (`AllocationBoundRuntimeTests`); AOT-token half was already done.
+- **Item 17** — topology fuzz over dict/array/struct-wrapper edge carriers (+ `GraphOracleComparer` struct traversal).
+- **Item 18** — cross-config pairwise + update-into under Preserve/SetNull (`CrossConfigFuzzTests`).
+- **Item 19** — async-stream / Span / IQueryable-projection property coverage (`AsyncSpanQueryablePropertyTests`).
+- **Item 20** — `[GenerateWrapperMap(typeof(W<>))]` single-payload generic wrapper family + DWARF067.
+
+New diagnostic IDs allocated this round: **DWARF064–DWARF067** (the planned 7/12/13/14 took 064–066; the wrapper
+family added 067). Next free id is **DWARF068**.
+
+## Status refresh — 2026-06-28
+
+Landed since this plan was written (correcting stale items below):
+- **Item 10 (`DwarfMapper.CodeFixes` package): DONE** — `src/DwarfMapper.CodeFixes` exists and ships as an
+  analyzer alongside the generator.
+- **DWARF059–DWARF063 are now ALLOCATED** (059 = `[MapConstructor]` invalid; 060 = same-source/multi-target
+  `[GenerateMap]`; 061–063 = ambient cross-assembly registry: required-not-provided / ctor-deps-not-registered
+  / ambiguous-provider). The "free slots DWARF059–062" note below is obsolete; the planned diagnostics 7/12/13/14
+  need freshly-allocated IDs (≥ DWARF064).
+- **Five library fixes landed this round** (hardening found while migrating a real AutoMapper codebase; each with a
+  regression test, full suite green): nested/element maps now run their Before/AfterMap hooks; update-into treats
+  an init-only target as non-writable (DWARF007, not CS8852); constructor parameters match case-insensitively by
+  default; a nullable reference collection/array element mapped to a non-null target throws instead of failing to
+  compile (CS8620) or smuggling nulls; a top-level `[GenerateMap]` accepts any `IEnumerable<T>` source.
+- **Item 9 (non-trivial type shapes): partially addressed** by `NonTrivialShapeRuntimeTests` (init-only/required
+  CREATE, init-only update-into, readonly struct, record struct, null-preserving deep-nullable list — value-asserted,
+  not merely compiled). Folding these shapes into the combinatorial fuzz pool proper remains the broader item.
+
+## Diagnostic ID allocation (historical — see Status refresh above)
 
 Used: **DWARF053** (generic mapper method), **DWARF054** (generic mapper class), **DWARF055** (mapper
 too large / build-budget Info — landed), **DWARF056** (pair-scoped attribute matches no pair — landed),
 **DWARF057** (generated co-located mapper name collision — landed), **DWARF058** (ambiguous convenience
-facade extension not generated — landed). Free slots for the planned diagnostics below:
-**DWARF059–DWARF062**. Reserved/unused historical: 004, 006, 019, 029.
+facade extension not generated — landed), **DWARF059–DWARF063** (now used — see Status refresh). The planned
+diagnostics below (items 7/12/13/14) must take fresh IDs ≥ DWARF064. Reserved/unused historical: 004, 006, 019, 029.
 
 > **Landed since this plan was written (2026-06-18, correctness-first design):** structural cache-safety
 > meta-test (`ModelCacheSafetyTests`), incremental-caching test (`IncrementalCachingTests` — closes item 4's
@@ -126,11 +166,9 @@ facade extension not generated — landed). Free slots for the planned diagnosti
    translatability legitimately fails for some shapes; net10 ref-struct schema generation is the cost.
 
 ### Planned — features & docs
-10. **[PLANNED·L] `DwarfMapper.CodeFixes` analyzer package.** No CodeFix/Analyzer project exists, yet
-   DWARF001/007 already embed `[MapIgnore(...)]` in their message text, so users expect a lightbulb. A
-   netstandard2.0 package (Microsoft.CodeAnalysis.CSharp.Workspaces) keyed on existing ids: insert
-   `[MapIgnore]`/`[MapProperty]`, disambiguate ambiguous matches (DWARF010), complete incomplete enums
-   (DWARF015). Largest single ergonomics win; packaging cost is the reason it's not a quick win.
+10. **[DONE] `DwarfMapper.CodeFixes` analyzer package.** `src/DwarfMapper.CodeFixes` ships a netstandard2.0
+   analyzer/code-fix package keyed on existing ids (insert `[MapIgnore]`/`[MapProperty]`, etc.), loaded as a
+   Roslyn analyzer alongside the generator. (Largest single ergonomics win — now landed.)
 20. **[PLANNED·L, demand-gated] Opt-in generic element-wrapper family** (`Envelope<TIn>`→`Envelope<TOut>`),
    **closed instantiations only** — one synthesized mapper per used `(A,B)` pair, emitting concrete types
    (AOT-safe; open generics remain a non-goal). Reduces boilerplate for `Result<T>`/`Page<T>` DTO

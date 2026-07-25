@@ -14,6 +14,13 @@ internal static class TypeInterfaces
     ///     Returns true for the eight core integral types plus nint/nuint.
     ///     Enums have SpecialType.None — this returns false for them.
     /// </summary>
+    // NOTE (ISSUE-017): System_Char is deliberately ABSENT. Including it would give int -> char a
+    // CreateChecked converter, i.e. silently enable a conversion that is EXPLICIT in C#. Mapperly moved
+    // explicit casts out of its default set in v5.0 for exactly that reason. char -> int / char -> double
+    // stay available because those are IMPLICIT casts and need no converter. The apparent disagreement
+    // with NumericConverter.IsCrossCategoryLossy (which DOES count char as integer-kind) is intentional:
+    // that classifier answers "do these sit in different numeric categories", not "may we synthesize a
+    // narrowing converter". Pinned by CharConversionPolicyTests.
     internal static bool IsIntegral(ITypeSymbol t)
     {
         return t.SpecialType is

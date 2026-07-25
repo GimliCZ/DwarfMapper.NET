@@ -21,9 +21,7 @@ public class MapIntoExistingGeneratorTests
                            [DwarfMapper]
                            public partial class M { public partial void Update(S src, D dest); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Assigns onto the existing dest instance (no `new D`).
         Assert.Contains("dest.Id = ", generated, StringComparison.Ordinal);
         Assert.Contains("dest.Name = ", generated, StringComparison.Ordinal);
@@ -81,9 +79,7 @@ public class MapIntoExistingGeneratorTests
                                public partial void Update(S src, D dest);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("dest.Name = ", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("dest.Computed", generated, StringComparison.Ordinal); // ignored
     }

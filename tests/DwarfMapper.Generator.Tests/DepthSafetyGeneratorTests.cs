@@ -26,9 +26,7 @@ public class DepthSafetyGeneratorTests
                                public partial NodeDto Map(Node n);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         // The synthesized method for Node→NodeDto must take a DwarfRefContext and int depth parameter
         Assert.Contains("DwarfRefContext", generated, StringComparison.Ordinal);
@@ -55,9 +53,7 @@ public class DepthSafetyGeneratorTests
                                public partial OrderDto Map(Order o);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         // Synthesized methods for the acyclic graph must NOT include DwarfRefContext parameter
         // They will still call __DwarfMap_Obj_ methods but those should not have ctx/depth
@@ -94,9 +90,7 @@ public class DepthSafetyGeneratorTests
                                public partial ADto Map(A a);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         // Both synthesized methods should carry DwarfRefContext + depth
         Assert.Contains("DwarfRefContext", generated, StringComparison.Ordinal);
@@ -180,9 +174,7 @@ public class DepthSafetyGeneratorTests
                                public partial NodeDto Map(Node n);
                            }
                            """;
-        var (diags, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ── 7. Generated code for recursion-capable method includes ctx.MaxDepth check ──────────────
@@ -265,9 +257,7 @@ public class DepthSafetyGeneratorTests
                                public partial CustomerDto Map(Customer c);
                            }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
 
         // Zero overhead: no DwarfRefContext anywhere in the generated code
         Assert.DoesNotContain("DwarfRefContext", generated, StringComparison.Ordinal);

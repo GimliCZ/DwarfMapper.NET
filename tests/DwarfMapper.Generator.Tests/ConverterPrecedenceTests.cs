@@ -82,7 +82,7 @@ public class ConverterPrecedenceTests
     [Fact]
     public void Same_source_two_targets_via_named_partial_method_compiles()
     {
-        // Real FusedChat shape (StoreItem -> {StoreItem clone, DbStore}): two maps share a SOURCE type.
+        // Real-world shape (StoreItem -> {StoreItem clone, DbStore}): two maps share a SOURCE type.
         // DwarfMapper overloads by parameter type, so both as [GenerateMap] would emit two `Map(StoreItem)`
         // (illegal return-type overload -> CS0111). The supported pattern is a distinctly-named partial
         // method for the second target. This compiles the generated code to prove there is no collision.

@@ -18,9 +18,7 @@ public class EnumNumericTests
                            [DwarfMapper]
                            public partial class M { public partial Target Map(Source s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("Shade = ", generated, StringComparison.Ordinal);
     }
 
@@ -36,8 +34,6 @@ public class EnumNumericTests
                            [DwarfMapper]
                            public partial class M { public partial Target Map(Source s); }
                            """;
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 }

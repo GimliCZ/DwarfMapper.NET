@@ -56,7 +56,6 @@ public sealed class DwarfRefContext
     // (a diamond) leaves the stack before its second parent is visited, so it is mapped again
     // (duplicated) rather than nulled — only true ancestor cycles are broken.
     private readonly HashSet<object>? _onStack;
-    private readonly bool _preserve;
 
     /// <summary>
     ///     Initializes a new <see cref="DwarfRefContext" /> with the specified depth limit.
@@ -78,7 +77,6 @@ public sealed class DwarfRefContext
         MaxDepth = maxDepth < 1 ? 1
             : maxDepth > AbsoluteMaxDepth ? AbsoluteMaxDepth
             : maxDepth;
-        _preserve = preserve;
         // In Preserve mode, allocate the identity map upfront so it is ready on first use.
         // Allocating eagerly here lets TryGetReference/SetReference do a single null check
         // instead of a lazy-init branch.

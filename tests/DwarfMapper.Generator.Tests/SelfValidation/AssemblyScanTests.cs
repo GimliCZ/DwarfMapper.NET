@@ -145,7 +145,6 @@ public sealed class AssemblyScanTests
             .Select(f => Path.GetFileName(f)!)
             .Select(name => name[..^suffix.Length]) // strip ".verified.txt"
             .Select(stem => stem.Split('.').Last()) // "Class.Method" → "Method"
-            .Select(method => method.Split('_')[0] == method ? method : method) // keep full method name
             .Where(method => !testText.Contains(method, StringComparison.Ordinal))
             .Distinct()
             .OrderBy(m => m, StringComparer.Ordinal)
@@ -426,14 +425,19 @@ public sealed class AssemblyScanTests
             .Where(t => t.IsPublic && t.IsEnum)
             .ToList();
 
+        // Match the QUALIFIED form `EnumType.Value`, not the bare value name. A bare `Contains("Throw")`
+        // passes vacuously off any `Assert.Throws`, `Contains("None")` off any unrelated `None`, etc. — the
+        // gate would give false assurance for common-word values. Requiring `NullStrategy.Throw` proves the
+        // value is actually referenced as that enum member.
         var missing = new List<string>();
         foreach (var enumType in publicEnums)
         foreach (var valueName in Enum.GetNames(enumType))
-            if (!testText.Contains(valueName, StringComparison.Ordinal))
+            if (!testText.Contains($"{enumType.Name}.{valueName}", StringComparison.Ordinal))
                 missing.Add($"{enumType.Name}.{valueName}");
 
         Assert.True(missing.Count == 0,
-            "Public enum value(s) with no test reference:\n" + string.Join("\n", missing));
+            "Public enum value(s) with no test reference (as the qualified `EnumType.Value`):\n"
+            + string.Join("\n", missing));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -468,6 +472,38 @@ public sealed class AssemblyScanTests
 
         Assert.True(missing.Count == 0,
             "TargetKind value(s) with no test reference:\n" + string.Join("\n", missing));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCAN 7 — Every descriptor has a prose section in docs/diagnostics.md
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Scan7_Every_descriptor_is_documented_in_diagnostics_md()
+    {
+        // The descriptor <-> AnalyzerReleases sync (Scan1) is machine-checked, but the human-facing docs are
+        // not: a new diagnostic can ship with a helpLinkUri pointing at a "#dwarfNNN" anchor that does not
+        // exist. Every id the IDE "learn more" link targets must resolve to a real section. Reserved/retired
+        // ids have no descriptor and need no section.
+        var docPath = Path.Combine(RepoRoot, "docs", "diagnostics.md");
+        Assert.True(File.Exists(docPath), $"docs/diagnostics.md not found at {docPath}");
+        var docText = File.ReadAllText(docPath);
+
+        // Sections are written lowercase, e.g. "## dwarf070"; ids are uppercase "DWARF070".
+        var documented = Regex.Matches(docText, @"(?im)^##\s+dwarf(\d{3})\b")
+            .Select(m => "DWARF" + m.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var undocumented = GetAllDescriptors()
+            .Select(d => d.Descriptor.Id)
+            .Where(id => !ReservedIds.Ids.Contains(id))
+            .Where(id => !documented.Contains(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(undocumented.Count == 0,
+            "Diagnostic(s) have no '## dwarfNNN' section in docs/diagnostics.md (the IDE 'learn more' link "
+            + "would 404):\n" + string.Join("\n", undocumented));
     }
 
     private static Dictionary<string, ReleaseRow> ParseAnalyzerReleases()

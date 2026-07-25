@@ -26,6 +26,10 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <!-- Payloads come from the same fixture/fuzz source the test suites use (ObjectFactoryV2), so the
+             benchmark measures the data distribution the mapper is actually tested against rather than a
+             hand-written uniform one. Used in [GlobalSetup] only — never on a measured path. -->
+        <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj"/>
         <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
                           OutputItemType="Analyzer"
                           ReferenceOutputAssembly="false"/>

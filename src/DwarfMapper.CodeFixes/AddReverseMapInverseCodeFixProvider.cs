@@ -25,7 +25,7 @@ public sealed class AddReverseMapInverseCodeFixProvider : CodeFixProvider
 {
     private const string DiagnosticId = "DWARF052";
 
-    public override ImmutableArray<string> FixableDiagnosticIds => ImmutableArray.Create(DiagnosticId);
+    public override ImmutableArray<string> FixableDiagnosticIds => [DiagnosticId];
 
     public override FixAllProvider GetFixAllProvider()
     {
@@ -41,8 +41,7 @@ public sealed class AddReverseMapInverseCodeFixProvider : CodeFixProvider
         {
             var node = root.FindNode(diagnostic.Location.SourceSpan, getInnermostNodeForTie: true);
             var forward = node.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-            if (forward is null
-                || forward.Parent is not ClassDeclarationSyntax
+            if (forward?.Parent is not ClassDeclarationSyntax
                 || forward.ParameterList.Parameters.Count == 0
                 || forward.ParameterList.Parameters[0].Type is null)
                 continue;

@@ -23,9 +23,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -40,9 +38,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -57,9 +53,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -74,9 +68,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -93,9 +85,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -110,9 +100,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -127,9 +115,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -144,9 +130,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -161,9 +145,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -186,9 +168,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Must use EnumConverter path, not NumericConverter path
         Assert.DoesNotContain("__DwarfMap_Num_", generated, StringComparison.Ordinal);
         Assert.Contains("__DwarfMap_EnumNum_", generated, StringComparison.Ordinal);
@@ -208,9 +188,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.DoesNotContain("CreateChecked", generated, StringComparison.Ordinal);
     }
 
@@ -235,7 +213,7 @@ public class NumericConversionTests
                                private static int Shrink(long v) => (int)v;
                            }
                            """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         // User method must be called, not the synthesized one
@@ -256,9 +234,7 @@ public class NumericConversionTests
                            [DwarfMapper]
                            public partial class M { public partial D Map(S s); }
                            """;
-        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("CreateChecked", generated, StringComparison.Ordinal);
     }
 }

@@ -54,6 +54,18 @@ public class FeatureInteractionCompileMatrixTests
                                                        [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
                                                        """);
 
+        yield return new FimMatrixCase("generate_wrapper_map", """
+            using DwarfMapper;
+            namespace Fim;
+            public class Src { public int X { get; set; } }
+            public class Dst { public int X { get; set; } }
+            public class Env<T> { public T Payload { get; set; } = default!; public int Status { get; set; } }
+            [DwarfMapper]
+            [GenerateMap<Src, Dst>]
+            [GenerateWrapperMap(typeof(Env<>))]
+            public partial class M { }
+            """);
+
         // ── 2. Nested auto-nest ───────────────────────────────────────────────
 
         yield return new FimMatrixCase("autonest_class", """
@@ -133,6 +145,19 @@ public class FeatureInteractionCompileMatrixTests
                                                                         public partial ItemDto Map(Item i);
                                                                     }
                                                                     """);
+
+        yield return new FimMatrixCase("collection_key_upsert", """
+                                                               using DwarfMapper;
+                                                               using System.Collections.Generic;
+                                                               namespace Fim;
+                                                               public class Item { public int Id { get; set; } public string Name { get; set; } = ""; }
+                                                               public class Src { public List<Item> Items { get; set; } = new(); }
+                                                               public class Dst { public List<Item> Items { get; set; } = new(); }
+                                                               [DwarfMapper] public partial class M {
+                                                                   [MapCollectionKey(nameof(Dst.Items), nameof(Item.Id))]
+                                                                   public partial void Merge(Src src, Dst dst);
+                                                               }
+                                                               """);
 
         // ── 4. Top-level collection methods ──────────────────────────────────
 

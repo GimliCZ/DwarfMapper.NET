@@ -24,9 +24,7 @@ public class NoneModeCollectionDepthGeneratorTests
                            [DwarfMapper]
                            public partial class M { public partial TreeDto Map(Tree t); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // The collection helper must now take (ctx, depth) and route through the depth companion.
         Assert.Contains("DwarfRefContext ctx, int depth", generated, StringComparison.Ordinal);
         Assert.Contains("__DwarfMap_Depth_Map", generated, StringComparison.Ordinal);
@@ -50,9 +48,7 @@ public class NoneModeCollectionDepthGeneratorTests
                            [DwarfMapper]
                            public partial class M { public partial PersonDto Map(Person p); public partial AddrDto Map(Addr a); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Non-recursive element → no ctx threading anywhere (zero overhead preserved).
         Assert.DoesNotContain("DwarfRefContext", generated, StringComparison.Ordinal);
     }

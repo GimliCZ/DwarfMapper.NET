@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
-using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
@@ -106,6 +105,17 @@ internal static class CollectionConverter
         {
             tgtElem = he!;
             targetKind = TargetKind.HashSet;
+        }
+        // ── Concrete Queue<T> / Stack<T> ─────────────────────────────────────
+        else if (IsExactNamedType(tgt, "Queue", "System.Collections.Generic", 1, out var qe))
+        {
+            tgtElem = qe!;
+            targetKind = TargetKind.Queue;
+        }
+        else if (IsExactNamedType(tgt, "Stack", "System.Collections.Generic", 1, out var ske))
+        {
+            tgtElem = ske!;
+            targetKind = TargetKind.Stack;
         }
         // ── IEnumerable<T> (LAZY target) ─────────────────────────────────────
         else if (IsIEnumerableT(tgt, out var ee))
@@ -254,6 +264,8 @@ internal static class CollectionConverter
             TargetKind.Array => elemFq + "[]",
             TargetKind.List => "List<" + elemFq + ">",
             TargetKind.HashSet => "HashSet<" + elemFq + ">",
+            TargetKind.Queue => "Queue<" + elemFq + ">",
+            TargetKind.Stack => "Stack<" + elemFq + ">",
             TargetKind.IEnumerable => "IEnumerable<" + elemFq + ">",
             TargetKind.ICollection => "ICollection<" + elemFq + ">",
             TargetKind.IList => "IList<" + elemFq + ">",
@@ -268,7 +280,7 @@ internal static class CollectionConverter
             _ => "IImmutableSet<" + elemFq + ">"
         };
 
-        var name = "__DwarfMapColl_" + Hash(srcFq + "=>" + targetTag + nullTag + preserveTag);
+        var name = GeneratedNames.Collection + StableHash.Fnv1a(srcFq + "=>" + targetTag + nullTag + preserveTag);
         if (synth.ContainsKey(name))
             return name;
 
@@ -285,11 +297,11 @@ internal static class CollectionConverter
         // a collection edge — without turning on register-before-fill outside Preserve.
         var threadCtx = registerBeforeFill || elemNeedsCtx;
 
-        var sb = new StringBuilder();
-        EmitBody(sb, name, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape, identity, threadCtx,
+        var w = new CodeWriter(1);
+        EmitBody(w, name, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape, identity, threadCtx,
             registerBeforeFill);
 
-        synth[name] = new SynthesizedMethod(name, sb.ToString());
+        synth[name] = new SynthesizedMethod(name, w.ToString());
         return name;
     }
 
@@ -314,22 +326,22 @@ internal static class CollectionConverter
         // Recursion-capable element → identity fast-path is never applicable; element call threads ctx.
         var item = ElementExpr("__item", ctxElementConverter, elemNull, true);
 
-        var sb = new StringBuilder();
-        EmitBody(sb, existingName, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape,
+        var w = new CodeWriter(1);
+        EmitBody(w, existingName, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape,
             false, true, false);
-        synth[existingName] = new SynthesizedMethod(existingName, sb.ToString());
+        synth[existingName] = new SynthesizedMethod(existingName, w.ToString());
     }
 
     /// <summary>Dispatches body emission to the per-shape emitter. Shared by Synthesize / SynthesizeInPlace.</summary>
     private static void EmitBody(
-        StringBuilder sb, string name, string srcFq, string srcParamType, ITypeSymbol srcType,
+        CodeWriter w, string name, string srcFq, string srcParamType, ITypeSymbol srcType,
         ITypeSymbol srcElem, string elemFq, string item, Shape shape, bool identity,
         bool threadCtx, bool registerBeforeFill)
     {
         switch (shape.Target)
         {
             case TargetKind.Array:
-                EmitArray(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx,
+                EmitArray(w, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx,
                     registerBeforeFill);
                 break;
 
@@ -338,40 +350,46 @@ internal static class CollectionConverter
             case TargetKind.IList:
             case TargetKind.IReadOnlyList:
             case TargetKind.IReadOnlyCollection:
-                EmitList(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx,
+                EmitList(w, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull, threadCtx,
                     registerBeforeFill);
                 break;
 
             case TargetKind.HashSet:
             case TargetKind.ISet:
             case TargetKind.IReadOnlySet:
-                EmitHashSet(sb, name, srcFq, srcParamType, elemFq, item, shape, srcType, identity, shape.NullAsNull,
+                EmitHashSet(w, name, srcFq, srcParamType, elemFq, item, shape, srcType, identity, shape.NullAsNull,
                     threadCtx, registerBeforeFill);
+                break;
+
+            case TargetKind.Queue:
+            case TargetKind.Stack:
+                EmitStackQueue(w, name, srcParamType, elemFq, item, shape.Target == TargetKind.Stack, identity,
+                    shape.NullAsNull, threadCtx);
                 break;
 
             case TargetKind.IEnumerable:
                 // IEnumerable is lazy — cannot register-before-fill (no concrete instance exists).
                 // Still thread ctx/depth to element if needed (via closure in the Select lambda).
-                EmitLazyEnumerable(sb, name, srcFq, srcParamType, srcElem, elemFq, item, shape, identity,
+                EmitLazyEnumerable(w, name, srcFq, srcParamType, srcElem, elemFq, item, shape, identity,
                     shape.NullAsNull, threadCtx);
                 break;
 
             case TargetKind.ImmutableArray:
                 // ImmutableArray is a value-type struct — cannot be registered.
                 // Thread ctx/depth to element via the fill loop.
-                EmitImmutableArray(sb, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull,
+                EmitImmutableArray(w, name, srcFq, srcParamType, elemFq, item, shape, identity, shape.NullAsNull,
                     threadCtx);
                 break;
 
             case TargetKind.ImmutableList:
             case TargetKind.IImmutableList:
-                EmitImmutableCollection(sb, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
+                EmitImmutableCollection(w, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
                     threadCtx, "ImmutableList");
                 break;
 
             case TargetKind.ImmutableHashSet:
             case TargetKind.IImmutableSet:
-                EmitImmutableCollection(sb, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
+                EmitImmutableCollection(w, name, srcParamType, elemFq, item, identity, shape.NullAsNull,
                     threadCtx, "ImmutableHashSet");
                 break;
         }
@@ -395,7 +413,7 @@ internal static class CollectionConverter
     }
 
     private static void EmitArray(
-        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
+        CodeWriter w, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool threadCtx, bool registerBeforeFill)
     {
         var retType = nullAsNull ? elem + "[]?" : elem + "[]";
@@ -403,71 +421,85 @@ internal static class CollectionConverter
         var emptyExpr = nullAsNull ? "null" : "global::System.Array.Empty<" + elem + ">()";
         var ctxParams = threadCtx ? CtxDepthParams : "";
 
-        sb.Append("    private ").Append(retType).Append(' ').Append(name)
-            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
-
-        if (identity && shape.SourceIsArray && !registerBeforeFill && !threadCtx)
+        using (w.Block("private " + retType + " " + name + "(" + paramType + " src" + ctxParams + ")"))
         {
-            // identity array→array: Clone() fast-path (only safe without register-before-fill / ctx threading).
-            sb.Append("        return src is null ? ")
-                .Append(emptyExpr)
-                .Append(" : (").Append(elem).Append("[])src.Clone();\n");
-        }
-        else if (shape.Count != CountKind.None)
-        {
-            var countExpr = shape.Count == CountKind.Length ? "src.Length" : "src.Count";
-            var arrayAlloc = ArrayNewExpr(elem, countExpr);
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            if (registerBeforeFill)
-                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(elem)
-                    .Append("[])__cc;\n");
-            sb.Append("        var __r = ").Append(arrayAlloc).Append(";\n");
-            if (registerBeforeFill) sb.Append("        ctx.SetReference(src, __r);\n");
-            if (shape.SourceIsArray && !registerBeforeFill && !threadCtx)
+            if (identity && shape.SourceIsArray && !registerBeforeFill && !threadCtx)
             {
-                // Non-recursive array→array (None mode): index with a single length-bounded counter over
-                // src[__i] so the JIT proves BOTH the source read and the destination store in-bounds and
-                // elides both bounds checks. The foreach + separate post-incremented write-index form (below)
-                // leaves the store index not-provably-in-bounds, so its bounds check survives — measurably
-                // slower in a hot 1000-element loop. Preserve (register-before-fill), ctx-threaded, and
-                // non-array (no indexer) sources keep the foreach form unchanged.
-                sb.Append("        for (int __i = 0; __i < ").Append(countExpr).Append("; __i++) { __r[__i] = ")
-                    .Append(item.Replace("__item", "src[__i]")).Append("; }\n");
+                // identity array→array: Clone() fast-path (only safe without register-before-fill / ctx threading).
+                w.Line("return src is null ? " + emptyExpr + " : (" + elem + "[])src.Clone();");
+            }
+            else if (shape.Count != CountKind.None)
+            {
+                var countExpr = shape.Count == CountKind.Length ? "src.Length" : "src.Count";
+                var arrayAlloc = ArrayNewExpr(elem, countExpr);
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                if (registerBeforeFill)
+                    w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + elem + "[])__cc;");
+                w.Line("var __r = " + arrayAlloc + ";");
+                if (registerBeforeFill) w.Line("ctx.SetReference(src, __r);");
+                if (shape.SourceIsArray && !registerBeforeFill && !threadCtx)
+                {
+                    // Non-recursive array→array (None mode): index with a single length-bounded counter over
+                    // src[__i] so the JIT proves BOTH the source read and the destination store in-bounds and
+                    // elides both bounds checks. The foreach + separate post-incremented write-index form (below)
+                    // leaves the store index not-provably-in-bounds, so its bounds check survives — measurably
+                    // slower in a hot 1000-element loop. Preserve (register-before-fill), ctx-threaded, and
+                    // non-array (no indexer) sources keep the foreach form unchanged.
+                    w.Line("for (int __i = 0; __i < " + countExpr + "; __i++) { __r[__i] = "
+                        + item.Replace("__item", "src[__i]") + "; }");
+                }
+                else
+                {
+                    w.Line("var __i = 0;");
+                    w.Line("foreach (var __item in src) { __r[__i++] = " + item + "; }");
+                }
+
+                w.Line("return __r;");
             }
             else
             {
-                sb.Append("        var __i = 0;\n");
-                sb.Append("        foreach (var __item in src) { __r[__i++] = ").Append(item).Append("; }\n");
+                // Unknown-count path: must buffer first; register after allocating final array.
+                // B3 fix: under Preserve, check TryGetReference BEFORE the fill loop (two parents sharing
+                // the same unknown-count source must produce ONE target array, not two independent copies).
+                // SetReference is called immediately after ToArray() so the second parent finds the array.
+                // Note: a cycle THROUGH this array (element refers back to the source array during fill)
+                // cannot be reconstructed correctly because the final array doesn't exist until after fill.
+                // That degenerate case is documented: register-before-fill is structurally impossible for
+                // unknown-count sources mapping to an array target. Two-parents-sharing is fully correct.
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                if (registerBeforeFill)
+                    w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + elem + "[])__cc;");
+                // ISSUE-019: the count is not knowable from the STATIC type, but the runtime value very often
+                // is — an IEnumerable<T> parameter is usually handed a List<T>/T[]/HashSet<T>. Probe for it and
+                // fill an exactly-sized array, so the common case costs one allocation instead of a growing
+                // List plus a ToArray copy. TryGetNonEnumeratedCount covers ICollection<T>, IReadOnlyCollection<T>
+                // and non-generic ICollection in one call, so it catches HashSet<T> — which an `is ICollection`
+                // probe would miss. Every source reaching here implements IEnumerable<T> (TryGetEnumerableElement
+                // returns false otherwise), so the call always binds.
+                // Called in STATIC form: generated files carry no using directives, so the extension-method
+                // instance form would not compile.
+                using (w.Block("if (global::System.Linq.Enumerable.TryGetNonEnumeratedCount(src, out var __n))"))
+                {
+                    w.Line("var __ra = " + ArrayNewExpr(elem, "__n") + ";");
+                    w.Line("var __ai = 0;");
+                    w.Line("foreach (var __item in src) { __ra[__ai++] = " + item + "; }");
+                    // Registered AFTER the fill, exactly as the buffered path below does: the probe must not
+                    // change Preserve semantics depending on the source's runtime type.
+                    if (registerBeforeFill) w.Line("ctx.SetReference(src, __ra);");
+                    w.Line("return __ra;");
+                }
+
+                w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
+                w.Line("foreach (var __item in src) { __buf.Add(" + item + "); }");
+                w.Line("var __r = __buf.ToArray();");
+                if (registerBeforeFill) w.Line("ctx.SetReference(src, __r);");
+                w.Line("return __r;");
             }
-
-            sb.Append("        return __r;\n");
         }
-        else
-        {
-            // Unknown-count path: must buffer first; register after allocating final array.
-            // B3 fix: under Preserve, check TryGetReference BEFORE the fill loop (two parents sharing
-            // the same unknown-count source must produce ONE target array, not two independent copies).
-            // SetReference is called immediately after ToArray() so the second parent finds the array.
-            // Note: a cycle THROUGH this array (element refers back to the source array during fill)
-            // cannot be reconstructed correctly because the final array doesn't exist until after fill.
-            // That degenerate case is documented: register-before-fill is structurally impossible for
-            // unknown-count sources mapping to an array target. Two-parents-sharing is fully correct.
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            if (registerBeforeFill)
-                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(elem)
-                    .Append("[])__cc;\n");
-            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
-            sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
-            sb.Append("        var __r = __buf.ToArray();\n");
-            if (registerBeforeFill) sb.Append("        ctx.SetReference(src, __r);\n");
-            sb.Append("        return __r;\n");
-        }
-
-        sb.Append("    }\n");
     }
 
     private static void EmitList(
-        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
+        CodeWriter w, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool threadCtx, bool registerBeforeFill)
     {
         var listFq = "global::System.Collections.Generic.List<" + elem + ">";
@@ -477,40 +509,37 @@ internal static class CollectionConverter
         var ctxParams = threadCtx ? CtxDepthParams : "";
 
         // Return type is always List<T> (concrete); the field type is an interface but assignable.
-        sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
-
-        if (identity && !registerBeforeFill && !threadCtx)
+        using (w.Block("private " + retFq + " " + name + "(" + paramType + " src" + ctxParams + ")"))
         {
-            sb.Append("        return src is null ? ").Append(emptyExpr)
-                .Append(" : new ").Append(listFq).Append("(src);\n");
+            if (identity && !registerBeforeFill && !threadCtx)
+            {
+                w.Line("return src is null ? " + emptyExpr + " : new " + listFq + "(src);");
+            }
+            else if (registerBeforeFill)
+            {
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + listFq + ")__cc;");
+                w.Line("var __r = new " + listFq + "(" + CapacityArg(shape) + ");");
+                w.Line("ctx.SetReference(src, __r);");
+                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("return __r;");
+            }
+            else
+            {
+                // Plain fill. When threadCtx is true (None/SetNull recursive element), `item` already
+                // contains the (..., ctx, depth + 1) arguments and ctx is in scope from the signature.
+                // Pre-size from the known source count (CapacityArg) so large lists don't repeatedly
+                // double+copy their backing array — same rationale as the array/dictionary paths.
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                w.Line("var __r = new " + listFq + "(" + CapacityArg(shape) + ");");
+                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("return __r;");
+            }
         }
-        else if (registerBeforeFill)
-        {
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(listFq).Append(")__cc;\n");
-            sb.Append("        var __r = new ").Append(listFq).Append('(').Append(CapacityArg(shape)).Append(");\n");
-            sb.Append("        ctx.SetReference(src, __r);\n");
-            sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
-            sb.Append("        return __r;\n");
-        }
-        else
-        {
-            // Plain fill. When threadCtx is true (None/SetNull recursive element), `item` already
-            // contains the (..., ctx, depth + 1) arguments and ctx is in scope from the signature.
-            // Pre-size from the known source count (CapacityArg) so large lists don't repeatedly
-            // double+copy their backing array — same rationale as the array/dictionary paths.
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        var __r = new ").Append(listFq).Append('(').Append(CapacityArg(shape)).Append(");\n");
-            sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
-            sb.Append("        return __r;\n");
-        }
-
-        sb.Append("    }\n");
     }
 
     private static void EmitHashSet(
-        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
+        CodeWriter w, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, ITypeSymbol srcType, bool identity, bool nullAsNull, bool threadCtx,
         bool registerBeforeFill)
     {
@@ -520,43 +549,50 @@ internal static class CollectionConverter
         var paramType = srcParamType; // nullable-aware; null guard inside handles it
         var ctxParams = threadCtx ? CtxDepthParams : "";
 
-        sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
-
-        if (identity && IsHashSetType(srcType) && !registerBeforeFill && !threadCtx)
+        using (w.Block("private " + retFq + " " + name + "(" + paramType + " src" + ctxParams + ")"))
         {
-            sb.Append("        return src is null ? ").Append(emptyExpr)
-                .Append(" : new ").Append(setFq).Append("(src);\n");
+            if (identity && IsHashSetType(srcType) && !registerBeforeFill && !threadCtx)
+            {
+                w.Line("return src is null ? " + emptyExpr + " : new " + setFq + "(src);");
+            }
+            else if (registerBeforeFill)
+            {
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + setFq + ")__cc;");
+                w.Line("var __r = new " + setFq + "(" + CapacityArg(shape) + ");");
+                w.Line("ctx.SetReference(src, __r);");
+                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("return __r;");
+            }
+            else
+            {
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                w.Line("var __r = new " + setFq + "(" + CapacityArg(shape) + ");");
+                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("return __r;");
+            }
         }
-        else if (registerBeforeFill)
-        {
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(setFq).Append(")__cc;\n");
-            sb.Append("        var __r = new ").Append(setFq).Append('(').Append(CapacityArg(shape)).Append(");\n");
-            sb.Append("        ctx.SetReference(src, __r);\n");
-            sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
-            sb.Append("        return __r;\n");
-        }
-        else
-        {
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        var __r = new ").Append(setFq).Append('(').Append(CapacityArg(shape)).Append(");\n");
-            sb.Append("        foreach (var __item in src) { __r.Add(").Append(item).Append("); }\n");
-            sb.Append("        return __r;\n");
-        }
-
-        sb.Append("    }\n");
     }
 
     private static void EmitLazyEnumerable(
-        StringBuilder sb, string name, string srcFq, string srcParamType, ITypeSymbol srcElemType, string elem,
+        CodeWriter w, string name, string srcFq, string srcParamType, ITypeSymbol srcElemType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
-        // Return type is IEnumerable<T> (deferred — no materialisation).
-        // IEnumerable is lazy: we cannot register-before-fill (no concrete instance).
-        // We CAN thread ctx/depth into the Select lambda if the element converter needs it.
-        // Note: Enumerable.Select returns a lazy sequence (not materialised); the consumer
-        // enumerates it on demand, which is correct for IEnumerable<T> target fields.
+        // Return type is IEnumerable<T>, MATERIALISED into a fresh List<T>.
+        //
+        // This used to hand back a lazy sequence — `src` itself when the element needed no transform, or an
+        // un-materialised Enumerable.Select otherwise. Both leak the source across the map boundary and were
+        // silent about it:
+        //   * identity  → the destination WAS the source collection. Mutating either corrupted the other, and
+        //                 a consumer can cast the IEnumerable<T> back to List<T> and write straight into the
+        //                 source. (This is AutoMapper's v3.1 "assignable collection" bug.)
+        //   * deferred  → the destination was a live query over the source: the element conversion re-ran on
+        //                 EVERY enumeration (wrong for a converter with side effects, and O(n) each time), and
+        //                 enumerating after the source was mutated threw InvalidOperationException. A mapped
+        //                 DTO must not be a time-bomb tied to the lifetime of the entity it came from.
+        //
+        // Map() returns an independent value; that contract outranks saving one allocation. The zero-alloc
+        // paths that are genuinely safe (blit/SIMD into a NEW buffer) are unaffected — they already copy.
         var ieFq = "global::System.Collections.Generic.IEnumerable<" + elem + ">";
         var retFq = nullAsNull ? ieFq + "?" : ieFq;
         var emptyExpr = nullAsNull
@@ -565,32 +601,37 @@ internal static class CollectionConverter
         var paramType = srcParamType; // nullable-aware; null guard inside handles it
         var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
 
-        sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
-
-        if (identity)
+        // One materialising path for both the identity and the converting case: `item` already carries the
+        // element conversion (it is just `__item` when no transform is needed), so the fill is the same.
+        _ = identity;
+        _ = srcElemType;
+        var cap = CapacityArg(shape);
+        using (w.Block("private " + retFq + " " + name + "(" + paramType + " src" + ctxParams + ")"))
         {
-            // Identity: source is already assignable to IEnumerable<T> — pass through.
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return src;\n");
+            w.Line("if (src is null) return " + emptyExpr + ";");
+            if (cap.Length > 0)
+            {
+                // Size is known up front (src.Length / src.Count): allocate the exact array once and fill it by
+                // index. Cheapest possible independent copy — one allocation, no List growth/reallocation, no
+                // per-Add bounds+version checks — and the source is enumerated exactly ONCE.
+                w.Line("var __a = new " + elem + "[" + cap + "];");
+                w.Line("var __i = 0;");
+                w.Line("foreach (var __item in src) { __a[__i++] = " + item + "; }");
+                w.Line("return __a;");
+            }
+            else
+            {
+                // Size unknown (a bare IEnumerable<T>): a single growing pass. Still exactly one enumeration —
+                // we must never count-then-enumerate, which would double-enumerate a side-effecting sequence.
+                w.Line("var __r = new global::System.Collections.Generic.List<" + elem + ">();");
+                w.Line("foreach (var __item in src) { __r.Add(" + item + "); }");
+                w.Line("return __r;");
+            }
         }
-        else
-        {
-            // Deferred: emit Enumerable.Select<SrcElem,TgtElem>(src, __item => map(__item)) without ToList().
-            // We must specify type arguments explicitly so the C# compiler doesn't infer the wrong
-            // return type when the element conversion is implicit (e.g. int→long).
-            var srcElemFq = Fq(srcElemType);
-            var selectFq = "global::System.Linq.Enumerable";
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return ").Append(selectFq).Append(".Select<").Append(srcElemFq).Append(", ").Append(elem)
-                .Append(">(src, __item => ").Append(item).Append(");\n");
-        }
-
-        sb.Append("    }\n");
     }
 
     private static void EmitImmutableArray(
-        StringBuilder sb, string name, string srcFq, string srcParamType, string elem,
+        CodeWriter w, string name, string srcFq, string srcParamType, string elem,
         string item, Shape shape, bool identity, bool nullAsNull, bool elemNeedsCtx)
     {
         var tgtFq = "global::System.Collections.Immutable.ImmutableArray<" + elem + ">";
@@ -614,37 +655,33 @@ internal static class CollectionConverter
         // Under AsNull, return ImmutableArray<T>? so null source yields null (HasValue=false).
         var retTypeFq = nullAsNull ? tgtFq + "?" : tgtFq;
 
-        sb.Append("    private ").Append(retTypeFq).Append(' ').Append(name)
-            .Append('(').Append(paramType).Append(" src").Append(ctxParams).Append(")\n    {\n");
-
-        if (identity && !elemNeedsCtx)
+        using (w.Block("private " + retTypeFq + " " + name + "(" + paramType + " src" + ctxParams + ")"))
         {
-            // Identity elements without ctx threading: copy straight into the ImmutableArray via CreateRange.
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(").Append(srcExpr)
-                .Append(");\n");
+            if (identity && !elemNeedsCtx)
+            {
+                // Identity elements without ctx threading: copy straight into the ImmutableArray via CreateRange.
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                w.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange(" + srcExpr + ");");
+            }
+            else
+            {
+                // Need element conversion or ctx threading: build a List first, then CreateRange.
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
+                w.Line("foreach (var __item in " + srcExpr + ") { __buf.Add(" + item + "); }");
+                w.Line("return global::System.Collections.Immutable.ImmutableArray.CreateRange(__buf);");
+            }
         }
-        else
-        {
-            // Need element conversion or ctx threading: build a List first, then CreateRange.
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
-            sb.Append("        foreach (var __item in ").Append(srcExpr).Append(") { __buf.Add(").Append(item)
-                .Append("); }\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableArray.CreateRange(__buf);\n");
-        }
-
-        sb.Append("    }\n");
     }
 
     /// <summary>
     ///     Emits a synthesized mapper for an <c>ImmutableList&lt;T&gt;</c> or <c>ImmutableHashSet&lt;T&gt;</c>
-    ///     target (identical shapes bar the concrete immutable type). <paramref name="immutableType"/> is the
-    ///     unqualified type name (<c>"ImmutableList"</c> / <c>"ImmutableHashSet"</c>); both use the matching
-    ///     factory's <c>CreateRange</c> and <c>.Empty</c>.
+    ///     target — identical shapes bar the concrete immutable type, so both are driven from here.
+    ///     <paramref name="immutableType" /> is the unqualified type name (<c>"ImmutableList"</c> /
+    ///     <c>"ImmutableHashSet"</c>); each uses the matching factory's <c>CreateRange</c> and <c>.Empty</c>.
     /// </summary>
     private static void EmitImmutableCollection(
-        StringBuilder sb, string name, string srcParamType, string elem, string item,
+        CodeWriter w, string name, string srcParamType, string elem, string item,
         bool identity, bool nullAsNull, bool elemNeedsCtx, string immutableType)
     {
         var tgtFq = "global::System.Collections.Immutable." + immutableType + "<" + elem + ">";
@@ -653,23 +690,65 @@ internal static class CollectionConverter
         var createRange = "global::System.Collections.Immutable." + immutableType + ".CreateRange";
         var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
 
-        sb.Append("    private ").Append(retFq).Append(' ').Append(name)
-            .Append('(').Append(srcParamType).Append(" src").Append(ctxParams).Append(")\n    {\n");
-
-        if (identity && !elemNeedsCtx)
+        using (w.Block("private " + retFq + " " + name + "(" + srcParamType + " src" + ctxParams + ")"))
         {
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        return ").Append(createRange).Append("(src);\n");
+            if (identity && !elemNeedsCtx)
+            {
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                w.Line("return " + createRange + "(src);");
+            }
+            else
+            {
+                w.Line("if (src is null) return " + emptyExpr + ";");
+                w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
+                w.Line("foreach (var __item in src) { __buf.Add(" + item + "); }");
+                w.Line("return " + createRange + "(__buf);");
+            }
         }
-        else
-        {
-            sb.Append("        if (src is null) return ").Append(emptyExpr).Append(";\n");
-            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(elem).Append(">();\n");
-            sb.Append("        foreach (var __item in src) { __buf.Add(").Append(item).Append("); }\n");
-            sb.Append("        return ").Append(createRange).Append("(__buf);\n");
-        }
+    }
 
-        sb.Append("    }\n");
+    /// <summary>
+    ///     Emits a <c>Queue&lt;T&gt;</c> or <c>Stack&lt;T&gt;</c> target.
+    ///     <para>
+    ///     Ordering is chosen so that <b>enumerating the result yields the same sequence as the source</b> — the
+    ///     only round-trip-safe reading of "map this collection", and the reason these were previously refused
+    ///     (DWARF027) rather than silently reversed. <c>Queue&lt;T&gt;</c> is FIFO, so
+    ///     <c>new Queue&lt;T&gt;(seq)</c> already enumerates in source order. <c>Stack&lt;T&gt;</c> is LIFO:
+    ///     <c>new Stack&lt;T&gt;(seq)</c> makes the LAST element the top, which would reverse the enumeration, so
+    ///     the input is reversed first — <c>List → Stack → List</c> then round-trips to the original.
+    ///     </para>
+    /// </summary>
+    private static void EmitStackQueue(
+        CodeWriter w, string name, string srcParamType, string elem,
+        string item, bool isStack, bool identity, bool nullAsNull, bool elemNeedsCtx)
+    {
+        var concrete = isStack ? "Stack" : "Queue";
+        var tgtFq = "global::System.Collections.Generic." + concrete + "<" + elem + ">";
+        var retFq = nullAsNull ? tgtFq + "?" : tgtFq;
+        var emptyExpr = nullAsNull ? "null" : "new " + tgtFq + "()";
+        var ctxParams = elemNeedsCtx ? CtxDepthParams : "";
+
+        using (w.Block("private " + retFq + " " + name + "(" + srcParamType + " src" + ctxParams + ")"))
+        {
+            w.Line("if (src is null) return " + emptyExpr + ";");
+
+            // Materialize the mapped elements in SOURCE enumeration order.
+            string seq;
+            if (identity && !elemNeedsCtx)
+            {
+                seq = "src";
+            }
+            else
+            {
+                w.Line("var __buf = new global::System.Collections.Generic.List<" + elem + ">();");
+                w.Line("foreach (var __item in src) { __buf.Add(" + item + "); }");
+                seq = "__buf";
+            }
+
+            // Stack pushes in order, so reverse the input to keep the result's top-first enumeration == source order.
+            var ctorArg = isStack ? "global::System.Linq.Enumerable.Reverse(" + seq + ")" : seq;
+            w.Line("return new " + tgtFq + "(" + ctorArg + ");");
+        }
     }
 
     // ─── Blit ─────────────────────────────────────────────────────────────────
@@ -681,23 +760,28 @@ internal static class CollectionConverter
         var elem = Fq(tgtElem);
         var srcE = Fq(srcElem);
         var srcFq = Fq(srcArrayType);
-        var name = "__DwarfBlit_" + Hash(srcFq + "=>" + elem + "[]");
+        var name = "__DwarfBlit_" + StableHash.Fnv1a(srcFq + "=>" + elem + "[]");
         if (synth.ContainsKey(name))
             return name;
-        var sb = new StringBuilder();
-        sb.Append("    private static ").Append(elem).Append("[] ").Append(name).Append('(').Append(srcFq)
-            .Append(" src)\n    {\n");
-        sb.Append("        if (src is null) return global::System.Array.Empty<").Append(elem).Append(">();\n");
-        sb.Append("        if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(srcE)
-            .Append(">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<").Append(elem).Append(">())\n");
-        sb.Append(
-            "            throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");\n");
-        sb.Append("        var __r = new ").Append(elem).Append("[src.Length];\n");
-        sb.Append("        global::System.Runtime.InteropServices.MemoryMarshal.Cast<").Append(srcE).Append(", ")
-            .Append(elem)
-            .Append(">(new global::System.ReadOnlySpan<").Append(srcE).Append(">(src)).CopyTo(__r);\n");
-        sb.Append("        return __r;\n    }\n");
-        synth[name] = new SynthesizedMethod(name, sb.ToString());
+        var w = new CodeWriter(1);
+        using (w.Block("private static " + elem + "[] " + name + "(" + srcFq + " src)"))
+        {
+            w.Line("if (src is null) return global::System.Array.Empty<" + elem + ">();");
+            w.Line("if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + srcE
+                   + ">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + elem + ">())");
+            using (w.Indent())
+            {
+                w.Line(
+                    "throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");");
+            }
+
+            w.Line("var __r = new " + elem + "[src.Length];");
+            w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem
+                   + ">(new global::System.ReadOnlySpan<" + srcE + ">(src)).CopyTo(__r);");
+            w.Line("return __r;");
+        }
+
+        synth[name] = new SynthesizedMethod(name, w.ToString());
         return name;
     }
 
@@ -725,30 +809,35 @@ internal static class CollectionConverter
         var dst = Fq(tgtElem);
         var srcE = Fq(srcElem);
         var srcFq = Fq(srcArrayType);
-        var name = "__DwarfWiden_" + Hash(srcFq + "=>" + dst + "[]");
+        var name = "__DwarfWiden_" + StableHash.Fnv1a(srcFq + "=>" + dst + "[]");
         if (synth.ContainsKey(name))
             return name;
 
-        var sb = new StringBuilder();
-        sb.Append("    private static ").Append(dst).Append("[] ").Append(name).Append('(').Append(srcFq)
-            .Append(" src)\n    {\n");
-        sb.Append("        if (src is null) return global::System.Array.Empty<").Append(dst).Append(">();\n");
-        sb.Append("        var __r = new ").Append(dst).Append("[src.Length];\n");
-        sb.Append("        int __i = 0;\n");
-        sb.Append("        if (global::System.Numerics.Vector.IsHardwareAccelerated)\n        {\n");
-        sb.Append("            int __w = global::System.Numerics.Vector<").Append(srcE).Append(">.Count;\n");
-        sb.Append("            int __half = global::System.Numerics.Vector<").Append(dst).Append(">.Count;\n");
-        sb.Append("            for (; __i + __w <= src.Length; __i += __w)\n            {\n");
-        sb.Append("                var __v = new global::System.Numerics.Vector<").Append(srcE)
-            .Append(">(src, __i);\n");
-        sb.Append("                global::System.Numerics.Vector.Widen(__v, out var __lo, out var __hi);\n");
-        sb.Append("                __lo.CopyTo(__r, __i);\n");
-        sb.Append("                __hi.CopyTo(__r, __i + __half);\n");
-        sb.Append("            }\n        }\n");
-        // Scalar tail (and full path when not hardware-accelerated): the implicit widening cast.
-        sb.Append("        for (; __i < src.Length; __i++) __r[__i] = src[__i];\n");
-        sb.Append("        return __r;\n    }\n");
-        synth[name] = new SynthesizedMethod(name, sb.ToString());
+        var w = new CodeWriter(1);
+        using (w.Block("private static " + dst + "[] " + name + "(" + srcFq + " src)"))
+        {
+            w.Line("if (src is null) return global::System.Array.Empty<" + dst + ">();");
+            w.Line("var __r = new " + dst + "[src.Length];");
+            w.Line("int __i = 0;");
+            using (w.Block("if (global::System.Numerics.Vector.IsHardwareAccelerated)"))
+            {
+                w.Line("int __w = global::System.Numerics.Vector<" + srcE + ">.Count;");
+                w.Line("int __half = global::System.Numerics.Vector<" + dst + ">.Count;");
+                using (w.Block("for (; __i + __w <= src.Length; __i += __w)"))
+                {
+                    w.Line("var __v = new global::System.Numerics.Vector<" + srcE + ">(src, __i);");
+                    w.Line("global::System.Numerics.Vector.Widen(__v, out var __lo, out var __hi);");
+                    w.Line("__lo.CopyTo(__r, __i);");
+                    w.Line("__hi.CopyTo(__r, __i + __half);");
+                }
+            }
+
+            // Scalar tail (and full path when not hardware-accelerated): the implicit widening cast.
+            w.Line("for (; __i < src.Length; __i++) __r[__i] = src[__i];");
+            w.Line("return __r;");
+        }
+
+        synth[name] = new SynthesizedMethod(name, w.ToString());
         return name;
     }
 
@@ -917,21 +1006,6 @@ internal static class CollectionConverter
         return stripped.ToDisplayString(NullableFullyQualifiedFormat) + "?";
     }
 
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
-    }
-
     // ─── Target kinds ─────────────────────────────────────────────────────────
     internal enum TargetKind
     {
@@ -939,6 +1013,8 @@ internal static class CollectionConverter
         Array, // T[]            — projection-translatable
         List, // List<T>        — projection-translatable
         HashSet, // HashSet<T>     — NOT translatable
+        Queue, // Queue<T>       — NOT translatable; FIFO, enumeration order = source order
+        Stack, // Stack<T>       — NOT translatable; LIFO, built reversed so enumeration order = source order
 
         // ── Interface → List<T> ──────────────────────────────────────
         IEnumerable, // IEnumerable<T> — projection-translatable (LAZY)

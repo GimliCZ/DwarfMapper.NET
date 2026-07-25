@@ -37,7 +37,7 @@ internal static class AmbientValidator
     {
         foreach (var a in compilation.Assembly.GetAttributes())
         {
-            if (a.AttributeClass?.ToDisplayString() != "DwarfMapper.DwarfMapperValidationRootAttribute") continue;
+            if (a.AttributeClass?.ToDisplayString() != KnownNames.ValidationRootFqn) continue;
 
             var autoValidate = false;
             foreach (var named in a.NamedArguments)
@@ -65,10 +65,10 @@ internal static class AmbientValidator
         foreach (var a in asm.GetAttributes())
             switch (a.AttributeClass?.ToDisplayString())
             {
-                case "DwarfMapper.DwarfProvidesMapAttribute":
+                case KnownNames.DwarfProvidesMapFqn:
                     if (ReadPair(a) is { } p) provided.Add(p);
                     break;
-                case "DwarfMapper.DwarfRequiresMapAttribute":
+                case KnownNames.DwarfRequiresMapFqn:
                     if (ReadPair(a) is { } r) required.Add(r);
                     break;
             }

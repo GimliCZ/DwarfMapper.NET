@@ -8,9 +8,7 @@ public class NullCollectionsAuditTests
 {
     private static void NoErrors(string src)
     {
-        var (diagnostics, _) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.CompilesClean(src);
     }
 
     // ─── A1: nullAsNull must propagate into nested element/key/value converters ──
@@ -104,7 +102,7 @@ public class NullCollectionsAuditTests
                          public partial class M { public partial Dst Map(Src a); }
                          """;
         // Must compile with zero errors (especially no CS8601 nullable mismatch)
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -136,7 +134,7 @@ public class NullCollectionsAuditTests
                          [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
                          public partial class M { public partial Dst Map(Src a); }
                          """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -151,7 +149,7 @@ public class NullCollectionsAuditTests
                          [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
                          public partial class M { public partial Dst Map(Src a); }
                          """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     [Fact]
@@ -166,7 +164,7 @@ public class NullCollectionsAuditTests
                          [DwarfMapper(NullCollections = NullCollectionStrategy.AsNull)]
                          public partial class M { public partial Dst Map(Src a); }
                          """;
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 
     // ─── A4: null guard must appear BEFORE allocation in EmitList/EmitHashSet ──

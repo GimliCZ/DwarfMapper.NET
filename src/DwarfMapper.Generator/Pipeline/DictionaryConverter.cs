@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
-using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
@@ -99,7 +98,7 @@ internal static class DictionaryConverter
                 break;
         }
 
-        var name = "__DwarfMapDict_" + Hash(Fq(srcType) + "=>" + retTypeFq + nullTag + preserveTag);
+        var name = GeneratedNames.Dictionary + StableHash.Fnv1a(Fq(srcType) + "=>" + retTypeFq + nullTag + preserveTag);
         if (synth.ContainsKey(name))
             return name;
 
@@ -113,46 +112,43 @@ internal static class DictionaryConverter
         var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
         var ctxParams = threadCtx ? CtxDepthParams : "";
 
-        var sb = new StringBuilder();
-        sb.Append("    private ").Append(retAnnot).Append(' ').Append(name)
-            .Append('(').Append(srcParam).Append(" src").Append(ctxParams).Append(")\n    {\n");
-
-        if (targetKind == DictTargetKind.ImmutableDictionary
-            || targetKind == DictTargetKind.IImmutableDictionary)
+        var w = new CodeWriter(1);
+        using (w.Block("private " + retAnnot + " " + name + "(" + srcParam + " src" + ctxParams + ")"))
         {
-            var emptyImm = nullAsNull
-                ? "null"
-                : "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">.Empty";
+            if (targetKind == DictTargetKind.ImmutableDictionary
+                || targetKind == DictTargetKind.IImmutableDictionary)
+            {
+                var emptyImm = nullAsNull
+                    ? "null"
+                    : "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">.Empty";
 
-            sb.Append("        if (src is null) return ").Append(emptyImm).Append(";\n");
-            // Build a List<KeyValuePair<K,V>>, then CreateRange.
-            var kvpFq = "global::System.Collections.Generic.KeyValuePair<" + keyFq + ", " + valFq + ">";
-            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(kvpFq)
-                .Append(">();\n");
-            sb.Append("        foreach (var __kv in src)\n");
-            sb.Append("        {\n");
-            sb.Append("            __buf.Add(new ").Append(kvpFq).Append('(').Append(keyExpr).Append(", ")
-                .Append(valExpr).Append("));\n");
-            sb.Append("        }\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableDictionary.CreateRange(__buf);\n");
-        }
-        else
-        {
-            var dictFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
-            sb.Append("        if (src is null) return ").Append(emptyDict).Append(";\n");
-            if (effectivePreserve)
-                sb.Append("        if (ctx.TryGetReference(src, out var __cc)) return (").Append(dictFq)
-                    .Append(")__cc;\n");
-            sb.Append("        var __r = new ").Append(dictFq).Append('(').Append(srcHasCount ? "src.Count" : "")
-                .Append(");\n");
-            if (effectivePreserve) sb.Append("        ctx.SetReference(src, __r);\n");
-            sb.Append("        foreach (var __kv in src) { __r[").Append(keyExpr).Append("] = ").Append(valExpr)
-                .Append("; }\n");
-            sb.Append("        return __r;\n");
+                w.Line("if (src is null) return " + emptyImm + ";");
+                // Build through ImmutableDictionary.CreateBuilder and assign by INDEXER — deliberately NOT
+                // CreateRange (audit ISSUE-005), matching the mutable path exactly. CreateRange THROWS on a
+                // duplicate key, so the two dictionary paths disagreed on the same input: when the key CONVERSION
+                // collapses two source keys onto one target key (enum->string by name, a case change, a narrowing),
+                // a mutable target silently kept the last value while an immutable target threw ArgumentException.
+                // Same mapping, same data, opposite outcome decided only by the destination type. Last-write-wins
+                // matches Dictionary's own indexer and the majority path. (Also drops the intermediate List<KVP>.)
+                w.Line("var __b = global::System.Collections.Immutable.ImmutableDictionary.CreateBuilder<"
+                       + keyFq + ", " + valFq + ">();");
+                w.Line("foreach (var __kv in src) { __b[" + keyExpr + "] = " + valExpr + "; }");
+                w.Line("return __b.ToImmutable();");
+            }
+            else
+            {
+                var dictFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
+                w.Line("if (src is null) return " + emptyDict + ";");
+                if (effectivePreserve)
+                    w.Line("if (ctx.TryGetReference(src, out var __cc)) return (" + dictFq + ")__cc;");
+                w.Line("var __r = new " + dictFq + "(" + (srcHasCount ? "src.Count" : "") + ");");
+                if (effectivePreserve) w.Line("ctx.SetReference(src, __r);");
+                w.Line("foreach (var __kv in src) { __r[" + keyExpr + "] = " + valExpr + "; }");
+                w.Line("return __r;");
+            }
         }
 
-        sb.Append("    }\n");
-        synth[name] = new SynthesizedMethod(name, sb.ToString());
+        synth[name] = new SynthesizedMethod(name, w.ToString());
         return name;
     }
 
@@ -182,39 +178,38 @@ internal static class DictionaryConverter
         var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyNeedsCtx);
         var valExpr = Expr("__kv.Value", valConverter, valNull, valNeedsCtx);
 
-        var sb = new StringBuilder();
-        sb.Append("    private ").Append(retAnnot).Append(' ').Append(existingName)
-            .Append('(').Append(srcParam).Append(" src").Append(CtxDepthParams).Append(")\n    {\n");
-
-        if (isImmutable)
+        var w = new CodeWriter(1);
+        using (w.Block("private " + retAnnot + " " + existingName + "(" + srcParam + " src" + CtxDepthParams + ")"))
         {
-            var emptyImm = nullAsNull
-                ? "null"
-                : "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">.Empty";
-            sb.Append("        if (src is null) return ").Append(emptyImm).Append(";\n");
-            var kvpFq = "global::System.Collections.Generic.KeyValuePair<" + keyFq + ", " + valFq + ">";
-            sb.Append("        var __buf = new global::System.Collections.Generic.List<").Append(kvpFq)
-                .Append(">();\n");
-            sb.Append("        foreach (var __kv in src)\n        {\n");
-            sb.Append("            __buf.Add(new ").Append(kvpFq).Append('(').Append(keyExpr).Append(", ")
-                .Append(valExpr).Append("));\n");
-            sb.Append("        }\n");
-            sb.Append("        return global::System.Collections.Immutable.ImmutableDictionary.CreateRange(__buf);\n");
-        }
-        else
-        {
-            var dictFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
-            var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
-            sb.Append("        if (src is null) return ").Append(emptyDict).Append(";\n");
-            sb.Append("        var __r = new ").Append(dictFq).Append('(').Append(srcHasCount ? "src.Count" : "")
-                .Append(");\n");
-            sb.Append("        foreach (var __kv in src) { __r[").Append(keyExpr).Append("] = ").Append(valExpr)
-                .Append("; }\n");
-            sb.Append("        return __r;\n");
+            if (isImmutable)
+            {
+                var emptyImm = nullAsNull
+                    ? "null"
+                    : "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">.Empty";
+                w.Line("if (src is null) return " + emptyImm + ";");
+                // Builder with INDEXER semantics, matching the mutable path exactly. CreateRange THROWS on a
+                // duplicate key, so the two dictionary paths disagreed on the same input: when the key CONVERSION
+                // collapses two source keys onto one target key (enum->string by name, a case change, a narrowing),
+                // a mutable target silently kept the last value while an immutable target threw ArgumentException.
+                // Same mapping, same data, opposite outcome decided only by the destination type. Last-write-wins
+                // matches Dictionary's own indexer and the majority path. (Also drops the intermediate List<KVP>.)
+                w.Line("var __b = global::System.Collections.Immutable.ImmutableDictionary.CreateBuilder<"
+                       + keyFq + ", " + valFq + ">();");
+                w.Line("foreach (var __kv in src) { __b[" + keyExpr + "] = " + valExpr + "; }");
+                w.Line("return __b.ToImmutable();");
+            }
+            else
+            {
+                var dictFq = "global::System.Collections.Generic.Dictionary<" + keyFq + ", " + valFq + ">";
+                var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
+                w.Line("if (src is null) return " + emptyDict + ";");
+                w.Line("var __r = new " + dictFq + "(" + (srcHasCount ? "src.Count" : "") + ");");
+                w.Line("foreach (var __kv in src) { __r[" + keyExpr + "] = " + valExpr + "; }");
+                w.Line("return __r;");
+            }
         }
 
-        sb.Append("    }\n");
-        synth[existingName] = new SynthesizedMethod(existingName, sb.ToString());
+        synth[existingName] = new SynthesizedMethod(existingName, w.ToString());
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -370,21 +365,6 @@ internal static class DictionaryConverter
     {
         var stripped = t.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
         return stripped.ToDisplayString(NullableFullyQualifiedFormat) + "?";
-    }
-
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
     }
 
     internal enum DictTargetKind

@@ -60,8 +60,29 @@ internal static class CombinatorialSchema
         ("global::System.DateTimeOffset", null),
         ("global::System.TimeSpan", null),
         ("Cmb_IntEnum", null), // enum : int
-        ("Cmb_LongEnum", null) // enum : long
+        ("Cmb_LongEnum", null), // enum : long
+
+        // A [Flags] enum. No schema had one, which is exactly why a by-name enum converter that THREW on every
+        // combined value (Read | Write — the ordinary case for a flags enum, and the DEFAULT strategy) sailed
+        // through the entire suite. A shape nothing generates is a shape nothing can test.
+        ("Cmb_FlagsEnum", null)
     ];
+
+    /// <summary>
+    /// Every generated cell is compiled in a NULLABLE-ANNOTATED context — what real consumers ship
+    /// (<c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c> is the default for new .NET projects, and this repo's own
+    /// Directory.Build.props sets it alongside TreatWarningsAsErrors).
+    /// <para>
+    /// Without this the whole combinatorial tier ran in the OBLIVIOUS world:
+    /// <see cref="GeneratorTestHarness" /> defaults to <c>NullableContextOptions.Disable</c>, so every
+    /// reference member came back with <c>NullableAnnotation.None</c> rather than Annotated/NotAnnotated.
+    /// That is not a cosmetic difference — the generator branches on the annotation
+    /// (<c>SourceMayBeNullRef</c>, the null-forgiving <c>!</c>, DWARF070), so the matrix was exercising code
+    /// paths that production never takes and skipping the ones it does. Nullability has THREE states and we
+    /// were only ever testing the third.
+    /// </para>
+    /// </summary>
+    private const string NullableDirective = "#nullable enable";
 
     // All shapes at depth ≤1 (the exhaustive tier)
     private static readonly string[] DepthOneShapes =
@@ -72,9 +93,41 @@ internal static class CombinatorialSchema
         "List",
         "IReadOnlyList",
         "HashSet",
+        "Queue",
+        "Stack",
         "ImmutableArray",
+
+        // The rest of the supported System.* collection surface. The combinatorial tier previously covered
+        // only a slice of it, so most supported targets were never crossed with the other axes (cycle mode,
+        // update-into, null strategy…). Coverage of a target in ONE tier is not coverage of it in all of them.
+        "IEnumerable",
+        "ICollection",
+        "IList",
+        "IReadOnlyCollection",
+        "ISet",
+        "IReadOnlySet",
+        "ImmutableList",
+        "IImmutableList",
+        "ImmutableHashSet",
+        "IImmutableSet",
+
         "DictStringKey", // Dictionary<string, B>
         "DictStringValue", // Dictionary<B, string>  (only valid for value-types as key)
+        "IDict", // IDictionary<string, B>
+        "IReadOnlyDict", // IReadOnlyDictionary<string, B>
+        "ImmutableDict", // ImmutableDictionary<string, B>
+        "IImmutableDict", // IImmutableDictionary<string, B>
+
+        "tuple", // (B, string) — ValueTuple was entirely absent from every schema
+        "generic_box", // CmbBox<B> — a USER generic type, not a BCL one
+        "nullable_ref", // string? — the nullable REFERENCE case (3-state NullableAnnotation)
+
+        // string? SOURCE -> string TARGET. Probably the single commonest real-world DTO mapping there is, and
+        // no schema had it: `nullable_ref` used string? on BOTH sides, so the nullability MISMATCH — the one
+        // shape that makes the compiler emit CS8601 out of the generated file — was never generated at all.
+        // This is the cell that DWARF070 exists for.
+        "nullable_ref_mismatch",
+
         "nested_object",
         "record_type",
         "polymorphic_dispatch" // [MapDerivedType] dispatch — Plan 22 coverage
@@ -180,6 +233,7 @@ internal static class CombinatorialSchema
         var sb = new StringBuilder();
         sb.AppendLine("// CombinatorialSchema auto-generated — do not edit");
         sb.AppendLine("// seed=" + seed.ToString(CultureInfo.InvariantCulture));
+        sb.AppendLine(NullableDirective);
         sb.AppendLine("using DwarfMapper;");
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
@@ -192,6 +246,9 @@ internal static class CombinatorialSchema
         // Shared enum declarations (always emitted so the type names resolve)
         sb.AppendLine("public enum Cmb_IntEnum  { A = 1, B = 2, C = 3 }");
         sb.AppendLine("public enum Cmb_LongEnum : long { A = 1, B = 2, C = 3 }");
+        // Powers of two, so combined values (A | B == 3) are legal and DISTINCT from any declared member.
+        sb.AppendLine(
+            "[global::System.Flags] public enum Cmb_FlagsEnum { None = 0, A = 1, B = 2, C = 4 }");
         sb.AppendLine();
 
         // Emit nested helper types if needed
@@ -210,6 +267,14 @@ internal static class CombinatorialSchema
         {
             sb.AppendLine("public record CmbRecord_" + EscapeType(srcElem) + "_Src(" + srcElem + " Val);");
             sb.AppendLine("public record CmbRecord_" + EscapeType(dstElem) + "_Dst(" + dstElem + " Val);");
+            sb.AppendLine();
+        }
+
+        if (shape == "generic_box")
+        {
+            // A USER-DEFINED generic. Every generic in every schema was a BCL type, so a user generic as a
+            // member type — a completely ordinary thing to write — was never exercised anywhere.
+            sb.AppendLine("public class CmbBox<T> { public T? Val { get; set; } }");
             sb.AppendLine();
         }
 
@@ -256,6 +321,7 @@ internal static class CombinatorialSchema
         sb.AppendLine("// CombinatorialSchema auto-generated — do not edit");
         sb.AppendLine("// seed=" + seed.ToString(CultureInfo.InvariantCulture));
         sb.AppendLine("// shape=polymorphic_dispatch");
+        sb.AppendLine(NullableDirective);
         sb.AppendLine("using DwarfMapper;");
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
@@ -265,6 +331,9 @@ internal static class CombinatorialSchema
         sb.AppendLine();
         sb.AppendLine("public enum Cmb_IntEnum  { A = 1, B = 2, C = 3 }");
         sb.AppendLine("public enum Cmb_LongEnum : long { A = 1, B = 2, C = 3 }");
+        // Powers of two, so combined values (A | B == 3) are legal and DISTINCT from any declared member.
+        sb.AppendLine(
+            "[global::System.Flags] public enum Cmb_FlagsEnum { None = 0, A = 1, B = 2, C = 4 }");
         sb.AppendLine();
 
         // Abstract base source/dto
@@ -309,9 +378,43 @@ internal static class CombinatorialSchema
             "List" => $"global::System.Collections.Generic.List<{elem}>",
             "IReadOnlyList" => $"global::System.Collections.Generic.IReadOnlyList<{elem}>",
             "HashSet" => $"global::System.Collections.Generic.HashSet<{elem}>",
+            "Queue" => $"global::System.Collections.Generic.Queue<{elem}>",
+            "Stack" => $"global::System.Collections.Generic.Stack<{elem}>",
             "ImmutableArray" => $"global::System.Collections.Immutable.ImmutableArray<{elem}>",
+
+            "IEnumerable" => $"global::System.Collections.Generic.IEnumerable<{elem}>",
+            "ICollection" => $"global::System.Collections.Generic.ICollection<{elem}>",
+            "IList" => $"global::System.Collections.Generic.IList<{elem}>",
+            "IReadOnlyCollection" => $"global::System.Collections.Generic.IReadOnlyCollection<{elem}>",
+            "ISet" => $"global::System.Collections.Generic.ISet<{elem}>",
+            "IReadOnlySet" => $"global::System.Collections.Generic.IReadOnlySet<{elem}>",
+            "ImmutableList" => $"global::System.Collections.Immutable.ImmutableList<{elem}>",
+            "IImmutableList" => $"global::System.Collections.Immutable.IImmutableList<{elem}>",
+            "ImmutableHashSet" => $"global::System.Collections.Immutable.ImmutableHashSet<{elem}>",
+            "IImmutableSet" => $"global::System.Collections.Immutable.IImmutableSet<{elem}>",
+
             "DictStringKey" => $"global::System.Collections.Generic.Dictionary<string, {elem}>",
             "DictStringValue" => $"global::System.Collections.Generic.Dictionary<{elem}, string>",
+            "IDict" => $"global::System.Collections.Generic.IDictionary<string, {elem}>",
+            "IReadOnlyDict" => $"global::System.Collections.Generic.IReadOnlyDictionary<string, {elem}>",
+            "ImmutableDict" => $"global::System.Collections.Immutable.ImmutableDictionary<string, {elem}>",
+            "IImmutableDict" => $"global::System.Collections.Immutable.IImmutableDictionary<string, {elem}>",
+
+            // ValueTuple: a structural type, not a named one — no schema generated it before.
+            "tuple" => $"({elem}, string)",
+
+            // A USER generic type. Every generic in the schemas was a BCL one, so a user-defined generic
+            // member was never exercised at all.
+            "generic_box" => $"CmbBox<{elem}>",
+
+            // The nullable REFERENCE case. NullableAnnotation has THREE states (Annotated / NotAnnotated /
+            // None-oblivious) and code that tests `== Annotated` silently drops the null guard on the third.
+            "nullable_ref" => "string?",
+
+            // The nullability MISMATCH: nullable on the source, non-nullable on the destination. The generated
+            // assignment would raise CS8601 in the consumer's build if the emitter did not suppress it, and
+            // DwarfMapper reports DWARF070 so the risk is not silent.
+            "nullable_ref_mismatch" => src ? "string?" : "string",
             "nested_object" => $"CmbNested_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
             "record_type" => $"CmbRecord_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
             "ListOfList" => $"global::System.Collections.Generic.List<global::System.Collections.Generic.List<{elem}>>",
@@ -338,7 +441,7 @@ internal static class CombinatorialSchema
                    : t is "bool" or "sbyte" or "byte" or "short" or "ushort"
                        or "int" or "uint" or "long" or "ulong" or "char"
                        or "float" or "double" or "decimal"
-                       or "Cmb_IntEnum" or "Cmb_LongEnum");
+                       or "Cmb_IntEnum" or "Cmb_LongEnum" or "Cmb_FlagsEnum");
     }
 
     private static bool IsValidDictKey(string t)
@@ -361,9 +464,23 @@ internal static class CombinatorialSchema
             .Replace(" ", "", StringComparison.Ordinal);
     }
 
+    /// <summary>The type arguments of a closed generic, verbatim (handles both 1-arg and K,V forms).</summary>
+    private static string TypeArgsOf(string type)
+    {
+        var lt = type.IndexOf('<', StringComparison.Ordinal);
+        var gt = type.LastIndexOf('>');
+        return lt >= 0 && gt > lt ? type.Substring(lt + 1, gt - lt - 1).Trim() : "object";
+    }
+
     private static string DefaultInit(string type)
     {
         if (type == "string") return " = \"\";";
+
+        // `string?` — a nullable REFERENCE. No initialiser: null is the whole point of the shape.
+        if (type.EndsWith('?')) return string.Empty;
+
+        // ValueTuple is a struct; default(...) is valid and needs no initialiser.
+        if (type.StartsWith('(')) return string.Empty;
         if (type.EndsWith("[]", StringComparison.Ordinal))
         {
             var elem = type[..^2];
@@ -389,22 +506,58 @@ internal static class CombinatorialSchema
 
         if (type.StartsWith("global::System.Collections.Generic.List<", StringComparison.Ordinal) ||
             type.StartsWith("global::System.Collections.Generic.HashSet<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.Queue<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.Stack<", StringComparison.Ordinal) ||
             type.StartsWith("global::System.Collections.Generic.Dictionary<", StringComparison.Ordinal))
             return " = new();";
         // Interface collection types: cannot use new() — use concrete List<T> or new()
-        // IReadOnlyList<T> → init with new System.Collections.Generic.List<T>()
-        if (type.StartsWith("global::System.Collections.Generic.IReadOnlyList<", StringComparison.Ordinal))
+        // Ordered collection interfaces → back with a concrete List<T>; set interfaces → HashSet<T>.
+        // (IReadOnlyList was the only one handled before, because it was the only one generated.)
+        if (type.StartsWith("global::System.Collections.Generic.IEnumerable<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.ICollection<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IList<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyCollection<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyList<", StringComparison.Ordinal))
         {
-            var lt = type.LastIndexOf('<');
-            var gt = type.LastIndexOf('>');
-            var elemT = lt >= 0 && gt > lt ? type.Substring(lt + 1, gt - lt - 1).Trim() : "object";
-            return " = new global::System.Collections.Generic.List<" + elemT + ">();";
+            var args = TypeArgsOf(type);
+            return " = new global::System.Collections.Generic.List<" + args + ">();";
         }
 
-        if (type.StartsWith("global::System.Collections.Immutable.ImmutableDictionary<", StringComparison.Ordinal) ||
-            type.StartsWith("global::System.Collections.Immutable.ImmutableList<", StringComparison.Ordinal) ||
-            type.StartsWith("global::System.Collections.Immutable.ImmutableHashSet<", StringComparison.Ordinal))
-            return " = new();";
+        if (type.StartsWith("global::System.Collections.Generic.ISet<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlySet<", StringComparison.Ordinal))
+        {
+            var args = TypeArgsOf(type);
+            return " = new global::System.Collections.Generic.HashSet<" + args + ">();";
+        }
+
+        if (type.StartsWith("global::System.Collections.Generic.IDictionary<", StringComparison.Ordinal) ||
+            type.StartsWith("global::System.Collections.Generic.IReadOnlyDictionary<", StringComparison.Ordinal))
+        {
+            var args = TypeArgsOf(type);
+            return " = new global::System.Collections.Generic.Dictionary<" + args + ">();";
+        }
+
+        // The immutable family has NO public constructor — `new()` would not compile. They expose a static
+        // Empty. (This block previously said `new()`, which was simply never exercised because none of these
+        // shapes were ever generated.) The INTERFACE forms have no Empty of their own, so they are backed by
+        // the corresponding concrete implementation.
+        if (type.StartsWith("global::System.Collections.Immutable.", StringComparison.Ordinal))
+        {
+            var open = type.IndexOf('<', StringComparison.Ordinal);
+            var name = type[..open];
+            var concrete = name switch
+            {
+                "global::System.Collections.Immutable.IImmutableList" =>
+                    "global::System.Collections.Immutable.ImmutableList",
+                "global::System.Collections.Immutable.IImmutableSet" =>
+                    "global::System.Collections.Immutable.ImmutableHashSet",
+                "global::System.Collections.Immutable.IImmutableDictionary" =>
+                    "global::System.Collections.Immutable.ImmutableDictionary",
+                _ => name,
+            };
+
+            return " = " + concrete + "<" + TypeArgsOf(type) + ">.Empty;";
+        }
         // Nested record types (have required ctor params) — cannot use new()
         if (type.StartsWith("CmbRecord_", StringComparison.Ordinal))
             return string.Empty; // will be set by the ctor; not initialized in class body

@@ -3,8 +3,13 @@
 namespace DwarfMapper;
 
 /// <summary>
-///     How a nullable <b>value-type</b> source mapped to a non-nullable destination is handled when null. (A nullable
-///     reference source is unaffected — it raw-assigns; guard with <c>SkipNullSourceMembers</c> or <c>NullSubstitute</c>.)
+///     How a nullable <b>value-type</b> source mapped to a non-nullable destination is handled when null.
+///     <para>
+///     A nullable <b>reference</b> source is unaffected — it raw-assigns. That is deliberate, but it is not
+///     silent: it reports <b>DWARF070</b>, so the null flowing into a non-nullable member is a build-time
+///     warning you can act on. Guard it with <c>SkipNullSourceMembers</c> or <c>NullSubstitute</c>, or make the
+///     destination member nullable.
+///     </para>
 /// </summary>
 public enum NullStrategy
 {

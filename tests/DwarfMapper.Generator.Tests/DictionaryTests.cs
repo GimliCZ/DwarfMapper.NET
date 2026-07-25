@@ -8,9 +8,7 @@ public class DictionaryTests
 {
     private static void NoErrors(string s)
     {
-        var (diagnostics, _) = GeneratorTestHarness.Run(s);
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.CompilesClean(s);
     }
 
     [Fact]

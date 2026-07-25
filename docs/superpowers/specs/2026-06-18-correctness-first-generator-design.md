@@ -9,15 +9,22 @@
 - **Phase B — DONE.** XML-doc mapping plan on every public generated method (`MapEmitter.EmitMappingPlanDoc`);
   55 snapshots updated (verified additive-only).
 - **Phase E — DONE.** `ReflectionFreeMetaTests` (E3), `docs/CORRECTNESS.md` (E1), COMPARISON/README framing (E2).
-- **Phase C — NOT STARTED (deliberate).** The `DwarfMapper.CodeFixes` package is a net-new netstandard2.0
-  project + `Microsoft.CodeAnalysis.*.Workspaces` dependency + analyzer-nupkg packaging wiring + a new
-  code-fix-testing harness. That is a restore-fragile, packaging-heavy lift whose failure mode is a broken
-  solution build. It deserves its own focused session rather than a rushed tail-end attempt that risks the
-  green build maintained through A/B/E. Recommended first slice when picked up: the `DWARF052` "insert the
-  missing [ReverseMap] inverse method" fix (highest delight, smallest surface), then `DWARF001`.
+- **Phase C — DONE** (status corrected 2026-07-23; this entry previously read "NOT STARTED (deliberate)" long
+  after the work had landed). The `DwarfMapper.CodeFixes` netstandard2.0 project exists and is in the solution,
+  with both recommended slices delivered **and** one more:
+  - `AddReverseMapInverseCodeFixProvider` — `DWARF052` (the recommended first slice),
+  - `AddMapIgnoreCodeFixProvider` — `DWARF001` (the recommended second),
+  - `ResolveExplicitOnlyMemberCodeFixProvider` — `DWARF072`.
+
+  Tests live in `tests/DwarfMapper.Generator.Tests/CodeFixes/`. The packaging risk anticipated here did not
+  materialise. Later hardening (audit ISSUE-028) moved the member-name recovery off diagnostic **message
+  parsing** onto the diagnostic **property bag** (`DiagnosticInfo.MemberName` → the `"Member"` property), so a
+  reworded or localised message no longer silently breaks a fix; `CodeFixes/DiagnosticPropertyContractTests.cs`
+  pins that contract.
 - **Phase D — INVESTIGATED, DEFERRED (with technical blocker).** Per-method extraction granularity was
   investigated against the real code. The blocker: `synthesized` (the shared synthesized-helper dictionary)
-  and `nestedRegistry` are created **once per class** (`MapperExtractor` lines 87/95) and threaded through
+  and `nestedRegistry` are created **once per class** (`MapperExtractor.cs:186` and `:198` as of 2026-07-23;
+  cited as lines 87/95 when written — the file has grown, the structure has not) and threaded through
   every method; synthesized nested mappers are **deduplicated across methods** (the dedup prevents `CS0111`
   duplicate-member errors), plus there's a cross-method synthesized post-pass, Preserve-mode re-synthesis,
   and the registry cap (`DWARF031`). So methods are **not independent units**. A per-method cache split would
@@ -29,7 +36,29 @@
   dedicated isolated effort (own worktree/branch) where intermediate build-breakage is contained, and would
   likely require first refactoring synthesized-helper ownership out of the per-class extraction.
 
-All landed work: full suite 2970 green, 0 warnings, nothing pushed.
+All landed work: full suite 2970 green, 0 warnings, nothing pushed. *(As of 2026-07-23: 5,561 green, 0 warnings,
+merged and pushed to `origin/master`. The 2970 figure is the count on the day this design was written.)*
+
+## Reconciliation note (2026-07-23)
+
+This design predates the four-part **generator maintainability programme**
+(`2026-07-22-generator-testing-framework-design.md`, `2026-07-22-shared-engine-core-design.md`, then the emission
+layer and the `MapperExtractor.cs` split). Two connections matter, and both were discovered *after* duplicating
+effort — read this section before starting either of the remaining sub-projects:
+
+- **Phase A ↔ sub-project 1.** `ModelCacheSafetyTests` already enforces "no `ISymbol`/`SyntaxNode`/`Compilation`/
+  `Location` in a pipeline model", **structurally** — by reflecting over declared types in
+  `DwarfMapper.Generator.Model`, recursing into element types, with an allow-list. Sub-project 1 later added
+  `GeneratorCacheAssert.NoSymbolsInPipeline`, which checks the same rule **dynamically** over runtime step
+  outputs. They are complementary, not redundant: the structural one fires the moment a bad field is *declared*
+  and has no depth bound; the dynamic one reaches the `.Combine()` tuple shapes (`.Item1.Item1[…]`) that live
+  outside the `Model` namespace, which is where a silent depth-truncation defect was actually found. Anyone
+  touching either should know the other exists.
+- **Phase D ↔ sub-project 4.** The per-method-extraction blocker documented above is the same obstacle
+  sub-project 4 (splitting `MapperExtractor.cs`) will meet: `synthesized` and `nestedRegistry` are class-scoped
+  with cross-method deduplication that prevents `CS0111`. Phase D's conclusion — that methods are **not**
+  independent units, and that helper ownership must be refactored out of per-class extraction first — is prior
+  art for that sub-project, not a separate concern.
 
 ## Goal & framing
 

@@ -23,9 +23,7 @@ public class NestedAutoMapEdgeTests
                            public class Dst { public SInner Inner { get; set; } }
                            [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Value-type target → guard throws (no uncompilable `return null!`).
         Assert.Contains("InvalidOperationException", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("return null!", generated, StringComparison.Ordinal);
@@ -81,9 +79,7 @@ public class NestedAutoMapEdgeTests
                            public class BDto { public int Id { get; set; } public ADto? A { get; set; } }
                            [DwarfMapper] public partial class M { public partial ADto Map(A a); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         // Both directions synthesized exactly once each (memoized).
         Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
     }
@@ -100,9 +96,7 @@ public class NestedAutoMapEdgeTests
                            public class Dst { public Box<long> B { get; set; } = new(); }
                            [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
                            """;
-        var (diags, generated) = GeneratorTestHarness.Run(src);
-        Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
     }
 }

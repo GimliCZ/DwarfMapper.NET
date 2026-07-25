@@ -212,6 +212,6 @@ public sealed class FacadeExtensionsGeneratorTests
         // The facade class is public, but THIS extension stays internal because OrderView is internal (a public
         // extension over an internal type would be CS0051).
         Assert.Contains("internal static global::Demo.OrderView ToOrderView", facade, StringComparison.Ordinal);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(s));
+        GeneratorAssert.EmitsCompilableCode(s);
     }
 }

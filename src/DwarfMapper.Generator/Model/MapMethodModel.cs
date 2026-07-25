@@ -139,6 +139,15 @@ public sealed record MapMethodModel(
     /// </summary>
     bool IsAsyncStreamMap = false,
     /// <summary>
+    /// For an <see cref="IsAsyncStreamMap"/> method, the name of a user-declared
+    /// <c>CancellationToken</c> parameter, or null when none was declared. The generated half must match the
+    /// user's partial signature exactly, so the token can only exist if the user asked for it; when present the
+    /// emitted parameter carries <c>[EnumeratorCancellation]</c> and the loop threads it through
+    /// <c>WithCancellation</c>, which is the only way cancellation can reach a consumer's
+    /// <c>await foreach</c>.
+    /// </summary>
+    string? AsyncCancellationParam = null,
+    /// <summary>
     /// Additional source-like parameters declared after the source (e.g. <c>Dto Map(Entity e, string
     /// tenant)</c>), each pre-formatted as <c>"global::Type name"</c> for direct signature emission. They
     /// are matched to destination members by name (precedence: explicit &gt; extra parameter &gt; by-name

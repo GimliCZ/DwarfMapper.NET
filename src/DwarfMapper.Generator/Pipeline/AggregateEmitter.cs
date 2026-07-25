@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Text;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 
 namespace DwarfMapper.Generator.Pipeline;
@@ -38,9 +39,7 @@ internal static class AggregateEmitter
         {
             if (!model.GenerateExtensions || !model.HasParameterlessCtor) continue;
 
-            var mapperFullName = "global::" + (string.IsNullOrEmpty(model.Namespace)
-                ? model.ClassName
-                : model.Namespace + "." + model.ClassName);
+            var mapperFullName = model.FullyQualifiedName;
 
             foreach (var method in model.Methods)
             {
@@ -124,8 +123,7 @@ internal static class AggregateEmitter
     public static string? EmitServiceCollection(IReadOnlyList<MapperClassModel> models, string assemblyNamespace)
     {
         var mapperTypes = models
-            .Select(m =>
-                "global::" + (string.IsNullOrEmpty(m.Namespace) ? m.ClassName : m.Namespace + "." + m.ClassName))
+            .Select(m => m.FullyQualifiedName)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToList();
@@ -188,9 +186,7 @@ internal static class AggregateEmitter
                 .ToList();
             if (eligible.Count == 0) continue;
 
-            var mapperFullName = "global::" + (string.IsNullOrEmpty(model.Namespace)
-                ? model.ClassName
-                : model.Namespace + "." + model.ClassName);
+            var mapperFullName = model.FullyQualifiedName;
 
             if (!model.HasParameterlessCtor)
             {
@@ -254,14 +250,31 @@ internal static class AggregateEmitter
     }
 
     /// <summary>
-    ///     A map is placed in the ambient registry iff it is an eligible plain <c>T Map(S)</c> entry whose source
-    ///     AND destination are effectively public (internal types have no cross-assembly meaning). Shared by the
-    ///     registration emitter and <see cref="CollectProvidedPairs" /> so the emitted <c>Provides</c> manifest and
-    ///     the root-validation view never drift.
+    ///     A map is placed in the ambient registry iff it is a public entry that maps ONE source value to a
+    ///     RETURNED value — so it can be boxed through the registry's <c>Func&lt;object,object&gt;</c> and called as
+    ///     <c>Map&lt;TDest&gt;(src)</c>. This deliberately covers the FULL breadth the internal mapper supports as a
+    ///     single <c>TDest Map(TSource)</c> shape: plain object maps, top-level collection/dictionary conversions,
+    ///     nested generics, and async-stream (<c>IAsyncEnumerable</c>) maps. Both source and destination must be
+    ///     effectively public (incl. generic type arguments — internal types cannot be named cross-assembly).
+    ///     <para>
+    ///         Excluded by nature: IQueryable projections (expression trees, not runtime delegates); update-into
+    ///         (two parameters; mutates an existing instance); span maps (<c>Span&lt;T&gt;</c> is a ref struct and
+    ///         cannot be boxed); derived-type dispatch and extra-parameter maps (no single (source)-&gt;(dest)
+    ///         shape).
+    ///     </para>
+    ///     Shared by the registration emitter and <see cref="CollectProvidedPairs" /> so the emitted <c>Provides</c>
+    ///     manifest and the root-validation view never drift.
     /// </summary>
     private static bool IsAmbientRegisterable(MapMethodModel m)
     {
-        return IsEligible(m) && m.ParameterIsPublicType && m.ReturnIsPublicType;
+        if (!(m.IsPartial || m.EmitAsNonPartial)) return false;
+        if (m.Accessibility != "public" && m.Accessibility != "internal") return false;
+        if (m.IsProjection || m.IsUpdateInto || m.IsSpanMap) return false;
+        // An async-stream map that declares a CancellationToken takes two arguments, so it cannot be invoked by
+        // the single-argument `Map(src)` shape this aggregate emits (nor registered as a Func<object, object>).
+        if (m.AsyncCancellationParam is not null) return false;
+        if (m.DerivedTypeArms.Count > 0 || m.ExtraParameters.Count > 0) return false;
+        return m.ParameterIsPublicType && m.ReturnIsPublicType;
     }
 
     /// <summary>
@@ -336,7 +349,12 @@ internal static class AggregateEmitter
         var s = mapperFullName.StartsWith("global::", StringComparison.Ordinal)
             ? mapperFullName.Substring("global::".Length)
             : mapperFullName;
-        return "__" + s.Replace('.', '_');
+        // ISSUE-007: '.' -> '_' is not injective, so two DISTINCT mapper types can collapse onto one field
+        // name (A.B_C.M and A.B.C.M both give __A_B_C_M) and the aggregate would declare the field twice ->
+        // CS0102 out of generated code. Both call sites dedupe by exact FQN, so only a genuine collision of
+        // different names can reach here. A hash of the ORIGINAL name disambiguates while staying stable
+        // across processes (a GetHashCode would not be).
+        return "__" + s.Replace('.', '_') + "_" + StableHash.Fnv1a(s);
     }
 
     /// <summary>One candidate convenience extension: <c>{ExtName}(this {Source}) => {Mapper}.{Method}(...)</c>.</summary>

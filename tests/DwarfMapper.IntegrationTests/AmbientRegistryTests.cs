@@ -35,6 +35,38 @@ public sealed class AmbientRegistryTests
         Assert.Equal(12, byBoth.V);
     }
 
+    // ISSUE-026 — Map<TSource, TDestination> documents itself as using the STATIC source type, but its body was
+    // byte-identical to Map<TDestination>: it resolved through the runtime GetType() + base walk, so TSource was
+    // ignored entirely. With BOTH a base and a derived registration present, passing a derived instance as
+    // Map<Base, Dto> must honour the static type the caller asked for.
+    [Fact]
+    public void Facade_Map_with_TSource_uses_the_static_source_type_not_the_runtime_one()
+    {
+        DwarfMapperRegistry.Register(typeof(Base9), typeof(D9), s => new D9 { Tag = "base:" + ((Base9)s).V });
+        DwarfMapperRegistry.Register(typeof(Derived9), typeof(D9), s => new D9 { Tag = "derived:" + ((Derived9)s).V });
+
+        var mapper = DwarfMapperFacade.Instance;
+        Base9 instance = new Derived9 { V = 3 };
+
+        // Static type Base9 → the Base9 map, even though the runtime type is Derived9.
+        Assert.Equal("base:3", mapper.Map<Base9, D9>(instance).Tag);
+
+        // The runtime-typed overload still dispatches on the most-derived registration.
+        Assert.Equal("derived:3", mapper.Map<D9>(instance).Tag);
+    }
+
+    private class Base9
+    {
+        public int V { get; set; }
+    }
+
+    private sealed class Derived9 : Base9;
+
+    private sealed class D9
+    {
+        public string Tag { get; set; } = "";
+    }
+
     [Fact]
     public void Map_resolves_derived_instance_via_base_registration()
     {

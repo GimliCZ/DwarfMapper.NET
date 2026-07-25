@@ -5,8 +5,8 @@ using Microsoft.CodeAnalysis;
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-///     ImplicitConversions policy (DWARF038): non-lossless basic-type conversions (narrowing, parse/format,
-///     cross-category numeric) surface as an Info SUGGESTION by default, or a build ERROR when
+///     ImplicitConversions policy (DWARF038): lossy basic-type conversions (narrowing, parse/format,
+///     cross-category numeric) surface as a Warning by default (item 8), or a build ERROR when
 ///     [DwarfMapper(ImplicitConversions = false)]. Lossless same-category widening and identity are silent.
 /// </summary>
 public class ConversionPolicyGeneratorTests
@@ -17,7 +17,27 @@ public class ConversionPolicyGeneratorTests
     }
 
     [Fact]
-    public void Narrowing_in_permissive_mode_is_an_Info_suggestion_and_still_compiles()
+    public void Parse_format_conversion_warns_and_names_the_runtime_exceptions()
+    {
+        // Item 15: a string -> int parse conversion can throw at runtime; the message must say so.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class S { public string Score { get; set; } = ""; }
+            public class D { public int Score { get; set; } }
+            [DwarfMapper] public partial class M { public partial D Map(S s); }
+            """;
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        var d = D038(diags);
+        Assert.NotNull(d);
+        Assert.Equal(DiagnosticSeverity.Warning, d!.Severity); // lossy → Warning (item 8)
+        var msg = d.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("FormatException", msg, System.StringComparison.Ordinal);
+        Assert.Contains("OverflowException", msg, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Narrowing_in_permissive_mode_is_a_Warning_and_still_compiles()
     {
         const string src = """
                            using DwarfMapper;
@@ -29,9 +49,10 @@ public class ConversionPolicyGeneratorTests
         var (diags, _) = GeneratorTestHarness.Run(src);
         var d = D038(diags);
         Assert.NotNull(d);
-        Assert.Equal(DiagnosticSeverity.Info, d!.Severity);
+        // Item 8: a lossy (narrowing) implicit conversion is a Warning (data-losing behaviour), not a mere Info.
+        Assert.Equal(DiagnosticSeverity.Warning, d!.Severity);
         Assert.DoesNotContain(diags, x => x.Severity == DiagnosticSeverity.Error);
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src)); // still maps (CreateChecked)
+        GeneratorAssert.EmitsCompilableCode(src); // still maps (CreateChecked)
     }
 
     [Fact]
@@ -97,6 +118,6 @@ public class ConversionPolicyGeneratorTests
                            """;
         var (diags, _) = GeneratorTestHarness.Run(src);
         Assert.Null(D038(diags)); // explicit conversion → no DWARF038, even in strict mode
-        Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+        GeneratorAssert.EmitsCompilableCode(src);
     }
 }

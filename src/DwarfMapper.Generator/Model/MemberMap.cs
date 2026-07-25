@@ -61,4 +61,36 @@ public sealed record MemberMap(
     /// members (AutoMapper's <c>ForAllMembers(o =&gt; o.Condition((_,_,src) =&gt; src != null))</c>).
     /// Mutually exclusive with <see cref="WhenPredicate"/>.
     /// </summary>
-    bool SkipIfSourceNull = false) : IEquatable<MemberMap>;
+    bool SkipIfSourceNull = false,
+    /// <summary>
+    /// When <c>true</c>, a nullable-annotated REFERENCE source is being raw-assigned to a non-nullable
+    /// reference target (the documented <see cref="DwarfMapper.NullStrategy"/> contract: it governs nullable
+    /// VALUE types only). The assignment is intentional, but it makes the C# compiler emit CS8601 from inside
+    /// the generated file — an unfixable warning for a consumer with TreatWarningsAsErrors, in code they cannot
+    /// edit. The emitter therefore appends the null-forgiving <c>!</c> to silence CS8601, and DwarfMapper
+    /// reports DWARF070 against the user's own DTO instead: same signal, but actionable and suppressible.
+    /// Set only for the direct-assign path (no converter, no null-handling, no NullSubstitute) and cleared
+    /// when <see cref="SkipIfSourceNull"/> already guards the null.
+    /// </summary>
+    bool NullRefIntoNonNullable = false,
+    /// <summary>
+    /// When non-null, this is an <b>update-into key-based upsert</b> of a <c>List&lt;T&gt;</c> member (set by
+    /// <c>[MapCollectionKey]</c>): the emitter merges the source list into the existing one by this key member
+    /// rather than replacing it — matched keys update the slot, new keys are added, unmatched existing elements
+    /// are kept. <see cref="UpsertKeyMember"/> is the element-type key member; <see cref="UpsertKeyTypeFqn"/>
+    /// its type (for the index dictionary). v1: element type identical on both sides.
+    /// </summary>
+    string? UpsertKeyMember = null,
+    string? UpsertKeyTypeFqn = null,
+    /// <summary>
+    /// When <c>true</c>, <see cref="ConverterMethod"/> is a user-declared map/converter method whose parameter
+    /// is a NON-nullable reference type, and <see cref="SourceIsNullableRef"/> is true — i.e. a possibly-null
+    /// source is being passed into a converter that cannot accept null. The emitter must null-forgive the
+    /// argument (<c>Conv(s.X!)</c>) so the call compiles (else CS8604), exactly as it already does for
+    /// synthesized nested mappers via <c>IsSynthesized</c>. A genuine null then throws loudly inside the
+    /// callee's own <c>ArgumentNullException.ThrowIfNull</c> rather than being smuggled in. Distinguished from a
+    /// null-TOLERANT user converter (one declared with a nullable parameter), which does NOT set this and so is
+    /// never forgiven — dropping a null it was written to accept. Set only for the user-declared converter path;
+    /// synthesized helpers keep flowing through <c>IsSynthesized</c>.
+    /// </summary>
+    bool ConverterParamIsNonNullableRef = false) : IEquatable<MemberMap>;

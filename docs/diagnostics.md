@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF063`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF074`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -29,21 +29,49 @@ dotnet_diagnostic.DWARF044.severity = none    # I accept the nullable-path risk 
 The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR06` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
 
+### Adopting incrementally (the strictness valve)
+
+DwarfMapper is strict by default so that a mapping decision you didn't make is a build-time signal, not a
+runtime surprise. When retrofitting it onto an existing codebase you can dial that strictness up or down, per
+rule, without giving up the guarantees you *do* want:
+
+1. **Loosen the noise, keep the guarantees.** Turn opt-in *suggestions* off where they don't fit
+   (`dotnet_diagnostic.DWARF039.severity = none`), while the correctness rules (`DWARF001`, conversions,
+   depth guard) stay on. `DWARF001` is enforced *by construction* — you cannot accidentally ship an incomplete
+   map even if you silence its id.
+2. **One-click resolutions.** The common completeness diagnostics carry code fixes: `DWARF001` → *Add
+   [MapIgnore]*, `DWARF072` → *Map it* / *Ignore it*, `DWARF052` → *scaffold the inverse*. Adopt member by
+   member from the IDE lightbulb rather than hand-editing attributes.
+3. **Tighten as you go.** Escalate a suggestion to a build error once a module is clean
+   (`dotnet_diagnostic.DWARF038.severity = error` for strict, Mapperly-style conversions;
+   `[DwarfMapper(RequiredMapping = Both)]` to also flag unused source members), or reach for the
+   trust-boundary guard (`AutoMatchMembers = false`) on the maps that cross one.
+4. **Migrating from another mapper?** Start from the matching guide under
+   [`howto/`](howto/) (AutoMapper / Mapperly / Mapster / handwritten) — each maps that library's knobs onto
+   these.
+
+Every diagnostic below documents its own fix; this table is just the order to apply them in.
+
 ---
 
 ## Registry diagnostics (`[MapTo]`)
 
 The `[MapTo]` registry front door (attribute-on-the-source, no mapper class) has its own `DWARFR##` codes,
-category `DwarfMapper.Registry`, distinct from the `[DwarfMapper]` class-model `DWARF###` codes below:
+category `DwarfMapper.Registry`, distinct from the `[DwarfMapper]` class-model `DWARF###` codes below. **`[MapTo]`
+is a prototype/experimental tier**: its diagnostics are deliberately not release-tracked and are exempt from the
+DWARF0xx self-validation scans that the rest of this reference is held to.
 
 | Code | Meaning & fix |
 |---|---|
 | `DWARFR01` | **Invalid `[MapTo]` target** — the target type isn't a mappable class/struct. |
-| `DWARFR02` | **Destination member is not mapped** — the registry's completeness gate (the `[MapTo]` counterpart of `DWARF001`). Add a source member, a `[MapProperty]` binding, or drop it. |
-| `DWARFR03` | **Conflicting sources for one destination member** — more than one source claims it; give them distinct positional `[MapProperty]` names. |
-| `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. |
+| `DWARFR02` | **Destination member is not mapped** — the registry's completeness gate (the `[MapTo]` counterpart of `DWARF001`). Add a source member, a `[MapProperty]` binding, or drop it. Member enumeration now walks the base-type chain exactly as the `[DwarfMapper]` class model does, so this gate also covers **inherited destination members** — a base-class member that was never mapped before now trips `DWARFR02`. Because `DWARFR02` is Error severity, this can turn a project that built yesterday into a build failure today. **Fix:** supply the inherited member (a source member, a `[MapProperty]` binding) or `[MapIgnore]` it. |
+| `DWARFR03` | **Conflicting sources for one destination member** — more than one source claims it; give them distinct positional `[MapProperty]` names. Inherited members now participate too: a member the source class picks up from a base class can conflict with one declared directly, and a derived member renamed onto a name its base also supplies is now a conflict where it previously wasn't. |
+| `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. `[MapProperty]` on a base class is now read for every derived `[MapTo]` source, not just the class that declares it — so a base annotated for a 2-target derived type can emit `DWARFR04` on a 1-target sibling derived type that inherits the same attribute. |
 | `DWARFR05` | **No conversion between mapped members** — the member types are incompatible; use the `[DwarfMapper]` class model for a custom `Use=` converter. |
 | `DWARFR06` | **Recursive nested mapping is not supported by the registry** — the front door threads no reference context; use the `[DwarfMapper]` class model (`ReferenceHandling`/`OnCycle`) for cyclic graphs. |
+| `DWARFR08` | **Two `[MapTo]` targets generate the same method name** — targets whose *simple* names collide (`Foo.Order` and `Bar.Order`) would each emit `ToOrder(this Src)` into one static class (CS0111). Rename a target, or use the `[DwarfMapper]` class model where every method is named explicitly. |
+| `DWARFR09` | **`[MapTo]` target has no accessible parameterless constructor** — the registry constructs targets with `new T { … }`. Add a public parameterless constructor, or use the `[DwarfMapper]` class model, which supports constructor mapping. |
+| `DWARFR07` | **Lossy implicit numeric conversion** (Info) — the conversion is implicit in C# but crosses numeric categories (`long`→`double`, `int`→`float`, `long`→`decimal`) and loses precision for large magnitudes. The `[DwarfMapper]` class model reports the same thing as `DWARF038`; map through an explicit member type if the precision matters. |
 
 ---
 
@@ -191,7 +219,12 @@ map to a different type.
 **Unsupported collection/dictionary target type** · Error
 
 The collection/dictionary target type isn't supported. **Fix:** use a supported target (`T[]`, `List<T>`,
-`HashSet<T>`, `Dictionary<K,V>`), supply `[MapProperty(Use = ...)]`, or map it manually.
+`HashSet<T>`, `Queue<T>`, `Stack<T>`, `Dictionary<K,V>`, the collection interfaces, and the immutable family),
+supply `[MapProperty(Use = ...)]`, or map it manually.
+
+> `Queue<T>` and `Stack<T>` map with their enumeration order preserved (mapping a sequence keeps the sequence).
+> `Queue<T>` is FIFO so this is natural; `Stack<T>` is LIFO, so the source is reversed on construction — which
+> means `List → Stack → List` round-trips to the original order, rather than silently reversing.
 
 ## dwarf028
 **Projection member cannot be translated to a database query** · Error
@@ -258,11 +291,18 @@ specific type wins).
 you wanted cycle-breaking.
 
 ## dwarf038
-**Implicit type conversion applied** · Info (escalates to Error)
+**Implicit type conversion applied** · Warning for lossy conversions, Info otherwise (escalates to Error)
 
-A non-lossless conversion (narrowing, parse/format, cross-category numeric) is being applied. It's visible, not
-silent. **Fix (optional):** make it explicit with `[MapProperty(Use = nameof(...))]`. Set
-`[DwarfMapper(ImplicitConversions = false)]` to turn all such conversions into build errors.
+A non-lossless conversion is being applied. It's visible, not silent. **Lossy** sub-cases — numeric
+narrowing/sign-change, parse/format (`string ↔ T`, which can throw `FormatException` / `OverflowException` at
+runtime), and cross-category numeric (precision loss) — are **Warnings**. A user-defined explicit conversion
+operator stays **Info** (you defined it deliberately). **Fix (optional):** make it explicit with
+`[MapProperty(Use = nameof(...))]`. Set `[DwarfMapper(ImplicitConversions = false)]` to turn all such
+conversions into build errors. To silence a specific instance, downgrade in `.editorconfig`:
+`dotnet_diagnostic.DWARF038.severity = suggestion` (a `-warnaserror` build treats the Warning as an error
+until downgraded). A conversion on a nested/collection element may be reported without a file location; for a
+blanket downgrade across a project use `<WarningsNotAsErrors>DWARF038</WarningsNotAsErrors>` (keep the warning,
+don't fail the build) or `<NoWarn>DWARF038</NoWarn>` (suppress) in the `.csproj`.
 
 ## dwarf039
 **Source member is read by no destination member** · Info
@@ -295,10 +335,13 @@ A dotted source path has a segment that doesn't resolve. **Fix:** correct the pa
 dots, so each segment must be a real member.
 
 ## dwarf044
-**[MapProperty] source path traverses a nullable member** · Info
+**[MapProperty] source path traverses a nullable member** · Warning
 
-A dotted source path passes through a nullable member, which can throw `NullReferenceException` at runtime.
-**Fix (optional):** guard the value, or suppress with `.editorconfig` if you know it's non-null here.
+A dotted source path passes through a nullable member, which can throw `NullReferenceException` at runtime — a
+data-integrity hazard, so it is a **Warning** (item 8), consistent with the other runtime-throwing diagnostics.
+**Fix (optional):** guard the value, or downgrade in `.editorconfig` if you know it's non-null here:
+`dotnet_diagnostic.DWARF044.severity = suggestion` (or `none`). A `-warnaserror` build treats the Warning as an
+error until downgraded.
 
 ## dwarf045
 **Invalid [MapProperty] unflatten target path** · Error
@@ -439,6 +482,210 @@ concrete mapper directly, or give it a parameterless constructor. (Informational
 Two assemblies in the graph both provide an ambient map for the same `(source, destination)`. The registry
 keeps the first registration and ignores the rest. **Fix:** ensure the duplication is intentional, or remove
 all but one definition. Reported at the validation root.
+
+## dwarf064
+**[MapValue] shadows an auto-matchable source member** · Info
+
+A `[MapValue]` supplies a constant/provider for a target that *also* has a same-named readable source member,
+so the real source value is never read — usually a leftover stub from before the source member existed. **Fix:**
+remove the `[MapValue]` to map the source member, or `[MapIgnoreSource("{member}")]` if the shadow is intended.
+
+## dwarf065
+**Update-into replaces a nested member instead of merging it** · Info
+
+An update-into `Map(S src, T dest)` maps a nested object member by replacing `dest`'s existing instance with a
+freshly-mapped one (its identity discarded), not by deep-merging into it. **Fix:** map the leaf members directly
+if you need to preserve the nested instance, or accept the replacement. (Collections are always rebuilt.)
+
+## dwarf066
+**[MapProperty(When=)] can leave a non-nullable member at its default** · Info
+
+A `[MapProperty(When=)]` guards a non-nullable reference target: when the predicate is false the member is not
+assigned and keeps its default (which for a non-nullable reference is `null`). **Fix:** give the member a default
+initializer, make it nullable, or confirm the unset default is intended.
+
+## dwarf067
+**[GenerateWrapperMap] wrapper is not a single-payload generic** · Error
+
+`[GenerateWrapperMap(typeof(W<>))]` requires `W` to be a generic type with exactly one type parameter and exactly
+one member of that parameter's type (a `List<T>` payload is not a single non-collection payload). **Fix:** point
+the attribute at a single-payload envelope (`Result<T>`/`Page<T>`/`Envelope<T>`), or declare the wrapper pairs
+explicitly with `[GenerateMap<W<A>, W<B>>]`.
+
+## dwarf068
+**Unsupported MapConfig expression** · Error
+
+A `MapConfig<S,T>` convention method's fluent call uses a selector that isn't a member-access chain (e.g. a
+method call like `s => Identity(s.A)`), or a converter/factory/predicate argument that isn't a method group (e.g.
+an inline lambda `v => v`). **Fix:** extract a named method (a method group), or use a plain member selector
+(`t => t.A.B`).
+
+## dwarf069
+**Conflicting member configuration** · Error
+
+The same destination member is configured more than once — by both an attribute (`[MapProperty<,>]`/
+`[MapValue<>]`) and a `MapConfig<S,T>` `.Map`/`.Value` call, or twice within the same `MapConfig<S,T>` method.
+**Fix:** remove one of the two configurations for that member.
+
+---
+
+## dwarf070
+**Nullable source member is assigned to a non-nullable target member** · Warning
+
+The source member is a nullable reference (`string?`) but the destination member is not (`string`), so a null
+would be stored in a member whose type says it cannot be null. `NullStrategy` does **not** cover this: it
+governs nullable *value* types (`int?`) only, and a nullable *reference* source raw-assigns by design.
+
+Left alone, that raw assignment also made the **compiler** emit `CS8601` ("possible null reference assignment")
+from inside the *generated* file — a warning you cannot fix, in code you cannot edit, and a hard build break
+under `TreatWarningsAsErrors`. DwarfMapper now suppresses that `CS8601` and reports this instead, against your
+own DTO, where you can act on it.
+
+**Fix** — pick the one that matches your intent:
+
+| You want | Use |
+|---|---|
+| a fallback value when the source is null | `[MapProperty(nameof(Src.Name), nameof(Dst.Name), NullSubstitute = "(none)")]` |
+| the destination to keep its own default | `[DwarfMapper(SkipNullSourceMembers = true)]` |
+| null to be a legal value here | make the destination member nullable (`string?`) |
+| to accept the null knowingly | `dotnet_diagnostic.DWARF070.severity = none` |
+
+Only fires for a genuinely annotated source (`string?`) flowing into an annotated non-nullable target. Code in
+a `#nullable disable` context is *oblivious*, the compiler raises no `CS8601` there, and neither does this — a
+legacy codebase is not flooded with warnings about a contract it never opted into.
+
+---
+
+## dwarf071
+**Source type has derived types whose members would be dropped** · Info
+
+The source member is declared as a concrete class that something else in your compilation *derives from*. A
+mapper resolves members at **compile time from the declared type**, so if that member holds a derived instance
+at run time, the members declared only on the derived type are dropped — silently, with no error:
+
+```csharp
+public class Animal { public string Name { get; set; } = ""; }
+public sealed class Dog : Animal { public string Breed { get; set; } = ""; }
+
+public class Kennel { public Animal Pet { get; set; } = new(); }   // may actually hold a Dog
+// -> the mapper copies Name and drops Breed.
+```
+
+This is the one place where being a compile-time mapper is a genuine disadvantage against a reflective one,
+which can dispatch on the runtime type. So DwarfMapper does the next best thing: it tells you.
+
+**Fix** — pick the one that matches your intent:
+
+| You want | Use |
+|---|---|
+| dispatch on the runtime type | `[MapDerivedType<Dog, DogDto>]` on the mapping method |
+| the declared type to be the only type | `sealed` on the source class |
+| base members only — that *is* the intent | `dotnet_diagnostic.DWARF071.severity = none` |
+
+Related: **`DWARF033`** is the same hazard when the source is *abstract or an interface*. That one is an
+**Error**, not an Info, and the difference is principled — an abstract source is *necessarily* a derived
+instance at run time, so the drop is certain, whereas a concrete base may genuinely hold exactly the base type.
+
+Deliberately quiet: it does not fire for a `sealed` source, nor for a non-sealed class that nothing in the
+compilation actually derives from.
+
+---
+
+## dwarf072
+**Member has a source match but auto-matching is disabled** · Error
+
+The mapper is declared `[DwarfMapper(AutoMatchMembers = false)]` (explicit-only), and this destination member
+has a **same-named source member** — so it *would* have auto-wired, but the mode refuses to do it silently.
+
+This is the **trust-boundary / anti-over-posting guard**. By-name auto-matching is how mass assignment
+([OWASP API6](https://owasp.org/API-Security/editions/2019/en/0xa6-mass-assignment/)) happens: an
+attacker-controlled field (`IsAdmin`, `Balance`, `Id`) that lines up by name with a protected entity member is
+copied with no diagnostic — and `DWARF001` never catches it, because the field *is* mapped. Turning
+auto-matching off makes every such wire an explicit, reviewable decision.
+
+```csharp
+[DwarfMapper(AutoMatchMembers = false)]        // explicit-only: nothing auto-wires
+[MapIgnore("IsAdmin")]                          // protected — never assigned
+public partial class AccountUpdateMapper
+{
+    [MapProperty(nameof(Input.DisplayName), nameof(Account.DisplayName))]  // allowed
+    public partial Account Map(Input input);
+}
+```
+
+**Fix** — for each member the mapper reports:
+
+| You want | Use |
+|---|---|
+| this field to be mapped | `[MapProperty(nameof(Src.X), nameof(Dst.X))]` |
+| this field to be a fixed/computed value | `[MapValue(nameof(Dst.X), …)]` |
+| this field left alone (protected) | `[MapIgnore("X")]` |
+
+Related: `DWARF001` is the *other* completeness case — a destination member that has **no** source at all.
+`DWARF072` is specifically "a source exists, but I won't auto-wire it here." Constructor parameters,
+`[Flatten]`, and additional mapping parameters still resolve in explicit-only mode — they are already explicit
+or structurally required; only the implicit by-name matching of settable members is disabled. See
+[`SECURITY.md`](SECURITY.md#over-posting--mass-assignment-guidance-consumer-responsibility).
+
+---
+
+## dwarf073
+**`[MapProperty(StringFormat=)]` is not applicable here** · Error
+
+A `StringFormat` was given where it cannot apply. It formats a value into a string —
+`source.ToString(format, InvariantCulture)` — so it is valid **only** when the destination member is `string`
+and the source implements `System.IFormattable` (`int`, `decimal`, `DateTime`, `Guid`, `TimeSpan`, …), and
+**not** alongside `Use=` (the converter already produces the value).
+
+```csharp
+[MapProperty(nameof(Src.When), nameof(Dst.When), StringFormat = "yyyy-MM-dd")]   // DateTime -> string ✓
+[MapProperty(nameof(Src.Amount), nameof(Dst.Amount), StringFormat = "F2")]        // decimal  -> string ✓
+```
+
+The provider is always `InvariantCulture`, by design — the formatted output must be stable across deployments
+and threads, not shift with the ambient culture (see [`SECURITY.md`](SECURITY.md), the culture-footgun row).
+**Fix:** map to a `string` member, drop `Use=`, or remove the `StringFormat`.
+
+---
+
+## dwarf074
+**`[MapCollectionKey]` cannot be applied here** · Error
+
+`[MapCollectionKey("Member", "Key")]` merges an update-into collection member by key instead of replacing it,
+but the v1 upsert has a defined scope and refuses anything outside it rather than silently replacing:
+
+- the method must be **update-into** (`void Map(TSource, TTarget)`);
+- the named member must be a **`List<T>`** on both source and destination;
+- the element type must be the **same** on both sides (the common Entity↔Entity update);
+- the key must be a **readable member** of the element type.
+
+```csharp
+[MapCollectionKey(nameof(Order.Lines), nameof(OrderLine.Id))]
+public partial void Merge(OrderUpdate src, Order dst);   // dst.Lines merged by Id, not replaced
+```
+
+Merged in place: an element whose key matches an existing one updates that slot, a new key is added, and
+existing elements the update didn't mention are kept — so the list instance and its untouched elements survive
+(contrast `DWARF065`, whole-collection replacement). **Fix:** meet the scope above, or drop the attribute to
+accept whole-collection replacement.
+
+---
+
+## dwarf075
+**`[FlattenGraph]` leaf member was not flattened** · Warning
+
+A graph node carried a **data-bearing complex leaf** — a nested object, collection, or dictionary member such as
+`List<string> Tags` or `Money Price` — that could not be flattened, so the destination member is left at its
+default. This is reported only under `ReferenceHandling = Preserve`: there, the helper synthesized for such a
+leaf may later be force-marked recursion-capable (three parameters) while the flat-node helper calls it with
+one, so emitting the call would not compile. Outside Preserve the leaf **is** flattened normally.
+
+Note this is different from **edge** members (the navigation properties named in `[FlattenGraph(...)]`), which
+are deliberately set to `null` — that topology degradation is the whole point of flattening a graph. A *data*
+leaf going missing is not, which is why it is now said out loud instead of silently dropped.
+
+**Fix:** map the member explicitly (e.g. a `[MapProperty]` binding or a manual assignment in an `AfterMap` hook),
+or use `ReferenceHandling = None` for this mapper if the graph does not need reference preservation.
 
 ---
 

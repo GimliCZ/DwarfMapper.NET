@@ -49,7 +49,7 @@ DWARF040 | DwarfMapper | Error | Constant [MapValue] is not assignable to the de
 DWARF041 | DwarfMapper | Error | [MapValue(Use=)] provider method is invalid
 DWARF042 | DwarfMapper | Error | Conflicting or invalid [MapValue]
 DWARF043 | DwarfMapper | Error | [MapProperty] source path segment not found
-DWARF044 | DwarfMapper | Info | [MapProperty] source path traverses a nullable member
+DWARF044 | DwarfMapper | Warning | [MapProperty] source path traverses a nullable member
 DWARF045 | DwarfMapper | Error | Invalid [MapProperty] unflatten target path
 DWARF046 | DwarfMapper | Error | Conflicting [MapProperty] unflatten target
 DWARF047 | DwarfMapper | Info | Additional mapping parameter is unused
@@ -69,3 +69,15 @@ DWARF060 | DwarfMapper | Error | Conflicting map methods from the same source ty
 DWARF061 | DwarfMapper | Error | Required ambient map is not provided
 DWARF062 | DwarfMapper | Info | Mapper not added to the ambient registry
 DWARF063 | DwarfMapper | Warning | Ambiguous ambient map provider
+DWARF064 | DwarfMapper | Info | [MapValue] shadows an auto-matchable source member
+DWARF065 | DwarfMapper | Info | Update-into replaces a nested member instead of merging it
+DWARF066 | DwarfMapper | Info | [MapProperty(When=)] can leave a non-nullable member at its default
+DWARF067 | DwarfMapper | Error | [GenerateWrapperMap] wrapper is not a single-payload generic
+DWARF068 | DwarfMapper | Error | MapConfigUnsupportedExpression
+DWARF069 | DwarfMapper | Error | MapConfigConflict
+DWARF070 | DwarfMapper | Warning | Nullable source member is assigned to a non-nullable target member
+DWARF071 | DwarfMapper | Info | Source type has derived types whose members would be dropped
+DWARF072 | DwarfMapper | Error | Member has a source match but auto-matching is disabled (explicit-only)
+DWARF073 | DwarfMapper | Error | [MapProperty(StringFormat=)] is not applicable here
+DWARF074 | DwarfMapper | Error | [MapCollectionKey] cannot be applied here
+DWARF075 | DwarfMapper | Warning | [FlattenGraph] leaf member was not flattened

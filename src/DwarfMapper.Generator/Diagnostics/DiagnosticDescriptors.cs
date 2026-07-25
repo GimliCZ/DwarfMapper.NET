@@ -316,13 +316,15 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Error, true,
         helpLinkUri: HelpBase + "dwarf043");
 
-    // Info: a nullable reference on the interior of a source path can throw NullReferenceException at
-    // runtime when dereferenced. Suppress via dotnet_diagnostic.DWARF044.severity = none in .editorconfig.
+    // Warning (item 8): a nullable reference on the interior of a source path can throw
+    // NullReferenceException at runtime when dereferenced — a data-integrity hazard, so it is a Warning
+    // (consistent with the other runtime-throwing diagnostics), not a mere suggestion. Downgrade via
+    // dotnet_diagnostic.DWARF044.severity = suggestion (or none) in .editorconfig if intentional.
     public static readonly DiagnosticDescriptor PathNullableHop = new(
         "DWARF044",
         "[MapProperty] source path traverses a nullable member",
         "{0}",
-        Category, DiagnosticSeverity.Info, true,
+        Category, DiagnosticSeverity.Warning, true,
         helpLinkUri: HelpBase + "dwarf044");
 
     public static readonly DiagnosticDescriptor UnflattenInvalid = new(
@@ -492,4 +494,170 @@ public static class DiagnosticDescriptors
         "More than one assembly provides an ambient map '{0}' -> '{1}'. The ambient registry keeps the first registration and ignores the others; ensure the duplicate definitions are intentional, or remove all but one.",
         Category, DiagnosticSeverity.Warning, true,
         helpLinkUri: HelpBase + "dwarf063");
+
+    // Item 12: a [MapValue] supplies a constant/provider for a target that ALSO has a same-name readable
+    // source member. The constant silently shadows the real source data — typically a leftover stub from
+    // before the source member existed. Info (suppressible); only emitted when the shadow actually exists.
+    public static readonly DiagnosticDescriptor MapValueShadowsSource = new(
+        "DWARF064",
+        "[MapValue] shadows an auto-matchable source member",
+        "[MapValue] for '{0}' overrides the same-named source member '{0}', so the real source value is never read. Remove the [MapValue] to map the source member, or [MapIgnoreSource(\"{0}\")] if the shadow is intentional.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf064");
+
+    // Item 13: an update-into Map(S src, T dest) maps a nested reference member by REPLACING it with a
+    // freshly-mapped instance, not by recursively updating dest's existing instance. Callers expecting a
+    // deep merge (identity of the nested object preserved) are warned. Info (suppressible).
+    public static readonly DiagnosticDescriptor UpdateIntoNestedReplaced = new(
+        "DWARF065",
+        "Update-into replaces a nested member instead of merging it",
+        "Update-into maps nested member '{0}' by replacing it with a new instance; the destination's existing '{0}' object (and its identity) is discarded, not deep-merged. Map the leaf members directly, or accept the replacement.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf065");
+
+    // Item 14: a [MapProperty(When=)] guards a NON-nullable target member. When the predicate is false the
+    // member keeps its (possibly type-default) value, which for a non-nullable reference can be a latent
+    // null. Restricted to non-nullable targets; Info (suppressible) to limit false positives.
+    public static readonly DiagnosticDescriptor WhenLeavesNonNullableDefault = new(
+        "DWARF066",
+        "[MapProperty(When=)] can leave a non-nullable member at its default",
+        "[MapProperty(When=)] guards non-nullable target member '{0}': when the predicate is false the member is not assigned and keeps its default (a non-nullable reference default is null). Give the member a default initializer, make it nullable, or confirm the unset default is intended.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf066");
+
+    // Item 20: [GenerateWrapperMap(typeof(W<>))] requires a single-payload generic wrapper — a generic type
+    // with exactly one type parameter and exactly one member of that parameter's type. A wrapper that is not
+    // generic (arity != 1) or has zero / multiple payload members (e.g. a List<T> payload, which is not a
+    // single non-collection payload) cannot be expanded; the attribute is skipped. Error (the opt-in is unusable).
+    public static readonly DiagnosticDescriptor WrapperMapInvalid = new(
+        "DWARF067",
+        "[GenerateWrapperMap] wrapper is not a single-payload generic",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf067");
+
+    public static readonly DiagnosticDescriptor MapConfigUnsupportedExpression = new(
+        id: "DWARF068",
+        title: "Unsupported MapConfig expression",
+        // Single placeholder (mirrors DWARF067's WrapperMapInvalid) — DiagnosticInfo carries one MessageArg,
+        // so the op-name and offending-expression text are combined by the caller into one formatted string.
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf068");
+
+    public static readonly DiagnosticDescriptor MapConfigConflict = new(
+        id: "DWARF069",
+        title: "Conflicting member configuration",
+        // Single placeholder (mirrors DWARF068's MapConfigUnsupportedExpression) — DiagnosticInfo carries one
+        // MessageArg, so the caller builds the whole formatted string (member/type/reason all inline).
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf069");
+
+    // A nullable-annotated REFERENCE source assigned to a non-nullable reference target. Per NullStrategy's
+    // documented contract this raw-assigns (NullStrategy governs nullable VALUE types only), so a null lands
+    // in a member whose type says it cannot be null. Two things were wrong with staying quiet about it:
+    //
+    //   * it is silent — the whole point of DwarfMapper is that a mapping decision the user did not make is a
+    //     build-time diagnostic, not a runtime surprise; and
+    //   * it was not even silent in practice: the raw assignment made the COMPILER emit CS8601 ("possible null
+    //     reference assignment") from inside the generated file. A consumer with TreatWarningsAsErrors got a
+    //     build break they could not fix, in code they cannot edit, with no mention of DwarfMapper.
+    //
+    // So the emitter now suppresses that CS8601 (the raw-assign is intentional) and DwarfMapper says it in its
+    // own voice instead: actionable, pointing at the user's own DTO, and suppressible per-rule.
+    //
+    // Fires ONLY for Annotated -> NotAnnotated, exactly when CS8601 would. An oblivious (None) annotation on
+    // either side means the user opted out of nullable analysis (#nullable disable), and the compiler stays
+    // quiet there too — so we do as well, rather than flooding legacy code with warnings.
+    // The polymorphic silent drop, concrete-base-class edition.
+    //
+    // DWARF033 already refuses an ABSTRACT or INTERFACE auto-nest source, on the grounds that it "silently
+    // drops members that exist only on derived runtime types". A CONCRETE base class carries exactly the same
+    // risk — a `Animal Pet` member can hold a `Dog` at run time, and the mapper, which can only see the
+    // declared type, copies the Animal members and drops Breed — but it is perfectly instantiable, so it sails
+    // straight through the DWARF033 gate. The caller gets a plausible object quietly missing data: precisely
+    // the failure the "never silent" premise exists to prevent, and the one place where being a compile-time
+    // mapper is a real disadvantage against a reflective one (which can dispatch on the runtime type).
+    //
+    // Info, not Error, and the distinction is principled: an abstract source is NECESSARILY a derived instance
+    // at run time, so the drop is certain; a concrete base MAY genuinely hold exactly the base type, so this is
+    // a risk rather than a defect, and mapping base-only is often exactly what the author intends. Per the
+    // severity table that is an Info — "surfaces a footgun without forcing a change".
+    //
+    // Fires only when a derived type is actually present IN THE COMPILATION and no [MapDerivedType] arm covers
+    // the pair; a non-sealed class nobody derives from raises nothing.
+    public static readonly DiagnosticDescriptor PolymorphicSourceMayDropMembers = new(
+        "DWARF071",
+        "Source type has derived types whose members would be dropped",
+        "Source member type '{0}' has derived types in this compilation. A mapper resolves members at compile "
+        + "time from the DECLARED type, so if this member holds a derived instance at run time, the members "
+        + "declared only on that derived type are dropped — silently, with no error. Add [MapDerivedType<TFrom, "
+        + "TTo>] to dispatch on the runtime type, seal the source type, or accept that only the base members "
+        + "are mapped.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf071");
+
+    // Trust-boundary / anti-over-posting guard. Under [DwarfMapper(AutoMatchMembers = false)] a destination
+    // member has a same-named SOURCE member — it WOULD have auto-wired — but auto-matching is off, so the
+    // generator refuses to wire it silently. This is the mass-assignment surface (OWASP API6) made visible:
+    // by-name auto-matching is exactly how an attacker-controlled `IsAdmin` reaches a protected entity field,
+    // and DWARF001 does NOT catch it because the field IS mapped. Distinct from DWARF001 (no source at all):
+    // here a source EXISTS and the message tells the developer to make the over-post an explicit decision.
+    // Error — it is the completeness gate applied at the trust boundary; the safe path (do nothing) leaves the
+    // member unmapped and forces a visible [MapProperty]/[MapIgnore] choice.
+    // [MapProperty(StringFormat = "...")] used where it cannot apply: the destination is not string, the source
+    // is not IFormattable, or a Use= converter is also present (the converter already owns the transform).
+    // [MapCollectionKey] used where the v1 key-based upsert cannot apply: not an update-into method, the named
+    // member is not a List<T>, the element type differs between source and target, or the key member is not
+    // found on the element type. Loud rather than silently falling back to whole-collection replacement.
+    // [FlattenGraph] could not flatten a data-bearing complex leaf (a nested object, collection or dictionary
+    // member of a graph node). Only reachable under ReferenceHandling = Preserve, where the synthesized helper
+    // for such a leaf may later be force-marked recursion-capable (3-param) and would then be called with one
+    // argument from the flat-node helper. Outside Preserve the leaf IS flattened. Loud rather than leaving the
+    // DTO member silently at its default — dropping data without a word is exactly what this library forbids.
+    public static readonly DiagnosticDescriptor FlattenGraphLeafNotFlattened = new(
+        "DWARF075",
+        "[FlattenGraph] leaf member was not flattened",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf075");
+
+    public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
+        "DWARF074",
+        "[MapCollectionKey] cannot be applied here",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf074");
+
+    public static readonly DiagnosticDescriptor StringFormatInvalid = new(
+        "DWARF073",
+        "[MapProperty(StringFormat=)] is not applicable here",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf073");
+
+    public static readonly DiagnosticDescriptor AutoMatchDisabled = new(
+        "DWARF072",
+        "Member has a source match but auto-matching is disabled",
+        "Destination member '{0}' has a same-named source member, but this mapper is explicit-only "
+        + "([DwarfMapper(AutoMatchMembers = false)]) so nothing is auto-wired across the trust boundary. Map it "
+        + "deliberately with [MapProperty] or skip it with [MapIgnore]. This is what stops an untrusted "
+        + "same-named field (e.g. IsAdmin) from silently over-posting onto a protected member.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf072");
+
+    public static readonly DiagnosticDescriptor NullableRefSourceToNonNullableTarget = new(
+        "DWARF070",
+        "Nullable source member is assigned to a non-nullable target member",
+        "Source member '{0}' is a nullable reference but the destination member is non-nullable, so a null "
+        + "would be stored in a member whose type forbids it. Fix it in one of: [MapProperty(NullSubstitute = …)] "
+        + "for a fallback value, [DwarfMapper(SkipNullSourceMembers = true)] to keep the destination default, "
+        + "or make the destination member nullable.",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf070");
 }

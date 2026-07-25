@@ -2,6 +2,7 @@
 
 using System.Collections;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 
 namespace DwarfMapper.Testing;
@@ -60,6 +61,32 @@ public static class ObjectFactory
         if (type.IsEnum)
         {
             var values = Enum.GetValues(type);
+            if (values.Length == 0) return Activator.CreateInstance(type);
+
+            // A [Flags] enum's whole point is that COMBINED values (Read | Write) are legal — and picking a
+            // single declared member, as this did, can never produce one. So the fuzzers only ever fed enums
+            // values that happened to have a name, and a by-name converter that threw on every combination
+            // looked perfectly healthy. Build a real combination instead.
+            if (type.IsDefined(typeof(FlagsAttribute), false))
+            {
+                var picks = rng.Next(1, Math.Min(values.Length, 4) + 1);
+
+                // Accumulate in the enum's own underlying type: an unsigned enum can hold values above
+                // long.MaxValue, which Convert.ToInt64 would throw on.
+                if (Enum.GetUnderlyingType(type) == typeof(ulong))
+                {
+                    ulong acc = 0;
+                    for (var i = 0; i < picks; i++)
+                        acc |= Convert.ToUInt64(values.GetValue(rng.Next(values.Length)), CultureInfo.InvariantCulture);
+                    return Enum.ToObject(type, acc);
+                }
+
+                long signed = 0;
+                for (var i = 0; i < picks; i++)
+                    signed |= Convert.ToInt64(values.GetValue(rng.Next(values.Length)), CultureInfo.InvariantCulture);
+                return Enum.ToObject(type, signed);
+            }
+
             return values.GetValue(rng.Next(values.Length));
         }
 
@@ -81,11 +108,85 @@ public static class ObjectFactory
             return list;
         }
 
+        // Sets and the collection INTERFACES.
+        //
+        // Without this, two whole families of member were never actually exercised by the fuzzers:
+        //   * HashSet<T>/ISet<T> fell through to the parameterless-ctor path below, and since a set exposes no
+        //     settable properties it was populated with nothing — every set in every fuzz run was EMPTY.
+        //   * every interface-typed collection (IEnumerable<T>, ICollection<T>, IList<T>, IReadOnlyList<T>,
+        //     IReadOnlyCollection<T>) hit the `IsInterface -> null` bail-out below and was silently NULL.
+        // So the generated "covers every supported linkage" space quietly excluded them. That is how an
+        // IEnumerable<T>-target aliasing bug survived a fuzz + matrix suite: the shape was never populated.
+        if (type.IsGenericType)
+        {
+            var def = type.GetGenericTypeDefinition();
+            var elementType = type.GetGenericArguments()[0];
+            var n = depth >= MaxDepth ? 0 : rng.Next(1, 4);
+
+            if (def == typeof(IEnumerable<>) || def == typeof(ICollection<>) || def == typeof(IList<>) ||
+                def == typeof(IReadOnlyCollection<>) || def == typeof(IReadOnlyList<>))
+            {
+                var backing = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elementType))!;
+                for (var i = 0; i < n; i++) backing.Add(Create(elementType, rng, depth + 1));
+                return backing;
+            }
+
+            if (def == typeof(HashSet<>) || def == typeof(ISet<>) || def == typeof(IReadOnlySet<>))
+            {
+                var setType = typeof(HashSet<>).MakeGenericType(elementType);
+                var set = Activator.CreateInstance(setType)!;
+                var add = setType.GetMethod("Add", new[] { elementType })!;
+                for (var i = 0; i < n; i++) add.Invoke(set, new[] { Create(elementType, rng, depth + 1) });
+                return set;
+            }
+
+            // Dictionaries had the same defect as sets: a Dictionary<K,V> member reached the
+            // parameterless-ctor path and, exposing no settable properties, came back EMPTY — so the whole
+            // DictionaryConverter was being fuzzed against zero entries. The interface forms were NULL.
+            if (type.GetGenericArguments().Length == 2 &&
+                (def == typeof(Dictionary<,>) || def == typeof(IDictionary<,>) ||
+                 def == typeof(IReadOnlyDictionary<,>)))
+            {
+                var keyType = type.GetGenericArguments()[0];
+                var valueType = type.GetGenericArguments()[1];
+                var dictType = typeof(Dictionary<,>).MakeGenericType(keyType, valueType);
+                var dict = (IDictionary)Activator.CreateInstance(dictType)!;
+                for (var i = 0; i < n; i++)
+                {
+                    var key = Create(keyType, rng, depth + 1);
+                    if (key is null || dict.Contains(key)) continue; // keys must be unique and non-null
+                    dict[key] = Create(valueType, rng, depth + 1);
+                }
+
+                return dict;
+            }
+        }
+
         if (type.IsInterface || type.IsAbstract || depth >= MaxDepth)
             return type.IsValueType ? Activator.CreateInstance(type) : null;
 
         var ctor = type.GetConstructor(Type.EmptyTypes);
-        if (ctor is null) return type.IsValueType ? Activator.CreateInstance(type) : null;
+        if (ctor is null)
+        {
+            // No parameterless constructor. Before, this simply returned null — which meant every POSITIONAL
+            // RECORD and every ctor-only DTO was silently null in every fuzz run, so the constructor-mapping
+            // path was never exercised by the value oracles at all. Construct it properly instead: take the
+            // ctor with the fewest parameters and generate an argument for each.
+            var candidate = type
+                .GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+                .OrderBy(c => c.GetParameters().Length)
+                .FirstOrDefault();
+
+            if (candidate is null)
+                return type.IsValueType ? Activator.CreateInstance(type) : null;
+
+            var parameters = candidate.GetParameters();
+            var args = new object?[parameters.Length];
+            for (var i = 0; i < parameters.Length; i++)
+                args[i] = Create(parameters[i].ParameterType, rng, depth + 1);
+
+            return candidate.Invoke(args);
+        }
 
         var instance = ctor.Invoke(null);
         foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))

@@ -138,7 +138,7 @@ public class FeatureCombinationFuzzTests
         {
             // A valid combination — must compile clean with no error diagnostic.
             Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
-            Assert.Empty(GeneratorTestHarness.RunAndGetCompilationErrors(src));
+            GeneratorAssert.EmitsCompilableCode(src);
         }
     }
 

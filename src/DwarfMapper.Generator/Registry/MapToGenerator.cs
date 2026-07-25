@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Globalization;
-using System.Text;
 using DwarfMapper.Generator.Collections;
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;
@@ -22,6 +21,16 @@ namespace DwarfMapper.Generator.Registry;
 [Generator(LanguageNames.CSharp)]
 public sealed class MapToGenerator : IIncrementalGenerator
 {
+    /// <summary>
+    ///     Tracking name for the extraction step. Without one the step is anonymous, so a test cannot address
+    ///     this pipeline at all — which is why DwarfGenerator had six incremental-caching tests and this
+    ///     generator had none. Its model could stop being value-equatable and nothing would notice.
+    /// </summary>
+    internal const string ExtractStepName = "MapToExtract";
+
+    /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
+    internal static readonly string[] AllStepNames = { ExtractStepName };
+
     private const string MapToAttr = "DwarfMapper.MapToAttribute";
     private const string MapPropAttr = "DwarfMapper.MapPropertyAttribute";
     private const string MapIgnoreAttr = "DwarfMapper.MapIgnoreAttribute";
@@ -30,9 +39,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var models = context.SyntaxProvider.ForAttributeWithMetadataName(
-            MapToAttr,
-            static (node, _) => node is TypeDeclarationSyntax,
-            static (ctx, _) => Extract(ctx));
+                MapToAttr,
+                static (node, _) => node is TypeDeclarationSyntax,
+                static (ctx, _) => Extract(ctx))
+            .WithTrackingName(ExtractStepName);
 
         context.RegisterSourceOutput(models, static (spc, model) =>
         {
@@ -40,7 +50,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             if (model.HasError || model.Targets.Count == 0) return;
 
-            spc.AddSource($"{model.ExtClassName}.g.cs", Emit(model));
+            spc.AddNormalizedSource($"{model.ExtClassName}.g.cs", Emit(model));
         });
     }
 
@@ -67,7 +77,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
         // Per-member directives in source order; each aligns positionally to a [MapTo] target.
         var members = new List<(ISymbol Sym, ITypeSymbol Type, List<(bool Ignore, string? Name)> Directives)>();
-        foreach (var (srcSym, srcType) in ReadableMembers(source))
+        foreach (var (srcSym, _, srcType) in MemberFacts.Readable(source))
         {
             var directives = ParseDirectives(srcSym);
             if (directives.Count > 1 && targetCount > 0 && directives.Count != targetCount)
@@ -92,8 +102,16 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 continue;
             }
 
+            if (!HasParameterlessCtor(target))
+            {
+                diags.Add(new DiagnosticInfo(RegistryDiagnostics.NoParameterlessConstructor, location,
+                    target.ToDisplayString()));
+                hasError = true;
+                continue;
+            }
+
             var targetFqn = target.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var writables = WritableMembers(target).ToList();
+            var writables = MemberFacts.Writable(target).ToList();
 
             // destName -> chosen source member (resolved per target, independently).
             var chosen = new Dictionary<string, (ISymbol Sym, ITypeSymbol Type)>();
@@ -155,6 +173,17 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 new EquatableArray<Assignment>(assignments.ToArray())));
         }
 
+        // Two targets with the same SIMPLE name (Foo.Order + Bar.Order) both yield `ToOrder(this Src)` in one
+        // static class → CS0111 out of generated code. Say so instead.
+        foreach (var dup in plans.GroupBy(p => p.MethodName, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        {
+            diags.Add(new DiagnosticInfo(RegistryDiagnostics.DuplicateTargetMethodName, location,
+                $"[MapTo] targets {string.Join(", ", dup.Select(p => p.TargetFqn))} share a simple name, so each "
+                + $"would generate '{dup.Key}(this …)' — rename one target, or use the [DwarfMapper] class model "
+                + "where every method is named explicitly"));
+            hasError = true;
+        }
+
         var ns = source.ContainingNamespace is { IsGlobalNamespace: false } n ? n.ToDisplayString() : null;
         var helpers = resolver.Synth.Values.OrderBy(h => h.Name, StringComparer.Ordinal).ToArray();
         // Public extension class when the source and every target are effectively public, so callers in
@@ -188,6 +217,18 @@ public sealed class MapToGenerator : IIncrementalGenerator
                && !target.IsAbstract;
     }
 
+    /// <summary>
+    ///     The registry emits <c>new T { … }</c>, so the target needs an accessible parameterless constructor.
+    ///     A struct always has one. Reported as DWARFR09 rather than left to CS1729, which is what a ctor-only
+    ///     target produced before: it has no writable members either, so the completeness gate never fired.
+    /// </summary>
+    private static bool HasParameterlessCtor(INamedTypeSymbol target)
+    {
+        return target.TypeKind == TypeKind.Struct
+               || target.InstanceConstructors.Any(c =>
+                   c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+    }
+
     private static bool IsObjectType(INamedTypeSymbol t)
     {
         return (t.TypeKind == TypeKind.Class || t.TypeKind == TypeKind.Struct)
@@ -197,48 +238,37 @@ public sealed class MapToGenerator : IIncrementalGenerator
                    i.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T);
     }
 
-    private static IEnumerable<(ISymbol Symbol, ITypeSymbol Type)> ReadableMembers(INamedTypeSymbol type)
-    {
-        foreach (var m in type.GetMembers())
-        {
-            if (m.IsStatic || m.DeclaredAccessibility != Accessibility.Public) continue;
-            if (m is IPropertySymbol { GetMethod: not null, IsIndexer: false } p) yield return (p, p.Type);
-            else if (m is IFieldSymbol { IsConst: false, IsImplicitlyDeclared: false } f) yield return (f, f.Type);
-        }
-    }
-
-    private static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> WritableMembers(INamedTypeSymbol type)
-    {
-        foreach (var m in type.GetMembers())
-        {
-            if (m.IsStatic || m.DeclaredAccessibility != Accessibility.Public) continue;
-            if (m is IPropertySymbol { SetMethod: not null, IsIndexer: false } p) yield return (p, p.Name, p.Type);
-            else if (m is IFieldSymbol { IsConst: false, IsReadOnly: false, IsImplicitlyDeclared: false } f)
-                yield return (f, f.Name, f.Type);
-        }
-    }
-
     /// <summary>A member's [MapProperty]/[MapIgnore] directives in source order; i-th → i-th [MapTo] target.</summary>
     private static List<(bool Ignore, string? Name)> ParseDirectives(ISymbol member)
     {
-        var ordered = new List<(int Pos, bool Ignore, string? Name)>();
+        var ordered = new List<(string File, int Pos, bool Ignore, string? Name)>();
         foreach (var a in member.GetAttributes())
         {
             var cls = a.AttributeClass?.ToDisplayString();
             if (cls != MapPropAttr && cls != MapIgnoreAttr) continue;
-            var pos = a.ApplicationSyntaxReference?.Span.Start ?? 0;
+            var reference = a.ApplicationSyntaxReference;
+            // Span.Start alone orders attributes only within ONE file. A partial property (C# 13) can carry
+            // directives in two files, where the spans are independent offsets and the ordering — which decides
+            // WHICH [MapTo] target each directive binds to — would depend on GetAttributes()' cross-file order.
+            // Including the file path makes it total and stable across builds.
+            var file = reference?.SyntaxTree.FilePath ?? string.Empty;
+            var pos = reference?.Span.Start ?? 0;
             if (cls == MapIgnoreAttr)
             {
-                ordered.Add((pos, true, null));
+                ordered.Add((file, pos, true, null));
             }
             else
             {
                 var name = a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null;
-                ordered.Add((pos, false, name));
+                ordered.Add((file, pos, false, name));
             }
         }
 
-        ordered.Sort((x, y) => x.Pos.CompareTo(y.Pos));
+        ordered.Sort((x, y) =>
+        {
+            var byFile = string.CompareOrdinal(x.File, y.File);
+            return byFile != 0 ? byFile : x.Pos.CompareTo(y.Pos);
+        });
         return ordered.Select(x => (x.Ignore, x.Name)).ToList();
     }
 
@@ -247,77 +277,57 @@ public sealed class MapToGenerator : IIncrementalGenerator
         return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
     }
 
-    private static string Hash(string s)
-    {
-        unchecked
-        {
-            var h = 2166136261u;
-            foreach (var c in s)
-            {
-                h ^= c;
-                h *= 16777619u;
-            }
-
-            return h.ToString("x8", CultureInfo.InvariantCulture);
-        }
-    }
-
     private static string Emit(Model model)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("// <auto-generated/>");
-        sb.AppendLine("#nullable enable");
-        var indent = "";
-        if (model.Namespace is not null)
+        var w = new CodeWriter();
+        w.Line("// <auto-generated/>");
+        w.Line("#nullable enable");
+
+        using (model.Namespace is not null ? w.Block("namespace " + model.Namespace) : null)
         {
-            sb.Append("namespace ").AppendLine(model.Namespace);
-            sb.AppendLine("{");
-            indent = "    ";
+            var classHeader = (model.Public ? "public static class " : "internal static class ")
+                               + model.ExtClassName;
+            using (w.Block(classHeader))
+            {
+                using (w.Block("public static TTarget MapTo<TTarget>(this " + model.SourceFqn + " source)"))
+                {
+                    w.Line("if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
+                    foreach (var t in model.Targets)
+                        w.Line("if (typeof(TTarget) == typeof(" + t.TargetFqn + ")) return (TTarget)(object)"
+                               + t.MethodName + "(source);");
+                    w.Line("throw new global::System.NotSupportedException(\"No [MapTo] mapping from "
+                           + model.SourceFqn + " to \" + typeof(TTarget).FullName + \".\");");
+                }
+
+                foreach (var t in model.Targets)
+                {
+                    w.Line();
+                    using (w.Block("public static " + t.TargetFqn + " " + t.MethodName + "(this "
+                                    + model.SourceFqn + " source)"))
+                    {
+                        w.Line(
+                            "if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
+                        w.Line("return new " + t.TargetFqn);
+                        w.Line("{");
+                        using (w.Indent())
+                        {
+                            foreach (var a in t.Assignments)
+                                w.Line(a.DestMember + " = " + a.Expr + ",");
+                        }
+
+                        w.Line("};");
+                    }
+                }
+
+                foreach (var h in model.Helpers)
+                {
+                    w.Line();
+                    w.Raw(h.Code);
+                }
+            }
         }
 
-        sb.Append(indent).Append(model.Public ? "public static class " : "internal static class ")
-            .AppendLine(model.ExtClassName);
-        sb.Append(indent).AppendLine("{");
-        var i2 = indent + "    ";
-        var i3 = i2 + "    ";
-
-        sb.Append(i2).Append("public static TTarget MapTo<TTarget>(this ").Append(model.SourceFqn)
-            .AppendLine(" source)");
-        sb.Append(i2).AppendLine("{");
-        sb.Append(i3).AppendLine("if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
-        foreach (var t in model.Targets)
-            sb.Append(i3).Append("if (typeof(TTarget) == typeof(").Append(t.TargetFqn)
-                .Append(")) return (TTarget)(object)")
-                .Append(t.MethodName).AppendLine("(source);");
-        sb.Append(i3).Append("throw new global::System.NotSupportedException(\"No [MapTo] mapping from ")
-            .Append(model.SourceFqn).AppendLine(" to \" + typeof(TTarget).FullName + \".\");");
-        sb.Append(i2).AppendLine("}");
-
-        foreach (var t in model.Targets)
-        {
-            sb.AppendLine();
-            sb.Append(i2).Append("public static ").Append(t.TargetFqn).Append(' ').Append(t.MethodName)
-                .Append("(this ").Append(model.SourceFqn).AppendLine(" source)");
-            sb.Append(i2).AppendLine("{");
-            sb.Append(i3)
-                .AppendLine("if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
-            sb.Append(i3).Append("return new ").Append(t.TargetFqn).AppendLine();
-            sb.Append(i3).AppendLine("{");
-            foreach (var a in t.Assignments)
-                sb.Append(i3).Append("    ").Append(a.DestMember).Append(" = ").Append(a.Expr).AppendLine(",");
-            sb.Append(i3).AppendLine("};");
-            sb.Append(i2).AppendLine("}");
-        }
-
-        foreach (var h in model.Helpers)
-        {
-            sb.AppendLine();
-            sb.Append(h.Code);
-        }
-
-        sb.Append(indent).AppendLine("}");
-        if (model.Namespace is not null) sb.AppendLine("}");
-        return sb.ToString();
+        return w.ToString();
     }
 
     // ── equatable, symbol-free model (cache-safe) ───────────────────────────────
@@ -359,7 +369,18 @@ public sealed class MapToGenerator : IIncrementalGenerator
         public string? Resolve(ITypeSymbol srcType, ITypeSymbol tgtType, string srcExpr, string targetName)
         {
             var conv = _comp.ClassifyCommonConversion(srcType, tgtType);
-            if (conv.IsIdentity || conv.IsImplicit) return srcExpr;
+            if (conv.IsIdentity) return srcExpr;
+            if (conv.IsImplicit)
+            {
+                // An implicit conversion is a free direct assignment — EXCEPT across numeric categories
+                // (long→double, int→float, long→decimal), which the compiler accepts silently while losing
+                // precision. The class model reports DWARF038 here; without this the registry stayed silent, so
+                // the same mapping was loud through [DwarfMapper] and quiet through [MapTo].
+                if (NumericConverter.IsCrossCategoryLossy(srcType, tgtType))
+                    _diags.Add(new DiagnosticInfo(RegistryDiagnostics.LossyImplicitConversion, _loc,
+                        $"'{srcType.ToDisplayString()}' → '{tgtType.ToDisplayString()}' for '{targetName}'"));
+                return srcExpr;
+            }
 
             var n = NumericConverter.TryCreate(srcType, tgtType, Synth);
             if (n is not null) return $"{n}({srcExpr})";
@@ -386,7 +407,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
         private string? SynthNested(INamedTypeSymbol src, INamedTypeSymbol tgt, string targetName)
         {
             var key = Key(src, tgt);
-            var name = "__DwarfMapObj_" + Hash(key);
+            var name = "__DwarfMapObj_" + StableHash.Fnv1a(key);
             if (Synth.ContainsKey(name)) return name;
             if (!_inProgress.Add(key))
             {
@@ -395,10 +416,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 return null;
             }
 
-            var lines = new List<string>();
+            var members = new List<(string Name, string Expr)>();
             var ok = true;
-            var readable = ReadableMembers(src).ToList();
-            foreach (var w in WritableMembers(tgt))
+            var readable = MemberFacts.Readable(src).ToList();
+            foreach (var w in MemberFacts.Writable(tgt))
             {
                 var sm = readable.FirstOrDefault(r => r.Symbol.Name == w.Name);
                 if (sm.Symbol is null)
@@ -418,7 +439,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    lines.Add($"            {w.Name} = {expr},");
+                    members.Add((w.Name, expr));
                 }
             }
 
@@ -427,12 +448,25 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             var fqTgt = Fq(tgt);
             var fqSrc = Fq(src);
-            var ctor = $"new {fqTgt}\n        {{\n{string.Join("\n", lines)}\n        }}";
             // Reference-type source: null-propagate; value-type source: can't be null.
-            var body = src.IsReferenceType
-                ? $"    private static {fqTgt} {name}({fqSrc} s) => s is null ? default! : {ctor};\n"
-                : $"    private static {fqTgt} {name}({fqSrc} s) => {ctor};\n";
-            Synth[name] = new SynthesizedMethod(name, body);
+            var header = src.IsReferenceType
+                ? $"private static {fqTgt} {name}({fqSrc} s) => s is null ? default! : new {fqTgt}"
+                : $"private static {fqTgt} {name}({fqSrc} s) => new {fqTgt}";
+
+            var bodyWriter = new CodeWriter(1);
+            bodyWriter.Line(header);
+            using (bodyWriter.Indent())
+            {
+                bodyWriter.Line("{");
+                using (bodyWriter.Indent())
+                {
+                    foreach (var m in members) bodyWriter.Line($"{m.Name} = {m.Expr},");
+                }
+
+                bodyWriter.Line("};");
+            }
+
+            Synth[name] = new SynthesizedMethod(name, bodyWriter.ToString());
             return name;
         }
 
@@ -455,34 +489,51 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             if (dElem is null) return null;
 
-            if (!CollectionConverter.TryGetEnumerableElement(srcType, out var sElem, out _)) return null;
+            if (!CollectionConverter.TryGetEnumerableElement(srcType, out var sElem, out var sCount)) return null;
 
             var elemConv = Resolve(sElem, dElem, "x", targetName);
             if (elemConv is null) return null;
 
             var key = "Coll|" + Fq(srcType) + "|" + Fq(tgtType);
-            var name = "__DwarfMapColl_" + Hash(key);
+            var name = "__DwarfMapColl_" + StableHash.Fnv1a(key);
             if (!Synth.ContainsKey(name))
             {
                 var fqSrc = Fq(srcType);
                 var fqDElem = Fq(dElem);
-                var sb = new StringBuilder();
-                sb.Append("    private static ").Append(Fq(tgtType)).Append(' ').Append(name)
-                    .Append('(').Append(fqSrc).Append(" s)\n    {\n");
-                sb.Append("        if (s is null) return ")
-                    .Append(dstArray
-                        ? $"global::System.Array.Empty<{fqDElem}>()"
-                        : $"new global::System.Collections.Generic.List<{fqDElem}>()")
-                    .Append(";\n");
-                sb.Append("        var __r = new global::System.Collections.Generic.List<").Append(fqDElem)
-                    .Append(">();\n");
-                sb.Append("        foreach (var x in s) __r.Add(").Append(elemConv).Append(");\n");
-                sb.Append("        return __r").Append(dstArray ? ".ToArray()" : "").Append(";\n");
-                sb.Append("    }\n");
-                Synth[name] = new SynthesizedMethod(name, sb.ToString());
+                var fqTgt = Fq(tgtType);
+                var emptyExpr = dstArray
+                    ? $"global::System.Array.Empty<{fqDElem}>()"
+                    : $"new global::System.Collections.Generic.List<{fqDElem}>()";
+
+                var bodyWriter = new CodeWriter(1);
+                using (bodyWriter.Block($"private static {fqTgt} {name}({fqSrc} s)"))
+                {
+                    bodyWriter.Line($"if (s is null) return {emptyExpr};");
+                    // ISSUE-020: the element count was available from TryGetEnumerableElement and thrown away, so
+                    // this buffer grew by repeated reallocation even when the source's size was known up front.
+                    // The class engine pre-sizes from that very helper; the registry simply never used the value
+                    // it asked for.
+                    bodyWriter.Line(
+                        $"var __r = new global::System.Collections.Generic.List<{fqDElem}>({CountExpr(sCount)});");
+                    bodyWriter.Line($"foreach (var x in s) __r.Add({elemConv});");
+                    bodyWriter.Line($"return __r{(dstArray ? ".ToArray()" : "")};");
+                }
+
+                Synth[name] = new SynthesizedMethod(name, bodyWriter.ToString());
             }
 
             return $"{name}({srcExpr})";
+        }
+
+        /// <summary>Capacity argument for a pre-sized buffer, or empty when the source size is unknown.</summary>
+        private static string CountExpr(CollectionConverter.CountKind count)
+        {
+            return count switch
+            {
+                CollectionConverter.CountKind.Length => "s.Length",
+                CollectionConverter.CountKind.Count => "s.Count",
+                _ => string.Empty,
+            };
         }
 
         private static string Key(ITypeSymbol a, ITypeSymbol b)

@@ -175,6 +175,75 @@ public class IncrementalCachingTests
                 $"expected Cached/Unchanged on identical re-run, got {output.Reason}")));
     }
 
+    // A mapper that reports diagnostics WITHOUT being fatal: DWARF070 (nullable ref -> non-nullable target)
+    // and DWARF038 (implicit cross-category numeric). Both must survive caching.
+    private const string DiagnosticSource = """
+                                            #nullable enable
+                                            using DwarfMapper;
+                                            namespace Demo;
+                                            public class Src { public string? Name { get; set; } public int N { get; set; } }
+                                            public class Dst { public string Name { get; set; } = ""; public double N { get; set; } }
+                                            [DwarfMapper]
+                                            public partial class M { public partial Dst Map(Src s); }
+                                            """;
+
+    [Fact]
+    public void Diagnostics_are_still_reported_when_the_output_is_CACHED()
+    {
+        // The nastiest incremental-generator failure mode, and the one no other test here can see: a warning
+        // that is reported on the first run and then VANISHES on subsequent runs because the output node was
+        // served from cache. In an IDE that means a diagnostic which appears once and then disappears on the
+        // next keystroke; in a build with incremental compilation it can mean a warning that simply never
+        // surfaces. Diagnostics must be part of the cached output, not a side effect of computing it.
+        //
+        // Note the deliberate shape: the SAME driver is reused across both runs (a fresh driver would have an
+        // empty cache and prove nothing — which is exactly why DeterminismFuzzTests, comparing two fresh
+        // drivers, cannot catch this).
+        var compilation = GeneratorTestHarness.BuildCompilation("IncCacheDiag", DiagnosticSource,
+            NullableContextOptions.Enable);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { new DwarfGenerator().AsSourceGenerator() },
+            driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, true));
+
+        driver = driver.RunGenerators(compilation);
+        var firstRun = driver.GetRunResult().Results[0].Diagnostics;
+
+        Assert.Contains(firstRun, d => d.Id == "DWARF070");
+
+        // Second run on the SAME compilation and the SAME driver: everything is a cache hit.
+        driver = driver.RunGenerators(compilation);
+        var secondRun = driver.GetRunResult().Results[0].Diagnostics;
+
+        Assert.Equal(
+            firstRun.Select(d => d.Id + "@" + d.Location.GetLineSpan().StartLinePosition).OrderBy(s => s,
+                StringComparer.Ordinal),
+            secondRun.Select(d => d.Id + "@" + d.Location.GetLineSpan().StartLinePosition).OrderBy(s => s,
+                StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void Diagnostics_survive_an_unrelated_edit()
+    {
+        // Same failure mode, but the realistic IDE version: the user types in a DIFFERENT file. The mapper is
+        // untouched, so its node is cached — and its warnings must not evaporate just because nothing about it
+        // changed.
+        var compilation = GeneratorTestHarness.BuildCompilation("IncCacheDiag2", DiagnosticSource,
+            NullableContextOptions.Enable);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { new DwarfGenerator().AsSourceGenerator() },
+            driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, true));
+
+        driver = driver.RunGenerators(compilation);
+
+        var modified = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Other { public class Unrelated { public int Z; } }"));
+        driver = driver.RunGenerators(modified);
+
+        var afterEdit = driver.GetRunResult().Results[0].Diagnostics;
+
+        Assert.Contains(afterEdit, d => d.Id == "DWARF070");
+    }
+
     [Fact]
     public void Editing_the_mapper_does_recompute_it()
     {

@@ -7,13 +7,20 @@ using BenchmarkDotNet.Running;
 using DwarfMapper;
 using Mapster;
 
-BenchmarkRunner.Run<MapperBenchmarks>();
+// `args` MUST be forwarded. Without it BenchmarkRunner silently ignores every command-line switch, so
+// `--filter`, `--anyCategories` and `--job` do nothing and the FULL suite runs every time — a targeted
+// re-measurement of one category quietly becomes a ~40-minute sweep, and the operator has no signal that
+// their filter was dropped. This cost several timed-out runs before it was spotted.
+BenchmarkRunner.Run<MapperBenchmarks>(args: args);
 
 // ── Shared benchmark types (auto-properties → every mapper handles them) ───────
+// Nullable on BOTH sides. The payload factory draws null for a nullable position ~15% of the time; a
+// non-nullable annotation would be a lie reflection assigns straight through, and the mapper would emit no
+// null handling — i.e. we would measure the branch-free path while feeding it nullable data.
 public sealed class FlatSrc
 {
     public int Id { get; set; }
-    public string Name { get; set; } = "";
+    public string? Name { get; set; } = "";
     public long Score { get; set; }
     public bool Active { get; set; }
 }
@@ -21,11 +28,16 @@ public sealed class FlatSrc
 public sealed class FlatDst
 {
     public int Id { get; set; }
-    public string Name { get; set; } = "";
+    public string? Name { get; set; } = "";
     public long Score { get; set; }
     public bool Active { get; set; }
 }
 
+// Inner stays NON-nullable, and the payload builder guarantees it. Making it nullable is what a realistic
+// graph would do, but it makes the generated MapNested pass `s.Inner` into the user-declared
+// `MapFlat(FlatSrc s)` — CS8604, with no DWARF diagnostic explaining it. That is a mapper-contract question
+// (what should a nullable nested reference into a non-nullable partial-method parameter do?) and does not
+// belong in a throughput benchmark. Null MEMBERS still flow: FlatSrc.Name inside Inner can be null.
 public sealed class NestedSrc
 {
     public int Id { get; set; }
@@ -44,6 +56,20 @@ public sealed class ArraySrc
 }
 
 public sealed class ArrayDst
+{
+    public FlatDst[] Items { get; set; } = Array.Empty<FlatDst>();
+}
+
+// ISSUE-019: the source member is typed IEnumerable<T>, so the count is not knowable at compile time. The
+// old emission buffered into a growing List<T> and copied it out with ToArray(); the fix probes the RUNTIME
+// count and fills one exactly-sized array. The runtime value here is a List, so the probe succeeds. No
+// existing benchmark covered this shape — the Array category uses an ARRAY source, whose count is static.
+public sealed class SeqSrc
+{
+    public IEnumerable<FlatSrc> Items { get; set; } = Array.Empty<FlatSrc>();
+}
+
+public sealed class SeqDst
 {
     public FlatDst[] Items { get; set; } = Array.Empty<FlatDst>();
 }
@@ -100,8 +126,8 @@ public sealed class WidenDst
 // Flatten: Order.Customer.Name → OrderDto.CustomerName (real-world Entity→DTO; eShopOnWeb-style).
 public sealed class FlCustomer
 {
-    public string Name { get; set; } = "";
-    public string Email { get; set; } = "";
+    public string? Name { get; set; } = "";
+    public string? Email { get; set; } = "";
 }
 
 public sealed class FlOrder
@@ -114,7 +140,7 @@ public sealed class FlOrder
 public sealed class FlOrderDto
 {
     public int Id { get; set; }
-    public string CustomerName { get; set; } = "";
+    public string? CustomerName { get; set; } = "";
     public decimal Amount { get; set; }
 }
 
@@ -145,7 +171,11 @@ public sealed class EnumDst
     public BenchStatusDto Status { get; set; }
 }
 
-// Dictionary copy (Dictionary<string,int> → Dictionary<string,int>).
+// Dictionary with a VALUE-TYPE CHANGE (Dictionary<string,int> → Dictionary<string,long>). The value change is
+// deliberate: with identical types Mapperly returns the SOURCE dictionary by reference (aliasing), so the
+// old same-type row measured aliasing against copying and could not be read as a like-for-like comparison.
+// int→long forces EVERY mapper to allocate a new dictionary and convert each value, so the four are finally
+// measured doing the same work.
 public sealed class DictSrc
 {
     public Dictionary<string, int> M { get; set; } = new();
@@ -153,7 +183,50 @@ public sealed class DictSrc
 
 public sealed class DictDst
 {
-    public Dictionary<string, int> M { get; set; } = new();
+    public Dictionary<string, long> M { get; set; } = new();
+}
+
+// ── nullable_ref_mismatch: string? source → string target — the commonest real DTO shape, and DWARF070's
+// reason for existing. The generator does NOT silently store the null: DWARF070 is a warning that a strict
+// project (warnings-as-errors) escalates to a build error, forcing the author to choose a resolution. The
+// realistic choice benchmarked here is NullSubstitute, which emits a genuine `s.Name ?? "<sub>"` coalesce on
+// the hot path — so this measures the null-CHECK cost, not a branch-free copy. DwarfMapper-only coverage.
+// Payload draws null ~15% of the time (ObjectFactoryV2), so the coalesce actually fires.
+public sealed class NmSrc
+{
+    public int Id { get; set; }
+    public string? Name { get; set; } = "";
+}
+
+public sealed class NmDst
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+}
+
+// ── Set target (int[] → HashSet<int>): distinct allocation profile — hashing + dedup, not a linear fill.
+// DwarfMapper-only coverage (competitors need per-library set config). ObjectFactoryV2 draws boundary ints, so
+// duplicates and edge values both occur.
+public sealed class SetSrc
+{
+    public int[] V { get; set; } = Array.Empty<int>();
+}
+
+public sealed class SetDst
+{
+    public HashSet<int> V { get; set; } = new();
+}
+
+// ── Immutable target (int[] → ImmutableArray<int>): builder + freeze, again a different allocation shape from
+// List/array. DwarfMapper-only coverage.
+public sealed class ImmSrc
+{
+    public int[] V { get; set; } = Array.Empty<int>();
+}
+
+public sealed class ImmDst
+{
+    public System.Collections.Immutable.ImmutableArray<int> V { get; set; }
 }
 
 // ── DwarfMapper (compile-time, reflection-free, AOT-safe) ─────────────────────
@@ -163,6 +236,7 @@ public partial class DwarfM
     public partial FlatDst MapFlat(FlatSrc s); // also used for NestedDst.Inner
     public partial NestedDst MapNested(NestedSrc s);
     public partial ArrayDst MapArray(ArraySrc s);
+    public partial SeqDst MapSeq(SeqSrc s); // IEnumerable<T> source → unknown count (ISSUE-019)
     public partial ListDst MapList(ListSrc s); // List<T> → List<T> (pre-sized plain fill)
     public partial BlitDst MapBlit(BlitSrc s); // Vec3[] → SIMD blit
     public partial WidenDst MapWiden(WidenSrc s); // int[] → long[] → SIMD widen
@@ -171,7 +245,11 @@ public partial class DwarfM
     public partial FlOrderDto MapFlatten(FlOrder s); // deep source path (explicit; others auto-flatten)
 
     public partial EnumDst MapEnum(EnumSrc s); // enum by-name
-    public partial DictDst MapDict(DictSrc s); // dictionary copy
+    public partial DictDst MapDict(DictSrc s); // dictionary copy + value widen (int→long)
+    [MapProperty(nameof(NmSrc.Name), nameof(NmDst.Name), NullSubstitute = "")]
+    public partial NmDst MapNullMismatch(NmSrc s); // string? → string via NullSubstitute (DWARF070 shape)
+    public partial SetDst MapSet(SetSrc s); // int[] → HashSet<int>
+    public partial ImmDst MapImmutable(ImmSrc s); // int[] → ImmutableArray<int>
 }
 
 // ── Mapperly (compile-time source gen) ────────────────────────────────────────
@@ -197,6 +275,7 @@ public class MapperBenchmarks
     private readonly DwarfM _dwarf = new();
     private readonly MapperlyM _mapperly = new();
     private ArraySrc _array = null!;
+    private SeqSrc _seq = null!;
     private IMapper _auto = null!;
     private BlitSrc _blit = null!;
     private DictSrc _dict = null!;
@@ -207,34 +286,51 @@ public class MapperBenchmarks
     private ListSrc _list = null!;
     private NestedSrc _nested = null!;
     private WidenSrc _widen = null!;
+    private NmSrc _nm = null!;
+    private SetSrc _set = null!;
+    private ImmSrc _imm = null!;
 
     [Params(1000)] public int N { get; set; }
 
     [GlobalSetup]
     public void Setup()
     {
-        _flat = new FlatSrc { Id = 7, Name = "vein", Score = 42, Active = true };
-        _nested = new NestedSrc { Id = 1, Inner = _flat };
+        // Payloads come from ObjectFactoryV2 — the same fixture/fuzz source the test suites use — so the
+        // measured distribution includes nulls, boundary numerics and varied string lengths instead of the
+        // uniform literals this setup used to hand-build. Each shape gets a distinct salt so categories are
+        // not correlated draws of one another. Setup is not measured by BenchmarkDotNet.
+        _flat = RealisticPayloads.One<FlatSrc>(1);
 
-        var items = new FlatSrc[N];
-        for (var i = 0; i < N; i++) items[i] = new FlatSrc { Id = i, Name = "n" + i, Score = i, Active = i % 2 == 0 };
+        // The factory assigns through reflection, which does not see nullable annotations — it can null ANY
+        // reference member below the root. For the two shapes whose nested reference is declared non-nullable
+        // (see the NestedSrc note), materialise it so the benchmark measures nesting rather than dying on an
+        // NRE. Their MEMBERS still carry the factory's nulls and boundary values.
+        _nested = RealisticPayloads.One<NestedSrc>(2);
+        _nested.Inner ??= RealisticPayloads.One<FlatSrc>(21);
+
+        // Element CONTENT is factory-drawn; element COUNT stays pinned to N. The factory builds 1-3 element
+        // collections, so letting it size these would quietly turn an N=1000 benchmark into N≈2.
+        var items = RealisticPayloads.Elements<FlatSrc>(N, 3);
         _array = new ArraySrc { Items = items };
         _list = new ListSrc { Items = new List<FlatSrc>(items) };
+        // Statically IEnumerable<T>, a List at runtime — the probe hits, which is the common real-world case.
+        _seq = new SeqSrc { Items = new List<FlatSrc>(items) };
 
-        var vecs = new Vec3Src[N];
-        for (var i = 0; i < N; i++) vecs[i] = new Vec3Src { X = i, Y = i + 1, Z = i + 2 };
-        _blit = new BlitSrc { Items = vecs };
+        _blit = new BlitSrc { Items = RealisticPayloads.Elements<Vec3Src>(N, 4) };
+        _widen = new WidenSrc { V = RealisticPayloads.Elements<int>(N, 5) };
 
-        var ints = new int[N];
-        for (var i = 0; i < N; i++) ints[i] = i - N / 2;
-        _widen = new WidenSrc { V = ints };
+        _flOrder = RealisticPayloads.One<FlOrder>(6);
+        _flOrder.Customer ??= RealisticPayloads.One<FlCustomer>(61);
+        _enum = RealisticPayloads.One<EnumSrc>(7);
+        _dict = new DictSrc { M = RealisticPayloads.Map(N, 8) };
+        _nm = RealisticPayloads.One<NmSrc>(9);
+        _set = new SetSrc { V = RealisticPayloads.Elements<int>(N, 10) };
+        _imm = new ImmSrc { V = RealisticPayloads.Elements<int>(N, 11) };
 
-        _flOrder = new FlOrder
-            { Id = 9, Customer = new FlCustomer { Name = "Ada Lovelace", Email = "ada@x.io" }, Amount = 42.50m };
-        _enum = new EnumSrc { Id = 1, Status = BenchStatus.Active };
-        var dict = new Dictionary<string, int>();
-        for (var i = 0; i < N; i++) dict["k" + i] = i;
-        _dict = new DictSrc { M = dict };
+        // Fail loudly if the draw came back degenerate. Without this, a change to the factory's probabilities
+        // (or an unlucky seed) would silently restore the old flat distribution while every benchmark still
+        // reported a healthy-looking number.
+        RealisticPayloads.AssertRealistic(items, nameof(FlatSrc));
 
         var cfg = new MapperConfiguration(c =>
         {
@@ -323,6 +419,13 @@ public class MapperBenchmarks
     public ArrayDst Array_Dwarf()
     {
         return _dwarf.MapArray(_array);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Seq")]
+    public SeqDst Seq_Dwarf()
+    {
+        return _dwarf.MapSeq(_seq);
     }
 
     [Benchmark]
@@ -518,5 +621,29 @@ public class MapperBenchmarks
     public DictDst Dict_AutoMapper()
     {
         return _auto.Map<DictDst>(_dict);
+    }
+
+    // ── Coverage-only categories (DwarfMapper alone): shapes with distinct allocation profiles that the
+    // cross-library categories above do not exercise. No competitor rows — competitors need per-library config
+    // for sets/immutables, and the point here is to guard DwarfMapper's own emitted path against regression.
+    [Benchmark]
+    [BenchmarkCategory("NullMismatch")]
+    public NmDst NullMismatch_Dwarf()
+    {
+        return _dwarf.MapNullMismatch(_nm);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Set")]
+    public SetDst Set_Dwarf()
+    {
+        return _dwarf.MapSet(_set);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Immutable")]
+    public ImmDst Immutable_Dwarf()
+    {
+        return _dwarf.MapImmutable(_imm);
     }
 }

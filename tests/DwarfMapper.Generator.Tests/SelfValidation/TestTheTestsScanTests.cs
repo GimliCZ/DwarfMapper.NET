@@ -62,6 +62,10 @@ file static class MatrixExemptAttributes
             // (RegistryMapTo*RuntimeTests). Remove if [MapTo] folds into the main pipeline/matrix.
             "MapTo",
             "DwarfMapperOptions",
+            // DwarfMapperDefaults: an ASSEMBLY-GLOBAL default-options marker, not a per-mapper feature the
+            // FIM matrix crosses. It cannot be a matrix case (one [assembly:] attribute re-defaults the whole
+            // matrix). Its layering is covered by AssemblyDefaultsTests.
+            "DwarfMapperDefaults",
             "DwarfProvidesMap",
             "DwarfRequiresMap",
             "UsesMap",
@@ -324,14 +328,16 @@ public sealed class TestTheTestsScanTests
             .Where(t => t.IsPublic && t.IsEnum)
             .ToList();
 
+        // Qualified `EnumType.Value`, not the bare value name — a bare Contains("Throw"/"None"/"Exact") passes
+        // vacuously off unrelated text, so the gate would falsely report common-word values as covered.
         var missing = new List<string>();
         foreach (var enumType in publicEnums)
         foreach (var valueName in Enum.GetNames(enumType))
-            if (!combinedText.Contains(valueName, StringComparison.Ordinal))
+            if (!combinedText.Contains($"{enumType.Name}.{valueName}", StringComparison.Ordinal))
                 missing.Add($"{enumType.Name}.{valueName}");
 
         Assert.True(missing.Count == 0,
-            "Public enum value(s) with no coverage in the FIM or any test file:\n" +
+            "Public enum value(s) with no coverage in the FIM or any test file (as qualified `EnumType.Value`):\n" +
             string.Join("\n", missing.Select(m => "  " + m)) +
             "\nFix: add a matrix case or test that uses the missing value.");
     }
@@ -388,9 +394,12 @@ public sealed class TestTheTestsScanTests
         // registry markers (DwarfProvidesMap/DwarfRequiresMap/UsesMap/DwarfMapperValidationRoot) — none of
         // which affect a single mapping's output, so none have a per-mapping compile-matrix form. Bumped
         // 4 -> 7 with that justification, then 7 -> 8 for MapTo (the [MapTo] front door is handled by
-        // MapToGenerator, not the [DwarfMapper] FIM pipeline, and has its own RegistryMapTo*RuntimeTests).
+        // MapToGenerator, not the [DwarfMapper] FIM pipeline, and has its own RegistryMapTo*RuntimeTests),
+        // then 8 -> 9 for DwarfMapperDefaults (an ASSEMBLY-GLOBAL default-options marker — one [assembly:]
+        // attribute re-defaults the whole matrix, so it cannot be a per-mapper matrix case; covered by
+        // AssemblyDefaultsTests, structurally the same exemption as DwarfMapperOptions).
         // The set must still only SHRINK from here.
-        const int MaxAllowedEntries = 8;
+        const int MaxAllowedEntries = 9;
         Assert.True(
             MatrixExemptAttributes.UsageNames.Count <= MaxAllowedEntries,
             $"MatrixExemptAttributes has {MatrixExemptAttributes.UsageNames.Count} entries " +

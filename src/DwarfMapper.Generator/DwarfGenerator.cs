@@ -7,6 +7,7 @@ using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace DwarfMapper.Generator;
@@ -22,7 +23,7 @@ namespace DwarfMapper.Generator;
 [Generator(LanguageNames.CSharp)]
 public sealed class DwarfGenerator : IIncrementalGenerator
 {
-    internal const string MarkerAttributeFullName = "DwarfMapper.DwarfMapperAttribute";
+    internal const string MarkerAttributeFullName = KnownNames.DwarfMapperFqn;
 
     /// <summary>
     ///     Metadata name (with generic arity) of <see cref="DwarfMapper.GenerateMapAttribute{TSource,TTarget}" />,
@@ -40,6 +41,17 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
     /// <summary>Tracking name for the co-located ([GenerateMap]-on-plain-class) extraction step.</summary>
     internal const string CoLocatedExtractStepName = "DwarfMapperCoLocatedExtract";
+
+    internal const string AggregateStepName = "DwarfMapperAggregate";
+    internal const string RequiresManifestStepName = "DwarfMapperRequiresManifest";
+    internal const string AmbientRegistrationStepName = "DwarfMapperAmbientRegistration";
+
+    /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
+    internal static readonly string[] AllStepNames =
+    {
+        ExtractStepName, CoLocatedExtractStepName,
+        AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName,
+    };
 
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -79,7 +91,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             var publicExtensions = false;
             foreach (var a in compilation.Assembly.GetAttributes())
             {
-                if (a.AttributeClass?.ToDisplayString() != "DwarfMapper.DwarfMapperOptionsAttribute") continue;
+                if (a.AttributeClass?.ToDisplayString() != KnownNames.DwarfMapperOptionsFqn) continue;
                 foreach (var na in a.NamedArguments)
                     if (na.Key == "PublicExtensions" && na.Value.Value is bool b)
                         publicExtensions = b;
@@ -89,7 +101,8 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         });
 
         context.RegisterSourceOutput(
-            mappers.Collect().Combine(coLocated.Collect()).Combine(aggregateOptions),
+            mappers.Collect().Combine(coLocated.Collect()).Combine(aggregateOptions)
+                .WithTrackingName(AggregateStepName),
             static (spc, pair) => EmitAggregates(
                 spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right.Di, pair.Right.PublicExtensions,
                 pair.Right.AsmNs));
@@ -107,7 +120,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             .Select(static (compilation, ct) => AmbientRequiresCollector.ReadAssemblyUsesMap(compilation, ct));
 
         var classUsesMap = context.SyntaxProvider.ForAttributeWithMetadataName(
-            "DwarfMapper.UsesMapAttribute",
+            KnownNames.UsesMapFqn,
             static (node, _) => node is ClassDeclarationSyntax,
             static (ctx, ct) => AmbientRequiresCollector.ReadClassUsesMap(ctx, ct));
 
@@ -140,7 +153,8 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                 return EquatableArray.From(all);
             });
 
-        context.RegisterSourceOutput(ownRequired, static (spc, pairs) => EmitRequiresManifest(spc, pairs));
+        context.RegisterSourceOutput(ownRequired.WithTrackingName(RequiresManifestStepName),
+            static (spc, pairs) => EmitRequiresManifest(spc, pairs));
 
         // This assembly's own provided (registered) ambient pairs — exactly what its module initializer registers.
         var ownProvided = mappers.Collect().Combine(coLocated.Collect())
@@ -171,7 +185,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         });
 
         context.RegisterSourceOutput(
-            ownProvided.Combine(ownRequired).Combine(rootInfo),
+            ownProvided.Combine(ownRequired).Combine(rootInfo).WithTrackingName(AmbientRegistrationStepName),
             static (spc, data) =>
             {
                 var ((own, req), root) = data;
@@ -195,14 +209,14 @@ public sealed class DwarfGenerator : IIncrementalGenerator
                 var validate = AmbientValidator.EmitValidateMethod(consumed, root.AutoValidate, own.Length > 0);
                 if (validate.Length != 0)
                 {
-                    spc.AddSource("DwarfMapper.Validate.g.cs", validate);
+                    spc.AddNormalizedSource("DwarfMapper.Validate.g.cs", validate);
 
                     // DI-configurable counterpart: services.AddDwarfMappers().ValidateDwarfMaps() runs the
                     // check synchronously at the call site (chain it after the AddDwarfMappers that load providers).
                     if (root.DiAvailable)
                     {
                         var di = AmbientValidator.EmitValidateDiExtension(consumed);
-                        if (di.Length != 0) spc.AddSource("DwarfMapper.ValidateDi.g.cs", di);
+                        if (di.Length != 0) spc.AddNormalizedSource("DwarfMapper.ValidateDi.g.cs", di);
                     }
                 }
             });
@@ -219,7 +233,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             sb.Append("[assembly: global::DwarfMapper.DwarfRequiresMap(typeof(")
                 .Append(source).Append("), typeof(").Append(destination).Append("))]\n");
 
-        spc.AddSource("DwarfMapper.AmbientRequires.g.cs", sb.ToString());
+        spc.AddNormalizedSource("DwarfMapper.AmbientRequires.g.cs", sb.ToString());
     }
 
     /// <summary>
@@ -240,7 +254,19 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             foreach (var ch in segments[i]) sb.Append(char.IsLetterOrDigit(ch) || ch == '_' ? ch : '_');
 
             var s = sb.Length == 0 ? "_" : sb.ToString();
-            segments[i] = char.IsDigit(s[0]) ? "_" + s : s;
+            if (char.IsDigit(s[0])) s = "_" + s;
+
+            // A segment that is a RESERVED C# keyword is a legal assembly-name segment but not a legal namespace
+            // identifier: an assembly called "Acme.class" produced `namespace Acme.class;`, which does not parse.
+            // Non-identifier characters and leading digits were already handled; keywords were not. Prefixing
+            // "_" keeps the transform in the same shape as the other two (and stays a valid identifier, unlike a
+            // bare "@" escape inside a dotted namespace).
+            // Contextual keywords (value, record, from, …) are deliberately NOT escaped — they are perfectly
+            // valid identifiers, so renaming them would change the emitted namespace for no reason.
+            if (SyntaxFacts.GetKeywordKind(s) != SyntaxKind.None)
+                s = "_" + s;
+
+            segments[i] = s;
         }
 
         return string.Join(".", segments);
@@ -256,7 +282,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         if (usable.Count == 0) return;
 
         var (facade, facadeCollisions) = AggregateEmitter.EmitExtensions(usable, publicExtensions);
-        if (facade is not null) spc.AddSource("DwarfMapper.Extensions.g.cs", facade);
+        if (facade is not null) spc.AddNormalizedSource("DwarfMapper.Extensions.g.cs", facade);
         foreach (var (sourceType, extName) in facadeCollisions)
             // DWARF058 (Info): two mappers would produce the same x.ToTarget() extension, so it was dropped.
             spc.ReportDiagnostic(Diagnostic.Create(
@@ -268,13 +294,13 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         if (diAvailable)
         {
             var di = AggregateEmitter.EmitServiceCollection(usable, assemblyNamespace);
-            if (di is not null) spc.AddSource("DwarfMapper.ServiceCollectionExtensions.g.cs", di);
+            if (di is not null) spc.AddNormalizedSource("DwarfMapper.ServiceCollectionExtensions.g.cs", di);
         }
 
         // Ambient cross-assembly registry: a module initializer self-registers this assembly's stateless,
         // public-typed create-maps into DwarfMapperRegistry, plus the [assembly: DwarfProvidesMap] manifest.
         var (ambient, unregisterable) = AggregateEmitter.EmitAmbientRegistration(usable);
-        if (ambient is not null) spc.AddSource("DwarfMapper.AmbientRegistration.g.cs", ambient);
+        if (ambient is not null) spc.AddNormalizedSource("DwarfMapper.AmbientRegistration.g.cs", ambient);
         foreach (var mapper in unregisterable)
             spc.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.AmbientMapperNotRegistered, Location.None, mapper));
@@ -287,6 +313,6 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         if (model.HasBlockingError) return;
 
         var source = MapEmitter.Emit(model);
-        spc.AddSource($"{model.HintName}.g.cs", source);
+        spc.AddNormalizedSource($"{model.HintName}.g.cs", source);
     }
 }
