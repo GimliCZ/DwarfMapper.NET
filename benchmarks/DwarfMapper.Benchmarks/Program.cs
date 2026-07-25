@@ -171,7 +171,11 @@ public sealed class EnumDst
     public BenchStatusDto Status { get; set; }
 }
 
-// Dictionary copy (Dictionary<string,int> → Dictionary<string,int>).
+// Dictionary with a VALUE-TYPE CHANGE (Dictionary<string,int> → Dictionary<string,long>). The value change is
+// deliberate: with identical types Mapperly returns the SOURCE dictionary by reference (aliasing), so the
+// old same-type row measured aliasing against copying and could not be read as a like-for-like comparison.
+// int→long forces EVERY mapper to allocate a new dictionary and convert each value, so the four are finally
+// measured doing the same work.
 public sealed class DictSrc
 {
     public Dictionary<string, int> M { get; set; } = new();
@@ -179,7 +183,50 @@ public sealed class DictSrc
 
 public sealed class DictDst
 {
-    public Dictionary<string, int> M { get; set; } = new();
+    public Dictionary<string, long> M { get; set; } = new();
+}
+
+// ── nullable_ref_mismatch: string? source → string target — the commonest real DTO shape, and DWARF070's
+// reason for existing. The generator does NOT silently store the null: DWARF070 is a warning that a strict
+// project (warnings-as-errors) escalates to a build error, forcing the author to choose a resolution. The
+// realistic choice benchmarked here is NullSubstitute, which emits a genuine `s.Name ?? "<sub>"` coalesce on
+// the hot path — so this measures the null-CHECK cost, not a branch-free copy. DwarfMapper-only coverage.
+// Payload draws null ~15% of the time (ObjectFactoryV2), so the coalesce actually fires.
+public sealed class NmSrc
+{
+    public int Id { get; set; }
+    public string? Name { get; set; } = "";
+}
+
+public sealed class NmDst
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+}
+
+// ── Set target (int[] → HashSet<int>): distinct allocation profile — hashing + dedup, not a linear fill.
+// DwarfMapper-only coverage (competitors need per-library set config). ObjectFactoryV2 draws boundary ints, so
+// duplicates and edge values both occur.
+public sealed class SetSrc
+{
+    public int[] V { get; set; } = Array.Empty<int>();
+}
+
+public sealed class SetDst
+{
+    public HashSet<int> V { get; set; } = new();
+}
+
+// ── Immutable target (int[] → ImmutableArray<int>): builder + freeze, again a different allocation shape from
+// List/array. DwarfMapper-only coverage.
+public sealed class ImmSrc
+{
+    public int[] V { get; set; } = Array.Empty<int>();
+}
+
+public sealed class ImmDst
+{
+    public System.Collections.Immutable.ImmutableArray<int> V { get; set; }
 }
 
 // ── DwarfMapper (compile-time, reflection-free, AOT-safe) ─────────────────────
@@ -198,7 +245,11 @@ public partial class DwarfM
     public partial FlOrderDto MapFlatten(FlOrder s); // deep source path (explicit; others auto-flatten)
 
     public partial EnumDst MapEnum(EnumSrc s); // enum by-name
-    public partial DictDst MapDict(DictSrc s); // dictionary copy
+    public partial DictDst MapDict(DictSrc s); // dictionary copy + value widen (int→long)
+    [MapProperty(nameof(NmSrc.Name), nameof(NmDst.Name), NullSubstitute = "")]
+    public partial NmDst MapNullMismatch(NmSrc s); // string? → string via NullSubstitute (DWARF070 shape)
+    public partial SetDst MapSet(SetSrc s); // int[] → HashSet<int>
+    public partial ImmDst MapImmutable(ImmSrc s); // int[] → ImmutableArray<int>
 }
 
 // ── Mapperly (compile-time source gen) ────────────────────────────────────────
@@ -235,6 +286,9 @@ public class MapperBenchmarks
     private ListSrc _list = null!;
     private NestedSrc _nested = null!;
     private WidenSrc _widen = null!;
+    private NmSrc _nm = null!;
+    private SetSrc _set = null!;
+    private ImmSrc _imm = null!;
 
     [Params(1000)] public int N { get; set; }
 
@@ -269,6 +323,9 @@ public class MapperBenchmarks
         _flOrder.Customer ??= RealisticPayloads.One<FlCustomer>(61);
         _enum = RealisticPayloads.One<EnumSrc>(7);
         _dict = new DictSrc { M = RealisticPayloads.Map(N, 8) };
+        _nm = RealisticPayloads.One<NmSrc>(9);
+        _set = new SetSrc { V = RealisticPayloads.Elements<int>(N, 10) };
+        _imm = new ImmSrc { V = RealisticPayloads.Elements<int>(N, 11) };
 
         // Fail loudly if the draw came back degenerate. Without this, a change to the factory's probabilities
         // (or an unlucky seed) would silently restore the old flat distribution while every benchmark still
@@ -564,5 +621,29 @@ public class MapperBenchmarks
     public DictDst Dict_AutoMapper()
     {
         return _auto.Map<DictDst>(_dict);
+    }
+
+    // ── Coverage-only categories (DwarfMapper alone): shapes with distinct allocation profiles that the
+    // cross-library categories above do not exercise. No competitor rows — competitors need per-library config
+    // for sets/immutables, and the point here is to guard DwarfMapper's own emitted path against regression.
+    [Benchmark]
+    [BenchmarkCategory("NullMismatch")]
+    public NmDst NullMismatch_Dwarf()
+    {
+        return _dwarf.MapNullMismatch(_nm);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Set")]
+    public SetDst Set_Dwarf()
+    {
+        return _dwarf.MapSet(_set);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("Immutable")]
+    public ImmDst Immutable_Dwarf()
+    {
+        return _dwarf.MapImmutable(_imm);
     }
 }

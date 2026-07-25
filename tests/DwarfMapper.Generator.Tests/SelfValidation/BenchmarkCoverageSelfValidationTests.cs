@@ -32,8 +32,11 @@ public class BenchmarkCoverageSelfValidationTests
         ["array"] = "Array",
         ["List"] = "List",
         ["IEnumerable"] = "Seq", // ISSUE-019: unknown-count source, added only after the bug was found
-        ["DictStringKey"] = "Dict",
+        ["DictStringKey"] = "Dict", // now a VALUE-CHANGE dict (int→long) so every mapper copies, not aliases
         ["nested_object"] = "Nested",
+        ["nullable_ref_mismatch"] = "NullMismatch", // string? → string, the DWARF070 shape
+        ["HashSet"] = "Set", // hashing + dedup allocation profile
+        ["ImmutableArray"] = "Immutable", // builder + freeze allocation profile
 
         // ── Not measured. Each line is a real gap, not a decision that the shape does not matter. ──────
         // Cheap scalar variations: the mapping cost is a field copy, so a benchmark would measure the
@@ -41,26 +44,22 @@ public class BenchmarkCoverageSelfValidationTests
         ["nullable"] = null,
         ["nullable_ref"] = null,
 
-        // The nullability MISMATCH is the commonest real DTO shape and carries a real null-check cost on the
-        // measured path. Worth benchmarking; simply not done yet.
-        ["nullable_ref_mismatch"] = null,
-
         // Collection families that all go through the same emitted fill loops as List/array, but with
         // different allocation strategies (pre-sized vs builder vs frozen). ISSUE-019 lived in exactly this
-        // blind spot, so "similar to List" is not evidence they are free.
+        // blind spot, so "similar to List" is not evidence they are free. HashSet and ImmutableArray now HAVE
+        // benchmarks (Set / Immutable) as representatives of the set and immutable families; the rest below
+        // are the still-open tail.
         ["IReadOnlyList"] = null,
         ["ICollection"] = null,
         ["IList"] = null,
         ["IReadOnlyCollection"] = null,
-        ["HashSet"] = null,
         ["ISet"] = null,
         ["IReadOnlySet"] = null,
         ["Queue"] = null,
         ["Stack"] = null,
 
-        // Immutable targets build through a Builder and then freeze — a materially different allocation
-        // profile from List, and entirely unmeasured.
-        ["ImmutableArray"] = null,
+        // Immutable targets build through a Builder and then freeze — ImmutableArray is now benchmarked; the
+        // other immutable variants share that profile and stay on the tail.
         ["ImmutableList"] = null,
         ["IImmutableList"] = null,
         ["ImmutableHashSet"] = null,
@@ -164,8 +163,8 @@ public class BenchmarkCoverageSelfValidationTests
     {
         var covered = ShapeToBenchmarkCategory.Count(kv => kv.Value is not null);
 
-        Assert.True(covered >= 6,
-            $"Benchmark shape coverage dropped to {covered} shapes; it was 6. A benchmark was deleted or a "
+        Assert.True(covered >= 9,
+            $"Benchmark shape coverage dropped to {covered} shapes; it was 9. A benchmark was deleted or a "
             + "category renamed — restore it rather than lowering this floor.");
     }
 }
