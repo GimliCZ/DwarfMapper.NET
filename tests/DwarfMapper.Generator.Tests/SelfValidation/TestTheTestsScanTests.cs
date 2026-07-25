@@ -407,6 +407,83 @@ public sealed class TestTheTestsScanTests
             "Fix missing matrix coverage instead of exempting attributes.");
     }
 
+    /// <summary>
+    ///     T5 — NEGATIVE CONTROL for the hollow detector itself.
+    ///     <para>
+    ///         T1 polices every <c>[Fact]</c>/<c>[Theory]</c> in the repo, and it does so through one predicate.
+    ///         Everything above proves the SCAN's inputs are sane (the universe is non-empty, the allowlists are
+    ///         small and unstale) — nothing proved the PREDICATE still discriminates. That asymmetry is
+    ///         dangerous in one direction: if the predicate grows too STRICT it produces loud false positives
+    ///         (a real test flagged hollow, someone notices immediately), but if it grows too PERMISSIVE T1
+    ///         passes over genuinely assertion-free tests forever and reports success while checking nothing.
+    ///     </para>
+    ///     <para>
+    ///         Not hypothetical: an IDE cleanup rewrote the snapshot suite's <c>Verifier.Verify(x)</c> into the
+    ///         modern <c>Verify(x)</c>, a form <see cref="ContainsVerifierCall" /> did not recognise. That
+    ///         landed on the loud side. The same edit in the other direction would have been silent.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void T5_The_hollow_detector_still_discriminates()
+    {
+        // Bodies with NO assertion of any kind must be classified hollow. Driven through the REAL extraction
+        // path (GetMethodBodyText -> ContainsAssertion), because comment stripping happens during extraction —
+        // testing the predicate alone would miss exactly the comment case below.
+        string[] hollow =
+        [
+            "var x = Compile(src);",
+            "var result = Run(source); _ = result.Diagnostics;",
+            "// Arrange / Act / Assert. (a comment, not an assertion)",
+            "/* Assert.Equal would go here, but this test never got finished */ var x = Run();"
+        ];
+        foreach (var body in hollow)
+            Assert.False(DetectsAssertion(body),
+                $"The hollow detector accepted an assertion-free body as assertive: {body}");
+
+        // Every form the detector is documented to recognise must still be recognised. A regression here is
+        // the loud direction, but it is exactly what broke once, so it is pinned too.
+        string[] assertive =
+        [
+            "Assert.Equal(1, x);",
+            "Assert.True(ok);",
+            "Record.Exception(() => Run());",
+            "actual.ShouldBe(expected);",
+            "Assert.Fail(\"report\");",
+            "return Verifier.Verify(generated);",  // legacy VerifyXunit form
+            "await Verifier.Verify(generated);",
+            "return Verify(generated);",           // modern form the cleanup introduced
+            "await Verify(generated);"
+        ];
+        foreach (var body in assertive)
+            Assert.True(DetectsAssertion(body),
+                $"The hollow detector no longer recognises a real assertion: {body}");
+
+        // The snapshot-exemption gate is a narrower question than "is there an assertion" — an allowlisted
+        // class earns its exemption ONLY by actually calling Verify. Both spellings must count, and a plain
+        // Assert must NOT, or the allowlist would silently launder non-snapshot tests.
+        Assert.True(ContainsVerifierCall("return Verify(generated);"));
+        Assert.True(ContainsVerifierCall("return Verifier.Verify(generated);"));
+        Assert.False(ContainsVerifierCall("Assert.Equal(1, x);"));
+    }
+
+    /// <summary>
+    ///     Runs <paramref name="body" /> through the same path T1 uses on real files: wrap it in a method,
+    ///     parse it, extract the body via <see cref="GetMethodBodyText" /> (which strips comments), then apply
+    ///     <see cref="ContainsAssertion" />. Testing the predicate in isolation would not exercise extraction,
+    ///     and extraction is where the comment-stripping lives.
+    /// </summary>
+    private static bool DetectsAssertion(string body)
+    {
+        var method = CSharpSyntaxTree
+            .ParseText("class C { public async System.Threading.Tasks.Task M() { " + body + " } }")
+            .GetRoot()
+            .DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Single();
+
+        return ContainsAssertion(GetMethodBodyText(method));
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Helpers: attribute usage-name derivation
     // ─────────────────────────────────────────────────────────────────────────
@@ -475,10 +552,31 @@ public sealed class TestTheTestsScanTests
     private static string GetMethodBodyText(MethodDeclarationSyntax method)
     {
         if (method.Body != null)
-            return method.Body.ToFullString();
+            return StripComments(method.Body);
         if (method.ExpressionBody != null)
-            return method.ExpressionBody.ToFullString();
+            return StripComments(method.ExpressionBody);
         return string.Empty;
+    }
+
+    /// <summary>
+    ///     Renders a body WITHOUT comment trivia. Assertion detection is substring-based, so
+    ///     <c>ToFullString()</c> let a comment merely MENTIONING <c>Assert.</c> — an "Arrange / Act / Assert."
+    ///     header, or a note explaining why an assertion was left out — count as the assertion itself. That is a
+    ///     false negative in the one direction that fails silently: the method is genuinely assertion-free, and
+    ///     T1 waves it through. Stripping comments means only real code can satisfy the check.
+    /// </summary>
+    private static string StripComments(SyntaxNode node)
+    {
+        var comments = node.DescendantTrivia()
+            .Where(t => t.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                        || t.IsKind(SyntaxKind.MultiLineCommentTrivia)
+                        || t.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia)
+                        || t.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia))
+            .ToList();
+
+        return comments.Count == 0
+            ? node.ToFullString()
+            : node.ReplaceTrivia(comments, (_, _) => default).ToFullString();
     }
 
     /// <summary>
