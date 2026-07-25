@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+using System.Globalization;
 
 namespace DwarfMapper.Generator.Tests;
 
@@ -102,6 +103,38 @@ public class ProjectionRuntimeParityTests
             """;
 
         Assert.NotEmpty(GeneratorAssert.Reports(src, "DWARF028"));
+    }
+
+    [Fact]
+    public void SkipNullSourceMembers_is_refused_per_affected_member_and_only_those()
+    {
+        // Third divergence of the same family, and the class-level one: .Map guards the assignment so the
+        // target keeps its own default ("PRESET"), while a projection's object initializer always assigns and
+        // stored null instead. Verified before the fix; silent, like the other two.
+        //
+        // Reported per AFFECTED member, which makes the negative half the real assertion: Id has a
+        // non-nullable value-type source, so the option never touched it and it must stay quiet. A diagnostic
+        // that fired on every member would be noise, and noise is how a real rule gets globally suppressed.
+        const string src = """
+            using System.Linq;
+            using DwarfMapper;
+            namespace Demo;
+            public sealed class Src { public int Id { get; set; } public string? Name { get; set; } }
+            public sealed class Dto { public int Id { get; set; } public string? Name { get; set; } = "PRESET"; }
+
+            [DwarfMapper(SkipNullSourceMembers = true)]
+            public partial class M
+            {
+                public partial IQueryable<Dto> Project(IQueryable<Src> q);
+            }
+            """;
+
+        var reported = GeneratorAssert.Reports(src, "DWARF028");
+
+        Assert.Contains(reported, d =>
+            d.GetMessage(CultureInfo.InvariantCulture).Contains("'Name'", StringComparison.Ordinal));
+        Assert.DoesNotContain(reported, d =>
+            d.GetMessage(CultureInfo.InvariantCulture).Contains("'Id'", StringComparison.Ordinal));
     }
 
     [Fact]

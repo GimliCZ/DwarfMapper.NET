@@ -502,7 +502,8 @@ internal static partial class MapperExtractor
                 var projMembers = ResolveProjectionMembers(
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumStrategy,
-                    referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method));
+                    referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method),
+                    skipNullSrc);
 
                 methods.Add(new MapMethodModel(
                     method.Name,

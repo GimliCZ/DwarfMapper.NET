@@ -120,8 +120,21 @@ internal static partial class MapperExtractor
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
         EnumStrategy enumStrategy, int referenceHandling, string paramExpr, int nameConvention = 0,
         IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
-            mapPropertyExtras = null)
+            mapPropertyExtras = null,
+        bool skipNullSourceMembers = false)
     {
+        // Targets the runtime COULD have deferred under SkipNullSourceMembers (settable, not init-only, not
+        // required). Mirrors ResolveMembers' rule so the projection diagnostic fires on exactly the members the
+        // option would have changed — no more, no less.
+        var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);
+        if (skipNullSourceMembers)
+            for (var t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            foreach (var tm in t.GetMembers())
+                if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: false } && !p.IsRequired)
+                    deferrableTargets.Add(p.Name);
+                else if (tm is IFieldSymbol f && !f.IsReadOnly && !f.IsConst && !f.IsRequired)
+                    deferrableTargets.Add(f.Name);
+
         // Per-member [MapProperty] modifiers, keyed by target — checked against the translatable set below.
         var extrasByTarget =
             new Dictionary<string, (bool HasNullSub, string? When)>(StringComparer.Ordinal);
@@ -272,6 +285,23 @@ internal static partial class MapperExtractor
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember, location, target.Name,
                     MemberName: target.Name));
+                continue;
+            }
+
+            // [DwarfMapper(SkipNullSourceMembers = true)] cannot be honoured inside an expression tree: the
+            // runtime emitter guards the assignment with `if (src.X is not null) …` so the target keeps its own
+            // default, which a projection's object initializer has no way to express — it always assigns, so a
+            // null source would overwrite that default with null. Reported PER AFFECTED MEMBER, using the same
+            // eligibility the runtime uses (nullable source + a target it could actually have deferred), so
+            // members the option never touched stay quiet.
+            if (skipNullSourceMembers
+                && (src.Type.IsReferenceType || IsNullableValue(src.Type, out _))
+                && deferrableTargets.Contains(target.Name))
+            {
+                EmitDWARF028(diagnostics, location, target.Name,
+                    "SkipNullSourceMembers is not translatable in projection (an object initializer always "
+                    + "assigns, so a null source would overwrite the target's default instead of keeping it); "
+                    + "map this member at runtime, or drop the option for this mapper");
                 continue;
             }
 
