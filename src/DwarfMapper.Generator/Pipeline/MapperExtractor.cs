@@ -1364,6 +1364,28 @@ internal static partial class MapperExtractor
             methods.Add(model with { IsRecursionCapable = isRC });
         }
 
+        // ── DWARF076: declared create-map whose source and target are the same type ──
+        // A type trivially satisfies itself, so every destination member resolves and the completeness gate
+        // stays silent while the generator emits a shallow copy. Almost always a copy-paste slip. Only
+        // DECLARED create-style maps are considered: update-into (T src, T dest) is a legitimate
+        // refresh-an-existing-instance pattern, and the span/async-stream/projection shapes carry their own
+        // parameter lists. Auto-synthesized nested pairs never reach `methods`, so a same-type nested member
+        // (the graph's shape, not a typo) is exempt by construction.
+        for (var i = 0; i < methods.Count; i++)
+        {
+            var m = methods[i];
+            if (!(m.IsPartial || m.EmitAsNonPartial)) continue;
+            if (m.IsUpdateInto || m.IsSpanMap || m.IsAsyncStreamMap || m.IsProjection) continue;
+            if (!string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal)) continue;
+
+            publicMethodLocs.TryGetValue(i, out var selfLoc);
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.SelfMap, selfLoc,
+                $"Source and target are the same type '{m.ParameterTypeFullName}', so '{m.MethodName}' just "
+                + "emits a shallow copy of every member. This is usually a mistyped type argument — did you mean "
+                + "a different target? If a shallow copy IS what you want, suppress DWARF076 here to say so."));
+        }
+
         // ── DWARF060: same-source / multiple-target signature collision ──────────
         // Two public create-style maps that would emit an identical (name, parameter-type) signature but
         // with different return (target) types overload only by return type — illegal C# (CS0111). The

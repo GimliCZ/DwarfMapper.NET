@@ -627,6 +627,21 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf075");
 
+    // A DECLARED create-map whose source and target are the same type. It compiles and emits a shallow copy,
+    // and the completeness gate cannot object — a type trivially satisfies itself, so every destination member
+    // resolves and the map is "complete". That silence is the problem: the overwhelmingly common cause is a
+    // copy-paste slip ([GenerateMap<Dto, Dto>] where Entity was meant). Warning, not Error, because a shallow
+    // clone is a legitimate thing to ask for; a warnings-as-errors build still fails, and a deliberate clone
+    // suppresses the id. Update-into (T src, T dest) is exempt — refreshing an existing instance from another
+    // of the same type is a real pattern — as are auto-synthesized nested pairs, which reflect the graph's
+    // shape rather than anything the author typed and so offer nothing to fix.
+    public static readonly DiagnosticDescriptor SelfMap = new(
+        "DWARF076",
+        "Source and target are the same type",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf076");
+
     public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
         "DWARF074",
         "[MapCollectionKey] cannot be applied here",

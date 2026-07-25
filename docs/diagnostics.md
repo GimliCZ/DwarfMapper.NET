@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF074`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF076`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -686,6 +686,29 @@ leaf going missing is not, which is why it is now said out loud instead of silen
 
 **Fix:** map the member explicitly (e.g. a `[MapProperty]` binding or a manual assignment in an `AfterMap` hook),
 or use `ReferenceHandling = None` for this mapper if the graph does not need reference preservation.
+
+## dwarf076
+**Source and target are the same type** · Warning
+
+A declared create-map maps a type to **itself** — `[GenerateMap<Dto, Dto>]`, or `partial Dto Map(Dto s)` — so the
+generated method is just a **shallow copy** of every member. The completeness gate cannot object here: a type
+trivially satisfies itself, so every destination member resolves and the map is "complete" and silent. In
+practice this is almost always a mistyped type argument (`[GenerateMap<Dto, Dto>]` where the entity was meant),
+and the cost of the silence is that the mapper looks wired up while mapping nothing across.
+
+**Deliberately exempt:**
+
+- **Update-into** — `partial void Update(Order src, Order dest)` (or the fluent `partial Order Update(…)`).
+  Copying values onto an *existing* instance of the same type is a real pattern (refreshing a tracked entity
+  from a detached one), so it is never reported.
+- **Auto-synthesized nested pairs** — if `Src.Child` and `Dst.Child` are both `Leaf`, the generator synthesizes a
+  `Leaf → Leaf` pair. That reflects the shape of your graph rather than anything you typed, and there would be
+  nothing to fix, so it stays quiet.
+
+**Fix:** correct the type argument to the target you meant. If a shallow clone genuinely *is* what you want, say
+so by suppressing the id at that site (`#pragma warning disable DWARF076`, a `[SuppressMessage]`, or
+`dotnet_diagnostic.DWARF076.severity = none` in `.editorconfig`) — this is a Warning, so a warnings-as-errors
+build still fails until you make that choice explicit.
 
 ---
 
