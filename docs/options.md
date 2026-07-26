@@ -12,6 +12,7 @@ The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `
 
 ## Class-level options — `[DwarfMapper(...)]`
 
+<!-- table: class-options -->
 | Option | Type | Default | What it does |
 |---|---|---|---|
 | `CaseInsensitive` | `bool` | `false` | Match member names ordinal-ignore-case. Ambiguity → `DWARF010`. |
@@ -30,6 +31,7 @@ The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `
 | `GenerateExtensions` | `bool` | `true` | Emit `source.ToTarget()` convenience extension methods (namespace `DwarfMapper.Extensions`). `false` suppresses them for this mapper. |
 | `AutoMatchMembers` | `bool` | `true` | `false` = explicit-only (trust-boundary guard): nothing is wired by name, every member needs `[MapProperty]`/`[MapValue]` or `[MapIgnore]`, and a would-be auto-match raises `DWARF072`. Stops an untrusted same-named field (e.g. `IsAdmin`) over-posting onto a protected member. |
 | `IgnoreObsoleteMembers` | `bool` | `false` | Drop `[Obsolete]` members from mapping: an obsolete destination is neither required nor auto-populated, an obsolete source needn't be consumed (no `DWARF039`). An explicit `[MapProperty]`/`[MapValue]` still opts a specific one back in. |
+<!-- endtable -->
 
 > **`CaseInsensitive` and `NameConvention` interact** — they both govern how member names are matched, so set
 > one or the other. `NameConvention.Exact` honours `CaseInsensitive` (`Exact` + `CaseInsensitive=true` =
@@ -54,9 +56,11 @@ enum, and `DwarfMappingDepthException`.
 
 ## Assembly-level options — `[assembly: DwarfMapperOptions(...)]`
 
+<!-- table: assembly-options -->
 | Option | Type | Default | What it does |
 |---|---|---|---|
 | `PublicExtensions` | `bool` | `false` | Emit the generated convenience extensions (`DwarfMapper.Extensions`) as **`public`** (cross-assembly) for pairs whose source and target types are both public — pairs involving a non-public type stay assembly-internal for safety. The opt-in for the layered "mappers in a library, consumed elsewhere" layout. |
+<!-- endtable -->
 
 ## Per-member / per-method attributes
 

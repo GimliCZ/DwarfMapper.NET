@@ -15,6 +15,30 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 public class DocsAreSnippetCurrentTests
 {
     private const string GalleryReadme = "samples/DwarfMapper.Gallery/README.md";
+    private const string OptionsDoc = "docs/options.md";
+
+    /// <summary>
+    ///     An option that exists in code but has no prose in the cheat-sheet. The table renders it with an
+    ///     empty cell rather than omitting it, so the page cannot lie by silence — and this fails until a
+    ///     human writes the description.
+    /// </summary>
+    [Fact]
+    public void Every_option_in_code_carries_prose_in_the_cheat_sheet()
+    {
+        var committed = DocSet.Read(OptionsDoc);
+
+        var undocumented = OptionTableRenderer
+            .UndocumentedOptions(OptionTableRenderer.RenderRows(
+                typeof(DwarfMapperAttribute), committed, "class-options"))
+            .Concat(OptionTableRenderer.UndocumentedOptions(OptionTableRenderer.RenderRows(
+                typeof(DwarfMapperOptionsAttribute), committed, "assembly-options")))
+            .ToList();
+
+        Assert.True(undocumented.Count == 0,
+            "Option(s) present in code with no description in docs/options.md. The row is rendered with an "
+            + "empty cell so the omission is visible; write the prose:\n  "
+            + string.Join("\n  ", undocumented));
+    }
 
     [Fact]
     public void Every_snippet_marker_in_every_doc_matches_its_sample()
@@ -30,6 +54,17 @@ public class DocsAreSnippetCurrentTests
             if (string.Equals(relative, GalleryReadme, StringComparison.Ordinal))
                 injected = DocTableInjector.Inject(
                     injected, "gallery-index", GalleryIndexRenderer.RenderRows(), relative);
+
+            if (string.Equals(relative, OptionsDoc, StringComparison.Ordinal))
+            {
+                injected = DocTableInjector.Inject(injected, "class-options",
+                    OptionTableRenderer.RenderRows(typeof(DwarfMapperAttribute), committed, "class-options"),
+                    relative);
+                injected = DocTableInjector.Inject(injected, "assembly-options",
+                    OptionTableRenderer.RenderRows(typeof(DwarfMapperOptionsAttribute), committed,
+                        "assembly-options"),
+                    relative);
+            }
 
             if (string.Equals(Normalise(committed), Normalise(injected), StringComparison.Ordinal)) continue;
 
