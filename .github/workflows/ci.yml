@@ -108,7 +108,41 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       # Fails the build on any IL2xxx (trim) or IL3xxx (AOT) warning.
-      - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -warnaserror
+      - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -warnaserror -o aot-out
+      # Publishing proves it COMPILES trim/AOT-clean; it says nothing about behaviour. The sample is written
+      # as a behavioural gate (36 `return 1` sites) and was never executed, so CORRECTNESS.md's "runs a
+      # behavioural gate over the published native binary" was untrue until this step existed.
+      - name: Execute the published AOT binary (behavioural gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="aot-out/DwarfMapper.AotSample"
+          [[ "${{ matrix.rid }}" == win-* ]] && BIN="aot-out/DwarfMapper.AotSample.exe"
+          if [[ ! -x "$BIN" && ! -f "$BIN" ]]; then
+            echo "FAIL: published AOT binary not found at $BIN — a gate that cannot find its subject must not pass." >&2
+            exit 1
+          fi
+          "./$BIN"
+
+  # ── Conformance gate (fail-closed) ────────────────────────────────────────
+  # samples/DwarfMapper.Conformance returns a real exit code from its assertions and was never executed by
+  # CI, so it only ran when someone remembered. The script also fails on ABSENCE — missing artifact, wrong
+  # commit, or a shrunken assertion count — because a gate that only fails when the run fails still passes
+  # when the run never happened, and "skipped" is indistinguishable from "passed" in a green check.
+  conformance-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: chmod +x scripts/conformance-gate.sh
+      - run: ./scripts/conformance-gate.sh linux-x64
+      - name: Publish the dated conformance artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: conformance-results
+          path: conformance/results/
 
   codeql:
     runs-on: ubuntu-latest
