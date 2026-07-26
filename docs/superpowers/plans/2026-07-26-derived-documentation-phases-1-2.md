@@ -93,7 +93,7 @@ Pure refactor. The three files under `docs/generated/` must be **byte-identical*
 - [ ] **Step 1: Capture the byte-exact baseline of the generated docs**
 
 ```bash
-cd /home/jouda/RiderProjects/DwarfMapper.NET
+cd "$(git rev-parse --show-toplevel)"
 sha256sum docs/generated/*.md > /tmp/docs-baseline.sha256
 cat /tmp/docs-baseline.sha256
 ```
@@ -243,7 +243,7 @@ The two `[Fact]`s that call `ApiReferenceRenderer.Render(DoNotEdit)` need no oth
 - [ ] **Step 7: Register the project in the solution**
 
 ```bash
-cd /home/jouda/RiderProjects/DwarfMapper.NET
+cd "$(git rev-parse --show-toplevel)"
 dotnet sln DwarfMapper.NET.sln add src/DwarfMapper.DocTooling/DwarfMapper.DocTooling.csproj \
   --solution-folder src
 ```
