@@ -3,7 +3,8 @@
 
 > Machine-generated companions: [diagnostics index](generated/diagnostics-index.md)
 > (every id, severity and title, rendered from the descriptors) and the
-> [option support matrix](generated/option-support-matrix.md) (what each
+> [API reference](generated/api-reference.md) (the public surface, from the assembly and its XML
+> summaries), and the [option support matrix](generated/option-support-matrix.md) (what each
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 

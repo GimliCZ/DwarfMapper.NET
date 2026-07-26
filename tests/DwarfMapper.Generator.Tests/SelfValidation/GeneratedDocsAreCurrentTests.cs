@@ -59,6 +59,30 @@ public class GeneratedDocsAreCurrentTests
     }
 
     [Fact]
+    public void The_api_reference_matches_the_public_surface()
+    {
+        AssertCurrent(Path.Combine("docs", "generated", "api-reference.md"),
+            ApiReferenceRenderer.Render(DoNotEdit));
+    }
+
+    [Fact]
+    public void The_api_reference_actually_carries_summaries()
+    {
+        // Without this, a broken XML lookup would render a complete-looking page of empty Summary cells and
+        // the drift check would happily hold it stable forever.
+        var api = ApiReferenceRenderer.Render(DoNotEdit);
+        var rows = api.Split('\n').Where(l => l.StartsWith("| `", StringComparison.Ordinal)).ToList();
+        var documented = rows.Count(l => l.TrimEnd().EndsWith('|')
+                                         && l.Split('|').Length > 3
+                                         && !string.IsNullOrWhiteSpace(l.Split('|')[^2]));
+
+        Assert.True(rows.Count >= 20, $"API reference rendered only {rows.Count} member rows.");
+        Assert.True(documented >= rows.Count / 2,
+            $"Only {documented} of {rows.Count} rendered members carry a summary — the XML lookup is likely "
+            + "broken rather than the code being undocumented.");
+    }
+
+    [Fact]
     public void The_generators_are_not_vacuous()
     {
         // Both renderers would "pass" trivially if they produced an empty body and the committed file were
@@ -164,9 +188,9 @@ public class GeneratedDocsAreCurrentTests
         foreach (var _ in endpoints) sb.Append("---|");
         sb.Append('\n');
 
-        foreach (var cell in OptionContractTests.ProjectionCells.OrderBy(c => c.Option, StringComparer.Ordinal))
+        foreach (var cell in OptionCatalog.Options)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"| `{cell.Option}` |");
+            sb.Append(CultureInfo.InvariantCulture, $"| `{cell.Name}` |");
 
             // A row silent at EVERY endpoint means the fixture never triggers the option — a gap in the
             // probe, not a verdict on the code. Gating on the reference endpoint alone was too coarse:
@@ -189,8 +213,10 @@ public class GeneratedDocsAreCurrentTests
             sb.Append('\n');
         }
 
-        sb.Append("\nProbed with `")
-            .Append(string.Join("`, `", OptionContractTests.ProjectionCells.Select(c => c.NonDefault)))
+        sb.Append("\nOption list and defaults scanned from `DwarfMapperAttribute`; each probe value derived\n");
+        sb.Append("from its default (invert a bool, pick another enum member, step an int), so a new option\n");
+        sb.Append("appears here without anyone maintaining a list. Probed with: `")
+            .Append(string.Join("`, `", OptionCatalog.Options.Select(c => c.NonDefault)))
             .Append("`.\n");
         return sb.ToString();
     }
@@ -252,8 +278,8 @@ public class GeneratedDocsAreCurrentTests
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanWrite).Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
 
-        var stale = OptionContractTests.ProjectionCells
-            .Select(c => c.Option).Where(o => !actual.Contains(o)).ToList();
+        var stale = OptionCatalog.Options
+            .Select(c => c.Name).Where(o => !actual.Contains(o)).ToList();
 
         Assert.True(stale.Count == 0, "Matrix probes option(s) that no longer exist: " + string.Join(", ", stale));
     }

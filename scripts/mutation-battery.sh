@@ -32,6 +32,13 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
+# EQUIVALENT MUTANTS — deliberately NOT catalogued, because no test can kill them and a permanent survivor
+# would train everyone to ignore the report:
+#   * update-into passing `false, false` for isPreserveMode/isSetNullMode instead of the real values. The
+#     hardcoded literals contradict the six other call sites and were worth removing, but preserve threading
+#     is driven by the class-level nested synthesis path, so the call site makes no observable difference.
+#     Verified by mutating it back with UpdateIntoPreserveParityTests in place: still green.
+#
 # id | file | sed expression | guard (test filter) | what the mutation simulates
 #
 # The guard column is the POINT of the catalogue: it records which test is supposed to notice. A mutant killed
@@ -60,7 +67,10 @@ MUTANTS=(
 "M22|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (explicitOnly)/if (false)/|OptionContractTests|the mass-assignment trust boundary (AutoMatchMembers=false) not applying at projection"
 "M23|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (!autoNest)/if (false)/|OptionContractTests|projection auto-nesting despite AutoNest=false"
 "M24|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (ignoreObsolete)/if (false)/|OptionContractTests|IgnoreObsoleteMembers silently dropped by projection"
-"M25|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/if (explicitOnly)\n                {\n                    diagnostics.Add(new DiagnosticInfo(\n                        DiagnosticDescriptors.ExplicitOnlyNotElementWise/if (false)\n                {\n                    diagnostics.Add(new DiagnosticInfo(\n                        DiagnosticDescriptors.ExplicitOnlyNotElementWise/|OptionEndpointParityTests|the explicit-only trust boundary silently not applying to span/async element pairs"
+"M25|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/if (explicitOnly)/if (false)/|OptionEndpointParityTests|the explicit-only trust boundary silently not applying to span/async element pairs"
+"M27|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/                    EmitSourceCoverageFromConsumed(/                    NoOpSourceCoverage(/|GeneratedDocsAreCurrentTests|RequiredMapping source coverage lost at projection"
+"M26|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/foreach (var owed in elementPairsOwedCoverage)/foreach (var owed in new System.Collections.Generic.List<(ITypeSymbol Src, ITypeSymbol Tgt, LocationInfo? Loc, List<string> IgnoreSources)>())/|GeneratedDocsAreCurrentTests|RequiredMapping source coverage lost at the span and async-stream endpoints"
+"M28|tests/DwarfMapper.Generator.Tests/Contracts/OptionCatalog.cs|s/v => !v.Equals(def)/v => true/|OptionContractTests|the derived enum probe collapsing to the DEFAULT value, making every enum cell measure nothing"
 "M21|docs/diagnostics.md|s/\*\*Fix:\*\* disambiguate with/**Fix (optional):** disambiguate with/|Scan8|an ERROR diagnostic downgrading its remedy to optional advice"
 )
 

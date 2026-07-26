@@ -194,6 +194,14 @@ internal static partial class MapperExtractor
         // NestedMappingRegistry: local to this Extract call (contains ISymbol — never stored in model).
         var nestedRegistry = new NestedMappingRegistry();
 
+        // Span and async-stream methods do not resolve members themselves — they map the ELEMENT pair through
+        // an auto-synthesized mapper, and synthesized mappers do not run the source-coverage gate. So
+        // RequiredMapping = Both reported unconsumed source members at every other endpoint and silently
+        // nothing at these two. Record the element pairs here and run coverage when the synthesis loop has
+        // actually resolved them, which reuses the real resolution instead of duplicating the matching rules.
+        var elementPairsOwedCoverage =
+            new List<(ITypeSymbol Src, ITypeSymbol Tgt, LocationInfo? Loc, List<string> IgnoreSources)>();
+
         foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
         {
             ct.ThrowIfCancellationRequested();
@@ -239,6 +247,10 @@ internal static partial class MapperExtractor
                         out var spanConv, out var spanNull, out var spanNeedsCtx, spanAutoNest, nestedRegistry))
                     // Element pair not mappable → diagnostic (e.g. DWARF005) already added.
                     continue;
+
+                if (requiredMapping == 1) // RequiredMappingStrategy.Both
+                    elementPairsOwedCoverage.Add(
+                        (spanSrcElem, spanDstElem, methodLocation, ReadIgnoreSources(method).ToList()));
 
                 var spanElemMember = new MemberMap(
                     "", "", spanConv,
@@ -288,12 +300,26 @@ internal static partial class MapperExtractor
                     updExplicit, allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                     updFlatten, updReinterpret,
                     null, null, updAutoNest, nestedRegistry,
-                    nullCollections == NullCollectionsBehavior.AsNull, false, false,
+                    // These were hardcoded `false` while the six other ResolveMembers call sites pass the
+                    // real values. Passing them is consistency, not a demonstrated fix: preserve threading
+                    // actually comes from the class-level nested synthesis path, so mutating this back to
+                    // `false, false` changes no generated output and no test can catch it. Kept because a
+                    // lone hardcoded literal here is a landmine the next person would have to re-derive.
+                    nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
                     implicitConversions, updMapValues, valueProviders,
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
                     skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
                     explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                     stringFormats: ReadStringFormats(method));
+
+                // Source-side completeness applies here too. It lived inline in the create-map branch, so
+                // RequiredMapping = Both reported unconsumed source members through .Map and said nothing
+                // through .Update on the SAME mapper. There are no constructor arguments to consider: an
+                // update writes onto an instance that already exists.
+                if (requiredMapping == 1) // RequiredMappingStrategy.Both
+                    EmitSourceCoverage(
+                        updSrc, updMembers, null, classIgnoreSources, ReadIgnoreSources(method),
+                        ignoreObsolete, methodLocation, diagnostics);
 
                 // Update-into assigns members post-construction, so init-only targets cannot be written
                 // (they would emit CS8852). Treat them as read-only here: drop them and surface DWARF007
@@ -420,6 +446,10 @@ internal static partial class MapperExtractor
                         out var asConv, out var asNull, out var asNeedsCtx, asAutoNest, nestedRegistry))
                     continue; // element pair not mappable → diagnostic already added
 
+                if (requiredMapping == 1) // RequiredMappingStrategy.Both
+                    elementPairsOwedCoverage.Add(
+                        (asSrcElem, asDstElem, methodLocation, ReadIgnoreSources(method).ToList()));
+
                 var asElemMember = new MemberMap(
                     "", "", asConv,
                     asNull, asNeedsCtx);
@@ -515,12 +545,21 @@ internal static partial class MapperExtractor
                 // Per-method [AutoNest] override, matching every other endpoint (C1). Projection ignored
                 // the option entirely before this.
                 var projAutoNest = ReadMethodAutoNest(method, classAutoNest);
+                var projConsumedSources = new HashSet<string>(StringComparer.Ordinal);
                 var projExplicitMaps = ReadExplicitMaps(method);
                 var projMembers = ResolveProjectionMembers(
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumStrategy,
                     referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method),
-                    skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest);
+                    skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
+                    projConsumedSources);
+
+                // Source-side completeness for projection. The resolver already knows which source members it
+                // read, so this needed tracking rather than new analysis — it was simply never asked.
+                if (requiredMapping == 1) // RequiredMappingStrategy.Both
+                    EmitSourceCoverageFromConsumed(
+                        projSource, projConsumedSources, classIgnoreSources, ReadIgnoreSources(method),
+                        ignoreObsolete, methodLocation, diagnostics);
 
                 methods.Add(new MapMethodModel(
                     method.Name,
@@ -914,27 +953,9 @@ internal static partial class MapperExtractor
             // consumed by nothing surfaces DWARF039 (Info suggestion), unless suppressed by
             // [MapIgnoreSource]. Dotted source names (flattened leaves) mark their root consumed.
             if (requiredMapping == 1) // RequiredMappingStrategy.Both
-            {
-                var ignoreSources = new HashSet<string>(classIgnoreSources, StringComparer.Ordinal);
-                foreach (var s in ReadIgnoreSources(method))
-                    ignoreSources.Add(s);
-                // IgnoreObsoleteMembers, source side: an obsolete source member need not be consumed — you are
-                // retiring it, not required to keep reading it — so it does not surface DWARF039.
-                if (ignoreObsolete)
-                    foreach (var s in ObsoleteMemberNames(sourceType))
-                        ignoreSources.Add(s);
-
-                var consumed = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var m in members)
-                    AddConsumed(consumed, m.SourceName);
-                foreach (var m in ctorArgs)
-                    AddConsumed(consumed, m.SourceName);
-
-                foreach (var (name, _) in ReadableMembers(sourceType))
-                    if (!consumed.Contains(name) && !ignoreSources.Contains(name))
-                        diagnostics.Add(new DiagnosticInfo(
-                            DiagnosticDescriptors.UnconsumedSourceMember, methodLocation, name));
-            }
+                EmitSourceCoverage(
+                    sourceType, members, ctorArgs, classIgnoreSources, ReadIgnoreSources(method),
+                    ignoreObsolete, methodLocation, diagnostics);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -1281,6 +1302,19 @@ internal static partial class MapperExtractor
                 // leaves it at its default — safe and consistent — with no "unmappable" hazard.
                 mapPropertyExtras: nestedExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
                 ignoreObsolete: ignoreObsolete);
+
+            // Only the pairs registered above — a genuinely NESTED member pair is deliberately left alone,
+            // because source coverage has never applied at depth and turning it on for every synthesized pair
+            // would be a broad behavioural change rather than closing this gap.
+            foreach (var owed in elementPairsOwedCoverage)
+                if (SymbolEqualityComparer.Default.Equals(owed.Src, nestedSrc)
+                    && SymbolEqualityComparer.Default.Equals(owed.Tgt, nestedTgt))
+                {
+                    EmitSourceCoverage(
+                        nestedSrc, nestedMembers, null, classIgnoreSources, owed.IgnoreSources,
+                        ignoreObsolete, owed.Loc, diagnostics);
+                    break;
+                }
 
             nestedRegistry.ClearCurrentPair();
 
@@ -2451,6 +2485,77 @@ internal static partial class MapperExtractor
         // and would not compile when assigned to float/decimal.
         literal = RenderConstantLiteral(tc.Value, tc.Type, targetType, compilation);
         return true;
+    }
+
+    /// <summary>
+    ///     The source side of the completeness gate (<c>RequiredMapping = Both</c>): every readable source
+    ///     member must be read by something, or it surfaces DWARF039.
+    ///     <para>
+    ///         Extracted so update-into can share it. It lived inline in the create-map branch, which meant
+    ///         `RequiredMapping = Both` reported unconsumed source members through .Map and silently reported
+    ///         nothing through .Update on the same mapper — the option was accepted and discarded.
+    ///     </para>
+    /// </summary>
+    private static void EmitSourceCoverage(
+        ITypeSymbol sourceType,
+        IEnumerable<MemberMap> members,
+        IEnumerable<MemberMap>? ctorArgs,
+        IEnumerable<string> classIgnoreSources,
+        IEnumerable<string> methodIgnoreSources,
+        bool ignoreObsolete,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        var ignoreSources = new HashSet<string>(classIgnoreSources, StringComparer.Ordinal);
+        foreach (var s in methodIgnoreSources)
+            ignoreSources.Add(s);
+        // IgnoreObsoleteMembers, source side: an obsolete source member need not be consumed — you are
+        // retiring it, not required to keep reading it — so it does not surface DWARF039.
+        if (ignoreObsolete)
+            foreach (var s in ObsoleteMemberNames(sourceType))
+                ignoreSources.Add(s);
+
+        var consumed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var m in members)
+            AddConsumed(consumed, m.SourceName);
+        if (ctorArgs is not null)
+            foreach (var m in ctorArgs)
+                AddConsumed(consumed, m.SourceName);
+
+        ReportUnconsumed(sourceType, consumed, ignoreSources, location, diagnostics);
+    }
+
+    /// <summary>
+    ///     Same gate, for a caller that already knows which source members it read. Projection resolves
+    ///     expressions rather than <see cref="MemberMap" />s, so it tracks the names directly.
+    /// </summary>
+    private static void EmitSourceCoverageFromConsumed(
+        ITypeSymbol sourceType,
+        HashSet<string> consumed,
+        IEnumerable<string> classIgnoreSources,
+        IEnumerable<string> methodIgnoreSources,
+        bool ignoreObsolete,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        var ignoreSources = new HashSet<string>(classIgnoreSources, StringComparer.Ordinal);
+        foreach (var s in methodIgnoreSources)
+            ignoreSources.Add(s);
+        if (ignoreObsolete)
+            foreach (var s in ObsoleteMemberNames(sourceType))
+                ignoreSources.Add(s);
+
+        ReportUnconsumed(sourceType, consumed, ignoreSources, location, diagnostics);
+    }
+
+    private static void ReportUnconsumed(
+        ITypeSymbol sourceType, HashSet<string> consumed, HashSet<string> ignoreSources,
+        LocationInfo? location, List<DiagnosticInfo> diagnostics)
+    {
+        foreach (var (name, _) in ReadableMembers(sourceType))
+            if (!consumed.Contains(name) && !ignoreSources.Contains(name))
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.UnconsumedSourceMember, location, name));
     }
 
 }

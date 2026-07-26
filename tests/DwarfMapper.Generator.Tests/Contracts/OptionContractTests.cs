@@ -32,56 +32,12 @@ namespace DwarfMapper.Generator.Tests.Contracts;
 /// </summary>
 public sealed record OptionCell(
     string Option,
-    string NonDefault,
     CellStatus Status,
     string? DiagnosticId,
-    string Reason,
-    string? Types = null);
+    string Reason);
 
 public class OptionContractTests
 {
-
-    private const string UnconsumedSource = """
-        public sealed class Src { public int Id { get; set; } public string? Name { get; set; } public int Extra { get; set; } }
-        public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-        """;
-
-    private const string NullableValueToNonNullable = """
-        public sealed class Src { public int Id { get; set; } public int? Val { get; set; } }
-        public sealed class Dst { public int Id { get; set; } public int Val { get; set; } }
-        """;
-
-    private const string NullableToNonNullable = """
-        public sealed class Src { public int Id { get; set; } public string? Name { get; set; } }
-        public sealed class Dst { public int Id { get; set; } public string Name { get; set; } = ""; }
-        """;
-
-    private const string NestedPair = """
-        public sealed class Inner { public int X { get; set; } }
-        public sealed class InnerDto { public int X { get; set; } }
-        public sealed class Src { public int Id { get; set; } public Inner Child { get; set; } = new(); }
-        public sealed class Dst { public int Id { get; set; } public InnerDto Child { get; set; } = new(); }
-        """;
-
-    private const string NonPublicSource = """
-        public sealed class Src { public int Id { get; set; } internal string? Name { get; set; } }
-        public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-        """;
-
-    private const string SnakeCaseSource = """
-        public sealed class Src { public int Id { get; set; } public string? user_name { get; set; } }
-        public sealed class Dst { public int Id { get; set; } public string? UserName { get; set; } }
-        """;
-
-    private const string ObsoleteMember = """
-        public sealed class Src { public int Id { get; set; } [System.Obsolete] public string? Name { get; set; } }
-        public sealed class Dst { public int Id { get; set; } [System.Obsolete] public string? Name { get; set; } }
-        """;
-
-    private const string CaseOnlyDifference = """
-        public sealed class Src { public int Id { get; set; } public string? name { get; set; } }
-        public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-        """;
 
     /// <summary>
     ///     Every class-level option, with what projection is expected to do about it. A cell declared
@@ -90,81 +46,75 @@ public class OptionContractTests
     /// </summary>
     public static readonly OptionCell[] ProjectionCells =
     [
-        new("SkipNullSourceMembers", "SkipNullSourceMembers = true", CellStatus.Refused, "DWARF028",
-            "merge-shaped semantics: a projection CREATES a row, so 'leave the target alone' has no meaning",
-            NullableToNonNullable),
+        new("SkipNullSourceMembers", CellStatus.Refused, "DWARF028",
+            "merge-shaped semantics: a projection CREATES a row, so 'leave the target alone' has no meaning"),
 
-        new("AllowNonPublic", "AllowNonPublic = true", CellStatus.Refused, "DWARF028",
-            "an expression tree the provider translates cannot read a non-public member", NonPublicSource),
+        new("AllowNonPublic", CellStatus.Refused, "DWARF028",
+            "an expression tree the provider translates cannot read a non-public member"),
 
-        new("NullStrategy", "NullStrategy = NullStrategy.SetDefault", CellStatus.NotApplicable, null,
+        new("NullStrategy", CellStatus.NotApplicable, null,
             "int?->int is refused with DWARF028 structurally, with or without this option, so the option is "
             + "never consulted. Recorded as NotApplicable rather than Refused because an earlier Refused "
             + "declaration passed for the WRONG reason: it asserted DWARF028 was present, and the baseline "
             + "emits it too. The endpoint-parity classifier caught that by only counting diagnostics the "
-            + "option itself introduces",
-            NullableValueToNonNullable),
+            + "option itself introduces"),
 
-        new("AutoNest", "AutoNest = false", CellStatus.Refused, "DWARF005",
-            "explicit-nesting mode still refuses an unmapped nested member, as it does everywhere else",
-            NestedPair),
+        new("AutoNest", CellStatus.Refused, "DWARF005",
+            "explicit-nesting mode still refuses an unmapped nested member, as it does everywhere else"),
 
-        new("AutoMatchMembers", "AutoMatchMembers = false", CellStatus.Refused, "DWARF072",
+        new("AutoMatchMembers", CellStatus.Refused, "DWARF072",
             "the mass-assignment guard is a trust boundary and must not weaken at the projection endpoint"),
 
-        new("NameConvention", "NameConvention = NameConvention.Flexible", CellStatus.Honoured, null,
-            "name resolution happens before translatability, so it applies identically here", SnakeCaseSource),
+        new("NameConvention", CellStatus.Honoured, null,
+            "name resolution happens before translatability, so it applies identically here"),
 
-        new("CaseInsensitive", "CaseInsensitive = true", CellStatus.Honoured, null,
-            "name resolution happens before translatability, so it applies identically here",
-            CaseOnlyDifference),
+        new("CaseInsensitive", CellStatus.Honoured, null,
+            "name resolution happens before translatability, so it applies identically here"),
 
-        new("IgnoreObsoleteMembers", "IgnoreObsoleteMembers = true", CellStatus.Honoured, null,
-            "member filtering is a resolution concern and precedes translatability", ObsoleteMember),
+        new("IgnoreObsoleteMembers", CellStatus.Honoured, null,
+            "member filtering is a resolution concern and precedes translatability"),
 
-        new("ImplicitConversions", "ImplicitConversions = false", CellStatus.NotApplicable, null,
+        new("ReferenceHandling", CellStatus.Refused, "DWARF028",
+            "identity preservation needs a runtime dictionary, which an expression tree cannot carry"),
+
+        new("RequiredMapping", CellStatus.Refused, "DWARF039",
+            "source-side completeness: an unconsumed source member is reported here exactly as it is at the "
+            + "create and update endpoints"),
+
+        // ── Declared NotApplicable ────────────────────────────────────────────────────────────────────────
+        // The UNVERIFIED class. Each states why no fixture distinguishes honoured from dropped, because
+        // "I could not think of a fixture" and "there is nothing to observe" must not look alike. These are
+        // the rows the generated matrix renders as "not probed" — it does not claim they are fine.
+        new("ImplicitConversions", CellStatus.NotApplicable, null,
             "verified against both endpoints rather than assumed: for a WIDENING pair (int->long) neither "
             + "endpoint reacts to the option at all, and for a NARROWING pair projection refuses the member "
             + "with DWARF028 before any conversion policy is consulted (CreateMap reports DWARF038). There is "
             + "no fixture in which projection observes this option, so there is nothing to diverge"),
 
-        new("GenerateExtensions", "GenerateExtensions = false", CellStatus.NotApplicable, null,
+        new("GenerateExtensions", CellStatus.NotApplicable, null,
             "projection emits no convenience extension in the first place (verified: no static class appears "
             + "in the output with or without the option), so there is nothing for it to suppress"),
 
-        // ── Declared NotApplicable: the option has no projection-observable trigger ────────────────────────
-        // These are the UNVERIFIED class. Each states why no fixture can distinguish honoured from dropped,
-        // because "I could not think of a fixture" and "there is nothing to observe" must not look alike.
-        new("EnumStrategy", "EnumStrategy = EnumStrategy.ByValue", CellStatus.NotApplicable, null,
+        new("EnumStrategy", CellStatus.NotApplicable, null,
             "a cross-enum conversion is itself untranslatable, so the STRATEGY never gets to matter — the "
             + "member is refused before the strategy is consulted"),
 
-        new("NullCollections", "NullCollections = NullCollectionStrategy.AsEmpty", CellStatus.NotApplicable,
-            null,
+        new("NullCollections", CellStatus.NotApplicable, null,
             "collection rebuilds are untranslatable outright, so the null policy for them is unreachable"),
 
-        new("ReferenceHandling", "ReferenceHandling = ReferenceHandlingStrategy.Preserve",
-            CellStatus.NotApplicable, null,
-            "identity preservation needs a runtime dictionary; the member is refused before the policy applies"),
-
-        new("OnCycle", "OnCycle = OnCycleStrategy.Throw", CellStatus.NotApplicable, null,
+        new("OnCycle", CellStatus.NotApplicable, null,
             "cycles require reference tracking, which is refused at this endpoint for the same reason"),
 
-        new("MaxDepth", "MaxDepth = 2", CellStatus.NotApplicable, null,
-            "projection depth is bounded by what the provider can translate, not by this budget"),
-
-        new("RequiredMapping", "RequiredMapping = RequiredMappingStrategy.Both", CellStatus.NotApplicable, null,
-            "SHOULD report DWARF039 for the unconsumed source member, as CreateMap does, and does not. This "
-            + "is a KNOWN GAP tracked in OptionGaps.KnownSilent, not a genuine non-applicability — recorded "
-            + "here rather than declared Refused, because declaring the behaviour we want would make this "
-            + "test fail for a real reason while reading as a passing contract",
-            UnconsumedSource)
+        new("MaxDepth", CellStatus.NotApplicable, null,
+            "projection depth is bounded by what the provider can translate, not by this budget")
     ];
 
     public static TheoryData<string> OptionNames()
     {
+        // Driven by the SCANNED catalogue, not by the declaration list: an option added to the attribute
+        // becomes a failing cell here immediately, instead of waiting for someone to notice the list.
         var data = new TheoryData<string>();
-        foreach (var c in ProjectionCells) data.Add(c.Option);
+        foreach (var c in OptionCatalog.Options) data.Add(c.Name);
         return data;
     }
 
@@ -172,11 +122,20 @@ public class OptionContractTests
     [MemberData(nameof(OptionNames))]
     public void Projection_honours_or_refuses_each_option_as_declared(string option)
     {
-        var cell = ProjectionCells.Single(c => string.Equals(c.Option, option, StringComparison.Ordinal));
+        var scanned = OptionCatalog.Options.Single(c => string.Equals(c.Name, option, StringComparison.Ordinal));
+        var cell = ProjectionCells.SingleOrDefault(
+            c => string.Equals(c.Option, option, StringComparison.Ordinal));
 
+        Assert.True(cell is not null,
+            $"[DwarfMapper] option '{option}' exists on the attribute but has no declared projection "
+            + "contract. Add a ProjectionCells row saying whether projection honours it, refuses it, or "
+            + "cannot observe it.");
+
+        // Probe value comes from the catalogue so the doc and the contract test cannot disagree about what
+        // was actually set.
         var withOption = EndpointSources.Build(
-            Endpoint.Projection, options: cell.NonDefault, types: cell.Types);
-        var withoutOption = EndpointSources.Build(Endpoint.Projection, types: cell.Types);
+            Endpoint.Projection, options: scanned.NonDefault, types: scanned.Types);
+        var withoutOption = EndpointSources.Build(Endpoint.Projection, types: scanned.Types);
 
         var (diagnostics, generated) = GeneratorTestHarness.Run(withOption);
         var (_, baseline) = GeneratorTestHarness.Run(withoutOption);
@@ -186,7 +145,7 @@ public class OptionContractTests
             case CellStatus.Refused:
                 Assert.True(
                     diagnostics.Any(d => string.Equals(d.Id, cell.DiagnosticId, StringComparison.Ordinal)),
-                    $"[DwarfMapper({cell.NonDefault})] on a Project method must report {cell.DiagnosticId} "
+                    $"[DwarfMapper({scanned.NonDefault})] on a Project method must report {cell.DiagnosticId} "
                     + $"({cell.Reason}), but reported: {Describe(diagnostics)}. A projection that accepts the "
                     + "option and quietly ignores it produces silently wrong data — this is the exact shape of "
                     + "the four divergences this matrix was built for.");
@@ -195,14 +154,14 @@ public class OptionContractTests
             case CellStatus.Honoured:
                 Assert.True(
                     !diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error),
-                    $"[DwarfMapper({cell.NonDefault})] is declared Honoured at projection but errored: "
+                    $"[DwarfMapper({scanned.NonDefault})] is declared Honoured at projection but errored: "
                     + Describe(diagnostics));
 
                 // The assertion that a silent drop cannot survive. "Compiles clean" would pass against every
                 // defect this file exists to catch, because a dropped option compiles perfectly well.
                 Assert.True(
                     !string.Equals(generated, baseline, StringComparison.Ordinal),
-                    $"[DwarfMapper({cell.NonDefault})] is declared Honoured at projection, but the generated "
+                    $"[DwarfMapper({scanned.NonDefault})] is declared Honoured at projection, but the generated "
                     + "output is byte-identical to the same source without it. Either the option is silently "
                     + $"dropped ({cell.Reason} says it should not be), or the fixture does not trigger it — "
                     + "and those must not be indistinguishable.");

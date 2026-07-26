@@ -74,9 +74,9 @@ public class OptionEndpointParityTests
     public static TheoryData<string, Endpoint> Cells()
     {
         var data = new TheoryData<string, Endpoint>();
-        foreach (var cell in OptionContractTests.ProjectionCells)
+        foreach (var cell in OptionCatalog.Options)
         foreach (var endpoint in ComparableEndpoints)
-            data.Add(cell.Option, endpoint);
+            data.Add(cell.Name, endpoint);
         return data;
     }
 
@@ -85,8 +85,8 @@ public class OptionEndpointParityTests
     public void An_option_that_acts_at_CreateMap_does_not_go_silent_at_another_endpoint(
         string option, Endpoint endpoint)
     {
-        var cell = OptionContractTests.ProjectionCells
-            .Single(c => string.Equals(c.Option, option, StringComparison.Ordinal));
+        var cell = OptionCatalog.Options
+            .Single(c => string.Equals(c.Name, option, StringComparison.Ordinal));
 
         var reference = OptionProbe.Classify(Endpoint.CreateMap, cell.NonDefault, cell.Types);
 
@@ -126,7 +126,7 @@ public class OptionEndpointParityTests
     {
         // If Classify() were broken so that everything read Silent at CreateMap, every cell would return at
         // the first guard and the whole theory would pass without comparing anything.
-        var acting = OptionContractTests.ProjectionCells
+        var acting = OptionCatalog.Options
             .Count(c => OptionProbe.Classify(Endpoint.CreateMap, c.NonDefault, c.Types).Effect != OptionEffect.Silent);
 
         Assert.True(acting >= 6,
@@ -139,7 +139,7 @@ public class OptionEndpointParityTests
     public void Every_exemption_names_a_real_option_and_endpoint()
     {
         // A stale exemption silently re-permits the divergence it was written to excuse.
-        var known = OptionContractTests.ProjectionCells.Select(c => c.Option).ToHashSet(StringComparer.Ordinal);
+        var known = OptionCatalog.Options.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var ((opt, ep), why) in Exempt)
         {
             Assert.True(known.Contains(opt), $"Exemption names unknown option '{opt}'.");

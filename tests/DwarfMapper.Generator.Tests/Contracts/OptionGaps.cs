@@ -18,18 +18,17 @@ namespace DwarfMapper.Generator.Tests.Contracts;
 /// </summary>
 public static class OptionGaps
 {
-    public static readonly Dictionary<string, string> KnownSilent = new(StringComparer.Ordinal)
-    {
-        ["RequiredMapping"] =
-            "source-side completeness (DWARF039) fires at CreateMap only. Setting RequiredMapping = Both to "
-            + "catch a too-wide input DTO does nothing on Update/Project/MapSpan/MapStream. Lower severity "
-            + "than the trust-boundary gaps — it fails to WARN rather than producing wrong data — but the "
-            + "option is still accepted and discarded, which is the same shape of bug",
-
-        ["ReferenceHandling"] =
-            "the REVERSE asymmetry: silent at CreateMap and UpdateInto while acting at Projection (DWARF028) "
-            + "and both span endpoints. Identity preservation needs genuinely shared references to observe, "
-            + "and the probe fixture has none, so the CreateMap cells cannot yet be called a divergence "
-            + "rather than an untriggered probe. Needs a shared-reference fixture before it can be judged"
-    };
+    /// <summary>
+    ///     Currently EMPTY. Every divergence found in this codebase has been closed:
+    ///     SkipNullSourceMembers, NullSubstitute, When=, AllowNonPublic and the nullable-to-non-nullable
+    ///     decision at projection; AutoMatchMembers, AutoNest and IgnoreObsoleteMembers at projection;
+    ///     AutoMatchMembers at the span and async-stream endpoints (DWARF077); and RequiredMapping's
+    ///     source-coverage gate at every endpoint that lacked it.
+    ///     <para>
+    ///         Kept rather than deleted because the ratchet reads from it: an empty dictionary means every
+    ///         silent cell fails the build immediately, with nowhere to put a new one without writing down
+    ///         why. Deleting the type would just make the next gap easier to leave unrecorded.
+    ///     </para>
+    /// </summary>
+    public static readonly Dictionary<string, string> KnownSilent = new(StringComparer.Ordinal);
 }

@@ -122,7 +122,8 @@ internal static partial class MapperExtractor
         IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
             mapPropertyExtras = null,
         bool skipNullSourceMembers = false, bool allowNonPublic = false,
-        bool explicitOnly = false, bool ignoreObsolete = false, bool autoNest = true)
+        bool explicitOnly = false, bool ignoreObsolete = false, bool autoNest = true,
+        HashSet<string>? consumedSources = null)
     {
         // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
         // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
@@ -184,6 +185,13 @@ internal static partial class MapperExtractor
             }
 
             handled.Add(tgtName);
+            if (consumedSources is not null)
+            {
+                // A dotted source path (a flattened leaf) marks its ROOT consumed, matching AddConsumed.
+                var dot = srcName.IndexOf('.');
+                consumedSources.Add(dot < 0 ? srcName : srcName.Substring(0, dot));
+            }
+
             if (ignores.Contains(tgtName))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName));
@@ -347,6 +355,7 @@ internal static partial class MapperExtractor
                 continue;
             }
 
+            consumedSources?.Add(src.Name);
             var srcAccessExpr = paramExpr + "." + src.Name;
             // C4: pass comparer so nested objects respect CaseInsensitive setting.
             var inlineExpr = ResolveProjectionExpr(

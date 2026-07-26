@@ -38,8 +38,10 @@ neither has a mapper class to carry a class-level option.
 | `NullCollections` | not probed | not probed | not probed | not probed | not probed |
 | `NullStrategy` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `OnCycle` | not probed | not probed | not probed | not probed | not probed |
-| `ReferenceHandling` | **SILENT** | **SILENT** | `DWARF028` | honoured | honoured |
-| `RequiredMapping` | `DWARF039` | **SILENT** | **SILENT** | **SILENT** | **SILENT** |
+| `ReferenceHandling` | honoured | honoured | `DWARF028` | honoured | honoured |
+| `RequiredMapping` | `DWARF039` | `DWARF039` | `DWARF039` | **SILENT** | **SILENT** |
 | `SkipNullSourceMembers` | honoured | honoured | `DWARF028` | honoured | honoured |
 
-Probed with `SkipNullSourceMembers = true`, `AllowNonPublic = true`, `NullStrategy = NullStrategy.SetDefault`, `AutoNest = false`, `AutoMatchMembers = false`, `NameConvention = NameConvention.Flexible`, `CaseInsensitive = true`, `IgnoreObsoleteMembers = true`, `ImplicitConversions = false`, `GenerateExtensions = false`, `EnumStrategy = EnumStrategy.ByValue`, `NullCollections = NullCollectionStrategy.AsEmpty`, `ReferenceHandling = ReferenceHandlingStrategy.Preserve`, `OnCycle = OnCycleStrategy.Throw`, `MaxDepth = 2`, `RequiredMapping = RequiredMappingStrategy.Both`.
+Option list and defaults scanned from `DwarfMapperAttribute`; each probe value derived
+from its default (invert a bool, pick another enum member, step an int), so a new option
+appears here without anyone maintaining a list. Probed with: `AllowNonPublic = true`, `AutoMatchMembers = false`, `AutoNest = false`, `CaseInsensitive = true`, `EnumStrategy = EnumStrategy.ByValue`, `GenerateExtensions = false`, `IgnoreObsoleteMembers = true`, `ImplicitConversions = false`, `MaxDepth = 65`, `NameConvention = NameConvention.Flexible`, `NullCollections = NullCollectionStrategy.AsNull`, `NullStrategy = NullStrategy.SetDefault`, `OnCycle = OnCycleStrategy.SetNull`, `ReferenceHandling = ReferenceHandlingStrategy.Preserve`, `RequiredMapping = RequiredMappingStrategy.Both`, `SkipNullSourceMembers = true`.
