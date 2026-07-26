@@ -227,6 +227,13 @@ internal static partial class MapperExtractor
             {
                 var spanComp = ctx.SemanticModel.Compilation;
                 var spanAutoNest = ReadMethodAutoNest(method, classAutoNest);
+                if (explicitOnly)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.ExplicitOnlyNotElementWise, methodLocation, method.Name));
+                    continue;
+                }
+
                 if (!TryResolveConversion(spanComp, spanSrcElem, spanDstElem, null, allMethods, mapperMethods,
                         enumStrategy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
                         out var spanConv, out var spanNull, out var spanNeedsCtx, spanAutoNest, nestedRegistry))
@@ -401,6 +408,13 @@ internal static partial class MapperExtractor
             {
                 var asComp = ctx.SemanticModel.Compilation;
                 var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
+                if (explicitOnly)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.ExplicitOnlyNotElementWise, methodLocation, method.Name));
+                    continue;
+                }
+
                 if (!TryResolveConversion(asComp, asSrcElem, asDstElem, null, allMethods, mapperMethods,
                         enumStrategy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
                         out var asConv, out var asNull, out var asNeedsCtx, asAutoNest, nestedRegistry))

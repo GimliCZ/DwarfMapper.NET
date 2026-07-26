@@ -82,3 +82,4 @@ DWARF073 | DwarfMapper | Error | [MapProperty(StringFormat=)] is not applicable 
 DWARF074 | DwarfMapper | Error | [MapCollectionKey] cannot be applied here
 DWARF075 | DwarfMapper | Warning | [FlattenGraph] leaf member was not flattened
 DWARF076 | DwarfMapper | Warning | Source and target are the same type
+DWARF077 | DwarfMapper | Error | Explicit-only mapping is not enforced element-wise

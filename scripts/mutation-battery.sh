@@ -60,6 +60,7 @@ MUTANTS=(
 "M22|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (explicitOnly)/if (false)/|OptionContractTests|the mass-assignment trust boundary (AutoMatchMembers=false) not applying at projection"
 "M23|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (!autoNest)/if (false)/|OptionContractTests|projection auto-nesting despite AutoNest=false"
 "M24|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (ignoreObsolete)/if (false)/|OptionContractTests|IgnoreObsoleteMembers silently dropped by projection"
+"M25|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/if (explicitOnly)\n                {\n                    diagnostics.Add(new DiagnosticInfo(\n                        DiagnosticDescriptors.ExplicitOnlyNotElementWise/if (false)\n                {\n                    diagnostics.Add(new DiagnosticInfo(\n                        DiagnosticDescriptors.ExplicitOnlyNotElementWise/|OptionEndpointParityTests|the explicit-only trust boundary silently not applying to span/async element pairs"
 "M21|docs/diagnostics.md|s/\*\*Fix:\*\* disambiguate with/**Fix (optional):** disambiguate with/|Scan8|an ERROR diagnostic downgrading its remedy to optional advice"
 )
 

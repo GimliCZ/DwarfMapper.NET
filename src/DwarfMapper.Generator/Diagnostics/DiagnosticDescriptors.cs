@@ -642,6 +642,24 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf076");
 
+    // The explicit-only trust boundary ([DwarfMapper(AutoMatchMembers = false)]) guards the TOP-LEVEL pair of
+    // a mapping method. Span and async-stream methods do not resolve members themselves — they map the ELEMENT
+    // pair through an auto-synthesized mapper, and explicit-only deliberately does not propagate into
+    // synthesized mappers (a synthesized mapper has no [MapProperty] to satisfy it, so propagating would make
+    // nested objects unmappable). The consequence was that one class-level option guarded .Map and silently did
+    // not guard .MapSpan on the same mapper: the developer's model is "this mapper class is explicit-only", and
+    // it held at one endpoint and not the other. Refusing loudly is the only honest option — silently applying
+    // half a trust boundary is how over-posting reaches production.
+    public static readonly DiagnosticDescriptor ExplicitOnlyNotElementWise = new(
+        "DWARF077",
+        "Explicit-only mapping is not enforced element-wise",
+        "Method '{0}' maps elements through an auto-synthesized mapper, which "
+        + "[DwarfMapper(AutoMatchMembers = false)] does not guard, so the explicit-only trust boundary would "
+        + "not apply to the element members. Declare a dedicated [DwarfMapper(AutoMatchMembers = false)] "
+        + "mapper for the element pair and call it, or remove AutoMatchMembers = false from this mapper.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf077");
+
     public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
         "DWARF074",
         "[MapCollectionKey] cannot be applied here",

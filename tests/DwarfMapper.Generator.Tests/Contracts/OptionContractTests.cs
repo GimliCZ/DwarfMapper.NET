@@ -92,9 +92,12 @@ public class OptionContractTests
         new("AllowNonPublic", "AllowNonPublic = true", CellStatus.Refused, "DWARF028",
             "an expression tree the provider translates cannot read a non-public member", NonPublicSource),
 
-        new("NullStrategy", "NullStrategy = NullStrategy.SetDefault", CellStatus.Refused, "DWARF028",
-            "a null decision is not translatable, so int?->int is refused rather than emitting .Value (which "
-            + "threw at runtime while .Map returned the configured default)",
+        new("NullStrategy", "NullStrategy = NullStrategy.SetDefault", CellStatus.NotApplicable, null,
+            "int?->int is refused with DWARF028 structurally, with or without this option, so the option is "
+            + "never consulted. Recorded as NotApplicable rather than Refused because an earlier Refused "
+            + "declaration passed for the WRONG reason: it asserted DWARF028 was present, and the baseline "
+            + "emits it too. The endpoint-parity classifier caught that by only counting diagnostics the "
+            + "option itself introduces",
             NullableValueToNonNullable),
 
         new("AutoNest", "AutoNest = false", CellStatus.Refused, "DWARF005",

@@ -712,6 +712,33 @@ build still fails until you make that choice explicit.
 
 ---
 
+## dwarf077
+**Explicit-only mapping is not enforced element-wise** · Error
+
+A mapper declared `[DwarfMapper(AutoMatchMembers = false)]` also declares a **span** or **async-stream**
+method. Those endpoints do not resolve members themselves — they map the *element* pair through an
+auto-synthesized mapper, and explicit-only deliberately does **not** propagate into synthesized mappers
+(a synthesized mapper has no `[MapProperty]` to satisfy it, so propagating would make nested objects
+unmappable). The result was that one class-level option guarded `.Map` and silently did **not** guard
+`.MapSpan` on the same mapper — half a trust boundary, which is how over-posting reaches production. It is
+now refused rather than applied selectively.
+
+```csharp
+[DwarfMapper(AutoMatchMembers = false)]
+public partial class M
+{
+    public partial Dst Map(Src s);                              // guarded: DWARF072 per auto-matched member
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);  // DWARF077 — not guarded element-wise
+}
+```
+
+**Fix:** declare a dedicated `[DwarfMapper(AutoMatchMembers = false)]` mapper for the element pair and call
+it from your own span/stream loop, so the boundary is enforced where the members are actually resolved. If
+this mapper is not a trust boundary, remove `AutoMatchMembers = false` from it and keep the guard on the
+mapper that does cross one — see [`SECURITY.md`](SECURITY.md#over-posting--mass-assignment-guidance-consumer-responsibility).
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather
