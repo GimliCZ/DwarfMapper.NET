@@ -126,6 +126,31 @@ public class DocSnippetInjectorTests
     }
 
     [Fact]
+    public void Preserves_the_markers_indentation_so_a_fence_inside_a_list_item_stays_in_it()
+    {
+        // A fence indented under a bullet is legitimate markdown, and README.md has two. Emitting the fence at
+        // column zero would break it out of the list item and silently reflow the document.
+        const string doc = """
+            - A bullet with an example:
+              <!-- snippet: demo -->
+              <!-- endsnippet -->
+            """;
+
+        var result = DocSnippetInjector.Inject(doc, Regions(("demo", "var x = 1;\n\nvar y = 2;")), "d.md");
+
+        Assert.Equal("""
+            - A bullet with an example:
+              <!-- snippet: demo -->
+              ```csharp
+              var x = 1;
+
+              var y = 2;
+              ```
+              <!-- endsnippet -->
+            """, result.Markdown.TrimEnd());
+    }
+
+    [Fact]
     public void A_document_with_no_markers_is_returned_unchanged()
     {
         // The harness must be inert before it has work to do, or a later diff is ambiguous.

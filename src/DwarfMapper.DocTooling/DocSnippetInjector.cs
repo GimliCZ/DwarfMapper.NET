@@ -49,8 +49,16 @@ public static class DocSnippetInjector
             referenced.Add(id);
             var closeIndex = FindClose(lines, i + 1, docPath, id, i + 1);
 
+            // The marker's own indentation is reapplied to everything emitted. A fence indented under a bullet
+            // is legitimate markdown (README.md has two); emitting at column zero would break it out of the
+            // list item and silently reflow the document around it.
+            var indent = line[..(line.Length - line.TrimStart().Length)];
+
             sb.Append(line).Append('\n');
-            sb.Append("```csharp\n").Append(region.Body).Append("\n```\n");
+            sb.Append(indent).Append("```csharp\n");
+            foreach (var bodyLine in region.Body.Split('\n'))
+                sb.Append(bodyLine.Length == 0 ? "" : indent).Append(bodyLine).Append('\n');
+            sb.Append(indent).Append("```\n");
             sb.Append(lines[closeIndex]).Append('\n');
             i = closeIndex + 1;
         }

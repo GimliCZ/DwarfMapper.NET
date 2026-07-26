@@ -23,7 +23,6 @@ public class DocFenceScanTests
     /// </summary>
     private static readonly Dictionary<string, string> Unconverted = new(StringComparer.Ordinal)
     {
-        ["README.md"] = "converted in Task 9",
         ["docs/howto/ambient-cross-assembly-maps.md"] = "converted in Task 10",
         ["docs/howto/common-changes.md"] = "converted in Task 10",
         ["docs/howto/migrate-from-automapper.md"] = "converted in Task 10",
