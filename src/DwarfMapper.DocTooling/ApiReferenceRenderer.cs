@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using DwarfMapper;
 
-namespace DwarfMapper.Generator.Tests.SelfValidation;
+namespace DwarfMapper.DocTooling;
 
 /// <summary>
 ///     Renders the public API reference from the two things that cannot lie about the API: the compiled
@@ -179,10 +179,11 @@ public static class ApiReferenceRenderer
     private static Dictionary<string, string> LoadSummaries(Assembly assembly)
     {
         var xmlPath = Path.ChangeExtension(assembly.Location, ".xml");
-        Assert.True(File.Exists(xmlPath),
-            $"No XML documentation beside {assembly.GetName().Name} at {xmlPath}. The API reference is "
-            + "rendered from it, so an empty page would misrepresent documented code as undocumented. "
-            + "Check GenerateDocumentationFile is still true for that project.");
+        if (!File.Exists(xmlPath))
+            throw new DocToolingException(
+                $"No XML documentation beside {assembly.GetName().Name} at {xmlPath}. The API reference is "
+                + "rendered from it, so an empty page would misrepresent documented code as undocumented. "
+                + "Check GenerateDocumentationFile is still true for that project.");
 
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var member in XDocument.Load(xmlPath).Descendants("member"))

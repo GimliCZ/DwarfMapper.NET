@@ -30,6 +30,7 @@
         <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"/>
         <ProjectReference Include="..\..\src\DwarfMapper.CodeFixes\DwarfMapper.CodeFixes.csproj"/>
         <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.DocTooling\DwarfMapper.DocTooling.csproj"/>
     </ItemGroup>
     <ItemGroup>
         <Using Include="Xunit"/>

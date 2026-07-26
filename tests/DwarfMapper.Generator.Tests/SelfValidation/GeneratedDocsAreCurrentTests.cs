@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Text;
 using DwarfMapper;
+using DwarfMapper.DocTooling;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Tests.Contracts;
 using Microsoft.CodeAnalysis;

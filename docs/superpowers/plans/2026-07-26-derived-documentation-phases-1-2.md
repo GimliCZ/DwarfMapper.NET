@@ -136,7 +136,13 @@ namespace DwarfMapper.DocTooling;
 ///     <c>file:line</c>, because these fire during a test run where the only diagnostic anyone sees is the
 ///     exception text.
 /// </summary>
-public sealed class DocToolingException : Exception
+/// <remarks>
+///     Derives from <see cref="InvalidOperationException" /> rather than <see cref="Exception" /> so that
+///     <see cref="RepoLayout.Root" /> can report an unusable working tree from a property getter without
+///     tripping CA1065 (which is an error here). That is also the accurate base: every one of these means the
+///     pipeline was asked to run against a repository state it cannot work in.
+/// </remarks>
+public sealed class DocToolingException : InvalidOperationException
 {
     public DocToolingException(string message) : base(message)
     {

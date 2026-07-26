@@ -1,0 +1,16 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <!-- Build-time documentation infrastructure. Never packed: doc tooling must not enlarge the public
+             API surface consumers take a dependency on. -->
+        <IsPackable>false</IsPackable>
+        <!-- Deliberately NO xunit reference. This library is a Stryker mutation target, and Stryker treats
+             test projects as the test-projects rather than the thing to mutate — a renderer living in the
+             test project could never be mutated, so nothing would prove the doc tests catch a defect in the
+             renderer itself. -->
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\DwarfMapper\DwarfMapper.csproj"/>
+    </ItemGroup>
+</Project>
