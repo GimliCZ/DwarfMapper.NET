@@ -61,11 +61,18 @@ A new **non-test** library holds the pipeline:
 ```
 src/DwarfMapper.DocTooling/          (new, net10.0, IsPackable=false)
     ApiReferenceRenderer.cs          (moved from the test project, unchanged)
-    SnippetCatalogue.cs              (new)
+    SnippetScanner.cs                (new — the source-scanning half)
+    ExampleCatalogue.cs              (new — the reflection half)
     DocSnippetInjector.cs            (new)
-    OptionTableRenderer.cs           (new)
-    DiagnosticSectionRenderer.cs     (new)
+    DocTableInjector.cs              (new)
+    GalleryIndexRenderer.cs          (new)
+    OptionTableRenderer.cs           (phase 4)
+    DiagnosticSectionRenderer.cs     (phase 4)
 ```
+
+The two scanners are separate types rather than one `SnippetCatalogue`: they read different sources (files on
+disk versus a loaded assembly) and fail for different reasons, and keeping them apart is what lets the
+reconciliation tests play one off against the other.
 
 The test project keeps only thin `[Fact]` shells plus the existing `AssertCurrent`. Three reasons this is a
 library and not more test code:
@@ -195,7 +202,7 @@ ordered by tier then ordinal. The Gallery README table is generated from the sam
 | `docs/howto/migrate-from-mapster.md` | 1 | snippet-backed |
 | `docs/howto/migrate-from-mapperly.md` | 0 | `diff` fences exempt |
 | `docs/howto/deploy-and-optimize.md` | 0 | snippets from `AotSample` where it currently gives advice in prose |
-| `samples/DwarfMapper.Gallery/README.md` | 0 | **fully generated** from the catalogue |
+| `samples/DwarfMapper.Gallery/README.md` | 0 | **injected** index table from the catalogue — *not* fully generated: its declaration-style comparison and "lambda note" are hand-written prose worth keeping |
 | `CONTRIBUTING.md` | — | ground rules gain a fourth: user-facing behaviour needs a doc snippet, not only the two tests |
 
 `docs/COMPARISON.md`, `docs/CORRECTNESS.md`, `docs/MIGRATION.md`, `docs/RELEASING.md`, `docs/SECURITY.md` and
