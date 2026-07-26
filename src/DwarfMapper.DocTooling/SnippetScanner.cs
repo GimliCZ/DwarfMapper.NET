@@ -23,26 +23,33 @@ public static class SnippetScanner
     ///     Every region in every sample file, keyed by id. Duplicate ids across files are refused here rather
     ///     than resolved, because "whichever was found first" is not a documentation contract.
     /// </summary>
-    public static IReadOnlyDictionary<string, SnippetRegion> ScanAll()
+    public static IReadOnlyDictionary<string, SnippetRegion> ScanAll() =>
+        Merge(Directory
+            .GetFiles(RepoLayout.Samples, "*.cs", SearchOption.AllDirectories)
+            .Where(IsNotBuildOutput)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .SelectMany(path => ScanFile(
+                Path.GetRelativePath(RepoLayout.Root, path).Replace('\\', '/'), File.ReadAllText(path))));
+
+    /// <summary>
+    ///     Keys regions by id, refusing duplicates. Separate from <see cref="ScanAll" /> so the refusal is
+    ///     testable without contriving a duplicate in the real corpus — the mutation battery found that a
+    ///     disabled check here changed nothing observable, because no test could reach it.
+    /// </summary>
+    public static IReadOnlyDictionary<string, SnippetRegion> Merge(IEnumerable<SnippetRegion> regions)
     {
+        ArgumentNullException.ThrowIfNull(regions);
+
         var result = new Dictionary<string, SnippetRegion>(StringComparer.Ordinal);
-
-        foreach (var path in Directory
-                     .GetFiles(RepoLayout.Samples, "*.cs", SearchOption.AllDirectories)
-                     .Where(IsNotBuildOutput)
-                     .OrderBy(p => p, StringComparer.Ordinal))
+        foreach (var region in regions)
         {
-            var relative = Path.GetRelativePath(RepoLayout.Root, path).Replace('\\', '/');
-            foreach (var region in ScanFile(relative, File.ReadAllText(path)))
-            {
-                if (result.TryGetValue(region.Id, out var first))
-                    throw new DocToolingException(
-                        $"Duplicate snippet id '{region.Id}': {first.RelativeFile}:{first.StartLine} and "
-                        + $"{region.RelativeFile}:{region.StartLine}. A doc marker must resolve to exactly "
-                        + "one region — rename one of them.");
+            if (result.TryGetValue(region.Id, out var first))
+                throw new DocToolingException(
+                    $"Duplicate snippet id '{region.Id}': {first.RelativeFile}:{first.StartLine} and "
+                    + $"{region.RelativeFile}:{region.StartLine}. A doc marker must resolve to exactly one "
+                    + "region — rename one of them.");
 
-                result[region.Id] = region;
-            }
+            result[region.Id] = region;
         }
 
         return result;

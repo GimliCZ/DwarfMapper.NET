@@ -82,4 +82,29 @@ public class DocsAreSnippetCurrentTests
 
     private static string Normalise(string text) =>
         text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd();
+
+    [Fact]
+    public void An_option_missing_from_the_committed_table_is_reported_as_undocumented()
+    {
+        // Added because the mutation battery survived a renderer that emits "TBD" for a missing option: the
+        // currency test only notices an EMPTY cell, so a helpful-looking placeholder would ship an option
+        // documented by a word that says nothing. This drives the renderer directly with a table that omits
+        // one option, so the detection is exercised rather than inferred.
+        const string committed = """
+            <!-- table: class-options -->
+            | Option | Type | Default | What it does |
+            |---|---|---|---|
+            | `MaxDepth` | `int` | `64` | Depth bound for recursion-capable pairs. |
+            <!-- endtable -->
+            """;
+
+        var rows = OptionTableRenderer.RenderRows(typeof(DwarfMapperAttribute), committed, "class-options");
+        var undocumented = OptionTableRenderer.UndocumentedOptions(rows);
+
+        Assert.DoesNotContain("MaxDepth", undocumented);
+        Assert.Contains("CaseInsensitive", undocumented);
+        Assert.True(undocumented.Count > 5,
+            "Only one option was documented in the fixture, so nearly every other option should be reported "
+            + $"as undocumented; got {undocumented.Count}.");
+    }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Reflection;
 using DwarfMapper.DocTooling;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
@@ -96,5 +97,27 @@ public class DocReconciliationTests
         Assert.True(silent.Count == 0,
             "Gallery example(s) with no '// <snippet: …>' region, so no document can quote them:\n  "
             + string.Join("\n  ", silent));
+    }
+
+    [Fact]
+    public void Every_declared_example_is_public()
+    {
+        // The mutation battery survived swapping GetTypes() for GetExportedTypes() in ExampleCatalogue,
+        // because every example happens to be public — an EQUIVALENT mutant, which the battery's own header
+        // says must not be catalogued. This test makes the equivalence a rule rather than an accident: if a
+        // non-public example is ever added, the two reflection calls diverge and this fails, naming it.
+        var assembly = typeof(DwarfMapper.Gallery.DocExampleAttribute).Assembly;
+        var exported = assembly.GetExportedTypes().ToHashSet();
+
+        var nonPublic = assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<DwarfMapper.Gallery.DocExampleAttribute>() is not null)
+            .Where(t => !exported.Contains(t))
+            .Select(t => t.FullName ?? t.Name)
+            .ToList();
+
+        Assert.True(nonPublic.Count == 0,
+            "Non-public [DocExample] type(s). An example the Gallery runs but the catalogue could drop is a "
+            + "runner/index divergence waiting to happen — make them public:\n  "
+            + string.Join("\n  ", nonPublic));
     }
 }

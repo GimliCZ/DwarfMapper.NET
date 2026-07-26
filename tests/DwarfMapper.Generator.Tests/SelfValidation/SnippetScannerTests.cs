@@ -142,4 +142,33 @@ public class SnippetScannerTests
         Assert.Equal(["a", "b"], regions.Select(r => r.Id));
         Assert.Equal(["one", "two"], regions.Select(r => r.Body));
     }
+
+    [Fact]
+    public void A_duplicate_id_across_files_is_refused()
+    {
+        // Added because the mutation battery killed nothing when the duplicate check was disabled: the real
+        // corpus has no duplicates, so no test could reach the branch. "Whichever file was scanned first" is
+        // not a documentation contract.
+        var ex = Assert.Throws<DocToolingException>(() => SnippetScanner.Merge(
+        [
+            new SnippetRegion("demo", "a", "A.cs", 1),
+            new SnippetRegion("demo", "b", "B.cs", 9)
+        ]));
+
+        Assert.Contains("Duplicate snippet id 'demo'", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("A.cs:1", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("B.cs:9", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Distinct_ids_merge_without_complaint()
+    {
+        var merged = SnippetScanner.Merge(
+        [
+            new SnippetRegion("one", "a", "A.cs", 1),
+            new SnippetRegion("two", "b", "B.cs", 2)
+        ]);
+
+        Assert.Equal(["one", "two"], merged.Keys.OrderBy(k => k, StringComparer.Ordinal));
+    }
 }

@@ -34,6 +34,11 @@ fi
 
 # EQUIVALENT MUTANTS — deliberately NOT catalogued, because no test can kill them and a permanent survivor
 # would train everyone to ignore the report:
+#   * ExampleCatalogue using GetExportedTypes() instead of GetTypes(). Catalogued as M33 and it SURVIVED:
+#     every [DocExample] type is public, so the two calls return the same set and no test can tell them
+#     apart. Rather than leave a permanent survivor, the equivalence is now enforced by
+#     DocReconciliationTests.Every_declared_example_is_public — if a non-public example is ever added the
+#     calls diverge and that test fails, which is the assertion the mutant was reaching for.
 #   * update-into passing `false, false` for isPreserveMode/isSetNullMode instead of the real values. The
 #     hardcoded literals contradict the six other call sites and were worth removing, but preserve threading
 #     is driven by the class-level nested synthesis path, so the call site makes no observable difference.
@@ -76,7 +81,6 @@ MUTANTS=(
 "M30|src/DwarfMapper.DocTooling/SnippetScanner.cs|s/if (result.TryGetValue(region.Id, out var first))/if (false \&\& result.TryGetValue(region.Id, out var first))/|SnippetScannerTests|a duplicate snippet id silently resolving to whichever file was scanned first"
 "M31|src/DwarfMapper.DocTooling/OptionTableRenderer.cs|s/prose.TryGetValue(p.Name, out var t) ? t : \"\"/prose.TryGetValue(p.Name, out var t) ? t : \"TBD\"/|DocsAreSnippetCurrentTests|a newly added option rendering placeholder prose instead of failing the build"
 "M32|tests/DwarfMapper.Generator.Tests/SelfValidation/DocFenceScanTests.cs|s/preceding?.StartsWith(ExemptMarker, StringComparison.Ordinal) != true/false/|DocFenceScanTests|the fence ratchet accepting any comment as an exemption"
-"M33|src/DwarfMapper.DocTooling/ExampleCatalogue.cs|s/.GetTypes()/.GetExportedTypes()/|DocReconciliationTests|a non-public example vanishing from the catalogue, shrinking the index silently"
 "M34|src/DwarfMapper.DocTooling/DocSnippetInjector.cs|s/LongestBacktickRun(region.Body) + 1/3/|DocPipelinePropertyTests|a snippet containing \`\`\` closing its own fence and leaking code into the document as prose"
 )
 
