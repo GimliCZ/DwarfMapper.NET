@@ -79,7 +79,17 @@ echo
 
 SURVIVORS=(); STALE=(); KILLED=0
 
-restore() { git checkout -- "$1" 2>/dev/null || true; }
+# Restores the mutated file AND any generated documentation.
+#
+# docs/ matters as much as src/ here, and this was found the hard way: the doc-currency tests REGENERATE
+# docs/generated/*.md whenever the rendered content differs from the committed copy. Under a mutant, the
+# rendered content reflects the DEFECT — so a battery run left a matrix on disk describing the mutated
+# generator, and that file was then committed as if it described the real one. A harness that silently
+# rewrites tracked artefacts is worse than no harness.
+restore() {
+  git checkout -- "$1" 2>/dev/null || true
+  git checkout -- docs/ 2>/dev/null || true
+}
 
 for entry in "${MUTANTS[@]}"; do
   IFS='|' read -r ID FILE EXPR GUARD DESC <<< "$entry"
@@ -120,8 +130,10 @@ for entry in "${MUTANTS[@]}"; do
   restore "$FILE"; echo
 done
 
-# Belt and braces: a half-applied mutation left behind would read as a real regression later.
+# Belt and braces: a half-applied mutation left behind would read as a real regression later, and a
+# doc regenerated under a mutant would be committed as fact.
 git checkout -- src/ 2>/dev/null || true
+git checkout -- docs/ 2>/dev/null || true
 
 echo "== killed $KILLED/${#MUTANTS[@]} =="
 

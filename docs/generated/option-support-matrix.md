@@ -40,7 +40,7 @@ neither has a mapper class to carry a class-level option.
 | `NullStrategy` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `OnCycle` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `ReferenceHandling` | honoured | honoured | `DWARF028` | honoured | honoured |
-| `RequiredMapping` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | **SILENT** | **SILENT** |
+| `RequiredMapping` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` |
 | `SkipNullSourceMembers` | honoured | honoured | `DWARF028` | honoured | honoured |
 
 Option list and defaults scanned from `DwarfMapperAttribute`; each probe value derived
