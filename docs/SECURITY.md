@@ -37,7 +37,7 @@ and `CORRECTNESS.md` asserted CI "runs a behavioural gate over the published nat
 | SEC-03 | Cross-width narrowing emits `CreateChecked` and throws `OverflowException` — never a silent wrap | `NumericConversionRuntimeTests` |
 | SEC-04 | Generated `Parse`/`ToString` always pass an explicit culture; the generator emits zero `CurrentCulture` calls | `DeterminismSourceScanTests` |
 | SEC-05 | The shipped generator and runtime are reflection-free — no `Activator`, `Type.GetType`, `Expression.Compile`, `MakeGenericType` | `ReflectionFreeMetaTests` |
-| SEC-06 | Over-posting is structural: only members the generator resolved are ever written | `MassAssignmentGuardRuntimeTests` |
+| SEC-06 | Over-posting is structural: only members the generator resolved are ever written, at every endpoint | `MassAssignmentGuardRuntimeTests` |
 | SEC-07 | Generated code is trim/NativeAOT-safe | `CI:aot-trim-gate` |
 
 `CI:`-prefixed entries are mechanised by a CI job rather than a test. They are the weakest bindings in this
@@ -66,6 +66,13 @@ input:
    raises **`DWARF072`** (build error) instead. Adding a protected field to the entity then forces a visible,
    reviewable decision rather than a silent auto-wire. Put untrusted-input maps in their own explicit-only
    mapper class; keep convenient auto-matching for output mapping elsewhere.
+
+   **This guard applies at every endpoint, including `Project`.** Stated plainly because it did not always:
+   up to and including 1.0.1-rc.1 the option was threaded into the runtime resolver only, so the same mapper
+   refused the implicit wire through `.Map` and performed it through `.Project` with no diagnostic — a trust
+   boundary that silently did not exist at one endpoint. If you relied on `AutoMatchMembers = false` for an
+   `IQueryable` projection on an earlier build, re-check that mapper: it will now report `DWARF072` for the
+   members it had been wiring for you. Endpoint parity is asserted by `OptionContractTests`.
 3. **Enable `RequiredMapping = Both`** to additionally flag *unused source* members (`DWARF039`), so a
    too-wide input DTO — one carrying fields nothing consumes — is visible rather than quietly ignored.
 4. **For update-into-existing entities**, map only the fields a request is allowed to change — use
