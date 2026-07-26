@@ -570,6 +570,7 @@ The source member is declared as a concrete class that something else in your co
 mapper resolves members at **compile time from the declared type**, so if that member holds a derived instance
 at run time, the members declared only on the derived type are dropped — silently, with no error:
 
+<!-- fence-exempt: illustrates a type shape that triggers DWARF042; a fragment, not a compilable unit -->
 ```csharp
 public class Animal { public string Name { get; set; } = ""; }
 public sealed class Dog : Animal { public string Breed { get; set; } = ""; }
@@ -610,6 +611,7 @@ attacker-controlled field (`IsAdmin`, `Balance`, `Id`) that lines up by name wit
 copied with no diagnostic — and `DWARF001` never catches it, because the field *is* mapped. Turning
 auto-matching off makes every such wire an explicit, reviewable decision.
 
+<!-- fence-exempt: illustrates the trust-boundary configuration DWARF072 guards; a sample would have to fail the build -->
 ```csharp
 [DwarfMapper(AutoMatchMembers = false)]        // explicit-only: nothing auto-wires
 [MapIgnore("IsAdmin")]                          // protected — never assigned
@@ -644,6 +646,7 @@ A `StringFormat` was given where it cannot apply. It formats a value into a stri
 and the source implements `System.IFormattable` (`int`, `decimal`, `DateTime`, `Guid`, `TimeSpan`, …), and
 **not** alongside `Use=` (the converter already produces the value).
 
+<!-- fence-exempt: attribute fragments shown to contrast StringFormat targets; not a compilable unit -->
 ```csharp
 [MapProperty(nameof(Src.When), nameof(Dst.When), StringFormat = "yyyy-MM-dd")]   // DateTime -> string ✓
 [MapProperty(nameof(Src.Amount), nameof(Dst.Amount), StringFormat = "F2")]        // decimal  -> string ✓
@@ -666,6 +669,7 @@ but the v1 upsert has a defined scope and refuses anything outside it rather tha
 - the element type must be the **same** on both sides (the common Entity↔Entity update);
 - the key must be a **readable member** of the element type.
 
+<!-- fence-exempt: attribute fragment illustrating [MapCollectionKey]; no sample covers update-into merge yet -->
 ```csharp
 [MapCollectionKey(nameof(Order.Lines), nameof(OrderLine.Id))]
 public partial void Merge(OrderUpdate src, Order dst);   // dst.Lines merged by Id, not replaced
@@ -730,6 +734,7 @@ unmappable). The result was that one class-level option guarded `.Map` and silen
 `.MapSpan` on the same mapper — half a trust boundary, which is how over-posting reaches production. It is
 now refused rather than applied selectively.
 
+<!-- fence-exempt: illustrates the DWARF077 gap between endpoints; a sample would have to fail the build -->
 ```csharp
 [DwarfMapper(AutoMatchMembers = false)]
 public partial class M

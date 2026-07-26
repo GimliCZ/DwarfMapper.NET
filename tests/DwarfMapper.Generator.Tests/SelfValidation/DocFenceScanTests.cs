@@ -20,11 +20,13 @@ public class DocFenceScanTests
     ///     Documents whose csharp fences are not yet converted, with the task that converts them. This list
     ///     must only SHRINK. An entry that is no longer needed fails the companion test below, so the ratchet
     ///     tightens as the conversion lands rather than being quietly retained.
+    ///     <para>
+    ///         Now EMPTY: every document the pipeline owns is fully accounted for, so the ratchet covers all
+    ///         of them with no exceptions. Kept rather than deleted because a future document arriving
+    ///         mid-conversion needs somewhere to sit, and the companion test makes sure it cannot stay.
+    ///     </para>
     /// </summary>
-    private static readonly Dictionary<string, string> Unconverted = new(StringComparer.Ordinal)
-    {
-        ["docs/diagnostics.md"] = "converted in phase 4, when its tables are injected"
-    };
+    private static readonly Dictionary<string, string> Unconverted = new(StringComparer.Ordinal);
 
     [Fact]
     public void No_hand_written_csharp_fence_outside_a_snippet_or_an_exemption()
