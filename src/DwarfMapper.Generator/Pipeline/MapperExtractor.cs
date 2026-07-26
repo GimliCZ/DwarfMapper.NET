@@ -269,7 +269,13 @@ internal static partial class MapperExtractor
                     false,
                     "",
                     IsSpanMap: true,
-                    SpanTargetParameterName: method.Parameters[1].Name));
+                    SpanTargetParameterName: method.Parameters[1].Name,
+                    // The create and update models carry MaxDepth and these did not, which is an omission
+                    // relative to its siblings. Passing it changes no generated output that any test can see:
+                    // the depth guard for an element pair comes from the synthesized mapper, not this model.
+                    // Kept for consistency, NOT claimed as a fix — the gap it looks like it should close is
+                    // recorded in OptionGaps.KnownSilent, still open.
+                    MaxDepth: maxDepth));
                 continue;
             }
 
@@ -469,7 +475,8 @@ internal static partial class MapperExtractor
                     IsAsyncStreamMap: true,
                     AsyncCancellationParam: asCtParam,
                     ParameterIsPublicType: IsEffectivelyPublic(method.Parameters[0].Type),
-                    ReturnIsPublicType: IsEffectivelyPublic(method.ReturnType)));
+                    ReturnIsPublicType: IsEffectivelyPublic(method.ReturnType),
+                    MaxDepth: maxDepth));
                 continue;
             }
 

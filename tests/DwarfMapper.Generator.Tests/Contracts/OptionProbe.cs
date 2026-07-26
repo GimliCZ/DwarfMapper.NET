@@ -23,14 +23,22 @@ public static class OptionProbe
         var withOption = EndpointSources.Build(endpoint, options: nonDefault, types: types);
         var without = EndpointSources.Build(endpoint, types: types);
 
-        var (diagnostics, generated) = GeneratorTestHarness.Run(withOption);
-        var (baseDiagnostics, baseline) = GeneratorTestHarness.Run(without);
+        var (diagnostics, generated) = GeneratorTestHarness.RunAll(withOption);
+        var (baseDiagnostics, baseline) = GeneratorTestHarness.RunAll(without);
 
         // Only diagnostics the OPTION introduced count. A fixture that already errors without the option
         // would otherwise read as "refused" at every endpoint and mask a real silence — this is exactly how
         // an earlier NullStrategy cell passed for the wrong reason.
-        var baseIds = baseDiagnostics.Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
-        var added = diagnostics.Where(d => !baseIds.Contains(d.Id)).Select(d => d.Id).Distinct()
+        // Keyed by (id, severity), not id alone. ImplicitConversions = false does not introduce a NEW
+        // diagnostic — it escalates DWARF038 from Warning to Error. Comparing ids only, that reads as "no
+        // diagnostic added", and an option that turns a warning into a build failure was being classified as
+        // having no observable effect.
+        var baseKeys = baseDiagnostics
+            .Select(d => d.Id + ":" + d.Severity).ToHashSet(StringComparer.Ordinal);
+        var added = diagnostics
+            .Where(d => !baseKeys.Contains(d.Id + ":" + d.Severity))
+            .Select(d => d.Severity == DiagnosticSeverity.Error ? d.Id : $"{d.Id} ({d.Severity})")
+            .Distinct()
             .OrderBy(id => id, StringComparer.Ordinal).ToList();
 
         if (added.Count > 0) return (OptionEffect.Refused, string.Join(",", added));

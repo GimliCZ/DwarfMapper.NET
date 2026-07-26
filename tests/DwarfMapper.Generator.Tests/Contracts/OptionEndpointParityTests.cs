@@ -54,23 +54,6 @@ public class OptionEndpointParityTests
     public static readonly Endpoint[] ComparableEndpoints =
         [Endpoint.UpdateInto, Endpoint.Projection, Endpoint.SpanMap, Endpoint.AsyncStream];
 
-    /// <summary>
-    ///     Known-and-accepted silences, each with the reason it is not a divergence. An entry here is a claim
-    ///     that the option CANNOT apply at that endpoint — not that it currently does not.
-    /// </summary>
-    private static readonly Dictionary<(string Option, Endpoint Endpoint), string> Exempt = new()
-    {
-        // A span map fills a caller-owned buffer element-wise and an async stream maps elements through the
-        // element mapper. Neither creates the target graph, so options about HOW the target is constructed
-        // have nothing to act on at that endpoint.
-        [("GenerateExtensions", Endpoint.SpanMap)] =
-            "the convenience extension is generated per mapper, not per span overload",
-        [("GenerateExtensions", Endpoint.AsyncStream)] =
-            "the convenience extension is generated per mapper, not per stream overload",
-        [("GenerateExtensions", Endpoint.UpdateInto)] =
-            "the convenience extension is a create-shaped source.ToTarget(); an update has no such form"
-    };
-
     public static TheoryData<string, Endpoint> Cells()
     {
         var data = new TheoryData<string, Endpoint>();
@@ -97,7 +80,7 @@ public class OptionEndpointParityTests
         var actual = OptionProbe.Classify(endpoint, cell.NonDefault, cell.Types);
         if (actual.Effect != OptionEffect.Silent) return;
 
-        if (Exempt.TryGetValue((option, endpoint), out var why))
+        if (OptionGaps.StructurallyInapplicable.TryGetValue((option, endpoint), out var why))
         {
             Assert.False(string.IsNullOrWhiteSpace(why));
             return;
@@ -140,7 +123,7 @@ public class OptionEndpointParityTests
     {
         // A stale exemption silently re-permits the divergence it was written to excuse.
         var known = OptionCatalog.Options.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
-        foreach (var ((opt, ep), why) in Exempt)
+        foreach (var ((opt, ep), why) in OptionGaps.StructurallyInapplicable)
         {
             Assert.True(known.Contains(opt), $"Exemption names unknown option '{opt}'.");
             Assert.Contains(ep, ComparableEndpoints);

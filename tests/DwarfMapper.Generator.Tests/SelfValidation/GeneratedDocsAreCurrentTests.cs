@@ -174,6 +174,7 @@ public class GeneratedDocsAreCurrentTests
         sb.Append("| `DWARFnnn` | the option is refused with that diagnostic — visible, not silent |\n");
         sb.Append("| n/a (loud) | not applied, but the build fails anyway, so nothing wrong can ship |\n");
         sb.Append("| **SILENT** | accepted, no effect, compiles — a divergence, and a bug |\n");
+        sb.Append("| n/a (no such surface) | the endpoint has nothing this option could configure |\n");
         sb.Append("| not probed | the probe fixture does not trigger this option anywhere, including the |\n");
         sb.Append("| | reference endpoint, so this row measures nothing and claims nothing |\n\n");
         sb.Append("`not probed` is called out rather than shown as a blank or as `SILENT`, because \"the option\n");
@@ -197,7 +198,9 @@ public class GeneratedDocsAreCurrentTests
             // ReferenceHandling is silent at CreateMap yet acts at Projection and the span endpoints, and
             // calling that row "not probed" would have hidden a real asymmetry.
             var effects = endpoints
-                .Select(e => OptionProbe.Classify(e, cell.NonDefault, cell.Types))
+                .Select(e => OptionGaps.StructurallyInapplicable.ContainsKey((cell.Name, e))
+                    ? (Effect: OptionEffect.Silent, Detail: "structural")
+                    : OptionProbe.Classify(e, cell.NonDefault, cell.Types))
                 .ToList();
 
             if (effects.TrueForAll(x => x.Effect == OptionEffect.Silent))
@@ -207,7 +210,12 @@ public class GeneratedDocsAreCurrentTests
             else
             {
                 foreach (var (effect, detail) in effects)
-                    sb.Append(CultureInfo.InvariantCulture, $" {Describe(effect, detail)} |");
+                {
+                    var text = string.Equals(detail, "structural", StringComparison.Ordinal)
+                        ? "n/a (no such surface)"
+                        : Describe(effect, detail);
+                    sb.Append(CultureInfo.InvariantCulture, $" {text} |");
+                }
             }
 
             sb.Append('\n');

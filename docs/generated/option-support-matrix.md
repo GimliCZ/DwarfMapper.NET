@@ -13,6 +13,7 @@ the difference is recorded. A hand-maintained table would describe what the opti
 | `DWARFnnn` | the option is refused with that diagnostic — visible, not silent |
 | n/a (loud) | not applied, but the build fails anyway, so nothing wrong can ship |
 | **SILENT** | accepted, no effect, compiles — a divergence, and a bug |
+| n/a (no such surface) | the endpoint has nothing this option could configure |
 | not probed | the probe fixture does not trigger this option anywhere, including the |
 | | reference endpoint, so this row measures nothing and claims nothing |
 
@@ -29,19 +30,19 @@ neither has a mapper class to carry a class-level option.
 | `AutoMatchMembers` | `DWARF072` | `DWARF072` | `DWARF072` | `DWARF077` | `DWARF077` |
 | `AutoNest` | `DWARF005` | `DWARF005` | `DWARF005` | `DWARF005` | `DWARF005` |
 | `CaseInsensitive` | honoured | honoured | honoured | honoured | honoured |
-| `EnumStrategy` | not probed | not probed | not probed | not probed | not probed |
-| `GenerateExtensions` | not probed | not probed | not probed | not probed | not probed |
+| `EnumStrategy` | honoured | honoured | honoured | honoured | honoured |
+| `GenerateExtensions` | honoured | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) |
 | `IgnoreObsoleteMembers` | honoured | honoured | honoured | honoured | honoured |
-| `ImplicitConversions` | not probed | not probed | not probed | not probed | not probed |
-| `MaxDepth` | not probed | not probed | not probed | not probed | not probed |
+| `ImplicitConversions` | `DWARF038` | `DWARF038` | n/a (loud) | `DWARF038` | `DWARF038` |
+| `MaxDepth` | honoured | honoured | n/a (loud) | **SILENT** | **SILENT** |
 | `NameConvention` | honoured | honoured | honoured | n/a (loud) | n/a (loud) |
-| `NullCollections` | not probed | not probed | not probed | not probed | not probed |
+| `NullCollections` | honoured | honoured | **SILENT** | honoured | honoured |
 | `NullStrategy` | honoured | honoured | n/a (loud) | honoured | honoured |
-| `OnCycle` | not probed | not probed | not probed | not probed | not probed |
+| `OnCycle` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `ReferenceHandling` | honoured | honoured | `DWARF028` | honoured | honoured |
-| `RequiredMapping` | `DWARF039` | `DWARF039` | `DWARF039` | **SILENT** | **SILENT** |
+| `RequiredMapping` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | **SILENT** | **SILENT** |
 | `SkipNullSourceMembers` | honoured | honoured | `DWARF028` | honoured | honoured |
 
 Option list and defaults scanned from `DwarfMapperAttribute`; each probe value derived
 from its default (invert a bool, pick another enum member, step an int), so a new option
-appears here without anyone maintaining a list. Probed with: `AllowNonPublic = true`, `AutoMatchMembers = false`, `AutoNest = false`, `CaseInsensitive = true`, `EnumStrategy = EnumStrategy.ByValue`, `GenerateExtensions = false`, `IgnoreObsoleteMembers = true`, `ImplicitConversions = false`, `MaxDepth = 65`, `NameConvention = NameConvention.Flexible`, `NullCollections = NullCollectionStrategy.AsNull`, `NullStrategy = NullStrategy.SetDefault`, `OnCycle = OnCycleStrategy.SetNull`, `ReferenceHandling = ReferenceHandlingStrategy.Preserve`, `RequiredMapping = RequiredMappingStrategy.Both`, `SkipNullSourceMembers = true`.
+appears here without anyone maintaining a list. Probed with: `AllowNonPublic = true`, `AutoMatchMembers = false`, `AutoNest = false`, `CaseInsensitive = true`, `EnumStrategy = EnumStrategy.ByValue`, `GenerateExtensions = false`, `IgnoreObsoleteMembers = true`, `ImplicitConversions = false`, `MaxDepth = 1`, `NameConvention = NameConvention.Flexible`, `NullCollections = NullCollectionStrategy.AsNull`, `NullStrategy = NullStrategy.SetDefault`, `OnCycle = OnCycleStrategy.SetNull`, `ReferenceHandling = ReferenceHandlingStrategy.Preserve`, `RequiredMapping = RequiredMappingStrategy.Both`, `SkipNullSourceMembers = true`.

@@ -84,12 +84,68 @@ public static class OptionCatalog
             public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
             """,
 
+        // Two enums whose members are declared in DIFFERENT order, so ByName and ByValue genuinely disagree
+        // about the result. Same-order enums would map identically under both strategies and the cell would
+        // read "no effect" while the option was working perfectly.
+        ["EnumStrategy"] = """
+            public enum SrcKind { A, B }
+            public enum DstKind { B, A }
+            public sealed class Src { public int Id { get; set; } public SrcKind Kind { get; set; } }
+            public sealed class Dst { public int Id { get; set; } public DstKind Kind { get; set; } }
+            """,
+
+        // A NULLABLE collection member: the option decides what a null source collection becomes.
+        // DIFFERENT collection types, so the mapper must REBUILD rather than assign the reference across.
+        // With List<int> on both sides it is a straight copy and the null policy never comes up, which read
+        // as "the option does nothing" when the fixture simply never asked it anything.
+        ["NullCollections"] = """
+            public sealed class Src { public int Id { get; set; } public System.Collections.Generic.List<int>? Items { get; set; } }
+            public sealed class Dst { public int Id { get; set; } public int[]? Items { get; set; } }
+            """,
+
+        // A self-referencing graph, so there is a cycle for the policy to have an opinion about.
+        ["OnCycle"] = """
+            public sealed class Node { public int Id { get; set; } public Node? Next { get; set; } }
+            public sealed class NodeDto { public int Id { get; set; } public NodeDto? Next { get; set; } }
+            public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } }
+            public sealed class Dst { public int Id { get; set; } public NodeDto? Root { get; set; } }
+            """,
+
+        // Nesting deeper than the probe's MaxDepth (see ProbeOverrides), so the budget actually binds.
+        // A RECURSIVE graph. A fixed three-level chain does not exercise a depth budget — the generator
+        // simply walks it — whereas a self-referencing type forces depth tracking, which is what MaxDepth
+        // bounds.
+        ["MaxDepth"] = """
+            public sealed class Node { public int Id { get; set; } public Node? Next { get; set; } }
+            public sealed class NodeDto { public int Id { get; set; } public NodeDto? Next { get; set; } }
+            public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } }
+            public sealed class Dst { public int Id { get; set; } public NodeDto? Root { get; set; } }
+            """,
+
+        // A NARROWING pair. Widening (int->long) is allowed regardless, so it cannot distinguish the option;
+        // narrowing is what ImplicitConversions actually gates, by escalating DWARF038 to an error.
+        ["ImplicitConversions"] = """
+            public sealed class Src { public int Id { get; set; } public long Val { get; set; } }
+            public sealed class Dst { public int Id { get; set; } public int Val { get; set; } }
+            """,
+
         ["ReferenceHandling"] = """
             public sealed class Inner { public int X { get; set; } }
             public sealed class InnerDto { public int X { get; set; } }
             public sealed class Src { public int Id { get; set; } public Inner? Child { get; set; } }
             public sealed class Dst { public int Id { get; set; } public InnerDto? Child { get; set; } }
             """
+    };
+
+    /// <summary>
+    ///     Probe values that cannot be derived sensibly from the default. Only <c>MaxDepth</c> so far: the
+    ///     generic rule for an int is "step it", which turns a default of 64 into 65 and binds on nothing.
+    ///     A depth BUDGET needs a value below the graph to have any effect, and no amount of reflection over
+    ///     an <c>int</c> property reveals that it is a limit rather than a count.
+    /// </summary>
+    private static readonly Dictionary<string, string> ProbeOverrides = new(StringComparer.Ordinal)
+    {
+        ["MaxDepth"] = "MaxDepth = 1"
     };
 
     public static IReadOnlyList<OptionInfo> Options { get; } = Build();
@@ -111,7 +167,7 @@ public static class OptionCatalog
                 var def = p.GetValue(probe);
                 return new OptionInfo(
                     p.Name,
-                    NonDefaultFor(p, def),
+                    ProbeOverrides.TryGetValue(p.Name, out var over) ? over : NonDefaultFor(p, def),
                     def,
                     TriggeringShapes.TryGetValue(p.Name, out var shape) ? shape : null);
             })

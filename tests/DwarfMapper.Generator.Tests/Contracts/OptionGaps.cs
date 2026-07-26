@@ -30,5 +30,46 @@ public static class OptionGaps
     ///         why. Deleting the type would just make the next gap easier to leave unrecorded.
     ///     </para>
     /// </summary>
-    public static readonly Dictionary<string, string> KnownSilent = new(StringComparer.Ordinal);
+    public static readonly Dictionary<string, string> KnownSilent = new(StringComparer.Ordinal)
+    {
+        ["MaxDepth"] =
+            "honoured at CreateMap and UpdateInto, silent at the span and async-stream endpoints. Found only "
+            + "once a RECURSIVE fixture existed — a fixed-depth chain never exercises a depth BUDGET, so the "
+            + "row read 'not probed' and claimed nothing. The element pair's depth guard comes from the "
+            + "auto-synthesized mapper rather than the method model, so adding MaxDepth to the span/async "
+            + "models (done, for consistency with their siblings) changes no output. Lower severity than it "
+            + "sounds: the default bound of 64 still applies, so this is a tighter bound being ignored, not "
+            + "unguarded recursion",
+
+        ["NullCollections"] =
+            "honoured everywhere except Projection, where a null source collection is mapped with no regard "
+            + "for the configured policy and no diagnostic. Found only after the fixture used DIFFERENT "
+            + "collection types (List<int> -> int[]); with the same type on both sides it is a reference copy "
+            + "and the null policy never comes up. ResolveProjectionMembers is not passed nullCollections at "
+            + "all — the same not-threaded shape as the seven already fixed, and the next one to close"
+    };
+
+    /// <summary>
+    ///     Cells where the option CANNOT apply because the endpoint has no such surface — a different claim
+    ///     from <see cref="KnownSilent" />, which is "it should apply and does not".
+    ///     <para>
+    ///         Shared with the generated matrix so it renders these as structural rather than as a
+    ///         divergence. Keeping them apart matters: "there is nothing here to configure" and "your
+    ///         configuration was discarded" look identical in the output and mean opposite things.
+    ///     </para>
+    /// </summary>
+    public static readonly Dictionary<(string Option, Endpoint Endpoint), string> StructurallyInapplicable =
+        new()
+        {
+            // The convenience extension is the create-shaped `source.ToTarget()`. Only a create map produces
+            // one, so on every other endpoint there is nothing for GenerateExtensions to suppress.
+            [("GenerateExtensions", Endpoint.UpdateInto)] =
+                "an update has no source.ToTarget() form to suppress",
+            [("GenerateExtensions", Endpoint.Projection)] =
+                "projection emits no convenience extension",
+            [("GenerateExtensions", Endpoint.SpanMap)] =
+                "the extension is generated per mapper, not per span overload",
+            [("GenerateExtensions", Endpoint.AsyncStream)] =
+                "the extension is generated per mapper, not per stream overload"
+        };
 }

@@ -72,6 +72,36 @@ internal static class GeneratorTestHarness
     }
 
     /// <summary>
+    ///     Every generated file, ordered by path and concatenated — including the assembly-wide aggregates
+    ///     (<c>DwarfMapper.Extensions.g.cs</c>, the DI registration, the validation facade) that
+    ///     <see cref="Run(string, NullableContextOptions)" /> deliberately drops so single-mapper snapshots
+    ///     stay stable regardless of emit order.
+    ///     <para>
+    ///         The option-support matrix needs this. Measuring only the per-mapper file made every option
+    ///         whose effect lands in an aggregate output invisible: <c>GenerateExtensions</c> read as having
+    ///         no observable effect at ANY endpoint, which is a property of the instrument rather than of the
+    ///         generator — and it would have been published as fact.
+    ///     </para>
+    /// </summary>
+    public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) RunAll(string source,
+        NullableContextOptions nullable = NullableContextOptions.Disable)
+    {
+        var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
+
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
+
+        var generated = string.Join("\n",
+            output.SyntaxTrees
+                .Where(t => t.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+                .OrderBy(t => t.FilePath, StringComparer.Ordinal)
+                .Select(t => t.ToString()));
+
+        return (genDiagnostics, generated);
+    }
+
+
+    /// <summary>
     ///     As <see cref="RunMapTo" />, but also returns the generated registry extension source — needed to
     ///     assert on what the registry DID emit (e.g. that an unassignable member is not assigned at all).
     /// </summary>
