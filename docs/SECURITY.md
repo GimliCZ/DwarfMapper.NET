@@ -19,6 +19,31 @@ referenced as 14.0.0 conceptually only).
 | **Vulnerable transitive dependencies** | AutoMapper 14.0.0 carries its CVE in its own engine; supply-chain advisories generally flow through deps. | The runtime library (`DwarfMapper`) has **zero NuGet dependencies**. The generator references only Roslyn (`Microsoft.CodeAnalysis.*`) with `PrivateAssets="all"` — a build-time analyzer, never shipped to consumers. `dotnet list package --vulnerable --include-transitive` reports **no vulnerable packages**. |
 | **Trim / NativeAOT unsafety** | AutoMapper (reflection) and Mapster (runtime mode) are not cleanly trim/AOT-safe (`IL2026`/`IL3050`). | Reflection-free generated code is trim- and AOT-safe; a `DwarfMapper.AotSample` + CI gate verifies a `PublishAot` build. |
 
+## Claim register (mechanised)
+
+Every claim in the table above is bound to something that **executes**. `ClaimMechanismScanTests` parses this
+register, reflects over the test assemblies, and fails the build when a claim names a mechanism that no longer
+exists — so a claim cannot outlive the thing that makes it true.
+
+This exists because drift already happened: `AutoValidate` was documented as a fail-fast safety net while the
+generator never read the flag, the "informed dumps" output was described in a shape the differ never produced,
+and `CORRECTNESS.md` asserted CI "runs a behavioural gate over the published native binary" when CI only ever
+*published* it. Prose is not executable; a binding is.
+
+| Id | Claim | Mechanised by |
+|---|---|---|
+| SEC-01 | Cyclic/over-deep input throws a **catchable** `DwarfMappingDepthException`, never an uncatchable `StackOverflowException` | `DepthSafetyRuntimeTests` |
+| SEC-02 | The **generator** terminates on recursive type graphs via the `DWARF031` nesting cap instead of hanging or crashing the compiler | `NestedAutoMapTests` |
+| SEC-03 | Cross-width narrowing emits `CreateChecked` and throws `OverflowException` — never a silent wrap | `NumericConversionRuntimeTests` |
+| SEC-04 | Generated `Parse`/`ToString` always pass an explicit culture; the generator emits zero `CurrentCulture` calls | `DeterminismSourceScanTests` |
+| SEC-05 | The shipped generator and runtime are reflection-free — no `Activator`, `Type.GetType`, `Expression.Compile`, `MakeGenericType` | `ReflectionFreeMetaTests` |
+| SEC-06 | Over-posting is structural: only members the generator resolved are ever written | `MassAssignmentGuardRuntimeTests` |
+| SEC-07 | Generated code is trim/NativeAOT-safe | `CI:aot-trim-gate` |
+
+`CI:`-prefixed entries are mechanised by a CI job rather than a test. They are the weakest bindings in this
+table — a job can be skipped, and until Phase 5 lands `aot-trim-gate` only *compiles* the AOT sample rather
+than running it.
+
 ## Over-posting / mass-assignment guidance (consumer responsibility)
 
 The classic mapper security risk is **mass assignment / over-posting**: mapping an untrusted input object

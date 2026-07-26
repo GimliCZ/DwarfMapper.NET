@@ -80,6 +80,20 @@ mappers structurally cannot go.
   — is documented in [`COMPARISON.md`](COMPARISON.md#nativeaot-benchmarking--stability); it is a perf knob,
   not a correctness issue (output is bit-identical either way).
 
+## Claim register (mechanised)
+
+Each guarantee above is bound to an executing test. `ClaimMechanismScanTests` fails the build when a binding
+names something that no longer exists, so a guarantee cannot quietly outlive its mechanism.
+
+| Id | Guarantee | Mechanised by |
+|---|---|---|
+| COR-01 | Every destination member is mapped or explicitly ignored, or the build fails (`DWARF001`) | `DiagnosticTests` |
+| COR-02 | The resolved mapping is visible as an XML-doc plan on every generated object-to-object method | `SnapshotTests` |
+| COR-03 | `[RoundTrip]` proves `Back(Forward(x)) ≡ x` over seeded fuzz | `RoundTripTests` |
+| COR-04 | Codegen is deterministic and incrementally cached | `DeterminismFuzzTests` |
+| COR-05 | Pipeline models are value-equatable, so caching cannot silently regress | `ModelCacheSafetyTests` |
+| COR-06 | Recursion is depth-bounded; no configuration yields a silent `StackOverflowException` | `DepthSafetyRuntimeTests` |
+
 ## 6. No silent `StackOverflowException`
 
 Recursion-capable mappings carry a depth bound (`MaxDepth`, default 64) applied uniformly across direct,
