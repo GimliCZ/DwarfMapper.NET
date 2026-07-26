@@ -283,7 +283,16 @@ public class BacklogCTests
                            }
                            """;
 
-        Assert.NotEmpty(GeneratorAssert.Reports(src, "DWARF028"));
+        var reported = GeneratorAssert.Reports(src, "DWARF028");
+        Assert.NotEmpty(reported);
+
+        // Assert the REASON, not merely the id. The mutation battery caught this: rewriting the explanation
+        // to "is fine actually" left the whole suite green, because every test here only checked that DWARF028
+        // fired. A diagnostic's text is the entire product for the person who hits it — an id with a degraded
+        // message is a worse failure than no message, since it misdirects with authority.
+        Assert.Contains(reported, d =>
+            d.GetMessage(CultureInfo.InvariantCulture).Contains("null decision", StringComparison.Ordinal)
+            && d.GetMessage(CultureInfo.InvariantCulture).Contains("nullable", StringComparison.Ordinal));
     }
 
     // ────────────────────────────────────────────────────────────────────────────
