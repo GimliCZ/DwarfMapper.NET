@@ -1,6 +1,12 @@
 <!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
+> Machine-generated companions: [diagnostics index](generated/diagnostics-index.md)
+> (every id, severity and title, rendered from the descriptors) and the
+> [option support matrix](generated/option-support-matrix.md) (what each
+> `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
+> without it). Both fail the build if they drift from the code.
+
 Every DwarfMapper diagnostic (`DWARF001`–`DWARF076`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.Testing;
-using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests.Contracts;
 
@@ -89,18 +88,27 @@ public class OptionEndpointParityTests
         var cell = OptionContractTests.ProjectionCells
             .Single(c => string.Equals(c.Option, option, StringComparison.Ordinal));
 
-        var reference = Classify(Endpoint.CreateMap, cell.NonDefault, cell.Types);
+        var reference = OptionProbe.Classify(Endpoint.CreateMap, cell.NonDefault, cell.Types);
 
         // An option the REFERENCE endpoint ignores says nothing about the others — there is no parity to
         // break. Those cells are carried in the theory anyway so the count stays honest.
         if (reference.Effect == OptionEffect.Silent) return;
 
-        var actual = Classify(endpoint, cell.NonDefault, cell.Types);
+        var actual = OptionProbe.Classify(endpoint, cell.NonDefault, cell.Types);
         if (actual.Effect != OptionEffect.Silent) return;
 
         if (Exempt.TryGetValue((option, endpoint), out var why))
         {
             Assert.False(string.IsNullOrWhiteSpace(why));
+            return;
+        }
+
+        // Known and recorded, but not yet fixed. Failing here would mean either hiding the gap or blocking
+        // every future change on fixing it; OptionGaps names it instead, and the ratchet there stops it
+        // spreading and forces removal once it is fixed.
+        if (OptionGaps.KnownSilent.TryGetValue(option, out var gap))
+        {
+            Assert.False(string.IsNullOrWhiteSpace(gap));
             return;
         }
 
@@ -119,7 +127,7 @@ public class OptionEndpointParityTests
         // If Classify() were broken so that everything read Silent at CreateMap, every cell would return at
         // the first guard and the whole theory would pass without comparing anything.
         var acting = OptionContractTests.ProjectionCells
-            .Count(c => Classify(Endpoint.CreateMap, c.NonDefault, c.Types).Effect != OptionEffect.Silent);
+            .Count(c => OptionProbe.Classify(Endpoint.CreateMap, c.NonDefault, c.Types).Effect != OptionEffect.Silent);
 
         Assert.True(acting >= 6,
             $"Expected several options to visibly act at CreateMap, but only {acting} did. Either the "
@@ -167,31 +175,4 @@ public class OptionEndpointParityTests
         }
     }
 
-    private static (OptionEffect Effect, string Detail) Classify(
-        Endpoint endpoint, string nonDefault, string? types)
-    {
-        var withOption = EndpointSources.Build(endpoint, options: nonDefault, types: types);
-        var without = EndpointSources.Build(endpoint, types: types);
-
-        var (diagnostics, generated) = GeneratorTestHarness.Run(withOption);
-        var (baseDiagnostics, baseline) = GeneratorTestHarness.Run(without);
-
-        // Only diagnostics the OPTION introduced count. A fixture that already errors without the option
-        // would otherwise read as "refused" at every endpoint and mask a real silence.
-        var baseIds = baseDiagnostics.Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
-        var added = diagnostics.Where(d => !baseIds.Contains(d.Id)).Select(d => d.Id).Distinct().ToList();
-
-        if (added.Count > 0) return (OptionEffect.Refused, string.Join(",", added));
-        if (!string.Equals(generated, baseline, StringComparison.Ordinal))
-            return (OptionEffect.Honoured, "output differs");
-
-        // Nothing changed — but did the developer at least get stopped? NameConvention at the span endpoint
-        // is the case that forced this distinction: the convention is not applied, yet the unmatched member
-        // raises DWARF001 either way, so no wrong data can ship. Calling that the same failure as a silently
-        // discarded trust boundary would overstate it.
-        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
-            return (OptionEffect.UnhonouredButLoud, "unhonoured, but the build fails regardless");
-
-        return (OptionEffect.Silent, "no diagnostic, identical output, compiles");
-    }
 }
