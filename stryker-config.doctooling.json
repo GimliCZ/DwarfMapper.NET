@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.Core/Stryker.Core/Schemas/stryker-config.json",
+  "stryker-config": {
+    "comment": "Mutation testing for the documentation pipeline. A SECOND config rather than entries in stryker-config.json because Stryker mutates one 'project' per run. This library exists as a non-test project precisely so it can be mutated: Stryker treats test projects as the test-projects, so a renderer living in DwarfMapper.Generator.Tests could never be a mutation target, and nothing would prove the doc tests catch a defect in the renderer itself. Run via scripts/housekeeping.ps1 -Mutation (needs: dotnet tool install -g dotnet-stryker).",
+    "project": "DwarfMapper.DocTooling.csproj",
+    "test-projects": [
+      "tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj"
+    ],
+    "mutate": [
+      "src/DwarfMapper.DocTooling/SnippetScanner.cs",
+      "src/DwarfMapper.DocTooling/DocSnippetInjector.cs",
+      "src/DwarfMapper.DocTooling/DocTableInjector.cs",
+      "src/DwarfMapper.DocTooling/OptionTableRenderer.cs",
+      "src/DwarfMapper.DocTooling/ExampleCatalogue.cs"
+    ],
+    "thresholds": { "high": 90, "low": 80, "break": 70 },
+    "reporters": ["progress", "html"]
+  }
+}

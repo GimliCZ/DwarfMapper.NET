@@ -136,6 +136,19 @@ public static class SnippetScanner
                 $"{relativePath}:{openLine}: snippet '{id}' is empty. An empty region renders as an empty "
                 + "code fence, which reads as \"this feature needs no code\".");
 
+        // A body carrying the injector's own closing marker has no correct rendering: once written into a
+        // document, the next run would find THAT line first and treat everything after it as prose, garbling
+        // the file. Refusing is the only safe answer, and no real sample needs such a line.
+        var marker = kept.FirstOrDefault(l =>
+            string.Equals(l.Trim(), "<!-- endsnippet -->", StringComparison.Ordinal)
+            || string.Equals(l.Trim(), "<!-- endtable -->", StringComparison.Ordinal));
+
+        if (marker is not null)
+            throw new DocToolingException(
+                $"{relativePath}:{openLine}: snippet '{id}' contains the line '{marker.Trim()}', which is an "
+                + "injector marker. Once written into a document the next run would end the block there and "
+                + "treat the rest of the file as prose. Remove the line or narrow the region.");
+
         var nonBlank = kept.Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
         var prefix = Whitespace(nonBlank[0]);
         foreach (var line in nonBlank)

@@ -19,6 +19,7 @@
         <PackageReference Include="coverlet.collector"/>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces"/>
+        <PackageReference Include="CsCheck"/>
         <PackageReference Include="Verify.Xunit"/>
         <PackageReference Include="Verify.SourceGenerators"/>
         <!-- Lets the harness reference Microsoft.Extensions.DependencyInjection so the generator emits the

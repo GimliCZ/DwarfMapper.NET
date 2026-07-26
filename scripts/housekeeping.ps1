@@ -56,7 +56,14 @@ try {
     if ($Mutation) {
         Write-Host "== 4/4 Mutation testing (Stryker — install: dotnet tool install -g dotnet-stryker) ==" -ForegroundColor Cyan
         dotnet stryker
-        if ($LASTEXITCODE) { throw "mutation score below break threshold" }
+        if ($LASTEXITCODE) { throw "mutation score below break threshold (generator)" }
+
+        # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
+        # this leg the doc tests are trusted on the strength of being green — the evidence a vacuous test
+        # also provides.
+        Write-Host "== 4/4b Mutation testing (DocTooling) ==" -ForegroundColor Cyan
+        dotnet stryker --config-file stryker-config.doctooling.json
+        if ($LASTEXITCODE) { throw "mutation score below break threshold (doc tooling)" }
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

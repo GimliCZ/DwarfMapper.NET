@@ -72,6 +72,12 @@ MUTANTS=(
 "M26|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/foreach (var owed in elementPairsOwedCoverage)/foreach (var owed in new System.Collections.Generic.List<(ITypeSymbol Src, ITypeSymbol Tgt, LocationInfo? Loc, List<string> IgnoreSources)>())/|GeneratedDocsAreCurrentTests|RequiredMapping source coverage lost at the span and async-stream endpoints"
 "M28|tests/DwarfMapper.Generator.Tests/Contracts/OptionCatalog.cs|s/v => !v.Equals(def)/v => true/|OptionContractTests|the derived enum probe collapsing to the DEFAULT value, making every enum cell measure nothing"
 "M21|docs/diagnostics.md|s/\*\*Fix:\*\* disambiguate with/**Fix (optional):** disambiguate with/|Scan8|an ERROR diagnostic downgrading its remedy to optional advice"
+"M29|src/DwarfMapper.DocTooling/SnippetScanner.cs|s/l\[prefix.Length..\]/l.TrimStart()/|SnippetScannerTests|dedent flattening relative indentation instead of removing the common prefix"
+"M30|src/DwarfMapper.DocTooling/SnippetScanner.cs|s/if (result.TryGetValue(region.Id, out var first))/if (false \&\& result.TryGetValue(region.Id, out var first))/|SnippetScannerTests|a duplicate snippet id silently resolving to whichever file was scanned first"
+"M31|src/DwarfMapper.DocTooling/OptionTableRenderer.cs|s/prose.TryGetValue(p.Name, out var t) ? t : \"\"/prose.TryGetValue(p.Name, out var t) ? t : \"TBD\"/|DocsAreSnippetCurrentTests|a newly added option rendering placeholder prose instead of failing the build"
+"M32|tests/DwarfMapper.Generator.Tests/SelfValidation/DocFenceScanTests.cs|s/preceding?.StartsWith(ExemptMarker, StringComparison.Ordinal) != true/false/|DocFenceScanTests|the fence ratchet accepting any comment as an exemption"
+"M33|src/DwarfMapper.DocTooling/ExampleCatalogue.cs|s/.GetTypes()/.GetExportedTypes()/|DocReconciliationTests|a non-public example vanishing from the catalogue, shrinking the index silently"
+"M34|src/DwarfMapper.DocTooling/DocSnippetInjector.cs|s/LongestBacktickRun(region.Body) + 1/3/|DocPipelinePropertyTests|a snippet containing \`\`\` closing its own fence and leaking code into the document as prose"
 )
 
 echo "== mutation battery: ${#MUTANTS[@]} mutants (mode: $MODE) =="

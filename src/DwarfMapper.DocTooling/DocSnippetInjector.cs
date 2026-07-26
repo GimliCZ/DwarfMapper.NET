@@ -54,16 +54,40 @@ public static class DocSnippetInjector
             // list item and silently reflow the document around it.
             var indent = line[..(line.Length - line.TrimStart().Length)];
 
+            // The fence must be LONGER than any backtick run inside the body, or a snippet containing ``` in
+            // a string or comment closes the block early: the rest of the code leaks out as prose, and the
+            // next run re-reads it as document text. Markdown allows any fence of three or more backticks.
+            var fence = new string('`', LongestBacktickRun(region.Body) + 1);
+
             sb.Append(line).Append('\n');
-            sb.Append(indent).Append("```csharp\n");
+            sb.Append(indent).Append(fence).Append("csharp\n");
             foreach (var bodyLine in region.Body.Split('\n'))
                 sb.Append(bodyLine.Length == 0 ? "" : indent).Append(bodyLine).Append('\n');
-            sb.Append(indent).Append("```\n");
+            sb.Append(indent).Append(fence).Append('\n');
             sb.Append(lines[closeIndex]).Append('\n');
             i = closeIndex + 1;
         }
 
         return new InjectionResult(sb.ToString().TrimEnd() + "\n", referenced);
+    }
+
+    /// <summary>The longest run of backticks on any line of the body, floored at 2 so the fence is ≥ 3.</summary>
+    private static int LongestBacktickRun(string body)
+    {
+        var longest = 2;
+        var run = 0;
+        foreach (var c in body)
+            if (c == '`')
+            {
+                run++;
+                if (run > longest) longest = run;
+            }
+            else
+            {
+                run = 0;
+            }
+
+        return longest;
     }
 
     private static string ParseId(string trimmedLine, string docPath, int line)

@@ -14,6 +14,12 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <!-- Test-only: exercises the generated IServiceCollection.AddDwarfMappers() DI registration. -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <!-- Property-based testing with INTEGRATED shrinking, closing open item 4 of
+         docs/research/testing-conformance-REPORT.md. Chosen over FsCheck (BSD-3) because shrinking is the
+         entire reason to add a PBT dependency and FsCheck needs separate shrinkers. Apache-2.0 sets no new
+         precedent for this GPL-2.0-only repo: xunit is Apache-2.0 already, and test-only dependencies are
+         not distributed. -->
+    <PackageVersion Include="CsCheck" Version="4.7.0" />
     <PackageVersion Include="Verify.Xunit" Version="28.16.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
