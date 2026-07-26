@@ -498,12 +498,15 @@ internal static partial class MapperExtractor
                     EmitDWARF028(diagnostics, methodLocation, method.Name,
                         "hooks (BeforeMap/AfterMap) are not supported in IQueryable projection (expression trees cannot contain hook calls); move hooks to a runtime mapper or remove them");
 
+                // Per-method [AutoNest] override, matching every other endpoint (C1). Projection ignored
+                // the option entirely before this.
+                var projAutoNest = ReadMethodAutoNest(method, classAutoNest);
                 var projExplicitMaps = ReadExplicitMaps(method);
                 var projMembers = ResolveProjectionMembers(
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumStrategy,
                     referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method),
-                    skipNullSrc, allowNonPublic);
+                    skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest);
 
                 methods.Add(new MapMethodModel(
                     method.Name,

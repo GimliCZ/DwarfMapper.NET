@@ -51,11 +51,21 @@ public static class EndpointSources
     ///     type) and <paramref name="classAttribute" /> on the mapper class.
     /// </summary>
     public static string Build(Endpoint endpoint, string memberAttribute = "", string classAttribute = "",
-        string extraMembers = "")
+        string extraMembers = "", string options = "", string? types = null)
     {
         var onMethod = string.IsNullOrEmpty(memberAttribute) ? "" : "    " + memberAttribute + "\n";
         var extras = string.IsNullOrEmpty(extraMembers) ? "" : "\n" + extraMembers + "\n";
-        var onClass = string.IsNullOrEmpty(classAttribute) ? "[DwarfMapper]" : "[DwarfMapper]\n" + classAttribute;
+
+        // Options go INSIDE [DwarfMapper(...)], not alongside it. Appending a second [DwarfMapper] would not
+        // compile (AllowMultiple = false), so the option family needs its own slot rather than reusing
+        // classAttribute, which exists for genuinely separate attributes like [MapIgnore].
+        var dwarf = string.IsNullOrEmpty(options) ? "[DwarfMapper]" : $"[DwarfMapper({options})]";
+        var onClass = string.IsNullOrEmpty(classAttribute) ? dwarf : dwarf + "\n" + classAttribute;
+
+        // Some options only become observable against a shape that triggers them (an enum for EnumStrategy, a
+        // nested class for AutoNest). A caller may substitute the DTO pair; the default stays deliberately
+        // trivial so the ordinary cells vary only the attribute and the endpoint.
+        var t = string.IsNullOrEmpty(types) ? Types : types;
 
         return endpoint switch
         {
@@ -63,7 +73,7 @@ public static class EndpointSources
                 using System.Linq;
                 using DwarfMapper;
                 namespace Demo;
-                {{Types}}
+                {{t}}
                 {{onClass}}
                 public partial class M
                 {
@@ -75,7 +85,7 @@ public static class EndpointSources
                 using System.Linq;
                 using DwarfMapper;
                 namespace Demo;
-                {{Types}}
+                {{t}}
                 {{onClass}}
                 public partial class M
                 {
@@ -87,7 +97,7 @@ public static class EndpointSources
                 using System.Linq;
                 using DwarfMapper;
                 namespace Demo;
-                {{Types}}
+                {{t}}
                 {{onClass}}
                 public partial class M
                 {
@@ -100,7 +110,7 @@ public static class EndpointSources
                 using System.Linq;
                 using DwarfMapper;
                 namespace Demo;
-                {{Types}}
+                {{t}}
                 {{onClass}}
                 public partial class M
                 {
@@ -113,7 +123,7 @@ public static class EndpointSources
                 using System.Linq;
                 using DwarfMapper;
                 namespace Demo;
-                {{Types}}
+                {{t}}
                 {{onClass}}
                 public partial class M
                 {

@@ -57,6 +57,10 @@ MUTANTS=(
 "M18|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.cs|s/DiagnosticDescriptors.UnmappedMember/DiagnosticDescriptors.AmbiguousMatch/|DiagnosticTests|the completeness gate reporting the wrong diagnostic"
 "M19|src/DwarfMapper.Generator/Pipeline/EnumConverter.cs|s/ArgumentOutOfRangeException/InvalidOperationException/g|EnumStringTests|string->enum failing with the wrong exception type"
 "M20|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/needs a null decision/is fine actually/|BacklogCTests|the nullable-to-non-nullable projection refusal losing its reason"
+"M22|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (explicitOnly)/if (false)/|OptionContractTests|the mass-assignment trust boundary (AutoMatchMembers=false) not applying at projection"
+"M23|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (!autoNest)/if (false)/|OptionContractTests|projection auto-nesting despite AutoNest=false"
+"M24|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (ignoreObsolete)/if (false)/|OptionContractTests|IgnoreObsoleteMembers silently dropped by projection"
+"M21|docs/diagnostics.md|s/\*\*Fix:\*\* disambiguate with/**Fix (optional):** disambiguate with/|Scan8|an ERROR diagnostic downgrading its remedy to optional advice"
 )
 
 echo "== mutation battery: ${#MUTANTS[@]} mutants (mode: $MODE) =="

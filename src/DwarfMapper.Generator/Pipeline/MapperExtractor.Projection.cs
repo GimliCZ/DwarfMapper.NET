@@ -121,8 +121,23 @@ internal static partial class MapperExtractor
         EnumStrategy enumStrategy, int referenceHandling, string paramExpr, int nameConvention = 0,
         IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
             mapPropertyExtras = null,
-        bool skipNullSourceMembers = false, bool allowNonPublic = false)
+        bool skipNullSourceMembers = false, bool allowNonPublic = false,
+        bool explicitOnly = false, bool ignoreObsolete = false, bool autoNest = true)
     {
+        // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
+        // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
+        // obsolete member that IS explicitly targeted stays out of the set — opting a retired member back
+        // in deliberately must keep working at both endpoints.
+        if (ignoreObsolete)
+        {
+            var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
+            ignores = new HashSet<string>(ignores, StringComparer.Ordinal);
+            foreach (var name in ObsoleteMemberNames(targetType))
+                if (!explicitTargets.Contains(name))
+                    ignores.Add(name);
+        }
+
         // Targets the runtime COULD have deferred under SkipNullSourceMembers (settable, not init-only, not
         // required). Mirrors ResolveMembers' rule so the projection diagnostic fires on exactly the members the
         // option would have changed — no more, no less.
@@ -236,7 +251,7 @@ internal static partial class MapperExtractor
             var srcExprForExplicit = paramExpr + "." + srcName;
             var inlineExpr = ResolveProjectionExpr(
                 sm, tgtType, srcExprForExplicit, 0, compilation, location,
-                diagnostics, tgtName, enumStrategy, comparer);
+                diagnostics, tgtName, enumStrategy, comparer, autoNest);
             if (inlineExpr is not null)
                 result.Add(new ProjectionMemberMap(tgtName, inlineExpr));
         }
@@ -269,7 +284,7 @@ internal static partial class MapperExtractor
                 // C4: pass comparer (carries CaseInsensitive setting) to ctor projection resolver.
                 var ctorExpr = ResolveProjectionCtorExpr(
                     bestCtor, sourceType, paramExpr, 0,
-                    compilation, location, diagnostics, targetType, enumStrategy, comparer);
+                    compilation, location, diagnostics, targetType, enumStrategy, comparer, autoNest);
                 if (ctorExpr is not null)
                     // Store as a whole-lambda body (TargetName = "")
                     result.Add(new ProjectionMemberMap("", ctorExpr));
@@ -302,6 +317,19 @@ internal static partial class MapperExtractor
                 continue;
             }
 
+            // [DwarfMapper(AutoMatchMembers = false)] is a TRUST BOUNDARY, not a convenience toggle: it is
+            // the anti-over-posting guard (OWASP API6). It was honoured by the runtime resolver and ignored
+            // here, so the same mapper refused the implicit wire through .Map and performed it through
+            // .Project — a security control that silently did not apply at one endpoint. Explicit
+            // [MapProperty]/[MapValue]/[MapIgnore] have already been handled above; only the implicit
+            // by-name wire is blocked, matching ResolveMembers exactly.
+            if (explicitOnly)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.AutoMatchDisabled, location, target.Name, MemberName: target.Name));
+                continue;
+            }
+
             // [DwarfMapper(SkipNullSourceMembers = true)] cannot be honoured inside an expression tree: the
             // runtime emitter guards the assignment with `if (src.X is not null) …` so the target keeps its own
             // default, which a projection's object initializer has no way to express — it always assigns, so a
@@ -323,7 +351,7 @@ internal static partial class MapperExtractor
             // C4: pass comparer so nested objects respect CaseInsensitive setting.
             var inlineExpr = ResolveProjectionExpr(
                 src.Type, target.Type, srcAccessExpr, 0,
-                compilation, location, diagnostics, target.Name, enumStrategy, comparer);
+                compilation, location, diagnostics, target.Name, enumStrategy, comparer, autoNest);
             if (inlineExpr is not null)
                 result.Add(new ProjectionMemberMap(target.Name, inlineExpr));
         }
@@ -361,7 +389,8 @@ internal static partial class MapperExtractor
         List<DiagnosticInfo> diagnostics,
         string targetMemberName,
         EnumStrategy enumStrategy,
-        StringComparer? comparer = null)
+        StringComparer? comparer = null,
+        bool autoNest = true)
     {
         comparer ??= StringComparer.Ordinal;
 
@@ -393,7 +422,7 @@ internal static partial class MapperExtractor
             // C4: propagate comparer into element expression resolver.
             var elemExpr = ResolveProjectionExpr(
                 srcElem, tgtElem, elemParam, depth + 1,
-                compilation, location, diagnostics, targetMemberName, enumStrategy, comparer);
+                compilation, location, diagnostics, targetMemberName, enumStrategy, comparer, autoNest);
             if (elemExpr is null) return null; // DWARF028 already emitted
 
             // Use fully-qualified Enumerable.Select to avoid needing 'using System.Linq' in generated code.
@@ -512,10 +541,23 @@ internal static partial class MapperExtractor
         // ── 3. Nested named object (recursive) ───────────────────────────────
         if (srcType is INamedTypeSymbol namedSrc && tgtType is INamedTypeSymbol namedTgt
                                                  && IsMappableObjectPair(compilation, srcType, namedTgt))
+        {
+            // [DwarfMapper(AutoNest = false)] means "do not synthesize nested pairs I did not ask for". The
+            // runtime resolver refuses with DWARF005; projection auto-nested regardless, so the two endpoints
+            // disagreed about whether a nested member was mapped at all. Report the same diagnostic the
+            // runtime reports, so turning auto-nesting off means the same thing everywhere.
+            if (!autoNest)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.NoImplicitConversion, location, targetMemberName));
+                return null;
+            }
+
             // C4: pass comparer into nested object resolver.
             return ResolveProjectionNestedObjectExpr(
                 namedSrc, namedTgt, srcExpr, depth, compilation, location, diagnostics,
-                targetMemberName, enumStrategy, comparer);
+                targetMemberName, enumStrategy, comparer, autoNest);
+        }
 
         // ── Nullable T? → nullable U? or non-nullable U ───────────────────────
         // C5: when source is Nullable<T> and target is also Nullable<U>, emit a null-preserving
@@ -527,7 +569,7 @@ internal static partial class MapperExtractor
                 // int?→long?: null-preserving ternary: __s.X.HasValue ? (long?)__s.X.Value : null
                 var innerExpr = ResolveProjectionExpr(
                     srcUnderlying, tgtUnderlying, srcExpr + ".Value", depth,
-                    compilation, location, diagnostics, targetMemberName, enumStrategy, comparer);
+                    compilation, location, diagnostics, targetMemberName, enumStrategy, comparer, autoNest);
                 if (innerExpr is null) return null;
                 var tgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 return $"{srcExpr}.HasValue ? ({tgtNullableFqn}){innerExpr} : null";
@@ -642,7 +684,8 @@ internal static partial class MapperExtractor
         string srcExpr, int depth,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         string targetMemberName, EnumStrategy enumStrategy,
-        StringComparer? comparer = null)
+        StringComparer? comparer = null,
+        bool autoNest = true)
     {
         comparer ??= StringComparer.Ordinal;
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -714,7 +757,7 @@ internal static partial class MapperExtractor
                 var memberInlineExpr = ResolveProjectionExpr(
                     srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
                     compilation, location, diagnostics,
-                    targetMemberName + "." + tgtMember.Name, enumStrategy, comparer);
+                    targetMemberName + "." + tgtMember.Name, enumStrategy, comparer, autoNest);
 
                 if (memberInlineExpr is null)
                 {
@@ -750,7 +793,8 @@ internal static partial class MapperExtractor
         List<DiagnosticInfo> diagnostics,
         INamedTypeSymbol tgtType,
         EnumStrategy enumStrategy,
-        StringComparer comparer)
+        StringComparer comparer,
+        bool autoNest = true)
     {
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var srcReadable = BuildProjectionSourceLookup(srcType, comparer, location, diagnostics);
@@ -772,7 +816,7 @@ internal static partial class MapperExtractor
             // C4: propagate comparer into ctor param expression resolver.
             var paramInlineExpr = ResolveProjectionExpr(
                 srcMember.Type, param.Type, paramSrcExpr, depth + 1,
-                compilation, location, diagnostics, param.Name, enumStrategy, comparer);
+                compilation, location, diagnostics, param.Name, enumStrategy, comparer, autoNest);
 
             if (paramInlineExpr is null)
             {
