@@ -506,6 +506,76 @@ public sealed class AssemblyScanTests
             + "would 404):\n" + string.Join("\n", undocumented));
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCAN 8 — Every ERROR diagnostic's docs section states a remedy
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Scan8_Every_error_diagnostic_documents_a_fix()
+    {
+        // Scan7 proves the section EXISTS; it says nothing about whether the section helps. An error stops the
+        // build, so its page has one job beyond naming the problem: say what to do instead. `AllowNonPublic` is
+        // the cautionary case this encodes — it refused correctly while reporting "no matching source member"
+        // for a member that plainly existed, which sent people looking for a typo that was not there.
+        //
+        // This scan found nothing when it was written: all 51 error ids already carried a fix clause. It is a
+        // ratchet for the NEXT diagnostic, not a discovery, and is worth having only because the convention is
+        // otherwise unenforced and invisible to a reviewer adding id 77.
+        //
+        // Warnings and Info may use "**Fix (optional):**" or omit a fix entirely — DWARF038 describes a
+        // conversion that is working as intended, and there is nothing to repair. Errors may not.
+        var docPath = Path.Combine(RepoRoot, "docs", "diagnostics.md");
+        var docText = File.ReadAllText(docPath);
+
+        // Sections run from one "## dwarfNNN" heading to the next.
+        var sections = new Dictionary<string, string>(StringComparer.Ordinal);
+        var headings = Regex.Matches(docText, @"(?im)^##\s+dwarf(\d{3})\b").ToList();
+        for (var i = 0; i < headings.Count; i++)
+        {
+            var start = headings[i].Index;
+            var end = i + 1 < headings.Count ? headings[i + 1].Index : docText.Length;
+            sections["DWARF" + headings[i].Groups[1].Value] = docText[start..end];
+        }
+
+        // Tolerant of the punctuation the docs actually use: "**Fix:**", "**Fix**", "**Fix** — ...".
+        // Deliberately NOT tolerant of "**Fix (optional):**" for an error.
+        var fix = new Regex(@"\*\*Fix\*?\*?", RegexOptions.IgnoreCase);
+        var optional = new Regex(@"\*\*Fix\s*\(optional\)", RegexOptions.IgnoreCase);
+
+        var offenders = GetAllDescriptors()
+            .Where(d => d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error)
+            .Select(d => d.Descriptor.Id)
+            .Where(id => !ReservedIds.Ids.Contains(id))
+            .Where(id => sections.TryGetValue(id, out var body)
+                         && (!fix.IsMatch(body) || optional.IsMatch(body)))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "Error diagnostic(s) whose docs/diagnostics.md section never states a fix (an error stops the "
+            + "build — naming the problem without naming the remedy leaves the reader stuck):\n"
+            + string.Join("\n", offenders));
+    }
+
+    [Fact]
+    public void Scan8_is_not_vacuous_it_actually_inspects_error_diagnostics()
+    {
+        // Without this, deleting the DefaultSeverity filter's contents — or an id-format drift that made every
+        // TryGetValue miss — would leave Scan8 permanently, silently green.
+        var errorIds = GetAllDescriptors()
+            .Where(d => d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error)
+            .Select(d => d.Descriptor.Id)
+            .Where(id => !ReservedIds.Ids.Contains(id))
+            .ToList();
+
+        Assert.True(errorIds.Count >= 40,
+            $"Expected Scan8 to inspect a substantial number of error diagnostics, saw {errorIds.Count}.");
+
+        var docText = File.ReadAllText(Path.Combine(RepoRoot, "docs", "diagnostics.md"));
+        var headings = Regex.Count(docText, @"(?im)^##\s+dwarf\d{3}\b");
+        Assert.True(headings >= 40, $"Expected to parse many doc sections, parsed {headings}.");
+    }
+
     private static Dictionary<string, ReleaseRow> ParseAnalyzerReleases()
     {
         var result = new Dictionary<string, ReleaseRow>(StringComparer.Ordinal);
