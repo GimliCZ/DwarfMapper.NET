@@ -4,14 +4,19 @@
 - **Date:** 2026-07-26
 - **Spec:** [`specs/2026-07-26-test-hardening-programme.md`](../specs/2026-07-26-test-hardening-programme.md)
 - **Status:** **IMPLEMENTED** — all five phases delivered 2026-07-26.
-  P1 `2807333` `14924eb` `be659ae` · P2 `9aee911` · P3 `0a30e7c` · P5 `0c0da41` · P4 `e0df5d2`.
-  Suite 5,149 generator + 705 integration + 31 testing, green. Mutation battery: 3/3 killed.
+  P1 `2807333` `14924eb` `be659ae` · P2 `9aee911` · P3 `0a30e7c` · P5 `0c0da41` · P4 `e0df5d2` `9d09866`.
+  Suite 5,149 generator + 705 integration + 31 testing, green. Mutation battery: **20/20 killed** (§4.3 met).
 
   Every phase was verified by mutation rather than by passing: each guard was made to fail for the right
   reason before being accepted. Three of those mutations exposed defects in the NEW work itself — the P2
   growth ratchet auto-classified unknown attributes and could never fire, the P5 gate "verified" a commit it
   had just written, and the P5 CI scan was satisfied by an adjacent `chmod` line. All three were found only
   because the guards were mutation-tested, which is the argument for the practice.
+
+  Expanding the battery from 3 to 20 mutants (`9d09866`) then found a fourth defect, this time in the
+  *pre-existing* suite: the nullable-to-non-nullable projection refusal could have its explanation rewritten
+  to nonsense with all 5,149 tests still green, because every test asserted only that `DWARF028` fired. That
+  is the pattern this programme exists to catch — a guard that checks the id and calls it coverage.
 
 Execution order is the spec's §8: **P1 → P2 → P3 → P5 → P4**. Phase 5 deliberately precedes Phase 4 — a
 fail-closed gate protects everything already built, whereas the harness mainly finds *new* defects, so if
@@ -82,7 +87,7 @@ cannot be verified red-then-green is not done.
 |---|---|---|
 | 4.1 | `Fuzzing/Fixtures/` — one shape vocabulary (member kind × type × nullability × collection shape × endpoint); migrate `CombinatorialSchema` and `SyntheticSchema` onto it. | Existing fuzz suites stay green through the migration. |
 | 4.2 | Shrinker: on failure, minimise (drop members → simplify types → relax options) while the failure reproduces; report minimal repro + seed. | Seed a known failure → repro shrinks to ≤ 5 members. |
-| 4.3 | `Fuzzing/MutationBatteryTests` (**non-default lane**): catalogue of semantic mutations — invert a conditional, drop a null guard, swap a comparer to culture-sensitive, remove a diagnostic emission — rebuilt in-memory; assert ≥ 1 test fails per mutant. | ≥ 20 mutants, zero survivors — or each survivor filed with the missing test named. |
+| 4.3 | `Fuzzing/MutationBatteryTests` (**non-default lane**): catalogue of semantic mutations — invert a conditional, drop a null guard, swap a comparer to culture-sensitive, remove a diagnostic emission — rebuilt in-memory; assert ≥ 1 test fails per mutant. | ≥ 20 mutants, zero survivors — or each survivor filed with the missing test named. **Met: 20/20 killed.** Shipped as `scripts/mutation-battery.sh` rather than an xUnit class — each mutant rebuilds the generator, so it is a minutes-scale lane that must not sit in the default suite. |
 | 4.4 | Endpoint axis: emit each schema through all seven endpoints and cross-check. P2's table restated as a property. | Should independently rediscover the projection divergences. |
 
 **Done when:** shrinker meets its bound; mutation battery has no unexplained survivors.
