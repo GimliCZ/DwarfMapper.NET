@@ -39,6 +39,8 @@ public partial class Mapper
     }
 }
 
+[DocExample(9, Tier.Configuration, "Conditional and constant values",
+    Shows = "When=, NullSubstitute=, and [MapValue]")]
 public static class Example
 {
     public static void Run()

@@ -45,6 +45,8 @@ public partial class Mapper
 {
 } // no methods — the pair-scoped attribute carries the nested rename
 
+[DocExample(14, Tier.Configuration, "The same, with no partial methods",
+    Shows = "pair-scoped [MapProperty<S,T>] on the class carries the nested rename")]
 public static class Example
 {
     public static void Run()

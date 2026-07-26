@@ -43,6 +43,8 @@ public partial class Mapper
     public partial PersonDto ToDto(Person person);
 }
 
+[DocExample(13, Tier.Configuration, "Configure a collection-element map",
+    Shows = "renaming a member of the element type inside a List<T>")]
 public static class Example
 {
     public static void Run()

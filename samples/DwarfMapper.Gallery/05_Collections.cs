@@ -36,6 +36,8 @@ public partial class Mapper
     public partial BasketDto ToDto(Basket b);
 }
 
+[DocExample(5, Tier.Basics, "Collections",
+    Shows = "lists and arrays, element-by-element and bulk copy")]
 public static class Example
 {
     public static void Run()

@@ -27,6 +27,8 @@ public partial class Mapper
     public partial IQueryable<OrderDto> Project(IQueryable<Order> src);
 }
 
+[DocExample(11, Tier.Configuration, "IQueryable projection",
+    Shows = "the one place a Select lambda is generated for you")]
 public static class Example
 {
     public static void Run()

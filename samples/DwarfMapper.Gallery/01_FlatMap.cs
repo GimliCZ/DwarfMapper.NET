@@ -24,6 +24,8 @@ public partial class Mapper
 {
 }
 
+[DocExample(1, Tier.Basics, "Flat map",
+    Shows = "the simplest map — [GenerateMap<A,B>], same names and types")]
 public static class Example
 {
     public static void Run()

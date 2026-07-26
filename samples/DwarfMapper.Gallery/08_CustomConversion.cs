@@ -35,6 +35,8 @@ public partial class Mapper
     }
 }
 
+[DocExample(8, Tier.Configuration, "Custom conversion",
+    Shows = "Use = nameof(Method) — the method body is the \"lambda\"")]
 public static class Example
 {
     public static void Run()

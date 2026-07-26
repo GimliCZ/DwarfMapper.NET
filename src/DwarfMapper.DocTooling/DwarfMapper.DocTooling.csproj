@@ -12,5 +12,9 @@
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="..\DwarfMapper\DwarfMapper.csproj"/>
+        <!-- The example catalogue is reflected out of the Gallery assembly. This library, not the test
+             project, carries that dependency. If the Gallery stops building, the doc tests fail loudly
+             rather than quietly skipping. -->
+        <ProjectReference Include="..\..\samples\DwarfMapper.Gallery\DwarfMapper.Gallery.csproj"/>
     </ItemGroup>
 </Project>

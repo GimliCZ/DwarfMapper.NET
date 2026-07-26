@@ -26,6 +26,8 @@ public partial class Mapper
     public partial CustomerDto ToDto(Customer c);
 }
 
+[DocExample(2, Tier.Basics, "Rename a member",
+    Shows = "[MapProperty(nameof(...), nameof(...))]")]
 public static class Example
 {
     public static void Run()

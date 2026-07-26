@@ -39,6 +39,8 @@ public partial class Mapper
     public partial HeroDto ToDto(Hero h); // int -> long (widen), Rank -> RankDto (by name)
 }
 
+[DocExample(3, Tier.Basics, "Built-in conversions",
+    Shows = "automatic widening and enum-by-name")]
 public static class Example
 {
     public static void Run()

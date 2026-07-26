@@ -42,6 +42,8 @@ public partial class Mapper
     public partial OrderSummary ToSummary(Order o);
 }
 
+[DocExample(6, Tier.Configuration, "Deep dotted paths",
+    Shows = "a dotted source path — what others reach with a lambda")]
 public static class Example
 {
     public static void Run()

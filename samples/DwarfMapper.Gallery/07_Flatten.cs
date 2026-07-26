@@ -33,6 +33,8 @@ public partial class Mapper
     public partial PersonDto ToDto(Person p);
 }
 
+[DocExample(7, Tier.Configuration, "Flatten",
+    Shows = "[Flatten] lifts sub-members to the top level")]
 public static class Example
 {
     public static void Run()

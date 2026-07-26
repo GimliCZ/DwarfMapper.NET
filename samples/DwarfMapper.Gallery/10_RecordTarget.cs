@@ -22,6 +22,8 @@ public partial class Mapper
     public partial PersonDto ToDto(Person p); // emits new PersonDto(Id: p.Id, Name: p.Name)
 }
 
+[DocExample(10, Tier.Configuration, "Immutable record target",
+    Shows = "constructor binding into a record with no parameterless ctor")]
 public static class Example
 {
     public static void Run()

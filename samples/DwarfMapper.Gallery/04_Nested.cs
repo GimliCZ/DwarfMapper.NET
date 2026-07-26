@@ -36,6 +36,8 @@ public partial class Mapper
     public partial OrderDto ToDto(Order o); // ShipTo (Address -> AddressDto) auto-nested
 }
 
+[DocExample(4, Tier.Basics, "Nested objects",
+    Shows = "auto-nesting a nested (S,T) pair")]
 public static class Example
 {
     public static void Run()

@@ -14,6 +14,8 @@ using DwarfMapper.Gallery.Ex15.Models;
 
 namespace DwarfMapper.Gallery.Ex15;
 
+[DocExample(15, Tier.FrontDoors, "Co-located on the DTO",
+    Shows = "[GenerateMap] on a plain sealed DTO — no partial, no [DwarfMapper]")]
 public static class Example
 {
     public static void Run()
