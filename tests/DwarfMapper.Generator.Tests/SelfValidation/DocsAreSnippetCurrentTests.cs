@@ -43,7 +43,7 @@ public class DocsAreSnippetCurrentTests
     [Fact]
     public void Every_snippet_marker_in_every_doc_matches_its_sample()
     {
-        var regions = SnippetScanner.ScanAll();
+        var regions = DocRegions.All();
         var stale = new List<string>();
 
         foreach (var relative in DocSet.All)

@@ -58,7 +58,7 @@ public class DocReconciliationTests
         // the file is linked from the generated index and the example runs on every `dotnet run`, so an
         // unquoted one is a doc opportunity, not dead weight. Scoping the rule that way keeps it aimed at the
         // decay it was written for: a region in, say, AotSample, which nothing links and nobody runs by hand.
-        var regions = SnippetScanner.ScanAll();
+        var regions = DocRegions.All();
         var referenced = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var relative in DocSet.All)
@@ -119,5 +119,28 @@ public class DocReconciliationTests
             "Non-public [DocExample] type(s). An example the Gallery runs but the catalogue could drop is a "
             + "runner/index divergence waiting to happen — make them public:\n  "
             + string.Join("\n  ", nonPublic));
+    }
+
+    [Fact]
+    public void The_published_generator_output_is_real_emitted_code()
+    {
+        // Without this, a harness that silently returned "" or a header-only stub would render a
+        // plausible-looking block, and the drift check would hold that lie stable forever — the exact failure
+        // mode The_api_reference_actually_carries_summaries was written for on the reference side.
+        var emitted = EmittedCodeCatalogue.Render();
+
+        Assert.Equal(2, emitted.Count);
+
+        var flat = emitted["emitted-flat-map"].Body;
+        Assert.Contains("Age = src.Age", flat, StringComparison.Ordinal);
+        Assert.Contains("Name = src.Name", flat, StringComparison.Ordinal);
+        Assert.Contains("ThrowIfNull", flat, StringComparison.Ordinal);
+
+        // The whole point of the deep-paths example: the dotted string became a real member access.
+        var deep = emitted["emitted-deep-paths"].Body;
+        Assert.Contains("City = o.Customer.Address.City", deep, StringComparison.Ordinal);
+
+        Assert.All(emitted.Values, r => Assert.True(r.Body.Split('\n').Length > 8,
+            $"'{r.Id}' rendered only {r.Body.Split('\n').Length} lines — too short to be a generated mapper."));
     }
 }
