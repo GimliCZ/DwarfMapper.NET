@@ -170,26 +170,33 @@ Once it builds, verify behaviour with the two tools DwarfMapper gives you for fr
 **Round-trip a forward/back pair** — tag the forward method `[RoundTrip]` and call the generated verifier
 from one test (needs a `DwarfMapper.Testing` reference; without it the attribute is a no-op):
 
-<!-- fence-exempt: [RoundTrip] sample arrives in phase 3 (#25) -->
+<!-- snippet: round-trip -->
 ```csharp
 [DwarfMapper]
-public partial class OrderMapper
+public partial class Mapper
 {
-    [RoundTrip] public partial OrderDto ToDto(Order o);
-    public partial Order FromDto(OrderDto d);
-}
+    [RoundTrip]                                       // emits VerifyRoundTrip_ToDto(seed, count)
+    public partial LedgerDto ToDto(Ledger l);
 
-[Fact]
-public void Order_roundtrips() => new OrderMapper().VerifyRoundTrip_ToDto();
-// fuzzes seeded inputs, asserts Back(Forward(x)) ≡ x, throws a mapping-aware diff on mismatch
+    public partial Ledger FromDto(LedgerDto d);       // the inverse it verifies against
+}
 ```
+<!-- endsnippet -->
 
 **Or verify ad-hoc** without the attribute:
 
-<!-- fence-exempt: informed-dump sample arrives in phase 3 (#26) -->
+<!-- snippet: informed-dumps -->
 ```csharp
-RoundTrip.Verify<Order, OrderDto>(m.ToDto, m.FromDto);
+[DwarfMapper]
+public partial class Mapper
+{
+    public partial CoinDto ToDto(Coin c);
+
+    [MapIgnore(nameof(Coin.Mint))]   // nothing to restore it from — stated, not forgotten
+    public partial Coin FromDto(CoinDto d);
+}
 ```
+<!-- endsnippet -->
 
 For a belt-and-braces migration, keep your *old* mapper around for one release and assert old-output ≡
 new-output over a sample of real inputs before deleting it. The repo's own

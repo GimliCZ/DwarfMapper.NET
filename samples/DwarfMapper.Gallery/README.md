@@ -30,6 +30,19 @@ dotnet run --project samples/DwarfMapper.Gallery
 | 14 | [`14_NestedListConfigErgonomic.cs`](14_NestedListConfigErgonomic.cs) — The same, with no partial methods | pair-scoped `[MapProperty<S,T>]` on the class carries the nested rename |
 | | **Front doors** | |
 | 15 | [`ex15/15_CoLocated.cs`](ex15/15_CoLocated.cs) — Co-located on the DTO | `[GenerateMap]` on a plain `sealed` DTO — no `partial`, no `[DwarfMapper]` |
+| 16 | [`16_MapToRegistry.cs`](16_MapToRegistry.cs) — The `[MapTo]` registry | declaring the pair on the source type — no mapper class at all |
+| | **Advanced** | |
+| 17 | [`17_UpdateInto.cs`](17_UpdateInto.cs) — Update an existing instance | a two-parameter partial method preserves the target's identity |
+| 18 | [`18_SpanMap.cs`](18_SpanMap.cs) — Zero-alloc span mapping | `void Map(ReadOnlySpan<S>, Span<D>)` into a caller-provided buffer |
+| 19 | [`19_AsyncStream.cs`](19_AsyncStream.cs) — Async streaming | `IAsyncEnumerable<D> Map(IAsyncEnumerable<S>)` — element-by-element, no buffering |
+| 20 | [`20_ReferenceCycles.cs`](20_ReferenceCycles.cs) — Reference cycles | `OnCycle = SetNull` breaks a cycle instead of overflowing the stack |
+| 21 | [`21_BlittableSimd.cs`](21_BlittableSimd.cs) — Blittable bulk copy | a layout-identical array is bulk-copied, not looped — proven, never assumed |
+| 22 | [`22_Reinterpret.cs`](22_Reinterpret.cs) — `[Reinterpret]` — asserted blit | bulk-copying layout-identical structs whose field NAMES differ |
+| 23 | [`23_FlattenGraph.cs`](23_FlattenGraph.cs) — `[FlattenGraph]` — a graph becomes a list | breadth-first graph collapse with per-node-type mapping |
+| 24 | [`24_MapDerivedType.cs`](24_MapDerivedType.cs) — `[MapDerivedType]` — polymorphic dispatch | one base-typed method that maps each concrete subtype to its own DTO |
+| | **Testing** | |
+| 25 | [`25_RoundTrip.cs`](25_RoundTrip.cs) — `[RoundTrip]` verification | one attribute emits a fuzzing harness asserting `Back(Forward(x)) == x` |
+| 26 | [`26_InformedDumps.cs`](26_InformedDumps.cs) — Informed failure dumps | a failed round trip names the diverging member path, not two object dumps |
 | | **Guides** | |
 | 30 | [`guides/30_CompositeMapper.cs`](guides/30_CompositeMapper.cs) — A composite mapper | rename, `Use=` conversion, and `[Flatten]` in one mapper |
 | 31 | [`guides/31_GenerateMapPairs.cs`](guides/31_GenerateMapPairs.cs) — Several pairs on one class | `[GenerateMap<A,B>]` stacked — the AutoMapper `CreateMap` shape |

@@ -8,10 +8,18 @@
              (Console output literals, public sample POCOs in an exe, per-file namespaces, etc.). The point of
              these files is to teach the DwarfMapper API, not to model production analyzer hygiene. -->
         <AnalysisMode>Recommended</AnalysisMode>
-        <NoWarn>$(NoWarn);CA1050;CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA1716;CA1724;CA5394;CA1812;CA1822</NoWarn>
+        <!-- CA1051 (visible instance fields) and CA1815 (struct should override Equals) are suppressed for
+             the blittable example: public fields in a plain unmanaged struct are exactly the shape the
+             bulk-copy proof is about, and adding Equals/operators would obscure the layout being
+             demonstrated. -->
+        <NoWarn>$(NoWarn);CA1050;CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA1716;CA1724;CA5394;CA1812;CA1822;CA1051;CA1815</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <!-- Test-time only, for examples 25-26 ([RoundTrip] verification and informed dumps). Reflection-based
+             and never AOT-published; the mapper itself stays reflection-free. Without this reference
+             [RoundTrip] is a no-op. -->
+        <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj"/>
         <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
                           OutputItemType="Analyzer" ReferenceOutputAssembly="false"/>
         <!-- Only for the last example (DI). Centrally versioned in Directory.Packages.props. -->

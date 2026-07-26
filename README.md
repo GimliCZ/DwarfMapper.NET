@@ -132,29 +132,22 @@ dotnet new console -o HelloDwarf && cd HelloDwarf
 dotnet add package DwarfMapper --prerelease   # once it's on nuget.org; until then, reference the project (see Packages)
 ```
 
-<!-- fence-exempt: [MapTo] registry sample arrives in phase 3 (#16) -->
+<!-- snippet: map-to-registry -->
 ```csharp
-// Program.cs — a complete program (top-level statements + the two classes)
-using DwarfMapper;
-
-var person = new Person { Name = "Ada", Age = 42 };
-
-PersonDto dto = person.MapTo<PersonDto>();   // or person.ToPersonDto()
-Console.WriteLine($"{dto.Name}, {dto.Age}"); // Ada, 42
-
-[MapTo(typeof(PersonDto))]
-public class Person
+[MapTo(typeof(RuneDto))]
+public sealed class Rune
 {
-    public required string Name { get; set; }   // `required` keeps the default `Nullable` context warning-free
-    public int Age { get; set; }
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
 }
 
-public class PersonDto
+public sealed class RuneDto
 {
-    public required string Name { get; set; }
-    public int Age { get; set; }
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
 }
 ```
+<!-- endsnippet -->
 
 That's the whole loop: **two plain classes, one attribute, one call.** The generated body is exactly what you'd write by
 hand — `new PersonDto { Name = person.Name, Age = person.Age }`.
@@ -224,23 +217,21 @@ generated extension — no `partial` class, nothing to instantiate. One source c
 directives are **stacked and read in source order, each aligned to the matching `[MapTo]` target** — so a member can be
 renamed differently per target, or mapped in some and ignored in others:
 
-<!-- fence-exempt: [MapTo] registry sample arrives in phase 3 (#16) -->
+<!-- snippet: map-to-multi-target -->
 ```csharp
-using DwarfMapper;
-
-[MapTo(typeof(OrderDto), typeof(OrderSummary))]
-public class Order
+[MapTo(typeof(GateDto), typeof(GateSummary))]
+public sealed class Gate
 {
-    [MapProperty("Name"), MapProperty("FullName")]  // OrderDto.Name ; OrderSummary.FullName
-    public string FullName { get; set; }
+    public int Id { get; set; }
 
-    [MapProperty("Total"), MapIgnore]               // mapped into OrderDto ; ignored for OrderSummary
-    public decimal Total { get; set; }
+    [MapProperty("Name"), MapProperty("Title")]   // GateDto.Name ; GateSummary.Title
+    public string Label { get; set; } = "";
+
+    [MapProperty("Warden"), MapIgnore]            // mapped into GateDto ; ignored for GateSummary
+    public string Keeper { get; set; } = "";
 }
-
-OrderDto    a = order.MapTo<OrderDto>();
-OrderSummary b = order.ToOrderSummary();
 ```
+<!-- endsnippet -->
 
 The same completeness gate applies (every destination member must be satisfied, or it's a build error), and the **full
 conversion engine** is reused — numeric widening/narrowing, `string`↔`T` parse/format, enums, nested objects, and `T[]`/
@@ -567,16 +558,15 @@ memory-safe (unmanaged + size guard), with the field correspondence as your asse
 Declare a two-parameter partial method to map onto an **existing** target instead of constructing a new one — the
 target's identity is preserved (handy for updating tracked entities, pooled objects, or pre-allocated buffers):
 
-<!-- fence-exempt: update-into sample arrives in phase 3 (#17) -->
+<!-- snippet: update-into -->
 ```csharp
 [DwarfMapper]
-public partial class CustomerMapper
+public partial class Mapper
 {
-    public partial void Update(CustomerDto src, Customer dest);      // mutate dest in place
-    // Fluent variant — pick exactly ONE per pair; you can't declare both (C# won't overload on return type):
-    //   public partial Customer Update(CustomerDto src, Customer dest);   // returns dest
+    public partial void Update(ForgeOrderDto src, ForgeOrder dest);   // mutates dest in place
 }
 ```
+<!-- endsnippet -->
 
 Settable members are assigned from the source; the same completeness gate (`DWARF001`), conversions, `[MapProperty]`/
 `[MapIgnore]`, and hooks apply. Both parameters are null-guarded (loud `ArgumentNullException`). Nested members and
@@ -588,11 +578,15 @@ by value couldn't observe the mutation). Recursion-capable nested members are de
 Declare `void Map(ReadOnlySpan<S> src, Span<D> dst)` to map element-wise into a caller-provided buffer with no heap
 allocation — ideal for hot paths over `stackalloc`/pooled memory:
 
-<!-- fence-exempt: span-map sample arrives in phase 3 (#18) -->
+<!-- snippet: span-map -->
 ```csharp
 [DwarfMapper]
-public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
+public partial class Mapper
+{
+    public partial void Map(ReadOnlySpan<int> src, Span<long> dst);   // int -> long, widened per element
+}
 ```
+<!-- endsnippet -->
 
 Each element runs through the full conversion pipeline (`dst[i] = convert(src[i])`). The destination must be a writable
 `Span<D>` (source may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws
@@ -604,11 +598,15 @@ Declare `IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src)` to lazily transform a
 an `async` iterator (`await foreach … yield return convert(item)`) that streams element-by-element without buffering,
 preserving back-pressure:
 
-<!-- fence-exempt: async-stream sample arrives in phase 3 (#19) -->
+<!-- snippet: async-stream -->
 ```csharp
 [DwarfMapper]
-public partial class M { public partial IAsyncEnumerable<Dto> Map(IAsyncEnumerable<Entity> src); }
+public partial class Mapper
+{
+    public partial IAsyncEnumerable<OreDto> Map(IAsyncEnumerable<Ore> src);
+}
 ```
+<!-- endsnippet -->
 
 Ideal for mapping a streamed data source (DB cursor, network stream) to DTOs without materializing the whole sequence.
 
@@ -618,13 +616,15 @@ Recursive/self-referential types (`Node { Node? Next }`, a tree, mutually-recurs
 time. Only the `(src,tgt)` pairs that can actually re-enter get the extra machinery — acyclic pairs stay zero-overhead.
 The behaviour for shared references and cycles is controlled per mapper:
 
-<!-- fence-exempt: reference-handling/cycles sample arrives in phase 3 (#20) -->
+<!-- snippet: reference-cycles -->
 ```csharp
-// Pick ONE [DwarfMapper(...)] per class — the attribute is AllowMultiple = false; these are alternatives, not a stack:
-[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]   // full topology
-// [DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]                     // ...or break cycles with null
-// [DwarfMapper(MaxDepth = 128)]                                       // ...or a custom depth bound (default 64)
+[DwarfMapper(OnCycle = OnCycleStrategy.SetNull)]
+public partial class Mapper
+{
+    public partial DwarfDto ToDto(Dwarf d);
+}
 ```
+<!-- endsnippet -->
 
 - **`ReferenceHandling = None`** (default): no identity tracking, zero allocation. Recursion-capable pairs carry a depth
   counter — a cycle (or an over-deep chain), whether through a **direct reference member or
@@ -666,18 +666,18 @@ Tag the forward method with `[RoundTrip]`; the generator finds the inverse mappi
 structural equality, and on mismatch throws an **informed dump**. One attribute replaces the fixtures you used to
 maintain by hand — call it from a single test:
 
-<!-- fence-exempt: [RoundTrip] sample arrives in phase 3 (#25) -->
+<!-- snippet: round-trip -->
 ```csharp
 [DwarfMapper]
-public partial class OrderMapper
+public partial class Mapper
 {
-    [RoundTrip] public partial OrderDto ToDto(Order o);
-    public partial Order FromDto(OrderDto d);
-}
+    [RoundTrip]                                       // emits VerifyRoundTrip_ToDto(seed, count)
+    public partial LedgerDto ToDto(Ledger l);
 
-[Fact]
-public void Order_roundtrips() => new OrderMapper().VerifyRoundTrip_ToDto();
+    public partial Ledger FromDto(LedgerDto d);       // the inverse it verifies against
+}
 ```
+<!-- endsnippet -->
 
 Requires a reference to `DwarfMapper.Testing`; without it, `[RoundTrip]` is a no-op (no verifier is generated). No
 inverse → `DWARF020`; ambiguous inverse → `DWARF021`.
@@ -693,11 +693,18 @@ throws a `RoundTripException` that walks the two graphs and reports the **member
 
 `DwarfMapper.Testing` ships the round-trip verifier you can call now:
 
-<!-- fence-exempt: informed-dump sample arrives in phase 3 (#26) -->
+<!-- snippet: informed-dumps -->
 ```csharp
-var m = new OrderMapper();
-RoundTrip.Verify<Order, OrderDto>(m.ToDto, m.FromDto);   // fuzzes inputs, asserts Back(Forward(x)) ≡ x
+[DwarfMapper]
+public partial class Mapper
+{
+    public partial CoinDto ToDto(Coin c);
+
+    [MapIgnore(nameof(Coin.Mint))]   // nothing to restore it from — stated, not forgotten
+    public partial Coin FromDto(CoinDto d);
+}
 ```
+<!-- endsnippet -->
 
 On a mismatch it throws with a structural diff (the differing member's path, expected vs. actual, and the replay seed).
 `ObjectFactory.Create<T>(seed)` and `Fuzzer.Generate<T>(count, seed)` build seeded fixtures for your own tests. The
