@@ -23,6 +23,11 @@ Enable the local pre-push gate once: `git config core.hooksPath scripts/git-hook
   do not suppress without a justification comment.
 - New mapping behavior requires: a generator snapshot test **and** a runtime
   integration test. A bug fix starts with a failing test.
+- User-facing behavior also needs a **documentation snippet**: an example under `samples/` carrying a
+  `// <snippet: id>` region, quoted from a `<!-- snippet: id -->` marker in the prose that describes it.
+  Hand-written ```csharp fences are refused by `DocFenceScanTests` — code in the docs is an extract of code
+  that compiles and runs, so it cannot describe an API that no longer exists. If no sample fits yet, mark the
+  fence `<!-- fence-exempt: reason -->`; the reason is required, so a gap is recorded rather than bypassed.
 - The generator must remain reflection-free and AOT/trim-safe; the AOT sample
   must publish clean.
 

@@ -49,12 +49,14 @@ public class DocReconciliationTests
         Assert.Equal(files.Count, files.Distinct(StringComparer.Ordinal).Count());
     }
 
-    [Fact(Skip = "The docs are converted in Tasks 9-10; until then every region is legitimately unreferenced. "
-                 + "Remove this Skip in Task 10 — clearing it is that task's completion criterion. Verified "
-                 + "genuinely red first: it listed all 16 regions as orphaned.")]
-    public void No_snippet_region_is_orphaned()
+    [Fact]
+    public void No_snippet_region_outside_a_declared_example_is_orphaned()
     {
-        // A region no document references is maintained forever and read by nobody.
+        // A region no document references is maintained forever and read by nobody — but only if the file it
+        // sits in exists SOLELY to be quoted. A region inside a declared [DocExample] is already reader-facing:
+        // the file is linked from the generated index and the example runs on every `dotnet run`, so an
+        // unquoted one is a doc opportunity, not dead weight. Scoping the rule that way keeps it aimed at the
+        // decay it was written for: a region in, say, AotSample, which nothing links and nobody runs by hand.
         var regions = SnippetScanner.ScanAll();
         var referenced = new HashSet<string>(StringComparer.Ordinal);
 
@@ -62,15 +64,19 @@ public class DocReconciliationTests
             referenced.UnionWith(
                 DocSnippetInjector.Inject(DocSet.Read(relative), regions, relative).ReferencedIds);
 
+        var exampleFiles = ExampleCatalogue.Scan()
+            .Select(e => e.RelativeFile)
+            .ToHashSet(StringComparer.Ordinal);
+
         var orphans = regions.Values
-            .Where(r => !referenced.Contains(r.Id))
+            .Where(r => !referenced.Contains(r.Id) && !exampleFiles.Contains(r.RelativeFile))
             .Select(r => $"{r.Id} ({r.RelativeFile}:{r.StartLine})")
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
 
         Assert.True(orphans.Count == 0,
-            "Snippet region(s) that no document references. Reference them, or delete the markers:\n  "
-            + string.Join("\n  ", orphans));
+            "Snippet region(s) in a non-example file that no document references. Reference them, or delete "
+            + "the markers:\n  " + string.Join("\n  ", orphans));
     }
 
     [Fact]

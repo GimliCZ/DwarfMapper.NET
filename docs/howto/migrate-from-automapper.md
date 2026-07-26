@@ -63,14 +63,16 @@ It's a near find-and-replace: `CreateMap<A, B>();` → `[GenerateMap<A, B>]`. If
 config (`.ForMember(...)`), declare it as a **named partial method** instead so you have somewhere to hang
 the attributes (Step 4):
 
+<!-- snippet: rename -->
 ```csharp
 [DwarfMapper]
-public partial class Mappers
+public partial class Mapper
 {
     [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]
-    public partial CustomerDto ToDto(Customer src);
+    public partial CustomerDto ToDto(Customer c);
 }
 ```
+<!-- endsnippet -->
 
 ## Step 3 — Delete the runtime plumbing
 
@@ -110,17 +112,20 @@ The mechanical rule: **lambdas become named methods.** A `MapFrom(s => Compute(s
 method `Compute(srcMemberType) -> destType` referenced by `Use=`. A `Condition(s => …)` becomes a
 `bool`-returning method referenced by `When=`.
 
+<!-- snippet: composite-mapper -->
 ```csharp
 [DwarfMapper]
 public partial class CustomerMapper
 {
-    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]                          // rename
-    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))] // custom conversion
+    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]                           // rename
+    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))]  // conversion
+    [Flatten(nameof(Customer.Address))]                                                          // Address.City -> City
     public partial CustomerDto ToDto(Customer src);
 
-    private static string FormatMoney(decimal d) => d.ToString("C");
+    private static string FormatMoney(decimal d) => d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
 }
 ```
+<!-- endsnippet -->
 
 ### Resolvers and type converters
 
@@ -138,17 +143,22 @@ pass it as an extra method parameter (`partial Dto Map(Entity e, string tenant)`
 **Resolver / converter that needs DI.** A `[DwarfMapper]` mapper is a normal `partial class` — give it a
 constructor and reference the dependency from an **instance** `Use=`/`Convert` method:
 
+<!-- snippet: ctor-injection -->
 ```csharp
 [DwarfMapper]
-public partial class OrderMapper(IRateService rates)   // primary constructor
+public partial class RatedOrderMapper(IRateService rates)   // primary constructor
 {
-    [MapProperty(nameof(Order.Amount), nameof(OrderDto.Amount), Use = nameof(ToLocal))]
+    [MapProperty(nameof(Order.FullName), nameof(OrderDto.Name))]
+    [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(ToLocal))]
+    [MapValue(nameof(OrderDto.Source), "api-v2")]
     public partial OrderDto ToDto(Order o);
+
     private decimal ToLocal(decimal amount) => rates.Convert(amount);
 }
 ```
+<!-- endsnippet -->
 
-Register the concrete type in DI (`services.AddScoped<OrderMapper>()`). Note the trade-offs: such a mapper
+Register the concrete type in DI (`services.AddScoped<RatedOrderMapper>()`). Note the trade-offs: such a mapper
 **can't be `new`-ed argument-free**, and it does **not** get the generated `To<Target>()` convenience
 extensions (those require a parameterless constructor) — call it via the instance or DI.
 
@@ -195,17 +205,20 @@ Full conversion table: the [repository README, "Built-in scalar conversions"](..
 
 `.ReverseMap()` example:
 
+<!-- snippet: reverse-map -->
 ```csharp
 [DwarfMapper]
-public partial class OrderMapper
+public partial class ReversibleOrderMapper
 {
     [ReverseMap]
     [MapProperty(nameof(Order.FullName), nameof(OrderDto.Name))]
+    [MapIgnore(nameof(OrderDto.Source))]
     public partial OrderDto ToDto(Order o);
 
-    public partial Order FromDto(OrderDto d);   // inherits the inverted Name → FullName rename
+    public partial Order FromDto(OrderDto d);   // inherits the inverted Name -> FullName rename
 }
 ```
+<!-- endsnippet -->
 
 ## Step 7 — Build, and clear DWARF001
 

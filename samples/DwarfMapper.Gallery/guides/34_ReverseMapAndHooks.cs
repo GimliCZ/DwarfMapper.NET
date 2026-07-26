@@ -47,18 +47,22 @@ public partial class RatedOrderMapper(IRateService rates)   // primary construct
 }
 // </snippet>
 
+// <snippet: after-map-hook>
 [DwarfMapper]
 public partial class StampedOrderMapper
 {
-    [MapProperty(nameof(Order.FullName), nameof(OrderReceipt.Name))]
-    [MapIgnore(nameof(OrderReceipt.Source))]
+    [MapProperty(nameof(Order.FullName), nameof(OrderReceipt.Name))]                          // rename
+    [MapProperty(nameof(Order.Total), nameof(OrderReceipt.Total), Use = nameof(Round))]       // transform
+    [MapValue(nameof(OrderReceipt.Source), "api-v2")]                                         // constant
+    [MapIgnore(nameof(OrderReceipt.Checksum))]                                                // filled below
     public partial OrderReceipt ToReceipt(Order o);
 
-    // <snippet: after-map-hook>
+    private static decimal Round(decimal d) => Math.Round(d, 2);
+
     [AfterMap]  // the imperative tail you couldn't express declaratively
-    private static void Stamp(Order o, OrderReceipt r) => r.Source = $"api-v2/{o.Id}";
-    // </snippet>
+    private static void Stamp(Order o, OrderReceipt r) => r.Checksum = $"{o.Id:x8}";
 }
+// </snippet>
 
 [DocExample(34, Tier.Guides, "Inverse maps, injected dependencies, and hooks",
     Shows = "`[ReverseMap]`, a primary-constructor dependency in a `Use=` converter, and `[AfterMap]`")]
@@ -76,6 +80,6 @@ public static class Example
         var stamped = new StampedOrderMapper().ToReceipt(new Order { Id = 9, FullName = "Alan", Total = 1m });
 
         Console.WriteLine(
-            $"34 Reverse/ctor/hook  -> round-trip {back.FullName}, rated {rated.Total}, {stamped.Source}");
+            $"34 Reverse/ctor/hook  -> round-trip {back.FullName}, rated {rated.Total}, {stamped.Source} {stamped.Checksum}");
     }
 }

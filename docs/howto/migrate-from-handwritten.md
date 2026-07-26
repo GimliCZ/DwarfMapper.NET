@@ -72,21 +72,27 @@ Most of a hand-written mapper is `Dst = src` assignments that DwarfMapper does f
 | `// deliberately not copying PasswordHash` | `[MapIgnore(nameof(Order.PasswordHash))]` (now enforced, not a comment) |
 | a `// TODO compute later` left-default member | `[MapIgnore(...)]` + fill it in `[AfterMap]` |
 
+Put together — a rename, a transform, a constant, and a member deliberately left for the hook to compute.
+This is Gallery example 34, so it compiles and runs (`dotnet run --project samples/DwarfMapper.Gallery`):
+
+<!-- snippet: after-map-hook -->
 ```csharp
 [DwarfMapper]
-public partial class OrderMapper
+public partial class StampedOrderMapper
 {
-    [MapProperty(nameof(Order.FullName), nameof(OrderDto.Name))]
-    [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(Format))]
-    [MapValue(nameof(OrderDto.Source), "api-v2")]
-    public partial OrderDto ToDto(Order o);
+    [MapProperty(nameof(Order.FullName), nameof(OrderReceipt.Name))]                          // rename
+    [MapProperty(nameof(Order.Total), nameof(OrderReceipt.Total), Use = nameof(Round))]       // transform
+    [MapValue(nameof(OrderReceipt.Source), "api-v2")]                                         // constant
+    [MapIgnore(nameof(OrderReceipt.Checksum))]                                                // filled below
+    public partial OrderReceipt ToReceipt(Order o);
 
-    private static decimal Format(decimal d) => Math.Round(d, 2);   // OrderDto.Total stays decimal (as in Step 2)
+    private static decimal Round(decimal d) => Math.Round(d, 2);
 
-    [AfterMap]                                   // imperative tail you couldn't express declaratively
-    private static void Stamp(Order o, OrderDto d) => d.Checksum = Compute(o);
+    [AfterMap]  // the imperative tail you couldn't express declaratively
+    private static void Stamp(Order o, OrderReceipt r) => r.Checksum = $"{o.Id:x8}";
 }
 ```
+<!-- endsnippet -->
 
 Anything genuinely imperative that has nowhere else to go lives in `[BeforeMap]` / `[AfterMap]` — that's the
 escape hatch for logic that isn't a per-member transform.

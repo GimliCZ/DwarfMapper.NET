@@ -23,11 +23,6 @@ public class DocFenceScanTests
     /// </summary>
     private static readonly Dictionary<string, string> Unconverted = new(StringComparer.Ordinal)
     {
-        ["docs/howto/ambient-cross-assembly-maps.md"] = "converted in Task 10",
-        ["docs/howto/common-changes.md"] = "converted in Task 10",
-        ["docs/howto/migrate-from-automapper.md"] = "converted in Task 10",
-        ["docs/howto/migrate-from-handwritten.md"] = "converted in Task 10",
-        ["docs/howto/migrate-from-mapster.md"] = "converted in Task 10",
         ["docs/diagnostics.md"] = "converted in phase 4, when its tables are injected"
     };
 

@@ -75,17 +75,20 @@ partial method for that pair:
 
 The rule (same as every guide): **lambdas become named methods.**
 
+<!-- snippet: composite-mapper -->
 ```csharp
 [DwarfMapper]
-public partial class Mappers
+public partial class CustomerMapper
 {
-    [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(FormatMoney))]
-    [MapIgnore(nameof(OrderDto.InternalNote))]
-    public partial OrderDto ToDto(Order src);
+    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]                           // rename
+    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))]  // conversion
+    [Flatten(nameof(Customer.Address))]                                                          // Address.City -> City
+    public partial CustomerDto ToDto(Customer src);
 
-    private static string FormatMoney(decimal d) => d.ToString("C");
+    private static string FormatMoney(decimal d) => d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
 }
 ```
+<!-- endsnippet -->
 
 ## Step 5 — Match Mapster's global settings
 

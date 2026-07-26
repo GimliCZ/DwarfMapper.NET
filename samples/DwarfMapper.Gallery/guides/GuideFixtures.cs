@@ -93,4 +93,7 @@ public sealed class OrderReceipt
     public string Name { get; set; } = "";
     public decimal Total { get; set; }
     public string Source { get; set; } = "";
+
+    /// <summary>Left default by the map and filled in the hook — the "TODO compute later" member.</summary>
+    public string Checksum { get; set; } = "";
 }

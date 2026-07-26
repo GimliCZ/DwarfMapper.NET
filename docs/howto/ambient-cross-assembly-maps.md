@@ -10,12 +10,14 @@ directly — fully compile-checked, zero indirection. But sometimes a consumer n
 
 Inject `IDwarfMapper` and call `Map<TDestination>(source)`:
 
+<!-- snippet: ambient-facade -->
 ```csharp
 public sealed class SettingsService(IDwarfMapper mapper)
 {
-    public BotSettings Load(UserSettingsDocument doc) => mapper.Map<BotSettings>(doc);
+    public CustomerSummary Summarise(Customer customer) => mapper.Map<CustomerSummary>(customer);
 }
 ```
+<!-- endsnippet -->
 
 `IDwarfMapper` (`DwarfMapperFacade`) is registered for you by the generated `services.AddDwarfMappers()` — but that method is generated **only in an assembly that declares at least one mapper**, in that assembly's own namespace. A pure-consumer/composition-root assembly with no local `[GenerateMap]`/`[DwarfMapper]` must call a **referenced provider assembly's** `AddDwarfMappers()` (or register `DwarfMapper.DwarfMapperFacade.Instance` directly) to get `IDwarfMapper` into DI. You
 do **not** declare the map in the consuming assembly — it is declared once, anywhere, with `[GenerateMap<S,T>]`.
