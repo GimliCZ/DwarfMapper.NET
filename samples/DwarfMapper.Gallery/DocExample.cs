@@ -12,7 +12,14 @@ public enum Tier
     Configuration,
     FrontDoors,
     Advanced,
-    Testing
+    Testing,
+
+    /// <summary>
+    ///     Composite mappers in the vocabulary the README and the migration guides use. These exist to be
+    ///     quoted by that prose, and to show a realistic mapper doing several things at once — the shape a
+    ///     migrating reader actually arrives with, which the one-feature-per-example tiers above never show.
+    /// </summary>
+    Guides
 }
 
 /// <summary>

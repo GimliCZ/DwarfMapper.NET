@@ -30,6 +30,13 @@ dotnet run --project samples/DwarfMapper.Gallery
 | 14 | [`14_NestedListConfigErgonomic.cs`](14_NestedListConfigErgonomic.cs) — The same, with no partial methods | pair-scoped `[MapProperty<S,T>]` on the class carries the nested rename |
 | | **Front doors** | |
 | 15 | [`ex15/15_CoLocated.cs`](ex15/15_CoLocated.cs) — Co-located on the DTO | `[GenerateMap]` on a plain `sealed` DTO — no `partial`, no `[DwarfMapper]` |
+| | **Guides** | |
+| 30 | [`guides/30_CompositeMapper.cs`](guides/30_CompositeMapper.cs) — A composite mapper | rename, `Use=` conversion, and `[Flatten]` in one mapper |
+| 31 | [`guides/31_GenerateMapPairs.cs`](guides/31_GenerateMapPairs.cs) — Several pairs on one class | `[GenerateMap<A,B>]` stacked — the AutoMapper `CreateMap` shape |
+| 32 | [`guides/32_FourWaysToCall.cs`](guides/32_FourWaysToCall.cs) — Ways to call a mapper | instance, the generated extension method, and `AddDwarfMappers()` DI |
+| 33 | [`guides/33_ExplicitDirectives.cs`](guides/33_ExplicitDirectives.cs) — Satisfying the completeness gate | `[MapProperty]` / `[MapValue]` / `[MapIgnore]` — the three answers to `DWARF001` |
+| 34 | [`guides/34_ReverseMapAndHooks.cs`](guides/34_ReverseMapAndHooks.cs) — Inverse maps, injected dependencies, and hooks | `[ReverseMap]`, a primary-constructor dependency in a `Use=` converter, and `[AfterMap]` |
+| 35 | [`guides/35_AmbientFacade.cs`](guides/35_AmbientFacade.cs) — The ambient IDwarfMapper facade | mapping when the caller cannot name the concrete mapper type |
 <!-- endtable -->
 
 ## Which declaration style should I use?
