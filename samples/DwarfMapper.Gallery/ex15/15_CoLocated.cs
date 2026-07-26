@@ -15,14 +15,17 @@ using DwarfMapper.Gallery.Ex15.Models;
 namespace DwarfMapper.Gallery.Ex15;
 
 [DocExample(15, Tier.FrontDoors, "Co-located on the DTO",
-    Shows = "[GenerateMap] on a plain sealed DTO — no partial, no [DwarfMapper]")]
+    Shows = "`[GenerateMap]` on a plain `sealed` DTO — no `partial`, no `[DwarfMapper]`")]
 public static class Example
 {
     public static void Run()
     {
+        // <snippet: co-located-call>
         var model = new Person { Name = "John Doe", Age = 100 };
 
+        // No mapper class exists in this example — the generated extension is the whole call site.
         var dto = model.ToPersonDto();
+        // </snippet>
 
         Console.WriteLine($"15 Co-located on DTO -> {dto.FullName}: Age {dto.Age}");
     }

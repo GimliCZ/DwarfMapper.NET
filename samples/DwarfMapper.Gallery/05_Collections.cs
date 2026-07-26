@@ -30,11 +30,13 @@ public sealed class BasketDto
     public string[] Tags { get; set; } = Array.Empty<string>();
 }
 
+// <snippet: collections>
 [DwarfMapper]
 public partial class Mapper
 {
     public partial BasketDto ToDto(Basket b);
 }
+// </snippet>
 
 [DocExample(5, Tier.Basics, "Collections",
     Shows = "lists and arrays, element-by-element and bulk copy")]

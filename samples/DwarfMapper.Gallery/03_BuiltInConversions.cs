@@ -33,11 +33,13 @@ public sealed class HeroDto
     public RankDto Rank { get; set; }
 }
 
+// <snippet: built-in-conversions>
 [DwarfMapper]
 public partial class Mapper
 {
     public partial HeroDto ToDto(Hero h); // int -> long (widen), Rank -> RankDto (by name)
 }
+// </snippet>
 
 [DocExample(3, Tier.Basics, "Built-in conversions",
     Shows = "automatic widening and enum-by-name")]

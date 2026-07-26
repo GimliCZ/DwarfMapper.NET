@@ -18,14 +18,16 @@ public sealed class PersonDto
     public string Name { get; set; } = "";
 }
 
+// <snippet: flat-map>
 [DwarfMapper]
 [GenerateMap<Person, PersonDto>]
 public partial class Mapper
 {
 }
+// </snippet>
 
 [DocExample(1, Tier.Basics, "Flat map",
-    Shows = "the simplest map — [GenerateMap<A,B>], same names and types")]
+    Shows = "the simplest map — `[GenerateMap<A,B>]`, same names and types")]
 public static class Example
 {
     public static void Run()

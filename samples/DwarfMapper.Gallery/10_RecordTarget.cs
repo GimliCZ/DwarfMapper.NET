@@ -14,6 +14,7 @@ public sealed class Person
     public string Name { get; set; } = "";
 }
 
+// <snippet: record-target>
 public record PersonDto(int Id, string Name); // immutable, no parameterless ctor
 
 [DwarfMapper]
@@ -21,6 +22,7 @@ public partial class Mapper
 {
     public partial PersonDto ToDto(Person p); // emits new PersonDto(Id: p.Id, Name: p.Name)
 }
+// </snippet>
 
 [DocExample(10, Tier.Configuration, "Immutable record target",
     Shows = "constructor binding into a record with no parameterless ctor")]

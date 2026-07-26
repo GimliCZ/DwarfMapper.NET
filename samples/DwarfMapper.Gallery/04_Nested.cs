@@ -30,14 +30,16 @@ public sealed class OrderDto
     public AddressDto ShipTo { get; set; } = new();
 }
 
+// <snippet: nested>
 [DwarfMapper]
 public partial class Mapper
 {
     public partial OrderDto ToDto(Order o); // ShipTo (Address -> AddressDto) auto-nested
 }
+// </snippet>
 
 [DocExample(4, Tier.Basics, "Nested objects",
-    Shows = "auto-nesting a nested (S,T) pair")]
+    Shows = "auto-nesting a nested `(S,T)` pair")]
 public static class Example
 {
     public static void Run()

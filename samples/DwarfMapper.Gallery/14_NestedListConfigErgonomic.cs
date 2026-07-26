@@ -38,15 +38,17 @@ public sealed class PlaceDto
     public List<PersonDto> People { get; set; } = new();
 }
 
+// <snippet: nested-list-config-ergonomic>
 [DwarfMapper]
 [GenerateMap<Place, PlaceDto>]
 [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]
 public partial class Mapper
 {
 } // no methods — the pair-scoped attribute carries the nested rename
+// </snippet>
 
 [DocExample(14, Tier.Configuration, "The same, with no partial methods",
-    Shows = "pair-scoped [MapProperty<S,T>] on the class carries the nested rename")]
+    Shows = "pair-scoped `[MapProperty<S,T>]` on the class carries the nested rename")]
 public static class Example
 {
     public static void Run()

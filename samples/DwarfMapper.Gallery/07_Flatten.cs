@@ -26,15 +26,17 @@ public sealed class PersonDto
     public string Zip { get; set; } = "";
 }
 
+// <snippet: flatten>
 [DwarfMapper]
 public partial class Mapper
 {
     [Flatten(nameof(Person.Address))] // Address.City -> City, Address.Zip -> Zip
     public partial PersonDto ToDto(Person p);
 }
+// </snippet>
 
 [DocExample(7, Tier.Configuration, "Flatten",
-    Shows = "[Flatten] lifts sub-members to the top level")]
+    Shows = "`[Flatten]` lifts sub-members to the top level")]
 public static class Example
 {
     public static void Run()

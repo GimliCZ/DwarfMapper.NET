@@ -24,14 +24,16 @@ public sealed class GemDto
     public int Carats { get; set; }
 }
 
+// <snippet: ergonomics>
 [DwarfMapper]
 public partial class Mapper
 {
     public partial GemDto ToDto(Gem g);
 }
+// </snippet>
 
 [DocExample(12, Tier.Configuration, "Extension method and DI",
-    Shows = "the generated x.ToGemDto() and AddDwarfMappers()")]
+    Shows = "the generated `x.ToGemDto()` and `AddDwarfMappers()`")]
 public static class Example
 {
     public static void Run()

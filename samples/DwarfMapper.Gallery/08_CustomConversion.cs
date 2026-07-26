@@ -23,6 +23,7 @@ public sealed class OrderDto
     public string Total { get; set; } = "";
 }
 
+// <snippet: custom-conversion>
 [DwarfMapper]
 public partial class Mapper
 {
@@ -34,9 +35,10 @@ public partial class Mapper
         return d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
     }
 }
+// </snippet>
 
 [DocExample(8, Tier.Configuration, "Custom conversion",
-    Shows = "Use = nameof(Method) — the method body is the \"lambda\"")]
+    Shows = "`Use = nameof(Method)` — the method body is the \"lambda\"")]
 public static class Example
 {
     public static void Run()

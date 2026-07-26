@@ -24,6 +24,7 @@ public sealed class MemberDto
     public int Score { get; set; }
 }
 
+// <snippet: conditional-and-value>
 [DwarfMapper]
 public partial class Mapper
 {
@@ -38,9 +39,10 @@ public partial class Mapper
         // Score is copied only for VIPs; others keep 0
     }
 }
+// </snippet>
 
 [DocExample(9, Tier.Configuration, "Conditional and constant values",
-    Shows = "When=, NullSubstitute=, and [MapValue]")]
+    Shows = "`When=`, `NullSubstitute=`, and `[MapValue]`")]
 public static class Example
 {
     public static void Run()

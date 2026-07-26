@@ -32,6 +32,7 @@ public sealed class PlaceDto
     public List<PersonDto> People { get; set; } = new();
 }
 
+// <snippet: nested-list-config>
 [DwarfMapper]
 public partial class Mapper
 {
@@ -42,9 +43,10 @@ public partial class Mapper
     [MapProperty(nameof(Person.Name), nameof(PersonDto.FullName))]
     public partial PersonDto ToDto(Person person);
 }
+// </snippet>
 
 [DocExample(13, Tier.Configuration, "Configure a collection-element map",
-    Shows = "renaming a member of the element type inside a List<T>")]
+    Shows = "renaming a member of the element type inside a `List<T>`")]
 public static class Example
 {
     public static void Run()

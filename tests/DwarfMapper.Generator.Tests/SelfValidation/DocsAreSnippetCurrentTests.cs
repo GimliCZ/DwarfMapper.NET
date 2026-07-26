@@ -14,6 +14,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 /// </summary>
 public class DocsAreSnippetCurrentTests
 {
+    private const string GalleryReadme = "samples/DwarfMapper.Gallery/README.md";
+
     [Fact]
     public void Every_snippet_marker_in_every_doc_matches_its_sample()
     {
@@ -24,6 +26,10 @@ public class DocsAreSnippetCurrentTests
         {
             var committed = DocSet.Read(relative);
             var injected = DocSnippetInjector.Inject(committed, regions, relative).Markdown;
+
+            if (string.Equals(relative, GalleryReadme, StringComparison.Ordinal))
+                injected = DocTableInjector.Inject(
+                    injected, "gallery-index", GalleryIndexRenderer.RenderRows(), relative);
 
             if (string.Equals(Normalise(committed), Normalise(injected), StringComparison.Ordinal)) continue;
 

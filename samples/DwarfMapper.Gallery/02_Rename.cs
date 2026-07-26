@@ -19,15 +19,17 @@ public sealed class CustomerDto
     public int Age { get; set; }
 }
 
+// <snippet: rename>
 [DwarfMapper]
 public partial class Mapper
 {
     [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]
     public partial CustomerDto ToDto(Customer c);
 }
+// </snippet>
 
 [DocExample(2, Tier.Basics, "Rename a member",
-    Shows = "[MapProperty(nameof(...), nameof(...))]")]
+    Shows = "`[MapProperty(nameof(...), nameof(...))]`")]
 public static class Example
 {
     public static void Run()

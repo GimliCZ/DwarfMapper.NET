@@ -9,23 +9,28 @@ file. Run them all:
 dotnet run --project samples/DwarfMapper.Gallery
 ```
 
-| #  | File                                                                 | Shows                                                                                                                                                                                                                                      |
-|----|----------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 01 | [`01_FlatMap.cs`](01_FlatMap.cs)                                     | The simplest map — `[GenerateMap<A,B>]`, same names/types.                                                                                                                                                                                 |
-| 02 | [`02_Rename.cs`](02_Rename.cs)                                       | Renaming a member with `[MapProperty(nameof(...), nameof(...))]`.                                                                                                                                                                          |
-| 03 | [`03_BuiltInConversions.cs`](03_BuiltInConversions.cs)               | Automatic type conversions (widening, enum-by-name).                                                                                                                                                                                       |
-| 04 | [`04_Nested.cs`](04_Nested.cs)                                       | Nested objects via auto-nesting.                                                                                                                                                                                                           |
-| 05 | [`05_Collections.cs`](05_Collections.cs)                             | Lists & arrays, element-by-element + bulk copy.                                                                                                                                                                                            |
-| 06 | [`06_DeepPaths.cs`](06_DeepPaths.cs)                                 | **Deep property access** — `"Customer.Address.City"` (what others do with a lambda).                                                                                                                                                       |
-| 07 | [`07_Flatten.cs`](07_Flatten.cs)                                     | `[Flatten("Address")]` lifts sub-members to the top level.                                                                                                                                                                                 |
-| 08 | [`08_CustomConversion.cs`](08_CustomConversion.cs)                   | **Custom logic** via `Use = nameof(Method)` (the method body is the "lambda").                                                                                                                                                             |
-| 09 | [`09_ConditionalAndValue.cs`](09_ConditionalAndValue.cs)             | `When=`, `NullSubstitute=`, and `[MapValue]`.                                                                                                                                                                                              |
-| 10 | [`10_RecordTarget.cs`](10_RecordTarget.cs)                           | Mapping into an immutable `record` (constructor binding).                                                                                                                                                                                  |
-| 11 | [`11_Projection.cs`](11_Projection.cs)                               | `IQueryable` projection — the one place a `Select(s => …)` lambda is **generated**.                                                                                                                                                        |
-| 12 | [`12_Ergonomics.cs`](12_Ergonomics.cs)                               | The generated `x.ToGemDto()` extension and `AddDwarfMappers()` DI.                                                                                                                                                                         |
-| 13 | [`13_NestedListConfig.cs`](13_NestedListConfig.cs)                   | **Configuring a nested/collection-element map** on the class — rename `Person.Name → PersonDto.FullName` inside a `List<Person>`.                                                                                                          |
-| 14 | [`14_NestedListConfigErgonomic.cs`](14_NestedListConfigErgonomic.cs) | Same scenario with **zero partial methods**: pair-scoped `[MapProperty<Person, PersonDto>]` on the class carries the nested rename; `[GenerateMap]` + `moria.ToPlaceDto()` do the rest.                                                    |
-| 15 | [`ex15/`](ex15/)                                                     | **Co-located mapping, no `partial`/`[DwarfMapper]`** — `[GenerateMap]` + `[MapProperty<,>]` live on a plain `sealed` DTO (`dtos/PersonDto.cs`); the generator emits a separate `PersonDtoMapper`. Delete the DTO and its mapping goes too. |
+<!-- table: gallery-index -->
+| # | Example | Shows |
+|---|---|---|
+| | **Basics** | |
+| 01 | [`01_FlatMap.cs`](01_FlatMap.cs) — Flat map | the simplest map — `[GenerateMap<A,B>]`, same names and types |
+| 02 | [`02_Rename.cs`](02_Rename.cs) — Rename a member | `[MapProperty(nameof(...), nameof(...))]` |
+| 03 | [`03_BuiltInConversions.cs`](03_BuiltInConversions.cs) — Built-in conversions | automatic widening and enum-by-name |
+| 04 | [`04_Nested.cs`](04_Nested.cs) — Nested objects | auto-nesting a nested `(S,T)` pair |
+| 05 | [`05_Collections.cs`](05_Collections.cs) — Collections | lists and arrays, element-by-element and bulk copy |
+| | **Configuration** | |
+| 06 | [`06_DeepPaths.cs`](06_DeepPaths.cs) — Deep dotted paths | a dotted source path — what others reach with a lambda |
+| 07 | [`07_Flatten.cs`](07_Flatten.cs) — Flatten | `[Flatten]` lifts sub-members to the top level |
+| 08 | [`08_CustomConversion.cs`](08_CustomConversion.cs) — Custom conversion | `Use = nameof(Method)` — the method body is the "lambda" |
+| 09 | [`09_ConditionalAndValue.cs`](09_ConditionalAndValue.cs) — Conditional and constant values | `When=`, `NullSubstitute=`, and `[MapValue]` |
+| 10 | [`10_RecordTarget.cs`](10_RecordTarget.cs) — Immutable record target | constructor binding into a record with no parameterless ctor |
+| 11 | [`11_Projection.cs`](11_Projection.cs) — IQueryable projection | the one place a `Select` lambda is generated for you |
+| 12 | [`12_Ergonomics.cs`](12_Ergonomics.cs) — Extension method and DI | the generated `x.ToGemDto()` and `AddDwarfMappers()` |
+| 13 | [`13_NestedListConfig.cs`](13_NestedListConfig.cs) — Configure a collection-element map | renaming a member of the element type inside a `List<T>` |
+| 14 | [`14_NestedListConfigErgonomic.cs`](14_NestedListConfigErgonomic.cs) — The same, with no partial methods | pair-scoped `[MapProperty<S,T>]` on the class carries the nested rename |
+| | **Front doors** | |
+| 15 | [`ex15/15_CoLocated.cs`](ex15/15_CoLocated.cs) — Co-located on the DTO | `[GenerateMap]` on a plain `sealed` DTO — no `partial`, no `[DwarfMapper]` |
+<!-- endtable -->
 
 ## Which declaration style should I use?
 

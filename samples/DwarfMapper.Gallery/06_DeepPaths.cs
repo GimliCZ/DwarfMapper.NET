@@ -34,6 +34,7 @@ public sealed class OrderSummary
     public string City { get; set; } = "";
 }
 
+// <snippet: deep-paths>
 [DwarfMapper]
 public partial class Mapper
 {
@@ -41,6 +42,7 @@ public partial class Mapper
     [MapProperty("Customer.Address.City", nameof(OrderSummary.City))]
     public partial OrderSummary ToSummary(Order o);
 }
+// </snippet>
 
 [DocExample(6, Tier.Configuration, "Deep dotted paths",
     Shows = "a dotted source path — what others reach with a lambda")]

@@ -16,6 +16,19 @@ public enum Tier
 }
 
 /// <summary>
+///     How a <see cref="Tier" /> is spelled for a reader. Lives beside the enum so the runner and the
+///     generated index cannot print two different names for the same tier.
+/// </summary>
+public static class TierName
+{
+    public static string Of(Tier tier) => tier switch
+    {
+        Tier.FrontDoors => "Front doors",
+        _ => tier.ToString()
+    };
+}
+
+/// <summary>
 ///     Declares a Gallery example. Reflected over by DwarfMapper.DocTooling to build the runner order and the
 ///     generated index table, so that neither is a hand-maintained list.
 ///     <para>

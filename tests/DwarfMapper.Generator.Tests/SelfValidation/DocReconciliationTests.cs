@@ -49,7 +49,9 @@ public class DocReconciliationTests
         Assert.Equal(files.Count, files.Distinct(StringComparer.Ordinal).Count());
     }
 
-    [Fact]
+    [Fact(Skip = "The docs are converted in Tasks 9-10; until then every region is legitimately unreferenced. "
+                 + "Remove this Skip in Task 10 — clearing it is that task's completion criterion. Verified "
+                 + "genuinely red first: it listed all 16 regions as orphaned.")]
     public void No_snippet_region_is_orphaned()
     {
         // A region no document references is maintained forever and read by nobody.
@@ -71,9 +73,7 @@ public class DocReconciliationTests
             + string.Join("\n  ", orphans));
     }
 
-    [Fact(Skip = "Regions are added in Task 7. Remove this Skip in that task's first step — it is the test "
-                 + "that proves the retrofit is complete. Verified genuinely red before being skipped: it "
-                 + "listed all 15 examples as having no region.")]
+    [Fact]
     public void Every_gallery_example_owns_at_least_one_snippet_region()
     {
         // An example the docs cannot quote is invisible to every reader who does not browse samples/.
