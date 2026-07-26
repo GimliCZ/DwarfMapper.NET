@@ -3,7 +3,15 @@
 
 - **Date:** 2026-07-26
 - **Spec:** [`specs/2026-07-26-test-hardening-programme.md`](../specs/2026-07-26-test-hardening-programme.md)
-- **Status:** NOT STARTED
+- **Status:** **IMPLEMENTED** — all five phases delivered 2026-07-26.
+  P1 `2807333` `14924eb` `be659ae` · P2 `9aee911` · P3 `0a30e7c` · P5 `0c0da41` · P4 `e0df5d2`.
+  Suite 5,149 generator + 705 integration + 31 testing, green. Mutation battery: 3/3 killed.
+
+  Every phase was verified by mutation rather than by passing: each guard was made to fail for the right
+  reason before being accepted. Three of those mutations exposed defects in the NEW work itself — the P2
+  growth ratchet auto-classified unknown attributes and could never fire, the P5 gate "verified" a commit it
+  had just written, and the P5 CI scan was satisfied by an adjacent `chmod` line. All three were found only
+  because the guards were mutation-tested, which is the argument for the practice.
 
 Execution order is the spec's §8: **P1 → P2 → P3 → P5 → P4**. Phase 5 deliberately precedes Phase 4 — a
 fail-closed gate protects everything already built, whereas the harness mainly finds *new* defects, so if
