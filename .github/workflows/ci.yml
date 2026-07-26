@@ -108,7 +108,31 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       # Fails the build on any IL2xxx (trim) or IL3xxx (AOT) warning.
-      - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -warnaserror -o aot-out
+      #
+      # PublishAot is deliberately NOT passed on the command line. The sample's csproj already sets
+      # <PublishAot>true</PublishAot>, and `-p:` sets a GLOBAL property, which MSBuild flows down the entire
+      # project graph — including src/DwarfMapper.Generator and src/DwarfMapper.CodeFixes, which target
+      # netstandard2.0 and can never be AOT-compiled. That produced NETSDK1207 and the job died before
+      # compiling anything: a gate failing to START, not a gate catching a regression. It was red from
+      # 2026-07-25 until 2026-07-26 for exactly this reason, while the README went on advertising
+      # "AOT / trim-safe (CI-verified)". A project-level property applies to that project alone.
+      - run: dotnet publish samples/DwarfMapper.AotSample/DwarfMapper.AotSample.csproj -c Release -r ${{ matrix.rid }} -warnaserror -o aot-out
+      # Now that the flag is gone, nothing on the command line asserts AOT-ness — and a framework-dependent
+      # publish still produces a runnable binary that would sail through the behavioural gate below, leaving
+      # it green while proving nothing. NativeAOT emits a native image with NO managed assembly and NO
+      # runtimeconfig.json, so assert their ABSENCE before trusting the run.
+      - name: Assert the publish really was NativeAOT
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ls aot-out/*.runtimeconfig.json >/dev/null 2>&1 \
+            || ls aot-out/DwarfMapper.AotSample.dll >/dev/null 2>&1; then
+            echo "FAIL: aot-out holds a managed assembly or runtimeconfig.json, so this was NOT a NativeAOT" >&2
+            echo "      publish. The behavioural gate below would then pass without proving anything." >&2
+            ls -la aot-out >&2
+            exit 1
+          fi
+          echo "NativeAOT confirmed: no managed assembly, no runtimeconfig.json in aot-out."
       # Publishing proves it COMPILES trim/AOT-clean; it says nothing about behaviour. The sample is written
       # as a behavioural gate (36 `return 1` sites) and was never executed, so CORRECTNESS.md's "runs a
       # behavioural gate over the published native binary" was untrue until this step existed.
