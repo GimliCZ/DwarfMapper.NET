@@ -1,5 +1,20 @@
 # Benchmark results — realistic payloads, comparable Dict + new coverage (2026-07-25, Windows)
 
+> ## ⚠ CORRECTION (2026-07-26): the Dict headline below does not reproduce
+>
+> This file calls the `Dict` row "the headline" at a ~2× lead over Mapperly (`Dict_Mapperly` 20,050 ns vs
+> `Dict_Dwarf` 9,964 ns). Four independent Linux re-measurements put that lead at **~1.14× (range 1.09–1.19)**.
+> `Dict_Dwarf` reproduces almost exactly (10.10 µs on the quietest run); **`Dict_Mapperly` does not** — it
+> measures 11.37 µs here against 20,050 ns there.
+>
+> A Mapperly version change, a benchmark change and a difference in work done were all ruled out (pinned
+> `4.3.1` throughout; the fixture change and this file are the *same* commit; allocation is identical on both
+> platforms, so both really do copy and convert). Whether the Windows figure was an outlier or a genuine
+> Windows characteristic **cannot be decided without a Windows host**.
+>
+> **Do not cite the ~2× Dict figure.** See `2026-07-26-full-sweep-linux.md` § *Dict re-measurement*. Every
+> other row in this file stands.
+
 Supersedes the Dict caveat in `2026-07-24-realistic-payloads-side-by-side.md`. Same payload source
 (`ObjectFactoryV2`, identical instance to every mapper in a category), with four changes since that run:
 

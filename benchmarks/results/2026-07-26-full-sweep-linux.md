@@ -215,17 +215,54 @@ Mapperly wins Flatten and Enum here.
 
 ## Two things a maintainer should know
 
-**1. The "Dict ~2× over Mapperly" headline from `2026-07-25` does not reproduce.** That file recorded Mapperly
-at 20,050 ns against Dwarf's 9,964 ns. Here Dwarf is essentially unchanged (10.10 µs) while Mapperly is
-**11.33 µs, ~1.8× faster than it measured on Windows**. Dwarf still leads, but by 1.12×, not 2×. Since
-DwarfMapper's own number barely moved, the difference is on Mapperly's side — platform, Mapperly version, or an
-anomaly in that Windows run. Worth one deliberate re-measurement before the 2× figure is repeated anywhere.
-It is not currently claimed in `README.md` or `docs/COMPARISON.md` — only in that results file's prose.
+**1. The "Dict ~2× over Mapperly" headline from `2026-07-25` does not reproduce — re-measured and settled
+below.** See *Dict re-measurement*. The lead on Linux is **~1.14×**, not 2×. Not claimed in `README.md` or
+`docs/COMPARISON.md`; only in that file's prose, which now carries a correction pointing here.
 
 **2. Flatten and Enum go to Mapperly by margins outside the error bars** (~19% and ~11%). Small, and on
 single-object shapes, but real rather than noise. Neither contradicts any published claim.
 
 ---
+
+## Dict re-measurement — settling the Mapperly discrepancy
+
+`2026-07-25` (Windows) recorded `Dict_Mapperly` at 20,050 ns against `Dict_Dwarf` at 9,964 ns and called the
+resulting ~2× lead "the headline". It does not reproduce on Linux. Four independent measurements, the last two
+under deliberately rising load:
+
+| Measurement | Settings | `Dict_Dwarf` | `Dict_Mapperly` | Ratio |
+|---|---|---:|---:|---:|
+| Full sweep (chunk 7) | DefaultJob | 10.10 µs | 11.33 µs | **1.12×** |
+| Re-measure 1 | 10 warmup / 20 iter | 10.47 µs | 11.37 µs | **1.09×** |
+| Re-measure 2 | 10 warmup / 20 iter, load ~5 | 13.10 µs | 15.62 µs | **1.19×** |
+| Re-measure 3 | 10 warmup / 20 iter, load ~7.5 | 12.86 µs | 14.84 µs | **1.15×** |
+
+**Result: DwarfMapper leads Mapperly on `Dict` by ~1.14× (range 1.09–1.19), not 2×.** Absolutes climbed 25–35%
+across the four as the machine loaded up; the ratio moved by 0.10. That is the textbook signature of a
+load-sensitive absolute and a load-insensitive ratio, and it is why the ratio is the finding.
+
+### What was ruled out
+
+- **Not a Mapperly version change.** `Riok.Mapperly` has been pinned at `4.3.1` since the commit that
+  introduced it; it has never been bumped.
+- **Not a benchmark change.** The `2026-07-25` results file and the commit that made `Dict` a value-changing
+  map (`0432ef1`) are the *same commit*, so those numbers were taken against today's exact fixture.
+- **Not a difference in work done.** Allocation is identical in every run and on both platforms —
+  `Dict_Dwarf` 30.39 KB, `Dict_Mapperly` 30.45 KB. Both genuinely allocate a new dictionary and convert every
+  value; neither aliases. Allocation is load-independent, so this holds regardless of the machine caveats.
+- **Not a shape difference.** Both are a partial `MapDict(DictSrc) → DictDst` on their own mapper class.
+
+### What could not be ruled out
+
+`Dict_Dwarf` measured 9,964 ns on Windows and 10.10 µs on the quietest Linux run — effectively identical.
+`Dict_Mapperly` measured 20,050 ns there and 11.37 µs here. **The movement is entirely on Mapperly's side.**
+Whether the Windows figure was an outlier in that run or a genuine Windows characteristic of Mapperly's
+generated dictionary copy cannot be decided from Linux, and this sandbox has no Windows host. Someone with a
+Windows machine should re-run `--anyCategories Dict` before either figure is cited.
+
+**Until then, the defensible claim is the Linux one: Dict leads Mapperly by ~1.14×, and allocates 3.3× less
+than Mapster/AutoMapper.** The allocation figure is the stronger half of that row and does not depend on any
+of this.
 
 ## Why this run exists, and what it could not have shown
 
