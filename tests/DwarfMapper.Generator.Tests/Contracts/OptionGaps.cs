@@ -42,11 +42,26 @@ public static class OptionGaps
             + "unguarded recursion",
 
         ["NullCollections"] =
-            "honoured everywhere except Projection, where a null source collection is mapped with no regard "
-            + "for the configured policy and no diagnostic. Found only after the fixture used DIFFERENT "
-            + "collection types (List<int> -> int[]); with the same type on both sides it is a reference copy "
-            + "and the null policy never comes up. ResolveProjectionMembers is not passed nullCollections at "
-            + "all — the same not-threaded shape as the seven already fixed, and the next one to close"
+            "honoured everywhere except Projection, which reads the option nowhere and always emits "
+            + "`src.Items == null ? null : ...` — i.e. AsNull. Under the DEFAULT (AsEmpty) the runtime "
+            + "produces an EMPTY collection, so .Map and .Project answer the same input differently and a "
+            + "caller doing dto.Items.Length gets an NRE on the projection path only.\n\n"
+            + "NOT fixed, and deliberately so — this one is a DESIGN DECISION, not a threading oversight "
+            + "like the other ten. A refusal was implemented and reverted: it broke seven existing tests, "
+            + "including ProjectionDeepTests.Projection_nullable_collection_member_gets_source_null_guard, "
+            + "which asserts that ternary ON PURPOSE because Enumerable.Select(null!, ...) throws at query "
+            + "evaluation time, and the ProjectionMatrixSafeTests capability tests. Refusing would mean "
+            + "'you cannot project a nullable collection under default options', a capability regression "
+            + "far larger than the divergence it closes.\n\n"
+            + "Three candidate resolutions, for a maintainer to choose:\n"
+            + "  (a) honour AsEmpty by emitting `== null ? new List<T>() : ...` — fixes it properly, but "
+            + "needs someone to confirm the provider translates a constructed empty collection inside an "
+            + "expression tree; failing inside a query at runtime is worse than the current divergence;\n"
+            + "  (b) refuse with DWARF028 unless NullCollections = AsNull — loud and correct, but breaks the "
+            + "default path for every nullable source collection;\n"
+            + "  (c) declare projection's collection null-semantics to be AsNull by nature and document it, "
+            + "leaving the code alone.\n\n"
+            + "Pinned by the generated matrix rendering this cell SILENT, so it cannot be forgotten"
     };
 
     /// <summary>
