@@ -40,13 +40,6 @@ and no unaccounted fence can be added.
 The `CaseInsensitive` one is the only plausible candidate for conversion, and it needs a fixture with a
 deliberately lower-cased member — decide whether that is worth an analyzer suppression in the Gallery.
 
-### ~~3. The `Dict` row wants one Windows re-run~~ — **DECIDED 2026-08-11, delete this section**
-
-Run on the Windows host. `Dict_Mapperly` = 19,801 ns, `Dict_Dwarf` = 9,315 ns → **2.13×**, reproducing the
-original figure seventeen days later. It was not an outlier: Mapperly's dictionary path really is ~1.74× more
-expensive on Windows than on Linux, while DwarfMapper's lands within ~7% on both.
-
-Outcome: the throughput figure is **qualified, not withdrawn** — name the platform, or quote 1.1–2.1×. The
-allocation half (**3.29× less** than Mapster/AutoMapper, at parity with Mapperly) is platform-independent and
-needs no caveat. Evidence: `benchmarks/results/2026-08-11-dict-windows-rerun.md`; the 2026-07-25 correction
-banner is updated to RESOLVED.
+*(Item 3, the `Dict` Windows re-run, was decided on 2026-08-11 and deleted per the rule above. The answer
+lives where it belongs: `benchmarks/results/2026-08-11-dict-windows-rerun.md`, with the 2026-07-25 correction
+banner updated to RESOLVED.)*
