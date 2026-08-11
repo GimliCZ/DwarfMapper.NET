@@ -1,19 +1,26 @@
 # Benchmark results — realistic payloads, comparable Dict + new coverage (2026-07-25, Windows)
 
-> ## ⚠ CORRECTION (2026-07-26): the Dict headline below does not reproduce
+> ## ⚠ CORRECTION (2026-07-26), **RESOLVED (2026-08-11)**: the Dict headline is platform-dependent
 >
 > This file calls the `Dict` row "the headline" at a ~2× lead over Mapperly (`Dict_Mapperly` 20,050 ns vs
 > `Dict_Dwarf` 9,964 ns). Four independent Linux re-measurements put that lead at **~1.14× (range 1.09–1.19)**.
 > `Dict_Dwarf` reproduces almost exactly (10.10 µs on the quietest run); **`Dict_Mapperly` does not** — it
-> measures 11.37 µs here against 20,050 ns there.
+> measures 11.37 µs there against 20,050 ns here.
 >
 > A Mapperly version change, a benchmark change and a difference in work done were all ruled out (pinned
 > `4.3.1` throughout; the fixture change and this file are the *same* commit; allocation is identical on both
 > platforms, so both really do copy and convert). Whether the Windows figure was an outlier or a genuine
-> Windows characteristic **cannot be decided without a Windows host**.
+> Windows characteristic could not be decided without a Windows host.
 >
-> **Do not cite the ~2× Dict figure.** See `2026-07-26-full-sweep-linux.md` § *Dict re-measurement*. Every
-> other row in this file stands.
+> **A Windows host has now run it: the figure below reproduces.** `2026-08-11-dict-windows-rerun.md` measures
+> `Dict_Mapperly` at 19,801 ns and `Dict_Dwarf` at 9,315 ns — a 2.13× lead, seventeen days and one SDK pin
+> later. It was not an outlier; Mapperly's dictionary path really is ~1.74× more expensive on this Windows
+> host than on the Linux one, while DwarfMapper's lands within ~7% on both.
+>
+> So the number is not withdrawn, it is **qualified**: quote `Dict` throughput with the platform named, or
+> quote the range (1.1–2.1× depending on host). The allocation half of the row — **3.29× less than
+> Mapster/AutoMapper**, at parity with Mapperly — is load- and platform-independent and needs no caveat.
+> Every other row in this file stands.
 
 Supersedes the Dict caveat in `2026-07-24-realistic-payloads-side-by-side.md`. Same payload source
 (`ObjectFactoryV2`, identical instance to every mapper in a category), with four changes since that run:

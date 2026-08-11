@@ -40,19 +40,13 @@ and no unaccounted fence can be added.
 The `CaseInsensitive` one is the only plausible candidate for conversion, and it needs a fixture with a
 deliberately lower-cased member — decide whether that is worth an analyzer suppression in the Gallery.
 
-### 3. The `Dict` row wants one Windows re-run
+### ~~3. The `Dict` row wants one Windows re-run~~ — **DECIDED 2026-08-11, delete this section**
 
-`benchmarks/results/2026-07-25-realistic-payloads-comparable.md` called a ~2× lead over Mapperly "the
-headline". Four Linux re-measurements put it at **~1.14× (range 1.09–1.19)**. `Dict_Dwarf` reproduces across
-platforms; **`Dict_Mapperly` does not** (20,050 ns on Windows vs 11.37 µs here), so the movement is entirely on
-Mapperly's side.
+Run on the Windows host. `Dict_Mapperly` = 19,801 ns, `Dict_Dwarf` = 9,315 ns → **2.13×**, reproducing the
+original figure seventeen days later. It was not an outlier: Mapperly's dictionary path really is ~1.74× more
+expensive on Windows than on Linux, while DwarfMapper's lands within ~7% on both.
 
-Ruled out: Mapperly version (pinned `4.3.1` throughout), benchmark change (the fixture change and that results
-file are the *same* commit), and any difference in work done (allocation is identical on both platforms).
-
-**Cannot be settled from Linux** — it needs a Windows host. Windows CI works again as of `d6e583f`, so this is
-now cheap to arrange. Until then the defensible figure is the Linux one. The 2× is **not** claimed in
-`README.md` or `docs/COMPARISON.md`; the 2026-07-25 file carries a correction banner pointing at the evidence.
-
-The stronger half of that row never depended on any of this: `Dict` allocates **3.3× less** than
-Mapster/AutoMapper, and allocation is load-independent.
+Outcome: the throughput figure is **qualified, not withdrawn** — name the platform, or quote 1.1–2.1×. The
+allocation half (**3.29× less** than Mapster/AutoMapper, at parity with Mapperly) is platform-independent and
+needs no caveat. Evidence: `benchmarks/results/2026-08-11-dict-windows-rerun.md`; the 2026-07-25 correction
+banner is updated to RESOLVED.
