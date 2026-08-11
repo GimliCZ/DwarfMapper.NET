@@ -51,8 +51,12 @@ internal static class MemberFacts
                    || memberAsm.GivesAccessTo(compilation.Assembly));
     }
 
+    // ISSUE-044: no defaults on purpose. `(null, false)` is a real answer — "public members only, no
+    // cross-assembly context" — and it must be chosen at the call site, not inherited. The wrappers in
+    // MapperExtractor were fixed first and ConstructorSelector still slipped through as a DIRECT caller,
+    // which is exactly what a default here permits.
     internal static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> Readable(ITypeSymbol type,
-        Compilation? compilation = null, bool allowNonPublic = false)
+        Compilation? compilation, bool allowNonPublic)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
@@ -99,7 +103,7 @@ internal static class MemberFacts
     }
 
     internal static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> Writable(ITypeSymbol type,
-        Compilation? compilation = null, bool allowNonPublic = false)
+        Compilation? compilation, bool allowNonPublic)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         for (var current = type;

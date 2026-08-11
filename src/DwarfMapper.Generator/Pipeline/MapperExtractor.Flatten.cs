@@ -18,7 +18,8 @@ internal static partial class MapperExtractor
     ///     Segments are matched by exact ordinal name (member names never contain dots).
     /// </summary>
     private static bool TryResolveSourcePath(
-        ITypeSymbol root, string dottedPath, out ITypeSymbol? leafType, out bool nullableHop, out string badSegment)
+        ITypeSymbol root, string dottedPath, Compilation compilation, bool allowNonPublic,
+        out ITypeSymbol? leafType, out bool nullableHop, out string badSegment)
     {
         leafType = null;
         nullableHop = false;
@@ -28,7 +29,7 @@ internal static partial class MapperExtractor
         for (var i = 0; i < segments.Length; i++)
         {
             var seg = segments[i];
-            var member = ReadableMembers(current)
+            var member = ReadableMembers(current, compilation, allowNonPublic)
                 .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
                 .Select(m => ((string Name, ITypeSymbol Type)?)m)
                 .FirstOrDefault();
@@ -65,13 +66,14 @@ internal static partial class MapperExtractor
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
         EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized, NullStrategy nullStrategy,
         bool autoNest, NestedMappingRegistry? nestedRegistry, bool nullAsNull, bool isPreserve, bool isSetNull,
-        bool implicitConversions, List<MemberMap> result)
+        bool implicitConversions, bool allowNonPublic, List<MemberMap> result)
     {
         // Resolve the source (simple or dotted) to its leaf type.
         ITypeSymbol? uSrc;
         if (srcName.IndexOf('.') >= 0)
         {
-            if (!TryResolveSourcePath(sourceType, srcName, out uSrc, out _, out var uBad))
+            if (!TryResolveSourcePath(sourceType, srcName, compilation, allowNonPublic, out uSrc, out _,
+                    out var uBad))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathSegmentNotFound, location,
                     $"[MapProperty] source path '{srcName}' has no member '{uBad}'"));
@@ -80,7 +82,7 @@ internal static partial class MapperExtractor
         }
         else
         {
-            uSrc = ReadableMembers(sourceType)
+            uSrc = ReadableMembers(sourceType, compilation, allowNonPublic)
                 .Where(m => StringComparer.Ordinal.Equals(m.Name, srcName))
                 .Select(m => (ITypeSymbol?)m.Type)
                 .FirstOrDefault();
@@ -127,7 +129,7 @@ internal static partial class MapperExtractor
             return;
         }
 
-        var leafType = WritableMembers(rootType)
+        var leafType = WritableMembers(rootType, compilation, allowNonPublic)
             .Where(m => StringComparer.Ordinal.Equals(m.Name, leafName))
             .Select(m => (ITypeSymbol?)m.Type)
             .FirstOrDefault();
@@ -195,7 +197,7 @@ internal static partial class MapperExtractor
     /// </summary>
     private static void ApplyCollectionKeyUpserts(
         IMethodSymbol method, ITypeSymbol srcType, INamedTypeSymbol tgtType, Compilation compilation,
-        LocationInfo? location, List<DiagnosticInfo> diagnostics, List<MemberMap> members)
+        bool allowNonPublic, LocationInfo? location, List<DiagnosticInfo> diagnostics, List<MemberMap> members)
     {
         foreach (var attr in method.GetAttributes())
         {
@@ -230,7 +232,7 @@ internal static partial class MapperExtractor
                 continue;
             }
 
-            var keyType = ReadableMembers(tgtElem!, compilation)
+            var keyType = ReadableMembers(tgtElem!, compilation, allowNonPublic)
                 .Where(m => StringComparer.Ordinal.Equals(m.Name, keyMember))
                 .Select(m => (ITypeSymbol?)m.Type)
                 .FirstOrDefault();
@@ -427,6 +429,7 @@ internal static partial class MapperExtractor
             NestedMappingRegistry? nestedRegistry,
             bool nullAsNull,
             bool isPreserve,
+            bool allowNonPublic,
             HashSet<string> consumedTargets,
             IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt)>? rawDerivedPairs = null)
     {
@@ -437,7 +440,7 @@ internal static partial class MapperExtractor
         {
             // 1. Resolve source navigation member on sourceType
             ITypeSymbol? srcNavType = null;
-            foreach (var m in ReadableMembers(sourceType))
+            foreach (var m in ReadableMembers(sourceType, compilation, allowNonPublic))
                 if (string.Equals(m.Name, srcNavName, StringComparison.Ordinal))
                 {
                     srcNavType = m.Type;
@@ -506,7 +509,7 @@ internal static partial class MapperExtractor
 
             // 3. Resolve target collection member on targetType
             ITypeSymbol? tgtCollType = null;
-            foreach (var m in WritableMembers(targetType))
+            foreach (var m in WritableMembers(targetType, compilation, allowNonPublic))
                 if (string.Equals(m.Name, tgtCollName, StringComparison.Ordinal))
                 {
                     tgtCollType = m.Type;
@@ -641,7 +644,7 @@ internal static partial class MapperExtractor
                     var derivedEdgeMembers = new List<(string Name, bool IsCollection, bool IsDictValue)>();
                     var derivedLeafMembers = new List<(string Name, ITypeSymbol Type)>();
 
-                    foreach (var nm in ReadableMembers(derivedSrc))
+                    foreach (var nm in ReadableMembers(derivedSrc, compilation, allowNonPublic))
                     {
                         var memberTypeNoAnnot = nm.Type.WithNullableAnnotation(NullableAnnotation.None);
 
@@ -703,7 +706,7 @@ internal static partial class MapperExtractor
                         var nodeFqDerived = derivedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         var dtoFqDerived = derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                         var dtoWritableDerived = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
-                        foreach (var wm in WritableMembers(derivedTgt))
+                        foreach (var wm in WritableMembers(derivedTgt, compilation, allowNonPublic))
                             dtoWritableDerived[wm.Name] = wm.Type;
 
                         var sbArm = new StringBuilder();
@@ -997,7 +1000,7 @@ internal static partial class MapperExtractor
             //   base-class-typed edges are traversed.  For edges typed as an ancestor/interface of nodeType,
             //   the BFS enqueue must cast via `is TNode __var` (since the queue holds TNode, not the interface).
             // SF-F3 fix: detect Dictionary<K,V> where V is assignable to nodeType as a dict-value edge.
-            var nodeMembers = ReadableMembers(nodeType).ToList();
+            var nodeMembers = ReadableMembers(nodeType, compilation, allowNonPublic).ToList();
             // Edge tuple: (Name, IsCollection, IsDictValue, NeedsNodeCast)
             // NeedsNodeCast=true: member type is an ancestor/interface of nodeType → enqueue via `is TNode` cast.
             var edgeMembers = new List<(string Name, bool IsCollection, bool IsDictValue, bool NeedsNodeCast)>();
@@ -1088,7 +1091,7 @@ internal static partial class MapperExtractor
 
             // 7. Get writable members of nodeDtoType for the flat-node helper
             var dtoWritable = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
-            foreach (var m in WritableMembers(nodeDtoType))
+            foreach (var m in WritableMembers(nodeDtoType, compilation, allowNonPublic))
                 dtoWritable[m.Name] = m.Type;
 
             // 8. Build hash key and helper names

@@ -143,7 +143,7 @@ internal static partial class MapperExtractor
         var flattenInfos = new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)>();
         foreach (var root in flattenRoots)
         {
-            var match = ReadableMembers(sourceType)
+            var match = ReadableMembers(sourceType, compilation, allowNonPublic)
                 .Where(m => comparerForLeaves.Equals(m.Name, root))
                 .Select(m => ((string Name, ITypeSymbol Type)?)m)
                 .FirstOrDefault();
@@ -162,7 +162,7 @@ internal static partial class MapperExtractor
                 continue;
             }
 
-            var leaves = ReadableMembers(rootType).ToList();
+            var leaves = ReadableMembers(rootType, compilation, allowNonPublic).ToList();
             if (leaves.Count == 0)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
@@ -209,7 +209,7 @@ internal static partial class MapperExtractor
                     handledTargets, unflattenRoots, writableByName, allMethods, autoCandidates, enumStrategy,
                     synthesized,
                     nullStrategy, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull, implicitConversions,
-                    result);
+                    allowNonPublic, result);
                 continue;
             }
 
@@ -243,7 +243,8 @@ internal static partial class MapperExtractor
                 // dots, so this is unambiguous). The leaf type drives the conversion; the dotted SourceName
                 // is emitted verbatim as `s.Customer.Name` (a null interior hop throws at runtime — DWARF044
                 // warns when that is possible).
-                if (!TryResolveSourcePath(sourceType, srcName, out srcMatch, out var nullableHop, out var badSegment))
+                if (!TryResolveSourcePath(sourceType, srcName, compilation, allowNonPublic, out srcMatch,
+                        out var nullableHop, out var badSegment))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathSegmentNotFound, location,
                         $"[MapProperty] source path '{srcName}' has no member '{badSegment}'"));
@@ -689,6 +690,7 @@ internal static partial class MapperExtractor
         LocationInfo? location,
         List<DiagnosticInfo> diagnostics,
         bool caseInsensitive,
+        bool allowNonPublic,
         IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
@@ -716,7 +718,7 @@ internal static partial class MapperExtractor
         var explicitForParams = new Dictionary<string, (string Source, string? Use)>(StringComparer.Ordinal);
         foreach (var (srcName, tgtName, use) in explicitMaps) explicitForParams[tgtName] = (srcName, use);
 
-        var readableByName = ReadableMembers(sourceType)
+        var readableByName = ReadableMembers(sourceType, compilation, allowNonPublic)
             .GroupBy(m => m.Name, comparer)
             .ToDictionary(g => g.Key, g => g.ToList(), comparer);
 
@@ -730,7 +732,7 @@ internal static partial class MapperExtractor
             // 1. Check for an explicit [MapProperty(src, paramName)] override.
             if (explicitForParams.TryGetValue(param.Name, out var explicitInfo))
             {
-                var srcList = ReadableMembers(sourceType)
+                var srcList = ReadableMembers(sourceType, compilation, allowNonPublic)
                     .Where(m => StringComparer.Ordinal.Equals(m.Name, explicitInfo.Source))
                     .ToList();
                 if (srcList.Count == 0)

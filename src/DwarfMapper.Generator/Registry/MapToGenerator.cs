@@ -31,6 +31,18 @@ public sealed class MapToGenerator : IIncrementalGenerator
     /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
     internal static readonly string[] AllStepNames = { ExtractStepName };
 
+    /// <summary>
+    ///     The registry front door has no <c>AllowNonPublic</c> equivalent: <c>[MapTo]</c> takes no options, and
+    ///     the extension methods it generates are ordinary public code. So its member enumeration is
+    ///     public-only, and it has no compilation context to reason about <c>[InternalsVisibleTo]</c> with.
+    ///     ISSUE-044 removed the defaults from <see cref="MemberFacts" /> so this stays a stated decision
+    ///     rather than an inherited one — if <c>[MapTo]</c> ever grows the option, these two are what change.
+    /// </summary>
+    private const Compilation? RegistryCompilation = null;
+
+    /// <inheritdoc cref="RegistryCompilation" />
+    private const bool RegistryAllowNonPublic = false;
+
     private const string MapToAttr = "DwarfMapper.MapToAttribute";
     private const string MapPropAttr = "DwarfMapper.MapPropertyAttribute";
     private const string MapIgnoreAttr = "DwarfMapper.MapIgnoreAttribute";
@@ -77,7 +89,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
         // Per-member directives in source order; each aligns positionally to a [MapTo] target.
         var members = new List<(ISymbol Sym, ITypeSymbol Type, List<(bool Ignore, string? Name)> Directives)>();
-        foreach (var (srcSym, _, srcType) in MemberFacts.Readable(source))
+        foreach (var (srcSym, _, srcType) in MemberFacts.Readable(source, RegistryCompilation, RegistryAllowNonPublic))
         {
             var directives = ParseDirectives(srcSym);
             if (directives.Count > 1 && targetCount > 0 && directives.Count != targetCount)
@@ -111,7 +123,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
             }
 
             var targetFqn = target.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var writables = MemberFacts.Writable(target).ToList();
+            var writables = MemberFacts.Writable(target, RegistryCompilation, RegistryAllowNonPublic).ToList();
 
             // destName -> chosen source member (resolved per target, independently).
             var chosen = new Dictionary<string, (ISymbol Sym, ITypeSymbol Type)>();
@@ -418,8 +430,8 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             var members = new List<(string Name, string Expr)>();
             var ok = true;
-            var readable = MemberFacts.Readable(src).ToList();
-            foreach (var w in MemberFacts.Writable(tgt))
+            var readable = MemberFacts.Readable(src, RegistryCompilation, RegistryAllowNonPublic).ToList();
+            foreach (var w in MemberFacts.Writable(tgt, RegistryCompilation, RegistryAllowNonPublic))
             {
                 var sm = readable.FirstOrDefault(r => r.Symbol.Name == w.Name);
                 if (sm.Symbol is null)

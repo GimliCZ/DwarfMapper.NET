@@ -147,7 +147,8 @@ internal static class ConstructorSelector
         if (sourceType is not null)
         {
             var satisfiable = candidates
-                .Where(c => AllParametersHaveASource(c, sourceType, explicitMaps))
+                .Where(c => AllParametersHaveASource(c, sourceType, explicitMaps, compilation,
+                    allowNonPublicConstructors))
                 .ToList();
             if (satisfiable.Count > 0) candidates = satisfiable;
         }
@@ -182,9 +183,21 @@ internal static class ConstructorSelector
     private static bool AllParametersHaveASource(
         IMethodSymbol ctor,
         ITypeSymbol sourceType,
-        IReadOnlyList<(string Source, string Target, string? Use)>? explicitMaps)
+        IReadOnlyList<(string Source, string Target, string? Use)>? explicitMaps,
+        Compilation compilation,
+        bool allowNonPublic)
     {
-        var readable = MemberFacts.Readable(sourceType).Select(m => m.Name).ToList();
+        // One option, [DwarfMapper(AllowNonPublic = true)], governs both constructor accessibility and member
+        // accessibility — the caller's `allowNonPublicConstructors` is that same flag.
+        //
+        // ISSUE-044: this enumeration used to take MemberFacts.Readable's (null, false) default, so under
+        // [DwarfMapper(AllowNonPublic = true)] a constructor whose parameter is fed by an internal source
+        // member scored as unsatisfiable — and selection then preferred a different ctor, or reported
+        // DWARF024/DWARF026 for a parameter that had a source all along. The doc comment above promises this
+        // mirrors ResolveConstructorArguments' name binding; that promise only holds if the visibility rule
+        // is the same one.
+        var readable = MemberFacts.Readable(sourceType, compilation, allowNonPublic)
+            .Select(m => m.Name).ToList();
         var byName = new HashSet<string>(readable, StringComparer.OrdinalIgnoreCase);
         var exact = new HashSet<string>(readable, StringComparer.Ordinal);
 

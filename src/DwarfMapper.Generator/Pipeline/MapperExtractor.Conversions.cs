@@ -988,15 +988,21 @@ internal static partial class MapperExtractor
 
     // Enumeration lives in Core.MemberFacts so both engines share one implementation. These wrappers keep the
     // class model's existing (Name, Type) shape so its 31 call sites are untouched by the move.
+    //
+    // ISSUE-044: both parameters are REQUIRED on purpose. They used to default to (null, false), and twenty
+    // call sites silently took that default — so those paths answered "which members can I read?" as if the
+    // mapper had never opted into AllowNonPublic, producing false DWARF043/DWARF045/DWARF001 on legal code.
+    // A required parameter turns "I forgot to thread the flag" from a silent wrong answer into a compile
+    // error at the call site, which is the only version of this that stays fixed.
     private static IEnumerable<(string Name, ITypeSymbol Type)> ReadableMembers(ITypeSymbol type,
-        Compilation? compilation = null, bool allowNonPublic = false)
+        Compilation? compilation, bool allowNonPublic)
     {
         foreach (var m in MemberFacts.Readable(type, compilation, allowNonPublic))
             yield return (m.Name, m.Type);
     }
 
     private static IEnumerable<(string Name, ITypeSymbol Type)> WritableMembers(ITypeSymbol type,
-        Compilation? compilation = null, bool allowNonPublic = false)
+        Compilation? compilation, bool allowNonPublic)
     {
         foreach (var m in MemberFacts.Writable(type, compilation, allowNonPublic))
             yield return (m.Name, m.Type);

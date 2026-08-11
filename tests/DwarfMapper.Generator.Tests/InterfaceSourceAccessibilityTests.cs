@@ -35,7 +35,8 @@ public class InterfaceSourceAccessibilityTests
     {
         var (_, iface) = BuildInterface();
 
-        var names = MemberFacts.Readable(iface).Select(m => m.Name).ToList();
+        // ISSUE-044 removed the (null, false) defaults; "public only, no compilation context" is now stated.
+        var names = MemberFacts.Readable(iface, null, false).Select(m => m.Name).ToList();
 
         Assert.Contains("Id", names); // public member still enumerated
         Assert.DoesNotContain("Secret", names); // private DIM excluded

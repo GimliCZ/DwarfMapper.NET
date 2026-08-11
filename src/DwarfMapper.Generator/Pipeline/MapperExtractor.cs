@@ -325,7 +325,7 @@ internal static partial class MapperExtractor
                 if (requiredMapping == 1) // RequiredMappingStrategy.Both
                     EmitSourceCoverage(
                         updSrc, updMembers, null, classIgnoreSources, ReadIgnoreSources(method),
-                        ignoreObsolete, methodLocation, diagnostics);
+                        ignoreObsolete, comp, allowNonPublic, methodLocation, diagnostics);
 
                 // Update-into assigns members post-construction, so init-only targets cannot be written
                 // (they would emit CS8852). Treat them as read-only here: drop them and surface DWARF007
@@ -360,7 +360,8 @@ internal static partial class MapperExtractor
                 // [MapCollectionKey]: turn a List<T> member's whole-collection replacement into a key-based
                 // upsert (merge in place). Applied before DWARF065 so an upserted collection is not also flagged
                 // as "replaced".
-                ApplyCollectionKeyUpserts(method, updSrc, updTgt, comp, methodLocation, diagnostics, updMembers);
+                ApplyCollectionKeyUpserts(method, updSrc, updTgt, comp, allowNonPublic, methodLocation,
+                    diagnostics, updMembers);
 
                 // Item 13 (DWARF065): update-into maps a nested object member by REPLACING dest's existing
                 // instance with a freshly-mapped one (the auto-nested __DwarfMap_Obj_* converter constructs a
@@ -566,7 +567,8 @@ internal static partial class MapperExtractor
                 if (requiredMapping == 1) // RequiredMappingStrategy.Both
                     EmitSourceCoverageFromConsumed(
                         projSource, projConsumedSources, classIgnoreSources, ReadIgnoreSources(method),
-                        ignoreObsolete, methodLocation, diagnostics);
+                        ignoreObsolete, ctx.SemanticModel.Compilation, allowNonPublic, methodLocation,
+                        diagnostics);
 
                 methods.Add(new MapMethodModel(
                     method.Name,
@@ -896,6 +898,7 @@ internal static partial class MapperExtractor
                     enumStrategy, synthesized, nullStrategy,
                     methodAutoNest, nestedRegistry,
                     nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
+                    allowNonPublic,
                     flattenGraphConsumed,
                     rawDerivedPairs);
 
@@ -926,7 +929,8 @@ internal static partial class MapperExtractor
             else
             {
                 if (!ResolveConstructorArguments(ctor, sourceType, ctx.SemanticModel.Compilation,
-                        methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
+                        methodLocation, diagnostics, caseInsensitive, allowNonPublic, explicitMaps, allMethods,
+                        mapperMethods,
                         enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs,
                         out consumedParams,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
@@ -962,7 +966,7 @@ internal static partial class MapperExtractor
             if (requiredMapping == 1) // RequiredMappingStrategy.Both
                 EmitSourceCoverage(
                     sourceType, members, ctorArgs, classIgnoreSources, ReadIgnoreSources(method),
-                    ignoreObsolete, methodLocation, diagnostics);
+                    ignoreObsolete, ctx.SemanticModel.Compilation, allowNonPublic, methodLocation, diagnostics);
 
             var applicableBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -1148,7 +1152,8 @@ internal static partial class MapperExtractor
             else
             {
                 if (!ResolveConstructorArguments(genCtor, genSrc, genComp, genLoc, diagnostics,
-                        caseInsensitive, genExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
+                        caseInsensitive, allowNonPublic, genExplicit, allMethods, mapperMethods, enumStrategy,
+                        synthesized,
                         nullStrategy, classAutoNest, nestedRegistry, out genCtorArgs, out genConsumed,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
                         implicitConversions))
@@ -1273,7 +1278,7 @@ internal static partial class MapperExtractor
             {
                 // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
                 if (!ResolveConstructorArguments(nestedCtor, nestedSrc, ctx.SemanticModel.Compilation,
-                        nestedLocation, diagnostics, caseInsensitive, nestedExplicit,
+                        nestedLocation, diagnostics, caseInsensitive, allowNonPublic, nestedExplicit,
                         allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                         pairAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
@@ -1319,7 +1324,7 @@ internal static partial class MapperExtractor
                 {
                     EmitSourceCoverage(
                         nestedSrc, nestedMembers, null, classIgnoreSources, owed.IgnoreSources,
-                        ignoreObsolete, owed.Loc, diagnostics);
+                        ignoreObsolete, ctx.SemanticModel.Compilation, allowNonPublic, owed.Loc, diagnostics);
                     break;
                 }
 
@@ -2296,8 +2301,10 @@ internal static partial class MapperExtractor
             EquatableArray.From(conventionRefs));
     }
 
+    // ISSUE-044: required for the same reason as ReadableMembers/WritableMembers — this wrapper composes
+    // both, so a defaulted call here drops the mapper's AllowNonPublic opt-in just as silently.
     private static IEnumerable<(string Name, ITypeSymbol Type)> ReadOnlyMembers(ITypeSymbol type,
-        Compilation? compilation = null, bool allowNonPublic = false)
+        Compilation? compilation, bool allowNonPublic)
     {
         var writable = new HashSet<string>(WritableMembers(type, compilation, allowNonPublic).Select(m => m.Name),
             StringComparer.Ordinal);
@@ -2510,6 +2517,8 @@ internal static partial class MapperExtractor
         IEnumerable<string> classIgnoreSources,
         IEnumerable<string> methodIgnoreSources,
         bool ignoreObsolete,
+        Compilation compilation,
+        bool allowNonPublic,
         LocationInfo? location,
         List<DiagnosticInfo> diagnostics)
     {
@@ -2529,7 +2538,7 @@ internal static partial class MapperExtractor
             foreach (var m in ctorArgs)
                 AddConsumed(consumed, m.SourceName);
 
-        ReportUnconsumed(sourceType, consumed, ignoreSources, location, diagnostics);
+        ReportUnconsumed(sourceType, consumed, ignoreSources, compilation, allowNonPublic, location, diagnostics);
     }
 
     /// <summary>
@@ -2542,6 +2551,8 @@ internal static partial class MapperExtractor
         IEnumerable<string> classIgnoreSources,
         IEnumerable<string> methodIgnoreSources,
         bool ignoreObsolete,
+        Compilation compilation,
+        bool allowNonPublic,
         LocationInfo? location,
         List<DiagnosticInfo> diagnostics)
     {
@@ -2552,14 +2563,15 @@ internal static partial class MapperExtractor
             foreach (var s in ObsoleteMemberNames(sourceType))
                 ignoreSources.Add(s);
 
-        ReportUnconsumed(sourceType, consumed, ignoreSources, location, diagnostics);
+        ReportUnconsumed(sourceType, consumed, ignoreSources, compilation, allowNonPublic, location, diagnostics);
     }
 
     private static void ReportUnconsumed(
         ITypeSymbol sourceType, HashSet<string> consumed, HashSet<string> ignoreSources,
+        Compilation compilation, bool allowNonPublic,
         LocationInfo? location, List<DiagnosticInfo> diagnostics)
     {
-        foreach (var (name, _) in ReadableMembers(sourceType))
+        foreach (var (name, _) in ReadableMembers(sourceType, compilation, allowNonPublic))
             if (!consumed.Contains(name) && !ignoreSources.Contains(name))
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.UnconsumedSourceMember, location, name));

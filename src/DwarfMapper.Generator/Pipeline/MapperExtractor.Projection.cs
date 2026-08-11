@@ -8,6 +8,24 @@ namespace DwarfMapper.Generator.Pipeline;
 
 internal static partial class MapperExtractor
 {
+    /// <summary>
+    ///     Projection enumerates PUBLIC members only, and this constant is the single place that says so.
+    ///     <para>
+    ///         <c>AllowNonPublic</c> is honoured by the runtime path and deliberately refused here: a
+    ///         projection becomes an expression tree that a query provider translates, and it cannot read a
+    ///         non-public member. Accepting the option and quietly resolving the member anyway would produce
+    ///         silently wrong data — so an unmatched non-public member is reported as DWARF028 naming the real
+    ///         reason (see <c>ResolveProjectionMembers</c>), not resolved.
+    ///     </para>
+    ///     <para>
+    ///         ISSUE-044 made <c>compilation</c>/<c>allowNonPublic</c> required on the member-lookup wrappers
+    ///         precisely so a site like this states its choice instead of inheriting a default. Threading the
+    ///         mapper's real <c>allowNonPublic</c> in here compiles fine and breaks the contract —
+    ///         <c>OptionContractTests</c> and <c>ProjectionRuntimeParityTests</c> catch it.
+    ///     </para>
+    /// </summary>
+    private const bool ProjectionPublicOnly = false;
+
     private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
     {
         element = type;
@@ -85,11 +103,14 @@ internal static partial class MapperExtractor
     }
 
     private static Dictionary<string, (string Name, ITypeSymbol Type)> BuildProjectionSourceLookup(
-        ITypeSymbol sourceType, StringComparer comparer, LocationInfo? location,
-        List<DiagnosticInfo> diagnostics)
+        ITypeSymbol sourceType, StringComparer comparer, Compilation compilation,
+        LocationInfo? location, List<DiagnosticInfo> diagnostics)
     {
         var sources = new Dictionary<string, (string Name, ITypeSymbol Type)>(comparer);
-        foreach (var group in ReadableMembers(sourceType).GroupBy(m => m.Name, comparer))
+        // PUBLIC ONLY, deliberately — see ProjectionPublicOnly. Naming the choice at the site rather than
+        // inheriting a default is the point of ISSUE-044.
+        foreach (var group in ReadableMembers(sourceType, compilation, ProjectionPublicOnly)
+                     .GroupBy(m => m.Name, comparer))
         {
             var members = group.ToList();
             if (members.Count > 1)
@@ -166,10 +187,11 @@ internal static partial class MapperExtractor
             : caseInsensitive
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal;
-        var sources = BuildProjectionSourceLookup(sourceType, comparer, location, diagnostics);
+        var sources = BuildProjectionSourceLookup(sourceType, comparer, compilation, location, diagnostics);
         // C4: pass comparer to nested resolvers so CaseInsensitive propagates into nested objects.
         var writableByName = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
-        foreach (var m in WritableMembers(targetType)) writableByName[m.Name] = m.Type;
+        foreach (var m in WritableMembers(targetType, compilation, ProjectionPublicOnly))
+            writableByName[m.Name] = m.Type;
 
         var result = new List<ProjectionMemberMap>();
         var handled = new HashSet<string>(StringComparer.Ordinal);
@@ -244,7 +266,7 @@ internal static partial class MapperExtractor
             {
                 sm = sm is null
                     ? null
-                    : ReadableMembers(sm)
+                    : ReadableMembers(sm, compilation, ProjectionPublicOnly)
                         .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
                         .Select(m => (ITypeSymbol?)m.Type).FirstOrDefault();
                 if (sm is null) break;
@@ -274,7 +296,7 @@ internal static partial class MapperExtractor
             && !c.IsStatic
             && c.Parameters.Length == 0);
 
-        var writableMembers = WritableMembers(targetType)
+        var writableMembers = WritableMembers(targetType, compilation, ProjectionPublicOnly)
             .OrderBy(m => m.Name, StringComparer.Ordinal)
             .ToList();
 
@@ -398,8 +420,8 @@ internal static partial class MapperExtractor
         List<DiagnosticInfo> diagnostics,
         string targetMemberName,
         EnumStrategy enumStrategy,
-        StringComparer? comparer = null,
-        bool autoNest = true)
+        StringComparer? comparer,
+        bool autoNest)
     {
         comparer ??= StringComparer.Ordinal;
 
@@ -693,14 +715,14 @@ internal static partial class MapperExtractor
         string srcExpr, int depth,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         string targetMemberName, EnumStrategy enumStrategy,
-        StringComparer? comparer = null,
-        bool autoNest = true)
+        StringComparer? comparer,
+        bool autoNest)
     {
         comparer ??= StringComparer.Ordinal;
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
         // C4: use the configured comparer for member lookup so CaseInsensitive applies here.
-        var srcReadable = BuildProjectionSourceLookup(srcType, comparer, location, diagnostics);
+        var srcReadable = BuildProjectionSourceLookup(srcType, comparer, compilation, location, diagnostics);
 
         // Build member-init or ctor expression for the nested object.
         // Mirror the decision logic in ResolveProjectionMembers:
@@ -710,7 +732,7 @@ internal static partial class MapperExtractor
         // The original check "writableTargetMembers.Count == 0" only catches types with no
         // settable/init properties at all; it misses positional records whose init properties
         // exist but whose constructor has no parameterless overload (CS7036 at compile time).
-        var writableTargetMembers = WritableMembers(tgtType)
+        var writableTargetMembers = WritableMembers(tgtType, compilation, ProjectionPublicOnly)
             .OrderBy(m => m.Name, StringComparer.Ordinal)
             .ToList();
 
@@ -738,10 +760,14 @@ internal static partial class MapperExtractor
             }
 
             // C4: pass the configured comparer (not hardcoded Ordinal) so CaseInsensitive propagates.
+            // ISSUE-043: autoNest was omitted here and defaulted back to `true`, so a mapper with
+            // AutoNest = false still auto-nested through THIS path (nested object → ctor projection) while
+            // every sibling path honoured the setting. The parameter is required now, so the omission
+            // cannot come back.
             var ctorExpr = ResolveProjectionCtorExpr(
                 bestCtor, srcType, srcExpr, depth,
                 compilation, location, diagnostics, tgtType, enumStrategy,
-                comparer);
+                comparer, autoNest);
             if (ctorExpr is null) return null;
             innerBodyExpr = ctorExpr;
         }
@@ -803,10 +829,10 @@ internal static partial class MapperExtractor
         INamedTypeSymbol tgtType,
         EnumStrategy enumStrategy,
         StringComparer comparer,
-        bool autoNest = true)
+        bool autoNest)
     {
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var srcReadable = BuildProjectionSourceLookup(srcType, comparer, location, diagnostics);
+        var srcReadable = BuildProjectionSourceLookup(srcType, comparer, compilation, location, diagnostics);
 
         var argParts = new List<string>();
         var anyFailed = false;
