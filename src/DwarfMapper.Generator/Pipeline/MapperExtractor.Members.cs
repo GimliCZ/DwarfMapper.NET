@@ -88,7 +88,8 @@ internal static partial class MapperExtractor
         bool allowNonPublic = false,
         bool explicitOnly = false,
         bool ignoreObsolete = false,
-        Dictionary<string, string>? stringFormats = null)
+        Dictionary<string, string>? stringFormats = null,
+        IReadOnlyCollection<string>? mapperReservedConverters = null)
     {
         // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
         // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
@@ -179,6 +180,23 @@ internal static partial class MapperExtractor
         }
 
         // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
+        // Methods dedicated to one member by [MapProperty(Use = …)] / [MapValue(Use = …)]. They are
+        // withheld from signature-based auto-adoption: naming a converter for a specific member says it
+        // belongs to that member, not that it is a general-purpose converter for those types. Without
+        // this, such a method is silently reused for every member whose types happen to line up.
+        // Seeded with the mapper-wide set so a helper dedicated on ANOTHER method is withheld here too,
+        // then topped up from this method's own attributes.
+        var reservedConverters = mapperReservedConverters is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(mapperReservedConverters, StringComparer.Ordinal);
+        foreach (var em in explicitMaps)
+            if (em.Use is not null)
+                reservedConverters.Add(em.Use);
+        if (mapValues is not null)
+            foreach (var mv in mapValues)
+                if (mv.Use is not null)
+                    reservedConverters.Add(mv.Use);
+
         var explicitSeen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (srcName, tgtName, useMethod) in explicitMaps)
         {
@@ -272,7 +290,8 @@ internal static partial class MapperExtractor
             if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv,
                     out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
-                    isSetNull: isSetNull, implicitConversions: implicitConversions))
+                    isSetNull: isSetNull, implicitConversions: implicitConversions,
+                    reservedConverters: reservedConverters))
             {
                 // [MapProperty(StringFormat="…")]: replace the resolved converter with a format-aware
                 // src.ToString(format, InvariantCulture). Only valid for an IFormattable source into a string
@@ -478,7 +497,8 @@ internal static partial class MapperExtractor
                     && TryResolveConversion(compilation, ep.Type!, target.Type, null, allMethods, autoCandidates,
                         enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics,
                         out var epConv, out _, out var epNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
-                        isSetNull: isSetNull, implicitConversions: implicitConversions)
+                        isSetNull: isSetNull, implicitConversions: implicitConversions,
+                        reservedConverters: reservedConverters)
                     && !epNeedsCtx)
                 {
                     var valueExpr = epConv is null ? ep.Name : epConv + "(" + ep.Name + ")";
@@ -509,7 +529,8 @@ internal static partial class MapperExtractor
                     if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates,
                             enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv,
                             out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
-                            isSetNull: isSetNull, implicitConversions: implicitConversions))
+                            isSetNull: isSetNull, implicitConversions: implicitConversions,
+                    reservedConverters: reservedConverters))
                         result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, fneedsCtx,
                             SourceMayBeNullRef(fm.LeafType),
                             NullRefIntoNonNullable:
@@ -572,7 +593,8 @@ internal static partial class MapperExtractor
             if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv,
                     out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
-                    isSetNull: isSetNull, implicitConversions: implicitConversions))
+                    isSetNull: isSetNull, implicitConversions: implicitConversions,
+                    reservedConverters: reservedConverters))
             {
                 // A nullable-reference source passed into a user-declared converter/map whose parameter is
                 // non-nullable would emit CS8604. This only matters when the null would actually reach a
@@ -718,6 +740,13 @@ internal static partial class MapperExtractor
         var explicitForParams = new Dictionary<string, (string Source, string? Use)>(StringComparer.Ordinal);
         foreach (var (srcName, tgtName, use) in explicitMaps) explicitForParams[tgtName] = (srcName, use);
 
+        // Same reservation rule as ResolveMembers: a converter named for one constructor parameter is
+        // not offered up for signature-based auto-adoption by the others.
+        var reservedConverters = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var em in explicitMaps)
+            if (em.Use is not null)
+                reservedConverters.Add(em.Use);
+
         var readableByName = ReadableMembers(sourceType, compilation, allowNonPublic)
             .GroupBy(m => m.Name, comparer)
             .ToDictionary(g => g.Key, g => g.ToList(), comparer);
@@ -748,7 +777,8 @@ internal static partial class MapperExtractor
                         allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
                         location, param.Name, diagnostics, out var eConv, out var eNull,
                         out var eNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
-                        implicitConversions: implicitConversions))
+                        implicitConversions: implicitConversions,
+                        reservedConverters: reservedConverters))
                 {
                     args.Add(new MemberMap(param.Name, explicitInfo.Source, eConv, eNull, eNeedsCtx,
                         SourceMayBeNullRef(srcType),

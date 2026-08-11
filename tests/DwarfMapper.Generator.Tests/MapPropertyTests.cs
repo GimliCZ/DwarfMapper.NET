@@ -176,4 +176,89 @@ public class MapPropertyTests
         // read-only target is not in writableByName -> treated as unknown/un-writable target
         Assert.Contains(diagnostics, d => d.Id == "DWARF008");
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Regression: found migrating FusedChat (~300 maps) off AutoMapper 14.
+    //
+    // A pair-scoped [MapProperty<S,T>(src, tgt, Use = M)] names ONE destination member. If the same
+    // SOURCE member also auto-matches a DIFFERENT destination member by name, the converter must not
+    // reach that second member — the attribute did not name it.
+    //
+    // Why this matters more than it looks: the failure is silent. The build stays green, no diagnostic
+    // fires, and the only symptom is wrong data. In the case that surfaced it, DonationDetails.DonationId
+    // fed both PremiumDocument.Id (via a Use= that prefixes a date, "20260811_<guid>") and
+    // PremiumDocument.DonationId (a plain auto-matched copy). Leaking the converter would have written
+    // the decorated document id into the plain donation-id column of every new premium record.
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Pair_scoped_Use_converter_applies_only_to_the_member_it_names()
+    {
+        const string src = """
+                           using System;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Source { public Guid Code { get; set; } }
+                           public class Target
+                           {
+                               public string Tag { get; set; } = "";
+                               public string Code { get; set; } = "";
+                           }
+
+                           [DwarfMapper]
+                           [GenerateMap<Source, Target>]
+                           [MapProperty<Source, Target>(nameof(Source.Code), nameof(Target.Tag), Use = nameof(Decorate))]
+                           public partial class M
+                           {
+                               private static string Decorate(Guid g) => "X_" + g;
+                           }
+                           """;
+
+        var generated = GeneratorAssert.EmitsCompilableCode(src);
+
+        // The named member gets the converter...
+        Assert.Contains("Tag = Decorate(", generated, StringComparison.Ordinal);
+
+        // ...and the member that merely shares the SOURCE does not.
+        Assert.DoesNotContain("Code = Decorate(", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Use_converter_named_on_one_method_does_not_leak_into_another_method()
+    {
+        // The same rule across METHODS. ToA dedicates Decorate to its Code member; ToB never mentions
+        // it and must get the plain built-in Guid->string conversion.
+        //
+        // Two methods rather than two class-level [GenerateMap] pairs because the latter shape is
+        // DWARF060 (one source, two targets, and C# cannot overload by return type) — nothing is
+        // generated at all, so it cannot express this question.
+        const string src = """
+                           using System;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Source { public Guid Code { get; set; } }
+                           public class TargetA { public string Code { get; set; } = ""; }
+                           public class TargetB { public string Code { get; set; } = ""; }
+
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               [MapProperty(nameof(Source.Code), nameof(TargetA.Code), Use = nameof(Decorate))]
+                               public partial TargetA ToA(Source s);
+
+                               public partial TargetB ToB(Source s);
+
+                               private static string Decorate(Guid g) => "X_" + g;
+                           }
+                           """;
+
+        var generated = GeneratorAssert.EmitsCompilableCode(src);
+
+        // ToA asked for it.
+        Assert.Contains("Decorate(", generated, StringComparison.Ordinal);
+
+        // ToB did not. Exactly one call site total.
+        var occurrences = generated.Split("Decorate(", StringSplitOptions.None).Length - 1;
+        Assert.Equal(1, occurrences);
+    }
 }

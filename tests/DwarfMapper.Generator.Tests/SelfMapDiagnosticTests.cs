@@ -138,4 +138,67 @@ public class SelfMapDiagnosticTests
 
         Assert.Contains("Dto", generated, StringComparison.Ordinal);
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Regression: found migrating FusedChat (~300 maps) off AutoMapper 14.
+    //
+    // That codebase has four legitimate CreateMap<X, X>() clone maps, so it hits DWARF076 four times by
+    // design. docs/diagnostics.md#dwarf076 offers three escape hatches:
+    //
+    //     "(#pragma warning disable DWARF076, a [SuppressMessage], or
+    //      dotnet_diagnostic.DWARF076.severity = none in .editorconfig)"
+    //
+    // Only the third was ever covered by a test — and the test above does not actually assert
+    // suppression, it only asserts the code still compiles. The two in-FILE hatches are what a consumer
+    // reaches for first, because they are local to the deliberate clone instead of disabling the rule
+    // for the whole project. If they do not work, a warnings-as-errors consumer has no local way out
+    // and the documentation is actively misleading.
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void DWARF076_is_NOT_suppressed_by_a_pragma_documenting_a_Roslyn_limitation()
+    {
+        // Pins current, deliberate behaviour rather than an aspiration.
+        //
+        // `#pragma warning disable` is applied by the compiler's diagnostic filtering, which
+        // source-generator-reported diagnostics do not pass through. The generator therefore CANNOT honour
+        // a pragma — this is a Roslyn platform limitation, not a DwarfMapper bug, and docs/diagnostics.md
+        // no longer claims otherwise. The in-file hatch is [SuppressMessage] (next test); the project-wide
+        // one is .editorconfig.
+        //
+        // If a future Roslyn starts filtering generator diagnostics, this test fails and is the signal to
+        // re-document the pragma as supported.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public sealed class Dto { public int Id { get; set; } }
+
+            #pragma warning disable DWARF076
+            [DwarfMapper]
+            [GenerateMap<Dto, Dto>]
+            public partial class M { }
+            #pragma warning restore DWARF076
+            """;
+
+        Assert.NotEmpty(GeneratorAssert.Reports(src, Id));
+    }
+
+    [Fact]
+    public void DWARF076_is_suppressed_by_SuppressMessage_on_the_mapper()
+    {
+        const string src = """
+            using System.Diagnostics.CodeAnalysis;
+            using DwarfMapper;
+            namespace Demo;
+            public sealed class Dto { public int Id { get; set; } }
+
+            [DwarfMapper]
+            [GenerateMap<Dto, Dto>]
+            [SuppressMessage("DwarfMapper", "DWARF076:Source and target are the same type",
+                Justification = "Deliberate shallow clone.")]
+            public partial class M { }
+            """;
+
+        GeneratorAssert.DoesNotReport(src, Id);
+    }
 }
