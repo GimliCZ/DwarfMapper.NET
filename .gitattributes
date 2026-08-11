@@ -1,0 +1,42 @@
+# Line-ending policy. Without this file the working tree adopts whatever `core.autocrlf` the
+# contributor happens to have, and C# raw-string literals then carry the checkout's terminators —
+# so expected-value strings become CRLF while the code under test still produces LF. That is not a
+# hypothetical: a `core.autocrlf=true` clone of 84e13e7 fails DocSnippetInjectorTests where an LF
+# clone passes. LF everywhere is what makes a checkout reproducible across hosts.
+
+# Default: normalise to LF in the repository, let Git decide what is text.
+* text=auto eol=lf
+
+# Sources, docs and build/config inputs: LF in the repository AND in the working tree.
+*.cs        text eol=lf
+*.csproj    text eol=lf
+*.props     text eol=lf
+*.targets   text eol=lf
+*.sln       text eol=lf
+*.slnx      text eol=lf
+*.md        text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.editorconfig text eol=lf
+
+# Verify snapshots and the golden output manifest are compared byte-for-byte against generator
+# output, which is LF. A CRLF checkout would fail every one of them.
+*.txt       text eol=lf
+
+# Shell scripts must be LF or they do not run under bash, including in CI.
+*.sh        text eol=lf
+scripts/git-hooks/* text eol=lf
+
+# PowerShell tolerates LF; keeping it uniform avoids a second policy to remember.
+*.ps1       text eol=lf
+
+# Never touch these.
+*.zip       binary
+*.png       binary
+*.jpg       binary
+*.gif       binary
+*.ico       binary
+*.snk       binary
+*.dll       binary
+*.exe       binary
