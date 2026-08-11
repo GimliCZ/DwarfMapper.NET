@@ -34,6 +34,13 @@ so a version with no section here ships with no notes.
   surfacing in the same IDE error list as the `DWARF0xx` rules. They now have rows, the suppressions are
   gone, and `AssemblyScanTests` enforces the descriptor ↔ release-notes sync for the `DWARFR` family the same
   way it does for `DWARF###`. (ISSUE-047)
+- **Coverage for C# 14 consumer shapes.** The generator's contract is over consumer code, and the corpus had
+  never seen a `field`-backed property, a `partial` constructor, an extension block, or a user-defined
+  compound assignment operator. All four are now pinned as working, along with the fact that an extension
+  block in scope does not disturb converter discovery. One gap is pinned as *observed* rather than fixed:
+  `[MapProperty(Use = …)]` naming an extension member is refused with `DWARF014` ("conversion method not
+  found") — safe, but the reason is wrong, since the method is plainly there. See
+  `Issues/round17/roslyn-5-upgrade-opportunities.md`.
 - **This file**, and a release-workflow step that publishes the matching section as the release notes.
 
 ### Changed
