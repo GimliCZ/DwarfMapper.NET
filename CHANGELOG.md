@@ -38,6 +38,14 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **Roslyn floor raised to `Microsoft.CodeAnalysis` 5.0.0** (from 4.14.0; `Microsoft.CodeAnalysis.Analyzers`
+  3.11.0 → 5.3.0). The declared toolchain requirement is now **SDK 10.0.100+ / Roslyn 5.0+** — an older SDK
+  cannot load the generator at all, since Roslyn refuses an analyzer compiled against a newer compiler than
+  the host (`CS9057`). One consequence surfaced immediately: Roslyn 5.0 annotates
+  `SymbolDisplay.FormatPrimitive` as returning `string?`, which turned into a build error under
+  warnings-as-errors and is now handled explicitly at both call sites rather than assumed away.
+  A non-blocking CI leg builds on a newer 10.0.x SDK to prove forward compatibility; it is marked
+  `continue-on-error` until its first green run, and that marker is meant to be removed.
 - **The SDK pin is now real.** `global.json` used `rollForward: latestPatch` while CI installed `10.0.x`, so
   contributor and CI could compile a source generator — whose output the suite compares byte-for-byte — on
   different compilers. The pin is `10.0.101` with `rollForward: disable`, CI installs exactly that, and a CI

@@ -190,6 +190,34 @@ jobs:
           name: conformance-results
           path: conformance/results/
 
+  # ── Forward-compatibility leg: does the generator still load in a NEWER compiler? ────────────────────
+  # The floor (Microsoft.CodeAnalysis 5.0.0) is what every other job builds, and it is what the pinned SDK
+  # 10.0.101 carries. This job answers the other half: a consumer on a newer 10.0.x SDK runs our generator
+  # inside THEIR compiler, and a generator built against a newer Roslyn than the host refuses to load with
+  # CS9057. Measured locally: referencing 5.6.0 while building on SDK 10.0.101 fails with exactly that,
+  # which is why this leg needs its own, newer SDK and cannot live in build-test.
+  #
+  # NON-BLOCKING ON PURPOSE, FOR NOW. It was authored without a machine that has a newer 10.0.x SDK, so its
+  # first real run happens here. Flip `continue-on-error` to false once it has been seen green — a gate that
+  # cannot fail is decoration, and leaving it like this permanently would be exactly the kind of thing the
+  # rest of this pipeline exists to prevent.
+  roslyn-forward-compat:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.x'   # deliberately NOT the pin: this leg is about a newer host
+      - name: Drop the SDK pin for this job only
+        run: |
+          set -euo pipefail
+          rm -f global.json     # the working copy only; the committed pin is untouched
+          dotnet --version
+      - name: Build the generator against the floor, on a newer compiler
+        run: dotnet build DwarfMapper.NET.sln -c Release
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build
+
   codeql:
     runs-on: ubuntu-latest
     permissions:

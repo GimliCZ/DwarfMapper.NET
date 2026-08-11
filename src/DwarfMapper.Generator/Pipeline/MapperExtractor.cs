@@ -2438,12 +2438,22 @@ internal static partial class MapperExtractor
     private static string RenderConstantLiteral(object? value, ITypeSymbol? valueType, ITypeSymbol targetType, Compilation compilation)
     {
         if (value is null) return "null";
+
+        // Roslyn 5.0 annotated SymbolDisplay.FormatPrimitive as returning string? — it answers null for a
+        // value it does not recognise as a primitive. `value is null` is already handled above, so reaching
+        // null here means "not a constant this renderer can spell". Falling back to the `null` literal keeps
+        // the emitted code compilable and matches the early return; callers that can FAIL on assignability
+        // validate before calling (see the summary), so this is the non-failing path by construction.
         if (valueType is { TypeKind: TypeKind.Enum })
         {
             var enumFqn = valueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            return $"({enumFqn})({SymbolDisplay.FormatPrimitive(value, quoteStrings: false, useHexadecimalNumbers: false)})";
+            var enumValue = SymbolDisplay.FormatPrimitive(value, quoteStrings: false, useHexadecimalNumbers: false)
+                            ?? "null";
+            return $"({enumFqn})({enumValue})";
         }
-        var formatted = SymbolDisplay.FormatPrimitive(value, quoteStrings: true, useHexadecimalNumbers: false);
+
+        var formatted = SymbolDisplay.FormatPrimitive(value, quoteStrings: true, useHexadecimalNumbers: false)
+                        ?? "null";
         return targetType.SpecialType is SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal
             ? $"({targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({formatted})"
             : formatted;

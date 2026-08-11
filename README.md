@@ -844,6 +844,12 @@ See [`docs/RELEASING.md`](docs/RELEASING.md) for step-by-step verification (fing
 
 DwarfMapper is **.NET 10 only**. The one exception is the generator/code-fix assemblies (see note below).
 
+**Toolchain floor: .NET SDK 10.0.100 or newer (Roslyn 5.0+).** The generator is built against
+`Microsoft.CodeAnalysis` 5.0.0 and Roslyn refuses to load an analyzer compiled against a *newer* compiler than
+the host (`CS9057`), so an older SDK cannot run it. Any 10.0.x SDK works — the floor is the .NET 10 line
+itself, not a specific patch. (The repo's own `global.json` pins one exact patch, but that is about
+reproducing *this* build byte-for-byte; it is not a requirement on consumers.)
+
 | Reference                                                   | Purpose                                                                                                                                                                                                                                                                                                                          | TFM       |
 |-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
 | **`DwarfMapper`**                                           | **Everything you need in one package** — the attributes + tiny abstractions (`lib/net10.0`) **and** the Roslyn source generator + IDE code fixes bundled in the analyzer slot. Zero runtime dependencies.                                                                                                                        | `net10.0` |
