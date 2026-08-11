@@ -83,3 +83,18 @@ DWARF074 | DwarfMapper | Error | [MapCollectionKey] cannot be applied here
 DWARF075 | DwarfMapper | Warning | [FlattenGraph] leaf member was not flattened
 DWARF076 | DwarfMapper | Warning | Source and target are the same type
 DWARF077 | DwarfMapper | Error | Explicit-only mapping is not enforced element-wise
+
+; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
+; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a
+; consumer suppressing or documenting them needs them release-tracked too. They keep the DWARFR prefix
+; and their own category because the DWARF0xx self-validation scans key on `^DWARF\d{3}$`; a separate
+; scan (Scan1f/1g/1h in AssemblyScanTests) enforces this table for the DWARFR family.
+DWARFR01 | DwarfMapper.Registry | Error | Invalid [MapTo] target
+DWARFR02 | DwarfMapper.Registry | Error | Destination member is not mapped
+DWARFR03 | DwarfMapper.Registry | Error | Conflicting sources for one destination member
+DWARFR04 | DwarfMapper.Registry | Error | [MapProperty] value count does not match the targets
+DWARFR05 | DwarfMapper.Registry | Error | No conversion between mapped members
+DWARFR06 | DwarfMapper.Registry | Error | Recursive nested mapping is not supported by the registry
+DWARFR07 | DwarfMapper.Registry | Info | Lossy implicit numeric conversion
+DWARFR08 | DwarfMapper.Registry | Error | Two [MapTo] targets generate the same method name
+DWARFR09 | DwarfMapper.Registry | Error | [MapTo] target has no accessible parameterless constructor

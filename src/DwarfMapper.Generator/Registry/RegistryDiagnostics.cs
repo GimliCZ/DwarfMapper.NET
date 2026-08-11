@@ -6,14 +6,12 @@ namespace DwarfMapper.Generator.Registry;
 
 /// <summary>
 ///     Diagnostics for the <c>[MapTo]</c> registry generator. Kept in a SEPARATE class from
-///     <c>DiagnosticDescriptors</c> on purpose: the DWARF0xx self-validation scans reflect only over that
-///     class, so these <c>DWARFR</c>-prefixed descriptors are intentionally invisible to them. A later
-///     unification could fold them into the DWARF0xx scheme.
+///     <c>DiagnosticDescriptors</c> because the DWARF0xx self-validation scans key on
+///     <c>^DWARF\d{3}$</c> and these carry a <c>DWARFR</c> prefix. They are NOT unvalidated, though:
+///     Scan1f/1g/1h in <c>AssemblyScanTests</c> enforce the same descriptor ↔ AnalyzerReleases sync
+///     (both directions, plus severity) for this class that Scan1a/1b/1c enforce for that one.
+///     A later unification could fold them into the DWARF0xx scheme.
 /// </summary>
-// Prototype diagnostics are deliberately NOT release-tracked (kept out of AnalyzerReleases.*.md and the
-// DWARF0xx self-validation scans). Suppress the release-tracking analyzer for this experimental file.
-#pragma warning disable RS2000 // Add analyzer diagnostic IDs to analyzer release
-#pragma warning disable RS2001 // Ensure up-to-date entry for analyzer diagnostic IDs
 internal static class RegistryDiagnostics
 {
     private const string Category = "DwarfMapper.Registry";

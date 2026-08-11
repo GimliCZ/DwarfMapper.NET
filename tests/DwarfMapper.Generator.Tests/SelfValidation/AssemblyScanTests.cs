@@ -16,6 +16,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Pipeline;
+using DwarfMapper.Generator.Registry;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
@@ -576,7 +577,107 @@ public sealed class AssemblyScanTests
         Assert.True(headings >= 40, $"Expected to parse many doc sections, parsed {headings}.");
     }
 
-    private static Dictionary<string, ReleaseRow> ParseAnalyzerReleases()
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCAN 1f/1g/1h — the same sync, for the DWARFR registry family
+    // ─────────────────────────────────────────────────────────────────────────
+    // ISSUE-047: RegistryDiagnostics used to suppress RS2000/RS2001, so DWARFR01–R09 appeared in no
+    // AnalyzerReleases file at all — shipping in the same package, and in the same IDE error list, as
+    // rules whose sync IS machine-checked. The suppression is gone; these three scans are what replaced
+    // it. They deliberately mirror Scan1a/1b/1c rather than generalising them, so a change to the
+    // DWARF0xx contract cannot silently weaken the DWARFR one.
+
+    [Fact]
+    public void Scan1f_Every_registry_descriptor_has_an_AnalyzerReleases_entry()
+    {
+        var releaseRows = ParseAnalyzerReleases(RegistryIdPattern);
+
+        var missing = GetAllRegistryDescriptors()
+            .Where(d => !releaseRows.ContainsKey(d.Descriptor.Id))
+            .Select(d => d.Descriptor.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(missing.Count == 0,
+            "Registry descriptor(s) have no AnalyzerReleases entry: " + string.Join(", ", missing));
+    }
+
+    [Fact]
+    public void Scan1g_Every_registry_AnalyzerReleases_entry_has_a_descriptor()
+    {
+        var descriptorIds = GetAllRegistryDescriptors()
+            .Select(d => d.Descriptor.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var orphans = ParseAnalyzerReleases(RegistryIdPattern).Keys
+            .Where(id => !descriptorIds.Contains(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(orphans.Count == 0,
+            "AnalyzerReleases row(s) have no registry descriptor: " + string.Join(", ", orphans));
+    }
+
+    [Fact]
+    public void Scan1h_Registry_descriptor_metadata_matches_AnalyzerReleases_entry()
+    {
+        var releaseRows = ParseAnalyzerReleases(RegistryIdPattern);
+
+        var mismatches = new List<string>();
+        foreach (var (fieldName, desc) in GetAllRegistryDescriptors())
+        {
+            if (!releaseRows.TryGetValue(desc.Id, out var row)) continue; // checked by 1f
+
+            if (!string.Equals(row.Severity, desc.DefaultSeverity.ToString(), StringComparison.OrdinalIgnoreCase))
+                mismatches.Add($"{desc.Id} ({fieldName}): descriptor Severity={desc.DefaultSeverity} " +
+                               $"but AnalyzerReleases says {row.Severity}");
+
+            if (!string.Equals(row.Category, desc.Category, StringComparison.Ordinal))
+                mismatches.Add($"{desc.Id} ({fieldName}): descriptor Category='{desc.Category}' " +
+                               $"but AnalyzerReleases says '{row.Category}'");
+        }
+
+        Assert.True(mismatches.Count == 0,
+            "Registry descriptor/AnalyzerReleases mismatches:\n" + string.Join("\n", mismatches));
+    }
+
+    [Fact]
+    public void Scan1i_Registry_descriptor_Id_format_is_DWARFRdd()
+    {
+        var bad = GetAllRegistryDescriptors()
+            .Where(d => !Regex.IsMatch(d.Descriptor.Id, RegistryIdPattern))
+            .Select(d => $"{d.FieldName}: Id='{d.Descriptor.Id}'")
+            .ToList();
+
+        Assert.True(bad.Count == 0,
+            "Registry descriptor(s) with malformed Id (expected DWARFR##):\n" + string.Join("\n", bad));
+    }
+
+    // Non-vacuity guard for the four scans above: they are all "no counterexamples" assertions, which pass
+    // trivially if reflection ever stops finding the descriptors (class renamed, fields made non-public).
+    [Fact]
+    public void Scan1j_Registry_scans_actually_see_the_descriptors()
+    {
+        Assert.True(GetAllRegistryDescriptors().Count >= 9,
+            $"Expected the registry scans to inspect all DWARFR descriptors, saw "
+            + $"{GetAllRegistryDescriptors().Count}.");
+        Assert.True(ParseAnalyzerReleases(RegistryIdPattern).Count >= 9,
+            "Expected to parse the DWARFR rows out of AnalyzerReleases.");
+    }
+
+    private const string RegistryIdPattern = @"^DWARFR\d{2}$";
+
+    private static List<(string FieldName, DiagnosticDescriptor Descriptor)> GetAllRegistryDescriptors()
+    {
+        return typeof(RegistryDiagnostics)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.FieldType == typeof(DiagnosticDescriptor))
+            .Select(f => (f.Name, (DiagnosticDescriptor)f.GetValue(null)!))
+            .ToList();
+    }
+
+    // The id pattern is a parameter so the DWARF0xx scans and the DWARFR scans read the SAME table
+    // through the same parser: one file format, two families, no second parser to drift.
+    private static Dictionary<string, ReleaseRow> ParseAnalyzerReleases(string idPattern = @"^DWARF\d{3}$")
     {
         var result = new Dictionary<string, ReleaseRow>(StringComparer.Ordinal);
 
@@ -601,7 +702,7 @@ public sealed class AssemblyScanTests
                 if (parts.Length < 3) continue;
 
                 var id = parts[0].Trim();
-                if (!Regex.IsMatch(id, @"^DWARF\d{3}$")) continue;
+                if (!Regex.IsMatch(id, idPattern)) continue;
 
                 var category = parts[1].Trim();
                 var severity = parts[2].Trim();
