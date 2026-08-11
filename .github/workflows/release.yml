@@ -63,6 +63,35 @@ jobs:
       #    nuget.org publishing is done MANUALLY by the maintainer (deliberate control
       #    over what goes public) — download the signed .nupkg/.snupkg from the Release
       #    and `dotnet nuget push` them. See docs/RELEASING.md.
+      # Release notes come from CHANGELOG.md so the human-readable "what changed" is written and reviewed in
+      # the same commit as the change, not typed into a release form afterwards. A tag whose version has no
+      # section fails here rather than shipping notes that say nothing — a release with no changelog entry is
+      # a release nobody can audit.
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          # index(), not a regex: a version like 1.0.2-rc.1 is full of regex metacharacters, and `.`
+          # matching any character would let 1I0I2 select the 1.0.2 section.
+          notes=$(awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { inside = 1; next }
+            inside && index($0, "## [") == 1 { exit }
+            inside { print }
+          ' CHANGELOG.md)
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section (or it is empty)." \
+                 "Add one before tagging — see the comment at the end of CHANGELOG.md."
+            exit 1
+          fi
+          {
+            echo "NOTES<<CHANGELOG_EOF"
+            printf '%s\n\n' "$notes"
+            echo "---"
+            echo "Keyless-signed via GitHub OIDC (Sigstore build-provenance — verify with"
+            echo "\`gh attestation verify <pkg> --repo GimliCZ/DwarfMapper.NET\`), with a CycloneDX SBOM and"
+            echo "SHA256SUMS attached. Published to nuget.org manually by the maintainer."
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_ENV"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,4 +100,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             artifacts/*.nupkg artifacts/*.snupkg artifacts/SHA256SUMS artifacts/sbom/* \
             --title "$GITHUB_REF_NAME" \
-            --notes "Keyless-signed via GitHub OIDC (Sigstore build-provenance — verify with \`gh attestation verify <pkg> --repo GimliCZ/DwarfMapper.NET\`), with a CycloneDX SBOM and SHA256SUMS attached. Published to nuget.org manually by the maintainer."
+            --notes "$NOTES"
