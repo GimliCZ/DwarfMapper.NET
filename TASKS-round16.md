@@ -8,9 +8,9 @@ src (emitted-literal `global::` sweep, suppression audit, line-ending policy, as
 
 ## Round 17 — executing the list, as its own instrument
 
-Running a finding is a stronger instrument than reading one, and it corrected this document five times. Work
-landed on `master` as `caf279a`, `6128558`, `99bc8ee`, `7378851`, `f3e2670`; each item's entry below carries
-its status.
+Running a finding is a stronger instrument than reading one, and it corrected this document eight times. Work
+landed on `master` as `caf279a`, `6128558`, `99bc8ee`, `7378851`, `f3e2670`, `b207443`, `23594e6`, `d2fc4b0`,
+`e569665`, `723a50b`, `e4dd185`; each item entry below carries its status.
 
 **What execution corrected in this document:**
 
@@ -61,8 +61,31 @@ its status.
   parameter list). Caught by the build, restored from a backup taken first — but a scripted edit that
   *half*-applies is a worse failure mode than one that errors.
 
-**Still unproven / not run:** the Roslyn 5.0 bump, the ISSUE-046 EF experiment, the ISSUE-045 char matrix,
-the registry torture test, and the Windows `Dict_Mapperly` re-measurement. Nothing below claims otherwise.
+**All thirteen items are now run.** Three more corrections came out of the last three:
+
+6. **The ledger's "two-sided CI leg (5.0.0 floor + 5.6.0 latest)" is not buildable as written.** A generator
+   referencing Roslyn 5.6.0 cannot load in a 5.0.0 host — `CS9057`, measured. "Latest" is therefore a second
+   *SDK*, not a second package version, and the leg had to be rewritten as a job that installs a newer 10.0.x
+   SDK and drops the pin for its own working copy. It ships `continue-on-error` until its first green run,
+   because it was authored without a machine that has a newer SDK; the comment says to flip it.
+7. **ISSUE-046's candidate 3 rests on a false premise.** "A query provider cannot express the AsEmpty guard"
+   is wrong: it translates, to *identical SQL* to AsNull. The real finding is about shape — `??` on the
+   navigation is the one form EF refuses, and `??` on the projected list translates but is **vacuous**
+   (byte-identical SQL), which would look like the option was honoured while changing nothing.
+8. **The `Dict` Windows figure was not an outlier.** It reproduces to within 1.2% seventeen days later
+   (2.13×). The headline is *qualified* — name the platform — not withdrawn. CLAUDE.md decision #3 is closed.
+
+**Still not done, and not automatable:** the in-editor smoke check for the Roslyn bump (DWARF001 squiggle +
+code fix in VS 2026 / VS Code). That one needs a human with an IDE.
+
+**Two instrument failures from the last three items**, in the same spirit as the list above:
+
+- The EF probe's first version had only a control in the final `Select`. EF Core permits *client* evaluation
+  there, so the control passed and the probe concluded that even untranslatable code translates. A control
+  in a `WHERE` — which EF must translate — is what gave it power. "It ran without throwing" is not evidence.
+- The torture test's first two versions had no power at all, one of them because the registered lambda closed
+  only over an outer local and the compiler hoisted it, so every thread passed the *same* delegate. Both
+  broken registries passed it. Measured power is now recorded in the file itself.
 
 ---
 
@@ -93,7 +116,7 @@ the registry torture test, and the Windows `Dict_Mapperly` re-measurement. Nothi
 
 ## Optional polish (below issue threshold)
 
-- [ ] Gate the docs-regenerator writes (`GeneratedDocsAreCurrentTests.cs:118`,
+- [ ] (still open, cosmetic) Gate the docs-regenerator writes (`GeneratedDocsAreCurrentTests.cs:118`,
       `DocsAreSnippetCurrentTests.cs:71`) behind not-CI for workspace purity. **Not** a self-heal hazard — both
       write-then-`Assert.Fail` with a recorded rationale, so CI cannot self-bless; the write merely dirties a
       throwaway CI workspace. Cosmetic.
@@ -165,19 +188,19 @@ internals.
       versions on mismatch. CONTRIBUTING documents the strictness.
 - [x] **DONE (`99bc8ee`) — ISSUE-043 (Low, latent)**: pass `autoNest` at `Projection.cs:741`; required-params fix above retires the
       class.
-- [ ] **ISSUE-045 (Low)**: decide the `char` conversion policy (integral vs text-boundary) and pin the full
+- [x] **DONE (`23594e6`) — ISSUE-045 (Low)**: decide the `char` conversion policy (integral vs text-boundary) and pin the full
       matrix in one Theory.
-- [ ] **ISSUE-046 (Medium, deferred by design)**: run the deciding experiment — EF Core + SQLite, does
+- [x] **EXPERIMENT RUN (`e4dd185`; pick still yours) — ISSUE-046 (Medium)**: run the deciding experiment — EF Core + SQLite, does
       `?? new List<T>()` translate in a projection — then pick candidate 1 (honour AsEmpty) or 3 (document
       AsNull-by-nature).
-- [ ] Commit the round-13 **registry torture test** (`RegistryConcurrencyTortureTests.cs`, delivered, red-green
+- [x] DONE (`d2fc4b0`, as a REWRITE) — the round-13 **registry torture test** (`RegistryConcurrencyTortureTests.cs`, delivered, red-green
       validated). **Round 17: it is not recoverable.** The file is absent from the repo, from git history, and
       from this machine — the session that produced it ran elsewhere and its filesystem did not survive. This is
       a rewrite, and it cannot be red-green validated against a fixed implementation; verify it has teeth by
       temporarily breaking the registry instead.
 - [x] DONE (`f3e2670`) — Round-15 trust trio: refresh root `SECURITY.md` ("pre-1.0" is stale), add `CHANGELOG.md` + release-notes
       step, add the `EmitCompilerGeneratedFiles` audit paragraph.
-- [ ] Roslyn floor: bump M.CA to **5.0.0** (+ `?? "null"` at `MapperExtractor.cs:2440`), declare
+- [x] DONE (`723a50b`, one manual step left) — Roslyn floor: bump M.CA to **5.0.0** (+ `?? "null"` at `MapperExtractor.cs:2440`), declare
       "SDK 10.0.100+/Roslyn 5.0", two-sided CI leg (5.0.0 floor + 5.6.0 latest with Analyzers ≥5.3.0), and an
       in-editor smoke check (DWARF001 squiggle + code fix in VS 2026 / VS Code).
 
