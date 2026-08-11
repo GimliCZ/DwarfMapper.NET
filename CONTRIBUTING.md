@@ -8,7 +8,15 @@ Sign your commits with `git commit -s`.
 
 ## Building & testing
 
-You need the **.NET 10 SDK** (`10.0.x`) — the whole solution targets `net10.0` (an older SDK fails with `NETSDK1045`).
+You need **.NET SDK 10.0.101 exactly** — the whole solution targets `net10.0` (an older SDK fails with
+`NETSDK1045`), and `global.json` pins the patch with `rollForward: disable`.
+
+The pin is deliberate and it is strict: a source generator's output is compiler-version-sensitive, and the
+suite compares generated code byte-for-byte, so "any 10.0.x" would mean contributor and CI can disagree
+about what the build produces. CI installs the same exact version and asserts it matches `global.json`.
+If you have a different patch, install `10.0.101` alongside it (side-by-side SDKs are supported); do not
+loosen `global.json` locally. Bumping the pin means changing `global.json` **and** the `dotnet-version` in
+every `setup-dotnet` step in the same commit.
 
 ```bash
 dotnet build DwarfMapper.NET.sln -c Release
