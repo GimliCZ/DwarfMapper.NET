@@ -12,10 +12,55 @@ public static class ObjectFactory
 {
     private const int MaxDepth = 6;
 
+    /// <summary>Concrete stand-ins for an abstract/interface type, cached per type.</summary>
+    private static readonly Dictionary<Type, Type[]> ConcreteCandidates = [];
+
     /// <summary>Create a populated instance of <typeparamref name="T" /> for the given seed.</summary>
     public static T Create<T>(int seed = 0)
     {
         return (T)Create(typeof(T), new Random(seed), 0)!;
+    }
+
+    /// <summary>
+    ///     A concrete, parameterless-constructible type assignable to <paramref name="abstractType" />,
+    ///     or <see langword="null" /> when the loaded assemblies offer none.
+    /// </summary>
+    /// <remarks>
+    ///     Ordered by full name before the draw so the choice is a pure function of the seed — fixtures
+    ///     must not shift because the runtime happened to enumerate assemblies differently.
+    /// </remarks>
+    private static Type? PickConcrete(Type abstractType, Random rng)
+    {
+        Type[] candidates;
+        lock (ConcreteCandidates)
+        {
+            if (!ConcreteCandidates.TryGetValue(abstractType, out candidates!))
+            {
+                candidates = AppDomain.CurrentDomain.GetAssemblies()
+                    .SelectMany(SafeTypes)
+                    .Where(c => !c.IsAbstract && !c.IsInterface && !c.IsGenericTypeDefinition
+                                && abstractType.IsAssignableFrom(c)
+                                && c.GetConstructor(Type.EmptyTypes) is not null)
+                    .OrderBy(c => c.FullName, StringComparer.Ordinal)
+                    .ToArray();
+                ConcreteCandidates[abstractType] = candidates;
+            }
+        }
+
+        return candidates.Length == 0 ? null : candidates[rng.Next(candidates.Length)];
+    }
+
+    private static IEnumerable<Type> SafeTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            // A half-loadable assembly must not take the whole scan down.
+            return ex.Types.Where(t => t is not null)!;
+        }
     }
 
     /// <summary>Create a populated instance of <paramref name="type" /> using <paramref name="rng" />.</summary>
@@ -162,7 +207,23 @@ public static class ObjectFactory
             }
         }
 
-        if (type.IsInterface || type.IsAbstract || depth >= MaxDepth)
+        if (type.IsInterface || type.IsAbstract)
+        {
+            // Substitute a concrete implementation rather than giving up and returning null.
+            //
+            // Returning null here made polymorphic graphs untestable, which is precisely the shape
+            // [MapDerivedType] exists to map: a Dictionary<K, AbstractValue> came out with null values,
+            // and every fixture built from it exercised the null path instead of the dispatch path.
+            // Worse, it looked like a real behavioural difference when replayed against a mapper that
+            // (correctly) refuses nulls.
+            var concrete = depth < MaxDepth ? PickConcrete(type, rng) : null;
+            if (concrete is not null)
+                return Create(concrete, rng, depth + 1);
+
+            return type.IsValueType ? Activator.CreateInstance(type) : null;
+        }
+
+        if (depth >= MaxDepth)
             return type.IsValueType ? Activator.CreateInstance(type) : null;
 
         var ctor = type.GetConstructor(Type.EmptyTypes);
