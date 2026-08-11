@@ -1072,7 +1072,19 @@ internal static partial class MapperExtractor
             // member-level collection handling.
             var genIsColl = CollectionConverter.TryResolve(genTgt, genTgt, out _, out _, out _, false);
             var genIsDict = !genIsColl && DictionaryConverter.TryResolve(genTgt, genTgt, out _, out _, out _, out _, out _);
-            if (genIsColl || genIsDict)
+
+            // An ENUM target needs the same treatment, and for the same reason: it is a VALUE to convert,
+            // not an object to construct. Without this, `[GenerateMap<SrcKind, DstKind>]` emitted
+            // `return new DstKind { };` — an empty object initializer over an enum, which compiles, has no
+            // members to flag, and silently returns the zero value while discarding the source entirely.
+            // Green build, no diagnostic, every mapped value wrong.
+            //
+            // The conversion machinery was never the problem: the identical pair used as a MEMBER already
+            // resolves correctly through the enum converter. Only this declared-pair path constructed
+            // instead of converting.
+            var genIsEnum = genTgt.TypeKind == TypeKind.Enum;
+
+            if (genIsColl || genIsDict || genIsEnum)
             {
                 bool gResolved = TryResolveConversion(
                     genComp, genSrc, genTgt, null, allMethods, mapperMethods, enumStrategy, synthesized,
