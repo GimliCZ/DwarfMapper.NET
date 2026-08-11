@@ -1090,7 +1090,11 @@ internal static partial class MapperExtractor
                     genComp, genSrc, genTgt, null, allMethods, mapperMethods, enumStrategy, synthesized,
                     nullStrategy, genLoc, "Map", diagnostics, out var gConv, out _, out var gNeedsCtx,
                     classAutoNest, nestedRegistry, nullCollections == NullCollectionsBehavior.AsNull,
-                    isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
+                    isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
+                    // Without this the ELEMENT conversion for a collection pair can adopt a method
+                    // dedicated to one pair — a [MapConstructor] factory over the same types matches by
+                    // signature and wins, so the loop constructs each element and assigns nothing.
+                    reservedConverters: mapperReservedConverters);
 
                 if (!gResolved || gConv is null)
                     continue; // element/shape diagnostic already reported by the recursive call

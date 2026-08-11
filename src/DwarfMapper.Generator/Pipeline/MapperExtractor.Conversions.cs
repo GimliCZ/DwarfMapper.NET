@@ -849,9 +849,32 @@ internal static partial class MapperExtractor
                         into.Add(s);
         }
 
+        // [MapConstructor<S,T>("Factory")] names the factory as a CONSTRUCTOR argument, not a named one,
+        // so the Use= scan above cannot see it. It must be reserved for the same reason and with more
+        // force: a factory only CONSTRUCTS its pair's target, after which the pair assigns members.
+        // Adopted as a general element converter it produces an object with nothing filled in — the
+        // collection case that surfaced this returned an Empty singleton, so a whole collection mapped
+        // to blanks, silently and with a green build.
+        static void ScanCtorFactories(HashSet<string> into, System.Collections.Immutable.ImmutableArray<AttributeData> attrs)
+        {
+            foreach (var a in attrs)
+            {
+                if (!string.Equals(a.AttributeClass?.Name, KnownNames.MapConstructor, StringComparison.Ordinal))
+                    continue;
+
+                foreach (var ca in a.ConstructorArguments)
+                    if (ca.Value is string s && !string.IsNullOrEmpty(s))
+                        into.Add(s);
+            }
+        }
+
         Scan(reserved, classSymbol.GetAttributes());
+        ScanCtorFactories(reserved, classSymbol.GetAttributes());
         foreach (var member in classSymbol.GetMembers())
+        {
             Scan(reserved, member.GetAttributes());
+            ScanCtorFactories(reserved, member.GetAttributes());
+        }
 
         return reserved;
     }
