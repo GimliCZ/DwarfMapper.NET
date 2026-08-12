@@ -24,6 +24,9 @@ vocabulary with any source.
 |---|---|---|---|
 | [`jasontaylordev/CleanArchitecture`](https://github.com/jasontaylordev/CleanArchitecture) | MIT | `main`, 2026-08-12 | the DTO-declares-its-own-mapping pattern (a nested `Profile` inside the DTO), and the enum→`int` `MapFrom` |
 | [`dotnet-architecture/eShopOnWeb`](https://github.com/dotnet-architecture/eShopOnWeb) | MIT | `main`, 2026-08-12 | the central `MappingProfile` holding several `CreateMap`s, and `ForMember` used purely to reconcile a renamed member |
+| [`jbogard/ContosoUniversityDotNetCore-Pages`](https://github.com/jbogard/ContosoUniversityDotNetCore-Pages) | MIT | `master`, 2026-08-12 | view models as **records nested inside the handler that owns them**, `CreateProjection` over `IQueryable`, and two levels of navigation projected in one go — read because it is AutoMapper's own author demonstrating AutoMapper |
+| [`kgrzybek/modular-monolith-with-ddd`](https://github.com/kgrzybek/modular-monolith-with-ddd) | MIT | `master`, 2026-08-12 | the DOMAIN shape rather than a mapping one: **strongly-typed ids**, **private readonly backing lists exposed read-only**, a private parameterless constructor for ORM hydration plus an internal factory, and value objects |
+| ABP-style frameworks | — | 2026-08-12 | an **audited base class** (`CreatedAt`/`CreatedBy`/`LastModifiedAt`/`IsDeleted`) on every entity, which no DTO carries |
 | The Round-18 consumer | private | this session | `ConstructUsing` with a non-public constructor, `ReverseMap`, per-member `Ignore`, `Condition`, and the collection-of-a-polymorphic-base shape |
 
 ## The inventory
@@ -53,6 +56,27 @@ domain where they are the natural thing to write rather than a demonstration.
 
 Row 17 is the one worth stating loudly, because it is the only row where the answer is "you cannot, and here
 is why you would not want to".
+
+## The second inventory — the shapes that are not on any feature list
+
+The table above is the AutoMapper feature list, and a corpus built only from it is generic: every tutorial
+covers rename, flatten, ignore, condition, resolver. What actually makes mapping hard in production is the
+DOMAIN, not the mapper's option surface. `DddDomain.cs` covers that.
+
+| # | Real-world shape | Why it is interesting to convert |
+|---|---|---|
+| 18 | a strongly-typed id wrapping a `Guid` | every id member needs a conversion, and there are a lot of them; a missing one defaults silently under a reflective mapper |
+| 19 | a value object flattened into two DTO members | the ordinary treatment, and where AutoMapper's implicit path handling shows |
+| 20 | a value object rendered to a string | a real converter rather than a copy |
+| 21 | a positional record fed from a value object | `ForCtorParam` + a nested path — **found R18-31** |
+| 22 | a read-only child collection over a private backing list | a reflective mapper writes through the aggregate's back; a compile-time one cannot |
+| 23 | a private parameterless constructor for ORM hydration | the shape a mapper must NOT be able to use by accident |
+| 24 | an audited base class every entity carries and no DTO wants | the source-completeness question |
+| 25 | a `[Flags]` enum as text | a combined value formats as a comma-joined list, which a naive switch gets wrong |
+| 26 | a dictionary member keyed by culture | localisation, present in every real application and in no tutorial |
+| 27 | view models as records nested inside their handler | the mapper has to cope with types that are not top-level |
+
+Rows 21 and 22 are the two that produced findings rather than typing.
 
 ## What the corpus asserts
 

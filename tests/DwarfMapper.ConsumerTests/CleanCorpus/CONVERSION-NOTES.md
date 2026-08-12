@@ -71,6 +71,61 @@ there is nothing to scan and every pair is a declaration. That is a real cost in
 of the guarantees: a pair that is not declared does not exist, rather than existing depending on which
 assemblies happened to load.
 
+## The second corpus: what a DDD codebase actually looks like
+
+The scoreboard above is the AutoMapper FEATURE list, and on its own it is generic — every mapper tutorial
+covers rename, flatten, ignore, condition, resolver. `DddDomain.cs` covers what makes mapping hard in
+applications that are not tutorials, harvested from `kgrzybek/modular-monolith-with-ddd` (domain shape),
+`jbogard/ContosoUniversityDotNetCore-Pages` (view-model shape) and ABP-style framework conventions.
+
+| Real-world shape | Cost to convert |
+|---|---|
+| strongly-typed ids (`SessionId` wrapping a `Guid`) | one `[MapProperty]` per id — **identical to AutoMapper's `ForMember` per id** |
+| a value object flattened to two members | one `[MapProperty]` each, same as AutoMapper |
+| a value object rendered to a string | a converter, same as AutoMapper's resolver |
+| a `[Flags]` enum as text | nothing — both produce the comma-joined list |
+| a dictionary member | nothing |
+| view models as records NESTED inside their handler | nothing |
+| an audited base class no view carries | nothing — and see below |
+| **a positional record's parameters fed from a value object** | **a converter per parameter; the direct translation is refused** |
+| **a read-only child collection over a private list** | **not mapped inward at all, on purpose** |
+
+### Strongly-typed ids cost the same and fail differently
+
+AutoMapper needs a `ForMember` per id; DwarfMapper needs a `[MapProperty]` per id. Identical typing. What
+differs is what happens when one is **missing**: a default `Guid` that reaches the wire, versus a build that
+stops. In a codebase with a hundred ids that difference is the entire argument, and a test states it rather
+than leaving it to be believed.
+
+### The read-only child collection is the real behavioural difference
+
+`Session.Slots` has no setter and is backed by a private list, because the aggregate wants every addition to
+go through `Schedule`. AutoMapper writes into the backing field reflectively and never mentions it.
+DwarfMapper cannot and will not pretend to — so only the entity→view direction is declared, and the reverse
+would have to call the aggregate's own method.
+
+That is the largest single difference in this corpus, and it is not a limitation. It is the domain's decision
+being honoured instead of bypassed. A migration should expect to find every place a reflective mapper was
+quietly writing through an aggregate's back.
+
+### The audited base class
+
+Four members on every entity that no view carries. AutoMapper says nothing about an unmapped **source**
+member — convenient right up to the day one of them mattered. DwarfMapper is silent by default too, and
+`RequiredMapping = Both` is the switch that makes source coverage a build-time question. Either way it is
+now an asserted property of the corpus rather than an assumption.
+
+### Conversion note 7 — a defect, not a cost
+
+`ForCtorParam("Start", o => o.MapFrom(s => s.Window.Start))` does not translate directly: a dotted source
+path into a **constructor parameter** is refused, and the message — `DWARF009`, "source member
+'Window.Start' does not exist or is not readable" — is wrong, because it does exist and is readable. Filed as
+**R18-31**, message first, because a diagnostic that denies a member exists sends the reader hunting for a
+typo that is not there.
+
+The workaround is a converter per parameter taking the value object whole, and it is decent: `StartOf` says
+what it takes apart, where the dotted string said it in a place the compiler cannot check.
+
 ## The one deliberate behavioural difference
 
 `Availability` carries `[Description("on-shelf")]`. The AutoMapper profile wrote `.ToString()` — the
