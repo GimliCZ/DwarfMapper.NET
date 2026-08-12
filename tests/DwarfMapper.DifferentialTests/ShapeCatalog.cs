@@ -36,6 +36,8 @@ internal static class ShapeCatalog
 
     private static readonly MapperlyShapes Mapperly = new();
 
+    private static readonly DwarfEnumByName DwarfByName = new();
+
     private static readonly IMapper Auto = new MapperConfiguration(c =>
     {
         c.CreateMap<FlatSrc, FlatDst>();
@@ -47,6 +49,11 @@ internal static class ShapeCatalog
         c.CreateMap<StatusSrc, StatusDst>();
         c.CreateMap<OrderedSrc, OrderedDst>();
         c.CreateMap<KeywordSrc, KeywordDst>();
+        c.CreateMap<TupleSrc, TupleDst>();
+        c.CreateMap<Command, CommandDto>().Include<AliasCommand, AliasCommandDto>();
+        c.CreateMap<AliasCommand, AliasCommandDto>();
+        c.CreateMap<DispatchSrc, DispatchDst>();
+        c.CreateMap<Level, LevelDto>();
     }).CreateMapper();
 
     public static IEnumerable<Comparison> All()
@@ -152,5 +159,47 @@ internal static class ShapeCatalog
             DwarfIdentifierEnums.Map(status), Mapperly.ToStatus(status));
         yield return new Comparison("EnumToStringIdentifier", Oracles.AutoMapper,
             DwarfIdentifierEnums.Map(status), Auto.Map<StatusDst>(status));
+
+        // Harvested gap (R18-29): value tuples were in the fuzz schema as a type and never mapped end-to-end
+        // against another mapper. `Renamed` carries different ELEMENT names on the two sides, which is legal
+        // and — since names are erased before runtime — must make no difference to what arrives.
+        var tuples = new TupleSrc { Pair = (7, "axes"), Renamed = (9, "helms") };
+        yield return new Comparison("ValueTupleMembers", Oracles.Mapperly,
+            Dwarf.Map(tuples), Mapperly.ToTuple(tuples));
+        yield return new Comparison("ValueTupleMembers", Oracles.AutoMapper,
+            Dwarf.Map(tuples), Auto.Map<TupleDst>(tuples));
+
+        // Harvested gap (R18-29). A member DECLARED as the base type holding a derived instance: does the
+        // derived DTO come back with its extra member populated, or a well-formed base slice with the data
+        // quietly missing? The failure mode is invisible to a compiler on all three mappers, which is what
+        // makes it worth asking three of them.
+        var alias = new AliasCommand { Name = "ll", Alias = "ls -l" };
+        var dispatch = new DispatchSrc { Only = alias };
+        yield return new Comparison("DerivedTypeDispatch", Oracles.Mapperly,
+            Dwarf.Map(dispatch), Mapperly.ToDispatch(dispatch));
+        yield return new Comparison("DerivedTypeDispatch", Oracles.AutoMapper,
+            Dwarf.Map(dispatch), Auto.Map<DispatchDst>(dispatch));
+
+        // The arm called DIRECTLY, not only as somebody's member — the same reason FlatNestedTypeAlone
+        // exists. A dispatch that works through a containing object and not on its own (or the reverse)
+        // would otherwise be visible only through whichever container happened to hold it.
+        yield return new Comparison("DerivedTypeArmAlone", Oracles.Mapperly,
+            Dwarf.ToCommand(alias), Mapperly.ToCommand(alias));
+        yield return new Comparison("DerivedTypeArmAlone", Oracles.AutoMapper,
+            Dwarf.ToCommand(alias), Auto.Map<CommandDto>(alias));
+
+        // Enum to enum by name, on a DEFINED value: the ordinary case, where all three agree. The
+        // undefined value — the case that separates them — is in LoudRatherThanSilentTests, because two of
+        // the three answer it by throwing and this method is enumerated eagerly.
+        yield return new Comparison("EnumByNameDefinedValue", Oracles.Mapperly,
+            DwarfByName.Map(Level.High), Mapperly.ToLevel(Level.High));
+        yield return new Comparison("EnumByNameDefinedValue", Oracles.AutoMapper,
+            DwarfByName.Map(Level.High), Auto.Map<LevelDto>(Level.High));
+
+        // The BASE instance through the same arm-carrying method is NOT here, and deliberately: DwarfMapper
+        // throws for a runtime type with no arm while both oracles fall back to the base map. That is a
+        // difference rather than an agreement, so it lives in LoudRatherThanSilentTests — and it cannot live
+        // here in any case, because this method is eagerly enumerated and one throwing shape would take every
+        // test in the class down with it.
     }
 }

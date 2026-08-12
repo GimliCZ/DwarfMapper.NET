@@ -137,6 +137,91 @@ public class StatusDst
     public string Status { get; set; } = "";
 }
 
+// ── S9 value tuples as a mapped member ────────────────────────────────────────────────────────────────────
+// Harvested gap (R18-29): value tuples were named in the fuzz schema as a TYPE and never mapped end-to-end
+// against another mapper. Two members, because the interesting half is the second: element names are
+// compile-time only — at runtime a tuple is Item1/Item2 — so a mapper that "renames" them is doing nothing,
+// and one that silently reorders them would produce a result no member-by-member comparison of PROPERTIES
+// could see. (MemberComparer had to learn to walk fields for this shape to assert anything at all.)
+public class TupleSrc
+{
+    public (int Code, string Label) Pair { get; set; }
+
+    public (int Code, string Label) Renamed { get; set; }
+}
+
+public class TupleDst
+{
+    public (int Code, string Label) Pair { get; set; }
+
+    // Different ELEMENT names, same shape. Legal C#, and the question is whether any mapper treats the names
+    // as meaningful — they are erased before either mapper's output can be compared.
+    public (int Id, string Text) Renamed { get; set; }
+}
+
+// ── S10 polymorphic dispatch on the RUNTIME type ──────────────────────────────────────────────────────────
+// Harvested gap (R18-29). The inventory named it "generic derived-type dispatch" after Mapperly's axis, and
+// the GENERIC declaration form is n/a here by design — DWARF053, a generic mapping method cannot be
+// completed by a source generator that must emit a concrete body. The SEMANTICS are the part worth
+// comparing, and all three mappers express them: given a member declared as the base type holding a derived
+// instance, does the derived DTO come back, with its extra member populated?
+//
+// The base is CONCRETE: Mapperly refuses an abstract base here (RMG013 — nothing to construct when
+// the runtime type matches no arm), and a base that can itself be produced is the shape that actually
+// distinguishes the mappers, since a wrong answer is a well-formed base object rather than a crash.
+//
+// This is the shape whose failure is invisible to a compiler: a mapper that quietly maps the base slices
+// returns a well-formed object with data missing. MemberComparer reports it as a runtime-type difference.
+public class Command
+{
+    public string Name { get; set; } = "";
+}
+
+public sealed class AliasCommand : Command
+{
+    public string Alias { get; set; } = "";
+}
+
+public class CommandDto
+{
+    public string Name { get; set; } = "";
+}
+
+public sealed class AliasCommandDto : CommandDto
+{
+    public string Alias { get; set; } = "";
+}
+
+public class DispatchSrc
+{
+    public Command Only { get; set; } = new AliasCommand();
+}
+
+public class DispatchDst
+{
+    public CommandDto Only { get; set; } = new AliasCommandDto();
+}
+
+// ── S11 an enum value that matches no destination member ──────────────────────────────────────────────────
+// The names are COMPLETE on both sides, so nothing is reportable at build time — DwarfMapper's DWARF015 and
+// Mapperly's RMG038 both check declared members and both pass here. The question is the value that cannot be
+// checked: an undefined one, arriving from a cast, a database column or a wire format, which is where enums
+// actually go wrong. Asserted in LoudRatherThanSilentTests rather than compared in the catalogue, because
+// two of the three mappers answer by throwing.
+public enum Level
+{
+    Low,
+
+    High
+}
+
+public enum LevelDto
+{
+    Low,
+
+    High
+}
+
 // ═══ DwarfMapper ═════════════════════════════════════════════════════════════════════════════════════════
 [DwarfMapper]
 [GenerateMap<FlatSrc, FlatDst>]
@@ -148,12 +233,28 @@ public class StatusDst
 [GenerateMap<StatusSrc, StatusDst>]
 [GenerateMap<OrderedSrc, OrderedDst>]
 [GenerateMap<KeywordSrc, KeywordDst>]
-public partial class DwarfShapes;
+[GenerateMap<TupleSrc, TupleDst>]
+[GenerateMap<DispatchSrc, DispatchDst>]
+public partial class DwarfShapes
+{
+    /// <summary>
+    ///     Declared as a method rather than a class-level pair because the dispatch arms are method-level:
+    ///     <c>[MapDerivedType]</c> registers the runtime types this map is allowed to see. The
+    ///     <c>DispatchSrc</c> pair above then reuses this declared pair for its <c>Only</c> member.
+    /// </summary>
+    [MapDerivedType<AliasCommand, AliasCommandDto>]
+    public partial CommandDto ToCommand(Command src);
+}
 
 /// <summary>The same enum shape under the parity switch, which is what Mapperly and AutoMapper both do.</summary>
 [DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
 [GenerateMap<StatusSrc, StatusDst>]
 public partial class DwarfShapesIdentifierEnums;
+
+/// <summary>Enum to enum by name — the default strategy, stated rather than assumed.</summary>
+[DwarfMapper(EnumStrategy = EnumStrategy.ByName)]
+[GenerateMap<Level, LevelDto>]
+public partial class DwarfEnumByName;
 
 // ═══ Mapperly ════════════════════════════════════════════════════════════════════════════════════════════
 [Mapper]
@@ -174,6 +275,29 @@ public partial class MapperlyShapes
     public partial StatusDst ToStatus(StatusSrc src);
 
     public partial OrderedDst ToOrdered(OrderedSrc src);
+
+    public partial TupleDst ToTuple(TupleSrc src);
+
+    // FULLY QUALIFIED, and it has to be. This file's namespace is DwarfMapper.DifferentialTests, so
+    // DwarfMapper's own MapDerivedTypeAttribute is in scope through the enclosing namespace — and an
+    // enclosing-namespace name beats a `using`-imported one in C# lookup. Written unqualified here, the
+    // MAPPERLY mapper silently received DWARF's attribute, Mapperly ignored an attribute it never saw, and
+    // the harness reported it as Mapperly losing the derived type. A differential oracle that misconfigures
+    // its own oracle produces confident nonsense, so the qualification stays.
+    [Riok.Mapperly.Abstractions.MapDerivedType<AliasCommand, AliasCommandDto>]
+    public partial CommandDto ToCommand(Command src);
+
+    public partial DispatchDst ToDispatch(DispatchSrc src);
+
+    // Mapperly's by-name enum mapping, in both of the forms it offers: strict, and with a fallback for a
+    // value that matches nothing. The fallback is the capability DwarfMapper has no equivalent of, which is
+    // the whole reason this pair is here.
+    [Riok.Mapperly.Abstractions.MapEnum(Riok.Mapperly.Abstractions.EnumMappingStrategy.ByName)]
+    public partial LevelDto ToLevel(Level src);
+
+    [Riok.Mapperly.Abstractions.MapEnum(Riok.Mapperly.Abstractions.EnumMappingStrategy.ByName,
+        FallbackValue = LevelDto.Low)]
+    public partial LevelDto ToLevelWithFallback(Level src);
 }
 
 // ── S7 reserved-keyword member names ──────────────────────────────────────────────────────────────────────

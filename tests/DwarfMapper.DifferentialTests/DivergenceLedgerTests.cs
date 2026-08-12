@@ -93,20 +93,27 @@ public class DivergenceLedgerTests
         var declared = typeof(MapperlyShapes)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => m.GetParameters().Length == 1 && m.ReturnType != typeof(void))
-            .Select(m => m.GetParameters()[0].ParameterType.Name + " -> " + m.ReturnType.Name)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(p => p, StringComparer.Ordinal)
+            .Select(m => m.ReturnType)
+            .Distinct()
+            .OrderBy(t => t.Name, StringComparer.Ordinal)
             .ToList();
 
         var compared = ShapeCatalog.All()
             .Where(c => c.Dwarf is not null && c.Oracle_ is not null)
-            .Select(c => c.Dwarf!.GetType().Name)
-            .ToHashSet(StringComparer.Ordinal);
+            .Select(c => c.Dwarf!.GetType())
+            .Distinct()
+            .ToList();
 
         // A pair counts as compared when its TARGET type appears as a mapped result somewhere in the
         // catalogue. Matching on the target keeps this immune to which source shape drives it.
+        //
+        // ASSIGNABILITY, not name equality: the first polymorphic pair broke this check by satisfying it.
+        // A method declared to return CommandDto returns an AliasCommandDto at runtime — that IS the pair
+        // being exercised, in its most interesting form — and comparing runtime NAMES reported it as
+        // uncovered. A ratchet that fires on correct coverage teaches people to edit the ratchet.
         var uncompared = declared
-            .Where(p => !compared.Contains(p.Split([" -> "], StringSplitOptions.None)[1]))
+            .Where(target => !compared.Exists(target.IsAssignableFrom))
+            .Select(t => t.Name)
             .ToList();
 
         Assert.True(uncompared.Count == 0,

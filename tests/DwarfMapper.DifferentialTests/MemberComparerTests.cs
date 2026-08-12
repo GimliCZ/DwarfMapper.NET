@@ -130,6 +130,24 @@ public class MemberComparerTests
     }
 
     [Fact]
+    public void Two_value_tuples_that_differ_are_reported()
+    {
+        // The comparer walked PROPERTIES only, and a ValueTuple has none — Item1/Item2 are public FIELDS. So
+        // this method used to find nothing to compare in a tuple and return "they agree" for any two tuples
+        // whatsoever. The value-tuple shape added alongside this test would have passed without ever
+        // comparing anything, which is the hollow test this repository detects elsewhere.
+        var differences = MemberComparer.Differences((1, "a"), (1, "b"));
+
+        Assert.Contains(differences, d => d.Contains("Item2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Two_equal_value_tuples_agree()
+    {
+        Assert.Empty(MemberComparer.Differences((1, "a"), (1, "a")));
+    }
+
+    [Fact]
     public void A_self_referencing_graph_terminates()
     {
         // Some real shapes are cyclic, and a comparer that hangs on one is worse than no comparer.

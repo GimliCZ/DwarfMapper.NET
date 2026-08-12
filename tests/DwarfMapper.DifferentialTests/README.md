@@ -40,6 +40,11 @@ its first run — `Address -> AddressDto` was declared on all three mappers and 
 nested member, so a divergence in the pair itself would have been visible exclusively through whichever
 container happened to hold it.
 
+That guard matches the declared target type by **assignability**, not by name. The first polymorphic pair
+broke it by satisfying it: a method declared to return `CommandDto` returns an `AliasCommandDto` at runtime —
+which is the pair being exercised in its most interesting form — and name equality called that uncovered. A
+ratchet that fires on correct coverage teaches people to edit the ratchet.
+
 The current list has one axis on it, deliberately chosen because the three mappers really do disagree:
 enum→string. DwarfMapper reads `[Description]`/`[EnumMember]` by default (which is why `DWARF083` exists);
 Mapperly and AutoMapper use the identifier. The *same shape* is also compared under
@@ -71,11 +76,30 @@ two judgement calls:
 
 A polymorphic result that came back as the base type IS reported, and a self-referencing graph terminates.
 
+It also walks **fields**, not only properties, and that is not tidiness: a `ValueTuple` has no public
+properties at all — `Item1`/`Item2` are fields — so before this the comparer found nothing to compare in a
+tuple and reported that any two tuples agreed. The value-tuple shape was added on top of a comparer that
+could not have failed it.
+
+## Where the mappers deliberately differ
+
+`LoudRatherThanSilentTests` is the counterpart to the agreement suite: it asks what each mapper does with a
+value nobody declared an answer for — an enum value matching no destination member, a runtime type matching
+no dispatch arm. DwarfMapper and Mapperly both refuse; AutoMapper substitutes. Those tests are what make the
+corresponding `docs/COMPARISON.md` rows executable rather than prose, and they live outside `ShapeCatalog`
+because that enumerable is evaluated eagerly — one throwing shape would take every comparison down with it.
+
 ## Adding shapes
 
 Add the types to `Shapes.cs`, declare the pair on all three mappers, and add the comparison to
 `ShapeCatalog.All()`. Both the per-shape assertions and the ledger check read that one enumerable, so a new
 shape is covered by both without touching either test.
+
+**Qualify the oracle's attributes.** This project's namespace is `DwarfMapper.DifferentialTests`, so
+DwarfMapper's own attributes are in scope through the enclosing namespace and BEAT a `using`-imported one of
+the same name. `[MapDerivedType]` exists in both libraries: written unqualified on `MapperlyShapes` it binds
+to DwarfMapper's, Mapperly never sees an attribute, and the harness reports a defect that is entirely the
+harness's own. Write `[Riok.Mapperly.Abstractions.MapDerivedType<…>]`.
 
 Shapes should be written the way real DTOs are written, not the way a generator author would choose to test
 one — that is the entire point. See task **R18-29** for harvesting shapes from public projects: harvest the

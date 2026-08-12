@@ -63,12 +63,31 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Conditional member (`When=`)** | ✅ predicate `When=` (`DWARF050`) | ❌ | ✅ | ✅ |
 | **Reverse mapping (`[ReverseMap]`)** | ✅ inverts simple renames (`DWARF051/052`) | ~ | ✅ | ✅ |
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` suggestion, or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
+| **Unmatched enum value at runtime** | throws `ArgumentOutOfRangeException` — **no fallback option** | throws; `FallbackValue=` opts out | maps the raw value through | maps the raw value through |
+| **Runtime type with no dispatch arm** | throws `ArgumentException` naming the type | throws | n/a | maps the base as itself |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 
 **Differentiators only DwarfMapper has:** the blittable SIMD fast-path, zero-alloc `Span<T>` mapping,
 heterogeneous `[FlattenGraph]` degradation, a *non-optional* completeness build-error gate, `[RoundTrip]`
 verification, and uniform "never a silent StackOverflow" across direct/collection/dictionary cycles in
 every reference mode.
+
+**Where DwarfMapper is the stricter one, and where that costs you.** The last two rows are the only ones on
+which DwarfMapper is deliberately *less* capable than an oracle. A value the author did not declare an answer
+for — an enum value from a cast or a database column, a runtime subtype with no registered arm — is refused
+at runtime rather than substituted. That is the same stance as `NullStrategy.Throw` and the completeness
+gate: a mapping nobody wrote is not a mapping anyone should rely on.
+
+Mapperly reaches the same conclusion by default on both rows, which is worth saying plainly — two
+independently designed generators agreeing is a better argument for the stance than either makes alone. What
+Mapperly has and DwarfMapper does not is the **opt-out**: `FallbackValue=` names what an unmatched enum value
+should become. If you want a display path that degrades to `Unknown` rather than throwing, DwarfMapper's
+answer today is a `Use=` converter that handles the case explicitly, which is more typing and says what it
+does at the call site.
+
+Both rows are executable rather than prose: `tests/DwarfMapper.DifferentialTests/LoudRatherThanSilentTests.cs`
+runs all three mappers over the undeclared case and fails the day any cell above stops being true — in either
+direction.
 
 ## Testing approach comparison
 

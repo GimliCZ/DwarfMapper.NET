@@ -52,7 +52,7 @@ shape DwarfMapper has, with the reason.
 | Constant / computed values | ✅ | `[MapValue]`, Conformance F13 |
 | No mappable members at all | ✅ | `DWARF001` completeness gate |
 | Reserved-keyword member names (`@class`) | ✅ | **found and fixed by this pass** — R18-30; `ReservedKeywordMemberTests` |
-| **Value tuples as a target** | **➕ gap** | named in the fuzz schema, never mapped end-to-end |
+| Value tuples as a target | ✅ | **closed by this pass** — `DifferentialTests` shape `ValueTupleMembers`, compared against both oracles |
 
 ### Collections and dictionaries
 
@@ -90,7 +90,7 @@ shape DwarfMapper has, with the reason.
 | Runtime target type (`Map(src, typeof(T))`) | ✅ | ambient registry, `ConsumerTests` |
 | Generic *mapper class* | ➖ n/a | `DWARF054` — a generic partial cannot be completed |
 | Generic *mapping method* | ➖ n/a | `DWARF053`, same reason |
-| **Generic derived-type dispatch** | **➕ gap** | `GenericDerivedTypeTest` axis; untested here |
+| Generic derived-type dispatch | ✅ semantics / ➖ n/a declaration | **closed by this pass** — the SEMANTICS are `DifferentialTests` shapes `DerivedTypeDispatch` / `DerivedTypeArmAlone`; the GENERIC declaration form stays n/a for the same reason as the two rows above (`DWARF053`) |
 
 ### User methods and conversions
 
@@ -146,7 +146,8 @@ still does not compile for it.
 
 ### The rest
 
-**Four gaps**, all of them shapes nobody here would have thought of, which is the point:
+**Four gaps**, all of them shapes nobody here would have thought of, which is the point. All four are
+now closed:
 
 1. **Reserved-keyword member names** — a defect in both generators, above. Fixed here (**R18-30**);
    still open upstream in Mapperly.
@@ -154,19 +155,53 @@ still does not compile for it.
    enumeration order survives. Worth having asserted rather than assumed, because enumerating a `Stack` yields
    last-in-first-out and a mapper that rebuilds one by pushing in enumeration order reverses it, silently, and
    only for that one collection kind.
-3. **Value-tuple targets.** Present in the fuzz schema as a *type*, never mapped end-to-end. Open.
-4. **Generic derived-type dispatch.** Open.
+3. **Value-tuple targets.** Closed: a `ValueTupleMembers` shape maps them end-to-end against both oracles
+   and all three agree. Closing it required fixing the harness first — `MemberComparer` walked PROPERTIES
+   only, and a `ValueTuple` has none (Item1/Item2 are fields), so the shape would have compared nothing and
+   passed. It also surfaced a capability difference recorded below rather than fixed.
+4. **Generic derived-type dispatch.** Closed, in two halves. The SEMANTICS — a member declared as the base
+   holding a derived instance — are now `DerivedTypeDispatch` and `DerivedTypeArmAlone`, and all three
+   mappers agree. The GENERIC DECLARATION form (`TTarget Map<TTarget>(Base)`) stays **n/a by design**, the
+   same `DWARF053` reason as the two rows above it in the table: a generator that must emit a concrete body
+   cannot complete a generic partial.
 
-And **one difference worth writing down rather than closing**: Mapperly offers an enum fallback value for an
-unmatched name; DwarfMapper throws. That is a defensible choice — it is the same "loud rather than silent"
-stance as `NullStrategy.Throw` — but it is not currently stated anywhere, and an unwritten default is exactly
-how the `[Description]` near-miss happened.
+And **one difference worth writing down rather than closing** — now written down, and not as predicted.
+The claim above was "Mapperly offers an enum fallback value for an unmatched name; DwarfMapper throws". Half
+right. On an undefined value **Mapperly throws too**, by default, and so does its derived-dispatch miss; what
+it has that DwarfMapper does not is the OPT-OUT (`FallbackValue=`). AutoMapper is the one that substitutes
+silently on both axes. Two rows in `docs/COMPARISON.md` now state it, and
+`DifferentialTests/LoudRatherThanSilentTests.cs` makes them executable — the prediction was wrong in the
+direction that flatters DwarfMapper, which is the direction an unchecked claim usually goes.
+
+## One gap CLOSING gap 3 opened
+
+Mapping a class to a value tuple — `class Inner { int Code; string Label }` into `(int Code, string Label)` —
+is a shape the corpus reached only because tuples were finally being mapped end-to-end. Three answers:
+
+| | class → value tuple |
+|---|---|
+| DwarfMapper | **`DWARF024` build error.** A tuple's constructor parameters are `item1`/`item2`, and no source member is called that |
+| Mapperly | maps it, by ELEMENT name — `(7, "x")` |
+| AutoMapper | **silently returns `(0, )`** — no exception, no diagnostic, no data |
+
+DwarfMapper's answer is safe and the worst of the three to receive: the build stops on a shape a competitor
+supports. Binding tuple parameters by their element names is a feature rather than a defect fix, so it is
+recorded here for a decision rather than built — and it is NOT in the differential catalogue, because a shape
+DwarfMapper refuses to compile cannot be one.
 
 ## Next
 
-Gaps 3 and 4 become shapes in `tests/DwarfMapper.DifferentialTests/Shapes.cs`, where all three mappers get the
-same payload and the answer is settled by comparison rather than by opinion. Gap 1 is **R18-30**. The
-enum-fallback difference becomes a row in `docs/COMPARISON.md`.
+All four gaps and the difference are closed. Gap 1 was **R18-30**; gaps 3 and 4 are shapes in
+`tests/DwarfMapper.DifferentialTests/Shapes.cs`, where all three mappers get the same payload and the answer
+is settled by comparison rather than by opinion; the difference is two rows in `docs/COMPARISON.md` backed by
+`LoudRatherThanSilentTests`.
+
+Two things closing them taught, both about the harness rather than the mappers. `MemberComparer` compared
+properties only, so the tuple shape would have been hollow — a shape that cannot fail. And the first draft of
+the dispatch shape put DwarfMapper's `[MapDerivedType]` on the MAPPERLY mapper: this file's namespace is
+`DwarfMapper.DifferentialTests`, an enclosing-namespace name beats a `using`-imported one, and the harness
+duly reported that Mapperly loses derived types. A differential oracle that misconfigures its oracle produces
+confident nonsense; both fixes are pinned by tests.
 
 The harvest is worth repeating. This pass read one directory of one project and produced a defect, a closed
 gap, two open ones and a difference worth documenting — from 81 file names.

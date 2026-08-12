@@ -123,6 +123,16 @@ internal static class MemberComparer
                      .OrderBy(p => p.Name, StringComparer.Ordinal))
             Walk(property.GetValue(expected), property.GetValue(actual),
                 $"{path}.{property.Name}", found, depth + 1);
+
+        // FIELDS as well as properties, and not for symmetry — a ValueTuple exposes Item1/Item2 as public
+        // FIELDS and has no public properties at all. Walking properties alone, this method would find
+        // nothing to compare in a tuple, report no differences, and pass for any two tuples whatsoever. A
+        // shape that can only ever agree is the hollow test this repository detects elsewhere and would have
+        // added to itself here.
+        foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance)
+                     .OrderBy(f => f.Name, StringComparer.Ordinal))
+            Walk(field.GetValue(expected), field.GetValue(actual),
+                $"{path}.{field.Name}", found, depth + 1);
     }
 
     private static bool IsScalar(Type type) =>
