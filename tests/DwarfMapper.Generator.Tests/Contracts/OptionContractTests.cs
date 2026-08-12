@@ -106,6 +106,11 @@ public class OptionContractTests
             "a cross-enum conversion is itself untranslatable, so the STRATEGY never gets to matter — the "
             + "member is refused before the strategy is consulted"),
 
+        new("EnumStringSource", CellStatus.Refused, "DWARF028",
+            "measured, not assumed: enum<->string mapping is a generated switch, which projection refuses "
+            + "outright with DWARF028 before any string-source policy is consulted. The member is rejected, "
+            + "so the option cannot be silently dropped here — the failure mode this matrix exists for"),
+
         new("NullCollections", CellStatus.NotApplicable, null,
             "collection rebuilds are untranslatable outright, so the null policy for them is unreachable"),
 

@@ -86,14 +86,21 @@ public class GeneratorTestingScanTests
     // registry, for shapes the generator cannot express. Its behaviour is pinned by ProvidesMapRuntimeTests
     // (runtime) and DWARF082 (the refusal), neither of which a golden emission case would add to.
     //
-    // Baselines: 34 public attribute types, 14 public enum
-    // values (7 enums, 2 values each). GoldenCorpus.FeatureCases() is a hand-curated list, NOT derived from
+    // Raised to 16 on 2026-08-12 for EnumStringSource (Attribute | Identifier) — which text an enum member
+    // maps to and from when the other side is a string. It needs no golden emission case: the option changes
+    // the STRING LITERALS inside a synthesized enum<->string helper, which the enum snapshots already pin,
+    // and its behaviour is asserted end-to-end by EnumStringSourceRuntimeTests plus Conformance F45. What it
+    // did need was the strategy folded into that helper's NAME, so two mappers choosing differently over one
+    // enum cannot collide — pinned by both of those.
+    //
+    // Baselines: 34 public attribute types, 16 public enum
+    // values (8 enums, 2 values each). GoldenCorpus.FeatureCases() is a hand-curated list, NOT derived from
     // these taxonomies — see the design spec's Known Limitations note. This ratchet is the honest substitute:
     // it cannot force a specific new case the way true derivation would, but it forces a human to notice
     // growth and decide whether the feature axis needs a new pinned case, rather than the corpus silently
     // going stale next to an attribute or enum value nobody golden-tested.
     private const int BaselineAttributeTypeCount = 34;
-    private const int BaselineEnumValueCount = 14;
+    private const int BaselineEnumValueCount = 16;
 
     [Fact]
     public void The_feature_taxonomy_has_not_grown_past_its_recorded_baseline()

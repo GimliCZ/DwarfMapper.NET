@@ -271,5 +271,15 @@ R.Check("F43 [MapDerivedType] derived element keeps Alias",
 var f44 = new F44M().ToDto(new F44AliasCommand { Name = "aka", Alias = "a" });
 R.Check("F44 [MapDerivedType] shared target fills the derived member", f44 is { Name: "aka", Alias: "a" });
 
+// F45 EnumStringSource — the DWARF083 parity switch, with both settings live over the SAME enum in ONE
+// compilation. That is the case the helper-name hash has to survive: keyed by type alone the two mappers
+// would share one helper and whichever was synthesized first would decide the persisted format for both.
+var f45Annotated = new F45AnnotatedM().Map(new F45Donation { Source = F45DonationSource.Kofi });
+var f45Identity = new F45IdentityM().Map(new F45Donation { Source = F45DonationSource.Kofi });
+R.Check("F45 EnumStringSource default writes the annotation", f45Annotated.Source == "Ko-Fi");
+R.Check("F45 EnumStringSource=Identifier writes the name", f45Identity.Source == "Kofi");
+R.Check("F45 EnumStringSource=Identifier reads it back",
+    new F45IdentityM().Map(new F45DonationDoc { Source = "Kofi" }).Source == F45DonationSource.Kofi);
+
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;

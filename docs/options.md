@@ -6,7 +6,7 @@ mapping method. Defaults are chosen so the out-of-the-box behaviour is the safe,
 
 Set a house style once for the whole assembly with `[assembly: DwarfMapperDefaults(...)]` — every mapper
 inherits those values unless it sets its own. **Precedence: mapper > assembly defaults > built-in default.**
-The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `NullStrategy`, `NullCollections`,
+The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `EnumStringSource`, `NullStrategy`, `NullCollections`,
 `ImplicitConversions`, `RequiredMapping`, `AllowNonPublic`, `AutoNest`, `AutoMatchMembers`, `IgnoreObsoleteMembers`,
 `SkipNullSourceMembers`, `RegisterCollectionShapes`); per-graph knobs (`MaxDepth`, `ReferenceHandling`, `OnCycle`) stay per-mapper.
 
@@ -17,7 +17,7 @@ The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `
 |---|---|---|---|
 | `CaseInsensitive` | `bool` | `false` | Match member names ordinal-ignore-case. Ambiguity → `DWARF010`. |
 | `NameConvention` | `NameConvention` | `Exact` | `Flexible` matches across `PascalCase` ↔ `camelCase` ↔ `snake_case` ↔ `UPPER_CASE`. Collision → `DWARF048`. |
-| `EnumStrategy` | `EnumStrategy` | `ByName` | Enum↔enum mapping by member name (`ByName`) or underlying value (`ByValue`). Missing by-name member → `DWARF015`. For enum↔**string**, a member's `[EnumMember(Value="…")]` (else `[Description("…")]`, else its identifier) is used as the string form — so `InProgress` can serialize as `"in_progress"` with no custom converter. Non-`[Flags]` enums only. |
+| `EnumStrategy` | `EnumStrategy` | `ByName` | Enum↔enum mapping by member name (`ByName`) or underlying value (`ByValue`). Missing by-name member → `DWARF015`. For enum↔**string**, a member's `[EnumMember(Value="…")]` (else `[Description("…")]`, else its identifier) is used as the string form — so `InProgress` can serialize as `"in_progress"` with no custom converter. Non-`[Flags]` enums only. Switch that off with [`EnumStringSource`](#class-level-options--dwarfmapper) when the annotations are for display. |
 | `NullStrategy` | `NullStrategy` | `Throw` | Nullable-value source → non-nullable target when null: `Throw`, or `SetDefault` (use the destination default). |
 | `NullCollections` | `NullCollectionStrategy` | `AsEmpty` | Null source collection → `AsEmpty` (never throws) or `AsNull` (propagates null **only** when the target member is nullable — a nullable reference or a nullable value-type collection like `ImmutableArray<T>?`; a non-nullable target silently degrades to `AsEmpty`). |
 | `AutoNest` | `bool` | `true` | Auto-synthesize a private mapper for a nested `(S,T)` pair with no declared method. `false` requires explicit declarations. |
@@ -32,6 +32,7 @@ The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `
 | `AutoMatchMembers` | `bool` | `true` | `false` = explicit-only (trust-boundary guard): nothing is wired by name, every member needs `[MapProperty]`/`[MapValue]` or `[MapIgnore]`, and a would-be auto-match raises `DWARF072`. Stops an untrusted same-named field (e.g. `IsAdmin`) over-posting onto a protected member. |
 | `IgnoreObsoleteMembers` | `bool` | `false` | Drop `[Obsolete]` members from mapping: an obsolete destination is neither required nor auto-populated, an obsolete source needn't be consumed (no `DWARF039`). An explicit `[MapProperty]`/`[MapValue]` still opts a specific one back in. |
 | `RegisterCollectionShapes` | `bool` | `true` | Also register each declared object map into the ambient registry under the common **collection shapes**, so `IDwarfMapper.Map<ICollection<TTarget>>(listOfSources)` resolves without declaring a separate collection pair. Emitted at compile time — no reflection, no runtime synthesis. Six rows per pair, all keyed on `IEnumerable<TSource>`, so a `List`, an array, a `HashSet` and a lazy LINQ iterator are served by one entry. `false` keeps the table minimal for a mapper never reached through the facade over a collection. |
+| `EnumStringSource` | `EnumStringSource` | `Attribute` | Which text an enum member maps to and from when the other side is a `string`. `Attribute` (default): `[EnumMember(Value="…")]`, else `[Description("…")]`, else the identifier — so `InProgress` ↔ `"in_progress"` with no converter. `Identifier`: always the C# member name, exactly as `Enum.ToString()`/`Enum.Parse` use it. **The one-line answer to `DWARF083`**: `[Description]` is overwhelmingly a *display* annotation, and under the default it silently becomes the *persistence* format — a store full of `"Kofi"` starts receiving `"Ko-Fi"`. Applies to both directions and to `[assembly: DwarfMapperDefaults]`. Non-`[Flags]` enums only (a `[Flags]` string form is the comma-joined list `Enum.ToString` builds from identifiers, so the two settings agree). |
 <!-- endtable -->
 
 > **`CaseInsensitive` and `NameConvention` interact** — they both govern how member names are matched, so set
@@ -45,6 +46,7 @@ The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `
 | Enum | Values |
 |---|---|
 | `EnumStrategy` | `ByName` (default), `ByValue` |
+| `EnumStringSource` | `Attribute` (default), `Identifier` |
 | `NullStrategy` | `Throw` (default), `SetDefault` |
 | `NullCollectionStrategy` | `AsEmpty` (default), `AsNull` |
 | `ReferenceHandlingStrategy` | `None` (default), `Preserve` |

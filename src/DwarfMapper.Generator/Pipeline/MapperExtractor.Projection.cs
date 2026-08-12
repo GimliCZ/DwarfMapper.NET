@@ -139,7 +139,7 @@ internal static partial class MapperExtractor
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
-        EnumStrategy enumStrategy, int referenceHandling, string paramExpr, int nameConvention = 0,
+        EnumPolicy enumPolicy, int referenceHandling, string paramExpr, int nameConvention = 0,
         IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
             mapPropertyExtras = null,
         bool skipNullSourceMembers = false, bool allowNonPublic = false,
@@ -281,7 +281,7 @@ internal static partial class MapperExtractor
             var srcExprForExplicit = paramExpr + "." + srcName;
             var inlineExpr = ResolveProjectionExpr(
                 sm, tgtType, srcExprForExplicit, 0, compilation, location,
-                diagnostics, tgtName, enumStrategy, comparer, autoNest);
+                diagnostics, tgtName, enumPolicy, comparer, autoNest);
             if (inlineExpr is not null)
                 result.Add(new ProjectionMemberMap(tgtName, inlineExpr));
         }
@@ -314,7 +314,7 @@ internal static partial class MapperExtractor
                 // C4: pass comparer (carries CaseInsensitive setting) to ctor projection resolver.
                 var ctorExpr = ResolveProjectionCtorExpr(
                     bestCtor, sourceType, paramExpr, 0,
-                    compilation, location, diagnostics, targetType, enumStrategy, comparer, autoNest);
+                    compilation, location, diagnostics, targetType, enumPolicy, comparer, autoNest);
                 if (ctorExpr is not null)
                     // Store as a whole-lambda body (TargetName = "")
                     result.Add(new ProjectionMemberMap("", ctorExpr));
@@ -382,7 +382,7 @@ internal static partial class MapperExtractor
             // C4: pass comparer so nested objects respect CaseInsensitive setting.
             var inlineExpr = ResolveProjectionExpr(
                 src.Type, target.Type, srcAccessExpr, 0,
-                compilation, location, diagnostics, target.Name, enumStrategy, comparer, autoNest);
+                compilation, location, diagnostics, target.Name, enumPolicy, comparer, autoNest);
             if (inlineExpr is not null)
                 result.Add(new ProjectionMemberMap(target.Name, inlineExpr));
         }
@@ -419,7 +419,7 @@ internal static partial class MapperExtractor
         LocationInfo? location,
         List<DiagnosticInfo> diagnostics,
         string targetMemberName,
-        EnumStrategy enumStrategy,
+        EnumPolicy enumPolicy,
         StringComparer? comparer,
         bool autoNest)
     {
@@ -453,7 +453,7 @@ internal static partial class MapperExtractor
             // C4: propagate comparer into element expression resolver.
             var elemExpr = ResolveProjectionExpr(
                 srcElem, tgtElem, elemParam, depth + 1,
-                compilation, location, diagnostics, targetMemberName, enumStrategy, comparer, autoNest);
+                compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
             if (elemExpr is null) return null; // DWARF028 already emitted
 
             // Use fully-qualified Enumerable.Select to avoid needing 'using System.Linq' in generated code.
@@ -492,7 +492,7 @@ internal static partial class MapperExtractor
 
         // ── 2. Enum by-value cast (enum→enum) ─────────────────────────────────
         if (srcType.TypeKind == TypeKind.Enum && tgtType.TypeKind == TypeKind.Enum
-                                              && enumStrategy == EnumStrategy.ByValue)
+                                              && enumPolicy.Strategy == EnumStrategy.ByValue)
         {
             var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             return $"({tgtFqn}){srcExpr}";
@@ -537,9 +537,9 @@ internal static partial class MapperExtractor
             return null;
         }
 
-        // ── UNSAFE: enum by-name (enumStrategy == ByName, different enum types) ──
+        // ── UNSAFE: enum by-name (enumPolicy == ByName, different enum types) ──
         if ((srcType.TypeKind == TypeKind.Enum || tgtType.TypeKind == TypeKind.Enum)
-            && enumStrategy == EnumStrategy.ByName)
+            && enumPolicy.Strategy == EnumStrategy.ByName)
         {
             EmitDWARF028(diagnostics, location, targetMemberName,
                 "enum by-name mapping is not translatable in projection; use EnumStrategy.ByValue or map at runtime");
@@ -587,7 +587,7 @@ internal static partial class MapperExtractor
             // C4: pass comparer into nested object resolver.
             return ResolveProjectionNestedObjectExpr(
                 namedSrc, namedTgt, srcExpr, depth, compilation, location, diagnostics,
-                targetMemberName, enumStrategy, comparer, autoNest);
+                targetMemberName, enumPolicy, comparer, autoNest);
         }
 
         // ── Nullable T? → nullable U? or non-nullable U ───────────────────────
@@ -600,7 +600,7 @@ internal static partial class MapperExtractor
                 // int?→long?: null-preserving ternary: __s.X.HasValue ? (long?)__s.X.Value : null
                 var innerExpr = ResolveProjectionExpr(
                     srcUnderlying, tgtUnderlying, srcExpr + ".Value", depth,
-                    compilation, location, diagnostics, targetMemberName, enumStrategy, comparer, autoNest);
+                    compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
                 if (innerExpr is null) return null;
                 var tgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 return $"{srcExpr}.HasValue ? ({tgtNullableFqn}){innerExpr} : null";
@@ -714,7 +714,7 @@ internal static partial class MapperExtractor
         INamedTypeSymbol srcType, INamedTypeSymbol tgtType,
         string srcExpr, int depth,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
-        string targetMemberName, EnumStrategy enumStrategy,
+        string targetMemberName, EnumPolicy enumPolicy,
         StringComparer? comparer,
         bool autoNest)
     {
@@ -766,7 +766,7 @@ internal static partial class MapperExtractor
             // cannot come back.
             var ctorExpr = ResolveProjectionCtorExpr(
                 bestCtor, srcType, srcExpr, depth,
-                compilation, location, diagnostics, tgtType, enumStrategy,
+                compilation, location, diagnostics, tgtType, enumPolicy,
                 comparer, autoNest);
             if (ctorExpr is null) return null;
             innerBodyExpr = ctorExpr;
@@ -792,7 +792,7 @@ internal static partial class MapperExtractor
                 var memberInlineExpr = ResolveProjectionExpr(
                     srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
                     compilation, location, diagnostics,
-                    targetMemberName + "." + tgtMember.Name, enumStrategy, comparer, autoNest);
+                    targetMemberName + "." + tgtMember.Name, enumPolicy, comparer, autoNest);
 
                 if (memberInlineExpr is null)
                 {
@@ -827,7 +827,7 @@ internal static partial class MapperExtractor
         LocationInfo? location,
         List<DiagnosticInfo> diagnostics,
         INamedTypeSymbol tgtType,
-        EnumStrategy enumStrategy,
+        EnumPolicy enumPolicy,
         StringComparer comparer,
         bool autoNest)
     {
@@ -851,7 +851,7 @@ internal static partial class MapperExtractor
             // C4: propagate comparer into ctor param expression resolver.
             var paramInlineExpr = ResolveProjectionExpr(
                 srcMember.Type, param.Type, paramSrcExpr, depth + 1,
-                compilation, location, diagnostics, param.Name, enumStrategy, comparer, autoNest);
+                compilation, location, diagnostics, param.Name, enumPolicy, comparer, autoNest);
 
             if (paramInlineExpr is null)
             {

@@ -94,7 +94,7 @@ internal static partial class MapperExtractor
         bool caseInsensitive, IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-        EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
+        EnumPolicy enumPolicy, Dictionary<string, SynthesizedMethod> synthesized,
         NullStrategy nullStrategy, IReadOnlyList<string> flattenRoots, List<string> reinterpretMembers,
         HashSet<string>? consumedCtorParams = null,
         HashSet<string>? requiredMustInitialize = null,
@@ -265,7 +265,7 @@ internal static partial class MapperExtractor
 
                 ResolveUnflattenTarget(
                     sourceType, targetType, srcName, tgtName, useMethod, compilation, location, diagnostics,
-                    handledTargets, unflattenRoots, writableByName, allMethods, autoCandidates, enumStrategy,
+                    handledTargets, unflattenRoots, writableByName, allMethods, autoCandidates, enumPolicy,
                     synthesized,
                     nullStrategy, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull, implicitConversions,
                     allowNonPublic, result);
@@ -329,7 +329,7 @@ internal static partial class MapperExtractor
             }
 
             if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates,
-                    enumStrategy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv,
+                    enumPolicy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv,
                     out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                     isSetNull: isSetNull, implicitConversions: implicitConversions,
                     reservedConverters: reservedConverters))
@@ -577,7 +577,7 @@ internal static partial class MapperExtractor
 
                 if (ep.Name is not null
                     && TryResolveConversion(compilation, ep.Type!, target.Type, null, allMethods, autoCandidates,
-                        enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics,
+                        enumPolicy, synthesized, nullStrategy, location, target.Name, diagnostics,
                         out var epConv, out _, out var epNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                         isSetNull: isSetNull, implicitConversions: implicitConversions,
                         reservedConverters: reservedConverters)
@@ -609,7 +609,7 @@ internal static partial class MapperExtractor
                 {
                     var fm = flatMatches[0];
                     if (TryResolveConversion(compilation, fm.LeafType, target.Type, null, allMethods, autoCandidates,
-                            enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv,
+                            enumPolicy, synthesized, nullStrategy, location, target.Name, diagnostics, out var fconv,
                             out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                             isSetNull: isSetNull, implicitConversions: implicitConversions,
                     reservedConverters: reservedConverters))
@@ -673,7 +673,7 @@ internal static partial class MapperExtractor
             }
 
             if (TryResolveConversion(compilation, source.Type, target.Type, null, allMethods, autoCandidates,
-                    enumStrategy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv,
+                    enumPolicy, synthesized, nullStrategy, location, target.Name, diagnostics, out var conv,
                     out var nullH, out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                     isSetNull: isSetNull, implicitConversions: implicitConversions,
                     reservedConverters: reservedConverters))
@@ -798,7 +798,7 @@ internal static partial class MapperExtractor
         IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-        EnumStrategy enumStrategy,
+        EnumPolicy enumPolicy,
         Dictionary<string, SynthesizedMethod> synthesized,
         NullStrategy nullStrategy,
         bool autoNest,
@@ -856,7 +856,7 @@ internal static partial class MapperExtractor
 
                 var srcType = srcList[0].Type;
                 if (TryResolveConversion(compilation, srcType, param.Type, explicitInfo.Use,
-                        allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                        allMethods, autoCandidates, enumPolicy, synthesized, nullStrategy,
                         location, param.Name, diagnostics, out var eConv, out var eNull,
                         out var eNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
                         implicitConversions: implicitConversions,
@@ -910,7 +910,7 @@ internal static partial class MapperExtractor
 
             var srcMember = matches[0];
             if (TryResolveConversion(compilation, srcMember.Type, param.Type, null,
-                    allMethods, autoCandidates, enumStrategy, synthesized, nullStrategy,
+                    allMethods, autoCandidates, enumPolicy, synthesized, nullStrategy,
                     location, param.Name, diagnostics, out var conv, out var nullH,
                     out var needsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
                     implicitConversions: implicitConversions))

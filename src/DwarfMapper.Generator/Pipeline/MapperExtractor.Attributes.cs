@@ -30,6 +30,26 @@ internal static partial class MapperExtractor
         return EnumStrategy.ByName;
     }
 
+    /// <summary>
+    ///     Reads <c>EnumStringSource</c>, the enum↔string half of the enum policy.
+    /// </summary>
+    /// <remarks>
+    ///     Defaults to <c>Attribute</c>: <c>[EnumMember]</c>/<c>[Description]</c> redirecting the serialized
+    ///     text is a deliberate feature, and changing that default would silently rewrite the persisted form
+    ///     for every existing consumer — the precise failure the option exists to let a migrating consumer
+    ///     avoid. <c>DWARF083</c> surfaces the choice; this makes it a one-liner instead of a converter per
+    ///     enum.
+    /// </remarks>
+    private static EnumStringSource ReadEnumStringSource(ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "EnumStringSource" && named.Value.Value is int i)
+                return (EnumStringSource)i;
+
+        return EnumStringSource.Attribute;
+    }
+
     private static NullStrategy ReadNullStrategy(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)

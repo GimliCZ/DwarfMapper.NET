@@ -31,6 +31,7 @@ neither has a mapper class to carry a class-level option.
 | `AutoNest` | `DWARF005` | `DWARF005` | `DWARF005` | `DWARF005` | `DWARF005` |
 | `CaseInsensitive` | honoured | honoured | honoured | honoured | honoured |
 | `EnumStrategy` | honoured | honoured | honoured | honoured | honoured |
+| `EnumStringSource` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `GenerateExtensions` | honoured | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) |
 | `IgnoreObsoleteMembers` | honoured | honoured | honoured | honoured | honoured |
 | `ImplicitConversions` | `DWARF038` | `DWARF038` | n/a (loud) | `DWARF038` | `DWARF038` |
@@ -46,4 +47,4 @@ neither has a mapper class to carry a class-level option.
 
 Option list and defaults scanned from `DwarfMapperAttribute`; each probe value derived
 from its default (invert a bool, pick another enum member, step an int), so a new option
-appears here without anyone maintaining a list. Probed with: `AllowNonPublic = true`, `AutoMatchMembers = false`, `AutoNest = false`, `CaseInsensitive = true`, `EnumStrategy = EnumStrategy.ByValue`, `GenerateExtensions = false`, `IgnoreObsoleteMembers = true`, `ImplicitConversions = false`, `MaxDepth = 1`, `NameConvention = NameConvention.Flexible`, `NullCollections = NullCollectionStrategy.AsNull`, `NullStrategy = NullStrategy.SetDefault`, `OnCycle = OnCycleStrategy.SetNull`, `ReferenceHandling = ReferenceHandlingStrategy.Preserve`, `RegisterCollectionShapes = false`, `RequiredMapping = RequiredMappingStrategy.Both`, `SkipNullSourceMembers = true`.
+appears here without anyone maintaining a list. Probed with: `AllowNonPublic = true`, `AutoMatchMembers = false`, `AutoNest = false`, `CaseInsensitive = true`, `EnumStrategy = EnumStrategy.ByValue`, `EnumStringSource = EnumStringSource.Identifier`, `GenerateExtensions = false`, `IgnoreObsoleteMembers = true`, `ImplicitConversions = false`, `MaxDepth = 1`, `NameConvention = NameConvention.Flexible`, `NullCollections = NullCollectionStrategy.AsNull`, `NullStrategy = NullStrategy.SetDefault`, `OnCycle = OnCycleStrategy.SetNull`, `ReferenceHandling = ReferenceHandlingStrategy.Preserve`, `RegisterCollectionShapes = false`, `RequiredMapping = RequiredMappingStrategy.Both`, `SkipNullSourceMembers = true`.

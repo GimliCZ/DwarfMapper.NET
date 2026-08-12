@@ -15,6 +15,38 @@ internal enum EnumStrategy
     ByValue = 1
 }
 
+/// <summary>Mirrors <c>DwarfMapper.EnumStringSource</c>; the numeric values must stay in step.</summary>
+internal enum EnumStringSource
+{
+    Attribute = 0,
+    Identifier = 1
+}
+
+/// <summary>
+///     Everything the enum converters need from the mapper's policy layer, carried as ONE value.
+/// </summary>
+/// <remarks>
+///     Bundled rather than threaded as two parameters because the strategy travels through ten signatures and
+///     roughly thirty call sites on its way from <c>[DwarfMapper]</c> to <see cref="EnumConverter.TryCreate" />.
+///     Adding a parameter beside it means every one of those has to be edited correctly, and a site that was
+///     missed would silently fall back to the default — the failure this option exists to prevent.
+/// </remarks>
+internal readonly struct EnumPolicy
+{
+    public EnumPolicy(EnumStrategy strategy, EnumStringSource stringSource)
+    {
+        Strategy = strategy;
+        StringSource = stringSource;
+    }
+
+    public EnumStrategy Strategy { get; }
+
+    public EnumStringSource StringSource { get; }
+
+    /// <summary>By-name enum↔enum, attribute-driven enum↔string — the built-in defaults.</summary>
+    public static EnumPolicy Default => new(EnumStrategy.ByName, EnumStringSource.Attribute);
+}
+
 internal static class EnumConverter
 {
     /// <summary>
@@ -23,10 +55,12 @@ internal static class EnumConverter
     ///     Returns null if the pair is not enum-related.
     /// </summary>
     public static string? TryCreate(
-        ITypeSymbol src, ITypeSymbol tgt, EnumStrategy strategy,
+        ITypeSymbol src, ITypeSymbol tgt, EnumPolicy policy,
         Dictionary<string, SynthesizedMethod> synthesized,
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics)
     {
+        var strategy = policy.Strategy;
+        var stringSource = policy.StringSource;
         var srcEnum = src.TypeKind == TypeKind.Enum;
         var tgtEnum = tgt.TypeKind == TypeKind.Enum;
         var srcNum = IsIntegral(src);
@@ -42,14 +76,18 @@ internal static class EnumConverter
 
         if (srcEnum && tgtStr)
         {
-            ReportAttributeDivergence((INamedTypeSymbol)src, location, diagnostics);
-            return AddEnumToString(synthesized, (INamedTypeSymbol)src);
+            // Under Identifier there is nothing to diverge from: the mapping IS the identifier, which is what
+            // DWARF083 tells the reader to make sure of. Reporting it anyway would be reporting the fix.
+            if (stringSource == EnumStringSource.Attribute)
+                ReportAttributeDivergence((INamedTypeSymbol)src, location, diagnostics);
+            return AddEnumToString(synthesized, (INamedTypeSymbol)src, stringSource);
         }
 
         if (srcStr && tgtEnum)
         {
-            ReportAttributeDivergence((INamedTypeSymbol)tgt, location, diagnostics);
-            return AddStringToEnum(synthesized, (INamedTypeSymbol)tgt);
+            if (stringSource == EnumStringSource.Attribute)
+                ReportAttributeDivergence((INamedTypeSymbol)tgt, location, diagnostics);
+            return AddStringToEnum(synthesized, (INamedTypeSymbol)tgt, stringSource);
         }
 
         if (srcEnum && tgtNum) return AddEnumToNum(synthesized, (INamedTypeSymbol)src, tgt);
@@ -297,8 +335,12 @@ internal static class EnumConverter
     ///     (its string form is a comma-joined list that <c>Enum.ToString</c> builds from identifiers).
     ///     </para>
     /// </summary>
-    private static string SerializedName(IFieldSymbol member)
+    private static string SerializedName(IFieldSymbol member, EnumStringSource source)
     {
+        // EnumStringSource.Identifier says the annotations on this enum are for display and the persisted
+        // form is the member name — the one-line parity switch for a codebase migrating off .ToString().
+        if (source == EnumStringSource.Identifier) return member.Name;
+
         foreach (var attribute in member.GetAttributes())
         {
             var cls = attribute.AttributeClass;
@@ -354,7 +396,7 @@ internal static class EnumConverter
 
         foreach (var member in EnumMembers(enumType))
         {
-            var serialized = SerializedName(member);
+            var serialized = SerializedName(member, EnumStringSource.Attribute);
             if (!string.Equals(serialized, member.Name, StringComparison.Ordinal))
                 divergent.Add(member.Name + " -> \"" + serialized + "\"");
         }
@@ -376,9 +418,15 @@ internal static class EnumConverter
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 
-    private static string AddEnumToString(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol src)
+    private static string AddEnumToString(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol src,
+        EnumStringSource stringSource)
     {
-        var name = GeneratedNames.EnumToStr + Sanitize(src) + "_" + StableHash.Fnv1a("EnumStr|" + Fq(src));
+        // The strategy is part of the identity, not just of the body. Two mappers in one compilation may
+        // choose differently for the same enum; keyed by TYPE alone they would collide on a single helper and
+        // whichever was synthesized first would silently win for both — the bug class fixed twice already
+        // this round (Use= auto-adoption, [MapConstructor] as an element converter).
+        var name = GeneratedNames.EnumToStr + Sanitize(src) + "_"
+                   + StableHash.Fnv1a("EnumStr|" + stringSource + "|" + Fq(src));
         if (!synth.ContainsKey(name))
         {
             // A [Flags] enum keeps Enum.ToString() (comma-joined identifiers) for combined values;
@@ -393,7 +441,7 @@ internal static class EnumConverter
                 foreach (var m in EnumMembers(src))
                 {
                     if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue)) continue;
-                    var text = flags ? m.Name : SerializedName(m);
+                    var text = flags ? m.Name : SerializedName(m, stringSource);
                     w.Line(Fq(src) + "." + m.Name + " => \"" + Escape(text) + "\",");
                 }
 
@@ -407,17 +455,26 @@ internal static class EnumConverter
         return name;
     }
 
-    private static string AddStringToEnum(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol tgt)
+    private static string AddStringToEnum(Dictionary<string, SynthesizedMethod> synth, INamedTypeSymbol tgt,
+        EnumStringSource stringSource)
     {
-        var name = GeneratedNames.StrToEnum + Sanitize(tgt) + "_" + StableHash.Fnv1a("StrEnum|" + Fq(tgt));
+        // Same identity argument as AddEnumToString, and it matters more here: the parse switch matches on
+        // the serialized text, so a helper synthesized under the wrong strategy does not merely write the
+        // wrong string — it throws on every value it is asked to read.
+        var name = GeneratedNames.StrToEnum + Sanitize(tgt) + "_"
+                   + StableHash.Fnv1a("StrEnum|" + stringSource + "|" + Fq(tgt));
         if (!synth.ContainsKey(name))
             synth[name] = new SynthesizedMethod(name,
-                IsFlagsEnum(tgt) ? EmitStringToFlags(name, tgt) : EmitStringToEnum(name, tgt));
+                // The flags emitter takes no string source: a [Flags] enum keeps identifier semantics under
+                // both, because its string form is the comma-joined list Enum.ToString builds from names.
+                IsFlagsEnum(tgt)
+                    ? EmitStringToFlags(name, tgt)
+                    : EmitStringToEnum(name, tgt, stringSource));
 
         return name;
     }
 
-    private static string EmitStringToEnum(string name, INamedTypeSymbol tgt)
+    private static string EmitStringToEnum(string name, INamedTypeSymbol tgt, EnumStringSource stringSource)
     {
         var w = new CodeWriter(1);
         w.Line("private static " + Fq(tgt) + " " + name + "(string v) => v switch");
@@ -429,7 +486,7 @@ internal static class EnumConverter
             var seenNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var m in EnumMembers(tgt))
             {
-                var text = SerializedName(m);
+                var text = SerializedName(m, stringSource);
                 if (!seenNames.Add(text)) continue;
                 w.Line("\"" + Escape(text) + "\" => " + Fq(tgt) + "." + m.Name + ",");
             }

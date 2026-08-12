@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.ComponentModel;
 using System.Globalization;
 
 namespace DwarfMapper.Conformance;
@@ -1294,3 +1295,38 @@ public partial class F44M
     [MapDerivedType<F44AliasCommand, F44OverviewDto>]
     public partial F44OverviewDto ToDto(F44Command c);
 }
+
+// ── F45 EnumStringSource (the DWARF083 parity switch) ────────────────────────
+// [Description] on an enum member is overwhelmingly a DISPLAY annotation, but under the default it becomes
+// the PERSISTED string. Round 18 came within one code review of writing "Ko-Fi" into a store full of "Kofi",
+// breaking reads of every existing document — the previous mapper used .ToString(). EnumStringSource =
+// Identifier says "these annotations are for display", in one line, instead of a converter per enum.
+public enum F45DonationSource
+{
+    [Description("Ko-Fi")] Kofi,
+    Patreon
+}
+
+public class F45Donation
+{
+    public F45DonationSource Source { get; set; }
+}
+
+public class F45DonationDoc
+{
+    public string Source { get; set; } = "";
+}
+
+/// <summary>The default: the annotation decides, and "Ko-Fi" is what reaches the store.</summary>
+[DwarfMapper]
+[GenerateMap<F45Donation, F45DonationDoc>]
+public partial class F45AnnotatedM;
+
+/// <summary>
+///     The parity switch. Note that both mappers exist in ONE compilation over the SAME enum — which is why
+///     the strategy is part of the synthesized helper's name and not only of its body.
+/// </summary>
+[DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
+[GenerateMap<F45Donation, F45DonationDoc>]
+[GenerateMap<F45DonationDoc, F45Donation>]
+public partial class F45IdentityM;

@@ -22,6 +22,17 @@ public sealed class DwarfMapperAttribute : Attribute
     public EnumStrategy EnumStrategy { get; set; } = EnumStrategy.ByName;
 
     /// <summary>
+    ///     Which text an enum member maps to and from when the other side is a <see cref="string" />.
+    ///     Defaults to <see cref="DwarfMapper.EnumStringSource.Attribute" />.
+    ///     <para>
+    ///         Set it to <see cref="DwarfMapper.EnumStringSource.Identifier" /> when the enum's
+    ///         <c>[Description]</c> annotations are for display and the persisted form is the member name —
+    ///         the usual situation in a codebase migrating off <c>.ToString()</c>. See <c>DWARF083</c>.
+    ///     </para>
+    /// </summary>
+    public EnumStringSource EnumStringSource { get; set; } = EnumStringSource.Attribute;
+
+    /// <summary>
     ///     How a nullable value-type source mapped to a non-nullable destination is
     ///     handled when null. Defaults to <see cref="NullStrategy.Throw" />.
     /// </summary>

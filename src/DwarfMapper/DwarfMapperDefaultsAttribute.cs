@@ -27,6 +27,9 @@ public sealed class DwarfMapperDefaultsAttribute : Attribute
     /// <inheritdoc cref="DwarfMapperAttribute.EnumStrategy" />
     public EnumStrategy EnumStrategy { get; set; } = EnumStrategy.ByName;
 
+    /// <inheritdoc cref="DwarfMapperAttribute.EnumStringSource" />
+    public EnumStringSource EnumStringSource { get; set; } = EnumStringSource.Attribute;
+
     /// <inheritdoc cref="DwarfMapperAttribute.NullStrategy" />
     public NullStrategy NullStrategy { get; set; } = NullStrategy.Throw;
 

@@ -400,7 +400,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
             var p = ParsableConverter.TryCreate(_comp, srcType, tgtType, Synth);
             if (p is not null) return $"{p}({srcExpr})";
 
-            var e = EnumConverter.TryCreate(srcType, tgtType, EnumStrategy.ByName, Synth, _loc, targetName, _diags);
+            var e = EnumConverter.TryCreate(srcType, tgtType, EnumPolicy.Default, Synth, _loc, targetName, _diags);
             if (e is not null) return $"{e}({srcExpr})";
 
             var coll = TryCollection(srcType, tgtType, srcExpr, targetName);

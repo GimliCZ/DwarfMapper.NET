@@ -94,6 +94,14 @@ public static class OptionCatalog
             public sealed class Dst { public int Id { get; set; } public DstKind Kind { get; set; } }
             """,
 
+        // An enum member whose [Description] differs from its identifier, mapped to a string — otherwise the
+        // two settings describe the same mapping and the option reads as having no effect.
+        ["EnumStringSource"] = """
+            public enum Kind { [System.ComponentModel.Description("in-progress")] InProgress, Done }
+            public sealed class Src { public int Id { get; set; } public Kind Kind { get; set; } }
+            public sealed class Dst { public int Id { get; set; } public string Kind { get; set; } = ""; }
+            """,
+
         // A NULLABLE collection member: the option decides what a null source collection becomes.
         // DIFFERENT collection types, so the mapper must REBUILD rather than assign the reference across.
         // With List<int> on both sides it is a straight copy and the null policy never comes up, which read

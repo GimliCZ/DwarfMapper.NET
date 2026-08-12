@@ -15,7 +15,7 @@ internal static partial class MapperExtractor
         Compilation compilation, ITypeSymbol srcType, ITypeSymbol tgtType, string? useMethod,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-        EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized,
+        EnumPolicy enumPolicy, Dictionary<string, SynthesizedMethod> synthesized,
         NullStrategy nullStrategy,
         LocationInfo? location, string targetName, List<DiagnosticInfo> diagnostics,
         out string? converterMethod, out NullHandling nullHandling,
@@ -76,12 +76,12 @@ internal static partial class MapperExtractor
             // A1: propagate nullAsNull to nested key/value converters so nullable elements
             // (e.g. the value type List<int>? in Dictionary<string, List<int>?>) generate
             // helpers that preserve null instead of silently mapping to empty.
-            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy,
+            if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumPolicy,
                     synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull,
                     out var keyNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
                     implicitConversions: implicitConversions, reservedConverters: reservedConverters))
                 return false;
-            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy,
+            if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumPolicy,
                     synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull,
                     out var valNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
                     implicitConversions: implicitConversions, reservedConverters: reservedConverters))
@@ -210,7 +210,7 @@ internal static partial class MapperExtractor
             // A1: propagate nullAsNull to the element converter so nullable elements
             // (e.g. element type List<int>? inside List<List<int>?>) generate helpers
             // that preserve null instead of silently mapping to empty.
-            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy,
+            if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumPolicy,
                     synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull,
                     out var elemNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
                     implicitConversions: implicitConversions, reservedConverters: reservedConverters))
@@ -316,7 +316,7 @@ internal static partial class MapperExtractor
         // conversion resolves to NullableProject rather than ThrowIfNull/ValueOrDefault.
         if (IsNullableValue(srcType, out var bothSrcU) && IsNullableValue(tgtType, out var bothTgtU))
             if (TryResolveConversion(compilation, bothSrcU, bothTgtU, useMethod, allMethods, autoCandidates,
-                    enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
+                    enumPolicy, synthesized, nullStrategy, location, targetName, diagnostics,
                     out var innerNN, out _, out _, autoNest, nestedRegistry, nullAsNull,
                     reservedConverters: reservedConverters) && innerNN is not null)
             {
@@ -341,7 +341,7 @@ internal static partial class MapperExtractor
             // This handles cases like E1? → E2 where E1 → E2 requires a synthesized conversion.
             // Guard: 'underlying' is not itself nullable (Nullable<Nullable<T>> is illegal in C#).
             if (TryResolveConversion(compilation, underlying, tgtType, useMethod, allMethods, autoCandidates,
-                    enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
+                    enumPolicy, synthesized, nullStrategy, location, targetName, diagnostics,
                     out var innerConv, out _, out _, autoNest, nestedRegistry, nullAsNull,
                     reservedConverters: reservedConverters))
             {
@@ -363,7 +363,7 @@ internal static partial class MapperExtractor
         if (!IsNullableValue(srcType, out _) && IsNullableValue(tgtType, out var tgtUnderlying))
         {
             if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
-                    enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
+                    enumPolicy, synthesized, nullStrategy, location, targetName, diagnostics,
                     out var innerConvT, out _, out _, autoNest, nestedRegistry, nullAsNull,
                     reservedConverters: reservedConverters))
             {
@@ -489,7 +489,7 @@ internal static partial class MapperExtractor
             return true;
         }
 
-        var enumMethod = EnumConverter.TryCreate(srcType, tgtType, enumStrategy, synthesized, location, targetName,
+        var enumMethod = EnumConverter.TryCreate(srcType, tgtType, enumPolicy, synthesized, location, targetName,
             diagnostics);
         if (enumMethod is not null)
         {

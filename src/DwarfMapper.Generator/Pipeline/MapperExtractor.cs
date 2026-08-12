@@ -161,7 +161,7 @@ internal static partial class MapperExtractor
         pairValues.AddRange(mapConfig.Values);
         pairConstructors.AddRange(mapConfig.Constructors);
         classIgnoreSources.AddRange(mapConfig.IgnoreSources);
-        var enumStrategy = ReadEnumStrategy(opts);
+        var enumPolicy = new EnumPolicy(ReadEnumStrategy(opts), ReadEnumStringSource(opts));
         var nullStrategy = ReadNullStrategy(opts);
         var classAutoNest = ReadAutoNest(opts);
         var explicitOnly = !ReadAutoMatchMembers(opts); // trust-boundary guard (DWARF072)
@@ -292,7 +292,7 @@ internal static partial class MapperExtractor
                 }
 
                 if (!TryResolveConversion(spanComp, spanSrcElem, spanDstElem, null, allMethods, mapperMethods,
-                        enumStrategy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
+                        enumPolicy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
                         out var spanConv, out var spanNull, out var spanNeedsCtx, spanAutoNest, nestedRegistry))
                     // Element pair not mappable → diagnostic (e.g. DWARF005) already added.
                     continue;
@@ -352,7 +352,7 @@ internal static partial class MapperExtractor
 
                 var updMembers = ResolveMembers(
                     updSrc, updTgt, updIgnores, comp, methodLocation, diagnostics, caseInsensitive,
-                    updExplicit, allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
+                    updExplicit, allMethods, mapperMethods, enumPolicy, synthesized, nullStrategy,
                     updFlatten, updReinterpret,
                     null, null, updAutoNest, nestedRegistry,
                     // These were hardcoded `false` while the six other ResolveMembers call sites pass the
@@ -512,7 +512,7 @@ internal static partial class MapperExtractor
                 }
 
                 if (!TryResolveConversion(asComp, asSrcElem, asDstElem, null, allMethods, mapperMethods,
-                        enumStrategy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
+                        enumPolicy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
                         out var asConv, out var asNull, out var asNeedsCtx, asAutoNest, nestedRegistry))
                     continue; // element pair not mappable → diagnostic already added
 
@@ -620,7 +620,7 @@ internal static partial class MapperExtractor
                 var projExplicitMaps = ReadExplicitMaps(method);
                 var projMembers = ResolveProjectionMembers(
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
-                    methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumStrategy,
+                    methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumPolicy,
                     referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method),
                     skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
                     projConsumedSources);
@@ -746,7 +746,7 @@ internal static partial class MapperExtractor
                         // Excluded, the arm synthesizes a real AliasCommand -> CommandOverviewDto mapper,
                         // which is what "map this derived type differently" asked for.
                         ExcludingPair(mapperMethods, sourceType, targetType),
-                        enumStrategy, synthesized,
+                        enumPolicy, synthesized,
                         nullStrategy,
                         methodLocation, srcFqn, diagnostics,
                         out var armConverter, out _, out var armNeedsCtx,
@@ -852,7 +852,7 @@ internal static partial class MapperExtractor
                     sourceType, targetType,
                     null,
                     allMethods, mapperMethods,
-                    enumStrategy, synthesized,
+                    enumPolicy, synthesized,
                     nullStrategy,
                     methodLocation, method.Name, diagnostics,
                     out var tlConverter, out _, out var tlNeedsCtx,
@@ -970,7 +970,7 @@ internal static partial class MapperExtractor
                 (resolvedFgDirectives, fgInjectedMembers) = ResolveFlattenGraphDirectives(
                     sourceType, targetType, flattenGraphRaw, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, allMethods, mapperMethods,
-                    enumStrategy, synthesized, nullStrategy,
+                    enumPolicy, synthesized, nullStrategy,
                     methodAutoNest, nestedRegistry,
                     nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
                     allowNonPublic,
@@ -1006,7 +1006,7 @@ internal static partial class MapperExtractor
                 if (!ResolveConstructorArguments(ctor, sourceType, ctx.SemanticModel.Compilation,
                         methodLocation, diagnostics, caseInsensitive, allowNonPublic, explicitMaps, allMethods,
                         mapperMethods,
-                        enumStrategy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs,
+                        enumPolicy, synthesized, nullStrategy, methodAutoNest, nestedRegistry, out ctorArgs,
                         out consumedParams,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
                         implicitConversions))
@@ -1021,7 +1021,7 @@ internal static partial class MapperExtractor
             var members = ResolveMembers(
                 sourceType, targetType, ignores, ctx.SemanticModel.Compilation,
                 methodLocation, diagnostics, caseInsensitive, explicitMaps, allMethods, mapperMethods,
-                enumStrategy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
+                enumPolicy, synthesized, nullStrategy, flattenRoots, reinterpretMembers,
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
@@ -1152,7 +1152,7 @@ internal static partial class MapperExtractor
                 bool gResolved = TryResolveConversion(
                     genComp, genSrc, genTgt, null, allMethods,
                     // This pair is resolved as a WHOLE, so it must not be a candidate for its own conversion.
-                    ExcludingPair(mapperMethods, genSrc, genTgt), enumStrategy, synthesized,
+                    ExcludingPair(mapperMethods, genSrc, genTgt), enumPolicy, synthesized,
                     nullStrategy, genLoc, "Map", diagnostics, out var gConv, out _, out var gNeedsCtx,
                     classAutoNest, nestedRegistry, nullCollections == NullCollectionsBehavior.AsNull,
                     isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
@@ -1250,7 +1250,7 @@ internal static partial class MapperExtractor
             else
             {
                 if (!ResolveConstructorArguments(genCtor, genSrc, genComp, genLoc, diagnostics,
-                        caseInsensitive, allowNonPublic, genExplicit, allMethods, mapperMethods, enumStrategy,
+                        caseInsensitive, allowNonPublic, genExplicit, allMethods, mapperMethods, enumPolicy,
                         synthesized,
                         nullStrategy, classAutoNest, nestedRegistry, out genCtorArgs, out genConsumed,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
@@ -1262,7 +1262,7 @@ internal static partial class MapperExtractor
 
             var genMembers = ResolveMembers(
                 genSrc, genTgt, genIgnores, genComp, genLoc, diagnostics,
-                caseInsensitive, genExplicit, allMethods, mapperMethods, enumStrategy, synthesized,
+                caseInsensitive, genExplicit, allMethods, mapperMethods, enumPolicy, synthesized,
                 nullStrategy, Array.Empty<string>(), new List<string>(),
                 genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
@@ -1427,7 +1427,7 @@ internal static partial class MapperExtractor
                 // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
                 if (!ResolveConstructorArguments(nestedCtor!, nestedSrc, ctx.SemanticModel.Compilation,
                         nestedLocation, diagnostics, caseInsensitive, allowNonPublic, nestedExplicit,
-                        allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
+                        allMethods, mapperMethods, enumPolicy, synthesized, nullStrategy,
                         pairAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
                         implicitConversions))
@@ -1446,7 +1446,7 @@ internal static partial class MapperExtractor
                 ctx.SemanticModel.Compilation,
                 nestedLocation, diagnostics, caseInsensitive,
                 nestedExplicit, // pair-scoped [MapProperty<S,T>] (empty when none declared)
-                allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
+                allMethods, mapperMethods, enumPolicy, synthesized, nullStrategy,
                 new List<string>(), new List<string>(), // no flatten/reinterpret
                 nestedConsumed, nestedRequiredMustInit,
                 pairAutoNest, nestedRegistry,

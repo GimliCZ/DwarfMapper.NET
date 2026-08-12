@@ -64,7 +64,7 @@ internal static partial class MapperExtractor
         HashSet<string> handledTargets, HashSet<string> unflattenRoots, Dictionary<string, ITypeSymbol> writableByName,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
         IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-        EnumStrategy enumStrategy, Dictionary<string, SynthesizedMethod> synthesized, NullStrategy nullStrategy,
+        EnumPolicy enumPolicy, Dictionary<string, SynthesizedMethod> synthesized, NullStrategy nullStrategy,
         bool autoNest, NestedMappingRegistry? nestedRegistry, bool nullAsNull, bool isPreserve, bool isSetNull,
         bool implicitConversions, bool allowNonPublic, List<MemberMap> result)
     {
@@ -140,7 +140,7 @@ internal static partial class MapperExtractor
             return;
         }
 
-        if (TryResolveConversion(compilation, uSrc!, leafType!, useMethod, allMethods, autoCandidates, enumStrategy,
+        if (TryResolveConversion(compilation, uSrc!, leafType!, useMethod, allMethods, autoCandidates, enumPolicy,
                 synthesized, nullStrategy, location, tgtName, diagnostics, out var uConv, out var uNullH,
                 out var uNeedsCtx,
                 autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
@@ -422,7 +422,7 @@ internal static partial class MapperExtractor
             List<DiagnosticInfo> diagnostics,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
-            EnumStrategy enumStrategy,
+            EnumPolicy enumPolicy,
             Dictionary<string, SynthesizedMethod> synthesized,
             NullStrategy nullStrategy,
             bool autoNest,
@@ -726,7 +726,7 @@ internal static partial class MapperExtractor
                             var leafThrowAwaySynth = new Dictionary<string, SynthesizedMethod>(StringComparer.Ordinal);
                             var leafTestDiags = new List<DiagnosticInfo>();
                             var leafResolved = TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
-                                allMethods, autoCandidates, enumStrategy, leafThrowAwaySynth, nullStrategy,
+                                allMethods, autoCandidates, enumPolicy, leafThrowAwaySynth, nullStrategy,
                                 location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
                                 autoNest, nestedRegistry);
                             if (!leafResolved)
@@ -1142,7 +1142,7 @@ internal static partial class MapperExtractor
                         StringComparer.Ordinal);
                     var leafTestDiags = new List<DiagnosticInfo>();
                     var leafResolved = TryResolveConversion(compilation, leaf.Type, dtoMemberType, null,
-                        allMethods, autoCandidates, enumStrategy, leafThrowAwaySynth, nullStrategy,
+                        allMethods, autoCandidates, enumPolicy, leafThrowAwaySynth, nullStrategy,
                         location, leaf.Name, leafTestDiags, out var leafConv, out var leafNull, out _,
                         autoNest, nestedRegistry);
 

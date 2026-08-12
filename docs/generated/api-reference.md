@@ -80,6 +80,7 @@ Marks a partial class as a DwarfMapper. The generator implements the partial map
 | `AutoNest` | `Boolean` | `true` | When true (the default), a member whose type is a mappable object pair (S, T) with no declared mapper is automatically resolved by synthesizing a private nested mapper. Set to false to require explicit declarations for every nested type (the legacy opt-out behaviour, before auto-nesting became the default). |
 | `CaseInsensitive` | `Boolean` | `false` | When true, source and destination member names are matched case-insensitively (ordinal-ignore-case). Defaults to false (exact, case-sensitive matching). |
 | `EnumStrategy` | `EnumStrategy` | `ByName` | Strategy for enum-to-enum mapping. Defaults to ByName. |
+| `EnumStringSource` | `EnumStringSource` | `Attribute` | Which text an enum member maps to and from when the other side is a String. Defaults to Attribute. Set it to Identifier when the enum's [Description] annotations are for display and the persisted form is the member name — the usual situation in a codebase migrating off .ToString(). See DWARF083. |
 | `GenerateExtensions` | `Boolean` | `true` | When true (the default), the generator also emits convenience extension methods for this mapper's simple TTarget Map(TSource) methods — e.g. order.ToOrderDto() instead of new OrderMapper().ToDto(order). They live in the DwarfMapper.Extensions namespace (add using DwarfMapper.Extensions; to use them), are backed by a cached, stateless mapper instance, and are assembly-internal. Set to false to suppress them for this mapper. Only plain single-argument maps get an extension. Update-into, span, async-streaming, projection, derived-type dispatch, and methods with extra parameters are skipped, as are pairs whose generated name would collide. |
 | `IgnoreObsoleteMembers` | `Boolean` | `false` | When true, members marked [Obsolete] are excluded from mapping: an obsolete destination member is neither required to be mapped nor auto-populated, and an obsolete source member does not need to be consumed under RequiredMapping = Both. Defaults to false. The point of deprecating a member is to stop feeding it. Without this flag the completeness gate works against that — DWARF001 forces you to map (or explicitly [MapIgnore]) every obsolete destination member, and mapping one revives the very data flow you are retiring. With it, obsolete members drop out silently-but-safely: they keep their default and no diagnostic fires. An explicit [MapProperty]/[MapValue] targeting an obsolete member still wins, so you can opt a specific one back in. |
 | `ImplicitConversions` | `Boolean` | `true` | Controls whether non-lossless implicit type conversions between differently-typed members are allowed automatically. Defaults to true (permissive — today's behavior). When true: lossless same-category widening (int→long, float→double) is silent; narrowing (long→int), cross-category (int→double, int→string) and parse (string→int) conversions are still applied but surface a DWARF038 suggestion (Info) so they are never silent. When false (strict, Mapperly-style): those same non-lossless conversions become a DWARF038build error — you must opt in per member with [MapProperty(..., Use = nameof(Method))]. Lossless widening and identity still map freely. |
@@ -113,6 +114,7 @@ Assembly-wide default options for every [DwarfMapper] class in the assembly. A v
 | `AutoNest` | `Boolean` | `true` |  |
 | `CaseInsensitive` | `Boolean` | `false` |  |
 | `EnumStrategy` | `EnumStrategy` | `ByName` |  |
+| `EnumStringSource` | `EnumStringSource` | `Attribute` |  |
 | `IgnoreObsoleteMembers` | `Boolean` | `false` |  |
 | `ImplicitConversions` | `Boolean` | `true` |  |
 | `NameConvention` | `NameConvention` | `Exact` |  |
@@ -206,6 +208,15 @@ How enum-to-enum mappings are resolved.
 |---|---|---|
 | `ByName` | 0 | Match members by name (default); a source member with no same-named destination member is a build error. |
 | `ByValue` | 1 | Match members by their underlying numeric value (a cast). |
+
+### enum `EnumStringSource`
+
+Which text an enum member maps to and from when the other side of the pair is a String.
+
+| Value | Numeric | Summary |
+|---|---|---|
+| `Attribute` | 0 | [EnumMember(Value = "…")] wins, then [Description("…")], then the identifier (default). |
+| `Identifier` | 1 | Always the C# member identifier, exactly as Enum.ToString() and Enum.Parse use it. Attributes on the members are ignored for mapping — which is the point: it says the annotations on this enum are for display, and the persisted form is the identifier. |
 
 ### attribute `FlattenAttribute`
 
