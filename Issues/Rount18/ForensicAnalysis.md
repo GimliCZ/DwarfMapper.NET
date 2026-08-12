@@ -537,6 +537,54 @@ Kept separate deliberately — these are MedbotOmega's to close, not this repo's
 
 ---
 
+## 8b. Execution status (2026-08-12)
+
+**25 of 36 tasks complete**, all committed to `master`, whole solution including `samples/` at 0 errors /
+0 warnings, **6,234 tests green across five suites**, conformance 47 → 60 assertions.
+
+### What shipped
+
+| | |
+|---|---|
+| **Merged** | the four Round-18 generator fixes, after the whole-solution-incl-samples build the record never ran |
+| **New diagnostics** | `DWARF078` (CS8795 cascade signpost) · `DWARF079` (`required` + `[MapIgnore]`) · `DWARF080` (factory drops init-only) · `DWARF082` (`[ProvidesMap]` shape) · `DWARF083` (enum→string attribute divergence) |
+| **New capabilities** | `[MapNullSkip]` (pair/method-scoped null-skip) · collection-shape auto-registration · registry interface lookup · `IDwarfMapper.Map(source, destination)` · `[ProvidesMap]` |
+| **New coverage** | `DwarfMapper.ConsumerTests` (opaque, 4 projects, 16 runtime assertions) · Conformance `F31`–`F41` · Gallery `27_PatchMerge` · abstract-membered fuzz graphs · the option-surface ratchet |
+| **Docs** | the nine-item pre-flight checklist, the suppression correction, non-goals, per-project wiring, and the AutoMapper data-loss finding |
+
+### Three findings the work itself produced
+
+1. **`[GenerateMap<int, long>]` emitted `return new long { };`** — a second live instance of the enum bug
+   class, found by the audit that existed to check the fix wasn't a one-off. It was.
+2. **The option-surface ratchet proved it can fail** by finding six more holes on its first run, after the
+   known ones were closed. Four became conformance features; two carry stated reasons.
+3. **`GetInterfaces()` would have been this assembly's first trimming suppression.** Inverting the question —
+   ask each registered interface whether it accepts the source — needs no annotation, so the runtime library
+   stays trim-clean with zero suppressions.
+
+### What is not done, and why
+
+| Task | State |
+|---|---|
+| **R18-06** | Attempted and **reverted**. `MapperClassModel.SynthesizedMethods` is empty by the time the aggregate step sees the models (measured: `synth=Replace:0,Patch:0` on a compilation whose output plainly contains the helper), so body-comparison can never fire. Needs the nested pair identity + effective options carried on the model. `DWARF081` is reserved, not reused. Its *cause* is largely removed by `[MapNullSkip]`. |
+| **R18-27 part 2** | The `EnumStringSource` option. The diagnostic — the half that would have caught the Ko-Fi case — shipped. The option needs the synthesized helper's name hash to incorporate the strategy, or two mappers choosing differently collide on one helper and the first silently wins. |
+| **R18-03, R18-07, R18-11, R18-14, R18-22** | Not started. Each is real generator or design work, specified in its task. |
+| **R18-C1…C4** | **Blocked, and not by me.** `MedbotOmega` is on `develop` with nine uncommitted changes that are the maintainer's own in-progress work on this topic — including a new `Docs/mapping-migration-bugs.md` and `MapperRegressionTests.cs`. Editing that tree would collide with it. |
+
+### The consumer branch is now also stale — in a good way
+
+`mapper-to-dwarf-transition` consumes DwarfMapper by cross-repo `ProjectReference` against the live repo, and
+this session removed the need for much of what the branch does by hand: ~40 declared collection pairs
+(R18-01), five load-bearing `.ToList()` calls (R18-02), the two-keys duplicates (R18-02), five hand-written
+converters marked "not registered" (R18-16), concrete-mapper injection at 16 update-into sites (R18-15), and
+the two class splits that existed only to carry one boolean (R18-05).
+
+**Rebuild the branch against current `master` before merging it — the diff should shrink substantially, and it
+will meet three diagnostics it has never been built against** (`DWARF079`, `DWARF080` — which *will* fire on
+the `UserCommand` factory — and `DWARF082`).
+
+---
+
 ## 9. Task list
 
 Ordered by value-per-effort within each group. Nothing here is started.
