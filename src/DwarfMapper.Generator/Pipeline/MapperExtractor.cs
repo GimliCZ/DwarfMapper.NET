@@ -733,7 +733,19 @@ internal static partial class MapperExtractor
                         ctx.SemanticModel.Compilation,
                         derivedSrc, derivedTgt,
                         null,
-                        allMethods, mapperMethods,
+                        // Both lists, not just the mapper-method one: a partial mapping method is an ordinary
+                        // one-parameter method too, so it appears in allMethods as well and the auto-adoption
+                        // scan would pick it up again from there.
+                        ExcludingPair(allMethods, sourceType, targetType),
+                        // The dispatching method is not a candidate for its own arms. It matches every arm
+                        // by signature — a derived source converts to the declared source type — so
+                        // [MapDerivedType<AliasCommand, CommandOverviewDto>] on
+                        // `partial CommandOverviewDto ToDto(Command)` resolved to ToDto itself and emitted
+                        // `AliasCommand __s => ToDto(__s)`. That is a switch arm calling its own switch:
+                        // it compiles, reports nothing, and overflows the stack for every AliasCommand.
+                        // Excluded, the arm synthesizes a real AliasCommand -> CommandOverviewDto mapper,
+                        // which is what "map this derived type differently" asked for.
+                        ExcludingPair(mapperMethods, sourceType, targetType),
                         enumStrategy, synthesized,
                         nullStrategy,
                         methodLocation, srcFqn, diagnostics,

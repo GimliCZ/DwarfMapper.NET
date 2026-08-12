@@ -256,5 +256,20 @@ R.Check("F42 declared pair — collection element", f42Element[0].V == 102);
 R.Check("F42 declared pair — nested member", f42Nested.Only.V == 103);
 R.Check("F42 declared pair — nested collection element", f42Nested.Many[0].V == 104);
 
+// F43 [MapDerivedType] through a collection — the element must dispatch on its RUNTIME type, or the member
+// only the derived type has is silently dropped. That was a real API regression, not a hypothetical.
+var f43 = new F43M().Map(new F43Page
+{
+    Items = [new F43Command { Name = "plain" }, new F43AliasCommand { Name = "aka", Alias = "a" }]
+});
+R.Check("F43 [MapDerivedType] base element", f43.Items[0] is { Name: "plain" } and not F43AliasCommandDto);
+R.Check("F43 [MapDerivedType] derived element keeps Alias",
+    f43.Items[1] is F43AliasCommandDto { Name: "aka", Alias: "a" });
+
+// F44 Two sources, one target — the arm's target is the dispatching method's own return type. The arm must
+// not resolve back to the dispatching method; that emission compiled and overflowed the stack.
+var f44 = new F44M().ToDto(new F44AliasCommand { Name = "aka", Alias = "a" });
+R.Check("F44 [MapDerivedType] shared target fills the derived member", f44 is { Name: "aka", Alias: "a" });
+
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;

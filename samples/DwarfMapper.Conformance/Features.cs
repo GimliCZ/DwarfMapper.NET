@@ -1216,3 +1216,81 @@ public partial class F42M
     /// <summary>The +100 is the tell: any route that skips the factory returns the raw value.</summary>
     private static F42ItemDto Create(F42Item i) => new(i.V + 100);
 }
+
+// ── F43 [MapDerivedType] through a collection ────────────────────────────────
+// The symptom that motivated this: a derived element inside a base-typed collection silently lost the member
+// only the derived type has. A collection loop binds at COMPILE time, so `List<F43Command>` mapped every item
+// as a plain F43Command; the mapper it replaced dispatched on the RUNTIME type. [MapDerivedType] restores
+// that — and the arm must not resolve back to the method it dispatches from, which is a switch arm calling
+// its own switch: it compiles, reports nothing, and overflows the stack on the first derived element.
+public class F43Command
+{
+    public string Name { get; set; } = "";
+}
+
+public class F43AliasCommand : F43Command
+{
+    public string Alias { get; set; } = "";
+}
+
+public class F43CommandDto
+{
+    public string Name { get; set; } = "";
+}
+
+public class F43AliasCommandDto : F43CommandDto
+{
+    public string Alias { get; set; } = "";
+}
+
+public class F43Page
+{
+    public List<F43Command> Items { get; set; } = [];
+}
+
+public class F43PageDto
+{
+    public List<F43CommandDto> Items { get; set; } = [];
+}
+
+[DwarfMapper]
+[GenerateMap<F43Page, F43PageDto>]
+public partial class F43M
+{
+    // A dispatching method maps NOTHING itself — every runtime type either matches an arm or throws — so the
+    // base type needs an arm of its own. Ordering is by specificity, not by declaration, so the derived arm
+    // still wins for an F43AliasCommand.
+    [MapDerivedType<F43AliasCommand, F43AliasCommandDto>]
+    [MapDerivedType<F43Command, F43CommandDto>]
+    public partial F43CommandDto ToDto(F43Command c);
+
+    /// <summary>Deliberately NOT an overload of ToDto — an arm may resolve to any declared method.</summary>
+    public partial F43AliasCommandDto ToAliasDto(F43AliasCommand c);
+}
+
+// ── F44 [MapDerivedType] where two sources share one target ──────────────────
+// The arm's target IS the dispatching method's return type. This is the shape that recursed, and it is a
+// perfectly reasonable thing to write: one flat DTO, filled differently depending on what arrived.
+public class F44Command
+{
+    public string Name { get; set; } = "";
+}
+
+public class F44AliasCommand : F44Command
+{
+    public string Alias { get; set; } = "";
+}
+
+public class F44OverviewDto
+{
+    public string Name { get; set; } = "";
+
+    public string Alias { get; set; } = "";
+}
+
+[DwarfMapper]
+public partial class F44M
+{
+    [MapDerivedType<F44AliasCommand, F44OverviewDto>]
+    public partial F44OverviewDto ToDto(F44Command c);
+}
