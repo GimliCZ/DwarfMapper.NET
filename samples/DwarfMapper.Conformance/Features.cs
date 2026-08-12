@@ -884,3 +884,159 @@ public partial class DuniM
 {
     public partial UniD Map(UniS s);
 }
+
+// ═══════════════════ BATCH 5: options with no prior coverage ════════════════
+//
+// Six of fifteen policy options, plus the pair-scoped factory attribute, were exercised NOWHERE in this
+// project or in the Gallery before Round 18 — and four of them are what a real migration reaches for first.
+// Each case below asserts an OBSERVABLE RUNTIME DIFFERENCE, not merely that the option compiles.
+//
+// Note this closes the SURFACE gap only. The shape gap — multi-assembly, DI, ambient registry — is what
+// actually let Round 18's defects through, and needs a consumer-shaped project instead. See Issues/Rount18/.
+
+// ── F31 SkipNullSourceMembers (patch-merge) + [MapNullSkip] pair/method scope ─
+public class F31S
+{
+    public string? Name { get; set; }
+    public string? Note { get; set; }
+}
+
+public class F31D
+{
+    public string? Name { get; set; }
+    public string? Note { get; set; }
+}
+
+[DwarfMapper]
+public partial class F31M
+{
+    /// <summary>A null CLEARS the destination member.</summary>
+    public partial void Replace(F31S s, F31D d);
+
+    /// <summary>A null LEAVES the destination member alone.</summary>
+    [MapNullSkip]
+    public partial void Patch(F31S s, F31D d);
+}
+
+// ── F32 AllowNonPublic (internal constructor, deliberately granted) ──────────
+public class F32S
+{
+    public int Id { get; set; }
+}
+
+public class F32D
+{
+    // internal, not private: a deliberate, compiler-checked grant. `private` is never usable, by design —
+    // the generated code could not call it. This is the supported replacement for a reflective mapper's
+    // "empty ctor for the mapper" trick.
+    internal F32D()
+    {
+    }
+
+    public int Id { get; set; }
+}
+
+[DwarfMapper(AllowNonPublic = true)]
+public partial class F32M
+{
+    public partial F32D Map(F32S s);
+}
+
+// ── F33 AutoMatchMembers = false (explicit-only trust boundary) ──────────────
+public class F33S
+{
+    public string Name { get; set; } = "";
+    public bool IsAdmin { get; set; }   // the over-posting hazard: same name on both sides
+}
+
+public class F33D
+{
+    public string Name { get; set; } = "";
+    public bool IsAdmin { get; set; }
+}
+
+[DwarfMapper(AutoMatchMembers = false)]
+public partial class F33M
+{
+    // Nothing is wired by name. Name is mapped because it is NAMED; IsAdmin is refused because it is not —
+    // which is the whole point at a trust boundary.
+    [MapProperty(nameof(F33S.Name), nameof(F33D.Name))]
+    [MapIgnore(nameof(F33D.IsAdmin))]
+    public partial F33D Map(F33S s);
+}
+
+// ── F34 IgnoreObsoleteMembers ────────────────────────────────────────────────
+public class F34S
+{
+    public int Id { get; set; }
+}
+
+public class F34D
+{
+    public int Id { get; set; }
+
+    [Obsolete("replaced by Id")]
+    public int LegacyId { get; set; }
+}
+
+[DwarfMapper(IgnoreObsoleteMembers = true)]
+public partial class F34M
+{
+    // Without the option this is DWARF001: LegacyId has no source. With it, the obsolete member is neither
+    // required nor populated — and needs no [MapIgnore] to say so.
+    public partial F34D Map(F34S s);
+}
+
+// ── F35 [MapConstructor<S,T>] pair-scoped factory ────────────────────────────
+public class F35S
+{
+    public string Text { get; set; } = "";
+    public int Number { get; set; }
+}
+
+public class F35D
+{
+    public F35D(string text, int number)
+    {
+        Text = text;
+        Number = number;
+        Origin = "factory";
+    }
+
+    public string Text { get; }
+    public int Number { get; }
+    public string Origin { get; }
+}
+
+[DwarfMapper]
+[GenerateMap<F35S, F35D>]
+[MapConstructor<F35S, F35D>(nameof(Create))]
+public partial class F35M
+{
+    private static F35D Create(F35S s) => new(s.Text, s.Number);
+}
+
+// ── F36 [assembly: DwarfMapperDefaults] — the assembly policy layer ──────────
+//
+// The assembly attribute lives in Program.cs and sets CaseInsensitive = true. This mapper sets NO options of
+// its own, so the ONLY thing that can make a case-mismatched member map is the assembly default being read —
+// which is what makes the case non-vacuous.
+//
+// CaseInsensitive is chosen deliberately: every other feature in this file matches names exactly, so an
+// assembly-wide relaxation changes nothing for them. An option like EnumStrategy would have silently
+// rewritten F03/F04's expectations instead of testing this one.
+public class F36S
+{
+    public int itemcount { get; set; }
+}
+
+public class F36D
+{
+    public int ItemCount { get; set; }
+}
+
+[DwarfMapper]
+public partial class F36M
+{
+    public partial F36D Map(F36S s);
+}

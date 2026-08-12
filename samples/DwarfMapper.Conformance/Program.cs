@@ -4,6 +4,12 @@ using System.Globalization;
 using DwarfMapper;
 using DwarfMapper.Conformance;
 
+// F36: the assembly policy layer. Set here rather than on a mapper so F36M can prove the value is READ —
+// it declares no options of its own, and a case-mismatched member maps only because of this line.
+// CaseInsensitive is deliberate: every other feature matches names exactly, so relaxing it assembly-wide
+// changes nothing for them.
+[assembly: DwarfMapperDefaults(CaseInsensitive = true)]
+
 Console.WriteLine("DwarfMapper — god project (every feature, one run)\n");
 
 // F01 flat
@@ -166,6 +172,43 @@ R.Check("D7 enum raw value", (int)new DreM().Map(new ReS { Code = 999 }).Code ==
 // D8 unicode + empty-string passthrough
 R.Check("D8 unicode passthrough", new DuniM().Map(new UniS { Text = "héllo 🐉 世界" }).Text == "héllo 🐉 世界");
 R.Check("D8 empty string", new DuniM().Map(new UniS { Text = "" }).Text.Length == 0);
+
+Console.WriteLine("\n-- options with no prior coverage (Round 18) --");
+
+// F31 SkipNullSourceMembers scoped per method with [MapNullSkip]
+var f31Patched = new F31D { Name = "kept", Note = "kept" };
+var f31Replaced = new F31D { Name = "kept", Note = "kept" };
+new F31M().Patch(new F31S { Name = "new" }, f31Patched);
+new F31M().Replace(new F31S { Name = "new" }, f31Replaced);
+
+// CA1508 fires because the analyzer can see INTO the generated method bodies and prove these hold — which
+// is a compliment to the generator, not dead code. The assertion is the point of the conformance run.
+#pragma warning disable CA1508
+R.Check("F31 [MapNullSkip] patch keeps", f31Patched is { Name: "new", Note: "kept" });
+R.Check("F31 replace clears", f31Replaced is { Name: "new", Note: null });
+#pragma warning restore CA1508
+
+// F32 AllowNonPublic reaches an internal constructor
+R.Check("F32 AllowNonPublic ctor", new F32M().Map(new F32S { Id = 11 }).Id == 11);
+
+// F33 AutoMatchMembers = false — nothing is wired by name
+var f33 = new F33M().Map(new F33S { Name = "n", IsAdmin = true });
+R.Check("F33 explicit-only maps named", f33.Name == "n");
+R.Check("F33 explicit-only drops unnamed", !f33.IsAdmin);
+
+// F34 IgnoreObsoleteMembers — the obsolete destination needs no [MapIgnore]
+// Reading the obsolete member is exactly what the assertion is for: proving it was LEFT at its default.
+#pragma warning disable CS0618, CA1508
+R.Check("F34 obsolete member skipped", new F34M().Map(new F34S { Id = 4 }) is { Id: 4, LegacyId: 0 });
+#pragma warning restore CS0618, CA1508
+
+// F35 [MapConstructor<S,D>] pair-scoped factory owns construction
+var f35 = new F35M().Map(new F35S { Text = "t", Number = 9 });
+R.Check("F35 [MapConstructor] factory", f35 is { Text: "t", Number: 9, Origin: "factory" });
+
+// F36 [assembly: DwarfMapperDefaults] — F36M declares no options, so a case-mismatched member maps only
+// because the assembly default was read.
+R.Check("F36 assembly defaults read", new F36M().Map(new F36S { itemcount = 6 }).ItemCount == 6);
 
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;
