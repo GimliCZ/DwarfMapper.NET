@@ -42,6 +42,7 @@ Thrown by the ambient IDwarfMapper / DwarfMapperRegistry when no map is register
 
 | Member | Type | Default | Summary |
 |---|---|---|---|
+| `AmbiguousInterfaces` | `IReadOnlyList<Type>` | `System.Type[]` | When lookup failed because several of the source's interfaces had a registration, the interfaces in question. Empty in the ordinary "nothing registered" case. |
 | `Data` | `IDictionary` | `System.Collections.ListDictionaryInternal` |  |
 | `DestinationType` | `Type` | `null` | The requested destination type. |
 | `HResult` | `Int32` | `-2146233079` |  |

@@ -15,10 +15,27 @@ public sealed class DwarfMapMissingException : InvalidOperationException
     ///     <paramref name="destinationType" /> pair.
     /// </summary>
     public DwarfMapMissingException(Type sourceType, Type destinationType)
-        : base(FormatMessage(sourceType, destinationType))
+        : this(sourceType, destinationType, null)
+    {
+    }
+
+    /// <summary>
+    ///     Creates the exception, optionally naming the interfaces that were ambiguous.
+    /// </summary>
+    /// <param name="sourceType">The runtime type of the value that had no map.</param>
+    /// <param name="destinationType">The requested destination type.</param>
+    /// <param name="ambiguousInterfaces">
+    ///     Interfaces of <paramref name="sourceType" /> that each had a registration, when there was more than
+    ///     one. Reported rather than silently picked, because <see cref="Type.GetInterfaces" /> has no
+    ///     guaranteed order — choosing one would mean mapping through a different map on a different run.
+    /// </param>
+    public DwarfMapMissingException(Type sourceType, Type destinationType,
+        IReadOnlyList<Type>? ambiguousInterfaces)
+        : base(FormatMessage(sourceType, destinationType, ambiguousInterfaces))
     {
         SourceType = sourceType;
         DestinationType = destinationType;
+        AmbiguousInterfaces = ambiguousInterfaces ?? [];
     }
 
     /// <summary>Initializes a new instance with no message (for serialization infrastructure).</summary>
@@ -42,11 +59,37 @@ public sealed class DwarfMapMissingException : InvalidOperationException
     /// <summary>The requested destination type.</summary>
     public Type? DestinationType { get; }
 
-    private static string FormatMessage(Type? sourceType, Type? destinationType)
+    /// <summary>
+    ///     When lookup failed because <b>several</b> of the source's interfaces had a registration, the
+    ///     interfaces in question. Empty in the ordinary "nothing registered" case.
+    /// </summary>
+    public IReadOnlyList<Type> AmbiguousInterfaces { get; } = [];
+
+    private static string FormatMessage(Type? sourceType, Type? destinationType,
+        IReadOnlyList<Type>? ambiguousInterfaces)
     {
-        return $"No DwarfMapper map is registered for '{sourceType}' -> '{destinationType}'. " +
-               $"Declare [GenerateMap<{sourceType?.Name}, {destinationType?.Name}>] in a referenced assembly " +
-               "(its module initializer self-registers the map), or inject that assembly's concrete mapper directly.";
+        if (ambiguousInterfaces is { Count: > 1 })
+            return $"Ambiguous DwarfMapper map for '{sourceType}' -> '{destinationType}': it was not "
+                   + "registered directly or on a base type, and more than one of its interfaces has a "
+                   + $"registration ({string.Join(", ", ambiguousInterfaces.Select(i => i.Name))}). Interface "
+                   + "order is not defined, so no map was chosen. Declare the pair for the concrete source "
+                   + $"type: [GenerateMap<{sourceType?.Name}, {destinationType?.Name}>].";
+
+        // A compiler-generated iterator (Where/Select/SelectMany) can never be named by an attribute, so the
+        // generic "declare the pair" advice is unactionable for it. Say the thing that actually works.
+        var isIterator = sourceType?.Name.Contains('<', StringComparison.Ordinal) == true || sourceType?.IsNestedPrivate == true;
+
+        var remedy = isIterator
+            ? $"'{sourceType?.Name}' is a compiler-generated LINQ iterator — no [GenerateMap] attribute can "
+              + "name it. Materialize the sequence before mapping (.ToList()), or declare the pair for the "
+              + "interface it implements, e.g. [GenerateMap<IEnumerable<T>, "
+              + $"{destinationType?.Name}>]."
+            : $"Declare [GenerateMap<{sourceType?.Name}, {destinationType?.Name}>] in a referenced assembly "
+              + "(its module initializer self-registers the map), or inject that assembly's concrete mapper "
+              + "directly.";
+
+        return $"No DwarfMapper map is registered for '{sourceType}' -> '{destinationType}'. Lookup tried the "
+               + "runtime type, its base types, and its interfaces. " + remedy;
     }
 }
 
