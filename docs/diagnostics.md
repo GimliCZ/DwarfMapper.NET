@@ -756,6 +756,34 @@ mapper that does cross one — see [`SECURITY.md`](SECURITY.md#over-posting--mas
 
 ---
 
+## dwarf078
+**No code was generated for this mapper** · Warning
+
+Reported once per mapper class that had at least one DwarfMapper **error**. It is not a problem in its own
+right — it is a **signpost for the wall of `CS8795` that is about to appear**.
+
+When any diagnostic on a class is an error, the generator emits **nothing at all** for that class. That is the
+right call (half-generated code produces worse errors than none), but it means every `partial` mapping method
+on the class loses its implementing part simultaneously, and the build fills with
+`CS8795: … must have an implementing part`.
+
+That wall is ambiguous, and both readings are common:
+
+| What you see | Actual cause |
+|---|---|
+| Many `CS8795`, **plus** `DWARF078` and the errors it names | the generator ran and refused — fix the `DWARF…` errors |
+| Many `CS8795`, **no** `DWARF…` diagnostics at all | the generator never ran — the project is missing the analyzer reference |
+
+The second case is easy to hit, because DwarfMapper's analyzer is marked `PrivateAssets="all"` and so does
+**not** flow transitively: every project that declares mappers needs both the runtime reference and the
+generator as an `Analyzer`. See [`MIGRATION.md`](MIGRATION.md).
+
+**Fix:** fix the errors listed in the `DWARF078` message; the `CS8795`s disappear with them. Do not start by
+investigating the `CS8795`s — they are a cascade, and there will be one per mapping method regardless of how
+many real problems there are.
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather

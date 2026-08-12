@@ -81,5 +81,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF075` | Warning | [FlattenGraph] leaf member was not flattened |
 | `DWARF076` | Warning | Source and target are the same type |
 | `DWARF077` | Error | Explicit-only mapping is not enforced element-wise |
+| `DWARF078` | Warning | No code was generated for this mapper |
 
-73 diagnostics.
+74 diagnostics.

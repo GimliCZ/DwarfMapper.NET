@@ -35,8 +35,13 @@ public static class OptionProbe
         // having no observable effect.
         var baseKeys = baseDiagnostics
             .Select(d => d.Id + ":" + d.Severity).ToHashSet(StringComparer.Ordinal);
+        // DWARF078 is excluded because it is not an option EFFECT — it is the cascade signpost that
+        // accompanies any blocking error, on every option that produces one. Including it appended a
+        // ",DWARF078 (Warning)" to six otherwise-clean cells and told the reader nothing about the option,
+        // which is the opposite of what this matrix is for.
         var added = diagnostics
             .Where(d => !baseKeys.Contains(d.Id + ":" + d.Severity))
+            .Where(d => !string.Equals(d.Id, "DWARF078", StringComparison.Ordinal))
             .Select(d => d.Severity == DiagnosticSeverity.Error ? d.Id : $"{d.Id} ({d.Severity})")
             .Distinct()
             .OrderBy(id => id, StringComparer.Ordinal).ToList();

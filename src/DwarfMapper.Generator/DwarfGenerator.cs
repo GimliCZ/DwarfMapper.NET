@@ -310,9 +310,47 @@ public sealed class DwarfGenerator : IIncrementalGenerator
     {
         foreach (var diagnostic in model.Diagnostics) spc.ReportDiagnostic(diagnostic.ToDiagnostic());
 
-        if (model.HasBlockingError) return;
+        if (model.HasBlockingError)
+        {
+            ReportCascadeSignpost(spc, model);
+            return;
+        }
 
         var source = MapEmitter.Emit(model);
         spc.AddNormalizedSource($"{model.HintName}.g.cs", source);
+    }
+
+    /// <summary>
+    ///     Explains the <c>CS8795</c> wall that is about to appear, because nothing else can.
+    /// </summary>
+    /// <remarks>
+    ///     Suppressing emission for the whole class is the right call — half-generated code would produce worse
+    ///     errors than none. But it means every partial mapping method loses its implementing part at once, and
+    ///     the resulting pile of <c>CS8795</c> looks identical to the OTHER cause of that wall: a project that
+    ///     never wired the analyzer at all. One signpost, at the first real error's location, separates them.
+    /// </remarks>
+    private static void ReportCascadeSignpost(SourceProductionContext spc, MapperClassModel model)
+    {
+        // Distinct ids, in report order, so the message names the causes rather than repeating one id per
+        // affected member. Ordinal comparison: these are ASCII identifiers, never user text.
+        var ids = new List<string>();
+        LocationInfo? first = null;
+
+        foreach (var d in model.Diagnostics)
+        {
+            if (!d.IsError) continue;
+
+            first ??= d.Location;
+            var id = d.Descriptor.Id;
+            if (!ids.Contains(id, StringComparer.Ordinal)) ids.Add(id);
+        }
+
+        if (ids.Count == 0) return;
+
+        spc.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticDescriptors.NoCodeGenerated,
+            first?.ToLocation() ?? Location.None,
+            model.ClassName,
+            string.Join(", ", ids)));
     }
 }

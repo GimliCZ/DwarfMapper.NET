@@ -660,6 +660,30 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf077");
 
+    /// <summary>
+    ///     Signpost emitted when a mapper class is skipped because it has blocking errors.
+    /// </summary>
+    /// <remarks>
+    ///     A generator error suppresses emission for the WHOLE class, so every partial mapping method on it
+    ///     then has no implementing part and the build fills with <c>CS8795</c>. The real cause is one
+    ///     <c>DWARF…</c> line further up, buried under its own cascade.
+    ///     <para>
+    ///         This cost real time in the field: a migration wasted a debugging session on "the analyzer isn't
+    ///         wired" (the other, identical-looking cause of a CS8795 wall) when the actual signal was a
+    ///         <c>DWARF007</c>/<c>DWARF026</c> above it. Naming the cascade removes the ambiguity between the
+    ///         two, which no other diagnostic can do — a missing analyzer reference emits nothing at all.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor NoCodeGenerated = new(
+        "DWARF078",
+        "No code was generated for this mapper",
+        "No code was generated for mapper '{0}' because it has unresolved DwarfMapper errors ({1}). Every "
+        + "partial mapping method on it will now ALSO report CS8795 (\"must have an implementing part\") — "
+        + "those are a cascade of this, not a separate problem, and they are not caused by a missing analyzer "
+        + "reference. Fix the errors listed above.",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf078");
+
     public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
         "DWARF074",
         "[MapCollectionKey] cannot be applied here",
