@@ -1106,9 +1106,14 @@ internal static partial class MapperExtractor
             // The conversion machinery was never the problem: the identical pair used as a MEMBER already
             // resolves correctly through the enum converter. Only this declared-pair path constructed
             // instead of converting.
-            var genIsEnum = genTgt.TypeKind == TypeKind.Enum;
+            // Every VALUE-like target, not just enums. The enum case was found first, but the bug class is
+            // "a declared top-level pair whose target is a value gets object-mapped instead of converted" —
+            // and a follow-up audit caught [GenerateMap<int, long>] emitting `return new long { };` for
+            // exactly the same reason. SpecialType covers the primitives, string, decimal, char and bool;
+            // TypeKind.Enum covers the rest of the family.
+            var genIsValueLike = genTgt.TypeKind == TypeKind.Enum || genTgt.SpecialType != SpecialType.None;
 
-            if (genIsColl || genIsDict || genIsEnum)
+            if (genIsColl || genIsDict || genIsValueLike)
             {
                 bool gResolved = TryResolveConversion(
                     genComp, genSrc, genTgt, null, allMethods, mapperMethods, enumStrategy, synthesized,
