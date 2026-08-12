@@ -153,10 +153,19 @@ than one constructor would quietly get the *narrower* one and then fail complete
 one would have filled — the same shape as `ISSUE-044`, and invisible in this corpus because `SlotView` has a
 single constructor.
 
-The walk now lives once, in `MemberFacts.TryResolvePath`, and all three call it. Pinned by four tests in
+The walk now lives once, in `MemberFacts.TryResolvePath`. All three call it — as does the projection
+resolver, which turned out to be keeping a fourth copy of the same loop. Pinned by four tests in
 `DeepSourcePathGeneratorTests` and by
 `ConstructorSelectorHardeningTests.Dotted_source_path_into_a_ctor_param_keeps_the_wide_ctor`, which is the
 two-constructor case this corpus could not reach.
+
+Looking at the projection lane also turned up **R18-32**: there, a `[MapProperty]` aimed at a constructor
+parameter is ignored outright — parameters bind by name only — and the `DWARF024` that follows recommends
+`[MapProperty(src, "<paramName>")]`, which is what the author just wrote. Recorded rather than fixed in the
+same breath: it is loud, so nothing ships wrong, and the fix is a change to how projection composes a
+constructor call rather than a lookup correction. Today's behaviour is pinned by
+`ProjectionDeepTests.Projection_does_NOT_bind_a_ctor_param_from_an_explicit_map_R18_32`, which fails when the
+gap closes.
 
 ### A `[MapDerivedType]` arm that resolved to its own dispatcher
 

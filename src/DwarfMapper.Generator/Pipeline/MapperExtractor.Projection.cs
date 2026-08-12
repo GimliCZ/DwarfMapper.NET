@@ -260,18 +260,14 @@ internal static partial class MapperExtractor
 
             // Resolve the source, supporting a dotted path (e.g. "Colour.Code") for value-object /
             // nested-scalar flattening — matching the class-model [MapProperty] dotted-path feature.
-            // The projection accessor "__s.Colour.Code" is built verbatim below; we walk the segments
-            // here only to find the leaf type and validate each hop is a readable member.
-            var sm = sourceType;
-            foreach (var seg in srcName.Split('.'))
-            {
-                sm = sm is null
-                    ? null
-                    : ReadableMembers(sm, compilation, ProjectionPublicOnly)
-                        .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
-                        .Select(m => (ITypeSymbol?)m.Type).FirstOrDefault();
-                if (sm is null) break;
-            }
+            // The projection accessor "__s.Colour.Code" is built verbatim below; the walk is only here to
+            // find the leaf type and validate each hop is a readable member.
+            //
+            // The nullable-hop answer is deliberately NOT taken: DWARF044 warns that dereferencing a null
+            // interior throws, which is true in emitted C# and false here — the provider translates the path
+            // to a join that yields null. Same walk, different consequence.
+            MemberFacts.TryResolvePath(sourceType, srcName, compilation, ProjectionPublicOnly,
+                out var sm, out _, out _);
 
             if (sm is null)
             {

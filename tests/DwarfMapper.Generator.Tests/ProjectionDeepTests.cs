@@ -622,4 +622,42 @@ public class ProjectionDeepTests
         Assert.NotEmpty(d028);
         Assert.Contains("hook", d028[0].GetMessage(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    ///     A dotted source path READS fine in a projection — the walk is the shared one — but binding it (or
+    ///     any rename) to a CONSTRUCTOR PARAMETER is not supported in the projection lane: the ctor expression
+    ///     binds parameters by NAME only and never consults [MapProperty].
+    /// </summary>
+    /// <remarks>
+    ///     Found while fixing R18-31, which is the same shape in the class-model lane and IS fixed. This one is
+    ///     recorded rather than fixed because it is loud — the build stops, nothing ships wrong — but the
+    ///     message is still misleading: DWARF024 advises `[MapProperty(src, "&lt;paramName&gt;")]`, which is
+    ///     exactly what the author wrote. Filed as R18-32.
+    ///     <para>
+    ///         This test pins TODAY's behaviour so the gap cannot close silently. When projection learns to
+    ///         bind a parameter from an explicit map, this test fails, and that failure is the signal to
+    ///         rewrite it as the positive case.
+    ///     </para>
+    /// </remarks>
+    [Fact]
+    public void Projection_does_NOT_bind_a_ctor_param_from_an_explicit_map_R18_32()
+    {
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public sealed record Window(int Start, int End);
+                         public class Src { public Window Window { get; set; } = new(0, 0); }
+                         public sealed record Dst(int Start);
+                         [DwarfMapper] public partial class M
+                         {
+                             [MapProperty("Window.Start", "Start")]
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+
+        var d024 = diag.FirstOrDefault(d => d.Id == "DWARF024");
+        Assert.NotNull(d024);
+        Assert.Contains("Start", d024!.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
 }

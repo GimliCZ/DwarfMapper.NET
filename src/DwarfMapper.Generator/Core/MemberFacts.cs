@@ -112,11 +112,16 @@ internal static class MemberFacts
     ///     the flat lookup and lets a caller ask one question instead of two.
     /// </summary>
     /// <remarks>
-    ///     ISSUE-R18-31: this walk lives here rather than in the extractor because THREE places have to agree
-    ///     about what a dotted source means — member resolution, constructor-argument resolution, and
-    ///     <c>ConstructorSelector</c>'s satisfiability scoring. Two of them had their own flat-name lookup, so a
-    ///     path that resolved fine for a member was reported as a member that "does not exist" when it fed a
-    ///     constructor parameter.
+    ///     ISSUE-R18-31: this walk lives here rather than in the extractor because FOUR places have to agree
+    ///     about what a dotted source means — member resolution, constructor-argument resolution,
+    ///     <c>ConstructorSelector</c>'s satisfiability scoring, and the projection resolver. Two of them had
+    ///     their own flat-name lookup, so a path that resolved fine for a member was reported as a member that
+    ///     "does not exist" when it fed a constructor parameter; a third had its own copy of this loop.
+    ///     <para>
+    ///     The DIAGNOSTIC each caller draws from the answer still differs, and should: projection deliberately
+    ///     discards <paramref name="nullableHop" />, because a null interior throws in emitted C# and yields
+    ///     null in a provider-translated join. One walk, four consequences.
+    ///     </para>
     /// </remarks>
     internal static bool TryResolvePath(
         ITypeSymbol root, string dottedPath, Compilation? compilation, bool allowNonPublic,
