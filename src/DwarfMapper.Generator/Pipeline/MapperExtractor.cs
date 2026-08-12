@@ -182,6 +182,11 @@ internal static partial class MapperExtractor
                 classSymbol.Name));
         var synthesized = new Dictionary<string, SynthesizedMethod>(StringComparer.Ordinal);
         var allMethods = CollectMethods(classSymbol);
+
+        // Converters dedicated to a specific member by Use=, anywhere on this mapper. Collected once at
+        // MAPPER scope, not per method: a helper written for one method's member must not be
+        // auto-adopted by a different method either, and a per-method set cannot see that.
+        var mapperReservedConverters = CollectReservedConverterNames(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
         var valueProviders = CollectValueProviders(classSymbol); // parameterless methods for [MapValue(Use=)]
         var (beforeHookDefs, afterHookDefs) = CollectHooks(classSymbol, diagnostics);
@@ -316,7 +321,8 @@ internal static partial class MapperExtractor
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
                     skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
                     explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
-                    stringFormats: ReadStringFormats(method));
+                    stringFormats: ReadStringFormats(method),
+                    mapperReservedConverters: mapperReservedConverters);
 
                 // Source-side completeness applies here too. It lived inline in the create-map branch, so
                 // RequiredMapping = Both reported unconsumed source members through .Map and said nothing
@@ -951,7 +957,7 @@ internal static partial class MapperExtractor
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
                 nameConvention, mapPropExtras, skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete,
-                stringFormats);
+                stringFormats, mapperReservedConverters);
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -1066,13 +1072,29 @@ internal static partial class MapperExtractor
             // member-level collection handling.
             var genIsColl = CollectionConverter.TryResolve(genTgt, genTgt, out _, out _, out _, false);
             var genIsDict = !genIsColl && DictionaryConverter.TryResolve(genTgt, genTgt, out _, out _, out _, out _, out _);
-            if (genIsColl || genIsDict)
+
+            // An ENUM target needs the same treatment, and for the same reason: it is a VALUE to convert,
+            // not an object to construct. Without this, `[GenerateMap<SrcKind, DstKind>]` emitted
+            // `return new DstKind { };` — an empty object initializer over an enum, which compiles, has no
+            // members to flag, and silently returns the zero value while discarding the source entirely.
+            // Green build, no diagnostic, every mapped value wrong.
+            //
+            // The conversion machinery was never the problem: the identical pair used as a MEMBER already
+            // resolves correctly through the enum converter. Only this declared-pair path constructed
+            // instead of converting.
+            var genIsEnum = genTgt.TypeKind == TypeKind.Enum;
+
+            if (genIsColl || genIsDict || genIsEnum)
             {
                 bool gResolved = TryResolveConversion(
                     genComp, genSrc, genTgt, null, allMethods, mapperMethods, enumStrategy, synthesized,
                     nullStrategy, genLoc, "Map", diagnostics, out var gConv, out _, out var gNeedsCtx,
                     classAutoNest, nestedRegistry, nullCollections == NullCollectionsBehavior.AsNull,
-                    isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions);
+                    isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
+                    // Without this the ELEMENT conversion for a collection pair can adopt a method
+                    // dedicated to one pair — a [MapConstructor] factory over the same types matches by
+                    // signature and wins, so the loop constructs each element and assigns nothing.
+                    reservedConverters: mapperReservedConverters);
 
                 if (!gResolved || gConv is null)
                     continue; // element/shape diagnostic already reported by the recursive call
@@ -1169,7 +1191,8 @@ internal static partial class MapperExtractor
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 MatchPairValues(pairValues, genTgt), valueProviders,
                 mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
-                explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete);
+                explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
+                mapperReservedConverters: mapperReservedConverters);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -1313,7 +1336,10 @@ internal static partial class MapperExtractor
                 // ignoreObsolete DOES propagate (unlike explicitOnly): skipping an obsolete nested member just
                 // leaves it at its default — safe and consistent — with no "unmappable" hazard.
                 mapPropertyExtras: nestedExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
-                ignoreObsolete: ignoreObsolete);
+                ignoreObsolete: ignoreObsolete,
+                // A synthesized nested mapper must not adopt a dedicated converter either — the author
+                // never wrote this pair, so they certainly did not offer it one.
+                mapperReservedConverters: mapperReservedConverters);
 
             // Only the pairs registered above — a genuinely NESTED member pair is deliberately left alone,
             // because source coverage has never applied at depth and turning it on for every synthesized pair
@@ -1435,7 +1461,13 @@ internal static partial class MapperExtractor
         // refresh-an-existing-instance pattern, and the span/async-stream/projection shapes carry their own
         // parameter lists. Auto-synthesized nested pairs never reach `methods`, so a same-type nested member
         // (the graph's shape, not a typo) is exempt by construction.
-        for (var i = 0; i < methods.Count; i++)
+        // A deliberate clone says so with [SuppressMessage] on the mapper. #pragma cannot reach a
+        // generator-reported diagnostic (Roslyn does not run these through pragma filtering), so without
+        // honouring the attribute the only escape hatch is an .editorconfig entry that disables the rule
+        // for an entire project — far broader than the one deliberate clone being acknowledged.
+        var selfMapSuppressed = HasSuppressMessage(classSymbol, "DWARF076");
+
+        for (var i = 0; i < methods.Count && !selfMapSuppressed; i++)
         {
             var m = methods[i];
             if (!(m.IsPartial || m.EmitAsNonPartial)) continue;

@@ -717,9 +717,14 @@ and the cost of the silence is that the mapper looks wired up while mapping noth
   nothing to fix, so it stays quiet.
 
 **Fix:** correct the type argument to the target you meant. If a shallow clone genuinely *is* what you want, say
-so by suppressing the id at that site (`#pragma warning disable DWARF076`, a `[SuppressMessage]`, or
-`dotnet_diagnostic.DWARF076.severity = none` in `.editorconfig`) — this is a Warning, so a warnings-as-errors
-build still fails until you make that choice explicit.
+so by suppressing the id at that site — either `[SuppressMessage("DwarfMapper", "DWARF076:…")]` on the mapper
+class, or `dotnet_diagnostic.DWARF076.severity = none` in `.editorconfig`. This is a Warning, so a
+warnings-as-errors build still fails until you make that choice explicit.
+
+> **`#pragma warning disable DWARF076` does not work**, and neither does a pragma for any other `DWARF…` id.
+> Pragmas are applied by the compiler's diagnostic filtering, which source-generator-reported diagnostics do
+> not pass through — a Roslyn limitation rather than something DwarfMapper can honour. Use `[SuppressMessage]`
+> for an in-file, next-to-the-code hatch, or `.editorconfig` to change the rule project-wide.
 
 ---
 

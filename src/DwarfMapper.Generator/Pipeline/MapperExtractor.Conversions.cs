@@ -26,7 +26,8 @@ internal static partial class MapperExtractor
         bool isPreserve = false,
         bool allowInterfaceSrc = false,
         bool isSetNull = false,
-        bool implicitConversions = true)
+        bool implicitConversions = true,
+        IReadOnlyCollection<string>? reservedConverters = null)
     {
         converterMethod = null;
         nullHandling = NullHandling.None;
@@ -78,12 +79,12 @@ internal static partial class MapperExtractor
             if (!TryResolveConversion(compilation, srcKey, tgtKey, null, allMethods, autoCandidates, enumStrategy,
                     synthesized, nullStrategy, location, targetName, diagnostics, out var keyConv, out var keyNull,
                     out var keyNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
-                    implicitConversions: implicitConversions))
+                    implicitConversions: implicitConversions, reservedConverters: reservedConverters))
                 return false;
             if (!TryResolveConversion(compilation, srcVal, tgtVal, null, allMethods, autoCandidates, enumStrategy,
                     synthesized, nullStrategy, location, targetName, diagnostics, out var valConv, out var valNull,
                     out var valNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
-                    implicitConversions: implicitConversions))
+                    implicitConversions: implicitConversions, reservedConverters: reservedConverters))
                 return false;
             // Preserve OR SetNull: if the key/value converter is an auto-nested object mapper, force it RC
             // so it carries (ctx, depth) and the dict helper threads the shared context into it — this is
@@ -212,7 +213,7 @@ internal static partial class MapperExtractor
             if (!TryResolveConversion(compilation, srcElem, tgtElem, null, allMethods, autoCandidates, enumStrategy,
                     synthesized, nullStrategy, location, targetName, diagnostics, out var elemConv, out var elemNull,
                     out var elemNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve, isSetNull: isSetNull,
-                    implicitConversions: implicitConversions))
+                    implicitConversions: implicitConversions, reservedConverters: reservedConverters))
                 return false; // element diagnostic already reported by the recursive call
 
             // #100: a nullable-annotated REFERENCE element whose target element is non-nullable needs the
@@ -316,7 +317,8 @@ internal static partial class MapperExtractor
         if (IsNullableValue(srcType, out var bothSrcU) && IsNullableValue(tgtType, out var bothTgtU))
             if (TryResolveConversion(compilation, bothSrcU, bothTgtU, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerNN, out _, out _, autoNest, nestedRegistry, nullAsNull) && innerNN is not null)
+                    out var innerNN, out _, out _, autoNest, nestedRegistry, nullAsNull,
+                    reservedConverters: reservedConverters) && innerNN is not null)
             {
                 converterMethod = innerNN;
                 nullHandling = NullHandling.NullableProject;
@@ -340,7 +342,8 @@ internal static partial class MapperExtractor
             // Guard: 'underlying' is not itself nullable (Nullable<Nullable<T>> is illegal in C#).
             if (TryResolveConversion(compilation, underlying, tgtType, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerConv, out _, out _, autoNest, nestedRegistry, nullAsNull))
+                    out var innerConv, out _, out _, autoNest, nestedRegistry, nullAsNull,
+                    reservedConverters: reservedConverters))
             {
                 nullHandling = nullStrategy == NullStrategy.SetDefault
                     ? NullHandling.ValueOrDefault
@@ -361,7 +364,8 @@ internal static partial class MapperExtractor
         {
             if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
                     enumStrategy, synthesized, nullStrategy, location, targetName, diagnostics,
-                    out var innerConvT, out _, out _, autoNest, nestedRegistry, nullAsNull))
+                    out var innerConvT, out _, out _, autoNest, nestedRegistry, nullAsNull,
+                    reservedConverters: reservedConverters))
             {
                 converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
                 // nullHandling stays None — source is non-null, always yields a value
@@ -379,9 +383,22 @@ internal static partial class MapperExtractor
         //   1. autoCandidates  — partial mapper methods (S → D object-level mappers)
         //   2. allMethods      — non-partial scalar converter helpers (e.g. int Shrink(long v))
         //      These are already in allMethods; excluding partials avoids double-counting mappers.
+        // A method named by some [MapProperty(Use = …)] is RESERVED: the author dedicated it to that one
+        // member, which is a statement of intent, not an offer of a general-purpose converter. Without
+        // this guard it is also auto-adopted for every other member whose types happen to line up —
+        // silently, with no diagnostic and a green build.
+        //
+        // Found migrating a real codebase: a `string BuildDocumentId(Guid)` written for Document.Id (it
+        // prefixes a date) was also applied to Document.DonationId, a plain auto-matched Guid→string
+        // member, so every record would have stored the decorated id in the plain field. An explicit
+        // Use= for THIS member still resolves above and is unaffected — only auto-adoption is blocked.
+        static bool IsReserved(IReadOnlyCollection<string>? reserved, string name) =>
+            reserved is not null && reserved.Contains(name);
+
         string? found = null;
         foreach (var c in autoCandidates)
-            if (HasImplicitConversion(compilation, srcType, c.ParamType)
+            if (!IsReserved(reservedConverters, c.Name)
+                && HasImplicitConversion(compilation, srcType, c.ParamType)
                 && HasImplicitConversion(compilation, c.ReturnType, tgtType))
             {
                 if (found is not null)
@@ -397,6 +414,9 @@ internal static partial class MapperExtractor
         // Also search all non-partial user methods (scalar converters not declared as partial mappers).
         foreach (var m in allMethods)
         {
+            if (IsReserved(reservedConverters, m.Name))
+                continue;
+
             // Skip methods that are already in autoCandidates (partial mapper methods).
             if (autoCandidates.Any(ac => string.Equals(ac.Name, m.Name, StringComparison.Ordinal)
                                          && SymbolEqualityComparer.Default.Equals(ac.ParamType, m.ParamType)
@@ -769,6 +789,94 @@ internal static partial class MapperExtractor
             return true;
 
         return false;
+    }
+
+    /// <summary>
+    ///     Every method name dedicated to a member by a <c>Use=</c> anywhere on this mapper — class-level
+    ///     pair-scoped attributes and per-method ones alike.
+    /// </summary>
+    /// <remarks>
+    ///     These are withheld from signature-based auto-adoption. Naming a converter for a member states
+    ///     that it belongs to that member; it is not an offer to convert every pair of those types. The
+    ///     scan is deliberately generic over the named argument rather than per-attribute-type, so it
+    ///     covers <c>[MapProperty]</c>, <c>[MapValue]</c> and their generic pair-scoped forms uniformly,
+    ///     and keeps working if another attribute gains a <c>Use=</c>.
+    /// </remarks>
+    /// <summary>
+    ///     True when the symbol carries <c>[SuppressMessage(…, "DWARFxxx…")]</c> for the given id.
+    /// </summary>
+    /// <remarks>
+    ///     Generator-reported diagnostics do not pass through Roslyn's pragma filtering, so
+    ///     <c>#pragma warning disable</c> cannot reach them — that is a platform limitation, not something
+    ///     this generator can fix. <c>[SuppressMessage]</c> however is an ordinary attribute the generator
+    ///     can read, so honouring it restores an in-FILE escape hatch next to the deliberate code, instead
+    ///     of forcing an <c>.editorconfig</c> entry that disables the rule for the whole project.
+    ///     <para>
+    ///         The checkId is matched by prefix because the conventional spelling carries a description
+    ///         after a colon: <c>"DWARF076:Source and target are the same type"</c>.
+    ///     </para>
+    /// </remarks>
+    private static bool HasSuppressMessage(ISymbol symbol, string diagnosticId)
+    {
+        foreach (var a in symbol.GetAttributes())
+        {
+            if (!string.Equals(a.AttributeClass?.Name, "SuppressMessageAttribute", StringComparison.Ordinal))
+                continue;
+
+            if (a.ConstructorArguments.Length < 2)
+                continue;
+
+            if (a.ConstructorArguments[1].Value is string checkId
+                && (string.Equals(checkId, diagnosticId, StringComparison.Ordinal)
+                    || checkId.StartsWith(diagnosticId + ":", StringComparison.Ordinal)))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static HashSet<string> CollectReservedConverterNames(INamedTypeSymbol classSymbol)
+    {
+        var reserved = new HashSet<string>(StringComparer.Ordinal);
+
+        static void Scan(HashSet<string> into, System.Collections.Immutable.ImmutableArray<AttributeData> attrs)
+        {
+            foreach (var a in attrs)
+                foreach (var na in a.NamedArguments)
+                    if (string.Equals(na.Key, "Use", StringComparison.Ordinal)
+                        && na.Value.Value is string s
+                        && !string.IsNullOrEmpty(s))
+                        into.Add(s);
+        }
+
+        // [MapConstructor<S,T>("Factory")] names the factory as a CONSTRUCTOR argument, not a named one,
+        // so the Use= scan above cannot see it. It must be reserved for the same reason and with more
+        // force: a factory only CONSTRUCTS its pair's target, after which the pair assigns members.
+        // Adopted as a general element converter it produces an object with nothing filled in — the
+        // collection case that surfaced this returned an Empty singleton, so a whole collection mapped
+        // to blanks, silently and with a green build.
+        static void ScanCtorFactories(HashSet<string> into, System.Collections.Immutable.ImmutableArray<AttributeData> attrs)
+        {
+            foreach (var a in attrs)
+            {
+                if (!string.Equals(a.AttributeClass?.Name, KnownNames.MapConstructor, StringComparison.Ordinal))
+                    continue;
+
+                foreach (var ca in a.ConstructorArguments)
+                    if (ca.Value is string s && !string.IsNullOrEmpty(s))
+                        into.Add(s);
+            }
+        }
+
+        Scan(reserved, classSymbol.GetAttributes());
+        ScanCtorFactories(reserved, classSymbol.GetAttributes());
+        foreach (var member in classSymbol.GetMembers())
+        {
+            Scan(reserved, member.GetAttributes());
+            ScanCtorFactories(reserved, member.GetAttributes());
+        }
+
+        return reserved;
     }
 
     private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> CollectMethods(
