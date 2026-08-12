@@ -207,7 +207,7 @@ internal static partial class MapperExtractor
                 || attr.ConstructorArguments[1].Value is not string keyMember)
                 continue;
 
-            var idx = members.FindIndex(m => StringComparer.Ordinal.Equals(m.TargetName, collectionMember));
+            var idx = members.FindIndex(m => StringComparer.Ordinal.Equals(m.EmitTargetName, collectionMember));
             if (idx < 0)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionKeyInvalid, location,

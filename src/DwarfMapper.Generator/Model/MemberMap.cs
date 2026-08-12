@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Core;
+
 namespace DwarfMapper.Generator.Model;
 
 /// <summary>
@@ -93,4 +95,19 @@ public sealed record MemberMap(
     /// never forgiven — dropping a null it was written to accept. Set only for the user-declared converter path;
     /// synthesized helpers keep flowing through <c>IsSynthesized</c>.
     /// </summary>
-    bool ConverterParamIsNonNullableRef = false) : IEquatable<MemberMap>;
+    bool ConverterParamIsNonNullableRef = false) : IEquatable<MemberMap>
+{
+    /// <summary>
+    ///     <see cref="TargetName" /> as it must be written into emitted C# — <c>class</c> becomes <c>@class</c>.
+    /// </summary>
+    /// <remarks>
+    ///     Kept separate from the raw name rather than replacing it. <see cref="TargetName" /> is COMPARED
+    ///     (DWARF081's member list, the <c>[RestatesBase]</c> drift check, its <c>Overrides</c> matching) and
+    ///     printed in diagnostics, and <c>nameof(Dto.@class)</c> yields <c>"class"</c> — so escaping in place
+    ///     would silently break every one of those. Emission is the only place the <c>@</c> belongs.
+    /// </remarks>
+    public string EmitTargetName => Identifiers.EscapePath(TargetName);
+
+    /// <summary><see cref="SourceName" /> as it must be written into emitted C#. See <see cref="EmitTargetName" />.</summary>
+    public string EmitSourceName => Identifiers.EscapePath(SourceName);
+}

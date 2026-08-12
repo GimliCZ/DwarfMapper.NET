@@ -107,8 +107,8 @@ internal static class MapEmitter
     private static void AddPlanLine(List<string> lines, MemberMap m, string? tag)
     {
         var line = m.ValueExpression is not null
-            ? m.TargetName + " = " + m.ValueExpression
-            : m.TargetName + " <- " + (m.SourceName.Length == 0 ? "(none)" : m.SourceName);
+            ? m.EmitTargetName + " = " + m.ValueExpression
+            : m.EmitTargetName + " <- " + (m.EmitSourceName.Length == 0 ? "(none)" : m.EmitSourceName);
         if (m.ConverterMethod is not null) line += " via " + m.ConverterMethod;
         if (m.NullSubstituteLiteral is not null) line += " (?? " + m.NullSubstituteLiteral + ")";
         if (m.WhenPredicate is not null) line += " (when " + m.WhenPredicate + ")";
@@ -290,7 +290,7 @@ internal static class MapEmitter
                 sb.AppendLine("new " + method.ElementTargetTypeFullName);
                 sb.Append(indent).AppendLine("    {");
                 foreach (var pm in projMembers)
-                    sb.Append(indent).Append("        ").Append(pm.TargetName)
+                    sb.Append(indent).Append("        ").Append(pm.EmitTargetName)
                         .Append(" = ").Append(pm.InlineExpr).AppendLine(",");
                 sb.Append(indent).AppendLine("    });");
             }
@@ -300,8 +300,8 @@ internal static class MapEmitter
                 sb.AppendLine("new " + method.ElementTargetTypeFullName);
                 sb.Append(indent).AppendLine("    {");
                 foreach (var member in method.Members)
-                    sb.Append(indent).Append("        ").Append(member.TargetName)
-                        .Append(" = __s.").Append(member.SourceName).AppendLine(",");
+                    sb.Append(indent).Append("        ").Append(member.EmitTargetName)
+                        .Append(" = __s.").Append(member.EmitSourceName).AppendLine(",");
                 sb.Append(indent).AppendLine("    });");
             }
 
@@ -389,14 +389,14 @@ internal static class MapEmitter
             {
                 if (member.WhenPredicate is not null)
                     sb.Append(indent).Append("    if (").Append(member.WhenPredicate).Append('(')
-                        .Append(method.ParameterName).Append(")) __dwarf_target.").Append(member.TargetName)
+                        .Append(method.ParameterName).Append(")) __dwarf_target.").Append(member.EmitTargetName)
                         .Append(" = ");
                 else if (member.SkipIfSourceNull)
                     sb.Append(indent).Append("    if (").Append(method.ParameterName).Append('.')
-                        .Append(member.SourceName)
-                        .Append(" is not null) __dwarf_target.").Append(member.TargetName).Append(" = ");
+                        .Append(member.EmitSourceName)
+                        .Append(" is not null) __dwarf_target.").Append(member.EmitTargetName).Append(" = ");
                 else
-                    sb.Append(indent).Append("    __dwarf_target.").Append(member.TargetName).Append(" = ");
+                    sb.Append(indent).Append("    __dwarf_target.").Append(member.EmitTargetName).Append(" = ");
                 AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                 sb.AppendLine(";");
             }
@@ -426,7 +426,7 @@ internal static class MapEmitter
             for (var i = 0; i < ctorArgs.Count; i++)
             {
                 var arg = ctorArgs[i];
-                sb.Append(indent).Append("        ").Append(arg.TargetName).Append(": ");
+                sb.Append(indent).Append("        ").Append(arg.EmitTargetName).Append(": ");
                 AppendValueExpression(sb, arg, method.ParameterName, ctxVarName, depthPassFwd);
                 if (i < ctorArgs.Count - 1)
                     sb.AppendLine(",");
@@ -442,7 +442,7 @@ internal static class MapEmitter
                 {
                     if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null ||
                         member.SkipIfSourceNull) continue; // deferred
-                    sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
+                    sb.Append(indent).Append("        ").Append(member.EmitTargetName).Append(" = ");
                     AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
                 }
@@ -463,7 +463,7 @@ internal static class MapEmitter
             {
                 if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null ||
                     member.SkipIfSourceNull) continue; // deferred
-                sb.Append(indent).Append("        ").Append(member.TargetName).Append(" = ");
+                sb.Append(indent).Append("        ").Append(member.EmitTargetName).Append(" = ");
                 AppendValueExpression(sb, member, method.ParameterName, ctxVarName, depthPassFwd);
                 sb.AppendLine(",");
             }
@@ -577,7 +577,7 @@ internal static class MapEmitter
             for (var i = 0; i < ctorArgs.Count; i++)
             {
                 var arg = ctorArgs[i];
-                sb.Append(indent).Append("        ").Append(arg.TargetName).Append(": ");
+                sb.Append(indent).Append("        ").Append(arg.EmitTargetName).Append(": ");
                 AppendValueExpression(sb, arg, p, ctxVarName, depthPassFwd);
                 if (i < ctorArgs.Count - 1)
                     sb.AppendLine(",");
@@ -602,7 +602,7 @@ internal static class MapEmitter
         {
             if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null ||
                 member.SkipIfSourceNull) continue; // deferred
-            sb.Append(indent).Append("    __dwarf_t.").Append(member.TargetName).Append(" = ");
+            sb.Append(indent).Append("    __dwarf_t.").Append(member.EmitTargetName).Append(" = ");
             AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
             sb.AppendLine(";");
         }
@@ -769,7 +769,7 @@ internal static class MapEmitter
                 continue;
             }
 
-            sb.Append(indent).Append("    ").Append(dst).Append('.').Append(member.TargetName).Append(" = ");
+            sb.Append(indent).Append("    ").Append(dst).Append('.').Append(member.EmitTargetName).Append(" = ");
             AppendValueExpression(sb, member, src, ctxVar);
             sb.AppendLine(";");
         }
@@ -802,8 +802,8 @@ internal static class MapEmitter
     private static void EmitCollectionKeyUpsert(StringBuilder sb, MemberMap member, string src, string dst,
         string indent)
     {
-        var srcAccess = src + "." + member.SourceName;
-        var dstAccess = dst + "." + member.TargetName;
+        var srcAccess = src + "." + member.EmitSourceName;
+        var dstAccess = dst + "." + member.EmitTargetName;
         var key = member.UpsertKeyMember;
         var keyType = member.UpsertKeyTypeFqn;
 
@@ -898,7 +898,7 @@ internal static class MapEmitter
             for (var i = 0; i < ctorArgs.Count; i++)
             {
                 var arg = ctorArgs[i];
-                sb.Append(indent).Append("            ").Append(arg.TargetName).Append(": ");
+                sb.Append(indent).Append("            ").Append(arg.EmitTargetName).Append(": ");
                 AppendValueExpression(sb, arg, p, ctxVarName, depthPassFwd);
                 if (i < ctorArgs.Count - 1)
                     sb.AppendLine(",");
@@ -914,7 +914,7 @@ internal static class MapEmitter
                 {
                     if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null ||
                         member.SkipIfSourceNull) continue; // deferred
-                    sb.Append(indent).Append("            ").Append(member.TargetName).Append(" = ");
+                    sb.Append(indent).Append("            ").Append(member.EmitTargetName).Append(" = ");
                     AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
                     sb.AppendLine(",");
                 }
@@ -934,7 +934,7 @@ internal static class MapEmitter
             {
                 if (member.UnflattenIntermediateFqn is not null || member.WhenPredicate is not null ||
                     member.SkipIfSourceNull) continue; // deferred
-                sb.Append(indent).Append("            ").Append(member.TargetName).Append(" = ");
+                sb.Append(indent).Append("            ").Append(member.EmitTargetName).Append(" = ");
                 AppendValueExpression(sb, member, p, ctxVarName, depthPassFwd);
                 sb.AppendLine(",");
             }
@@ -1054,13 +1054,13 @@ internal static class MapEmitter
         foreach (var member in method.Members)
         {
             if (member.UnflattenIntermediateFqn is null) continue;
-            var dot = member.TargetName.IndexOf('.');
-            var root = member.TargetName.Substring(0, dot);
+            var dot = member.EmitTargetName.IndexOf('.');
+            var root = member.EmitTargetName.Substring(0, dot);
             if (emittedRoots.Add(root))
                 sb.Append(indent).Append("if (").Append(targetVar).Append('.').Append(root)
                     .Append(" is null) ").Append(targetVar).Append('.').Append(root)
                     .Append(" = new ").Append(member.UnflattenIntermediateFqn).Append("();").AppendLine();
-            sb.Append(indent).Append(targetVar).Append('.').Append(member.TargetName).Append(" = ");
+            sb.Append(indent).Append(targetVar).Append('.').Append(member.EmitTargetName).Append(" = ");
             AppendValueExpression(sb, member, paramName, ctxVarName, depthArg);
             sb.AppendLine(";");
         }
@@ -1069,7 +1069,7 @@ internal static class MapEmitter
         {
             if (member.WhenPredicate is null || member.UnflattenIntermediateFqn is not null) continue;
             sb.Append(indent).Append("if (").Append(member.WhenPredicate).Append('(').Append(paramName)
-                .Append(")) ").Append(targetVar).Append('.').Append(member.TargetName).Append(" = ");
+                .Append(")) ").Append(targetVar).Append('.').Append(member.EmitTargetName).Append(" = ");
             AppendValueExpression(sb, member, paramName, ctxVarName, depthArg);
             sb.AppendLine(";");
         }
@@ -1079,8 +1079,8 @@ internal static class MapEmitter
             // [DwarfMapper(SkipNullSourceMembers = true)]: keep the destination default when the source is null.
             if (!member.SkipIfSourceNull || member.WhenPredicate is not null ||
                 member.UnflattenIntermediateFqn is not null) continue;
-            sb.Append(indent).Append("if (").Append(paramName).Append('.').Append(member.SourceName)
-                .Append(" is not null) ").Append(targetVar).Append('.').Append(member.TargetName).Append(" = ");
+            sb.Append(indent).Append("if (").Append(paramName).Append('.').Append(member.EmitSourceName)
+                .Append(" is not null) ").Append(targetVar).Append('.').Append(member.EmitTargetName).Append(" = ");
             AppendValueExpression(sb, member, paramName, ctxVarName, depthArg);
             sb.AppendLine(";");
         }
@@ -1113,7 +1113,7 @@ internal static class MapEmitter
         // [MapProperty(NullSubstitute=)]: coalesce a null source member to a constant (direct members only).
         if (member.NullSubstituteLiteral is not null && member.ConverterMethod is null)
         {
-            sb.Append(paramName).Append('.').Append(member.SourceName).Append(" ?? ")
+            sb.Append(paramName).Append('.').Append(member.EmitSourceName).Append(" ?? ")
                 .Append(member.NullSubstituteLiteral);
             return;
         }
@@ -1123,7 +1123,7 @@ internal static class MapEmitter
         // C# 9+ target-typed conditional unifies U (from Conv) and null into U?.
         if (member.NullHandling == NullHandling.NullableProject)
         {
-            var srcExpr = paramName + "." + member.SourceName;
+            var srcExpr = paramName + "." + member.EmitSourceName;
             if (member.ConverterMethod is not null)
                 sb.Append(srcExpr).Append(".HasValue ? ")
                     .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value) : null");
@@ -1138,15 +1138,15 @@ internal static class MapEmitter
         switch (member.NullHandling)
         {
             case NullHandling.ThrowIfNull:
-                innerAccess = paramName + "." + member.SourceName
+                innerAccess = paramName + "." + member.EmitSourceName
                               + " ?? throw new global::System.InvalidOperationException(\"Source member '"
-                              + member.SourceName + "' was null\")";
+                              + member.EmitSourceName + "' was null\")";
                 break;
             case NullHandling.ValueOrDefault:
-                innerAccess = paramName + "." + member.SourceName + ".GetValueOrDefault()";
+                innerAccess = paramName + "." + member.EmitSourceName + ".GetValueOrDefault()";
                 break;
             default:
-                innerAccess = paramName + "." + member.SourceName;
+                innerAccess = paramName + "." + member.EmitSourceName;
                 break;
         }
 
@@ -1190,12 +1190,12 @@ internal static class MapEmitter
                                         || member.ConverterParamIsNonNullableRef));
                 if (member.ConverterNeedsDepthCtx)
                     sb.Append(member.ConverterMethod).Append('(')
-                        .Append(paramName).Append('.').Append(member.SourceName)
+                        .Append(paramName).Append('.').Append(member.EmitSourceName)
                         .Append(needsBang ? "!" : "").Append(", ")
                         .Append(ctxVarName).Append(", ").Append(depthArg).Append(')');
                 else
                     sb.Append(member.ConverterMethod).Append('(')
-                        .Append(paramName).Append('.').Append(member.SourceName)
+                        .Append(paramName).Append('.').Append(member.EmitSourceName)
                         .Append(needsBang ? "!)" : ")");
             }
         }

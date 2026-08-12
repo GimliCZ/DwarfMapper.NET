@@ -147,6 +147,7 @@ public class StatusDst
 [GenerateMap<OrderSrc, OrderDto>]
 [GenerateMap<StatusSrc, StatusDst>]
 [GenerateMap<OrderedSrc, OrderedDst>]
+[GenerateMap<KeywordSrc, KeywordDst>]
 public partial class DwarfShapes;
 
 /// <summary>The same enum shape under the parity switch, which is what Mapperly and AutoMapper both do.</summary>
@@ -175,14 +176,29 @@ public partial class MapperlyShapes
     public partial OrderedDst ToOrdered(OrderedSrc src);
 }
 
-// ── S7 reserved-keyword member names — HARVESTED, AND IT DOES NOT COMPILE ────────────────────────────────
-// Deliberately left commented out rather than deleted. A DTO with a member called `@class` or `@event` is
-// ordinary in code generated from a schema, and this shape found that BOTH DwarfMapper and Mapperly emit the
-// name unescaped: `class = src.class;`, which the C# compiler parses as a malformed event declaration. The
-// harvest's first genuine defect, in two generators at once. Task R18-30; uncomment when the emitters escape.
-//
-// public class KeywordSrc { public string @class { get; set; } = ""; public int @event { get; set; } }
-// public class KeywordDst { public string @class { get; set; } = ""; public int @event { get; set; } }
+// ── S7 reserved-keyword member names ──────────────────────────────────────────────────────────────────────
+// Harvested shape (R18-29), and the harvest's first genuine defect: BOTH DwarfMapper and Mapperly emitted the
+// name unescaped — `class = src.class;`, which the C# compiler parses as a malformed event declaration. A DTO
+// with a member called `@class` or `@event` is ordinary in code generated from a schema; nobody writing test
+// fixtures by hand chooses to type one, which is exactly why an outside inventory was worth building.
+// DwarfMapper's half is fixed (R18-30). Mapperly's is not, so the comparison runs against AutoMapper only.
+public class KeywordSrc
+{
+    public string @class { get; set; } = "";
+
+    public int @event { get; set; }
+
+    public bool @operator { get; set; }
+}
+
+public class KeywordDst
+{
+    public string @class { get; set; } = "";
+
+    public int @event { get; set; }
+
+    public bool @operator { get; set; }
+}
 
 // ── S8 Stack and Queue — where element ORDER is the whole question ────────────────────────────────────────
 // Harvested shape (R18-29): both types appeared in the corpus; whether the order survives was never asserted.

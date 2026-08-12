@@ -51,7 +51,7 @@ shape DwarfMapper has, with the reason.
 | Ignore obsolete members | ✅ | `IgnoreObsoleteMembers`, Conformance F34 |
 | Constant / computed values | ✅ | `[MapValue]`, Conformance F13 |
 | No mappable members at all | ✅ | `DWARF001` completeness gate |
-| **Reserved-keyword member names** (`@class`) | **🐞 defect** | emitted unescaped — see below, task **R18-30** |
+| Reserved-keyword member names (`@class`) | ✅ | **found and fixed by this pass** — R18-30; `ReservedKeywordMemberTests` |
 | **Value tuples as a target** | **➕ gap** | named in the fuzz schema, never mapped end-to-end |
 
 ### Collections and dictionaries
@@ -135,17 +135,21 @@ collapses.
 
 **Mapperly emits the same unescaped form and fails identically.** So this is not a case of being behind a
 competitor — it is a shape *neither* corpus ever asked about, which is the entire argument for harvesting from
-outside in the first place. Filed as **R18-30**, with the design note that member names reach emitted code at
-~41 sites and that patching 40 of them reproduces a defect class this project has already been bitten by twice.
+outside in the first place. **Fixed** (R18-30). Member names reach emitted code from ~40 places, and patching 39 of them would reproduce
+a defect class this project has already been bitten by twice — so the escape lives on `MemberMap` as
+`EmitTargetName`/`EmitSourceName` (per *segment*, because flattening carries `a.b.c` in one name), and a
+self-validation scan now fails the build if any emitter names the raw pair. The raw names stay raw, because
+they are also compared and printed, and `nameof(Dto.@class)` yields `"class"`.
 
-The shape itself is written and commented out in `tests/DwarfMapper.DifferentialTests/Shapes.cs`, with its
-catalogue entry, so closing R18-30 is a matter of uncommenting two blocks and watching the comparison go green.
+The shape is now a live differential comparison — against AutoMapper only, because Mapperly's generated mapper
+still does not compile for it.
 
 ### The rest
 
 **Four gaps**, all of them shapes nobody here would have thought of, which is the point:
 
-1. **Reserved-keyword member names** — a defect in both generators, above. **R18-30.**
+1. **Reserved-keyword member names** — a defect in both generators, above. Fixed here (**R18-30**);
+   still open upstream in Mapperly.
 2. **`Stack`/`Queue` element order.** Closed: added as a differential shape, and all three mappers agree —
    enumeration order survives. Worth having asserted rather than assumed, because enumerating a `Stack` yields
    last-in-first-out and a mapper that rebuilds one by pushing in enumeration order reverses it, silently, and

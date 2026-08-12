@@ -46,6 +46,7 @@ internal static class ShapeCatalog
         c.CreateMap<OrderSrc, OrderDto>();
         c.CreateMap<StatusSrc, StatusDst>();
         c.CreateMap<OrderedSrc, OrderedDst>();
+        c.CreateMap<KeywordSrc, KeywordDst>();
     }).CreateMapper();
 
     public static IEnumerable<Comparison> All()
@@ -125,9 +126,13 @@ internal static class ShapeCatalog
         yield return new Comparison("EnumToString", Oracles.AutoMapper,
             Dwarf.Map(status), Auto.Map<StatusDst>(status));
 
-        // A reserved-keyword shape (@class, @event) is NOT here, and that is a finding rather than an
-        // omission: BOTH DwarfMapper and Mapperly emit the member name unescaped, so neither compiles. See
-        // Issues/Rount18/ShapeInventory.md and task R18-30. The shape returns here when the emitters do.
+        // Harvested shape (R18-29) and the harvest's first defect: DwarfMapper emitted `class = src.class,`,
+        // which the compiler parses as a malformed event declaration. Fixed (R18-30). Compared against
+        // AutoMapper only — Mapperly emits the same unescaped form and its generated mapper does not compile,
+        // so it cannot be an oracle for this shape until that is fixed upstream.
+        var keywords = new KeywordSrc { @class = "wizard", @event = 3, @operator = true };
+        yield return new Comparison("ReservedKeywordMembers", Oracles.AutoMapper,
+            Dwarf.Map(keywords), Auto.Map<KeywordDst>(keywords));
 
         // Order is the whole question here: enumerating a Stack yields last-in-first-out, so a mapper that
         // rebuilds one by pushing in enumeration order reverses it — silently, and only for that one kind.

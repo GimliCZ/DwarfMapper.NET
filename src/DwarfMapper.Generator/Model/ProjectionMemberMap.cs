@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Core;
+
 namespace DwarfMapper.Generator.Model;
 
 /// <summary>
@@ -24,4 +26,11 @@ public sealed record ProjectionMemberMap(
     ///   "new global::D.PointDto(x: __s.Point.X, y: __s.Point.Y)"
     /// Never contains a synthesized helper call (__DwarfMap_*).
     /// </summary>
-    string InlineExpr) : IEquatable<ProjectionMemberMap>;
+    string InlineExpr) : IEquatable<ProjectionMemberMap>
+{
+    /// <summary>
+    ///     <see cref="TargetName" /> as it must be written into emitted C# — see <c>MemberMap.EmitTargetName</c>
+    ///     for why the escape belongs at emission and not in the name itself.
+    /// </summary>
+    public string EmitTargetName => Identifiers.EscapePath(TargetName);
+}

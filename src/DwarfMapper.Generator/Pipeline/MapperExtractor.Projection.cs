@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -278,7 +279,7 @@ internal static partial class MapperExtractor
                 continue;
             }
 
-            var srcExprForExplicit = paramExpr + "." + srcName;
+            var srcExprForExplicit = paramExpr + "." + Identifiers.EscapePath(srcName);
             var inlineExpr = ResolveProjectionExpr(
                 sm, tgtType, srcExprForExplicit, 0, compilation, location,
                 diagnostics, tgtName, enumPolicy, comparer, autoNest);
@@ -378,7 +379,7 @@ internal static partial class MapperExtractor
             }
 
             consumedSources?.Add(src.Name);
-            var srcAccessExpr = paramExpr + "." + src.Name;
+            var srcAccessExpr = paramExpr + "." + Identifiers.Escape(src.Name);
             // C4: pass comparer so nested objects respect CaseInsensitive setting.
             var inlineExpr = ResolveProjectionExpr(
                 src.Type, target.Type, srcAccessExpr, 0,
@@ -787,7 +788,7 @@ internal static partial class MapperExtractor
                     continue;
                 }
 
-                var memberSrcExpr = srcExpr + "." + srcMember.Name;
+                var memberSrcExpr = srcExpr + "." + Identifiers.Escape(srcMember.Name);
                 // C4: propagate comparer into recursive member resolution.
                 var memberInlineExpr = ResolveProjectionExpr(
                     srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
@@ -847,7 +848,7 @@ internal static partial class MapperExtractor
                 continue;
             }
 
-            var paramSrcExpr = srcExpr + "." + srcMember.Name;
+            var paramSrcExpr = srcExpr + "." + Identifiers.Escape(srcMember.Name);
             // C4: propagate comparer into ctor param expression resolver.
             var paramInlineExpr = ResolveProjectionExpr(
                 srcMember.Type, param.Type, paramSrcExpr, depth + 1,
