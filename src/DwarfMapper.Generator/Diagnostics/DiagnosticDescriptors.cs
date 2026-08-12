@@ -754,6 +754,26 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf082");
 
+    /// <summary>
+    ///     An enum's string form is not its identifier, because <c>[EnumMember]</c>/<c>[Description]</c>
+    ///     redirects it — and that string is what gets persisted.
+    /// </summary>
+    /// <remarks>
+    ///     Round 18 came within one code review of shipping this: <c>DonationSource.Kofi</c> carried
+    ///     <c>[Description("Ko-Fi")]</c>, and the migration would have started writing <c>"Ko-Fi"</c> into a
+    ///     store full of <c>"Kofi"</c>, breaking reads of every existing document. The precedence is a good
+    ///     default; the hazard is that <c>[Description]</c> is usually a DISPLAY annotation.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor EnumStringNameDiverges = new(
+        "DWARF083",
+        "Enum maps to strings that are not its member identifiers",
+        "Enum '{0}. [EnumMember]/[Description] takes precedence over the identifier for enum-to-string "
+        + "mapping, so these are the values that will be written and read. If the attribute was meant for "
+        + "display rather than persistence — which is the common case — map through an explicit "
+        + "[MapProperty(Use = …)] converter, or remove it from the members you persist.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf083");
+
     public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
         "DWARF074",
         "[MapCollectionKey] cannot be applied here",

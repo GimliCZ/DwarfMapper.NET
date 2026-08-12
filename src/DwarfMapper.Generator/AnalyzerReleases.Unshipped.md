@@ -87,6 +87,7 @@ DWARF078 | DwarfMapper | Warning | No code was generated for this mapper
 DWARF079 | DwarfMapper | Error | [MapIgnore] cannot ignore a required member
 DWARF080 | DwarfMapper | Info | A [MapConstructor] factory cannot assign this member
 DWARF082 | DwarfMapper | Error | [ProvidesMap] method cannot be registered
+DWARF083 | DwarfMapper | Info | Enum maps to strings that are not its member identifiers
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

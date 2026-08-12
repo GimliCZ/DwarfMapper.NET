@@ -85,5 +85,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF079` | Error | [MapIgnore] cannot ignore a required member |
 | `DWARF080` | Info | A [MapConstructor] factory cannot assign this member |
 | `DWARF082` | Error | [ProvidesMap] method cannot be registered |
+| `DWARF083` | Info | Enum maps to strings that are not its member identifiers |
 
-77 diagnostics.
+78 diagnostics.

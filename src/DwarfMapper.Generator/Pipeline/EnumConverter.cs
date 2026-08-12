@@ -40,8 +40,17 @@ internal static class EnumConverter
                 : AddEnumByName(synthesized, (INamedTypeSymbol)src, (INamedTypeSymbol)tgt, location, targetName,
                     diagnostics);
 
-        if (srcEnum && tgtStr) return AddEnumToString(synthesized, (INamedTypeSymbol)src);
-        if (srcStr && tgtEnum) return AddStringToEnum(synthesized, (INamedTypeSymbol)tgt);
+        if (srcEnum && tgtStr)
+        {
+            ReportAttributeDivergence((INamedTypeSymbol)src, location, diagnostics);
+            return AddEnumToString(synthesized, (INamedTypeSymbol)src);
+        }
+
+        if (srcStr && tgtEnum)
+        {
+            ReportAttributeDivergence((INamedTypeSymbol)tgt, location, diagnostics);
+            return AddStringToEnum(synthesized, (INamedTypeSymbol)tgt);
+        }
 
         if (srcEnum && tgtNum) return AddEnumToNum(synthesized, (INamedTypeSymbol)src, tgt);
         if (srcNum && tgtEnum) return AddNumToEnum(synthesized, src, (INamedTypeSymbol)tgt);
@@ -311,6 +320,54 @@ internal static class EnumConverter
         }
 
         return member.Name;
+    }
+
+    /// <summary>
+    ///     Reports <c>DWARF083</c> when an enum's string form is NOT its identifier, because an
+    ///     <c>[EnumMember]</c>/<c>[Description]</c> on one or more members redirects it.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The precedence itself is good and deliberate: it lets <c>InProgress</c> serialize as
+    ///         <c>"in_progress"</c> with no custom converter. The hazard is that <c>[Description]</c> is
+    ///         overwhelmingly a <b>display</b> annotation — people put it on enums for combo-box labels — and
+    ///         here it silently becomes the <b>persistence</b> format.
+    ///     </para>
+    ///     <para>
+    ///         Round 18 came within one code review of shipping that: <c>DonationSource.Kofi</c> carried
+    ///         <c>[Description("Ko-Fi")]</c>, and the migration would have started writing <c>"Ko-Fi"</c> into
+    ///         a MongoDB collection full of <c>"Kofi"</c> — breaking reads of every existing document. The
+    ///         previous mapper used <c>.ToString()</c>, i.e. always the identifier.
+    ///     </para>
+    ///     <para>
+    ///         Reported ONCE PER ENUM, not per member: an enum annotated for display typically annotates most
+    ///         of its members, and a wall of identical Infos is how a useful diagnostic gets ignored.
+    ///     </para>
+    /// </remarks>
+    private static void ReportAttributeDivergence(
+        INamedTypeSymbol enumType, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+    {
+        // [Flags] keeps identifier semantics in both directions, so there is nothing to diverge.
+        if (IsFlagsEnum(enumType)) return;
+
+        var divergent = new List<string>();
+
+        foreach (var member in EnumMembers(enumType))
+        {
+            var serialized = SerializedName(member);
+            if (!string.Equals(serialized, member.Name, StringComparison.Ordinal))
+                divergent.Add(member.Name + " -> \"" + serialized + "\"");
+        }
+
+        if (divergent.Count == 0) return;
+
+        var shown = divergent.Count <= 3
+            ? string.Join(", ", divergent)
+            : string.Join(", ", divergent.Take(3)) + $", … ({divergent.Count} in total)";
+
+        diagnostics.Add(new DiagnosticInfo(
+            DiagnosticDescriptors.EnumStringNameDiverges, location,
+            enumType.Name + "' maps to strings that are not its member identifiers: " + shown + " ('"));
     }
 
     /// <summary>Escapes a serialized name for emission as a C# string literal.</summary>

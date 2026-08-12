@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF082`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF083`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -940,6 +940,45 @@ migration hit that on five pairs and recorded it as *"the code is fine; the harn
 
 Note the registry does **not** wrap your method — it calls it. A hand-written map carries its own argument
 guards, unlike a generated one.
+
+---
+
+## dwarf083
+**Enum maps to strings that are not its member identifiers** · Info
+
+A declared enum↔string mapping involves an enum whose string form is redirected by
+`[EnumMember(Value = "…")]` or `[Description("…")]`. Those are the values that will be **written and read**.
+
+The precedence is deliberate and useful — it is how `InProgress` serializes as `"in_progress"` with no custom
+converter. This exists because of the case where it is *not* what anyone intended:
+
+<!-- fence-exempt: shows the hazard; a "correct" version would not demonstrate it -->
+```csharp
+public enum DonationSource
+{
+    [Description("Ko-Fi")] Kofi,   // put here for a combo-box label…
+    Patreon
+}
+```
+
+`[Description]` is overwhelmingly a **display** annotation. Here it becomes the **persistence** format: the
+map writes `"Ko-Fi"` where a store built by a previous mapper's `.ToString()` holds `"Kofi"` — and the
+string→enum direction stops parsing the existing values for the same reason.
+
+**Fix — pick the one that matches your intent:**
+
+| You mean | Do |
+|---|---|
+| the attribute IS the wire format | nothing; this is working as intended |
+| the attribute is for display only | remove it from the members you persist, or map through `[MapProperty(Use = …)]` with a converter that returns the identifier |
+
+Reported **once per enum**, naming the first few divergent members and the total, because an enum annotated
+for display usually annotates most of its members.
+
+Not reported for `[Flags]` enums: their string form is the comma-joined list `Enum.ToString` builds from
+identifiers, so the attributes do not apply.
+
+> Round 18 came within one code review of shipping the `Ko-Fi` case into a live MongoDB collection.
 
 ---
 
