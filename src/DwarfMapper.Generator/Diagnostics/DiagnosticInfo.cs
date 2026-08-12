@@ -26,19 +26,29 @@ public sealed record DiagnosticInfo(
     // fix to the exact wording of a human-readable string: rewording a message (or localising it) silently
     // breaks the fix with no compile error and no failing test. A plain string keeps the record
     // value-equatable, which the incremental cache depends on — hence a single field rather than a dictionary.
-    string? MemberName = null)
+    string? MemberName = null,
+    // The pair a code fix should copy configuration FROM, as "SourceDisplayName|TargetDisplayName". Only
+    // DWARF085 sets it. Handed over rather than re-derived: the generator has already decided which pair is
+    // the base (nearest declared pair up the class chain, ties refused), and a CodeFixProvider working that
+    // out again from syntax would be a second implementation of the same rule — free to disagree with the
+    // first, silently, which is a defect shape this project has already been bitten by twice.
+    string? SourcePair = null)
 {
     /// <summary>Property bag key under which <see cref="MemberName" /> reaches a CodeFixProvider.</summary>
     public const string MemberPropertyKey = "Member";
+
+    /// <summary>Property bag key under which <see cref="SourcePair" /> reaches a CodeFixProvider.</summary>
+    public const string SourcePairPropertyKey = "SourcePair";
 
     public bool IsError => (SeverityOverride ?? Descriptor.DefaultSeverity) == DiagnosticSeverity.Error;
 
     public Diagnostic ToDiagnostic()
     {
         var location = Location?.ToLocation() ?? Microsoft.CodeAnalysis.Location.None;
-        var properties = MemberName is null
-            ? null
-            : ImmutableDictionary<string, string?>.Empty.Add(MemberPropertyKey, MemberName);
+        var properties = ImmutableDictionary<string, string?>.Empty;
+        if (MemberName is not null) properties = properties.Add(MemberPropertyKey, MemberName);
+        if (SourcePair is not null) properties = properties.Add(SourcePairPropertyKey, SourcePair);
+        if (properties.Count == 0) properties = null!;
 
         return SeverityOverride is { } sev
             ? Diagnostic.Create(Descriptor, location, sev, null, properties, MessageArg)

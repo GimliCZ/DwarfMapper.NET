@@ -281,5 +281,13 @@ R.Check("F45 EnumStringSource=Identifier writes the name", f45Identity.Source ==
 R.Check("F45 EnumStringSource=Identifier reads it back",
     new F45IdentityM().Map(new F45DonationDoc { Source = "Kofi" }).Source == F45DonationSource.Kofi);
 
+// F46 [RestatesBase] — the restated pair must actually behave like the base pair it restates. The attribute
+// emits nothing; what it buys is that a silent divergence becomes DWARF085 at build time instead of wrong data
+// at run time. Here both pairs trim, because both say so.
+var f46 = new F46M();
+R.Check("F46 [RestatesBase] base pair converts", f46.Map(new F46Command { Raw = "  hi  " }).Text == "hi");
+R.Check("F46 [RestatesBase] restated pair converts too",
+    f46.Map(new F46AliasCommand { Raw = "  hi  ", Alias = "a" }) is { Text: "hi", Alias: "a" });
+
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;

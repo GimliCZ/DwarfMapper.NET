@@ -159,7 +159,11 @@ public static class EndpointContractMatrix
                 "marks a HAND-WRITTEN method for ambient registration; it does not modify how any endpoint "
                 + "maps, and the method it marks is by definition not one the generator produced"),
             ["MapIgnoreSource"] = (CellStatus.NotApplicable,
-                "source-side completeness mirror, only meaningful under RequiredMapping = Both")
+                "source-side completeness mirror, only meaningful under RequiredMapping = Both"),
+            ["RestatesBase"] = (CellStatus.NotApplicable,
+                "declares a relationship for the DRIFT CHECK to verify (DWARF084/085) and changes no emitted "
+                + "code at any endpoint — a test asserts the generated output is byte-identical with and "
+                + "without it, which is what makes 'not applicable' a measurement here rather than a shrug")
         };
 
     /// <summary>Attributes this matrix has been taught about — explicitly per-cell, or uniformly.</summary>

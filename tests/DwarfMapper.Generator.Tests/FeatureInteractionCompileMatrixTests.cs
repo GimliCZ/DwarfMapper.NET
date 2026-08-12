@@ -92,6 +92,28 @@ public class FeatureInteractionCompileMatrixTests
                                                               }
                                                               """);
 
+        // [RestatesBase] — the drift check for a restated base pair. The interaction worth compiling is that
+        // BOTH pairs live on one mapper and the derived one carries its own copy of the base's configuration:
+        // that is the shape the attribute exists to guard, and it has to keep compiling while it agrees.
+        yield return new FimMatrixCase("restates_base", """
+                                                       using DwarfMapper;
+                                                       namespace Fim;
+                                                       public class RbCommand { public string Raw { get; set; } = ""; }
+                                                       public class RbAlias : RbCommand { public string Alias { get; set; } = ""; }
+                                                       public class RbCommandDto { public string Text { get; set; } = ""; }
+                                                       public class RbAliasDto : RbCommandDto { public string Alias { get; set; } = ""; }
+                                                       [DwarfMapper]
+                                                       [GenerateMap<RbCommand, RbCommandDto>]
+                                                       [MapProperty<RbCommand, RbCommandDto>(nameof(RbCommand.Raw), nameof(RbCommandDto.Text), Use = nameof(Clean))]
+                                                       [GenerateMap<RbAlias, RbAliasDto>]
+                                                       [RestatesBase<RbAlias, RbAliasDto>]
+                                                       [MapProperty<RbAlias, RbAliasDto>(nameof(RbCommand.Raw), nameof(RbCommandDto.Text), Use = nameof(Clean))]
+                                                       public partial class M
+                                                       {
+                                                           private static string Clean(string raw) => raw.Trim();
+                                                       }
+                                                       """);
+
         yield return new FimMatrixCase("generate_wrapper_map", """
             using DwarfMapper;
             namespace Fim;

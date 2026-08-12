@@ -2436,6 +2436,12 @@ internal static partial class MapperExtractor
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PairScopedNoMatch, pc.Loc,
                     $"[MapConstructor<{pc.Source.ToDisplayString()}, {pc.Target.ToDisplayString()}>(\"{pc.Method}\")] matches no [GenerateMap<{pc.Source.ToDisplayString()}, {pc.Target.ToDisplayString()}>] pair"));
 
+        // DWARF084/085: [RestatesBase] pairs, checked against the base pair they name. Runs here because it
+        // needs the RESOLVED mappings — the point is to catch a restatement that is present but no longer does
+        // the same thing, which no count of attributes could see.
+        CheckRestatedBases(classSymbol, methods, LocationInfo.From(classSyntax.Identifier.GetLocation()),
+            diagnostics);
+
         // A mapper nested inside another type (e.g. inside the service that owns it) must have its generated
         // half re-declared inside that same containing type. Skipped for the co-located ([GenerateMap]) form,
         // whose emitted mapper is a brand-new class rather than the other half of the user's partial.

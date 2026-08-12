@@ -99,6 +99,31 @@ DwarfMapper mappers readable without cross-referencing.
 **What would flip this:** a second consumer hitting 15+ `IncludeBase` sites. One data point justifies removing
 the drift risk; two would justify the primitive.
 
+### Addendum (2026-08-12, on shipping R18-14): the marker comments are gone
+
+Deliverables 1 and 2 above both assumed a **generated marker comment** would be what makes a restatement
+checkable. Implementing it showed that assumption was unnecessary, and the mechanism that replaced it is
+strictly stronger.
+
+`[RestatesBase<TSource, TTarget>]` declares the relationship and the check compares the two pairs' **resolved
+mappings** — the same device that made `DWARF081` work. That catches the case a comment convention cannot see
+at all: a restatement which is *present, correctly bracketed, and no longer does the same thing*, because the
+base gained a `Use=` converter that this pair did not. A marker comment is unverifiable prose; two `MemberMap`
+records either match or they do not.
+
+So the shipped shape is:
+
+1. `[RestatesBase<S, T>]` — declares the relationship, emits nothing, and is asserted to change no generated
+   code at all. The base pair is **inferred** (nearest declared pair up the class chain, ties refused with
+   `DWARF084`) rather than named, because a fourth type argument could only ever disagree with the hierarchy.
+2. `DWARF085` — the drift, on resolved mappings, with `Overrides = ["Member"]` for a deliberate divergence:
+   an override is a decision, so it is stated where it is made and leaves every other member guarded.
+3. A code fix offering the two honest answers — *restate the base configuration here* (which adds a missing
+   attribute **and replaces a drifted one**) and *mark 'X' as a deliberate override*. It writes the attributes
+   a person would have typed, with no marker brackets to preserve.
+
+The full primitive stays specced-but-deferred, unchanged.
+
 ---
 
 ## D5 — enum→string `[Description]` precedence

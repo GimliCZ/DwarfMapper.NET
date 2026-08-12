@@ -1330,3 +1330,42 @@ public partial class F45AnnotatedM;
 [GenerateMap<F45Donation, F45DonationDoc>]
 [GenerateMap<F45DonationDoc, F45Donation>]
 public partial class F45IdentityM;
+
+// ── F46 [RestatesBase] — the drift check, not an inheritance primitive ───────
+// DwarfMapper has no IncludeBase, deliberately: every pair's configuration stays literally visible at its own
+// declaration, so a reader of one pair never has to go and find what some other pair decided on its behalf.
+// The cost is restatement, and that cost splits in two — typing it is mechanical and over once; drifting from
+// the base later is silent, and it only ever drifts toward wrong data. [RestatesBase] closes the second half:
+// it emits nothing, and exists so DWARF085 can compare the two pairs' RESOLVED mappings.
+public class F46Command
+{
+    public string Raw { get; set; } = "";
+}
+
+public class F46AliasCommand : F46Command
+{
+    public string Alias { get; set; } = "";
+}
+
+public class F46CommandDto
+{
+    public string Text { get; set; } = "";
+}
+
+public class F46AliasCommandDto : F46CommandDto
+{
+    public string Alias { get; set; } = "";
+}
+
+[DwarfMapper]
+[GenerateMap<F46Command, F46CommandDto>]
+[MapProperty<F46Command, F46CommandDto>(nameof(F46Command.Raw), nameof(F46CommandDto.Text), Use = nameof(Clean))]
+[GenerateMap<F46AliasCommand, F46AliasCommandDto>]
+[RestatesBase<F46AliasCommand, F46AliasCommandDto>]
+[MapProperty<F46AliasCommand, F46AliasCommandDto>(nameof(F46Command.Raw), nameof(F46CommandDto.Text),
+    Use = nameof(Clean))]
+public partial class F46M
+{
+    /// <summary>Drop the second [MapProperty] and DWARF085 says so — that is the whole feature.</summary>
+    private static string Clean(string raw) => raw.Trim();
+}

@@ -29,6 +29,7 @@ internal static class KnownNames
     public const string MapConstructor       = "MapConstructorAttribute";
     public const string MapNullSkip          = "MapNullSkipAttribute";
     public const string ProvidesMap          = "ProvidesMapAttribute";
+    public const string RestatesBase         = "RestatesBaseAttribute";
     public const string BeforeMap            = "BeforeMapAttribute";
     public const string AfterMap             = "AfterMapAttribute";
     public const string ReverseMap           = "ReverseMapAttribute";

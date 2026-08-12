@@ -89,6 +89,8 @@ DWARF080 | DwarfMapper | Info | A [MapConstructor] factory cannot assign this me
 DWARF081 | DwarfMapper | Info | The same nested pair is synthesized two different ways
 DWARF082 | DwarfMapper | Error | [ProvidesMap] method cannot be registered
 DWARF083 | DwarfMapper | Info | Enum maps to strings that are not its member identifiers
+DWARF084 | DwarfMapper | Error | [RestatesBase] cannot identify the base pair
+DWARF085 | DwarfMapper | Warning | Restated base configuration has drifted
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

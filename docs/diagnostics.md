@@ -945,6 +945,78 @@ only for the options someone thought to enumerate.
 
 ---
 
+## dwarf084
+**[RestatesBase] cannot identify the base pair** · Error
+
+`[RestatesBase<TSource, TTarget>]` declares that a pair restates the configuration of the pair for their base
+types, so the two can be checked against each other. It changes no emitted code — it exists so `DWARF085` has
+something to compare. This fires when there is nothing to compare against:
+
+| Cause | Fix |
+|---|---|
+| the named pair is not declared on this mapper | add `[GenerateMap<TSource, TTarget>]` (or a partial method), or fix the type arguments |
+| no base pair is declared | declare the base pair on the same mapper, or drop the attribute |
+| two base pairs sit at the same depth | declare the one you mean and remove the other |
+
+**Fix:** whichever row above applies — the message names the case.
+
+A base pair is one whose **source is a base class of `TSource`** and whose **target is a base class of
+`TTarget`**, declared on the same mapper. Only base classes are walked: an interface base has no single
+distance, so "the nearest one" would be a coin toss — and a coin toss deciding which configuration a drift
+check compares against is worse than refusing.
+
+> **Why refused rather than skipped.** The author asked for a check. A check that silently does not run is
+> precisely the drift risk they were guarding against — the same reasoning as `DWARF082`.
+
+---
+
+## dwarf085
+**Restated base configuration has drifted** · Warning
+
+A pair declared with `[RestatesBase]` no longer maps a member the way its base pair does — either it maps it
+**differently**, or it does not map it **at all**.
+
+<!-- fence-exempt: the drift is the difference between two DECLARATIONS; a runnable sample would bury it -->
+```csharp
+[GenerateMap<Command, CommandDto>]
+[MapProperty<Command, CommandDto>(nameof(Command.Raw), nameof(CommandDto.Text), Use = nameof(Clean))]
+
+[GenerateMap<AliasCommand, AliasCommandDto>]
+[RestatesBase<AliasCommand, AliasCommandDto>]
+[MapProperty<AliasCommand, AliasCommandDto>(nameof(Command.Raw), nameof(CommandDto.Text))]  // DWARF085: no Use=
+```
+
+**Fix:**
+
+1. **Restate the base configuration here.** The mechanical answer, and usually the right one.
+2. **`[RestatesBase<S, T>(Overrides = new[] { "Member" })]`** if the difference is intended. An override is a
+   decision, and a decision should be visible where it is made — listing the member exempts exactly that one
+   and leaves every other member guarded.
+
+### Why this exists instead of `IncludeBase`
+
+DwarfMapper has no inheritance primitive, deliberately: every pair's configuration stays literally visible at
+its own declaration, so a reader of one pair never has to go and find what some other pair decided on its
+behalf. The cost is restatement, and that cost splits in two — **typing it** is mechanical, annoying and over
+once; **drifting from the base later** is silent, and it only ever drifts toward wrong data.
+
+This closes the second half without introducing override semantics that would have to interact with
+pair-scoped attributes, `[MapDerivedType]` and the policy layer. See `Issues/Rount18/Decisions.md` §D4.
+
+### What is compared
+
+The **resolved mappings**, not the attribute text. That is what catches a restatement which is present but no
+longer does the same thing — the case a `MIRRORS BASE` comment convention cannot see, and the convention a
+real migration invented for itself before this existed.
+
+Auto-matched members are compared too and agree trivially. A member the derived target **redeclares with a
+different type** (`new`) is exempt: two different members wearing one name, whose mappings are supposed to
+differ.
+
+> Round 18 restated base configuration by hand at 15 sites in one project, 5 in another and 6 in a third.
+
+---
+
 ## dwarf082
 **[ProvidesMap] method cannot be registered** · Error
 

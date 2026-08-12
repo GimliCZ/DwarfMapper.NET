@@ -93,13 +93,18 @@ public class GeneratorTestingScanTests
     // did need was the strategy folded into that helper's NAME, so two mappers choosing differently over one
     // enum cannot collide — pinned by both of those.
     //
-    // Baselines: 34 public attribute types, 16 public enum
+    // Raised to 35 on 2026-08-12 for [RestatesBase] — the drift check for a restated base pair (R18-14 /
+    // decision R18-D4). It needs no golden emission case for the strongest possible reason: it emits nothing.
+    // A test asserts the generated output is byte-identical with and without it, which is a better guarantee
+    // than a pinned snapshot would be. Its behaviour is DWARF084/085, covered by RestatesBaseTests.
+    //
+    // Baselines: 35 public attribute types, 16 public enum
     // values (8 enums, 2 values each). GoldenCorpus.FeatureCases() is a hand-curated list, NOT derived from
     // these taxonomies — see the design spec's Known Limitations note. This ratchet is the honest substitute:
     // it cannot force a specific new case the way true derivation would, but it forces a human to notice
     // growth and decide whether the feature axis needs a new pinned case, rather than the corpus silently
     // going stale next to an attribute or enum value nobody golden-tested.
-    private const int BaselineAttributeTypeCount = 34;
+    private const int BaselineAttributeTypeCount = 35;
     private const int BaselineEnumValueCount = 16;
 
     [Fact]

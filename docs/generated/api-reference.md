@@ -477,6 +477,15 @@ Controls which side(s) of a mapping must be fully covered. Set via RequiredMappi
 | `Both` | 1 | In addition to the target gate, every source member must be read by some destination — a source member consumed by nothing surfaces the DWARF039 suggestion (Info). Suppress a specific member with [MapIgnoreSource("Member")]. Escalate to a build error with dotnet_diagnostic.DWARF039.severity = error in .editorconfig. |
 | `Target` | 0 | (Default) Every destination member must be mapped — an unmapped target is the build error DWARF001. Source members that are read by no destination are not flagged. |
 
+### attribute `RestatesBaseAttribute<TSource, TTarget>`
+
+Declares that the (TSource → TTarget) pair restates the configuration of the pair for their base types, so the two can be checked against each other and drift is reported instead of discovered.
+
+| Member | Type | Default | Summary |
+|---|---|---|---|
+| `Overrides` | `String[]` | — | Destination member names this pair deliberately configures differently from the base. |
+| `TypeId` | `Object` | — |  |
+
 ### attribute `ReverseMapAttribute`
 
 On a forward mapping method T Forward(S s), declares that a separately-declared inverse partial method S Back(T t) should inherit the inverted simple [MapProperty] renames (a rename A → B becomes B → A). Only single-member renames invert automatically; non-invertible forward configuration (Use= converters, dotted paths, NullSubstitute, When) is reported as DWARF051 so you can declare the reverse explicitly. If no inverse partial method exists, the forward method reports DWARF052.

@@ -42,6 +42,12 @@ public class DiagnosticMessageContractTests
         ("DWARF080", "[MapProperty]", "prefer constructor-parameter binding to a factory — the generalisable fix"),
         ("DWARF082", "public", "the shape requirement is the fix"),
         ("DWARF083", "display", "the whole point is that the annotation was probably meant for display")
+
+        // Deliberately absent: DWARF084 and DWARF085, whose MessageFormat is the pass-through "{0}" — the
+        // text is composed at report time, so there is no format string here to pin and a row asserting
+        // "{0}" would pass vacuously forever. Their rendered messages ARE asserted, by the EXPECT-MESSAGE
+        // lines of tests/DwarfMapper.NegativeCases/Cases/DWARF084_*.cs and DWARF085_*.cs, which is the
+        // stronger check: it reads what the consumer actually sees. Same reasoning for DWARF073/074.
     ];
 
     private static DiagnosticDescriptor Descriptor(string id)

@@ -87,5 +87,7 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF081` | Info | The same nested pair is synthesized two different ways |
 | `DWARF082` | Error | [ProvidesMap] method cannot be registered |
 | `DWARF083` | Info | Enum maps to strings that are not its member identifiers |
+| `DWARF084` | Error | [RestatesBase] cannot identify the base pair |
+| `DWARF085` | Warning | Restated base configuration has drifted |
 
-79 diagnostics.
+81 diagnostics.

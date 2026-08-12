@@ -738,6 +738,43 @@ public static class DiagnosticDescriptors
         helpLinkUri: HelpBase + "dwarf080");
 
     /// <summary>
+    ///     <c>[RestatesBase]</c> names a pair whose base pair cannot be identified.
+    /// </summary>
+    /// <remarks>
+    ///     Refused rather than skipped, for the same reason as <c>DWARF082</c>: the author asked for a check,
+    ///     and a check that silently does not run is precisely the drift risk they were guarding against.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor RestatesBaseUnresolved = new(
+        "DWARF084",
+        "[RestatesBase] cannot identify the base pair",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf084");
+
+    /// <summary>
+    ///     A pair declared with <c>[RestatesBase]</c> has drifted from the base pair it restates.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The whole point of the attribute. Restatement's cost splits into typing it — mechanical,
+    ///         annoying, over once — and drifting from the base later, which is silent and only ever drifts
+    ///         toward wrong data: the base pair gains a <c>Use=</c> converter and the derived one quietly keeps
+    ///         mapping the raw value.
+    ///     </para>
+    ///     <para>
+    ///         Compared on the RESOLVED mappings, not on attribute text. That is what catches a restatement
+    ///         which is present but no longer does the same thing — the failure a marker-comment convention
+    ///         cannot see.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor RestatedBaseDrift = new(
+        "DWARF085",
+        "Restated base configuration has drifted",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf085");
+
+    /// <summary>
     ///     One logical nested pair, auto-synthesized into two mappers that do not agree.
     /// </summary>
     /// <remarks>
