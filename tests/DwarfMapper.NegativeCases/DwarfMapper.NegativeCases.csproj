@@ -1,0 +1,39 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <!-- CA1707: test methods intentionally use underscores -->
+        <!-- CA1515: test types need not be sealed -->
+        <NoWarn>$(NoWarn);CA1707;CA1515</NoWarn>
+    </PropertyGroup>
+
+    <!-- The cases are REAL .cs files, deliberately red. They must never be compiled by this project — that is
+         the whole point — so they are removed from Compile and carried as embedded resources instead. Keeping
+         them as .cs (rather than .txt) is what makes them editable, greppable and copy-pasteable into a
+         scratch project when a maintainer wants to reproduce a refusal by hand. -->
+    <ItemGroup>
+        <Compile Remove="Cases\**\*.cs"/>
+        <EmbeddedResource Include="Cases\**\*.cs"/>
+        <None Include="README.md"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="xunit"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
+    </ItemGroup>
+
+    <!-- Deliberately minimal: the runtime attributes the cases reference, and the generator under test.
+         No Verify, no CsCheck, no shared test harness — an independent driver is the point, not an
+         inconvenience (see CaseDriver). -->
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit"/>
+    </ItemGroup>
+</Project>
