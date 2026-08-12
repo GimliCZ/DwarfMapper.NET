@@ -917,6 +917,73 @@ internal static partial class MapperExtractor
         return methods;
     }
 
+    /// <summary>
+    ///     Turns the class's <c>[GenerateMap&lt;S,T&gt;]</c> pairs into resolution candidates, so an element or
+    ///     member of those types routes through the declared pair instead of a freshly synthesized mapper that
+    ///     cannot see its configuration.
+    /// </summary>
+    /// <remarks>
+    ///     A pair that a declared partial method already covers is skipped rather than added alongside it.
+    ///     Seeding both would put two matching candidates in front of the ambiguity check and turn a shape
+    ///     that is legal today — declare the pair, then declare a partial method for it — into a
+    ///     <c>DWARF013</c>. The declared method wins, which is the same precedence the rest of resolution uses.
+    /// </remarks>
+    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> GeneratedPairCandidates(
+        IReadOnlyList<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+        IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> declared)
+    {
+        var candidates = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>();
+        foreach (var (src, tgt) in genPairs)
+        {
+            var alreadyDeclared = false;
+            foreach (var d in declared)
+                if (SymbolEqualityComparer.Default.Equals(d.ParamType, src)
+                    && SymbolEqualityComparer.Default.Equals(d.ReturnType, tgt))
+                {
+                    alreadyDeclared = true;
+                    break;
+                }
+
+            // Also skip a pair we have already added: [GenerateMap] twice over the same types is a
+            // duplicate, not an ambiguity, and it must not become one here.
+            if (!alreadyDeclared)
+                foreach (var c in candidates)
+                    if (SymbolEqualityComparer.Default.Equals(c.ParamType, src)
+                        && SymbolEqualityComparer.Default.Equals(c.ReturnType, tgt))
+                    {
+                        alreadyDeclared = true;
+                        break;
+                    }
+
+            // "Map" is the name the [GenerateMap] emission loop gives every pair it produces.
+            if (!alreadyDeclared) candidates.Add(("Map", src, tgt));
+        }
+
+        return candidates;
+    }
+
+    /// <summary>
+    ///     The candidate list minus the pair being resolved.
+    /// </summary>
+    /// <remarks>
+    ///     Only matters for a pair resolved as a whole rather than member by member — a top-level collection,
+    ///     dictionary or value-like <c>[GenerateMap]</c>. Left in, the pair finds ITSELF: <c>[GenerateMap&lt;int,
+    ///     long&gt;]</c> would resolve its own <c>Map</c> as its converter and emit <c>return Map(src);</c>,
+    ///     which compiles, reports nothing, and recurses until the stack ends.
+    /// </remarks>
+    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> ExcludingPair(
+        List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> candidates,
+        ITypeSymbol src, ITypeSymbol tgt)
+    {
+        var result = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>(candidates.Count);
+        foreach (var c in candidates)
+            if (!SymbolEqualityComparer.Default.Equals(c.ParamType, src)
+                || !SymbolEqualityComparer.Default.Equals(c.ReturnType, tgt))
+                result.Add(c);
+
+        return result;
+    }
+
     private static (List<(string Name, ITypeSymbol ParamType)> Before,
         List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)> After)
         CollectHooks(INamedTypeSymbol classSymbol, List<DiagnosticInfo> diagnostics)

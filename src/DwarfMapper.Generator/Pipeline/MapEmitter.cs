@@ -555,12 +555,24 @@ internal static class MapEmitter
         // Step 2: Construct target. For the register-before-populate algorithm, the ctor
         // must be called WITHOUT graph-node members that participate in the cycle.
         // DWARF030 is emitted at generator time for any ctor arg that is recursion-capable.
+        //
+        // A [MapConstructor] factory owns construction here exactly as it does on the ordinary path, and it
+        // composes with register-before-populate without qualification: the factory takes the SOURCE and
+        // returns the target, so the instance exists before any member is touched, which is the only thing
+        // this algorithm requires. Ignoring it — which is what this did — dropped the factory silently when
+        // the target happened to have a parameterless constructor, and emitted `new T()` against a type that
+        // has none when it did not, i.e. generated code that does not compile (CS7036). Neither failure named
+        // the factory. Found while fixing R18-03: the declared pair used the factory and this path did not.
         var hasCtorArgs = method.ConstructorArguments.Count > 0;
-        sb.Append(indent).Append("    var __dwarf_t = new ").Append(method.ReturnTypeFullName);
 
-        if (hasCtorArgs)
+        if (method.FactoryMethod is not null)
         {
-            sb.AppendLine("(");
+            sb.Append(indent).Append("    var __dwarf_t = ").Append(method.FactoryMethod)
+                .Append('(').Append(p).AppendLine(");");
+        }
+        else if (hasCtorArgs)
+        {
+            sb.Append(indent).Append("    var __dwarf_t = new ").Append(method.ReturnTypeFullName).AppendLine("(");
             var ctorArgs = method.ConstructorArguments;
             for (var i = 0; i < ctorArgs.Count; i++)
             {
@@ -575,7 +587,7 @@ internal static class MapEmitter
         }
         else
         {
-            sb.AppendLine("();");
+            sb.Append(indent).Append("    var __dwarf_t = new ").Append(method.ReturnTypeFullName).AppendLine("();");
         }
 
         // Step 3: Register BEFORE populating members — the critical invariant.

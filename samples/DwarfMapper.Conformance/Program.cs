@@ -245,5 +245,16 @@ var f41 = (ICollection<F41ItemDto>)DwarfMapperRegistry.Map(
     new F41Doc { Items = [new() { V = 3 }, new() { V = 4 }] }, typeof(ICollection<F41ItemDto>));
 R.Check("F41 [ProvidesMap] hand-written", f41.Count == 2 && f41.Last().V == 4);
 
+// F42 A declared pair is THE mapping for its types — the same [MapConstructor] factory has to run whichever
+// route reaches the pair. The +100 is the tell: a route that constructs the target itself returns the raw V.
+var f42M = new F42M();
+var f42Direct = f42M.Map(new F42Item { V = 1 });
+var f42Element = f42M.Map([new F42Item { V = 2 }]);
+var f42Nested = f42M.Map(new F42Box { Only = new F42Item { V = 3 }, Many = [new F42Item { V = 4 }] });
+R.Check("F42 declared pair — direct", f42Direct.V == 101);
+R.Check("F42 declared pair — collection element", f42Element[0].V == 102);
+R.Check("F42 declared pair — nested member", f42Nested.Only.V == 103);
+R.Check("F42 declared pair — nested collection element", f42Nested.Many[0].V == 104);
+
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;

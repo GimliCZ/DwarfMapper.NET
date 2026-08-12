@@ -196,6 +196,42 @@ internal static partial class MapperExtractor
         // auto-adopted by a different method either, and a per-method set cannot see that.
         var mapperReservedConverters = CollectReservedConverterNames(classSymbol);
         var mapperMethods = CollectMapperMethods(classSymbol);
+
+        // ── [GenerateMap<S,T>] pairs, collected HERE rather than at their emission loop far below ──────────
+        // Collect every (source, target) pair to emit: the [GenerateMap<S,T>] attributes, then — for each
+        // [GenerateWrapperMap(typeof(W<>))] — the closed wrapper instantiation W<S> -> W<T> per declared pair
+        // (item 20). Open generics are never emitted; only the closed instantiations actually declared.
+        var genComp = ctx.SemanticModel.Compilation;
+        var genLoc = LocationInfo.From(classSyntax.Identifier.GetLocation());
+        var genPairs = new List<(ITypeSymbol Src, INamedTypeSymbol Tgt)>();
+        foreach (var attr in classSymbol.GetAttributes())
+        {
+            if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac
+                && ac.TypeArguments.Length == 2
+                && ac.ContainingNamespace?.ToDisplayString() == KnownNames.Ns
+                && ac.TypeArguments[1] is INamedTypeSymbol gt)
+                genPairs.Add((ac.TypeArguments[0], gt));
+        }
+
+        ExpandWrapperMaps(classSymbol, genComp, genPairs, diagnostics, genLoc);
+
+        // A [GenerateMap<S,T>] emits a `public T Map(S)` overload that is, to every caller, indistinguishable
+        // from a declared partial mapper — so resolution must be able to FIND it. It could not: mapperMethods
+        // held partial METHODS only, and a class-level pair is not one.
+        //
+        // The consequence was silent and specific. Given [GenerateMap<Item, ItemDto>] carrying a
+        // [MapConstructor] factory AND [GenerateMap<List<Item>, List<ItemDto>>], the collection pair could not
+        // see the element pair, so it synthesized a FRESH element mapper — which constructs ItemDto directly
+        // and never calls the factory. One class, one pair of types, two different mappings, no diagnostic:
+        // `Map(item)` used the factory and `Map(list)[0]` did not.
+        //
+        // In the migration that surfaced it the same gap presented as a catch-22 instead of a divergence: the
+        // synthesized element mapper failed DWARF024 on an unbound constructor parameter, while binding that
+        // parameter on the factory-bearing declared pair was rejected by DWARF008 because there the factory
+        // owns construction — "the element pair is simultaneously 'has a factory' and 'must construct itself',
+        // and no attribute satisfies both" (Issues/Rount18, ImplementationRecord.txt:8421).
+        mapperMethods.AddRange(GeneratedPairCandidates(genPairs, mapperMethods));
+
         var valueProviders = CollectValueProviders(classSymbol); // parameterless methods for [MapValue(Use=)]
         var (beforeHookDefs, afterHookDefs) = CollectHooks(classSymbol, diagnostics);
         var methods = new List<MapMethodModel>();
@@ -1066,23 +1102,8 @@ internal static partial class MapperExtractor
         // gate, conversions, nested/collection handling, constructor mapping, and hooks as a declared
         // partial mapper. Source/target types stay plain POCOs (no attributes on them) — migrating from
         // e.g. AutoMapper's CreateMap<A,B>() is a near-mechanical 1:1 replace with [GenerateMap<A,B>].
-        var genComp = ctx.SemanticModel.Compilation;
-        var genLoc = LocationInfo.From(classSyntax.Identifier.GetLocation());
-
-        // Collect every (source, target) pair to emit: the [GenerateMap<S,T>] attributes, then — for each
-        // [GenerateWrapperMap(typeof(W<>))] — the closed wrapper instantiation W<S> -> W<T> per declared pair
-        // (item 20). Open generics are never emitted; only the closed instantiations actually declared.
-        var genPairs = new List<(ITypeSymbol Src, INamedTypeSymbol Tgt)>();
-        foreach (var attr in classSymbol.GetAttributes())
-        {
-            if (attr.AttributeClass is { Name: KnownNames.GenerateMap } ac
-                && ac.TypeArguments.Length == 2
-                && ac.ContainingNamespace?.ToDisplayString() == KnownNames.Ns
-                && ac.TypeArguments[1] is INamedTypeSymbol gt)
-                genPairs.Add((ac.TypeArguments[0], gt));
-        }
-        ExpandWrapperMaps(classSymbol, genComp, genPairs, diagnostics, genLoc);
-
+        // genPairs / genComp / genLoc are computed near the top of Extract, because element and member
+        // resolution has to be able to SEE these pairs long before this loop emits them.
         foreach (var (genSrc, genTgt) in genPairs)
         {
             // Pair-scoped [MapProperty<S,T>] / [MapIgnore<T>] config for this declared pair.
@@ -1117,7 +1138,9 @@ internal static partial class MapperExtractor
             if (genIsColl || genIsDict || genIsValueLike)
             {
                 bool gResolved = TryResolveConversion(
-                    genComp, genSrc, genTgt, null, allMethods, mapperMethods, enumStrategy, synthesized,
+                    genComp, genSrc, genTgt, null, allMethods,
+                    // This pair is resolved as a WHOLE, so it must not be a candidate for its own conversion.
+                    ExcludingPair(mapperMethods, genSrc, genTgt), enumStrategy, synthesized,
                     nullStrategy, genLoc, "Map", diagnostics, out var gConv, out _, out var gNeedsCtx,
                     classAutoNest, nestedRegistry, nullCollections == NullCollectionsBehavior.AsNull,
                     isPreserveMode, isSetNull: isSetNullMode, implicitConversions: implicitConversions,
@@ -1323,21 +1346,65 @@ internal static partial class MapperExtractor
             // emission site).
             LocationInfo? nestedLocation = null;
 
+            // A helper synthesized for a pair the class ALSO declares must construct it the way the declared
+            // pair does. Under Preserve/SetNull the element route is REQUIRED to be a synthesized helper —
+            // calling the public method from a collection helper would allocate a fresh DwarfRefContext per
+            // element and lose the identity map — so this is the one place the two routes can still diverge
+            // after element resolution learned to reuse declared pairs. Left alone, `Map(node)` ran the
+            // factory and `Map(node).Kids[0]` did not.
+            //
+            // Scoped to DECLARED pairs deliberately: a [MapConstructor] naming a pair with no [GenerateMap]
+            // is already refused by DWARF056 ("matches no pair"), and quietly honouring it here would make
+            // that diagnostic untrue.
+            string? nestedFactory = null;
+            if (genPairs.Exists(gp => SymbolEqualityComparer.Default.Equals(gp.Src, nestedSrc)
+                                      && SymbolEqualityComparer.Default.Equals(gp.Tgt, nestedTgt)))
+                foreach (var pc in pairConstructors)
+                {
+                    if (!SymbolEqualityComparer.Default.Equals(pc.Source, nestedSrc)
+                        || !SymbolEqualityComparer.Default.Equals(pc.Target, nestedTgt))
+                        continue;
+
+                    // A factory that does not resolve is already reported against the declared pair; saying
+                    // it twice, once without a usable location, would only add noise.
+                    var nestedFactorySym = allMethods.FirstOrDefault(m =>
+                        string.Equals(m.Name, pc.Method, StringComparison.Ordinal)
+                        && HasImplicitConversion(genComp, nestedSrc, m.ParamType)
+                        && HasImplicitConversion(genComp, m.ReturnType, nestedTgt));
+                    if (nestedFactorySym.Name is not null) nestedFactory = nestedFactorySym.Name;
+                    break;
+                }
+
             // Choose construction strategy for the nested target type.
-            var nestedCtor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, nestedTgt, diagnostics,
-                nestedLocation, out var nestedObjInitOnly, allowNonPublic, nestedSrc, nestedExplicit);
-            if (nestedCtor is null)
+            IMethodSymbol? nestedCtor = null;
+            var nestedObjInitOnly = false;
+            if (nestedFactory is null)
             {
-                // DWARF025/026 already reported; skip body emission for this pair.
-                nestedRegistry.ClearCurrentPair();
-                continue;
+                nestedCtor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, nestedTgt, diagnostics,
+                    nestedLocation, out nestedObjInitOnly, allowNonPublic, nestedSrc, nestedExplicit);
+                if (nestedCtor is null)
+                {
+                    // DWARF025/026 already reported; skip body emission for this pair.
+                    nestedRegistry.ClearCurrentPair();
+                    continue;
+                }
             }
 
             MemberMap[] nestedCtorArgs;
             HashSet<string> nestedConsumed;
             HashSet<string> nestedRequiredMustInit;
+            HashSet<string>? nestedFactoryExcluded = null;
 
-            if (nestedObjInitOnly)
+            if (nestedFactory is not null)
+            {
+                // The factory builds the object; only settable members are assigned afterwards, so init-only
+                // and required members are excluded — the factory owns them. Same shape as the declared path.
+                nestedCtorArgs = Array.Empty<MemberMap>();
+                nestedConsumed = CollectFactoryExcludedMembers(nestedTgt);
+                nestedRequiredMustInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                nestedFactoryExcluded = nestedConsumed;
+            }
+            else if (nestedObjInitOnly)
             {
                 nestedCtorArgs = Array.Empty<MemberMap>();
                 nestedConsumed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1346,7 +1413,7 @@ internal static partial class MapperExtractor
             else
             {
                 // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
-                if (!ResolveConstructorArguments(nestedCtor, nestedSrc, ctx.SemanticModel.Compilation,
+                if (!ResolveConstructorArguments(nestedCtor!, nestedSrc, ctx.SemanticModel.Compilation,
                         nestedLocation, diagnostics, caseInsensitive, allowNonPublic, nestedExplicit,
                         allMethods, mapperMethods, enumStrategy, synthesized, nullStrategy,
                         pairAutoNest, nestedRegistry, out nestedCtorArgs, out nestedConsumed,
@@ -1357,7 +1424,7 @@ internal static partial class MapperExtractor
                     continue;
                 }
 
-                nestedRequiredMustInit = ComputeRequiredMustInitialize(nestedCtor, nestedTgt, nestedConsumed);
+                nestedRequiredMustInit = ComputeRequiredMustInitialize(nestedCtor!, nestedTgt, nestedConsumed);
             }
 
             // C1: use the per-pair autoNest value (pairAutoNest), NOT classAutoNest.
@@ -1392,7 +1459,8 @@ internal static partial class MapperExtractor
                 // A synthesized nested mapper must not adopt a dedicated converter either — the author
                 // never wrote this pair, so they certainly did not offer it one.
                 mapperReservedConverters: mapperReservedConverters,
-                requiredMembersAlreadySatisfied: CtorSetsRequiredMembers(nestedCtor));
+                requiredMembersAlreadySatisfied: nestedCtor is not null && CtorSetsRequiredMembers(nestedCtor),
+                factoryExcludedMembers: nestedFactoryExcluded);
 
             // Only the pairs registered above — a genuinely NESTED member pair is deliberately left alone,
             // because source coverage has never applied at depth and turning it on for every synthesized pair
@@ -1463,7 +1531,8 @@ internal static partial class MapperExtractor
                 ConstructorArguments: EquatableArray.From(nestedCtorArgs),
                 IsPartial: false,
                 ReturnIsReferenceType: nestedTgt.IsReferenceType,
-                IsRecursionCapable: false); // patched below
+                IsRecursionCapable: false, // patched below
+                FactoryMethod: nestedFactory);
 
             pendingNestedModels.Add((nestedModel, nestedName));
         }

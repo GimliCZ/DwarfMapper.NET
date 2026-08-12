@@ -1173,3 +1173,46 @@ public partial class F41M
         return doc.Items.Select(Map).ToList();
     }
 }
+
+// ── F42 A declared pair is THE mapping for its types ─────────────────────────
+// A [GenerateMap<S,T>] pair configured with a [MapConstructor] factory, reached three ways: directly, as a
+// collection element, and as a nested member. All three must produce the same object, because they are the
+// same pair. They did not: element and member resolution searched declared partial METHODS only, so a class
+// -level pair was invisible to them and a fresh element mapper got synthesized past it — one that constructs
+// the target directly and never calls the factory. Green build, and `Map(item)` and `Map(list)[0]` disagreed.
+public class F42Item
+{
+    public int V { get; set; }
+}
+
+public class F42ItemDto
+{
+    public F42ItemDto(int v) => V = v;
+
+    public int V { get; }
+}
+
+public class F42Box
+{
+    public F42Item Only { get; set; } = new();
+
+    public List<F42Item> Many { get; set; } = [];
+}
+
+public class F42BoxDto
+{
+    public F42ItemDto Only { get; set; } = new(0);
+
+    public List<F42ItemDto> Many { get; set; } = [];
+}
+
+[DwarfMapper]
+[GenerateMap<F42Item, F42ItemDto>]
+[MapConstructor<F42Item, F42ItemDto>(nameof(Create))]
+[GenerateMap<F42Box, F42BoxDto>]
+[GenerateMap<List<F42Item>, List<F42ItemDto>>]
+public partial class F42M
+{
+    /// <summary>The +100 is the tell: any route that skips the factory returns the raw value.</summary>
+    private static F42ItemDto Create(F42Item i) => new(i.V + 100);
+}
