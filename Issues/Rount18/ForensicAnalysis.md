@@ -539,36 +539,46 @@ Kept separate deliberately — these are MedbotOmega's to close, not this repo's
 
 ## 8b. Execution status (2026-08-12)
 
-**25 of 36 tasks complete**, all committed to `master`, whole solution including `samples/` at 0 errors /
-0 warnings, **6,234 tests green across five suites**, conformance 47 → 60 assertions.
+**All 32 repo-side tasks complete**, committed to `master`, whole solution including `samples/` at 0 errors /
+0 warnings, **6,403 tests green across seven suites**, conformance 47 → 72 assertions. The only open items are
+the four `[FusedChat]` consumer tasks, which are blocked on the maintainer's own uncommitted work.
 
 ### What shipped
 
 | | |
 |---|---|
 | **Merged** | the four Round-18 generator fixes, after the whole-solution-incl-samples build the record never ran |
-| **New diagnostics** | `DWARF078` (CS8795 cascade signpost) · `DWARF079` (`required` + `[MapIgnore]`) · `DWARF080` (factory drops init-only) · `DWARF082` (`[ProvidesMap]` shape) · `DWARF083` (enum→string attribute divergence) |
-| **New capabilities** | `[MapNullSkip]` (pair/method-scoped null-skip) · collection-shape auto-registration · registry interface lookup · `IDwarfMapper.Map(source, destination)` · `[ProvidesMap]` |
-| **New coverage** | `DwarfMapper.ConsumerTests` (opaque, 4 projects, 16 runtime assertions) · Conformance `F31`–`F41` · Gallery `27_PatchMerge` · abstract-membered fuzz graphs · the option-surface ratchet |
-| **Docs** | the nine-item pre-flight checklist, the suppression correction, non-goals, per-project wiring, and the AutoMapper data-loss finding |
+| **New diagnostics** | `DWARF078` (CS8795 cascade signpost) · `DWARF079` (`required` + `[MapIgnore]`) · `DWARF080` (factory drops init-only) · `DWARF081` (one nested pair, two mappings) · `DWARF082` (`[ProvidesMap]` shape) · `DWARF083` (enum→string attribute divergence) · `DWARF084`/`DWARF085` (`[RestatesBase]` and its drift check) |
+| **New capabilities** | `[MapNullSkip]` · `[ProvidesMap]` · `[RestatesBase]` + code fix · `EnumStringSource` · collection-shape auto-registration · registry interface lookup · `IDwarfMapper.Map(source, destination)` |
+| **Generator fixes** | a declared pair is now THE mapping for its types on every route (R18-03) · `[MapDerivedType]` arms no longer dispatch into their own switch (R18-07) · `[MapConstructor]` honoured under `Preserve` (found while fixing R18-03: it emitted `new T()`, i.e. CS7036) |
+| **New coverage** | `DwarfMapper.ConsumerTests` (opaque, 4 projects) · `DwarfMapper.NegativeCases` (compile-time refusals, message text asserted) · `DwarfMapper.DifferentialTests` (vs Mapperly and AutoMapper) · Conformance `F31`–`F46` · Gallery `27_PatchMerge` |
+| **Docs** | the pre-flight checklist, the suppression correction, non-goals, per-project wiring, the AutoMapper data-loss finding, and eight new diagnostic sections |
 
-### Three findings the work itself produced
+### Findings the work itself produced
 
 1. **`[GenerateMap<int, long>]` emitted `return new long { };`** — a second live instance of the enum bug
    class, found by the audit that existed to check the fix wasn't a one-off. It was.
-2. **The option-surface ratchet proved it can fail** by finding six more holes on its first run, after the
-   known ones were closed. Four became conformance features; two carry stated reasons.
-3. **`GetInterfaces()` would have been this assembly's first trimming suppression.** Inverting the question —
-   ask each registered interface whether it accepts the source — needs no annotation, so the runtime library
-   stays trim-clean with zero suppressions.
+2. **A collection pair silently mapped its element type twice, two different ways** — `Map(item)` used the
+   `[MapConstructor]` factory and `Map(list)[0]` did not. Reported in Round 18 as a `DWARF024`/`DWARF008`
+   catch-22; the underlying defect was a silent divergence.
+3. **A `[MapDerivedType]` arm could resolve to the method it dispatches from**, emitting
+   `AliasCommand __s => ToDto(__s)` inside `ToDto` — a switch arm calling its own switch. Compiles, reports
+   nothing, overflows the stack on the first derived element.
+4. **`ReferenceHandling = Preserve` ignored `[MapConstructor]`**, emitting `new T()` against a type with no
+   parameterless constructor. Pre-existing, confirmed against the unmodified generator.
+5. **R18-06's blocking finding was wrong in an instructive way.** It concluded "the data is not on the model";
+   the data was on the model all along, under a different property. Auto-nested object mappers are not
+   `SynthesizedMethods`, they are private entries in `Methods`. The original design worked unchanged.
+6. **The option-surface ratchet proved it can fail** by finding six more holes on its first run, after the
+   known ones were closed. The negative-case and shape-coverage ratchets each did the same.
+7. **`GetInterfaces()` would have been this assembly's first trimming suppression.** Inverting the question
+   needs no annotation, so the runtime library stays trim-clean with zero suppressions.
 
 ### What is not done, and why
 
 | Task | State |
 |---|---|
-| **R18-06** | Attempted and **reverted**. `MapperClassModel.SynthesizedMethods` is empty by the time the aggregate step sees the models (measured: `synth=Replace:0,Patch:0` on a compilation whose output plainly contains the helper), so body-comparison can never fire. Needs the nested pair identity + effective options carried on the model. `DWARF081` is reserved, not reused. Its *cause* is largely removed by `[MapNullSkip]`. |
-| **R18-27 part 2** | The `EnumStringSource` option. The diagnostic — the half that would have caught the Ko-Fi case — shipped. The option needs the synthesized helper's name hash to incorporate the strategy, or two mappers choosing differently collide on one helper and the first silently wins. |
-| **R18-03, R18-07, R18-11, R18-14, R18-22** | Not started. Each is real generator or design work, specified in its task. |
+| **R18-29** | Harvest real-world mapping SHAPES from public projects to feed the differential oracle. Specified, not started. The rule is shapes, never text: pasting snippets from arbitrary repositories into a GPLv2-only tree imports their licences. |
 | **R18-C1…C4** | **Blocked, and not by me.** `MedbotOmega` is on `develop` with nine uncommitted changes that are the maintainer's own in-progress work on this topic — including a new `Docs/mapping-migration-bugs.md` and `MapperRegressionTests.cs`. Editing that tree would collide with it. |
 
 ### The consumer branch is now also stale — in a good way
