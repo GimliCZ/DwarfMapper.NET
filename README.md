@@ -797,7 +797,7 @@ verification.)
 feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies,
 `[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`, hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus
 adversarial "dirty paths" (null source → `ArgumentNullException`, narrowing overflow → `OverflowException` with no
-silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **55 runtime assertions**. It doubles
+silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **59 runtime assertions**. It doubles
 as living documentation.
 
 ---
@@ -889,7 +889,7 @@ samples/
   DwarfMapper.AotSample/     # NativeAOT + trimming gate sample
   DwarfMapper.AotBench/      # NativeAOT benchmarking & stability harness
   DwarfMapper.Gallery/       # runnable simple→advanced mapping examples
-  DwarfMapper.Conformance/   # one runnable app exercising every feature + adversarial paths (55 asserts)
+  DwarfMapper.Conformance/   # one runnable app exercising every feature + adversarial paths (59 asserts)
 docs/                        # COMPARISON.md, SECURITY.md, design specs + plans
 README.md
 ```

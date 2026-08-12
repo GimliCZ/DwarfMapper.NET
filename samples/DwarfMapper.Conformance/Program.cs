@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using DwarfMapper;
 using DwarfMapper.Conformance;
 
@@ -209,6 +210,34 @@ R.Check("F35 [MapConstructor] factory", f35 is { Text: "t", Number: 9, Origin: "
 // F36 [assembly: DwarfMapperDefaults] — F36M declares no options, so a case-mismatched member maps only
 // because the assembly default was read.
 R.Check("F36 assembly defaults read", new F36M().Map(new F36S { itemcount = 6 }).ItemCount == 6);
+
+// F37 RegisterCollectionShapes — one declared element map answers a COLLECTION request through the facade.
+// This is the Round-18 blocking defect, closed: before it, this call threw at first use.
+RuntimeHelpers.RunModuleConstructor(typeof(F37M).Module.ModuleHandle);
+var f37 = (ICollection<F37D>)DwarfMapperRegistry.Map(
+    new List<F37S> { new() { Id = 1 }, new() { Id = 2 } }, typeof(ICollection<F37D>));
+R.Check("F37 ambient collection shape", f37.Count == 2 && f37.First().Id == 1);
+
+// F38 [MapCollectionKey] — matched keys update in place, new keys are added, unmentioned ones survive
+var f38Dest = new F38Order
+{
+    Lines = [new() { Id = 1, Text = "old" }, new() { Id = 2, Text = "keep" }]
+};
+new F38M().Merge(
+    new F38Order { Lines = [new() { Id = 1, Text = "new" }, new() { Id = 3, Text = "added" }] },
+    f38Dest);
+R.Check("F38 [MapCollectionKey] merge",
+    f38Dest.Lines.Count == 3
+    && f38Dest.Lines.Single(l => l.Id == 1).Text == "new"
+    && f38Dest.Lines.Single(l => l.Id == 2).Text == "keep"
+    && f38Dest.Lines.Single(l => l.Id == 3).Text == "added");
+
+// F39 [AutoNest(false)] — the nested pair is declared by hand, and nothing is invented
+R.Check("F39 [AutoNest(false)]", new F39M().Map(new F39S { Inner = new F39Inner { V = 8 } }).Inner.V == 8);
+
+// F40 [GenerateWrapperMap] — the envelope's payload is mapped, the rest carried across
+var f40 = new F40M().Map(new F40Envelope<F40Payload> { Value = new F40Payload { Id = 2 }, Trace = "t" });
+R.Check("F40 [GenerateWrapperMap]", f40 is { Trace: "t", Value.Id: 2 });
 
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;

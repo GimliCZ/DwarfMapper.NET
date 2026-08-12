@@ -1040,3 +1040,101 @@ public partial class F36M
 {
     public partial F36D Map(F36S s);
 }
+
+// ── F37 RegisterCollectionShapes (ambient collection maps) ───────────────────
+// The Round-18 blocking defect, demonstrated: an element map declared once also answers a facade call for a
+// COLLECTION of it. Before this, Map<ICollection<D>>(listOfS) threw at first use, invisibly to every
+// compile-time check.
+public class F37S
+{
+    public int Id { get; set; }
+}
+
+public class F37D
+{
+    public int Id { get; set; }
+}
+
+[DwarfMapper]
+[GenerateMap<F37S, F37D>]
+public partial class F37M
+{
+}
+
+// ── F38 [MapCollectionKey] (update-into merge by key) ────────────────────────
+// Update-into normally REPLACES a list member. Keyed merge updates matched elements in place, adds new keys,
+// and keeps existing elements the source did not mention.
+public class F38Line
+{
+    public int Id { get; set; }
+    public string Text { get; set; } = "";
+}
+
+public class F38Order
+{
+    public List<F38Line> Lines { get; set; } = [];
+}
+
+[DwarfMapper]
+public partial class F38M
+{
+    [MapCollectionKey(nameof(F38Order.Lines), nameof(F38Line.Id))]
+    public partial void Merge(F38Order src, F38Order dest);
+}
+
+// ── F39 [AutoNest(false)] (explicit-nesting mode for one method) ─────────────
+// With auto-nesting off, the nested pair must be declared by hand — which is the point: no mapper appears
+// that the author did not write.
+public class F39Inner
+{
+    public int V { get; set; }
+}
+
+public class F39InnerD
+{
+    public int V { get; set; }
+}
+
+public class F39S
+{
+    public F39Inner Inner { get; set; } = new();
+}
+
+public class F39D
+{
+    public F39InnerD Inner { get; set; } = new();
+}
+
+[DwarfMapper]
+public partial class F39M
+{
+    [AutoNest(false)]
+    public partial F39D Map(F39S s);
+
+    // Declared explicitly, because [AutoNest(false)] refuses to invent it.
+    public partial F39InnerD MapInner(F39Inner s);
+}
+
+// ── F40 [GenerateWrapperMap] (single-payload generic wrapper) ────────────────
+public class F40Payload
+{
+    public int Id { get; set; }
+}
+
+public class F40PayloadD
+{
+    public int Id { get; set; }
+}
+
+public class F40Envelope<T>
+{
+    public T Value { get; set; } = default!;
+    public string Trace { get; set; } = "";
+}
+
+[DwarfMapper]
+[GenerateMap<F40Payload, F40PayloadD>]
+[GenerateWrapperMap(typeof(F40Envelope<>))]
+public partial class F40M
+{
+}
