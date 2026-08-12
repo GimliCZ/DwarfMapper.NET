@@ -40,6 +40,7 @@ dotnet run --project samples/DwarfMapper.Gallery
 | 22 | [`22_Reinterpret.cs`](22_Reinterpret.cs) — `[Reinterpret]` — asserted blit | bulk-copying layout-identical structs whose field NAMES differ |
 | 23 | [`23_FlattenGraph.cs`](23_FlattenGraph.cs) — `[FlattenGraph]` — a graph becomes a list | breadth-first graph collapse with per-node-type mapping |
 | 24 | [`24_MapDerivedType.cs`](24_MapDerivedType.cs) — `[MapDerivedType]` — polymorphic dispatch | one base-typed method that maps each concrete subtype to its own DTO |
+| 27 | [`27_PatchMerge.cs`](27_PatchMerge.cs) — Patch-merge: a null source member leaves the destination alone | [MapNullSkip] scoping SkipNullSourceMembers to one map, so replace and patch coexist |
 | | **Testing** | |
 | 25 | [`25_RoundTrip.cs`](25_RoundTrip.cs) — `[RoundTrip]` verification | one attribute emits a fuzzing harness asserting `Back(Forward(x)) == x` |
 | 26 | [`26_InformedDumps.cs`](26_InformedDumps.cs) — Informed failure dumps | a failed round trip names the diverging member path, not two object dumps |
