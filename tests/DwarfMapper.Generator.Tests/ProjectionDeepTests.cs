@@ -623,25 +623,17 @@ public class ProjectionDeepTests
         Assert.Contains("hook", d028[0].GetMessage(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    ///     A dotted source path READS fine in a projection — the walk is the shared one — but binding it (or
-    ///     any rename) to a CONSTRUCTOR PARAMETER is not supported in the projection lane: the ctor expression
-    ///     binds parameters by NAME only and never consults [MapProperty].
-    /// </summary>
-    /// <remarks>
-    ///     Found while fixing R18-31, which is the same shape in the class-model lane and IS fixed. This one is
-    ///     recorded rather than fixed because it is loud — the build stops, nothing ships wrong — but the
-    ///     message is still misleading: DWARF024 advises `[MapProperty(src, "&lt;paramName&gt;")]`, which is
-    ///     exactly what the author wrote. Filed as R18-32.
-    ///     <para>
-    ///         This test pins TODAY's behaviour so the gap cannot close silently. When projection learns to
-    ///         bind a parameter from an explicit map, this test fails, and that failure is the signal to
-    ///         rewrite it as the positive case.
-    ///     </para>
-    /// </remarks>
+    // ── Constructor targets under projection (R18-32) ────────────────────────────────────────────────────
+    // Projection used to bind constructor parameters by NAME alone and to RETURN the moment it had a
+    // constructor call. Three defects fell out of that, all found while fixing R18-31 and all fixed together
+    // because they are one structural confusion: the constructor route and the member route could not
+    // co-exist, so whichever ran first won and the other was discarded.
+
     [Fact]
-    public void Projection_does_NOT_bind_a_ctor_param_from_an_explicit_map_R18_32()
+    public void Projection_binds_a_ctor_param_from_a_dotted_explicit_map()
     {
+        // R18-32 proper. `ForCtorParam("Start", o => o.MapFrom(s => s.Window.Start))` translated to this and
+        // was refused with a DWARF024 recommending the very attribute the author had written.
         const string s = """
                          using DwarfMapper; using System.Linq;
                          namespace D;
@@ -654,10 +646,206 @@ public class ProjectionDeepTests
                              public partial IQueryable<Dst> Prj(IQueryable<Src> q);
                          }
                          """;
+        var gen = GeneratorAssert.CompilesClean(s);
+
+        Assert.Contains("new global::D.Dst(__s.Window.Start)", gen, StringComparison.Ordinal);
+        // Expression trees forbid named arguments (CS0853), so the argument must stay positional.
+        Assert.DoesNotContain("Start:", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Projection_binds_a_ctor_param_of_a_type_with_no_matching_property()
+    {
+        // The half that could not even be diagnosed as a ctor problem: with no writable member named `code`,
+        // the explicit map was refused as an UNKNOWN TARGET (DWARF014) before the constructor was consulted.
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public class Src { public int Id { get; set; } public int LegacyCode { get; set; } }
+                         public class Dst
+                         {
+                             public Dst(int id, int code) { Id = id; Code = code; }
+                             public int Id { get; }
+                             public int Code { get; }
+                         }
+                         [DwarfMapper] public partial class M
+                         {
+                             [MapProperty(nameof(Src.LegacyCode), "code")]
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var gen = GeneratorAssert.CompilesClean(s);
+
+        Assert.Contains("new global::D.Dst(__s.Id, __s.LegacyCode)", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Projection_assigns_an_init_member_the_constructor_did_NOT_take()
+    {
+        // The silent one, and the reason this went in rather than being filed: the resolver returned as soon
+        // as it had a constructor call, so `Extra` — assigned correctly through .Map — was dropped from the
+        // projection with no diagnostic on either side. Same mapper, two endpoints, different data.
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public class Src { public int Start { get; set; } public int Extra { get; set; } }
+                         public sealed record Dst(int Start) { public int Extra { get; init; } }
+                         [DwarfMapper] public partial class M
+                         {
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var gen = GeneratorAssert.CompilesClean(s);
+
+        Assert.Contains("new global::D.Dst(__s.Start)", gen, StringComparison.Ordinal);
+        Assert.Contains("Extra = __s.Extra", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Projection_does_not_assign_a_positional_record_member_beside_its_own_argument()
+    {
+        // A positional parameter also surfaces as an init PROPERTY, so a rename onto it matched both routes:
+        // the constructor took the by-name source and the explicit map was emitted as an initializer beside
+        // it, producing `new Dst { Start = __s.Other,  = new Dst(__s.Start) }` — an empty left-hand side, no
+        // diagnostic, and a CS error in generated code. CompilesClean is the assertion that matters here.
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public class Src { public int Start { get; set; } public int Other { get; set; } }
+                         public sealed record Dst(int Start);
+                         [DwarfMapper] public partial class M
+                         {
+                             [MapProperty("Other", "Start")]
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var gen = GeneratorAssert.CompilesClean(s);
+
+        Assert.Contains("new global::D.Dst(__s.Other)", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("Start =", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_Use_converter_into_a_ctor_param_reports_DWARF028_once_and_no_DWARF024()
+    {
+        // A converter is still untranslatable — that answer does not change. What changes is that the
+        // refusal is not followed by a DWARF024 recommending `[MapProperty(src, "<paramName>")]`, which the
+        // author has already written. One defect, one diagnostic.
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public class Src { public int Raw { get; set; } }
+                         public sealed record Dst(int Start);
+                         [DwarfMapper] public partial class M
+                         {
+                             [MapProperty(nameof(Src.Raw), "Start", Use = nameof(Twice))]
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                             private static int Twice(int v) => v * 2;
+                         }
+                         """;
         var (diag, _) = GeneratorTestHarness.Run(s);
 
-        var d024 = diag.FirstOrDefault(d => d.Id == "DWARF024");
-        Assert.NotNull(d024);
-        Assert.Contains("Start", d024!.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Single(diag.Where(d => d.Id == "DWARF028"));
+        Assert.DoesNotContain(diag, d => d.Id == "DWARF024");
+    }
+
+    [Fact]
+    public void A_bad_path_segment_into_a_ctor_param_reports_the_path_and_no_DWARF024()
+    {
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public sealed record Window(int Start, int End);
+                         public class Src { public Window Window { get; set; } = new(0, 0); }
+                         public sealed record Dst(int Start);
+                         [DwarfMapper] public partial class M
+                         {
+                             [MapProperty("Window.Middle", "Start")]
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+
+        Assert.Contains(diag, d => d.Id == "DWARF009");
+        Assert.DoesNotContain(diag, d => d.Id == "DWARF024");
+    }
+
+    [Fact]
+    public void A_map_naming_a_ctor_param_of_a_member_init_target_is_still_an_unknown_target()
+    {
+        // The negative half: this target HAS a public parameterless constructor, so projection builds it by
+        // member-init and the constructor is never called. A map naming one of its parameters has nothing to
+        // bind to and must stay DWARF014 — the parameter lookup is gated on the route actually being taken.
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public class Src { public int Id { get; set; } }
+                         public class Dst
+                         {
+                             public Dst() { }
+                             public Dst(int seed) { Id = seed; }
+                             public int Id { get; set; }
+                         }
+                         [DwarfMapper] public partial class M
+                         {
+                             [MapProperty(nameof(Src.Id), "seed")]
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var (diag, _) = GeneratorTestHarness.Run(s);
+
+        Assert.Contains(diag, d => d.Id == "DWARF008");
+    }
+
+    [Fact]
+    public void A_NESTED_ctor_projection_also_assigns_what_the_constructor_did_not_take()
+    {
+        // The same silent drop one level down, where it is harder to notice: the outer object initializer
+        // looks complete, and the member that vanished is inside the nested `new`.
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public class InnerSrc { public int Start { get; set; } public int Extra { get; set; } }
+                         public class Src { public InnerSrc Inner { get; set; } = new(); }
+                         public sealed record InnerDto(int Start) { public int Extra { get; init; } }
+                         public class Dst { public InnerDto Inner { get; set; } = new(0); }
+                         [DwarfMapper] public partial class M
+                         {
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var gen = GeneratorAssert.CompilesClean(s);
+
+        Assert.Contains("new global::D.InnerDto(__s.Inner.Start) { Extra = __s.Inner.Extra }", gen,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Projection_binds_a_camelCase_ctor_param_to_a_PascalCase_source_member()
+    {
+        // A fifth member of the same divergence family, found by the test above rather than by reading:
+        // ResolveConstructorArguments matches ctor parameters case-insensitively ALWAYS and says why — the
+        // camelCase-parameter / PascalCase-member shape is the dominant one. Projection matched them under
+        // the class comparer, Ordinal by default, so this pair bound through .Map and reported DWARF024
+        // through .Project.
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
+                         public class Dst
+                         {
+                             public Dst(int id, string name) { Id = id; Name = name; }
+                             public int Id { get; }
+                             public string Name { get; }
+                         }
+                         [DwarfMapper] public partial class M
+                         {
+                             public partial Dst Map(Src s);
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var gen = GeneratorAssert.CompilesClean(s);
+
+        Assert.Contains("new global::D.Dst(__s.Id, __s.Name)", gen, StringComparison.Ordinal);
     }
 }

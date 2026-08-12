@@ -59,9 +59,10 @@ public sealed record MapMethodModel(
     /// <summary>
     /// For projection methods (<see cref="IsProjection"/> = true), the inline expression
     /// fragments for each member (nested new / Select / ctor / direct assign).
-    /// When <see cref="ProjectionMembers"/> has exactly one entry with an empty
-    /// <see cref="ProjectionMemberMap.TargetName"/>, the single <see cref="ProjectionMemberMap.InlineExpr"/>
-    /// is the entire lambda body (constructor-only projection).
+    /// When the FIRST entry has an empty <see cref="ProjectionMemberMap.TargetName"/>, its
+    /// <see cref="ProjectionMemberMap.InlineExpr"/> is a <c>new T(…)</c> constructor call and any entries
+    /// after it are members the constructor did not take, emitted as an object initializer on top of it.
+    /// Otherwise every entry is a member-init binding.
     /// Empty for non-projection methods.
     /// </summary>
     EquatableArray<ProjectionMemberMap> ProjectionMembers = default,

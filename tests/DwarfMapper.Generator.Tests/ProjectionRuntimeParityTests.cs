@@ -186,6 +186,55 @@ public class ProjectionRuntimeParityTests
         GeneratorAssert.CompilesClean(src);
     }
 
+    [Theory]
+    // R18-32. Constructor TARGETS are the half of this invariant nothing swept, because every row above binds
+    // settable members. Each shape below binds through .Map and, before the fix, did something else through
+    // .Project: an explicit map aimed at a parameter was ignored (DWARF024 recommending the attribute the
+    // author had just written), an init member outside the parameter list was dropped in silence, and a
+    // camelCase parameter refused the PascalCase member .Map binds to it by rule.
+    //
+    // A positional record whose parameter is fed by an explicit map.
+    [InlineData("[MapProperty(nameof(Src.Legacy), \"Code\")]",
+        "public int Legacy { get; set; }",
+        "public sealed record Dto(int Code);")]
+    // The same, through a dotted path — the R18-31 shape, one lane over.
+    [InlineData("[MapProperty(\"Inner.Value\", \"Code\")]",
+        "public Inner Inner { get; set; } = new();",
+        "public sealed record Dto(int Code);")]
+    // An init member the constructor does not take: assigned by .Map, silently absent from .Project.
+    [InlineData("",
+        "public int Code { get; set; } public int Extra { get; set; }",
+        "public sealed record Dto(int Code) { public int Extra { get; init; } }")]
+    // A camelCase parameter against a PascalCase source member, with no option set.
+    [InlineData("",
+        "public int Code { get; set; }",
+        "public sealed class Dto { public Dto(int code) { Code = code; } public int Code { get; } }")]
+    public void Projection_and_the_runtime_map_agree_about_constructor_targets(
+        string attribute, string sourceMembers, string targetDecl)
+    {
+        // Compiles clean == both methods bound every parameter AND every member, on one mapper.
+        var src = $$"""
+            using System.Linq;
+            using DwarfMapper;
+            namespace Demo;
+
+            public sealed class Inner { public int Value { get; set; } }
+            public sealed class Src { {{sourceMembers}} }
+            {{targetDecl}}
+
+            [DwarfMapper]
+            public partial class M
+            {
+                {{attribute}}
+                public partial Dto Map(Src s);
+                {{attribute}}
+                public partial IQueryable<Dto> Project(IQueryable<Src> q);
+            }
+            """;
+
+        GeneratorAssert.CompilesClean(src);
+    }
+
     [Fact]
     public void Projection_reports_ambiguity_under_Flexible_just_like_the_runtime_path()
     {

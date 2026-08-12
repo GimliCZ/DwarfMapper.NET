@@ -278,11 +278,33 @@ internal static class MapEmitter
 
             var projMembers = method.ProjectionMembers;
 
-            if (projMembers.Count == 1 && projMembers[0].TargetName.Length == 0)
+            if (projMembers.Count > 0 && projMembers[0].TargetName.Length == 0)
             {
-                // Ctor-only projection: the entire lambda body is the single inline expression.
-                // e.g.  __s => new global::D.DstRec(x: __s.X, y: __s.Y)
-                sb.Append(projMembers[0].InlineExpr).AppendLine(");");
+                // Constructor projection. The leading empty-named entry carries the `new T(...)` call; any
+                // entries after it are members the constructor did NOT take, and they become an object
+                // initializer on top of it:
+                //
+                //   __s => new global::D.DstRec(__s.X, __s.Y)                      (no extra members)
+                //   __s => new global::D.DstRec(__s.X) { Extra = __s.Extra }       (with them)
+                //
+                // Both are ordinary MemberInit(New(…), bindings) expression trees and translate.
+                //
+                // R18-32: this used to require Count == 1, and the resolver returned the moment it had a
+                // constructor — so an init-only member the ctor did not take was dropped in silence, and a
+                // named entry that reached here anyway fell through to the member-init branch below and
+                // emitted `{ = new T(...) }` with an empty left-hand side. Neither had a diagnostic.
+                sb.Append(projMembers[0].InlineExpr);
+                if (projMembers.Count > 1)
+                {
+                    sb.AppendLine();
+                    sb.Append(indent).AppendLine("    {");
+                    for (var i = 1; i < projMembers.Count; i++)
+                        sb.Append(indent).Append("        ").Append(projMembers[i].EmitTargetName)
+                            .Append(" = ").Append(projMembers[i].InlineExpr).AppendLine(",");
+                    sb.Append(indent).Append("    }");
+                }
+
+                sb.AppendLine(");");
             }
             else if (projMembers.Count > 0)
             {

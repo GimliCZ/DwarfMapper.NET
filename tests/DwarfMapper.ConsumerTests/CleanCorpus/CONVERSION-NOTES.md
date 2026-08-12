@@ -137,7 +137,8 @@ over, because finding these is the corpus's job.
 
 ## What the corpus found in the generator
 
-Two defects, one per half, each on the first conversion attempt.
+Two defects on the first conversion attempt, one per half — and then a third family, found by going looking
+for the first one in the code next door.
 
 ### R18-31 — a dotted source path bound to a constructor parameter
 
@@ -159,13 +160,28 @@ resolver, which turned out to be keeping a fourth copy of the same loop. Pinned 
 `ConstructorSelectorHardeningTests.Dotted_source_path_into_a_ctor_param_keeps_the_wide_ctor`, which is the
 two-constructor case this corpus could not reach.
 
-Looking at the projection lane also turned up **R18-32**: there, a `[MapProperty]` aimed at a constructor
-parameter is ignored outright — parameters bind by name only — and the `DWARF024` that follows recommends
-`[MapProperty(src, "<paramName>")]`, which is what the author just wrote. Recorded rather than fixed in the
-same breath: it is loud, so nothing ships wrong, and the fix is a change to how projection composes a
-constructor call rather than a lookup correction. Today's behaviour is pinned by
-`ProjectionDeepTests.Projection_does_NOT_bind_a_ctor_param_from_an_explicit_map_R18_32`, which fails when the
-gap closes.
+### R18-32 — what the projection lane did with a constructor target
+
+Looking for the same defect one lane over found a worse one. Projection built a constructor call by matching
+parameters to source members BY NAME, and returned the moment it had one. Four failures came out of that
+single shape, and only the first was the one being looked for:
+
+| shape | before |
+|---|---|
+| `[MapProperty]` aimed at a parameter | ignored; `DWARF024` then recommended `[MapProperty(src, "<paramName>")]` — what the author had just written |
+| an `init` member the constructor did not take | **dropped in silence.** Assigned through `.Map`, absent through `.Project`, no diagnostic on either side |
+| a rename onto a positional record's parameter | emitted `new Dst { Start = __s.Other,  = new Dst(__s.Start) }` — an empty left-hand side, no diagnostic, a CS error in generated code |
+| `Dst(int id)` fed by `Id` | bound through `.Map`, refused through `.Project`: parameters matched under the class comparer, Ordinal by default, while `ResolveConstructorArguments` matches them case-insensitively always and says why |
+
+One cause: the constructor route and the member route could not co-exist, so whichever ran first won and the
+other was discarded. A constructor call is now allowed to carry an object initializer —
+`new Dto(__s.Code) { Extra = __s.Extra }`, an ordinary `MemberInit(New(…))` expression tree — and the
+parameters are bound from the explicit maps first, by name second, under the rule `.Map` already used.
+
+The second row is the reason this was fixed rather than filed: silent divergence between the two endpoints of
+one mapper is the failure this library exists to make impossible, and it is what the Round-18 consumer was
+actually suffering from. `ProjectionRuntimeParityTests` now sweeps constructor targets, which is the half of
+that invariant nothing had swept — every row there binds settable members.
 
 ### A `[MapDerivedType]` arm that resolved to its own dispatcher
 

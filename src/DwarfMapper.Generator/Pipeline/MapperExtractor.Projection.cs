@@ -194,9 +194,49 @@ internal static partial class MapperExtractor
         foreach (var m in WritableMembers(targetType, compilation, ProjectionPublicOnly))
             writableByName[m.Name] = m.Type;
 
+        // For IQueryable projection, member-init syntax is only SQL-translatable when the target
+        // type has a public parameterless constructor (EF Core materialises via default ctor then
+        // sets members). Positional records and other ctor-only types must use constructor projection.
+        var hasParameterlessCtor = targetType.InstanceConstructors.Any(c =>
+            c.DeclaredAccessibility == Accessibility.Public
+            && !c.IsStatic
+            && c.Parameters.Length == 0);
+
+        var writableMembers = WritableMembers(targetType, compilation, ProjectionPublicOnly)
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
+            .ToList();
+
+        // The constructor this projection will actually call, decided BEFORE the explicit maps are read
+        // because a [MapProperty] may target one of its parameters. R18-32: the parameters used to bind by
+        // NAME only, so an explicit map aimed at one was ignored — and then DWARF024 recommended
+        // `[MapProperty(src, "<paramName>")]`, which is what the author had just written.
+        var usesCtorProjection = writableMembers.Count == 0 || !hasParameterlessCtor;
+        var projectionCtor = usesCtorProjection
+            ? targetType.InstanceConstructors
+                .Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic &&
+                            c.Parameters.Length > 0)
+                .OrderByDescending(c => c.Parameters.Length)
+                .FirstOrDefault()
+            : null;
+
+        // Parameter name → type, for resolving an explicit map whose target is a parameter rather than a
+        // member. Ordinal, matching ResolveConstructorArguments' explicit-map index. Empty when the target
+        // will be built by member-init, where a map naming a parameter is still DWARF014 — the constructor
+        // is not used there, so there is nothing for it to bind to.
+        var ctorParamTypes = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
+        if (projectionCtor is not null)
+            foreach (var p in projectionCtor.Parameters)
+                ctorParamTypes[p.Name] = p.Type;
+
         var result = new List<ProjectionMemberMap>();
         var handled = new HashSet<string>(StringComparer.Ordinal);
         var explicitSeen = new HashSet<string>(StringComparer.Ordinal);
+
+        // Explicit maps aimed at a constructor parameter: the resolved argument expression, and (separately)
+        // every such target that was SEEN, so a parameter whose map failed to resolve fails quietly instead
+        // of collecting a second, contradictory DWARF024 on top of the diagnostic that already explained it.
+        var ctorArgExprs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var ctorArgTargets = new HashSet<string>(StringComparer.Ordinal);
 
         // ── Explicit maps ([MapProperty]) ────────────────────────────────────
         foreach (var (srcName, tgtName, use) in explicitMaps)
@@ -221,7 +261,14 @@ internal static partial class MapperExtractor
                 continue;
             }
 
-            if (!writableByName.TryGetValue(tgtName, out var tgtType))
+            // A constructor parameter is a legitimate target: a positional record's parameter also surfaces
+            // as an init property (so both lookups hit, same type), but a ctor-only type's parameter surfaces
+            // as nothing writable at all — and used to be refused as an unknown target for that reason.
+            var isCtorArg = ctorParamTypes.ContainsKey(tgtName);
+            if (isCtorArg) ctorArgTargets.Add(tgtName);
+
+            if (!writableByName.TryGetValue(tgtName, out var tgtType)
+                && !ctorParamTypes.TryGetValue(tgtName, out tgtType))
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownTarget, location, tgtName));
                 continue;
@@ -279,45 +326,51 @@ internal static partial class MapperExtractor
             var inlineExpr = ResolveProjectionExpr(
                 sm, tgtType, srcExprForExplicit, 0, compilation, location,
                 diagnostics, tgtName, enumPolicy, comparer, autoNest);
-            if (inlineExpr is not null)
+            if (inlineExpr is null)
+                continue;
+
+            // A parameter's expression goes into the constructor CALL, never into an initializer beside it:
+            // an init-only member cannot be assigned after the constructor that already set it, and emitting
+            // both produced `new T(x) { Same = x }`.
+            if (isCtorArg)
+                ctorArgExprs[tgtName] = inlineExpr;
+            else
                 result.Add(new ProjectionMemberMap(tgtName, inlineExpr));
         }
 
-        // ── Auto-matched writable members ────────────────────────────────────
+        // ── Constructor projection ───────────────────────────────────────────
 
-        // For IQueryable projection, member-init syntax is only SQL-translatable when the target
-        // type has a public parameterless constructor (EF Core materialises via default ctor then
-        // sets members). Positional records and other ctor-only types must use constructor projection.
-        var hasParameterlessCtor = targetType.InstanceConstructors.Any(c =>
-            c.DeclaredAccessibility == Accessibility.Public
-            && !c.IsStatic
-            && c.Parameters.Length == 0);
-
-        var writableMembers = WritableMembers(targetType, compilation, ProjectionPublicOnly)
-            .OrderBy(m => m.Name, StringComparer.Ordinal)
-            .ToList();
-
-        if (writableMembers.Count == 0 || !hasParameterlessCtor)
+        if (usesCtorProjection)
         {
             // Try constructor projection: select the ctor with the most params matching source.
             ConstructorSelector.Select(compilation, targetType, diagnostics, location, out var ctorOnly);
-            var bestCtor = targetType.InstanceConstructors
-                .Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length > 0)
-                .OrderByDescending(c => c.Parameters.Length)
-                .FirstOrDefault();
 
-            if (bestCtor is not null)
-            {
-                // C4: pass comparer (carries CaseInsensitive setting) to ctor projection resolver.
-                var ctorExpr = ResolveProjectionCtorExpr(
-                    bestCtor, sourceType, paramExpr, 0,
-                    compilation, location, diagnostics, targetType, enumPolicy, comparer, autoNest);
-                if (ctorExpr is not null)
-                    // Store as a whole-lambda body (TargetName = "")
-                    result.Add(new ProjectionMemberMap("", ctorExpr));
-            }
+            if (projectionCtor is null)
+                return result;
 
-            return result;
+            // C4: pass comparer (carries CaseInsensitive setting) to ctor projection resolver.
+            var ctorExpr = ResolveProjectionCtorExpr(
+                projectionCtor, sourceType, paramExpr, 0,
+                compilation, location, diagnostics, targetType, enumPolicy, comparer, autoNest,
+                ctorArgExprs, ctorArgTargets);
+            if (ctorExpr is null)
+                return result;
+
+            // The constructor call leads; anything the constructor did not take follows it as an object
+            // initializer, which the emitter appends. R18-32: this used to RETURN here, so an init-only
+            // member outside the parameter list was dropped without a word — assigned through .Map, absent
+            // through .Project, no diagnostic either way. Every parameter is marked handled so the member
+            // loop below cannot assign it a second time.
+            result.Insert(0, new ProjectionMemberMap("", ctorExpr));
+            foreach (var p in projectionCtor.Parameters)
+                handled.Add(p.Name);
+
+            // A record's positional parameter also surfaces as an init PROPERTY, and the comparer may be
+            // case-insensitive or Flexible — match the property to the parameter under the same comparer the
+            // rest of this resolver uses, or `Start` the property gets assigned beside `start` the argument.
+            foreach (var m in writableMembers)
+                if (projectionCtor.Parameters.Any(p => comparer.Equals(p.Name, m.Name)))
+                    handled.Add(m.Name);
         }
 
         foreach (var target in writableMembers)
@@ -738,6 +791,43 @@ internal static partial class MapperExtractor
             && !c.IsStatic
             && c.Parameters.Length == 0);
 
+        // Member-init parts for a set of target members — `P1 = expr1`, one per member. Shared by both
+        // branches below, because the constructor branch has to assign whatever the constructor did not take
+        // and there is no second way to resolve a member.
+        List<string>? MemberParts(IEnumerable<(string Name, ITypeSymbol Type)> members)
+        {
+            var parts = new List<string>();
+            var failed = false;
+
+            foreach (var tgtMember in members)
+            {
+                if (!srcReadable.TryGetValue(tgtMember.Name, out var srcMember))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.UnmappedMember, location, targetMemberName + "." + tgtMember.Name));
+                    failed = true;
+                    continue;
+                }
+
+                var memberSrcExpr = srcExpr + "." + Identifiers.Escape(srcMember.Name);
+                // C4: propagate comparer into recursive member resolution.
+                var memberInlineExpr = ResolveProjectionExpr(
+                    srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
+                    compilation, location, diagnostics,
+                    targetMemberName + "." + tgtMember.Name, enumPolicy, comparer, autoNest);
+
+                if (memberInlineExpr is null)
+                {
+                    failed = true;
+                    continue;
+                }
+
+                parts.Add($"{tgtMember.Name} = {memberInlineExpr}");
+            }
+
+            return failed ? null : parts;
+        }
+
         string innerBodyExpr;
 
         if (writableTargetMembers.Count == 0 || !hasParameterlessCtor)
@@ -766,41 +856,23 @@ internal static partial class MapperExtractor
                 compilation, location, diagnostics, tgtType, enumPolicy,
                 comparer, autoNest);
             if (ctorExpr is null) return null;
-            innerBodyExpr = ctorExpr;
+
+            // R18-32, nested half: a member the constructor did not take used to be dropped here in silence,
+            // exactly as at the top level — `new InnerDto(__s.Inner.Start)` with InnerDto.Extra never
+            // assigned, while .Map assigned it. It becomes an object initializer on the constructor call.
+            var leftover = MemberParts(writableTargetMembers
+                .Where(m => !bestCtor.Parameters.Any(p => comparer.Equals(p.Name, m.Name))));
+            if (leftover is null) return null;
+
+            innerBodyExpr = leftover.Count == 0
+                ? ctorExpr
+                : $"{ctorExpr} {{ {string.Join(", ", leftover)} }}";
         }
         else
         {
             // Member-init expression: new T { P1 = expr1, P2 = expr2 }
-            var memberParts = new List<string>();
-            var anyFailed = false;
-
-            foreach (var tgtMember in writableTargetMembers)
-            {
-                if (!srcReadable.TryGetValue(tgtMember.Name, out var srcMember))
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.UnmappedMember, location, targetMemberName + "." + tgtMember.Name));
-                    anyFailed = true;
-                    continue;
-                }
-
-                var memberSrcExpr = srcExpr + "." + Identifiers.Escape(srcMember.Name);
-                // C4: propagate comparer into recursive member resolution.
-                var memberInlineExpr = ResolveProjectionExpr(
-                    srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
-                    compilation, location, diagnostics,
-                    targetMemberName + "." + tgtMember.Name, enumPolicy, comparer, autoNest);
-
-                if (memberInlineExpr is null)
-                {
-                    anyFailed = true;
-                    continue;
-                }
-
-                memberParts.Add($"{tgtMember.Name} = {memberInlineExpr}");
-            }
-
-            if (anyFailed) return null;
+            var memberParts = MemberParts(writableTargetMembers);
+            if (memberParts is null) return null;
             innerBodyExpr = $"new {tgtFqn} {{ {string.Join(", ", memberParts)} }}";
         }
 
@@ -815,6 +887,16 @@ internal static partial class MapperExtractor
     ///     Build an inline constructor-call expression for targets with only ctor params (records etc.).
     ///     e.g. "new global::D.DstRec(x: __s.X, y: __s.Y)"
     /// </summary>
+    /// <param name="explicitArgExprs">
+    ///     Argument expressions already resolved from a <c>[MapProperty]</c> whose target names a parameter,
+    ///     keyed by parameter name (ordinal, matching <c>ResolveConstructorArguments</c>). Empty for the
+    ///     nested-object caller, where <c>[MapProperty]</c> targets belong to the top-level pair.
+    /// </param>
+    /// <param name="explicitArgTargets">
+    ///     Every parameter an explicit map NAMED, including ones whose resolution failed. A parameter in here
+    ///     but not in <paramref name="explicitArgExprs" /> already has a diagnostic explaining why; DWARF024
+    ///     on top of it would recommend the attribute the author has just written.
+    /// </param>
     private static string? ResolveProjectionCtorExpr(
         IMethodSymbol ctor,
         ITypeSymbol srcType,
@@ -826,7 +908,9 @@ internal static partial class MapperExtractor
         INamedTypeSymbol tgtType,
         EnumPolicy enumPolicy,
         StringComparer comparer,
-        bool autoNest)
+        bool autoNest,
+        Dictionary<string, string>? explicitArgExprs = null,
+        HashSet<string>? explicitArgTargets = null)
     {
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var srcReadable = BuildProjectionSourceLookup(srcType, comparer, compilation, location, diagnostics);
@@ -836,10 +920,24 @@ internal static partial class MapperExtractor
 
         foreach (var param in ctor.Parameters)
         {
-            if (!srcReadable.TryGetValue(param.Name, out var srcMember))
+            // An explicit [MapProperty] naming this parameter wins over the by-name match, exactly as it does
+            // in ResolveConstructorArguments. Its expression was resolved by the caller against the
+            // parameter's type, so it is used verbatim here.
+            if (explicitArgExprs is not null && explicitArgExprs.TryGetValue(param.Name, out var explicitArg))
             {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.ConstructorParameterUnmapped, location, param.Name));
+                argParts.Add(explicitArg);
+                continue;
+            }
+
+            if (explicitArgTargets is not null && explicitArgTargets.Contains(param.Name))
+            {
+                anyFailed = true;
+                continue;
+            }
+
+            if (!TryBindProjectionCtorParam(param.Name, srcReadable, comparer, location, diagnostics,
+                    out var srcMember))
+            {
                 anyFailed = true;
                 continue;
             }
@@ -863,6 +961,55 @@ internal static partial class MapperExtractor
         if (anyFailed) return null;
         return $"new {tgtFqn}({string.Join(", ", argParts)})";
     }
+
+    /// <summary>
+    ///     Binds one constructor parameter to a source member, first under the mapper's configured comparer
+    ///     and then — failing that — case-insensitively, reporting DWARF024 when neither finds anything.
+    /// </summary>
+    /// <remarks>
+    ///     The insensitive second pass is not a convenience: <c>ResolveConstructorArguments</c> matches ctor
+    ///     parameters case-insensitively ALWAYS, deliberately, because C# convention is a camelCase parameter
+    ///     (<c>id</c>) binding a PascalCase member (<c>Id</c>) — the dominant record / primary-constructor
+    ///     shape. Projection matched them under the class comparer, which is Ordinal by default, so
+    ///     <c>Dst(int id, int code)</c> bound its parameters through <c>.Map</c> and reported DWARF024 for the
+    ///     same pair through <c>.Project</c>. One more member of the divergence family
+    ///     <c>ProjectionRuntimeParityTests</c> exists to catch.
+    ///     <para>
+    ///         A genuine case-only collision is DWARF010 rather than an arbitrary pick, which is the same
+    ///         promise <see cref="BuildProjectionSourceLookup" /> makes for member binding.
+    ///     </para>
+    /// </remarks>
+    private static bool TryBindProjectionCtorParam(
+        string paramName,
+        Dictionary<string, (string Name, ITypeSymbol Type)> srcReadable,
+        StringComparer comparer,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics,
+        out (string Name, ITypeSymbol Type) srcMember)
+    {
+        if (srcReadable.TryGetValue(paramName, out srcMember))
+            return true;
+
+        var insensitive = srcReadable
+            .Where(kv => StringComparer.OrdinalIgnoreCase.Equals(kv.Key, paramName))
+            .Select(kv => kv.Value)
+            .ToList();
+
+        if (insensitive.Count == 1)
+        {
+            srcMember = insensitive[0];
+            return true;
+        }
+
+        diagnostics.Add(insensitive.Count > 1
+            ? new DiagnosticInfo(DiagnosticDescriptors.AmbiguousMatch, location, paramName)
+            : new DiagnosticInfo(DiagnosticDescriptors.ConstructorParameterUnmapped, location, paramName));
+        srcMember = default;
+        return false;
+    }
+
+    // The comparer already collapsed case when it is OrdinalIgnoreCase or Flexible, so the second pass can
+    // only ever add matches the first pass could not see — never override one it did.
 
     /// <summary>
     ///     DFS reachability: can we reach <paramref name="target" /> starting from <paramref name="start" />

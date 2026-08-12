@@ -255,7 +255,7 @@ Full conversion table: the [repository README, "Built-in scalar conversions"](..
 | `ForAllMembers(o => o.Condition((_,_,src) => src != null))` (skip null source members / patch-merge) | `[DwarfMapper(SkipNullSourceMembers = true)]` | a null source member keeps the destination's default (`if (src.X is not null) dst.X = …`) — the "don't clobber with nulls" guard. Distinct from a **per-member** `.Condition`, which is `[MapProperty(src, tgt, When = …)]` (above) |
 | `.PreserveReferences()` | `[DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]` | full topology reconstruction |
 | `.MaxDepth(n)` | `[DwarfMapper(MaxDepth = n)]` | throws catchable `DwarfMappingDepthException`, never a silent StackOverflow |
-| `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S> q)` | direct members, renames, ignores, enum→int casts, nested objects, collections, and dotted-path flattening (`[MapProperty("A.B", …)]`) all translate; only non-translatable conversions (narrowing/parse/by-name/`Use=`/`HashSet`·dict) are `DWARF028` |
+| `query.ProjectTo<Dto>(cfg)` | `partial IQueryable<Dto> Project(IQueryable<S> q)` | direct members, renames, ignores, enum→int casts, nested objects, collections, dotted-path flattening (`[MapProperty("A.B", …)]`) and constructor targets (positional records, with `[MapProperty]` binding a parameter and an initializer for whatever the constructor does not take) all translate; only non-translatable conversions (narrowing/parse/by-name/`Use=`/`HashSet`·dict) are `DWARF028` |
 
 `.ReverseMap()` example:
 
