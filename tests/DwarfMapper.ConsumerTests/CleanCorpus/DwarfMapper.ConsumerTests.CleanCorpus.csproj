@@ -1,0 +1,37 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>CleanCorpus</RootNamespace>
+        <!-- CA1707: test methods intentionally use underscores -->
+        <!-- CA1515: test types need not be sealed -->
+        <!-- CA2227/CA1002/CA1819: the DTOs are written the way application-layer DTOs are actually written —
+             settable collection properties are the shape under test, not an oversight to lint away. -->
+        <!-- CA1720/IDE1006: `Format`, `Page<T>` and the DTO member names mirror real application vocabulary. -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA2227;CA1002;CA1819;CA1861;CA1720;CA1716</NoWarn>
+        <!-- NU1903: AutoMapper 14.0.0 (the last MIT/GPL-compatible release; v15+ is RPL-1.5) carries a known
+             advisory. Test-only, non-shipped (IsPackable=false), mapping in-memory POCOs with no untrusted
+             input — same reasoning and same suppression as the benchmark and differential projects. -->
+        <NoWarn>$(NoWarn);NU1903</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="xunit"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+        <!-- The BEFORE side. The corpus exists to be converted off this. -->
+        <PackageReference Include="AutoMapper"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit"/>
+    </ItemGroup>
+</Project>

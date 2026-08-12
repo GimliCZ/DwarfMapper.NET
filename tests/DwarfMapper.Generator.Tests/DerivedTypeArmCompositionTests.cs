@@ -139,6 +139,52 @@ public class DerivedTypeArmCompositionTests
     }
 
     [Fact]
+    public void An_arm_may_resolve_to_a_SIBLING_that_shares_the_dispatchers_signature()
+    {
+        // Found by converting a CLEAN-architecture corpus off AutoMapper, where a base and a derived source
+        // mapping to ONE DTO is the ordinary shape rather than an edge case.
+        //
+        // The dispatcher is excluded from its own arms, and the first version of that exclusion worked by
+        // SIGNATURE. A base arm whose pair IS the dispatcher's own pair then needs a sibling with the same
+        // parameter and return types — legal C#, different name, no DWARF060 — and the signature exclusion
+        // removed the sibling along with the dispatcher. The arm had nowhere to resolve, so it synthesized a
+        // fresh mapper that could not see the sibling's configuration, and the pair failed its completeness
+        // gate on members the sibling explicitly maps.
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class Item { public string Title { get; set; } = ""; public Pub Publisher { get; set; } = new(); }
+            public class Audio : Item { public string Narrator { get; set; } = ""; public int RuntimeMinutes { get; set; } }
+            public class Pub { public string Name { get; set; } = ""; }
+            public class ItemDto { public string Title { get; set; } = ""; public string PublisherName { get; set; } = ""; public string? Narrator { get; set; } }
+            public class AudioDto : ItemDto { public int RuntimeMinutes { get; set; } }
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapDerivedType<Audio, AudioDto>]
+                [MapDerivedType<Item, ItemDto>]
+                public partial ItemDto ToDto(Item source);
+
+                // Same signature as ToDto, different name. THIS is what the base arm must resolve to.
+                [MapProperty("Publisher.Name", nameof(ItemDto.PublisherName))]
+                [MapIgnore(nameof(ItemDto.Narrator))]
+                public partial ItemDto ToBaseDto(Item source);
+
+                [MapProperty("Publisher.Name", nameof(ItemDto.PublisherName))]
+                public partial AudioDto ToAudioDto(Audio source);
+            }
+            """;
+
+        var generated = GeneratorAssert.CompilesClean(src);
+
+        // The base arm calls the sibling rather than a synthesized mapper that would have had to rediscover
+        // the flattened publisher name and the ignore for itself.
+        Assert.Contains("__s => ToBaseDto(__s)", generated, StringComparison.Ordinal);
+        Assert.Contains("__s => ToAudioDto(__s)", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_collection_element_route_dispatches_on_the_runtime_type()
     {
         // The whole point. A List<Command> holding an AliasCommand must go through the dispatching method,

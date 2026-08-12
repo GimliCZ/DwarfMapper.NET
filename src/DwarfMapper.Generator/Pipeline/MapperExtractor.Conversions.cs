@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Runtime.CompilerServices;
 using DwarfMapper.Generator.Core;
@@ -978,6 +978,32 @@ internal static partial class MapperExtractor
         var result = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>(candidates.Count);
         foreach (var c in candidates)
             if (!SymbolEqualityComparer.Default.Equals(c.ParamType, src)
+                || !SymbolEqualityComparer.Default.Equals(c.ReturnType, tgt))
+                result.Add(c);
+
+        return result;
+    }
+
+    /// <summary>
+    ///     The candidate list minus ONE named method — the one currently being resolved.
+    /// </summary>
+    /// <remarks>
+    ///     Narrower than <see cref="ExcludingPair" /> and necessary where a SIBLING may legitimately share the
+    ///     signature. A <c>[MapDerivedType]</c> dispatcher and its base arm are exactly that: two methods with
+    ///     the same parameter and return types and different names, which C# allows and <c>DWARF060</c> does
+    ///     not object to. Excluding by signature removed the arm along with the dispatcher, so the arm had
+    ///     nowhere to resolve and the pair failed its completeness gate on members the sibling configures.
+    ///     Found by converting a CLEAN-architecture corpus off AutoMapper, where a base and a derived source
+    ///     mapping to one DTO is the ordinary shape rather than an edge case.
+    /// </remarks>
+    private static List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> ExcludingMethod(
+        List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> candidates,
+        string name, ITypeSymbol src, ITypeSymbol tgt)
+    {
+        var result = new List<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)>(candidates.Count);
+        foreach (var c in candidates)
+            if (!string.Equals(c.Name, name, StringComparison.Ordinal)
+                || !SymbolEqualityComparer.Default.Equals(c.ParamType, src)
                 || !SymbolEqualityComparer.Default.Equals(c.ReturnType, tgt))
                 result.Add(c);
 
