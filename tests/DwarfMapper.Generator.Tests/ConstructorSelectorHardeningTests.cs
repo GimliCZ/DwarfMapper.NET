@@ -264,6 +264,40 @@ public class ConstructorSelectorHardeningTests
         Assert.Contains("code:", gen, StringComparison.Ordinal); // the WIDE ctor was chosen and fed the rename
     }
 
+    /// <summary>
+    ///     R18-31, the selection half: a ctor parameter fed by a dotted source PATH must count as satisfiable.
+    ///     Satisfiability is scored before resolution runs, against a flat set of source member names — so a
+    ///     path scored as "no source", the narrow ctor was preferred, and the get-only Code member then
+    ///     surfaced DWARF008 for a parameter that had a source all along. Same shape as the pair-scoped rename
+    ///     above and as ISSUE-044: two places answering "can this parameter be bound?" differently.
+    /// </summary>
+    [Fact]
+    public void Dotted_source_path_into_a_ctor_param_keeps_the_wide_ctor()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Legacy { public int Code { get; set; } }
+                         public class Src { public int Id { get; set; } public Legacy Legacy { get; set; } = new(); }
+                         public class Dst
+                         {
+                             public Dst(int id) { Id = id; }
+                             public Dst(int id, int code) { Id = id; Code = code; }
+                             public int Id { get; }
+                             public int Code { get; }
+                         }
+                         [DwarfMapper]
+                         [MapProperty<Src, Dst>("Legacy.Code", "code")]
+                         public partial class M { public partial Dst Map(Src s); }
+                         """;
+
+        var (diags, gen) = GeneratorTestHarness.Run(s);
+
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF008");
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF024");
+        Assert.Contains("code: s.Legacy.Code", gen, StringComparison.Ordinal);
+    }
+
     private static string Internal(string ctorAccessibility, bool flag)
     {
         return OnlyCtor(ctorAccessibility, flag,

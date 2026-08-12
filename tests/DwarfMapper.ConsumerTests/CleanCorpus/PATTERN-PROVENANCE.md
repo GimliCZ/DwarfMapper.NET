@@ -68,7 +68,7 @@ DOMAIN, not the mapper's option surface. `DddDomain.cs` covers that.
 | 18 | a strongly-typed id wrapping a `Guid` | every id member needs a conversion, and there are a lot of them; a missing one defaults silently under a reflective mapper |
 | 19 | a value object flattened into two DTO members | the ordinary treatment, and where AutoMapper's implicit path handling shows |
 | 20 | a value object rendered to a string | a real converter rather than a copy |
-| 21 | a positional record fed from a value object | `ForCtorParam` + a nested path — **found R18-31** |
+| 21 | a positional record fed from a value object | `ForCtorParam` + a nested path — **found R18-31**, now fixed |
 | 22 | a read-only child collection over a private backing list | a reflective mapper writes through the aggregate's back; a compile-time one cannot |
 | 23 | a private parameterless constructor for ORM hydration | the shape a mapper must NOT be able to use by accident |
 | 24 | an audited base class every entity carries and no DTO wants | the source-completeness question |

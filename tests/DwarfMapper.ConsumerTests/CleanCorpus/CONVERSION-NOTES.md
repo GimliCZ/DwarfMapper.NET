@@ -87,7 +87,7 @@ applications that are not tutorials, harvested from `kgrzybek/modular-monolith-w
 | a dictionary member | nothing |
 | view models as records NESTED inside their handler | nothing |
 | an audited base class no view carries | nothing — and see below |
-| **a positional record's parameters fed from a value object** | **a converter per parameter; the direct translation is refused** |
+| a positional record's parameters fed from a value object | one `[MapProperty]` per parameter — **after the defect this corpus found was fixed** |
 | **a read-only child collection over a private list** | **not mapped inward at all, on purpose** |
 
 ### Strongly-typed ids cost the same and fail differently
@@ -115,16 +115,17 @@ member — convenient right up to the day one of them mattered. DwarfMapper is s
 `RequiredMapping = Both` is the switch that makes source coverage a build-time question. Either way it is
 now an asserted property of the corpus rather than an assumption.
 
-### Conversion note 7 — a defect, not a cost
+### Conversion note 7 — a defect, not a cost, and now neither
 
-`ForCtorParam("Start", o => o.MapFrom(s => s.Window.Start))` does not translate directly: a dotted source
-path into a **constructor parameter** is refused, and the message — `DWARF009`, "source member
-'Window.Start' does not exist or is not readable" — is wrong, because it does exist and is readable. Filed as
-**R18-31**, message first, because a diagnostic that denies a member exists sends the reader hunting for a
-typo that is not there.
+`ForCtorParam("Start", o => o.MapFrom(s => s.Window.Start))` did not translate. A dotted source path into a
+**constructor parameter** was refused under `DWARF009` — "source member 'Window.Start' does not exist or is
+not readable" — about a member that existed, was readable, and mapped correctly into a *property* three lines
+up. Filed as **R18-31** and fixed; the conversion is now one `[MapProperty("Window.Start", "Start")]` per
+parameter, which is what it should always have been. See below for what the defect actually was.
 
-The workaround is a converter per parameter taking the value object whole, and it is decent: `StartOf` says
-what it takes apart, where the dotted string said it in a place the compiler cannot check.
+The workaround it forced in the meantime was a converter per parameter taking the value object whole — decent
+enough that it was easy not to notice the cost, which is the argument for converting real corpora rather than
+feature lists.
 
 ## The one deliberate behavioural difference
 
@@ -136,7 +137,28 @@ over, because finding these is the corpus's job.
 
 ## What the corpus found in the generator
 
-One defect, on the first conversion attempt.
+Two defects, one per half, each on the first conversion attempt.
+
+### R18-31 — a dotted source path bound to a constructor parameter
+
+Three places have to agree about what `"Window.Start"` means: member resolution, constructor-argument
+resolution, and the constructor *selector* that scores which parameters have a source. Only the first walked
+the path; the other two compared it against a flat set of member names, where a string containing a dot
+matches nothing.
+
+That produced two failures with one cause. Resolution reported `DWARF009` — "does not exist or is not
+readable" — which is the most misleading thing a diagnostic can say about a member that does exist, because
+the reader goes looking for a typo. And selection scored the constructor unsatisfiable, so a type with more
+than one constructor would quietly get the *narrower* one and then fail completeness on the members the wider
+one would have filled — the same shape as `ISSUE-044`, and invisible in this corpus because `SlotView` has a
+single constructor.
+
+The walk now lives once, in `MemberFacts.TryResolvePath`, and all three call it. Pinned by four tests in
+`DeepSourcePathGeneratorTests` and by
+`ConstructorSelectorHardeningTests.Dotted_source_path_into_a_ctor_param_keeps_the_wide_ctor`, which is the
+two-constructor case this corpus could not reach.
+
+### A `[MapDerivedType]` arm that resolved to its own dispatcher
 
 A `[MapDerivedType]` dispatcher is excluded from resolving its own arms — otherwise a switch arm calls its own
 switch. That exclusion worked by **signature**, and a base arm whose pair *is* the dispatcher's own pair needs

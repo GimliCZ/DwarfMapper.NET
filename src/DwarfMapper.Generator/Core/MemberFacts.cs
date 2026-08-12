@@ -102,6 +102,55 @@ internal static class MemberFacts
             }
     }
 
+    /// <summary>
+    ///     Resolves a dotted source path (e.g. <c>"Customer.Name"</c>) hop-by-hop from <paramref name="root" />
+    ///     over <see cref="Readable" />, returning the leaf member's type. <paramref name="nullableHop" /> is set
+    ///     when an <i>interior</i> hop (any but the last) is a nullable/oblivious reference — dereferencing it can
+    ///     throw at runtime (DWARF044). On failure, <paramref name="badSegment" /> names the first unresolved
+    ///     segment (DWARF043). Segments are matched by exact ordinal name; member names never contain dots, so
+    ///     the split is unambiguous. A path with no dot resolves as a single hop, which makes this a superset of
+    ///     the flat lookup and lets a caller ask one question instead of two.
+    /// </summary>
+    /// <remarks>
+    ///     ISSUE-R18-31: this walk lives here rather than in the extractor because THREE places have to agree
+    ///     about what a dotted source means — member resolution, constructor-argument resolution, and
+    ///     <c>ConstructorSelector</c>'s satisfiability scoring. Two of them had their own flat-name lookup, so a
+    ///     path that resolved fine for a member was reported as a member that "does not exist" when it fed a
+    ///     constructor parameter.
+    /// </remarks>
+    internal static bool TryResolvePath(
+        ITypeSymbol root, string dottedPath, Compilation? compilation, bool allowNonPublic,
+        out ITypeSymbol? leafType, out bool nullableHop, out string badSegment)
+    {
+        leafType = null;
+        nullableHop = false;
+        badSegment = "";
+        var segments = dottedPath.Split('.');
+        var current = root;
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var seg = segments[i];
+            var member = Readable(current, compilation, allowNonPublic)
+                .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
+                .Select(m => ((string Name, ITypeSymbol Type)?)(m.Name, m.Type))
+                .FirstOrDefault();
+            if (member is null)
+            {
+                badSegment = seg;
+                return false;
+            }
+
+            if (i < segments.Length - 1
+                && member.Value.Type.IsReferenceType
+                && member.Value.Type.NullableAnnotation != NullableAnnotation.NotAnnotated)
+                nullableHop = true;
+            current = member.Value.Type;
+        }
+
+        leafType = current;
+        return true;
+    }
+
     internal static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> Writable(ITypeSymbol type,
         Compilation? compilation, bool allowNonPublic)
     {

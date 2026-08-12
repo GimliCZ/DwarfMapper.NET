@@ -118,22 +118,18 @@ public partial class DddMappers
     /// </summary>
     /// <remarks>
     ///     CONVERSION NOTE 7. AutoMapper's <c>ForCtorParam("Start", o =&gt; o.MapFrom(s =&gt; s.Window.Start))</c>
-    ///     does not translate directly: a DOTTED source path into a CONSTRUCTOR PARAMETER is not supported,
-    ///     and it reports <c>DWARF009</c> — "source member 'Window.Start' does not exist or is not readable" —
-    ///     which is misleading, because it does exist and is readable. Filed as R18-31.
+    ///     is one <c>[MapProperty]</c> per parameter — the same dotted path the two members above use, aimed at
+    ///     a constructor parameter instead of a property.
     ///     <para>
-    ///         The supported route is a converter per parameter, taking the value object whole. Two extra
-    ///         lines, and arguably the better expression: <c>StartOf</c> and <c>EndOf</c> say what they take
-    ///         apart, where the dotted string said it in a place the compiler cannot check.
+    ///         It did not translate when this corpus was written: the path resolved for a member target and was
+    ///         refused for a parameter, under a <c>DWARF009</c> that claimed the member did not exist. That was
+    ///         R18-31, found here and fixed; the workaround it forced was a converter per parameter taking the
+    ///         value object whole. This is what it should have been in the first place.
     ///     </para>
     /// </remarks>
-    [MapProperty(nameof(Slot.Window), "Start", Use = nameof(StartOf))]
-    [MapProperty(nameof(Slot.Window), "End", Use = nameof(EndOf))]
+    [MapProperty(nameof(Slot.Window) + "." + nameof(TimeWindow.Start), "Start")]
+    [MapProperty(nameof(Slot.Window) + "." + nameof(TimeWindow.End), "End")]
     public partial SessionQuery.SlotView ToSlotView(Slot source);
 
     private static string RenderPrice(Money money) => Rendering.Price(money);
-
-    private static DateTimeOffset StartOf(TimeWindow window) => window.Start;
-
-    private static DateTimeOffset EndOf(TimeWindow window) => window.End;
 }

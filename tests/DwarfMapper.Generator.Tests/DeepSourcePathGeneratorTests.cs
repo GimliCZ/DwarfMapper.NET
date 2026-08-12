@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using System.Text;
 using Microsoft.CodeAnalysis;
 
@@ -177,6 +178,106 @@ public class DeepSourcePathGeneratorTests
                            """;
         var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
         Assert.Null(Find(diags, "DWARF044"));
+    }
+
+    // ── A dotted path into a CONSTRUCTOR PARAMETER (R18-31) ──────────────────────────────────────────────
+    // Every test above binds a path to a settable property. Binding one to a constructor parameter went down
+    // a different branch that did a flat name lookup, so the path never matched and DWARF009 claimed the
+    // member "does not exist or is not readable" — about a member that existed, was readable, and mapped
+    // correctly into a property one line up. Found by the DDD corpus in tests/DwarfMapper.ConsumerTests,
+    // where a positional record view is fed from a value object, which is the ordinary DDD shape.
+
+    [Fact]
+    public void Dotted_path_into_a_constructor_parameter_reads_through_and_compiles()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           namespace Demo;
+                           public sealed record Window(int Start, int End);
+                           public class S
+                           {
+                               public string Room { get; set; } = "";
+                               public Window Window { get; set; } = new(0, 0);
+                           }
+                           public sealed record D(string Room, int Start, int End);
+                           [DwarfMapper] public partial class M
+                           {
+                               [MapProperty("Window.Start", "Start")]
+                               [MapProperty("Window.End", "End")]
+                               public partial D Map(S s);
+                           }
+                           """;
+        var gen = GeneratorAssert.CompilesClean(src);
+        Assert.Contains("Start: s.Window.Start", gen, StringComparison.Ordinal);
+        Assert.Contains("End: s.Window.End", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Dotted_path_into_a_constructor_parameter_honours_an_explicit_Use_converter()
+    {
+        // The converter takes the LEAF type, exactly as it does for a member target — and it is reserved to
+        // the parameter that names it, which is where the converter-scoping regression lived.
+        const string src = """
+                           using DwarfMapper;
+                           namespace Demo;
+                           public sealed record Window(int Start, int End);
+                           public class S { public Window Window { get; set; } = new(0, 0); }
+                           public sealed record D(string Start);
+                           [DwarfMapper] public partial class M
+                           {
+                               [MapProperty("Window.Start", "Start", Use = nameof(Fmt))]
+                               public partial D Map(S s);
+                               private static string Fmt(int v) => "#" + v;
+                           }
+                           """;
+        var gen = GeneratorAssert.CompilesClean(src);
+        Assert.Contains("Fmt(s.Window.Start)", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Unknown_segment_into_a_constructor_parameter_reports_DWARF043_and_not_DWARF009()
+    {
+        // The message is the point. DWARF043 names the segment that is actually missing; DWARF009 would say
+        // the source member does not exist, sending the reader to hunt for a typo in a name that is correct.
+        const string src = """
+                           using DwarfMapper;
+                           namespace Demo;
+                           public sealed record Window(int Start, int End);
+                           public class S { public Window Window { get; set; } = new(0, 0); }
+                           public sealed record D(int Start);
+                           [DwarfMapper] public partial class M
+                           {
+                               [MapProperty("Window.Middle", "Start")]
+                               public partial D Map(S s);
+                           }
+                           """;
+        var (diags, _) = GeneratorTestHarness.Run(src);
+        var d = Find(diags, "DWARF043");
+        Assert.NotNull(d);
+        Assert.Contains("Middle", d!.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Null(Find(diags, "DWARF009"));
+    }
+
+    [Fact]
+    public void Nullable_interior_hop_into_a_constructor_parameter_reports_DWARF044()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           #nullable enable
+                           namespace Demo;
+                           public sealed record Window(int Start, int End);
+                           public class S { public Window? Window { get; set; } }
+                           public sealed record D(int Start);
+                           [DwarfMapper] public partial class M
+                           {
+                               [MapProperty("Window.Start", "Start")]
+                               public partial D Map(S s);
+                           }
+                           """;
+        var (diags, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
+        var d = Find(diags, "DWARF044");
+        Assert.NotNull(d);
+        Assert.Equal(DiagnosticSeverity.Warning, d!.Severity);
     }
 
     // Fuzz: paths of increasing depth all resolve and compile.

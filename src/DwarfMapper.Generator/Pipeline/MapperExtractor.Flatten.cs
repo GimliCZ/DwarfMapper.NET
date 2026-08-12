@@ -11,43 +11,16 @@ namespace DwarfMapper.Generator.Pipeline;
 internal static partial class MapperExtractor
 {
     /// <summary>
-    ///     Resolves a dotted source path (e.g. <c>"Customer.Name"</c>) hop-by-hop from <paramref name="root" />,
-    ///     returning the leaf member's type. <paramref name="nullableHop" /> is set when an <i>interior</i> hop
-    ///     (any but the last) is a nullable/oblivious reference — dereferencing it can throw at runtime
-    ///     (DWARF044). On failure, <paramref name="badSegment" /> names the first unresolved segment (DWARF043).
-    ///     Segments are matched by exact ordinal name (member names never contain dots).
+    ///     The extractor's name for <see cref="MemberFacts.TryResolvePath" />. The walk itself is shared because
+    ///     <c>ConstructorSelector</c> has to answer the same question when it scores which parameters have a
+    ///     source, and a second copy is how the two came to disagree (R18-31).
     /// </summary>
     private static bool TryResolveSourcePath(
         ITypeSymbol root, string dottedPath, Compilation compilation, bool allowNonPublic,
         out ITypeSymbol? leafType, out bool nullableHop, out string badSegment)
     {
-        leafType = null;
-        nullableHop = false;
-        badSegment = "";
-        var segments = dottedPath.Split('.');
-        var current = root;
-        for (var i = 0; i < segments.Length; i++)
-        {
-            var seg = segments[i];
-            var member = ReadableMembers(current, compilation, allowNonPublic)
-                .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
-                .Select(m => ((string Name, ITypeSymbol Type)?)m)
-                .FirstOrDefault();
-            if (member is null)
-            {
-                badSegment = seg;
-                return false;
-            }
-
-            if (i < segments.Length - 1
-                && member.Value.Type.IsReferenceType
-                && member.Value.Type.NullableAnnotation != NullableAnnotation.NotAnnotated)
-                nullableHop = true;
-            current = member.Value.Type;
-        }
-
-        leafType = current;
-        return true;
+        return MemberFacts.TryResolvePath(root, dottedPath, compilation, allowNonPublic,
+            out leafType, out nullableHop, out badSegment);
     }
 
     /// <summary>

@@ -843,10 +843,37 @@ internal static partial class MapperExtractor
             // 1. Check for an explicit [MapProperty(src, paramName)] override.
             if (explicitForParams.TryGetValue(param.Name, out var explicitInfo))
             {
-                var srcList = ReadableMembers(sourceType, compilation, allowNonPublic)
-                    .Where(m => StringComparer.Ordinal.Equals(m.Name, explicitInfo.Source))
-                    .ToList();
-                if (srcList.Count == 0)
+                // A dotted source path resolves hop-by-hop, exactly as it does for a member target — the leaf
+                // type drives the conversion and the dotted name is emitted verbatim as `s.Window.Start`.
+                // R18-31: this branch used to do a FLAT name lookup, so `[MapProperty("Window.Start", "start")]`
+                // reported DWARF009 "source member does not exist or is not readable" about a member that did
+                // exist and was readable — and mapped fine one line up, into a property instead of a parameter.
+                ITypeSymbol? srcType;
+                if (explicitInfo.Source.IndexOf('.') >= 0)
+                {
+                    if (!TryResolveSourcePath(sourceType, explicitInfo.Source, compilation, allowNonPublic,
+                            out srcType, out var ctorNullableHop, out var ctorBadSegment))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathSegmentNotFound, location,
+                            $"[MapProperty] source path '{explicitInfo.Source}' has no member '{ctorBadSegment}'"));
+                        allOk = false;
+                        continue;
+                    }
+
+                    if (ctorNullableHop)
+                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
+                            $"[MapProperty] source path '{explicitInfo.Source}' traverses a nullable member; " +
+                            "a null interior value throws at runtime"));
+                }
+                else
+                {
+                    srcType = ReadableMembers(sourceType, compilation, allowNonPublic)
+                        .Where(m => StringComparer.Ordinal.Equals(m.Name, explicitInfo.Source))
+                        .Select(m => (ITypeSymbol?)m.Type)
+                        .FirstOrDefault();
+                }
+
+                if (srcType is null)
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location,
                         explicitInfo.Source));
@@ -854,7 +881,6 @@ internal static partial class MapperExtractor
                     continue;
                 }
 
-                var srcType = srcList[0].Type;
                 if (TryResolveConversion(compilation, srcType, param.Type, explicitInfo.Use,
                         allMethods, autoCandidates, enumPolicy, synthesized, nullStrategy,
                         location, param.Name, diagnostics, out var eConv, out var eNull,

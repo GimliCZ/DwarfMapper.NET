@@ -208,10 +208,23 @@ internal static class ConstructorSelector
 
             // An explicit [MapProperty(src, paramName)] wins, but only when `src` names a real source member —
             // otherwise resolution reports DWARF012 and this ctor is not actually satisfiable.
+            //
+            // R18-31: `src` may be a dotted PATH ("Window.Start"), which resolution accepts and a flat set
+            // lookup does not. Scoring it unsatisfiable here would make selection prefer a different ctor —
+            // or report DWARF024/DWARF026 — for a parameter that has a source, which is the same shape as
+            // ISSUE-044 above. The path walk is the one MemberFacts owns, so the two cannot drift.
             var mapped = explicitMaps?.FirstOrDefault(m => StringComparer.Ordinal.Equals(m.Target, param.Name));
             if (mapped is { Target: not null })
             {
-                if (!exact.Contains(mapped.Value.Source)) return false;
+                var src = mapped.Value.Source;
+                if (src.IndexOf('.') >= 0)
+                {
+                    if (!MemberFacts.TryResolvePath(sourceType, src, compilation, allowNonPublic,
+                            out _, out _, out _)) return false;
+                    continue;
+                }
+
+                if (!exact.Contains(src)) return false;
                 continue;
             }
 
