@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF076`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF080`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -820,6 +820,50 @@ line. Say so in a comment — a placeholder that is never observed is fine, one 
 
 Not reported when the chosen constructor carries `[SetsRequiredMembers]`, or when the member is supplied as a
 constructor argument — in both cases the member is already satisfied and ignoring it is legitimate.
+
+---
+
+## dwarf080
+**A [MapConstructor] factory cannot assign this member** · Info
+
+The pair names a `[MapConstructor]` factory, and an `init`-only or `required` destination member has a matching
+source member. The factory owns construction, so the generator cannot assign that member afterwards
+(`CS8852` forbids it) — the mapped source value is **discarded** and the member keeps whatever the factory set.
+
+Only reported when a source member would actually have supplied a value. A factory-owned member that nothing
+maps to loses nothing.
+
+<!-- fence-exempt: illustrates the shape that TRIGGERS DWARF080; a compiling sample would need a whole factory + type pair to make one attribute line legible -->
+```csharp
+// Identifier is init-only, so Create() owns it — and Src.Identifier is silently dropped.
+[GenerateMap<Src, Dst>]
+[MapConstructor<Src, Dst>(nameof(Create))]   // DWARF080 on Identifier
+```
+
+**Fix — prefer the first:**
+
+1. **Bind the constructor parameters instead of naming a factory.** Direct construction fills an *object
+   initializer*, and `init` members **are** assignable there:
+
+   <!-- fence-exempt: the contrasting FIX for the shape above; paired with it for legibility -->
+   ```csharp
+   [GenerateMap<Src, Dst>]
+   [MapProperty<Src, Dst>(nameof(Src.Index), "number")]   // binds the ctor PARAMETER
+   ```
+
+   This is the better default generally — a factory is also invisible to synthesized element mappers, so a
+   collection pair over the same types cannot reuse it.
+2. Have the factory take the value as a parameter.
+3. `[MapIgnore("X")]` to state that the factory's value is intended. The point is that the choice be
+   explicit, not that factories be forbidden.
+
+**Why Info and not Warning.** The generator cannot read the factory body, so it cannot tell a factory that
+deliberately supplies its own value from one that forgot — and both are legitimate designs. Escalate with
+`dotnet_diagnostic.DWARF080.severity = warning` where the stricter reading is wanted.
+
+> Found twice in one codebase during Round 18 — an entity lost its `Identifier` through an `.Empty` factory
+> that minted a fresh `Guid`, and a second map "compiled green but silently dropped Identifier, TotalArguments
+> and IsCoreCommand" and had to be backed out.
 
 ---
 

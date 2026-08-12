@@ -124,7 +124,13 @@ internal static partial class MapperExtractor
         //
         // Named for the fact rather than for the constructor, because the update-into case has no constructor
         // and reading it as "the ctor sets them" would be nonsense at that call site.
-        bool requiredMembersAlreadySatisfied = false)
+        bool requiredMembersAlreadySatisfied = false,
+        // Destination members a [MapConstructor] FACTORY owns, and which the generator therefore does not
+        // assign. Distinct from consumedCtorParams, which those members also appear in: a constructor
+        // PARAMETER carries a mapped source value, whereas a factory-excluded member carries whatever the
+        // factory chose and drops the source value silently. Only the second is a data-loss hazard, so only
+        // the second raises DWARF080. Null when no factory is in force.
+        IReadOnlyCollection<string>? factoryExcludedMembers = null)
     {
         // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
         // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
@@ -509,7 +515,28 @@ internal static partial class MapperExtractor
             if (consumedCtorParams is not null && consumedCtorParams.Contains(target.Name)
                                                && (requiredMustInitialize is null ||
                                                    !requiredMustInitialize.Contains(target.Name)))
+            {
+                // Under a [MapConstructor] factory the skip above is not "the constructor assigns it" — it is
+                // "nobody assigns it". The factory owns construction, so an init-only/required member keeps
+                // whatever the factory chose, and a matching SOURCE value is silently discarded.
+                //
+                // Silent is the whole problem: the build is green and the member simply holds the wrong
+                // value. Round 18 hit this twice in one codebase — once losing an entity's Identifier through
+                // a `.Empty` factory that minted a fresh Guid, and once in a map that "compiled green but
+                // silently dropped Identifier, TotalArguments and IsCoreCommand", which was backed out on the
+                // principle that lossy-but-green is worse than undone.
+                //
+                // Only reported when a source member actually WOULD have supplied a value — a member nothing
+                // maps to loses nothing, and warning about it would be noise on every record type.
+                if (factoryExcludedMembers is not null
+                    && factoryExcludedMembers.Contains(target.Name)
+                    && !ignores.Contains(target.Name)
+                    && sourceGroups.ContainsKey(flexible ? NormalizeName(target.Name) : target.Name))
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.FactoryDropsMember, location, target.Name, MemberName: target.Name));
+
                 continue;
+            }
 
             if (handledTargets.Contains(target.Name)) continue;
 

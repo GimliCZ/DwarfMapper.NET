@@ -707,6 +707,36 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf079");
 
+    /// <summary>
+    ///     A <c>[MapConstructor]</c> factory owns construction, so an <c>init</c>-only or <c>required</c>
+    ///     destination member cannot be assigned afterwards and silently keeps whatever the factory set.
+    /// </summary>
+    /// <remarks>
+    ///     Reported only when a source member would actually have supplied a value, so the loss is real rather
+    ///     than theoretical. Round 18 hit this twice in one codebase: an entity lost its <c>Identifier</c>
+    ///     through an <c>.Empty</c> factory that minted a fresh <c>Guid</c>, and a second map "compiled green
+    ///     but silently dropped Identifier, TotalArguments and IsCoreCommand" and had to be backed out.
+    ///     <para>
+    ///         Direct construction does not have this problem — it fills an object initializer, where
+    ///         <c>init</c> members ARE assignable. Constructor-parameter binding is therefore the better
+    ///         default; see <c>docs/options.md</c>.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor FactoryDropsMember = new(
+        "DWARF080",
+        "A [MapConstructor] factory cannot assign this member",
+        "Destination member '{0}' is init-only or required, so the [MapConstructor] factory owns it and the "
+        + "matching source value is discarded — '{0}' will hold whatever the factory set. Bind the "
+        + "constructor parameters with [MapProperty] instead of naming a factory (init members are assignable "
+        + "in the object initializer that produces), have the factory take '{0}' as a parameter, or silence "
+        + "this with [MapIgnore(\"{0}\")] to state that the factory's value is intended.",
+        // Info, not Warning: the generator cannot see inside the factory, so it cannot tell a factory that
+        // deliberately supplies its own value from one that forgot. Both shapes are legitimate, and a Warning
+        // would break every warnings-as-errors consumer using the first. Escalate with
+        // dotnet_diagnostic.DWARF080.severity = warning where the stricter reading is wanted.
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf080");
+
     public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
         "DWARF074",
         "[MapCollectionKey] cannot be applied here",

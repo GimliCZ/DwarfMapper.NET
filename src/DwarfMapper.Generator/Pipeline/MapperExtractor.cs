@@ -1166,6 +1166,7 @@ internal static partial class MapperExtractor
             // from genRequiredInit because the selected ctor is scoped to the pattern below and DWARF079 asks
             // a different question of it — see CtorSetsRequiredMembers.
             var genCtorSetsRequired = false;
+            HashSet<string>? genFactoryExcluded = null;
 
             if (genFactory is not null)
             {
@@ -1174,6 +1175,9 @@ internal static partial class MapperExtractor
                 genCtorArgs = Array.Empty<MemberMap>();
                 genConsumed = CollectFactoryExcludedMembers(genTgt);
                 genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // Kept separately from genConsumed so DWARF080 can tell "the ctor assigns it" (no loss) from
+                // "the factory owns it and the source value is dropped" (silent loss).
+                genFactoryExcluded = genConsumed;
             }
             else if (ConstructorSelector.Select(ctx.SemanticModel.Compilation, genTgt, diagnostics, genLoc,
                          out var genObjInitOnly, allowNonPublic, genSrc, genExplicit) is not { } genCtor)
@@ -1210,7 +1214,8 @@ internal static partial class MapperExtractor
                 mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
                 explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                 mapperReservedConverters: mapperReservedConverters,
-                requiredMembersAlreadySatisfied: genCtorSetsRequired);
+                requiredMembersAlreadySatisfied: genCtorSetsRequired,
+                factoryExcludedMembers: genFactoryExcluded);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)

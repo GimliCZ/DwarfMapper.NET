@@ -83,5 +83,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF077` | Error | Explicit-only mapping is not enforced element-wise |
 | `DWARF078` | Warning | No code was generated for this mapper |
 | `DWARF079` | Error | [MapIgnore] cannot ignore a required member |
+| `DWARF080` | Info | A [MapConstructor] factory cannot assign this member |
 
-75 diagnostics.
+76 diagnostics.
