@@ -146,6 +146,7 @@ public class StatusDst
 [GenerateMap<NullableSrc, NullableDst>]
 [GenerateMap<OrderSrc, OrderDto>]
 [GenerateMap<StatusSrc, StatusDst>]
+[GenerateMap<OrderedSrc, OrderedDst>]
 public partial class DwarfShapes;
 
 /// <summary>The same enum shape under the parity switch, which is what Mapperly and AutoMapper both do.</summary>
@@ -170,4 +171,33 @@ public partial class MapperlyShapes
     public partial OrderDto ToOrder(OrderSrc src);
 
     public partial StatusDst ToStatus(StatusSrc src);
+
+    public partial OrderedDst ToOrdered(OrderedSrc src);
+}
+
+// ── S7 reserved-keyword member names — HARVESTED, AND IT DOES NOT COMPILE ────────────────────────────────
+// Deliberately left commented out rather than deleted. A DTO with a member called `@class` or `@event` is
+// ordinary in code generated from a schema, and this shape found that BOTH DwarfMapper and Mapperly emit the
+// name unescaped: `class = src.class;`, which the C# compiler parses as a malformed event declaration. The
+// harvest's first genuine defect, in two generators at once. Task R18-30; uncomment when the emitters escape.
+//
+// public class KeywordSrc { public string @class { get; set; } = ""; public int @event { get; set; } }
+// public class KeywordDst { public string @class { get; set; } = ""; public int @event { get; set; } }
+
+// ── S8 Stack and Queue — where element ORDER is the whole question ────────────────────────────────────────
+// Harvested shape (R18-29): both types appeared in the corpus; whether the order survives was never asserted.
+// It is a real hazard — enumerating a Stack yields last-in-first-out, so a mapper that rebuilds one by
+// pushing in enumeration order reverses it, silently, and only for that one collection kind.
+public class OrderedSrc
+{
+    public Stack<int> Recent { get; set; } = new();
+
+    public Queue<string> Pending { get; set; } = new();
+}
+
+public class OrderedDst
+{
+    public Stack<int> Recent { get; set; } = new();
+
+    public Queue<string> Pending { get; set; } = new();
 }

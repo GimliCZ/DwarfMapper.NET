@@ -45,6 +45,7 @@ internal static class ShapeCatalog
         c.CreateMap<NullableSrc, NullableDst>();
         c.CreateMap<OrderSrc, OrderDto>();
         c.CreateMap<StatusSrc, StatusDst>();
+        c.CreateMap<OrderedSrc, OrderedDst>();
     }).CreateMapper();
 
     public static IEnumerable<Comparison> All()
@@ -123,6 +124,22 @@ internal static class ShapeCatalog
             Dwarf.Map(status), Mapperly.ToStatus(status));
         yield return new Comparison("EnumToString", Oracles.AutoMapper,
             Dwarf.Map(status), Auto.Map<StatusDst>(status));
+
+        // A reserved-keyword shape (@class, @event) is NOT here, and that is a finding rather than an
+        // omission: BOTH DwarfMapper and Mapperly emit the member name unescaped, so neither compiles. See
+        // Issues/Rount18/ShapeInventory.md and task R18-30. The shape returns here when the emitters do.
+
+        // Order is the whole question here: enumerating a Stack yields last-in-first-out, so a mapper that
+        // rebuilds one by pushing in enumeration order reverses it — silently, and only for that one kind.
+        var ordered = new OrderedSrc
+        {
+            Recent = new Stack<int>([1, 2, 3]),
+            Pending = new Queue<string>(["first", "second"])
+        };
+        yield return new Comparison("StackAndQueueOrder", Oracles.Mapperly,
+            Dwarf.Map(ordered), Mapperly.ToOrdered(ordered));
+        yield return new Comparison("StackAndQueueOrder", Oracles.AutoMapper,
+            Dwarf.Map(ordered), Auto.Map<OrderedDst>(ordered));
 
         // The other half of the same finding, and the reason the divergence above is a decision rather than a
         // defect: EnumStringSource.Identifier IS Mapperly's and AutoMapper's behaviour, in one line.
