@@ -136,6 +136,7 @@ internal static partial class MapperExtractor
         var caseInsensitive = ReadCaseInsensitive(opts);
         var generateExtensions = ReadGenerateExtensions(opts); // default true (opt-out)
         var registerCollectionShapes = ReadRegisterCollectionShapes(opts); // default true (opt-out)
+        var handWrittenProvides = CollectHandWrittenProvides(classSymbol, diagnostics);
         // The convenience facade caches a `new()` mapper singleton, so it can only be emitted for a mapper
         // that has an accessible parameterless constructor (the implicit one counts).
         // For separateEmit the cached facade singleton is `new <Host>Mapper()` — the generated mapper always
@@ -2383,7 +2384,8 @@ internal static partial class MapperExtractor
             hasParameterlessCtor,
             EquatableArray.From(containingTypes),
             EquatableArray.From(conventionRefs),
-            registerCollectionShapes);
+            registerCollectionShapes,
+            EquatableArray.From(handWrittenProvides));
     }
 
     // ISSUE-044: required for the same reason as ReadableMembers/WritableMembers — this wrapper composes
@@ -2417,6 +2419,55 @@ internal static partial class MapperExtractor
     {
         return ctor is not null && ctor.GetAttributes()
             .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttribute);
+    }
+
+    /// <summary>
+    ///     Hand-written methods marked <c>[ProvidesMap]</c>, validated to the shape the ambient registry can
+    ///     hold: one parameter in, one value out, publicly nameable on both sides.
+    /// </summary>
+    /// <remarks>
+    ///     Silently skipping a mis-shaped method would be the wrong trade — the author asked for a
+    ///     registration and would get none, with no indication why. The shape is checked here and refused with
+    ///     DWARF082 rather than dropped.
+    /// </remarks>
+    private static List<HandWrittenProvide> CollectHandWrittenProvides(
+        INamedTypeSymbol classSymbol, List<DiagnosticInfo>? diagnostics = null)
+    {
+        var result = new List<HandWrittenProvide>();
+
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IMethodSymbol method) continue;
+
+            var marked = method.GetAttributes().Any(a =>
+                string.Equals(a.AttributeClass?.Name, KnownNames.ProvidesMap, StringComparison.Ordinal)
+                && a.AttributeClass?.ContainingNamespace?.ToDisplayString() == KnownNames.Ns);
+
+            if (!marked) continue;
+
+            var shapeOk = method.Parameters.Length == 1
+                          && !method.ReturnsVoid
+                          && method.DeclaredAccessibility == Accessibility.Public
+                          && IsEffectivelyPublic(method.Parameters[0].Type)
+                          && IsEffectivelyPublic(method.ReturnType);
+
+            if (!shapeOk)
+            {
+                diagnostics?.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ProvidesMapInvalidShape,
+                    LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None),
+                    method.Name));
+                continue;
+            }
+
+            result.Add(new HandWrittenProvide(
+                method.Name,
+                method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                method.IsStatic));
+        }
+
+        return result;
     }
 
     private static HashSet<string> ComputeRequiredMustInitialize(

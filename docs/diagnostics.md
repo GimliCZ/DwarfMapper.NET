@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF080`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF082`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -897,6 +897,49 @@ deliberately supplies its own value from one that forgot — and both are legiti
 > Found twice in one codebase during Round 18 — an entity lost its `Identifier` through an `.Empty` factory
 > that minted a fresh `Guid`, and a second map "compiled green but silently dropped Identifier, TotalArguments
 > and IsCoreCommand" and had to be backed out.
+
+---
+
+## dwarf082
+**[ProvidesMap] method cannot be registered** · Error
+
+`[ProvidesMap]` marks a **hand-written** method for registration into the ambient registry, so a shape the
+generator cannot express is still reachable through `IDwarfMapper`. The registry holds every map as a
+`Func<object, object>`, so the method must match that shape:
+
+| Requirement | Why |
+|---|---|
+| `public` | the registration is called from generated code in the same assembly, and the pair is resolvable from any other |
+| exactly one parameter | the registry passes one source value |
+| returns a value | a `void` method has nothing to hand back |
+| both types publicly nameable | a cross-assembly consumer has to be able to name the pair |
+
+Static and instance methods are both fine — a static one is invoked on the type and needs no cached instance.
+
+**Fix:** adjust the signature, or remove the attribute if the method is a helper rather than a map.
+
+> **Why this is refused rather than skipped.** The author asked for a registration. Dropping a mis-shaped one
+> quietly would leave every facade call site for that pair throwing `DwarfMapMissingException`, with nothing
+> to explain why — which is the exact failure `[ProvidesMap]` exists to prevent.
+
+### When to reach for `[ProvidesMap]`
+
+Some conversions are legitimately not mapping *shapes*. The common one is an object that **holds** a
+collection, mapped to the collection itself — one side is a container, the other an element sequence:
+
+<!-- fence-exempt: the shape is the point; a fuller sample would bury it -->
+```csharp
+[ProvidesMap]
+public ICollection<QuoteData> ToQuotes(UserQuotesDocument document) =>
+    document.Quotes.Select(Map).ToList();     // delegates to the generated element map
+```
+
+Without the attribute this is an ordinary method: nothing registers it, so `mapper.Map<ICollection<QuoteData>>(doc)`
+throws and a parity harness reports the pair as "not registered" even though the code is correct. A real
+migration hit that on five pairs and recorded it as *"the code is fine; the harness cannot see it."*
+
+Note the registry does **not** wrap your method — it calls it. A hand-written map carries its own argument
+guards, unlike a generated one.
 
 ---
 

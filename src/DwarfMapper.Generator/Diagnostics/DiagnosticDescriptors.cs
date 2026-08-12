@@ -737,6 +737,23 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf080");
 
+    /// <summary>
+    ///     <c>[ProvidesMap]</c> on a method the ambient registry cannot hold.
+    /// </summary>
+    /// <remarks>
+    ///     Refused rather than silently skipped: the author asked for a registration, and dropping it quietly
+    ///     would leave every facade call site for that pair throwing with nothing to explain why — which is
+    ///     the exact failure this attribute exists to prevent.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ProvidesMapInvalidShape = new(
+        "DWARF082",
+        "[ProvidesMap] method cannot be registered",
+        "Method '{0}' is marked [ProvidesMap] but does not have a registerable shape. It must be public, "
+        + "take exactly one parameter, and return a value, with both types publicly nameable — the same shape "
+        + "the generator's own maps register under, because the registry holds them the same way.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf082");
+
     public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
         "DWARF074",
         "[MapCollectionKey] cannot be applied here",

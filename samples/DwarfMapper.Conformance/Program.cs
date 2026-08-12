@@ -239,5 +239,11 @@ R.Check("F39 [AutoNest(false)]", new F39M().Map(new F39S { Inner = new F39Inner 
 var f40 = new F40M().Map(new F40Envelope<F40Payload> { Value = new F40Payload { Id = 2 }, Trace = "t" });
 R.Check("F40 [GenerateWrapperMap]", f40 is { Trace: "t", Value.Id: 2 });
 
+// F41 [ProvidesMap] — a hand-written object-to-collection map, reachable through the ambient registry
+RuntimeHelpers.RunModuleConstructor(typeof(F41M).Module.ModuleHandle);
+var f41 = (ICollection<F41ItemDto>)DwarfMapperRegistry.Map(
+    new F41Doc { Items = [new() { V = 3 }, new() { V = 4 }] }, typeof(ICollection<F41ItemDto>));
+R.Check("F41 [ProvidesMap] hand-written", f41.Count == 2 && f41.Last().V == 4);
+
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;

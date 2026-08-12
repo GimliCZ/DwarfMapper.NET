@@ -50,7 +50,13 @@ public sealed record MapperClassModel(
     /// the ambient registration emitter also registers each declared object map under the common collection
     /// shapes, so a facade call over a collection resolves without a separately declared collection pair.
     /// </summary>
-    bool RegisterCollectionShapes = true) : IEquatable<MapperClassModel>
+    bool RegisterCollectionShapes = true,
+    /// <summary>
+    /// Hand-written methods marked <c>[ProvidesMap]</c>: shapes the generator cannot express (an object that
+    /// HOLDS a collection mapped to the collection, say) which the author wants reachable through the ambient
+    /// facade anyway. Registered exactly like a generated map — a declaration, not reflection.
+    /// </summary>
+    EquatableArray<HandWrittenProvide> HandWrittenProvides = default) : IEquatable<MapperClassModel>
 {
     /// <summary>
     /// Unique per generated file. Includes the containing types: <c>Outer.M</c> and a namespace-level <c>M</c>

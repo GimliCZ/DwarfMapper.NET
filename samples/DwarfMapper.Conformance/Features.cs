@@ -1138,3 +1138,38 @@ public class F40Envelope<T>
 public partial class F40M
 {
 }
+
+// ── F41 [ProvidesMap] (hand-written method, ambient-registered) ──────────────
+// Some conversions are not mapping SHAPES. An object that HOLDS a collection, mapped to the collection
+// itself, is the common one: one side is a container, the other an element sequence. It must be written by
+// hand — and once written it is an ordinary method that nothing registers, so every facade call site for it
+// throws and a parity harness reports the pair as "not registered" while the code is perfectly correct.
+public class F41Item
+{
+    public int V { get; set; }
+}
+
+public class F41ItemDto
+{
+    public int V { get; set; }
+}
+
+public class F41Doc
+{
+    public List<F41Item> Items { get; set; } = [];
+}
+
+[DwarfMapper]
+[GenerateMap<F41Item, F41ItemDto>]
+public partial class F41M
+{
+    /// <summary>Hand-written, and registered by declaration rather than by reflection.</summary>
+    [ProvidesMap]
+    public ICollection<F41ItemDto> ToItems(F41Doc doc)
+    {
+        // The registry calls this method; it does not wrap it. A hand-written map carries its own guards.
+        ArgumentNullException.ThrowIfNull(doc);
+
+        return doc.Items.Select(Map).ToList();
+    }
+}

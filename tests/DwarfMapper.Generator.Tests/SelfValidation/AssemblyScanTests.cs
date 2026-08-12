@@ -26,6 +26,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 ///     DWARF004 — reserved since initial design (do not reuse).
 ///     DWARF006 — superseded by DWARF026 (NoMappableConstructor); descriptor removed, id retired.
 ///     DWARF029 — reserved since initial design (do not reuse).
+///     DWARF081 — reserved 2026-08-12. Was drafted as "the same nested pair is synthesized differently in two
+///                mappers" and reverted before shipping: MapperClassModel.SynthesizedMethods is empty by the
+///                time the aggregate step sees the models (measured: `synth=Replace:0,Patch:0` for a
+///                compilation whose output plainly contains the helper), so the detection could never fire.
+///                Held rather than reused, because the id appears in the Round-18 notes and a future
+///                implementation should keep it. See Issues/Rount18/ task R18-06.
 /// </summary>
 file static class ReservedIds
 {
@@ -34,7 +40,8 @@ file static class ReservedIds
         "DWARF004",
         "DWARF006",
         "DWARF019", // retired; superseded by DWARF028 (ProjectionNotTranslatable)
-        "DWARF029"
+        "DWARF029",
+        "DWARF081"  // reserved for the divergent-synthesized-pair diagnostic; see the summary above
     };
 }
 

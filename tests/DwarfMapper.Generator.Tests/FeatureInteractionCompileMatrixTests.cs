@@ -57,6 +57,25 @@ public class FeatureInteractionCompileMatrixTests
         // [MapNullSkip] / [MapNullSkip<S,T>] — the pair- and method-scope of SkipNullSourceMembers. Both
         // forms in one case, on one mapper, because the interaction worth compiling is precisely that a
         // single class can now carry BOTH null semantics (which is what forced a class split before).
+        // [ProvidesMap] — a hand-written method registered into the ambient registry. The interaction worth
+        // compiling is that it sits ALONGSIDE generated maps on the same mapper without disturbing them.
+        yield return new FimMatrixCase("provides_map", """
+                                                      using System.Collections.Generic;
+                                                      using System.Linq;
+                                                      using DwarfMapper;
+                                                      namespace Fim;
+                                                      public class PmItem { public int V { get; set; } }
+                                                      public class PmItemDto { public int V { get; set; } }
+                                                      public class PmDoc { public List<PmItem> Items { get; set; } = new(); }
+                                                      [DwarfMapper]
+                                                      [GenerateMap<PmItem, PmItemDto>]
+                                                      public partial class M
+                                                      {
+                                                          [ProvidesMap]
+                                                          public ICollection<PmItemDto> ToItems(PmDoc d) => d.Items.Select(Map).ToList();
+                                                      }
+                                                      """);
+
         yield return new FimMatrixCase("map_null_skip_scopes", """
                                                               using DwarfMapper;
                                                               namespace Fim;

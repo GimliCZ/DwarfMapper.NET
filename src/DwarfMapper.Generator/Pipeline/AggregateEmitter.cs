@@ -177,6 +177,8 @@ internal static class AggregateEmitter
         var regs = new List<(string Source, string Dest, string Field, string Method)>();
         var updateRegs = new List<(string Source, string Dest, string Field, string Method)>();
         var seenUpdatePairs = new HashSet<string>(StringComparer.Ordinal);
+        var handWrittenRegs = new List<(string Source, string Dest, string Invoker, string Method)>();
+        var seenHandWritten = new HashSet<string>(StringComparer.Ordinal);
         var collectionRegs = new List<(string Source, string Dest, string Field, string Method, bool AsArray)>();
         var seenCollectionPairs = new HashSet<string>(StringComparer.Ordinal);
         var fields = new SortedSet<string>(StringComparer.Ordinal);
@@ -195,7 +197,10 @@ internal static class AggregateEmitter
                 .Where(IsAmbientUpdateRegisterable)
                 .ToList();
 
-            if (eligible.Count == 0 && eligibleUpdates.Count == 0) continue;
+            // A mapper may exist ONLY to host [ProvidesMap] methods — a shape the generator cannot express has
+            // no generated maps by definition, which is the whole reason the attribute exists.
+            if (eligible.Count == 0 && eligibleUpdates.Count == 0 && model.HandWrittenProvides.Count == 0)
+                continue;
 
             var mapperFullName = model.FullyQualifiedName;
 
@@ -236,9 +241,34 @@ internal static class AggregateEmitter
                 updateRegs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName,
                     FieldName(mapperFullName), method.MethodName));
             }
+
+            foreach (var provide in model.HandWrittenProvides
+                         .OrderBy(p => p.SourceTypeFullName, StringComparer.Ordinal)
+                         .ThenBy(p => p.TargetTypeFullName, StringComparer.Ordinal))
+            {
+                if (!seenHandWritten.Add(provide.SourceTypeFullName + " " + provide.TargetTypeFullName))
+                    continue;
+
+                // A static [ProvidesMap] is invoked on the TYPE, so it needs no cached instance — and a
+                // mapper hosting only static ones therefore needs no parameterless constructor either.
+                string invoker;
+                if (provide.IsStatic)
+                {
+                    invoker = mapperFullName;
+                }
+                else
+                {
+                    fields.Add(mapperFullName);
+                    invoker = FieldName(mapperFullName);
+                }
+
+                handWrittenRegs.Add((provide.SourceTypeFullName, provide.TargetTypeFullName, invoker,
+                    provide.MethodName));
+            }
         }
 
-        if (regs.Count == 0 && updateRegs.Count == 0) return (null, unregisterable);
+        if (regs.Count == 0 && updateRegs.Count == 0 && handWrittenRegs.Count == 0)
+            return (null, unregisterable);
 
         var sb = new StringBuilder();
         sb.Append(Header).Append('\n');
@@ -252,6 +282,12 @@ internal static class AggregateEmitter
             sb.Append("[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(")
                 .Append(CollectionSourceOf(r.Source)).Append("), typeof(").Append(r.Dest).Append("))]")
                 .Append('\n');
+
+        // Hand-written [ProvidesMap] pairs belong in the manifest too — they ARE provided, and DWARF061 must
+        // not report a missing map for a pair this assembly registers.
+        foreach (var r in handWrittenRegs)
+            sb.Append("[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(")
+                .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("))]").Append('\n');
 
         sb.AppendLine();
         sb.AppendLine("namespace DwarfMapper.Generated;");
@@ -304,6 +340,20 @@ internal static class AggregateEmitter
                 .Append('.').Append(r.Method).Append("(__e)); return ")
                 .Append(r.AsArray ? "__r.ToArray()" : "__r").Append("; });").Append('\n');
         }
+
+        if (handWrittenRegs.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("        // Hand-written [ProvidesMap] methods: shapes the generator cannot express");
+            sb.AppendLine("        // (an object that HOLDS a collection mapped to the collection, say),");
+            sb.AppendLine("        // registered by declaration rather than by reflection.");
+        }
+
+        foreach (var r in handWrittenRegs)
+            sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(")
+                .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("), static __s => ")
+                .Append(r.Invoker).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s));")
+                .Append('\n');
 
         if (updateRegs.Count > 0)
         {

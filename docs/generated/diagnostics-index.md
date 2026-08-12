@@ -84,5 +84,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF078` | Warning | No code was generated for this mapper |
 | `DWARF079` | Error | [MapIgnore] cannot ignore a required member |
 | `DWARF080` | Info | A [MapConstructor] factory cannot assign this member |
+| `DWARF082` | Error | [ProvidesMap] method cannot be registered |
 
-76 diagnostics.
+77 diagnostics.

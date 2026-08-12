@@ -82,13 +82,17 @@ public class GeneratorTestingScanTests
     // already pinned by the class-level cases; what the new attributes change is its SCOPE, which
     // MapNullSkipScopeTests and MapNullSkipRuntimeTests cover directly.
     //
-    // Baselines: 33 public attribute types, 14 public enum
+    // Raised to 34 on 2026-08-12 for [ProvidesMap] — registering a hand-written method into the ambient
+    // registry, for shapes the generator cannot express. Its behaviour is pinned by ProvidesMapRuntimeTests
+    // (runtime) and DWARF082 (the refusal), neither of which a golden emission case would add to.
+    //
+    // Baselines: 34 public attribute types, 14 public enum
     // values (7 enums, 2 values each). GoldenCorpus.FeatureCases() is a hand-curated list, NOT derived from
     // these taxonomies — see the design spec's Known Limitations note. This ratchet is the honest substitute:
     // it cannot force a specific new case the way true derivation would, but it forces a human to notice
     // growth and decide whether the feature axis needs a new pinned case, rather than the corpus silently
     // going stale next to an attribute or enum value nobody golden-tested.
-    private const int BaselineAttributeTypeCount = 33;
+    private const int BaselineAttributeTypeCount = 34;
     private const int BaselineEnumValueCount = 14;
 
     [Fact]

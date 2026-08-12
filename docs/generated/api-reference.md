@@ -431,6 +431,14 @@ Controls how a reference cycle in the source graph is handled when None is activ
 | `SetNull` | 1 | Breaks cycles by nulling the re-entrant back-edge (equivalent to System.Text.JsonReferenceHandler.IgnoreCycles). A node already on the active mapping stack is not mapped again; the member that points back to it is set to null, yielding a finite, acyclic projection of a cyclic source. Useful for display/DTO shapes where the back-reference is not needed. Only reference-type nodes are tracked (value types are copied by value and cannot form a reference cycle). Shared but acyclic nodes (diamonds) are still mapped each time they are reached — only true back-edges to an ancestor on the current stack are nulled. |
 | `Throw` | 0 | Default. Recursion-capable pairs carry a depth counter; a cycle (or an over-deep acyclic chain) throws a loud, catchable DwarfMappingDepthException at MaxDepth rather than a silent StackOverflowException. |
 
+### attribute `ProvidesMapAttribute`
+
+Registers a hand-written mapping method into the ambient registry, so a shape the generator cannot express is still reachable through IDwarfMapper.
+
+| Member | Type | Default | Summary |
+|---|---|---|---|
+| `TypeId` | `Object` | `DwarfMapper.ProvidesMapAttribute` |  |
+
 ### enum `ReferenceHandlingStrategy`
 
 Controls how shared object references and cycles in the source graph are handled when mapping with an auto-synthesized nested mapper.

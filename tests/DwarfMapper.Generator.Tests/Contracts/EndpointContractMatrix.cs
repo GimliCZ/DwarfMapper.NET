@@ -155,6 +155,9 @@ public static class EndpointContractMatrix
             ["Reinterpret"] = (CellStatus.NotApplicable, CollectionOrGraphOnly),
             ["MapCollectionKey"] = (CellStatus.NotApplicable,
                 "update-into-only key correlation; refused elsewhere by DWARF074"),
+            ["ProvidesMap"] = (CellStatus.NotApplicable,
+                "marks a HAND-WRITTEN method for ambient registration; it does not modify how any endpoint "
+                + "maps, and the method it marks is by definition not one the generator produced"),
             ["MapIgnoreSource"] = (CellStatus.NotApplicable,
                 "source-side completeness mirror, only meaningful under RequiredMapping = Both")
         };
