@@ -63,8 +63,8 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | **Conditional member (`When=`)** | ✅ predicate `When=` (`DWARF050`) | ❌ | ✅ | ✅ |
 | **Reverse mapping (`[ReverseMap]`)** | ✅ inverts simple renames (`DWARF051/052`) | ~ | ✅ | ✅ |
 | **Conversion policy** | ✅ widening silent; non-lossless = `DWARF038` suggestion, or build error via `ImplicitConversions=false` | widening auto; lossy → diagnostic | most permissive | permissive |
-| **Unmatched enum value at runtime** | throws `ArgumentOutOfRangeException` — **no fallback option** | throws; `FallbackValue=` opts out | maps the raw value through | maps the raw value through |
-| **Runtime type with no dispatch arm** | throws `ArgumentException` naming the type | throws | n/a | maps the base as itself |
+| **Unmatched enum value at runtime** | throws `ArgumentOutOfRangeException` — **no fallback option** | throws; `FallbackValue=` opts out | ~ (untested here) | maps the raw value through |
+| **Runtime type with no dispatch arm** | throws `ArgumentException` naming the type | throws | ~ (untested here) | maps the base as itself |
 | `[RoundTrip]` anti-mislinking | ✅ | ❌ | ❌ | ❌ |
 
 **Differentiators only DwarfMapper has:** the blittable SIMD fast-path, zero-alloc `Span<T>` mapping,
@@ -85,9 +85,12 @@ should become. If you want a display path that degrades to `Unknown` rather than
 answer today is a `Use=` converter that handles the case explicitly, which is more typing and says what it
 does at the call site.
 
-Both rows are executable rather than prose: `tests/DwarfMapper.DifferentialTests/LoudRatherThanSilentTests.cs`
-runs all three mappers over the undeclared case and fails the day any cell above stops being true — in either
-direction.
+Both rows are executable rather than prose, for the three columns this repository has an oracle for:
+`tests/DwarfMapper.DifferentialTests/LoudRatherThanSilentTests.cs` runs DwarfMapper, Mapperly and AutoMapper
+over the undeclared case and fails the day any of their cells stops being true — in either direction. The
+**Mapster cells are `~` because they were not measured**: the differential harness references Mapperly and
+AutoMapper only, and a cell filled in from a plausible reading of somebody's defaults is exactly the kind of
+claim the rest of this table exists to avoid.
 
 ## Testing approach comparison
 
