@@ -249,6 +249,23 @@ which Mapperly offers. See [`COMPARISON.md`](COMPARISON.md#capability-matrix).
 | Deep merge into existing nested objects | ambiguous identity semantics | update **replaces** nested; merge by hand if truly needed |
 | Silent float/decimal→int truncation | data-loss footgun | explicit `Use=` converter (opt-in, visible) |
 | Turning the completeness check *off* | resilience-first stance | `[MapIgnore]` per intentional drop (auditable) |
+| `IncludeBase<S,T>()` / config inheritance between pairs | inheritance semantics would have to interact with pair-scoped attributes, `[MapDerivedType]` and the policy layer — and restatement keeps each pair readable at its own declaration | restate the shared `[MapProperty]`/`[MapIgnore]` on the derived pair; bracket the block with a comment naming the base pair so drift is visible in review |
+| Object↔collection maps (`ICollection<T>` ↔ a document that *holds* a collection) | not a mapping shape — one side is a container, the other an element sequence | map the inner collection; an AutoMapper `ConstructUsing` doing `ctx.Mapper.Map<ICollection<T>>(x.Items)` was already doing exactly this |
+| Update-into through the **ambient facade** | `IDwarfMapper` is type-erased on the source (`Map<TDest>(object)`); merge needs both types | inject the **concrete** mapper and call its `Update(src, dest)` partial method. Update-into itself is fully supported — see §1.7 |
+| Reflectively bypassing a `private` constructor | the generator emits ordinary C#, so a `private` member is genuinely unreachable | widen to `internal` + `[InternalsVisibleTo]`, or `[MapConstructor]` a factory — the same grant, but one the compiler checks (`DWARF026` if you don't) |
 
 Every non-goal is a **conscious resilience/AOT trade**, not a missing feature — each surfaces a diagnostic
 or a typed alternative rather than failing silently.
+
+### One thing that is *not* a non-goal, but behaves like one on first contact
+
+The ambient registry resolves an **exact** `(source, target)` pair; it does not derive a collection map from
+an element map the way AutoMapper did. `_mapper.Map<ICollection<Dto>>(listOfEntities)` therefore throws unless
+that collection pair is declared, and **two independent gates disagree about which type to key on**: the
+build-time check reads the call site's *static* argument type, while the runtime lookup uses
+`source.GetType()` and walks base types only — never interfaces. A method declared `ICollection<T>` that
+returns `List<T>` needs both pairs.
+
+Declare the collection pair **beside its element pair**, not beside the call site: the registry is
+process-wide, so it resolves across assemblies, whereas a pair declared where the element map is not visible
+gets a fresh convention-only element map that fails completeness.

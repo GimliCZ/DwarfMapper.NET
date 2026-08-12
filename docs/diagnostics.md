@@ -31,6 +31,39 @@ dotnet_diagnostic.DWARF039.severity = error   # only fires under [DwarfMapper(Re
 dotnet_diagnostic.DWARF044.severity = none    # I accept the nullable-path risk here
 ```
 
+### `#pragma warning disable` does **not** work for any `DWARF…` id
+
+This is the one suppression mechanism that is unavailable, and it is worth stating plainly because it is the
+first thing most people reach for:
+
+<!-- fence-exempt: demonstrates a suppression that does NOT work; a compiling sample cannot express "has no effect" -->
+```csharp
+#pragma warning disable DWARF076   // has no effect — the diagnostic is still reported
+```
+
+Pragmas are applied by the **compiler's** diagnostic filtering, and diagnostics reported by a *source
+generator* never pass through it. That is a Roslyn platform limitation, not something DwarfMapper can honour,
+and it applies uniformly to every id in this file.
+
+So the suppression options are:
+
+| Scope | Mechanism | Availability |
+|---|---|---|
+| Whole project | `dotnet_diagnostic.DWARFxxx.severity = none` in `.editorconfig` | **every** id |
+| One mapper class, in the file | `[SuppressMessage("DwarfMapper", "DWARFxxx:…")]` on the mapper | `DWARF076` today; see the note below |
+| One line | `#pragma warning disable` | **never** — see above |
+
+`[SuppressMessage]` is an ordinary attribute the generator can read, so it *can* be honoured where the
+diagnostic is reported against a symbol the generator has in hand. It is wired for `DWARF076`, whose whole
+point is acknowledging a deliberate same-type clone. Ids reported against a *member* rather than the class
+mostly have a better in-place answer already — `[MapIgnore]`, `[MapValue]`, `[MapProperty]` — which states
+*what you meant* rather than merely silencing the message.
+
+> Round 18 context: `docs/diagnostics.md` previously promised `#pragma` for `DWARF076`. Four independent
+> migration agents tried it, and a warnings-as-errors consumer was left with no in-file escape hatch at all.
+> The promise was removed and `[SuppressMessage]` was implemented, with a test pinning the pragma behaviour so
+> a future Roslyn change would be noticed.
+
 `DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
 
 The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR06` family — see

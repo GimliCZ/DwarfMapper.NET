@@ -31,11 +31,64 @@ the configuration, resolved at compile time. So the migration is: take everythin
 
 ---
 
+## Step 0 — Decide these nine things before you convert anything
+
+Every row below is a **behaviour change that compiles cleanly**. Each was found the expensive way during a
+real ~300-map migration; several would have shipped wrong data. Read the list, decide each one, and write the
+decision down — a migration ledger of "what we chose and why" pays for itself the first time someone asks.
+
+| # | Difference | Default consequence if you do nothing |
+|---|---|---|
+| 1 | **`NullStrategy` defaults to `Throw`.** AutoMapper silently substituted `default`. | A nullable-value source into a non-nullable target **throws at runtime**. Builds clean, fails in production. Set `NullStrategy = SetDefault` for parity. |
+| 2 | **`EnumStrategy` defaults to `ByName`.** AutoMapper matched by **value**. | Enums with different member orders map differently. Set `EnumStrategy = ByValue` for parity. |
+| 3 | **enum→string prefers `[EnumMember]`, then `[Description]`, then the identifier.** AutoMapper used `.ToString()`, i.e. always the identifier. | **The sharpest one.** `[Description]` is usually a *display* annotation, but it becomes your *persistence* format. An enum member `Kofi` carrying `[Description("Ko-Fi")]` starts writing `"Ko-Fi"` into a store full of `"Kofi"` — breaking reads of every existing record. |
+| 4 | **`SkipNullSourceMembers` guards nullable-*typed* members.** AutoMapper's `Condition(src != null)` was a runtime **value** check. | A non-nullable-typed member holding a runtime null is now copied where AutoMapper skipped it. |
+| 5 | **enum↔string parsing is case-sensitive.** `Enum.Parse` ignored case. | Hand-edited or legacy data throws instead of parsing. Only reachable if something other than your own writer produced the string. |
+| 6 | **`SkipNullSourceMembers` is class-scoped**, but `ForAllMembers` was per-map. | A profile mixing patch-merge maps with ordinary ones must be **split into two mapper classes**. Plan for it rather than discovering it mid-conversion. |
+| 7 | **`required` destination members cannot be `[MapIgnore]`d.** AutoMapper built targets reflectively and bypassed the rule. | `DWARF079` tells you so now, with the `[MapValue]` remedy. Before that diagnostic existed, this was the single most-repeated stumble of the migration. |
+| 8 | **A `private` "ctor for automapper" stops working.** It only ever worked because AutoMapper constructs by reflection. | `DWARF026`, no escape — `private` is never usable by design. Widen it to `internal` plus `[InternalsVisibleTo]`: the same grant, but one the compiler checks. |
+| 9 | **`[MapConstructor]` factories cannot assign `init`-only members.** | The factory's value wins and the source value is dropped (`DWARF080`). Prefer binding the **constructor parameters** — direct construction fills an object initializer, where `init` members *are* assignable. |
+
+Two more that are not behaviour changes but will cost you an afternoon each if you meet them cold:
+
+- **A wall of `CS8795` has two completely different causes.** Either the generator ran and refused (there will
+  be `DWARF078` plus real `DWARF…` errors above it — fix those), or the generator never ran in that project
+  at all (no DwarfMapper diagnostics whatsoever — see Step 1). Read the `DWARF…` lines first; the `CS8795`s
+  are one-per-mapping-method noise either way.
+- **Ambient `Map<ICollection<T>>(x)` resolves on the *runtime* type.** See Step 6.
+
 ## Step 1 — Reference the packages
 
 Follow [common-changes.md §1](common-changes.md#change-1--reference-the-packages-target-net10). Add
 the single `DwarfMapper` package, target `net10.0`. Leave the AutoMapper package in place for now —
 you'll remove it at the end (Step 8) so the codebase keeps compiling mid-migration.
+
+### Every project that declares mappers needs the reference — it does not flow
+
+DwarfMapper marks its analyzer `PrivateAssets="all"`, so it deliberately does **not** flow transitively. A
+project that references a project that references DwarfMapper does **not** get the generator. Its mappers
+simply produce no code, and you get the `CS8795` wall described above with no DwarfMapper diagnostics to
+explain it.
+
+**Prove the generator actually runs** in each project rather than assuming the reference resolved — the two
+failure modes look identical from the outside. Drop a throwaway mapper in, build, then delete it:
+
+<!-- fence-exempt: a deliberate throwaway smoke test, meant to be deleted; not a sample worth maintaining -->
+```csharp
+// TEMPORARY — proves the GENERATOR runs, not merely that the assembly is referenced.
+// If the analyzer is not wired, this fails with CS8795 and nothing else.
+[DwarfMapper]
+public partial class __WiringSmokeTest
+{
+    public partial Target Map(Source s);
+}
+```
+
+**Centralising the reference across many projects: use `Directory.Build.targets`, not `.props`.** This is not
+a style preference. `.props` is imported **before** the project body, so a `<UseDwarfMapper>true</UseDwarfMapper>`
+property set inside a `.csproj` does not exist yet when a condition in `.props` is evaluated — the condition
+silently never matches. `.targets` is imported **after** the body and sees it. As a bonus, it means you never
+have to touch an existing `Directory.Build.props`.
 
 ## Step 2 — Turn each Profile into a partial mapper class
 
@@ -253,5 +306,39 @@ DwarfMapper deliberately does **not** do these (each has a static replacement; f
 - **`IncludeAllDerived()` / runtime `Map(obj, srcType, destType)`** — list each `[MapDerivedType<DS, DD>]` arm explicitly (no reflection discovery).
 - **Deep merge into existing nested objects** — `Update(src, dest)` preserves the *top-level* identity but **replaces** nested members/collections.
 - **`SetMappingOrder` / `RecognizePrefixes` / `ShouldMapProperty` predicates** — order is deterministic; use `[MapProperty]`/`[MapIgnore]` explicitly.
+- **`IncludeBase<S,T>()`** — there is no inheritance primitive. Restate the shared `[MapProperty]`/`[MapIgnore]`
+  on each derived pair. Restatement is explicit and keeps every pair readable at its own declaration; the cost
+  is that it can drift, so bracket each restated block with a comment naming the base pair.
+- **Object↔collection maps** (`CreateMap<ICollection<Rank>, RanksDocument>()`) — not a mapping shape. Map the
+  document's inner collection instead, which is what an AutoMapper `ConstructUsing` that called
+  `ctx.Mapper.Map<ICollection<T>>(x.Items)` was literally already doing.
+- **Update-into through the ambient facade** — `IDwarfMapper` constructs a new destination. For merge
+  semantics inject the **concrete** mapper and call its `Update(src, dest)` partial method.
+
+### The one that is not a non-goal, but will surprise you: ambient collection maps
+
+`IDwarfMapper.Map<TDest>(object)` resolves through a registry keyed on the **exact** `(source, target)` pair,
+and AutoMapper derived collection maps implicitly from the element map. So this compiles and throws:
+
+<!-- fence-exempt: illustrates a runtime failure; a compiling sample cannot show "throws at first use" -->
+```csharp
+List<DbStore> rows = ...;
+var items = _mapper.Map<ICollection<StoreItem>>(rows);   // DwarfMapMissingException
+```
+
+Two things make it easy to get wrong, and both cost a false start during the reference migration:
+
+1. **Two keys, often two different types.** The build-time check (`DWARF061`) validates the call site's
+   **static** argument type; the runtime registry looks the delegate up by `source.GetType()` and walks base
+   types **only — never interfaces**. A method declared `Task<ICollection<T>>` that returns a `List<T>` needs
+   *both* pairs declared. Declaring only the static one compiles and still throws.
+2. **Declare the collection pair beside its ELEMENT pair, not beside the call site.** If the calling assembly
+   does not reference the one that owns the element map, the generator cannot see that element pair's
+   configuration and synthesises a fresh convention-only map, which then fails completeness. The ambient
+   registry is process-wide, so declaring it beside the element map resolves the far-away call site anyway.
+
+A lazy LINQ source (`Where(...)`, `SelectMany(...)`) can never be declared at all — those are private
+`System.Linq` iterator types that no attribute can name. Materialise with `.ToList()` before mapping; that
+call is load-bearing, so say so in a comment.
 
 Every one surfaces a diagnostic or has a typed alternative — none fail silently.

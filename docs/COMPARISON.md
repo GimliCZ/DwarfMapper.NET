@@ -146,6 +146,41 @@ Mapperly already uses `[Mapper] partial class` + a `partial Dst Map(Src)` per pa
 DwarfMapper now matches the *lowest* per-pair ceremony of the group while keeping POCOs attribute-free,
 and uniquely makes completeness a build error.
 
+### What one real migration actually found
+
+A ~300-map AutoMapper 14 codebase was converted in full, with every pair replayed against a golden master
+captured **before** the conversion. Three findings are worth reporting honestly, in both directions.
+
+**1. The migration surfaced a live AutoMapper data-loss bug.** A `HashSet<BotPlatform> → HashSet<int>` member
+could not be converted element-wise by AutoMapper, which collapsed the whole set to a single `0`:
+
+```text
+source:      [ 4, 5 ]
+AutoMapper:  [ 0 ]        ← both values lost; 0 is not even in the source
+DwarfMapper: [ 4, 5 ]
+```
+
+The field recorded *which platforms the user had chosen to display*, so that choice had been persisted as
+`{0}` regardless of what anyone picked. This is **one anecdote from one codebase, not a benchmark** — but the
+triggering shape is easy to check for in your own code: a collection member whose element type differs on the
+two sides.
+
+**2. Most divergences were the migration's own decisions, not defects.** 233 of 244 replayable pairs matched
+byte-for-byte on the first full run. Of the rest, all were explained: deliberate non-conversions, hand-written
+converters the harness could not see, and two documented behaviour choices.
+
+**3. It found four DwarfMapper defects, three of them silent-data-loss behind a green build.** They are fixed,
+each with a regression test, and the experience produced the diagnostics `DWARF078`–`DWARF080` plus the
+pre-flight checklist in [`howto/migrate-from-automapper.md`](howto/migrate-from-automapper.md). The honest
+lesson is not "the library was fine" — it is that **a 5,000-test generator suite could not reach any of them**,
+because every one needed a multi-assembly, runtime-registry, real-consumer shape.
+
+**Technique worth stealing:** capture a golden master *while still on the old mapper* — serialise both the
+fabricated source and the mapped output, commit both, then replay against the new mapper. Committing the
+**source** rather than a seed is the load-bearing detail: it makes the comparison independent of the fixture
+generator, which will otherwise change under you mid-migration and silently reshuffle every input while still
+appearing to pass. `DwarfMapper.Testing`'s `ObjectFactory` and `GraphOracleComparer` are built for this.
+
 ## Performance & memory
 
 See [`benchmarks/DwarfMapper.Benchmarks`](../benchmarks/DwarfMapper.Benchmarks/) — DwarfMapper vs.
