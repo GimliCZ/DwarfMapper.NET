@@ -118,3 +118,101 @@ public sealed class Settings
     public string? Theme { get; set; }
     public string? Locale { get; set; }
 }
+
+// ── An object that HOLDS a collection, mapped to the collection ──────────────────────────────────────
+// Not a DwarfMapper mapping shape: one side is a container, the other an element sequence. It has to be
+// written by hand — and a hand-written method is an ordinary method that nothing registers, so every facade
+// call site for the pair throws while the code is perfectly correct. That is what [ProvidesMap] is for.
+
+public sealed class Quote
+{
+    public int Number { get; set; }
+
+    public string Text { get; set; } = "";
+}
+
+public sealed class QuoteDto
+{
+    public int Number { get; set; }
+
+    public string Text { get; set; } = "";
+}
+
+public sealed class QuoteBook
+{
+    public List<Quote> Quotes { get; set; } = [];
+}
+
+// ── A collection over a pair that constructs through a factory ───────────────────────────────────────
+// The element route must run the factory AND the member assignments. A generator that adopts the factory as
+// the element converter instead emits `result.Add(Create(item))` — the bare factory, no members — and if the
+// factory ignores its argument the call returns a list of blanks. Silent, total data loss, green build.
+
+public sealed class Part
+{
+    public string Code { get; set; } = "";
+
+    public int Quantity { get; set; }
+}
+
+public sealed class PartDto
+{
+    /// <summary>Private, so the pair genuinely needs the factory rather than merely being given one.</summary>
+    private PartDto(string code) => Code = code;
+
+    public string Code { get; }
+
+    public int Quantity { get; set; }
+
+    /// <summary>The tell: a value only the factory can produce, so "did the factory run" is observable.</summary>
+    public static PartDto FromCode(string code) => new("PART-" + code);
+}
+
+// ── enum ↔ string, and the two things the annotation can mean ────────────────────────────────────────
+// [Description] is overwhelmingly a DISPLAY annotation, and under the default it becomes the PERSISTED
+// string. Which of the two a consumer wants is a per-mapper decision, and the wrong one silently rewrites
+// every row it touches.
+
+public enum DispatchChannel
+{
+    [System.ComponentModel.Description("Next-Day")]
+    NextDay,
+
+    Standard
+}
+
+public sealed class Shipment
+{
+    public DispatchChannel Channel { get; set; }
+}
+
+/// <summary>Written under the default: the annotation decides.</summary>
+public sealed class ShipmentDoc
+{
+    public string Channel { get; set; } = "";
+}
+
+/// <summary>Written under <c>EnumStringSource.Identifier</c>: the member name decides.</summary>
+public sealed class ShipmentLog
+{
+    public string Channel { get; set; } = "";
+}
+
+// ── Members whose names are C# keywords ──────────────────────────────────────────────────────────────
+// Ordinary in code generated from a JSON or OpenAPI schema, where `class` and `event` are perfectly good
+// field names. ISymbol.Name hands them over WITHOUT the `@`, so an unescaped emission produces
+// `class = src.class,` — parsed as a malformed event declaration, out of generated code, with no diagnostic.
+
+public sealed class KeywordRow
+{
+    public string @class { get; set; } = "";
+
+    public int @event { get; set; }
+}
+
+public sealed class KeywordDto
+{
+    public string @class { get; set; } = "";
+
+    public int @event { get; set; }
+}

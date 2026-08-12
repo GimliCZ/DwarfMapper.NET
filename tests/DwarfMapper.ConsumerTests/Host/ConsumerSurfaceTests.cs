@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using ConsumerTests.Contracts;
 using DwarfMapper;
@@ -264,6 +264,96 @@ public sealed class ConsumerSurfaceTests
 
         Assert.Equal("!x", provider.GetRequiredService<CommandService>()
             .ToDtos([new AliasCommand { Id = 1, Alias = "!x" }])[0].Alias);
+    }
+
+    // ── 6. Shapes the generator cannot express, registered by declaration ───────────────────────────
+
+    [Fact]
+    public void A_hand_written_map_marked_ProvidesMap_resolves_through_the_facade()
+    {
+        // An object that HOLDS a collection, mapped to the collection, is not a mapping SHAPE — one side is a
+        // container, the other an element sequence — so it is written by hand. Without [ProvidesMap] it is
+        // then an ordinary method that nothing registers: the code is correct and every facade call site for
+        // the pair still throws. Round 18 hit that on five pairs and recorded it as "the code is fine; the
+        // harness cannot see it."
+        var quotes = Mapper().Map<ICollection<QuoteDto>>(new QuoteBook
+        {
+            Quotes = [new Quote { Number = 1, Text = "speak friend" }, new Quote { Number = 2, Text = "and enter" }]
+        });
+
+        Assert.Equal(2, quotes.Count);
+        Assert.Equal("and enter", quotes.Last().Text);
+    }
+
+    // ── 7. A collection over a pair that constructs through a factory ───────────────────────────────
+
+    [Fact]
+    public void Elements_of_a_factory_constructed_pair_are_mapped_not_merely_constructed()
+    {
+        // The failure this guards is a list of BLANK objects: an element converter that resolves to the bare
+        // [MapConstructor] factory runs it without the member assignments that follow. Found in a live
+        // consumer, whose own source carried a fourteen-line comment telling readers not to rely on the map.
+        //
+        // Both halves are asserted, because either alone would pass while the other was broken: the factory
+        // must have run (only it produces the PART- prefix) AND the settable member must have been assigned.
+        var parts = Mapper().Map<ICollection<PartDto>>(new List<Part>
+        {
+            new() { Code = "A1", Quantity = 5 },
+            new() { Code = "B2", Quantity = 9 }
+        });
+
+        Assert.Equal(2, parts.Count);
+        Assert.Equal("PART-A1", parts.First().Code);
+        Assert.Equal(9, parts.Last().Quantity);
+    }
+
+    // ── 8. enum ↔ string: both readings of one annotation, live at once ─────────────────────────────
+
+    [Fact]
+    public void The_default_writes_the_annotated_text()
+    {
+        // [Description] is a DISPLAY annotation to most people and the PERSISTED format to the default. Round
+        // 18 came within one code review of writing the annotated form into a store full of identifiers.
+        Assert.Equal("Next-Day",
+            Mapper().Map<ShipmentDoc>(new Shipment { Channel = DispatchChannel.NextDay }).Channel);
+    }
+
+    [Fact]
+    public void EnumStringSource_Identifier_writes_the_member_name_from_another_assembly()
+    {
+        // The parity switch, and the case the synthesized helper's NAME has to survive: one enum, two
+        // readings, two assemblies, one process. Keyed by type alone the two would have shared a single
+        // helper and whichever loaded first would have decided the persisted format for the other — the exact
+        // bug class this round fixed twice elsewhere, and one that only a multi-assembly test can stage.
+        Assert.Equal("NextDay",
+            Mapper().Map<ShipmentLog>(new Shipment { Channel = DispatchChannel.NextDay }).Channel);
+    }
+
+    [Fact]
+    public void Both_readings_of_the_same_enum_coexist()
+    {
+        // Stated as its own assertion rather than inferred from the two above: what matters is that they
+        // disagree, in one process, without either having been silently overwritten by the other.
+        var shipment = new Shipment { Channel = DispatchChannel.NextDay };
+
+        Assert.NotEqual(
+            Mapper().Map<ShipmentDoc>(shipment).Channel,
+            Mapper().Map<ShipmentLog>(shipment).Channel);
+    }
+
+    // ── 9. Members whose names are C# keywords ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_member_named_for_a_keyword_maps_across_the_assembly_boundary()
+    {
+        // Ordinary in code generated from a JSON or OpenAPI schema. ISymbol.Name hands the name over WITHOUT
+        // the @, so an unescaped emission produces `class = src.class,` — parsed as a malformed event
+        // declaration, out of generated code, with no diagnostic. The provider assembly would not have
+        // compiled at all; this asserts the mapping actually carries the values too.
+        var dto = Mapper().Map<KeywordDto>(new KeywordRow { @class = "wizard", @event = 3 });
+
+        Assert.Equal("wizard", dto.@class);
+        Assert.Equal(3, dto.@event);
     }
 }
 

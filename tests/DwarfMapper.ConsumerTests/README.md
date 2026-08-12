@@ -45,3 +45,31 @@ Host        the DI container and the tests. Does NOT reference the provider mapp
 `Host` not referencing the providers' mappers is the load-bearing constraint: that is the condition under
 which the ambient registry is the only thing that can resolve a map, and therefore the condition under which
 the 47-site gap existed at all.
+
+## What is asserted
+
+22 assertions, each one a shape that a generator snapshot test cannot reach — because every test in that
+suite is one assembly, one compilation, no DI and no runtime resolution.
+
+| Area | The failure it guards |
+|---|---|
+| Ambient resolution | a map declared in an unreferenced assembly is unreachable through the facade |
+| Collection shapes | `Map<ICollection<TDto>>(list)` throws unless the instantiation was declared by hand |
+| Lazy sequences | a `.Where(…)` iterator implements `IEnumerable<T>` without deriving from it, so a base-chain lookup misses it and the call throws |
+| Polymorphic elements | a derived element inside a base-typed list silently loses its derived member |
+| Divergent nested pairs | two providers reaching one nested pair synthesize copies that quietly disagree |
+| Construction | a `[MapConstructor]` factory owns construction and drops an `init`-only member |
+| Non-public construction | an `internal` constructor behind `[InternalsVisibleTo]` — the supported replacement for a reflective mapper's bypass |
+| Patch-merge | replace and patch semantics on one mapper, across the boundary |
+| **`[ProvidesMap]`** | a hand-written map is correct code that nothing registers, so every facade call site for it throws |
+| **Factory + collection** | the element route runs the bare factory without the member assignments, returning a list of blanks |
+| **`EnumStringSource`** | one enum read two ways from two assemblies share a synthesized helper, and whichever loads first decides the persisted format for both |
+| **Reserved keywords** | a member called `@class` emits unescaped and the provider assembly does not compile |
+| DI | a registration in the container does not resolve |
+
+The last four are new. Each corresponds to something this round changed in the generator, and none of them
+had consumer-level coverage before — which is the same gap, one round later.
+
+Note the factory-and-collection case asserts BOTH halves: that the factory ran (only it produces the `PART-`
+prefix) and that the settable member was assigned. Either alone passes while the other is broken, and "a list
+of objects of the right length" is exactly what the defect produced.

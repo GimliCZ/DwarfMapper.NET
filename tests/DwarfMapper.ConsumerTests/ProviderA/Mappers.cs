@@ -82,3 +82,60 @@ public partial class SettingsMappers
     [MapNullSkip]
     public partial void Patch(SettingsPatch source, Settings destination);
 }
+
+/// <summary>
+///     A hand-written map registered by declaration rather than by reflection.
+/// </summary>
+/// <remarks>
+///     An object that HOLDS a collection, mapped to the collection, is not a DwarfMapper mapping shape — so it
+///     is written by hand. Without <c>[ProvidesMap]</c> it is then an ordinary method that nothing registers:
+///     the code is correct and every facade call site for the pair still throws, which a parity harness
+///     reports as "not registered at all". Round 18 hit that on five pairs and recorded it as
+///     <i>"the code is fine; the harness cannot see it."</i>
+/// </remarks>
+[DwarfMapper]
+[GenerateMap<Quote, QuoteDto>]
+public partial class QuoteMappers
+{
+    [ProvidesMap]
+    public ICollection<QuoteDto> ToQuotes(QuoteBook book)
+    {
+        // The registry CALLS this method; it does not wrap it. A hand-written map carries its own guards.
+        ArgumentNullException.ThrowIfNull(book);
+
+        return book.Quotes.Select(Map).ToList();
+    }
+}
+
+/// <summary>
+///     A collection over a pair that constructs through a <c>[MapConstructor]</c> factory.
+/// </summary>
+/// <remarks>
+///     The element route has to run the factory AND the member assignments. Adopting the factory as the
+///     element converter emits <c>result.Add(Create(item))</c> — the bare factory, no members — which for a
+///     factory that ignores its argument returns a list of blank objects. Found in a live consumer, whose own
+///     source carried a fourteen-line comment telling readers not to rely on the map.
+/// </remarks>
+[DwarfMapper]
+[GenerateMap<Part, PartDto>]
+[MapConstructor<Part, PartDto>(nameof(CreatePart))]
+public partial class PartMappers
+{
+    public partial ICollection<PartDto> ToParts(List<Part> source);
+
+    private static PartDto CreatePart(Part source) => PartDto.FromCode(source.Code);
+}
+
+/// <summary>enum → string under the DEFAULT: <c>[Description]</c> decides the persisted text.</summary>
+[DwarfMapper]
+[GenerateMap<Shipment, ShipmentDoc>]
+public partial class ShipmentDocMappers
+{
+}
+
+/// <summary>Members named for C# keywords, across the assembly boundary.</summary>
+[DwarfMapper]
+[GenerateMap<KeywordRow, KeywordDto>]
+public partial class KeywordMappers
+{
+}

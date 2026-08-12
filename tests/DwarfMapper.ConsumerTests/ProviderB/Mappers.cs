@@ -39,3 +39,19 @@ public partial class AddressPatchMappers
 public partial class AliasCommandMappers
 {
 }
+
+/// <summary>
+///     The same enum, the other reading of the same annotation — declared in a DIFFERENT assembly.
+/// </summary>
+/// <remarks>
+///     <c>EnumStringSource.Identifier</c> says the annotations on this enum are for display and the persisted
+///     form is the member name. Both readings are live in this process at once, over one enum, from two
+///     assemblies — which is the case the synthesized helper's name has to survive. Keyed by TYPE alone the
+///     two would have shared one helper, and whichever loaded first would have decided the persisted format
+///     for the other.
+/// </remarks>
+[DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
+[GenerateMap<Shipment, ShipmentLog>]
+public partial class ShipmentLogMappers
+{
+}
