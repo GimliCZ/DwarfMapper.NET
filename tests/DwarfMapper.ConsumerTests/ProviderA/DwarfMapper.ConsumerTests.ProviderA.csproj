@@ -1,0 +1,20 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>ConsumerTests.ProviderA</RootNamespace>
+        <AssemblyName>ConsumerTests.ProviderA</AssemblyName>
+        <!-- CA1515: consumer-shaped fixtures are public BY DESIGN — cross-assembly reachability is the point. -->
+        <!-- CA1002/CA1819/CA2227: DTOs expose List<T>/arrays exactly as a real consumer's do. -->
+        <NoWarn>$(NoWarn);CA1515;CA1002;CA1819;CA2227</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <!-- Only what a real consumer takes. No reference to any other project in this repo. -->
+        <ProjectReference Include="..\..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"/>
+        <ProjectReference Include="..\Contracts\DwarfMapper.ConsumerTests.Contracts.csproj"/>
+    </ItemGroup>
+</Project>

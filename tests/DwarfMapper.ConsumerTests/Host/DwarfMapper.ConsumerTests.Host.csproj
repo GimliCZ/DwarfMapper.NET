@@ -1,0 +1,67 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>ConsumerTests.Host</RootNamespace>
+        <AssemblyName>ConsumerTests.Host</AssemblyName>
+        <!--
+          CA1707  test method names use underscores.
+          CA1515  fixtures are public by design — cross-assembly reachability is the point.
+          CA1002  the service signatures use List<T> ON PURPOSE: this project exists to reproduce what a real
+                  consumer writes, and real consumers write List<T>. "Improving" them to Collection<T> would
+                  test a shape nobody has.
+          CA1031  the DI smoke test catches Exception deliberately — an unresolvable registration can throw
+                  anything, and the point is to REPORT it rather than let the first one abort the sweep.
+        -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA1002;CA1031</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="xunit"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <!--
+          Only the RUNTIME library and the analyzer, plus Contracts for the domain types.
+
+          Deliberately NO compile-time reference to ProviderA or ProviderB. That is the load-bearing
+          constraint of this project: the ambient registry must be the only thing that can resolve their maps,
+          which is the condition under which Round 18's 47-site gap existed at all.
+        -->
+        <ProjectReference Include="..\..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"/>
+        <ProjectReference Include="..\Contracts\DwarfMapper.ConsumerTests.Contracts.csproj"/>
+
+        <!-- Build ORDER only: built before the host, but invisible to its compiler. -->
+        <ProjectReference Include="..\ProviderA\DwarfMapper.ConsumerTests.ProviderA.csproj"
+                          ReferenceOutputAssembly="false"/>
+        <ProjectReference Include="..\ProviderB\DwarfMapper.ConsumerTests.ProviderB.csproj"
+                          ReferenceOutputAssembly="false"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit"/>
+    </ItemGroup>
+
+    <!--
+      ReferenceOutputAssembly="false" gives build order without compile-time visibility — but it also stops
+      the assemblies being COPIED, so the host would have nothing to load. Copying them explicitly is what a
+      plugin host does, and it keeps the three properties separate: BUILT, PRESENT, but not REFERENCED.
+
+      Forward slashes on purpose: MSBuild normalises them on every platform, and a backslash here is one
+      escape-sequence accident away from silently pointing at a path that does not exist.
+    -->
+    <Target Name="CopyProviderAssemblies" AfterTargets="Build">
+        <ItemGroup>
+            <ProviderAssembly Include="$(MSBuildThisFileDirectory)../ProviderA/bin/$(Configuration)/$(TargetFramework)/ConsumerTests.ProviderA.dll"/>
+            <ProviderAssembly Include="$(MSBuildThisFileDirectory)../ProviderB/bin/$(Configuration)/$(TargetFramework)/ConsumerTests.ProviderB.dll"/>
+        </ItemGroup>
+        <Copy SourceFiles="@(ProviderAssembly)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true"/>
+    </Target>
+</Project>

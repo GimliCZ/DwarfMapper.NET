@@ -1,0 +1,30 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>ConsumerTests.Contracts</RootNamespace>
+        <AssemblyName>ConsumerTests.Contracts</AssemblyName>
+        <!-- CA1515: consumer-shaped fixtures are public BY DESIGN — cross-assembly reachability is the point. -->
+        <!-- CA1002/CA1819/CA2227: DTOs expose List<T>/arrays exactly as a real consumer's do. -->
+        <NoWarn>$(NoWarn);CA1515;CA1002;CA1819;CA2227</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <!-- Only what a real consumer takes. No reference to any other project in this repo. -->
+        <ProjectReference Include="..\..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"/>
+    </ItemGroup>
+
+    <!--
+      AuditEntry's constructor is `internal`, and ProviderA maps it under AllowNonPublic = true. This is the
+      supported replacement for a reflective mapper's accessibility bypass: the same grant, but one the
+      compiler checks. Without this line the map is DWARF026, loudly.
+    -->
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>ConsumerTests.ProviderA</_Parameter1>
+        </AssemblyAttribute>
+    </ItemGroup>
+</Project>
