@@ -441,7 +441,12 @@ internal static partial class MapperExtractor
                     IsUpdateInto: true,
                     UpdateTargetParameterName: method.Parameters[1].Name,
                     UpdateReturnsVoid: method.ReturnsVoid,
-                    MaxDepth: maxDepth));
+                    MaxDepth: maxDepth,
+                    // Both flags were left at their defaults here while every other endpoint set them. That
+                    // was invisible until update-into became ambient-registerable, at which point the
+                    // registration gate rejected every merge method for types that are plainly public.
+                    ParameterIsPublicType: IsEffectivelyPublic(updSrc),
+                    ReturnIsPublicType: IsEffectivelyPublic(updTgt)));
                 continue;
             }
 

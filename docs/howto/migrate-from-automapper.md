@@ -312,8 +312,10 @@ DwarfMapper deliberately does **not** do these (each has a static replacement; f
 - **Object↔collection maps** (`CreateMap<ICollection<Rank>, RanksDocument>()`) — not a mapping shape. Map the
   document's inner collection instead, which is what an AutoMapper `ConstructUsing` that called
   `ctx.Mapper.Map<ICollection<T>>(x.Items)` was literally already doing.
-- **Update-into through the ambient facade** — `IDwarfMapper` constructs a new destination. For merge
-  semantics inject the **concrete** mapper and call its `Update(src, dest)` partial method.
+*(`AddDwarfMappers()` + `IDwarfMapper` covers update-into too, as of the facade's
+`Map(source, destination)` overload — `mapper.Map(src, existingDest)` is a near-verbatim replacement for
+AutoMapper's two-argument `Map`. Declare a two-parameter partial method on a public mapper and it is
+registered automatically.)*
 
 ### The one that is not a non-goal, but will surprise you: ambient collection maps
 

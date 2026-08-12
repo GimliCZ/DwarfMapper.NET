@@ -29,9 +29,14 @@ public sealed class DwarfMapMissingException : InvalidOperationException
     ///     one. Reported rather than silently picked, because <see cref="Type.GetInterfaces" /> has no
     ///     guaranteed order — choosing one would mean mapping through a different map on a different run.
     /// </param>
+    /// <param name="isUpdate">
+    ///     <see langword="true" /> when the missing map is an UPDATE-INTO map. Update-into is keyed separately
+    ///     from create-maps, so the message must say which one is absent — otherwise a reader goes looking for
+    ///     a registration that already exists.
+    /// </param>
     public DwarfMapMissingException(Type sourceType, Type destinationType,
-        IReadOnlyList<Type>? ambiguousInterfaces)
-        : base(FormatMessage(sourceType, destinationType, ambiguousInterfaces))
+        IReadOnlyList<Type>? ambiguousInterfaces, bool isUpdate = false)
+        : base(FormatMessage(sourceType, destinationType, ambiguousInterfaces, isUpdate))
     {
         SourceType = sourceType;
         DestinationType = destinationType;
@@ -66,8 +71,18 @@ public sealed class DwarfMapMissingException : InvalidOperationException
     public IReadOnlyList<Type> AmbiguousInterfaces { get; } = [];
 
     private static string FormatMessage(Type? sourceType, Type? destinationType,
-        IReadOnlyList<Type>? ambiguousInterfaces)
+        IReadOnlyList<Type>? ambiguousInterfaces, bool isUpdate = false)
     {
+        // Update-into has its own key space, so "no map" here means something different from the create case:
+        // a create-map for the same pair may well exist. Saying so stops the reader hunting for a
+        // registration that is already there.
+        if (isUpdate)
+            return $"No DwarfMapper UPDATE-INTO map is registered for '{sourceType}' -> '{destinationType}'. "
+                   + "A create-map for the same pair does not satisfy this — they are different operations "
+                   + "and are keyed separately. Declare a two-parameter partial method, e.g. "
+                   + $"`public partial void Update({sourceType?.Name} source, {destinationType?.Name} "
+                   + "destination);`, on a public mapper with a parameterless constructor.";
+
         if (ambiguousInterfaces is { Count: > 1 })
             return $"Ambiguous DwarfMapper map for '{sourceType}' -> '{destinationType}': it was not "
                    + "registered directly or on a base type, and more than one of its interfaces has a "

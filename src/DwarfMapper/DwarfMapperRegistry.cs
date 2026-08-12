@@ -165,6 +165,56 @@ public static class DwarfMapperRegistry
         throw new DwarfMapMissingException(runtimeType, destination, candidates);
     }
 
+    /// <summary>
+    ///     Update-into (merge) maps, keyed separately from the create-maps.
+    /// </summary>
+    /// <remarks>
+    ///     A pair can legitimately have BOTH — <c>TDest Map(TSource)</c> and <c>void Update(TSource, TDest)</c>
+    ///     are different operations over the same types — so they cannot share a key space without one
+    ///     shadowing the other.
+    /// </remarks>
+    private static readonly ConcurrentDictionary<Key, Action<object, object>> UpdateMaps = new();
+
+    /// <summary>Registers an update-into map for the exact <paramref name="source" />/<paramref name="destination" /> pair.</summary>
+    public static void RegisterUpdate(Type source, Type destination, Action<object, object> map)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(map);
+
+        var key = new Key(source, destination);
+        if (!UpdateMaps.TryAdd(key, map))
+            Ambiguous.TryAdd(key, 1);
+    }
+
+    /// <summary>True if an update-into map for the exact pair is registered.</summary>
+    public static bool IsUpdateProvided(Type source, Type destination)
+    {
+        return UpdateMaps.ContainsKey(new Key(source, destination));
+    }
+
+    /// <summary>
+    ///     Applies the registered update-into map, mutating <paramref name="destination" /> in place.
+    /// </summary>
+    /// <remarks>
+    ///     Resolution is by the DECLARED types, not by <c>GetType()</c>. Update-into writes into an instance
+    ///     the caller already holds, so silently dispatching on a more-derived runtime type could write
+    ///     members the caller's declared contract never mentioned — a create-map has no equivalent hazard,
+    ///     because it hands back an object the caller had no prior expectations about.
+    /// </remarks>
+    public static void Update(object source, object destination, Type sourceType, Type destinationType)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(sourceType);
+        ArgumentNullException.ThrowIfNull(destinationType);
+
+        if (!UpdateMaps.TryGetValue(new Key(sourceType, destinationType), out var map))
+            throw new DwarfMapMissingException(sourceType, destinationType, null, isUpdate: true);
+
+        map(source, destination);
+    }
+
     /// <summary>Test-only: clears the registry. Not for production use.</summary>
     internal static void ResetForTests()
     {

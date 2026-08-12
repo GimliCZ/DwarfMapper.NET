@@ -175,6 +175,8 @@ internal static class AggregateEmitter
         IReadOnlyList<MapperClassModel> models)
     {
         var regs = new List<(string Source, string Dest, string Field, string Method)>();
+        var updateRegs = new List<(string Source, string Dest, string Field, string Method)>();
+        var seenUpdatePairs = new HashSet<string>(StringComparer.Ordinal);
         var collectionRegs = new List<(string Source, string Dest, string Field, string Method, bool AsArray)>();
         var seenCollectionPairs = new HashSet<string>(StringComparer.Ordinal);
         var fields = new SortedSet<string>(StringComparer.Ordinal);
@@ -186,7 +188,14 @@ internal static class AggregateEmitter
             var eligible = model.Methods
                 .Where(IsAmbientRegisterable)
                 .ToList();
-            if (eligible.Count == 0) continue;
+
+            // Update-into is registered into its OWN key space, so a mapper that declares only merge methods
+            // is still worth registering — gating on `eligible.Count == 0` alone silently skipped that shape.
+            var eligibleUpdates = model.Methods
+                .Where(IsAmbientUpdateRegisterable)
+                .ToList();
+
+            if (eligible.Count == 0 && eligibleUpdates.Count == 0) continue;
 
             var mapperFullName = model.FullyQualifiedName;
 
@@ -215,9 +224,21 @@ internal static class AggregateEmitter
                         collectionRegs.Add((method.ParameterTypeFullName, dest, FieldName(mapperFullName),
                             method.MethodName, asArray));
             }
+
+            foreach (var method in eligibleUpdates
+                         .OrderBy(m => m.ParameterTypeFullName, StringComparer.Ordinal)
+                         .ThenBy(m => m.ReturnTypeFullName, StringComparer.Ordinal))
+            {
+                if (!seenUpdatePairs.Add(method.ParameterTypeFullName + " " + method.ReturnTypeFullName))
+                    continue;
+
+                fields.Add(mapperFullName);
+                updateRegs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName,
+                    FieldName(mapperFullName), method.MethodName));
+            }
         }
 
-        if (regs.Count == 0) return (null, unregisterable);
+        if (regs.Count == 0 && updateRegs.Count == 0) return (null, unregisterable);
 
         var sb = new StringBuilder();
         sb.Append(Header).Append('\n');
@@ -284,9 +305,41 @@ internal static class AggregateEmitter
                 .Append(r.AsArray ? "__r.ToArray()" : "__r").Append("; });").Append('\n');
         }
 
+        if (updateRegs.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("        // Update-into (merge) maps, in their own key space: a pair can have BOTH a");
+            sb.AppendLine("        // create-map and an update-into map, and they are different operations.");
+        }
+
+        foreach (var r in updateRegs)
+            sb.Append("        global::DwarfMapper.DwarfMapperRegistry.RegisterUpdate(typeof(")
+                .Append(r.Source).Append("), typeof(").Append(r.Dest)
+                .Append("), static (__s, __d) => ").Append(r.Field).Append('.').Append(r.Method)
+                .Append("((").Append(r.Source).Append(")__s, (").Append(r.Dest).Append(")__d));")
+                .Append('\n');
+
         sb.AppendLine("    }");
         sb.AppendLine("}");
         return (sb.ToString(), unregisterable);
+    }
+
+    /// <summary>
+    ///     An update-into map is ambient-registerable when it is a public, two-parameter merge over publicly
+    ///     nameable types — the shape <c>IDwarfMapper.Map(TSource, TDestination)</c> forwards to.
+    /// </summary>
+    /// <remarks>
+    ///     Registered as an <c>Action&lt;object, object&gt;</c> in a key space separate from the create-maps.
+    ///     The returning form (<c>TDest Update(TSource, TDest)</c>) registers identically — the emitted lambda
+    ///     calls it as a statement and discards the result, since the caller already holds the instance.
+    /// </remarks>
+    private static bool IsAmbientUpdateRegisterable(MapMethodModel m)
+    {
+        if (!m.IsUpdateInto) return false;
+        if (!(m.IsPartial || m.EmitAsNonPartial)) return false;
+        if (m.Accessibility != "public" && m.Accessibility != "internal") return false;
+        if (m.ExtraParameters.Count > 0) return false;
+        return m.ParameterIsPublicType && m.ReturnIsPublicType;
     }
 
     /// <summary>

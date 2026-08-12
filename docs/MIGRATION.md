@@ -251,13 +251,17 @@ which Mapperly offers. See [`COMPARISON.md`](COMPARISON.md#capability-matrix).
 | Turning the completeness check *off* | resilience-first stance | `[MapIgnore]` per intentional drop (auditable) |
 | `IncludeBase<S,T>()` / config inheritance between pairs | inheritance semantics would have to interact with pair-scoped attributes, `[MapDerivedType]` and the policy layer — and restatement keeps each pair readable at its own declaration | restate the shared `[MapProperty]`/`[MapIgnore]` on the derived pair; bracket the block with a comment naming the base pair so drift is visible in review |
 | Object↔collection maps (`ICollection<T>` ↔ a document that *holds* a collection) | not a mapping shape — one side is a container, the other an element sequence | map the inner collection; an AutoMapper `ConstructUsing` doing `ctx.Mapper.Map<ICollection<T>>(x.Items)` was already doing exactly this |
-| Update-into through the **ambient facade** | `IDwarfMapper` is type-erased on the source (`Map<TDest>(object)`); merge needs both types | inject the **concrete** mapper and call its `Update(src, dest)` partial method. Update-into itself is fully supported — see §1.7 |
 | Reflectively bypassing a `private` constructor | the generator emits ordinary C#, so a `private` member is genuinely unreachable | widen to `internal` + `[InternalsVisibleTo]`, or `[MapConstructor]` a factory — the same grant, but one the compiler checks (`DWARF026` if you don't) |
 
 Every non-goal is a **conscious resilience/AOT trade**, not a missing feature — each surfaces a diagnostic
 or a typed alternative rather than failing silently.
 
 ### One thing that is *not* a non-goal, but behaves like one on first contact
+
+**Update-into IS reachable through the facade.** `IDwarfMapper.Map(source, destination)` maps onto an
+existing instance, preserving its identity — the near-verbatim replacement for AutoMapper's two-argument
+`Map(src, dest)`. Declare a two-parameter partial method on a public mapper and it self-registers. It lives in
+a key space separate from the create-maps, because a pair can have both and they are different operations.
 
 The ambient registry resolves an **exact** `(source, target)` pair; it does not derive a collection map from
 an element map the way AutoMapper did. `_mapper.Map<ICollection<Dto>>(listOfEntities)` therefore throws unless
