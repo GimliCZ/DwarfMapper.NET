@@ -738,6 +738,39 @@ public static class DiagnosticDescriptors
         helpLinkUri: HelpBase + "dwarf080");
 
     /// <summary>
+    ///     One logical nested pair, auto-synthesized into two mappers that do not agree.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         A synthesized helper inherits the policy of the mapper that reached it, so two mappers reaching
+    ///         the same <c>(S, T)</c> each get a private copy — and if their options differ, so do the copies.
+    ///         Nothing in the build says so: both compile, both are correct in isolation, and the same two
+    ///         types are mapped two different ways in one assembly.
+    ///     </para>
+    ///     <para>
+    ///         Round 18 hit exactly this. <c>SkipNullSourceMembers</c> was class-scoped, a profile mixing
+    ///         patch-merge maps with ordinary ones had to be split across two mapper classes, and the split
+    ///         produced one null-guarded and one unguarded copy of the same nested pair — "a real behavioural
+    ///         difference, not a cosmetic one", because the store could deserialize nulls into those members.
+    ///     </para>
+    ///     <para>
+    ///         Info, not Warning: two mappers deliberately configured differently is a legitimate design, and
+    ///         <c>[MapNullSkip]</c> now removes the reason the split was forced in the first place. What the
+    ///         diagnostic adds is that the consequence is stated rather than discovered.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DivergentSynthesizedPair = new(
+        "DWARF081",
+        "The same nested pair is synthesized two different ways",
+        "Mappers {0} each auto-synthesize '{1}' -> '{2}', and their copies do not agree ({3}). A synthesized "
+        + "helper inherits the policy of the mapper that reached it, so one pair of types is mapped two ways "
+        + "in this assembly and nothing else reports it. Declare the pair once and share it (a partial method, "
+        + "or [GenerateMap] on one mapper), narrow the differing option to the pair that needs it (e.g. "
+        + "[MapNullSkip<TSource, TTarget>]), or accept the divergence deliberately.",
+        Category, DiagnosticSeverity.Info, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf081");
+
+    /// <summary>
     ///     <c>[ProvidesMap]</c> on a method the ambient registry cannot hold.
     /// </summary>
     /// <remarks>

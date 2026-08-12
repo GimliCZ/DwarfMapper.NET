@@ -47,7 +47,9 @@ public class DiagnosticCoverageRatchetTests
         "DWARF044", "DWARF045", "DWARF046", "DWARF047",
         "DWARF048", "DWARF049", "DWARF050", "DWARF051",
         "DWARF052", "DWARF053", "DWARF054", "DWARF055",
-        "DWARF056", "DWARF057", "DWARF058", "DWARF059",
+        // DWARF058 removed 2026-08-12: DWARF081's case declares it, because two mappers from one source type
+        // provoke it inherently. The ratchet tightening, exactly as intended.
+        "DWARF056", "DWARF057", "DWARF059",
         "DWARF060", "DWARF061", "DWARF062", "DWARF063",
         "DWARF064", "DWARF065", "DWARF066", "DWARF067",
         "DWARF068", "DWARF069", "DWARF070", "DWARF071",

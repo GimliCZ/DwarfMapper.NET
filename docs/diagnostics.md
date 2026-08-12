@@ -900,6 +900,51 @@ deliberately supplies its own value from one that forgot — and both are legiti
 
 ---
 
+## dwarf081
+**The same nested pair is synthesized two different ways** · Info
+
+Two mappers each auto-synthesize a private helper for the same nested `(S, T)` pair, and the two copies do not
+agree. A synthesized helper inherits the policy of the mapper that **reached** it, so a class-level option set
+on one mapper and not the other produces one pair of types mapped two different ways in one assembly.
+
+Both copies compile. Both are correct in isolation. Nothing else in the build reports it.
+
+<!-- fence-exempt: the point is the two DECLARATIONS differing; a runnable sample would bury one attribute under a type graph -->
+```csharp
+[DwarfMapper]                                   // Outer -> OuterDto, and Inner -> InnerDto with it
+[GenerateMap<Outer, OuterDto>]
+public partial class Replace;
+
+[DwarfMapper(SkipNullSourceMembers = true)]     // …and a SECOND Inner -> InnerDto, null-guarded
+[GenerateMap<Outer, OuterDto>]
+public partial class Patch;                     // DWARF081: the two copies treat Note differently
+```
+
+**Fix — pick the one that matches the intent:**
+
+1. **Narrow the differing option to the pair that needs it.** `[MapNullSkip<Inner, InnerDto>]` on both mappers
+   makes the nested pair's null policy a property of the *pair* rather than of whichever class reached it, so
+   the copies agree again while the classes still differ at the top level.
+2. **Declare the pair once and share it** — a partial method, or `[GenerateMap]` on one mapper — so there is
+   only one mapping to disagree about.
+3. **Accept it deliberately**, and say so where the two mappers are declared.
+
+The message names both mappers, the pair, and the member whose treatment differs — the helper itself is private
+and generated, so naming *that* would send you to code you never wrote.
+
+**Why Info and not Warning.** Two mappers configured differently is a design, not a defect. And the reported
+divergence is detected by comparing the generated *models*, so it fires for a difference from any cause —
+`NullStrategy`, `CaseInsensitive`, `EnumStrategy`, a converter reserved in one mapper and not the other — not
+only for the options someone thought to enumerate.
+
+> Found in Round 18. `SkipNullSourceMembers` was class-scoped, a profile mixing patch-merge maps with ordinary
+> ones had to be split into two mapper classes, and the split silently produced one null-guarded and one
+> unguarded copy of the same nested pair — "a real behavioural difference, not a cosmetic one", because the
+> store could deserialize nulls into those members. `[MapNullSkip]` now removes the reason for the split; this
+> reports the consequence if it happens for any other reason.
+
+---
+
 ## dwarf082
 **[ProvidesMap] method cannot be registered** · Error
 

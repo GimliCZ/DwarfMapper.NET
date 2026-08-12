@@ -86,6 +86,7 @@ DWARF077 | DwarfMapper | Error | Explicit-only mapping is not enforced element-w
 DWARF078 | DwarfMapper | Warning | No code was generated for this mapper
 DWARF079 | DwarfMapper | Error | [MapIgnore] cannot ignore a required member
 DWARF080 | DwarfMapper | Info | A [MapConstructor] factory cannot assign this member
+DWARF081 | DwarfMapper | Info | The same nested pair is synthesized two different ways
 DWARF082 | DwarfMapper | Error | [ProvidesMap] method cannot be registered
 DWARF083 | DwarfMapper | Info | Enum maps to strings that are not its member identifiers
 

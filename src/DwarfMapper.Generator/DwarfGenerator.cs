@@ -272,6 +272,115 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         return string.Join(".", segments);
     }
 
+    /// <summary>
+    ///     <c>DWARF081</c> — one logical nested pair auto-synthesized into two mappers that do not agree.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The comparison is between the auto-nested <c>__DwarfMap_Obj_*</c> entries of every mapper. Their
+    ///         NAME is a hash of <c>(srcFqn, tgtFqn)</c> alone (see <c>NestedMappingRegistry.BuildMethodName</c>),
+    ///         so the same name in two mappers means the same logical pair, while <c>MapMethodModel</c> is a
+    ///         value-equatable record, so "same name, different record" means the two copies genuinely map
+    ///         those types differently. That catches divergence from ANY cause — null-skip, null strategy,
+    ///         case-insensitivity, enum strategy, a converter reserved in one mapper and not the other —
+    ///         rather than only the options someone thought to enumerate.
+    ///     </para>
+    ///     <para>
+    ///         An earlier attempt compared <c>MapperClassModel.SynthesizedMethods</c> and was reverted because
+    ///         it measured empty: the auto-nested object mappers are not in that collection at all. They are
+    ///         private, non-partial entries in <c>Methods</c>, which is what this reads.
+    ///     </para>
+    /// </remarks>
+    private static void ReportDivergentSynthesizedPairs(
+        SourceProductionContext spc, List<MapperClassModel> models)
+    {
+        if (models.Count < 2) return;
+
+        // name -> the distinct model variants seen, and which mappers produced each.
+        var byName = new Dictionary<string, List<(MapMethodModel Method, List<string> Owners)>>(
+            StringComparer.Ordinal);
+
+        foreach (var model in models)
+        foreach (var method in model.Methods)
+        {
+            if (method.IsPartial || !GeneratedNames.IsObjectMap(method.MethodName)) continue;
+
+            if (!byName.TryGetValue(method.MethodName, out var variants))
+            {
+                variants = [];
+                byName[method.MethodName] = variants;
+            }
+
+            var existing = variants.Find(v => v.Method == method);
+            if (existing.Owners is not null)
+            {
+                if (!existing.Owners.Contains(model.ClassName)) existing.Owners.Add(model.ClassName);
+            }
+            else
+            {
+                variants.Add((method, [model.ClassName]));
+            }
+        }
+
+        foreach (var pair in byName.OrderBy(static p => p.Key, StringComparer.Ordinal))
+        {
+            var variants = pair.Value;
+            if (variants.Count < 2) continue;
+
+            var first = variants[0].Method;
+            var owners = variants
+                .SelectMany(static v => v.Owners)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static n => n, StringComparer.Ordinal)
+                .ToList();
+
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.DivergentSynthesizedPair, Location.None,
+                "'" + string.Join("' and '", owners) + "'",
+                first.ParameterTypeFullName,
+                first.ReturnTypeFullName,
+                DescribeDivergence(variants.Select(static v => v.Method).ToList())));
+        }
+    }
+
+    /// <summary>
+    ///     Says WHAT differs between the copies, not merely that something does.
+    /// </summary>
+    /// <remarks>
+    ///     A diagnostic reading "these disagree" would leave the reader diffing two private helpers they never
+    ///     wrote and cannot see without dumping the generated output. Naming the members whose treatment
+    ///     differs points straight at the option responsible.
+    /// </remarks>
+    private static string DescribeDivergence(List<MapMethodModel> variants)
+    {
+        var differing = new List<string>();
+
+        foreach (var name in variants
+                     .SelectMany(static v => v.Members.Select(static m => m.TargetName))
+                     .Distinct(StringComparer.Ordinal)
+                     .OrderBy(static n => n, StringComparer.Ordinal))
+        {
+            var treatments = variants
+                .Select(v => v.Members.FirstOrDefault(m =>
+                    string.Equals(m.TargetName, name, StringComparison.Ordinal)))
+                .Distinct()
+                .Count();
+
+            if (treatments > 1) differing.Add(name);
+        }
+
+        if (differing.Count == 0)
+            // Construction, hooks or the depth signature rather than a member — still a real difference, and
+            // saying "some member" would be a lie.
+            return "they differ in construction or hooks rather than in a single member";
+
+        var shown = differing.Count <= 3
+            ? string.Join(", ", differing)
+            : string.Join(", ", differing.Take(3)) + $", … ({differing.Count} in total)";
+
+        return "they treat " + shown + " differently";
+    }
+
     private static void EmitAggregates(
         SourceProductionContext spc, ImmutableArray<MapperClassModel> models, bool diAvailable, bool publicExtensions,
         string assemblyNamespace)
@@ -280,6 +389,8 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         // facade/DI either.
         var usable = models.Where(static m => !m.HasBlockingError).ToList();
         if (usable.Count == 0) return;
+
+        ReportDivergentSynthesizedPairs(spc, usable);
 
         var (facade, facadeCollisions) = AggregateEmitter.EmitExtensions(usable, publicExtensions);
         if (facade is not null) spc.AddNormalizedSource("DwarfMapper.Extensions.g.cs", facade);
