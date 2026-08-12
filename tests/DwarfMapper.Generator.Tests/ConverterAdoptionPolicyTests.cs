@@ -180,6 +180,69 @@ public class ConverterAdoptionPolicyTests
     }
 
     [Fact]
+    public void A_declared_collection_METHOD_withholds_the_factory_too()
+    {
+        // The same bug at the other door, found by building a real consumer against this generator. The
+        // [GenerateMap] collection path reserved the factory; the DECLARED-METHOD path did not, and emitted
+        // `result.Add(CreateUserCommand(i))` — the bare factory, without the member assignments the real
+        // element map performs afterwards. That factory ignores its argument, so the call returned a list of
+        // blank objects. Silent, total data loss, no diagnostic. The consumer's own source carries a
+        // fourteen-line comment describing it and telling readers not to rely on the map.
+        const string src = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace Demo;
+            public class DbCommand { public int V { get; set; } }
+            public class UserCommand
+            {
+                private UserCommand() { }
+                public int V { get; init; }
+                public static UserCommand Empty => new();
+            }
+
+            [DwarfMapper]
+            [GenerateMap<DbCommand, UserCommand>]
+            [MapConstructor<DbCommand, UserCommand>(nameof(CreateUserCommand))]
+            public partial class M
+            {
+                public partial ICollection<UserCommand> ToUserCommands(List<DbCommand> source);
+
+                private static UserCommand CreateUserCommand(DbCommand source) => UserCommand.Empty;
+            }
+            """;
+
+        var generated = GeneratorAssert.EmitsCompilableCode(src);
+
+        // The element route is the declared pair, which applies the factory AND the member assignments.
+        Assert.Contains("__r.Add(Map(__item))", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Add(CreateUserCommand(", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_declared_collection_method_does_not_resolve_to_itself()
+    {
+        // Its own signature is the perfect match for the pair it is declared for, so the whole-pair
+        // resolution has to exclude it — otherwise `return ToItems(source);` inside ToItems.
+        const string src = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace Demo;
+            public class Item { public int V { get; set; } }
+            public class ItemDto { public int V { get; set; } }
+
+            [DwarfMapper]
+            public partial class M
+            {
+                public partial List<ItemDto> ToItems(List<Item> source);
+            }
+            """;
+
+        var generated = GeneratorAssert.CompilesClean(src);
+
+        Assert.DoesNotContain("return ToItems(source)", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void An_unrelated_helper_with_a_non_matching_signature_is_never_adopted()
     {
         // The boundary of the feature: adoption is by SIGNATURE, so a helper that does not convert the pair

@@ -293,7 +293,10 @@ internal static partial class MapperExtractor
 
                 if (!TryResolveConversion(spanComp, spanSrcElem, spanDstElem, null, allMethods, mapperMethods,
                         enumPolicy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
-                        out var spanConv, out var spanNull, out var spanNeedsCtx, spanAutoNest, nestedRegistry))
+                        out var spanConv, out var spanNull, out var spanNeedsCtx, spanAutoNest, nestedRegistry,
+                        // Reservation is mapper-wide: a converter dedicated by Use=, or a [MapConstructor]
+                        // factory, must not be adopted as this element's converter either.
+                        reservedConverters: mapperReservedConverters))
                     // Element pair not mappable → diagnostic (e.g. DWARF005) already added.
                     continue;
 
@@ -513,7 +516,8 @@ internal static partial class MapperExtractor
 
                 if (!TryResolveConversion(asComp, asSrcElem, asDstElem, null, allMethods, mapperMethods,
                         enumPolicy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
-                        out var asConv, out var asNull, out var asNeedsCtx, asAutoNest, nestedRegistry))
+                        out var asConv, out var asNull, out var asNeedsCtx, asAutoNest, nestedRegistry,
+                        reservedConverters: mapperReservedConverters))
                     continue; // element pair not mappable → diagnostic already added
 
                 if (requiredMapping == 1) // RequiredMappingStrategy.Both
@@ -752,7 +756,9 @@ internal static partial class MapperExtractor
                         out var armConverter, out _, out var armNeedsCtx,
                         methodAutoNest, nestedRegistry,
                         nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
-                        true, isSetNullMode, implicitConversions);
+                        true, isSetNullMode, implicitConversions,
+                        // An arm is not an invitation to reuse a converter dedicated to some other pair.
+                        reservedConverters: mapperReservedConverters);
 
                     if (!resolved || armConverter is null)
                     {
@@ -851,14 +857,25 @@ internal static partial class MapperExtractor
                     ctx.SemanticModel.Compilation,
                     sourceType, targetType,
                     null,
-                    allMethods, mapperMethods,
+                    allMethods,
+                    // This pair is resolved as a WHOLE, so the method must not be a candidate for its own
+                    // conversion — the same self-exclusion the [GenerateMap] collection path needs.
+                    ExcludingPair(mapperMethods, sourceType, targetType),
                     enumPolicy, synthesized,
                     nullStrategy,
                     methodLocation, method.Name, diagnostics,
                     out var tlConverter, out _, out var tlNeedsCtx,
                     methodAutoNest, nestedRegistry,
                     nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode,
-                    isSetNull: isSetNullMode, implicitConversions: implicitConversions);
+                    isSetNull: isSetNullMode, implicitConversions: implicitConversions,
+                    // WITHOUT this the ELEMENT conversion adopts a method dedicated to one pair. Found in a
+                    // real consumer: `[MapConstructor<DbCommand, UserCommand>(nameof(CreateUserCommand))]`
+                    // plus `partial ICollection<UserCommand> ToUserCommands(List<DbCommand>)` emitted
+                    // `result.Add(CreateUserCommand(i))` — the bare factory, without the member assignments
+                    // the real element map performs, and that factory ignores its argument. A list of blank
+                    // objects, silently. The [GenerateMap] path was fixed for this; the DECLARED-METHOD path
+                    // was the same bug at the other door.
+                    reservedConverters: mapperReservedConverters);
 
                 if (!tlResolved || tlConverter is null)
                     // Element conversion failed (diagnostic already reported). Skip this method.
