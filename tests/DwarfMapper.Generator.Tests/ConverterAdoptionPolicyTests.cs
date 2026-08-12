@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper.Generator.Tests;
 
@@ -81,7 +81,7 @@ public class ConverterAdoptionPolicyTests
     {
         // Round-18 bug #1, pinned as policy rather than only as a regression: naming a converter for a member
         // says it belongs to THAT member. In the codebase that surfaced it, a `string BuildDocumentId(Guid)`
-        // written for Document.Id was also serving Document.DonationId — every record would have stored the
+        // written for Document.Id was also serving Document.DispatchId — every record would have stored the
         // date-prefixed id in the plain field.
         const string src = """
             using System;

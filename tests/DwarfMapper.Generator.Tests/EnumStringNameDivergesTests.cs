@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 
@@ -16,9 +16,9 @@ namespace DwarfMapper.Generator.Tests;
 ///     <para>
 ///         The hazard is that <c>[Description]</c> is overwhelmingly a <b>display</b> annotation — people put
 ///         it on enums for combo-box labels — and here it silently becomes the <b>persistence</b> format.
-///         Round 18 came within one code review of shipping exactly that: <c>DonationSource.Kofi</c> carried
-///         <c>[Description("Ko-Fi")]</c>, and the migration would have begun writing <c>"Ko-Fi"</c> into a
-///         MongoDB collection full of <c>"Kofi"</c>, breaking reads of every existing document. The previous
+///         Round 18 came within one code review of shipping exactly that: <c>DispatchChannel.NextDay</c> carried
+///         <c>[Description("Next-Day")]</c>, and the migration would have begun writing <c>"Next-Day"</c> into a
+///         MongoDB collection full of <c>"NextDay"</c>, breaking reads of every existing document. The previous
 ///         mapper used <c>.ToString()</c>, i.e. always the identifier.
 ///     </para>
 /// </remarks>
@@ -26,18 +26,18 @@ public class EnumStringNameDivergesTests
 {
     private const string Id = "DWARF083";
 
-    private const string KofiSource = """
+    private const string NextDaySource = """
         using System.ComponentModel;
         using DwarfMapper;
         namespace Demo;
 
-        public enum DonationSource
+        public enum DispatchChannel
         {
-            [Description("Ko-Fi")] Kofi,
-            Patreon
+            [Description("Next-Day")] NextDay,
+            Standard
         }
 
-        public class Src { public DonationSource Source { get; set; } }
+        public class Src { public DispatchChannel Source { get; set; } }
         public class Dst { public string Source { get; set; } = ""; }
 
         [DwarfMapper]
@@ -48,19 +48,19 @@ public class EnumStringNameDivergesTests
     [Fact]
     public void Reports_when_a_Description_redirects_the_persisted_string()
     {
-        Assert.NotEmpty(GeneratorAssert.Reports(KofiSource, Id));
+        Assert.NotEmpty(GeneratorAssert.Reports(NextDaySource, Id));
     }
 
     [Fact]
     public void The_message_shows_the_actual_value_that_will_be_written()
     {
-        var message = GeneratorAssert.Reports(KofiSource, Id)[0].GetMessage(CultureInfo.InvariantCulture);
+        var message = GeneratorAssert.Reports(NextDaySource, Id)[0].GetMessage(CultureInfo.InvariantCulture);
 
-        // Naming the enum is not enough — the reader has to SEE that "Kofi" becomes "Ko-Fi", because that is
+        // Naming the enum is not enough — the reader has to SEE that "NextDay" becomes "Next-Day", because that is
         // the fact that makes it a data problem rather than a style note.
-        Assert.Contains("DonationSource", message, StringComparison.Ordinal);
-        Assert.Contains("Kofi", message, StringComparison.Ordinal);
-        Assert.Contains("Ko-Fi", message, StringComparison.Ordinal);
+        Assert.Contains("DispatchChannel", message, StringComparison.Ordinal);
+        Assert.Contains("NextDay", message, StringComparison.Ordinal);
+        Assert.Contains("Next-Day", message, StringComparison.Ordinal);
         Assert.Contains("display", message, StringComparison.Ordinal);
     }
 
@@ -74,14 +74,14 @@ public class EnumStringNameDivergesTests
             using DwarfMapper;
             namespace Demo;
 
-            public enum DonationSource
+            public enum DispatchChannel
             {
-                [Description("Ko-Fi")] Kofi,
-                Patreon
+                [Description("Next-Day")] NextDay,
+                Standard
             }
 
             public class Src { public string Source { get; set; } = ""; }
-            public class Dst { public DonationSource Source { get; set; } }
+            public class Dst { public DispatchChannel Source { get; set; } }
 
             [DwarfMapper]
             [GenerateMap<Src, Dst>]
@@ -178,6 +178,6 @@ public class EnumStringNameDivergesTests
         // Serializing InProgress as "in_progress" is exactly what the precedence is FOR. This surfaces the
         // consequence; it does not forbid it, and it must not break a warnings-as-errors build.
         Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Info,
-            GeneratorAssert.Reports(KofiSource, Id)[0].Severity);
+            GeneratorAssert.Reports(NextDaySource, Id)[0].Severity);
     }
 }

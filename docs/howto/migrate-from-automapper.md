@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: GPL-2.0-only -->
+﻿<!-- SPDX-License-Identifier: GPL-2.0-only -->
 # How-to: migrate from AutoMapper to DwarfMapper
 
 A step-by-step walkthrough for moving a codebase off **AutoMapper 14.0.0** (the last MIT release).
@@ -41,7 +41,7 @@ decision down — a migration ledger of "what we chose and why" pays for itself 
 |---|---|---|
 | 1 | **`NullStrategy` defaults to `Throw`.** AutoMapper silently substituted `default`. | A nullable-value source into a non-nullable target **throws at runtime**. Builds clean, fails in production. Set `NullStrategy = SetDefault` for parity. |
 | 2 | **`EnumStrategy` defaults to `ByName`.** AutoMapper matched by **value**. | Enums with different member orders map differently. Set `EnumStrategy = ByValue` for parity. |
-| 3 | **enum→string prefers `[EnumMember]`, then `[Description]`, then the identifier.** AutoMapper used `.ToString()`, i.e. always the identifier. | **The sharpest one.** `[Description]` is usually a *display* annotation, but it becomes your *persistence* format. An enum member `Kofi` carrying `[Description("Ko-Fi")]` starts writing `"Ko-Fi"` into a store full of `"Kofi"` — breaking reads of every existing record. `DWARF083` reports it; **`EnumStringSource = Identifier` is the one-line parity switch**, on the mapper or on `[assembly: DwarfMapperDefaults]`, instead of a converter per enum. |
+| 3 | **enum→string prefers `[EnumMember]`, then `[Description]`, then the identifier.** AutoMapper used `.ToString()`, i.e. always the identifier. | **The sharpest one.** `[Description]` is usually a *display* annotation, but it becomes your *persistence* format. An enum member `NextDay` carrying `[Description("Next-Day")]` starts writing `"Next-Day"` into a store full of `"NextDay"` — breaking reads of every existing record. `DWARF083` reports it; **`EnumStringSource = Identifier` is the one-line parity switch**, on the mapper or on `[assembly: DwarfMapperDefaults]`, instead of a converter per enum. |
 | 4 | **`SkipNullSourceMembers` guards nullable-*typed* members.** AutoMapper's `Condition(src != null)` was a runtime **value** check. | A non-nullable-typed member holding a runtime null is now copied where AutoMapper skipped it. |
 | 5 | **enum↔string parsing is case-sensitive.** `Enum.Parse` ignored case. | Hand-edited or legacy data throws instead of parsing. Only reachable if something other than your own writer produced the string. |
 | 6 | **`SkipNullSourceMembers` is class-scoped**, but `ForAllMembers` was per-map. | A profile mixing patch-merge maps with ordinary ones must be **split into two mapper classes**. Plan for it rather than discovering it mid-conversion. |

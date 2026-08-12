@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Runtime.CompilerServices;
 using DwarfMapper.Generator.Core;
@@ -389,7 +389,7 @@ internal static partial class MapperExtractor
         // silently, with no diagnostic and a green build.
         //
         // Found migrating a real codebase: a `string BuildDocumentId(Guid)` written for Document.Id (it
-        // prefixes a date) was also applied to Document.DonationId, a plain auto-matched Guid→string
+        // prefixes a date) was also applied to Document.DispatchId, a plain auto-matched Guid→string
         // member, so every record would have stored the decorated id in the plain field. An explicit
         // Use= for THIS member still resolves above and is unaffected — only auto-adoption is blocked.
         static bool IsReserved(IReadOnlyCollection<string>? reserved, string name) =>

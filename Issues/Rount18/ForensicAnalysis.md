@@ -2,7 +2,7 @@
 # Round 18 — forensic analysis of `ImplementationRecord.txt`
 
 **Source:** `Issues/Rount18/ImplementationRecord.txt`, 9,120 lines — a full session transcript of migrating
-FusedChat (MedbotOmega, ~300 directed maps across 12 AutoMapper profiles) onto DwarfMapper.
+Consumer (ConsumerSolution, ~300 directed maps across 12 AutoMapper profiles) onto DwarfMapper.
 
 **Why this document exists.** That transcript is the first time DwarfMapper has been driven by a real consumer
 at scale rather than by its own test corpus. It found four generator defects, one blocking runtime gap, and a
@@ -67,7 +67,7 @@ Listed for completeness and because each one implies follow-up work beyond the f
 > user methods for one whose signature matches `srcType → tgtType` and adopts it as an automatic converter."*
 
 **What it cost.** Reported by a subagent at `:3163`, dismissed as unverified for ~1,100 lines because the
-isolated repro was blocked by `obj/` contention (`:3130`), and only confirmed at `:4259`. In FusedChat it would
+isolated repro was blocked by `obj/` contention (`:3130`), and only confirmed at `:4259`. In Consumer it would
 have written a date-prefixed document id (`"20260811_<guid>"`) into the plain `DonationId` column of every new
 premium record.
 
@@ -152,7 +152,7 @@ suppression table still implies otherwise for all of them. → **R18-04**.
 
 ### 3.1 BLOCKING — the ambient registry derives nothing from element maps (47 call sites)
 
-> `:7647` — `unresolvable=FusedChat.Omega.Interfaces.IOmegaData :: DwarfMapMissingException: No DwarfMapper map is registered for 'List<FusedChat.Database.Entities.Store>' -> 'ICollection<StoreItem>'`
+> `:7647` — `unresolvable=Consumer.Omega.Interfaces.IOmegaData :: DwarfMapMissingException: No DwarfMapper map is registered for 'List<Consumer.Database.Entities.Store>' -> 'ICollection<StoreItem>'`
 > `:7661` — *"AutoMapper derived collection maps implicitly from the element map; the ambient registry needs the
 > collection pair declared. Notably the `DWARF061` root couldn't catch this — the source type isn't statically
 > known at that call site."*
@@ -222,7 +222,7 @@ This is where your two observations meet, so it gets the most space.
 > the 9 `ForAllMembers` maps genuinely do need their own partial class."*
 
 AutoMapper's `ForAllMembers` was **per-map**. So a profile mixing patch-merge maps with ordinary maps cannot be
-translated 1:1 — it must be split into extra classes. FusedChat needed `RepositoryLexiconPatchMappers`
+translated 1:1 — it must be split into extra classes. Consumer needed `RepositoryLexiconPatchMappers`
 (`:3789`) and `DtosNullSafeMappers` (`:5011`) purely to carry one boolean.
 
 **Problem B — and this is a live correctness gap, still open.**
@@ -396,7 +396,7 @@ Round 18 produced a behavioural-differences list that belongs in `docs/howto/mig
 |---|---|---|
 | `NullStrategy` defaults to `Throw`; AutoMapper substituted `default` | `:472` | *"would have built clean and failed in production"* |
 | `EnumStrategy` defaults to `ByName`; AutoMapper is `ByValue` | `:370` | silent value shift |
-| enum→string prefers `[EnumMember]`/`[Description]` over the identifier | `:3109` | **`DonationSource.Kofi` would persist as `"Ko-Fi"` instead of `"Kofi"`, breaking reads of every existing Mongo document** |
+| enum→string prefers `[EnumMember]`/`[Description]` over the identifier | `:3109` | **`DispatchChannel.NextDay` would persist as `"Next-Day"` instead of `"NextDay"`, breaking reads of every existing Mongo document** |
 | `SkipNullSourceMembers` guards *nullable-typed* members; AutoMapper's `Condition` was a runtime value check | `:5043` | a non-nullable-typed member holding a runtime null is now copied |
 | enum→string parse is case-**sensitive**; `Enum.Parse` ignored case | `:5382` | throws on hand-edited data |
 | the registry needs **two keys** per facade call site | `:8604` | green build, runtime throw |
@@ -438,7 +438,7 @@ needed a shape the current corpus structurally cannot express**: more than one a
 ambient registry resolving at runtime, a polymorphic list, a top-level collection pair. `DwarfMapper.Conformance`
 is one project, one assembly, no DI.
 
-**R18-21 — `tests/DwarfMapper.ConsumerTests`: FusedChat in miniature.**
+**R18-21 — `tests/DwarfMapper.ConsumerTests`: Consumer in miniature.**
 
 A small **multi-project** solution slice, four assemblies, wired exactly as a consumer wires it, with **runtime**
 assertions rather than generated-source assertions:
@@ -520,9 +520,9 @@ applied to the *option surface* would have prevented this gap from forming. Give
 
 ---
 
-## 8. Consumer-side leftovers (FusedChat, not DwarfMapper)
+## 8. Consumer-side leftovers (Consumer, not DwarfMapper)
 
-Kept separate deliberately — these are MedbotOmega's to close, not this repo's.
+Kept separate deliberately — these are ConsumerSolution's to close, not this repo's.
 
 - **`UserCommand.Identifier` still lost** (`:9114`). Fix is the `internal` + `[InternalsVisibleTo]` treatment you
   approved for `CustomizedCommand`. It changes a domain type, so it was left for you.
@@ -541,7 +541,7 @@ Kept separate deliberately — these are MedbotOmega's to close, not this repo's
 
 **All 32 repo-side tasks complete**, committed to `master`, whole solution including `samples/` at 0 errors /
 0 warnings, **6,403 tests green across seven suites**, conformance 47 → 72 assertions. The only open items are
-the four `[FusedChat]` consumer tasks, which are blocked on the maintainer's own uncommitted work.
+the four `[Consumer]` consumer tasks, which are blocked on the maintainer's own uncommitted work.
 
 ### What shipped
 
@@ -579,7 +579,7 @@ the four `[FusedChat]` consumer tasks, which are blocked on the maintainer's own
 | Task | State |
 |---|---|
 | **R18-29** | Harvest real-world mapping SHAPES from public projects to feed the differential oracle. Specified, not started. The rule is shapes, never text: pasting snippets from arbitrary repositories into a GPLv2-only tree imports their licences. |
-| **R18-C1…C4** | **Blocked, and not by me.** `MedbotOmega` is on `develop` with nine uncommitted changes that are the maintainer's own in-progress work on this topic — including a new `Docs/mapping-migration-bugs.md` and `MapperRegressionTests.cs`. Editing that tree would collide with it. |
+| **R18-C1…C4** | **Blocked, and not by me.** `ConsumerSolution` is on `develop` with nine uncommitted changes that are the maintainer's own in-progress work on this topic — including a new `Docs/mapping-migration-bugs.md` and `MapperRegressionTests.cs`. Editing that tree would collide with it. |
 
 ### The consumer branch is now also stale — in a good way
 
@@ -665,7 +665,7 @@ the harness that proves them.
 | **R18-D4** | R18-14 | `IncludeBase`: full primitive, code-fix-assisted restatement, or out of scope? |
 | **R18-D5** | — | enum→string `[Description]` precedence: configurable, narrowed, or warned about? |
 
-### Consumer-side (MedbotOmega — listed for completeness, not this repo's work)
+### Consumer-side (ConsumerSolution — listed for completeness, not this repo's work)
 
 | ID | Task |
 |---|---|

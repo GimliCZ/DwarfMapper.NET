@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections;
 
@@ -73,7 +73,7 @@ public partial class FcEnumerableMapper
 public enum FcPlatform
 {
     YouTube,
-    Twitch
+    Primary
 }
 
 public abstract class FcClient
@@ -85,7 +85,7 @@ public sealed class FcYt : FcClient
 {
 }
 
-public sealed class FcTw : FcClient
+public sealed class FcPrimary : FcClient
 {
 }
 
@@ -94,7 +94,7 @@ public class FcYtDoc
     public string Color { get; set; } = "";
 }
 
-public class FcTwDoc
+public class FcPrimaryDoc
 {
     public string Color { get; set; } = "";
 }
@@ -102,7 +102,7 @@ public class FcTwDoc
 public class FcAlertsDoc
 {
     public FcYtDoc? YouTube { get; set; }
-    public FcTwDoc? Twitch { get; set; }
+    public FcPrimaryDoc? Primary { get; set; }
 }
 
 public class FcAlerts
@@ -115,13 +115,13 @@ public partial class FcAlertsMapper
 {
     // Per-platform concrete maps (compile-time generated).
     public partial FcYtDoc MapYt(FcYt s);
-    public partial FcTwDoc MapTw(FcTw s);
+    public partial FcPrimaryDoc MapTw(FcPrimary s);
     public partial FcYt MapYt(FcYtDoc s);
-    public partial FcTw MapTw(FcTwDoc s);
+    public partial FcPrimary MapTw(FcPrimaryDoc s);
 
     // model -> doc: ignore the flat props in the auto-map; an AfterMap hook fills them from the dictionary.
     [MapIgnore(nameof(FcAlertsDoc.YouTube))]
-    [MapIgnore(nameof(FcAlertsDoc.Twitch))]
+    [MapIgnore(nameof(FcAlertsDoc.Primary))]
     public partial FcAlertsDoc ToDoc(FcAlerts s);
 
     // doc -> model: ignore the dictionary; an AfterMap hook fills it from the flat props.
@@ -132,14 +132,14 @@ public partial class FcAlertsMapper
     private void FillDoc(FcAlerts s, FcAlertsDoc d)
     {
         if (s.ClientAlerts.TryGetValue(FcPlatform.YouTube, out var yt) && yt is FcYt y) d.YouTube = MapYt(y);
-        if (s.ClientAlerts.TryGetValue(FcPlatform.Twitch, out var tw) && tw is FcTw t) d.Twitch = MapTw(t);
+        if (s.ClientAlerts.TryGetValue(FcPlatform.Primary, out var tw) && tw is FcPrimary t) d.Primary = MapTw(t);
     }
 
     [AfterMap]
     private void FillModel(FcAlertsDoc s, FcAlerts d)
     {
         if (s.YouTube is not null) d.ClientAlerts[FcPlatform.YouTube] = MapYt(s.YouTube);
-        if (s.Twitch is not null) d.ClientAlerts[FcPlatform.Twitch] = MapTw(s.Twitch);
+        if (s.Primary is not null) d.ClientAlerts[FcPlatform.Primary] = MapTw(s.Primary);
     }
 }
 
@@ -226,17 +226,17 @@ public sealed class AutoMapperPatternsRuntimeTests
             ClientAlerts =
             {
                 [FcPlatform.YouTube] = new FcYt { Color = "red" },
-                [FcPlatform.Twitch] = new FcTw { Color = "purple" }
+                [FcPlatform.Primary] = new FcPrimary { Color = "purple" }
             }
         };
 
         var doc = mapper.ToDoc(model);
         Assert.Equal("red", doc.YouTube!.Color);
-        Assert.Equal("purple", doc.Twitch!.Color);
+        Assert.Equal("purple", doc.Primary!.Color);
 
         var back = mapper.ToModel(doc);
         Assert.Equal("red", ((FcYt)back.ClientAlerts[FcPlatform.YouTube]).Color);
-        Assert.Equal("purple", ((FcTw)back.ClientAlerts[FcPlatform.Twitch]).Color);
+        Assert.Equal("purple", ((FcPrimary)back.ClientAlerts[FcPlatform.Primary]).Color);
     }
 
     [Fact]

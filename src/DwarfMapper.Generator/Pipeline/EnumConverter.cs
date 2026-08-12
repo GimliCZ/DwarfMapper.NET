@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using System.Text;
@@ -376,9 +376,9 @@ internal static class EnumConverter
     ///         here it silently becomes the <b>persistence</b> format.
     ///     </para>
     ///     <para>
-    ///         Round 18 came within one code review of shipping that: <c>DonationSource.Kofi</c> carried
-    ///         <c>[Description("Ko-Fi")]</c>, and the migration would have started writing <c>"Ko-Fi"</c> into
-    ///         a MongoDB collection full of <c>"Kofi"</c> — breaking reads of every existing document. The
+    ///         Round 18 came within one code review of shipping that: <c>DispatchChannel.NextDay</c> carried
+    ///         <c>[Description("Next-Day")]</c>, and the migration would have started writing <c>"Next-Day"</c> into
+    ///         a MongoDB collection full of <c>"NextDay"</c> — breaking reads of every existing document. The
     ///         previous mapper used <c>.ToString()</c>, i.e. always the identifier.
     ///     </para>
     ///     <para>

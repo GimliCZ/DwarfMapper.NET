@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: GPL-2.0-only -->
+﻿<!-- SPDX-License-Identifier: GPL-2.0-only -->
 # DwarfMapper diagnostics reference
 
 > Machine-generated companions: [diagnostics index](generated/diagnostics-index.md)
@@ -1071,15 +1071,15 @@ converter. This exists because of the case where it is *not* what anyone intende
 
 <!-- fence-exempt: shows the hazard; a "correct" version would not demonstrate it -->
 ```csharp
-public enum DonationSource
+public enum DispatchChannel
 {
-    [Description("Ko-Fi")] Kofi,   // put here for a combo-box label…
-    Patreon
+    [Description("Next-Day")] NextDay,   // put here for a combo-box label…
+    Standard
 }
 ```
 
 `[Description]` is overwhelmingly a **display** annotation. Here it becomes the **persistence** format: the
-map writes `"Ko-Fi"` where a store built by a previous mapper's `.ToString()` holds `"Kofi"` — and the
+map writes `"Next-Day"` where a store built by a previous mapper's `.ToString()` holds `"NextDay"` — and the
 string→enum direction stops parsing the existing values for the same reason.
 
 **Fix — pick the one that matches your intent:**
@@ -1095,7 +1095,7 @@ for display usually annotates most of its members.
 Not reported for `[Flags]` enums: their string form is the comma-joined list `Enum.ToString` builds from
 identifiers, so the attributes do not apply.
 
-> Round 18 came within one code review of shipping the `Ko-Fi` case into a live MongoDB collection.
+> Round 18 came within one code review of shipping the `Next-Day` case into a live MongoDB collection.
 
 ---
 

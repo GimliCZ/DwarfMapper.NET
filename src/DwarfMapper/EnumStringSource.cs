@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper;
 
@@ -13,9 +13,9 @@ namespace DwarfMapper;
 ///     </para>
 ///     <para>
 ///         It is also a hazard when migrating, because <c>[Description]</c> is overwhelmingly a <b>display</b>
-///         annotation. A codebase that put <c>[Description("Ko-Fi")]</c> on <c>DonationSource.Kofi</c> for a
-///         combo-box label, and persisted the enum with <c>.ToString()</c>, has a store full of <c>"Kofi"</c>
-///         — and the first mapping under the default would start writing <c>"Ko-Fi"</c> into it, breaking
+///         annotation. A codebase that put <c>[Description("Next-Day")]</c> on <c>DispatchChannel.NextDay</c> for a
+///         combo-box label, and persisted the enum with <c>.ToString()</c>, has a store full of <c>"NextDay"</c>
+///         — and the first mapping under the default would start writing <c>"Next-Day"</c> into it, breaking
 ///         reads of every existing document. <c>DWARF083</c> reports the divergence; this option is the
 ///         one-line answer to it, instead of a converter per enum.
 ///     </para>

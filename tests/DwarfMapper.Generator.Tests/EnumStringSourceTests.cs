@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper.Generator.Tests;
 
@@ -10,8 +10,8 @@ namespace DwarfMapper.Generator.Tests;
 ///         For enum↔string a member's <c>[EnumMember(Value=…)]</c> wins, then <c>[Description(…)]</c>, then the
 ///         identifier. That precedence is a feature: <c>InProgress</c> serializes as <c>"in_progress"</c> with
 ///         no converter. It is also a hazard when migrating, because <c>[Description]</c> is overwhelmingly a
-///         <b>display</b> annotation — Round 18 came within one code review of writing <c>"Ko-Fi"</c> into a
-///         store full of <c>"Kofi"</c>.
+///         <b>display</b> annotation — Round 18 came within one code review of writing <c>"Next-Day"</c> into a
+///         store full of <c>"NextDay"</c>.
 ///     </para>
 ///     <para>
 ///         <c>EnumStringSource = Identifier</c> says: the annotations on this enum are for display, the
@@ -26,16 +26,16 @@ public class EnumStringSourceTests
         using DwarfMapper;
         namespace Demo;
 
-        public enum DonationSource
+        public enum DispatchChannel
         {
-            [Description("Ko-Fi")] Kofi,
-            Patreon
+            [Description("Next-Day")] NextDay,
+            Standard
         }
 
-        public class Donation { public DonationSource Source { get; set; } }
-        public class DonationDoc { public string Source { get; set; } = ""; }
-        public class DonationRead { public string Source { get; set; } = ""; }
-        public class DonationBack { public DonationSource Source { get; set; } }
+        public class Dispatch { public DispatchChannel Source { get; set; } }
+        public class DispatchDoc { public string Source { get; set; } = ""; }
+        public class DispatchRead { public string Source { get; set; } = ""; }
+        public class DispatchBack { public DispatchChannel Source { get; set; } }
         """;
 
     [Fact]
@@ -44,11 +44,11 @@ public class EnumStringSourceTests
         var generated = GeneratorAssert.EmitsCompilableCode(Enum + """
 
             [DwarfMapper]
-            [GenerateMap<Donation, DonationDoc>]
+            [GenerateMap<Dispatch, DispatchDoc>]
             public partial class M;
             """);
 
-        Assert.Contains("=> \"Ko-Fi\"", generated, StringComparison.Ordinal);
+        Assert.Contains("=> \"Next-Day\"", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -57,12 +57,12 @@ public class EnumStringSourceTests
         var generated = GeneratorAssert.EmitsCompilableCode(Enum + """
 
             [DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
-            [GenerateMap<Donation, DonationDoc>]
+            [GenerateMap<Dispatch, DispatchDoc>]
             public partial class M;
             """);
 
-        Assert.Contains("=> \"Kofi\"", generated, StringComparison.Ordinal);
-        Assert.DoesNotContain("Ko-Fi", generated, StringComparison.Ordinal);
+        Assert.Contains("=> \"NextDay\"", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Next-Day", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -73,12 +73,12 @@ public class EnumStringSourceTests
         var generated = GeneratorAssert.EmitsCompilableCode(Enum + """
 
             [DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
-            [GenerateMap<DonationRead, DonationBack>]
+            [GenerateMap<DispatchRead, DispatchBack>]
             public partial class M;
             """);
 
-        Assert.Contains("\"Kofi\" =>", generated, StringComparison.Ordinal);
-        Assert.DoesNotContain("Ko-Fi", generated, StringComparison.Ordinal);
+        Assert.Contains("\"NextDay\" =>", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Next-Day", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public class EnumStringSourceTests
         GeneratorAssert.DoesNotReport(Enum + """
 
             [DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
-            [GenerateMap<Donation, DonationDoc>]
+            [GenerateMap<Dispatch, DispatchDoc>]
             public partial class M;
             """, "DWARF083");
     }
@@ -103,21 +103,21 @@ public class EnumStringSourceTests
 
             namespace Demo;
 
-            public enum DonationSource
+            public enum DispatchChannel
             {
-                [Description("Ko-Fi")] Kofi,
-                Patreon
+                [Description("Next-Day")] NextDay,
+                Standard
             }
 
-            public class Donation { public DonationSource Source { get; set; } }
-            public class DonationDoc { public string Source { get; set; } = ""; }
+            public class Dispatch { public DispatchChannel Source { get; set; } }
+            public class DispatchDoc { public string Source { get; set; } = ""; }
 
             [DwarfMapper]
-            [GenerateMap<Donation, DonationDoc>]
+            [GenerateMap<Dispatch, DispatchDoc>]
             public partial class M;
             """);
 
-        Assert.Contains("=> \"Kofi\"", generated, StringComparison.Ordinal);
+        Assert.Contains("=> \"NextDay\"", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -131,21 +131,21 @@ public class EnumStringSourceTests
 
             namespace Demo;
 
-            public enum DonationSource
+            public enum DispatchChannel
             {
-                [Description("Ko-Fi")] Kofi,
-                Patreon
+                [Description("Next-Day")] NextDay,
+                Standard
             }
 
-            public class Donation { public DonationSource Source { get; set; } }
-            public class DonationDoc { public string Source { get; set; } = ""; }
+            public class Dispatch { public DispatchChannel Source { get; set; } }
+            public class DispatchDoc { public string Source { get; set; } = ""; }
 
             [DwarfMapper(EnumStringSource = EnumStringSource.Attribute)]
-            [GenerateMap<Donation, DonationDoc>]
+            [GenerateMap<Dispatch, DispatchDoc>]
             public partial class M;
             """);
 
-        Assert.Contains("=> \"Ko-Fi\"", generated, StringComparison.Ordinal);
+        Assert.Contains("=> \"Next-Day\"", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -161,28 +161,28 @@ public class EnumStringSourceTests
             using DwarfMapper;
             namespace Demo;
 
-            public enum DonationSource
+            public enum DispatchChannel
             {
-                [Description("Ko-Fi")] Kofi,
-                Patreon
+                [Description("Next-Day")] NextDay,
+                Standard
             }
 
-            public class Donation { public DonationSource Source { get; set; } }
-            public class DonationDoc { public string Source { get; set; } = ""; }
+            public class Dispatch { public DispatchChannel Source { get; set; } }
+            public class DispatchDoc { public string Source { get; set; } = ""; }
 
             [DwarfMapper]
-            [GenerateMap<Donation, DonationDoc>]
+            [GenerateMap<Dispatch, DispatchDoc>]
             public partial class Annotated;
 
             [DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
-            [GenerateMap<Donation, DonationDoc>]
+            [GenerateMap<Dispatch, DispatchDoc>]
             public partial class Plain;
             """;
 
         var (_, generated) = GeneratorTestHarness.RunAll(src);
 
-        Assert.Contains("=> \"Ko-Fi\"", generated, StringComparison.Ordinal);
-        Assert.Contains("=> \"Kofi\"", generated, StringComparison.Ordinal);
+        Assert.Contains("=> \"Next-Day\"", generated, StringComparison.Ordinal);
+        Assert.Contains("=> \"NextDay\"", generated, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.ComponentModel;
 using System.Globalization;
@@ -1298,28 +1298,28 @@ public partial class F44M
 
 // ── F45 EnumStringSource (the DWARF083 parity switch) ────────────────────────
 // [Description] on an enum member is overwhelmingly a DISPLAY annotation, but under the default it becomes
-// the PERSISTED string. Round 18 came within one code review of writing "Ko-Fi" into a store full of "Kofi",
+// the PERSISTED string. Round 18 came within one code review of writing "Next-Day" into a store full of "NextDay",
 // breaking reads of every existing document — the previous mapper used .ToString(). EnumStringSource =
 // Identifier says "these annotations are for display", in one line, instead of a converter per enum.
-public enum F45DonationSource
+public enum F45DispatchChannel
 {
-    [Description("Ko-Fi")] Kofi,
-    Patreon
+    [Description("Next-Day")] NextDay,
+    Standard
 }
 
-public class F45Donation
+public class F45Dispatch
 {
-    public F45DonationSource Source { get; set; }
+    public F45DispatchChannel Source { get; set; }
 }
 
-public class F45DonationDoc
+public class F45DispatchDoc
 {
     public string Source { get; set; } = "";
 }
 
-/// <summary>The default: the annotation decides, and "Ko-Fi" is what reaches the store.</summary>
+/// <summary>The default: the annotation decides, and "Next-Day" is what reaches the store.</summary>
 [DwarfMapper]
-[GenerateMap<F45Donation, F45DonationDoc>]
+[GenerateMap<F45Dispatch, F45DispatchDoc>]
 public partial class F45AnnotatedM;
 
 /// <summary>
@@ -1327,8 +1327,8 @@ public partial class F45AnnotatedM;
 ///     the strategy is part of the synthesized helper's name and not only of its body.
 /// </summary>
 [DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
-[GenerateMap<F45Donation, F45DonationDoc>]
-[GenerateMap<F45DonationDoc, F45Donation>]
+[GenerateMap<F45Dispatch, F45DispatchDoc>]
+[GenerateMap<F45DispatchDoc, F45Dispatch>]
 public partial class F45IdentityM;
 
 // ── F46 [RestatesBase] — the drift check, not an inheritance primitive ───────

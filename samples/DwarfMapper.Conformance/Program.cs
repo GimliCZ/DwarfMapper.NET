@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -274,12 +274,12 @@ R.Check("F44 [MapDerivedType] shared target fills the derived member", f44 is { 
 // F45 EnumStringSource — the DWARF083 parity switch, with both settings live over the SAME enum in ONE
 // compilation. That is the case the helper-name hash has to survive: keyed by type alone the two mappers
 // would share one helper and whichever was synthesized first would decide the persisted format for both.
-var f45Annotated = new F45AnnotatedM().Map(new F45Donation { Source = F45DonationSource.Kofi });
-var f45Identity = new F45IdentityM().Map(new F45Donation { Source = F45DonationSource.Kofi });
-R.Check("F45 EnumStringSource default writes the annotation", f45Annotated.Source == "Ko-Fi");
-R.Check("F45 EnumStringSource=Identifier writes the name", f45Identity.Source == "Kofi");
+var f45Annotated = new F45AnnotatedM().Map(new F45Dispatch { Source = F45DispatchChannel.NextDay });
+var f45Identity = new F45IdentityM().Map(new F45Dispatch { Source = F45DispatchChannel.NextDay });
+R.Check("F45 EnumStringSource default writes the annotation", f45Annotated.Source == "Next-Day");
+R.Check("F45 EnumStringSource=Identifier writes the name", f45Identity.Source == "NextDay");
 R.Check("F45 EnumStringSource=Identifier reads it back",
-    new F45IdentityM().Map(new F45DonationDoc { Source = "Kofi" }).Source == F45DonationSource.Kofi);
+    new F45IdentityM().Map(new F45DispatchDoc { Source = "NextDay" }).Source == F45DispatchChannel.NextDay);
 
 // F46 [RestatesBase] — the restated pair must actually behave like the base pair it restates. The attribute
 // emits nothing; what it buys is that a silent divergence becomes DWARF085 at build time instead of wrong data

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using Microsoft.CodeAnalysis;
 
@@ -829,9 +829,9 @@ public static class DiagnosticDescriptors
     ///     redirects it — and that string is what gets persisted.
     /// </summary>
     /// <remarks>
-    ///     Round 18 came within one code review of shipping this: <c>DonationSource.Kofi</c> carried
-    ///     <c>[Description("Ko-Fi")]</c>, and the migration would have started writing <c>"Ko-Fi"</c> into a
-    ///     store full of <c>"Kofi"</c>, breaking reads of every existing document. The precedence is a good
+    ///     Round 18 came within one code review of shipping this: <c>DispatchChannel.NextDay</c> carried
+    ///     <c>[Description("Next-Day")]</c>, and the migration would have started writing <c>"Next-Day"</c> into a
+    ///     store full of <c>"NextDay"</c>, breaking reads of every existing document. The precedence is a good
     ///     default; the hazard is that <c>[Description]</c> is usually a DISPLAY annotation.
     /// </remarks>
     public static readonly DiagnosticDescriptor EnumStringNameDiverges = new(

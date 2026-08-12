@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using Microsoft.CodeAnalysis;
@@ -178,16 +178,16 @@ public class MapPropertyTests
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Regression: found migrating FusedChat (~300 maps) off AutoMapper 14.
+    // Regression: found migrating the Round-18 consumer (~300 maps) off AutoMapper 14.
     //
     // A pair-scoped [MapProperty<S,T>(src, tgt, Use = M)] names ONE destination member. If the same
     // SOURCE member also auto-matches a DIFFERENT destination member by name, the converter must not
     // reach that second member — the attribute did not name it.
     //
     // Why this matters more than it looks: the failure is silent. The build stays green, no diagnostic
-    // fires, and the only symptom is wrong data. In the case that surfaced it, DonationDetails.DonationId
+    // fires, and the only symptom is wrong data. In the case that surfaced it, DispatchDetails.DispatchId
     // fed both PremiumDocument.Id (via a Use= that prefixes a date, "20260811_<guid>") and
-    // PremiumDocument.DonationId (a plain auto-matched copy). Leaking the converter would have written
+    // PremiumDocument.DispatchId (a plain auto-matched copy). Leaking the converter would have written
     // the decorated document id into the plain donation-id column of every new premium record.
     // ---------------------------------------------------------------------------------------------
 

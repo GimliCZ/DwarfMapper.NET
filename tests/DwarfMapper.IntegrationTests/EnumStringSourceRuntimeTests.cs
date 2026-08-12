@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.ComponentModel;
 using System.Runtime.Serialization;
@@ -6,86 +6,86 @@ using System.Runtime.Serialization;
 namespace DwarfMapper.IntegrationTests;
 
 // ── The enum that nearly cost a database ──────────────────────────────────────
-// Kofi carries [Description("Ko-Fi")] for a combo-box label. Under the default the annotation becomes the
-// PERSISTED string, so a migration off .ToString() would have begun writing "Ko-Fi" into a store full of
-// "Kofi" — breaking reads of every existing document. DWARF083 reports it; EnumStringSource is the switch.
-public enum EssDonationSource
+// NextDay carries [Description("Next-Day")] for a combo-box label. Under the default the annotation becomes the
+// PERSISTED string, so a migration off .ToString() would have begun writing "Next-Day" into a store full of
+// "NextDay" — breaking reads of every existing document. DWARF083 reports it; EnumStringSource is the switch.
+public enum EssDispatchChannel
 {
-    [Description("Ko-Fi")] Kofi,
+    [Description("Next-Day")] NextDay,
 
     // A second precedence level, so the test covers what actually wins rather than just "an attribute".
-    [EnumMember(Value = "patreon.com")] [Description("Patreon (display)")]
-    Patreon,
+    [EnumMember(Value = "standard-post")] [Description("Standard (display)")]
+    Standard,
 
     Direct
 }
 
-public class EssDonation
+public class EssDispatch
 {
-    public EssDonationSource Source { get; set; }
+    public EssDispatchChannel Source { get; set; }
 }
 
-public class EssDonationDoc
+public class EssDispatchDoc
 {
     public string Source { get; set; } = "";
 }
 
 /// <summary>The default — <c>EnumStringSource.Attribute</c>, stated explicitly so the value is exercised.</summary>
 [DwarfMapper(EnumStringSource = EnumStringSource.Attribute)]
-[GenerateMap<EssDonation, EssDonationDoc>]
-[GenerateMap<EssDonationDoc, EssDonation>]
+[GenerateMap<EssDispatch, EssDispatchDoc>]
+[GenerateMap<EssDispatchDoc, EssDispatch>]
 public partial class EssAttributeMapper;
 
 /// <summary>The parity switch — the identifier, exactly as <c>Enum.ToString()</c> produces it.</summary>
 [DwarfMapper(EnumStringSource = EnumStringSource.Identifier)]
-[GenerateMap<EssDonation, EssDonationDoc>]
-[GenerateMap<EssDonationDoc, EssDonation>]
+[GenerateMap<EssDispatch, EssDispatchDoc>]
+[GenerateMap<EssDispatchDoc, EssDispatch>]
 public partial class EssIdentifierMapper;
 
 public class EnumStringSourceRuntimeTests
 {
     [Theory]
-    [InlineData(EssDonationSource.Kofi, "Ko-Fi")]
-    [InlineData(EssDonationSource.Patreon, "patreon.com")] // [EnumMember] beats [Description]
-    [InlineData(EssDonationSource.Direct, "Direct")] // no annotation → the identifier anyway
-    public void Attribute_writes_the_annotated_text(EssDonationSource source, string expected)
+    [InlineData(EssDispatchChannel.NextDay, "Next-Day")]
+    [InlineData(EssDispatchChannel.Standard, "standard-post")] // [EnumMember] beats [Description]
+    [InlineData(EssDispatchChannel.Direct, "Direct")] // no annotation → the identifier anyway
+    public void Attribute_writes_the_annotated_text(EssDispatchChannel source, string expected)
     {
-        Assert.Equal(expected, new EssAttributeMapper().Map(new EssDonation { Source = source }).Source);
+        Assert.Equal(expected, new EssAttributeMapper().Map(new EssDispatch { Source = source }).Source);
     }
 
     [Theory]
-    [InlineData(EssDonationSource.Kofi)]
-    [InlineData(EssDonationSource.Patreon)]
-    [InlineData(EssDonationSource.Direct)]
-    public void Identifier_writes_exactly_what_ToString_would(EssDonationSource source)
+    [InlineData(EssDispatchChannel.NextDay)]
+    [InlineData(EssDispatchChannel.Standard)]
+    [InlineData(EssDispatchChannel.Direct)]
+    public void Identifier_writes_exactly_what_ToString_would(EssDispatchChannel source)
     {
         // The parity claim, asserted against the thing it claims parity with rather than a hand-typed literal.
         Assert.Equal(source.ToString(),
-            new EssIdentifierMapper().Map(new EssDonation { Source = source }).Source);
+            new EssIdentifierMapper().Map(new EssDispatch { Source = source }).Source);
     }
 
     [Theory]
-    [InlineData(EssDonationSource.Kofi)]
-    [InlineData(EssDonationSource.Patreon)]
-    [InlineData(EssDonationSource.Direct)]
-    public void Identifier_round_trips(EssDonationSource source)
+    [InlineData(EssDispatchChannel.NextDay)]
+    [InlineData(EssDispatchChannel.Standard)]
+    [InlineData(EssDispatchChannel.Direct)]
+    public void Identifier_round_trips(EssDispatchChannel source)
     {
         // Both directions or neither: the parse switch matches on the serialized text, so a writer and a
         // reader that disagree do not merely store the wrong string — the reader throws on every row.
         var mapper = new EssIdentifierMapper();
-        var written = mapper.Map(new EssDonation { Source = source });
+        var written = mapper.Map(new EssDispatch { Source = source });
 
         Assert.Equal(source, mapper.Map(written).Source);
     }
 
     [Theory]
-    [InlineData(EssDonationSource.Kofi)]
-    [InlineData(EssDonationSource.Patreon)]
-    [InlineData(EssDonationSource.Direct)]
-    public void Attribute_round_trips_too(EssDonationSource source)
+    [InlineData(EssDispatchChannel.NextDay)]
+    [InlineData(EssDispatchChannel.Standard)]
+    [InlineData(EssDispatchChannel.Direct)]
+    public void Attribute_round_trips_too(EssDispatchChannel source)
     {
         var mapper = new EssAttributeMapper();
-        var written = mapper.Map(new EssDonation { Source = source });
+        var written = mapper.Map(new EssDispatch { Source = source });
 
         Assert.Equal(source, mapper.Map(written).Source);
     }
@@ -97,10 +97,10 @@ public class EnumStringSourceRuntimeTests
         // mappers choosing differently for the same enum would have shared one helper and whichever was
         // synthesized first would have decided the persisted format for both — silently. Folding the strategy
         // into the helper's name is what makes this assertion possible at all.
-        var donation = new EssDonation { Source = EssDonationSource.Kofi };
+        var donation = new EssDispatch { Source = EssDispatchChannel.NextDay };
 
-        Assert.Equal("Ko-Fi", new EssAttributeMapper().Map(donation).Source);
-        Assert.Equal("Kofi", new EssIdentifierMapper().Map(donation).Source);
+        Assert.Equal("Next-Day", new EssAttributeMapper().Map(donation).Source);
+        Assert.Equal("NextDay", new EssIdentifierMapper().Map(donation).Source);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class EnumStringSourceRuntimeTests
     {
         // Stated as a test rather than a comment: this is the failure the option exists to let a consumer
         // avoid, and it is what "you must choose one and mean it" costs if you get it wrong.
-        var written = new EssIdentifierMapper().Map(new EssDonation { Source = EssDonationSource.Kofi });
+        var written = new EssIdentifierMapper().Map(new EssDispatch { Source = EssDispatchChannel.NextDay });
 
         Assert.Throws<ArgumentOutOfRangeException>(() => new EssAttributeMapper().Map(written));
     }

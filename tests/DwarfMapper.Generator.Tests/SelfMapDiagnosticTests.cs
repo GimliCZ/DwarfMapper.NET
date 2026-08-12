@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
 using Microsoft.CodeAnalysis;
@@ -140,7 +140,7 @@ public class SelfMapDiagnosticTests
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Regression: found migrating FusedChat (~300 maps) off AutoMapper 14.
+    // Regression: found migrating the Round-18 consumer (~300 maps) off AutoMapper 14.
     //
     // That codebase has four legitimate CreateMap<X, X>() clone maps, so it hits DWARF076 four times by
     // design. docs/diagnostics.md#dwarf076 offers three escape hatches:

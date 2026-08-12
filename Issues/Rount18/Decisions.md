@@ -135,15 +135,15 @@ serialize as `"in_progress"` with no custom converter, which is why it exists.
 
 The hazard is equally genuine and is specific to *migration*: `[Description]` is overwhelmingly a **display**
 annotation. Consumers put it on enums for combo-box labels with no expectation that it becomes their
-persistence format. AutoMapper used `.ToString()`, so `DonationSource.Kofi` with `[Description("Ko-Fi")]` would
-have started writing `"Ko-Fi"` into a store holding `"Kofi"` — breaking reads of every existing document.
+persistence format. AutoMapper used `.ToString()`, so `DispatchChannel.NextDay` with `[Description("Next-Day")]` would
+have started writing `"Next-Day"` into a store holding `"NextDay"` — breaking reads of every existing document.
 
 Three-part answer:
 
 1. **`EnumStringSource = Attribute | Identifier`** (default `Attribute`), on the policy layer, so a migrating
    consumer gets a one-line parity switch instead of a per-enum converter.
 2. **A diagnostic** when a declared enum↔string pair involves an enum member whose `[Description]`/
-   `[EnumMember]` value differs from its identifier: *"member X will map to \"Ko-Fi\", not \"Kofi\"."* Info by
+   `[EnumMember]` value differs from its identifier: *"member X will map to \"Next-Day\", not \"NextDay\"."* Info by
    default, escalatable. This is the make-the-silent-choice-explicit contract the project already embodies, and
    it is the part that would actually have caught this.
 3. **A row in the migration checklist** (R18-19, already written).
