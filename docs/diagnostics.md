@@ -784,6 +784,45 @@ many real problems there are.
 
 ---
 
+## dwarf079
+**[MapIgnore] cannot ignore a required member** · Error
+
+`[MapIgnore("X")]` where `X` is declared `required` on the destination. Ignoring a member means omitting it
+from the generated object initializer, and C# refuses that with **`CS9035`** — reported against *generated*
+code, with nothing linking it back to the attribute that caused it.
+
+<!-- fence-exempt: illustrates the shape that TRIGGERS DWARF079; a compiling sample would defeat the point -->
+```csharp
+public class Doc { public required string Id { get; set; } public string Name { get; set; } = ""; }
+
+[DwarfMapper]
+public partial class M
+{
+    [MapIgnore(nameof(Doc.Id))]     // DWARF079 — Id is required
+    public partial Doc Map(Src s);
+}
+```
+
+**Fix — pick the one that matches your intent:**
+
+| You mean | Write |
+|---|---|
+| "the caller assigns it right after mapping" | `[MapValue(nameof(Doc.Id), "")]` — a placeholder that is immediately overwritten |
+| "it comes from somewhere else in the source" | `[MapProperty(nameof(Src.Something), nameof(Doc.Id))]` |
+| "it genuinely has no value here" | drop `required` from the member |
+
+The `[MapValue]` route is the usual answer when migrating: a repository or factory sets the real id on the next
+line. Say so in a comment — a placeholder that is never observed is fine, one that reaches storage is not.
+
+> **Why this is common in migrating code.** AutoMapper constructed destinations *reflectively*, which bypasses
+> the `required` rule entirely, so `.Ignore()` on a required member simply left it `null`. DwarfMapper emits
+> ordinary C# and cannot. This was the single most-repeated friction point of a ~300-map migration.
+
+Not reported when the chosen constructor carries `[SetsRequiredMembers]`, or when the member is supplied as a
+constructor argument — in both cases the member is already satisfied and ignoring it is legitimate.
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather

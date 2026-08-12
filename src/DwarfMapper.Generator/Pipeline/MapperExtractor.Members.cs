@@ -63,6 +63,31 @@ internal static partial class MapperExtractor
         return chain;
     }
 
+    /// <summary>
+    ///     Whether <paramref name="memberName" /> is declared <c>required</c> anywhere in the target's
+    ///     hierarchy. Matched ordinal-ignore-case to line up with the rest of the required-member handling,
+    ///     which uses that comparer throughout.
+    /// </summary>
+    private static bool IsRequiredMember(INamedTypeSymbol targetType, string memberName)
+    {
+        for (var current = (ITypeSymbol?)targetType;
+             current is not null && current.SpecialType != SpecialType.System_Object;
+             current = current.BaseType)
+            foreach (var member in current.GetMembers())
+            {
+                if (!StringComparer.OrdinalIgnoreCase.Equals(member.Name, memberName)) continue;
+
+                switch (member)
+                {
+                    case IPropertySymbol { IsRequired: true }:
+                    case IFieldSymbol { IsRequired: true }:
+                        return true;
+                }
+            }
+
+        return false;
+    }
+
     private static List<MemberMap> ResolveMembers(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
@@ -89,7 +114,17 @@ internal static partial class MapperExtractor
         bool explicitOnly = false,
         bool ignoreObsolete = false,
         Dictionary<string, string>? stringFormats = null,
-        IReadOnlyCollection<string>? mapperReservedConverters = null)
+        IReadOnlyCollection<string>? mapperReservedConverters = null,
+        // True when every `required` destination member is already satisfied without the object initializer
+        // having to assign it, so omitting one cannot produce CS9035. Two distinct situations qualify:
+        //
+        //   * the chosen constructor carries [SetsRequiredMembers]; or
+        //   * there is no construction at all — UPDATE-INTO writes into an instance the caller already built,
+        //     and `required` only ever constrains construction.
+        //
+        // Named for the fact rather than for the constructor, because the update-into case has no constructor
+        // and reading it as "the ctor sets them" would be nonsense at that call site.
+        bool requiredMembersAlreadySatisfied = false)
     {
         // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
         // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
@@ -476,7 +511,27 @@ internal static partial class MapperExtractor
                                                    !requiredMustInitialize.Contains(target.Name)))
                 continue;
 
-            if (handledTargets.Contains(target.Name) || ignores.Contains(target.Name)) continue;
+            if (handledTargets.Contains(target.Name)) continue;
+
+            if (ignores.Contains(target.Name))
+            {
+                // Ignoring a `required` member does not produce a mapper that skips it — it produces an
+                // object initializer that omits it, which is CS9035 from GENERATED code. The consumer then
+                // reads a raw compiler error about a file they did not write, with nothing pointing back at
+                // the [MapIgnore] that caused it.
+                //
+                // This is the single most-repeated friction point of the Round-18 migration: three separate
+                // conversions hit it independently and each reinvented the same workaround, because
+                // AutoMapper's expression trees bypassed the compile-time rule entirely and simply left the
+                // member null. `.Ignore()` on a required member is therefore common in migrating code.
+                if (!requiredMembersAlreadySatisfied
+                    && (consumedCtorParams is null || !consumedCtorParams.Contains(target.Name))
+                    && IsRequiredMember(targetType, target.Name))
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.IgnoredRequiredMember, location, target.Name, MemberName: target.Name));
+
+                continue;
+            }
 
             // Phase 5: an additional parameter matching this target by name wins over a by-name source
             // member. Emitted as the parameter name directly (or a scalar conversion of it). Converters

@@ -684,6 +684,29 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf078");
 
+    /// <summary>
+    ///     <c>[MapIgnore]</c> on a <c>required</c> destination member, which cannot work.
+    /// </summary>
+    /// <remarks>
+    ///     Ignoring the member omits it from the generated object initializer, and C# refuses that with
+    ///     <c>CS9035</c> — reported against generated code the consumer never wrote, with nothing linking it
+    ///     back to the attribute that caused it.
+    ///     <para>
+    ///         The most-repeated friction point of the Round-18 migration: three separate conversions hit it
+    ///         independently and each reinvented the same workaround. It is common in migrating code
+    ///         specifically because AutoMapper built targets reflectively and so bypassed the rule entirely —
+    ///         <c>.Ignore()</c> on a <c>required</c> member simply left it null there.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor IgnoredRequiredMember = new(
+        "DWARF079",
+        "[MapIgnore] cannot ignore a required member",
+        "Destination member '{0}' is `required`, so ignoring it would emit an object initializer that omits "
+        + "it — which does not compile (CS9035). Supply a placeholder with [MapValue(\"{0}\", …)], map it, or "
+        + "drop `required` from the member.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf079");
+
     public static readonly DiagnosticDescriptor CollectionKeyInvalid = new(
         "DWARF074",
         "[MapCollectionKey] cannot be applied here",

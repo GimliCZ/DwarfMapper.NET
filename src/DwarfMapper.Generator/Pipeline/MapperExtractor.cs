@@ -322,7 +322,12 @@ internal static partial class MapperExtractor
                     skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
                     explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                     stringFormats: ReadStringFormats(method),
-                    mapperReservedConverters: mapperReservedConverters);
+                    mapperReservedConverters: mapperReservedConverters,
+                    // Update-into writes into an instance the CALLER already constructed, so there is no
+                    // object initializer to omit a member from and `required` cannot be violated here.
+                    // Without this, ignoring a required member on an update-into method reported a false
+                    // DWARF079 — caught by NonTrivialShapeRuntimeTests, which does exactly that legitimately.
+                    requiredMembersAlreadySatisfied: true);
 
                 // Source-side completeness applies here too. It lived inline in the create-map branch, so
                 // RequiredMapping = Both reported unconsumed source members through .Map and said nothing
@@ -957,7 +962,11 @@ internal static partial class MapperExtractor
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
                 nameConvention, mapPropExtras, skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete,
-                stringFormats, mapperReservedConverters);
+                stringFormats, mapperReservedConverters,
+                // NOT gated on objInitOnly: a parameterless constructor can still carry
+                // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
+                // would. Gating here produced a false DWARF079 on that shape.
+                requiredMembersAlreadySatisfied: CtorSetsRequiredMembers(ctor));
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -1152,6 +1161,12 @@ internal static partial class MapperExtractor
             MemberMap[] genCtorArgs;
             HashSet<string> genConsumed;
             HashSet<string> genRequiredInit;
+
+            // Whether the chosen constructor already satisfies every `required` member. Tracked separately
+            // from genRequiredInit because the selected ctor is scoped to the pattern below and DWARF079 asks
+            // a different question of it — see CtorSetsRequiredMembers.
+            var genCtorSetsRequired = false;
+
             if (genFactory is not null)
             {
                 // Factory builds the object; only settable members are assigned afterward, so init-only /
@@ -1167,6 +1182,7 @@ internal static partial class MapperExtractor
             }
             else if (genObjInitOnly)
             {
+                genCtorSetsRequired = CtorSetsRequiredMembers(genCtor);
                 genCtorArgs = Array.Empty<MemberMap>();
                 genConsumed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1181,6 +1197,7 @@ internal static partial class MapperExtractor
                         implicitConversions))
                     continue;
                 genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgt, genConsumed);
+                genCtorSetsRequired = CtorSetsRequiredMembers(genCtor);
             }
 
             var genMembers = ResolveMembers(
@@ -1192,7 +1209,8 @@ internal static partial class MapperExtractor
                 MatchPairValues(pairValues, genTgt), valueProviders,
                 mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
                 explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
-                mapperReservedConverters: mapperReservedConverters);
+                mapperReservedConverters: mapperReservedConverters,
+                requiredMembersAlreadySatisfied: genCtorSetsRequired);
 
             var genBefore = new List<string>();
             foreach (var h in beforeHookDefs)
@@ -1339,7 +1357,8 @@ internal static partial class MapperExtractor
                 ignoreObsolete: ignoreObsolete,
                 // A synthesized nested mapper must not adopt a dedicated converter either — the author
                 // never wrote this pair, so they certainly did not offer it one.
-                mapperReservedConverters: mapperReservedConverters);
+                mapperReservedConverters: mapperReservedConverters,
+                requiredMembersAlreadySatisfied: CtorSetsRequiredMembers(nestedCtor));
 
             // Only the pairs registered above — a genuinely NESTED member pair is deliberately left alone,
             // because source coverage has never applied at depth and turning it on for every synthesized pair
@@ -2349,6 +2368,23 @@ internal static partial class MapperExtractor
     ///     <c>[SetsRequiredMembers]</c>. These members must also be emitted in the object initializer to
     ///     avoid CS9035.
     /// </summary>
+    /// <summary>
+    ///     Whether the chosen constructor carries <c>[SetsRequiredMembers]</c>, which makes C# treat every
+    ///     <c>required</c> member as already satisfied.
+    /// </summary>
+    /// <remarks>
+    ///     Split out of <see cref="ComputeRequiredMustInitialize" /> because DWARF079 needs the same fact for a
+    ///     different question: that method answers "which required members must ALSO appear in the
+    ///     initializer", while DWARF079 asks "would omitting this required member actually break the build".
+    ///     Under <c>[SetsRequiredMembers]</c> the answer to the second is no, and ignoring the member is
+    ///     legitimate.
+    /// </remarks>
+    private static bool CtorSetsRequiredMembers(IMethodSymbol? ctor)
+    {
+        return ctor is not null && ctor.GetAttributes()
+            .Any(a => a.AttributeClass?.ToDisplayString() == SetsRequiredMembersAttribute);
+    }
+
     private static HashSet<string> ComputeRequiredMustInitialize(
         IMethodSymbol ctor,
         INamedTypeSymbol targetType,

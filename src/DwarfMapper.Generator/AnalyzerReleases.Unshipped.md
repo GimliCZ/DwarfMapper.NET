@@ -84,6 +84,7 @@ DWARF075 | DwarfMapper | Warning | [FlattenGraph] leaf member was not flattened
 DWARF076 | DwarfMapper | Warning | Source and target are the same type
 DWARF077 | DwarfMapper | Error | Explicit-only mapping is not enforced element-wise
 DWARF078 | DwarfMapper | Warning | No code was generated for this mapper
+DWARF079 | DwarfMapper | Error | [MapIgnore] cannot ignore a required member
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a
