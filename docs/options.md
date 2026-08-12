@@ -98,6 +98,37 @@ Put these on the mapping method (or the class, where noted).
 | `[AutoNest(false)]` | Disable auto-nesting for a single method even when the class enables it. |
 | `[DwarfMapperConstructor]` | Disambiguate which constructor to use on an immutable target. |
 
+## How a method becomes a converter
+
+Three routes, in precedence order. Only the first two are explicit, and the third is worth understanding
+because it acts at a distance.
+
+1. **Named** — `[MapProperty(src, tgt, Use = nameof(M))]`. `M` converts that one member and nothing else.
+2. **Pair factory** — `[MapConstructor<S,T>(nameof(F))]`. `F` constructs that pair's target and nothing else.
+3. **Adopted by signature** — any method on the mapper whose signature converts `S` to `T` is used
+   automatically wherever that conversion is needed.
+
+Route 3 is a deliberate feature: it is the replacement for AutoMapper's `ConvertUsing` /
+`ITypeConverter<S,D>`, and it is why a plain `Dst Convert(Src s)` on the mapper simply works with no
+attribute. Two consequences follow from it, and both are enforced:
+
+- **A method dedicated by route 1 or 2 is withheld from route 3.** Naming a converter for a member states
+  that it belongs to that member; it is not an offer to convert every pair of those types. The reservation is
+  **mapper-wide**, not per-method — a sibling method that declares no `Use=` of its own does not get to
+  borrow one.
+- **Two matching methods are a build error** (`DWARF013`), never an arbitrary choice. Picking one would make
+  the mapping depend on declaration order.
+
+> **Why this is spelled out.** Both rules exist because their absence produced silent data loss in a real
+> migration: a `string BuildDocumentId(Guid)` written for one member was also serving a plain `Guid`→`string`
+> member on the same type, and a `[MapConstructor]` factory was adopted as a collection's element converter,
+> mapping the whole collection to blanks. Both behind green builds. The behaviour is now pinned by
+> `ConverterAdoptionPolicyTests`.
+
+Adding an unrelated helper to a mapper class can therefore change existing maps, if its signature happens to
+fit a conversion nothing else provides. That is the cost of the convenience; the reservation rules bound it
+to methods you have not already dedicated elsewhere.
+
 ## `[MapNullSkip]` — patch-merge for one pair or one method
 
 `SkipNullSourceMembers` is a **policy** option: it applies to every map on the mapper (or, via
