@@ -316,6 +316,24 @@ Excludes a source member from source-coverage checking. Required to silence the 
 | `Source` | `String` | — | Name of the source member to exclude from coverage checking. |
 | `TypeId` | `Object` | — |  |
 
+### attribute `MapNullSkipAttribute`
+
+Turns SkipNullSourceMembers on (or off) for one mapping method, overriding the mapper- and assembly-level setting.
+
+| Member | Type | Default | Summary |
+|---|---|---|---|
+| `Enabled` | `Boolean` | — | Whether null source members are skipped for this method. |
+| `TypeId` | `Object` | — |  |
+
+### attribute `MapNullSkipAttribute<TSource, TTarget>`
+
+Turns SkipNullSourceMembers on (or off) for one declared [GenerateMap<TSource, TTarget>] pair, overriding the mapper- and assembly-level setting.
+
+| Member | Type | Default | Summary |
+|---|---|---|---|
+| `Enabled` | `Boolean` | — | Whether null source members are skipped for this pair. |
+| `TypeId` | `Object` | — |  |
+
 ### attribute `MapPropertyAttribute`
 
 Explicitly maps a source member to a differently-named destination member, overriding name-based matching for that destination. Two placements: On a mapping method (class model): [MapProperty(sourceName, targetName)]. On a source member (the [MapTo] registry): [MapProperty(destinationMember)] — the annotated member supplies that destination. Stack the attribute to bind across multiple [MapTo] targets (positional, in source order).

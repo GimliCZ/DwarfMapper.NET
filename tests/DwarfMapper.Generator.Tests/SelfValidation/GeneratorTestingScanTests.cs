@@ -76,13 +76,19 @@ public class GeneratorTestingScanTests
                 + "undetected. Add feature cases for it to GoldenCorpus.FeatureCases().");
     }
 
-    // Baselines recorded against DwarfMapper.dll on 2026-07-22: 31 public attribute types, 14 public enum
+    // Baselines recorded against DwarfMapper.dll on 2026-07-22, raised to 33 on 2026-08-12 when
+    // [MapNullSkip] / [MapNullSkip<S,T>] were added (Round 18: SkipNullSourceMembers needed a scope
+    // narrower than the class). Golden feature cases were reviewed at that point — the option's EFFECT is
+    // already pinned by the class-level cases; what the new attributes change is its SCOPE, which
+    // MapNullSkipScopeTests and MapNullSkipRuntimeTests cover directly.
+    //
+    // Baselines: 33 public attribute types, 14 public enum
     // values (7 enums, 2 values each). GoldenCorpus.FeatureCases() is a hand-curated list, NOT derived from
     // these taxonomies — see the design spec's Known Limitations note. This ratchet is the honest substitute:
     // it cannot force a specific new case the way true derivation would, but it forces a human to notice
     // growth and decide whether the feature axis needs a new pinned case, rather than the corpus silently
     // going stale next to an attribute or enum value nobody golden-tested.
-    private const int BaselineAttributeTypeCount = 31;
+    private const int BaselineAttributeTypeCount = 33;
     private const int BaselineEnumValueCount = 14;
 
     [Fact]

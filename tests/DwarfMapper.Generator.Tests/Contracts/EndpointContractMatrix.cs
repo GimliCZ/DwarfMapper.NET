@@ -93,6 +93,22 @@ public static class EndpointContractMatrix
         new("MapValue", Endpoint.Projection, CellStatus.Refused, "DWARF001",
             "no source member exists, and projection does not receive mapValues"),
 
+        // ── [MapNullSkip] — the pair/method scope of SkipNullSourceMembers ───────────────────────────────
+        // Two forms with different reach, and the distinction is the point:
+        //   * [MapNullSkip]            on a mapping METHOD  — read by CreateMap and UpdateInto
+        //   * [MapNullSkip<S,T>]       on the mapper CLASS  — read by [GenerateMap] pairs AND by the nested/
+        //                                                     element pairs the span & async-stream endpoints
+        //                                                     map through
+        // Patch-merge lives at UpdateInto, so that is the cell that matters most.
+        new("MapNullSkip", Endpoint.CreateMap, CellStatus.Honoured),
+        new("MapNullSkip", Endpoint.UpdateInto, CellStatus.Honoured),
+        new("MapNullSkip", Endpoint.SpanMap, CellStatus.Honoured),
+        new("MapNullSkip", Endpoint.AsyncStream, CellStatus.Honoured),
+        new("MapNullSkip", Endpoint.Projection, CellStatus.NotApplicable,
+            Reason: "projection translates to a query expression and never reads the null-skip policy at all "
+                    + "— the class-level SkipNullSourceMembers is DWARF028 there for the same reason"),
+        new("MapNullSkip", Endpoint.Registry, CellStatus.NotApplicable, Reason: NoMemberConfigOnRegistry),
+
         // ── [MapIgnore] / [MapIgnoreSource] — completeness control, meaningful wherever completeness runs ─
         new("MapIgnore", Endpoint.CreateMap, CellStatus.Honoured),
         new("MapIgnore", Endpoint.UpdateInto, CellStatus.Honoured),

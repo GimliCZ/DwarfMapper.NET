@@ -187,6 +187,75 @@ internal static partial class MapperExtractor
         return false;
     }
 
+    /// <summary>
+    ///     Reads a method-level <c>[MapNullSkip]</c> / <c>[MapNullSkip(false)]</c>, or <see langword="null" />
+    ///     when the method does not carry one and should inherit the mapper's setting.
+    /// </summary>
+    /// <remarks>
+    ///     Three-state on purpose. A plain <c>bool</c> could not express "inherit", and an attribute argument
+    ///     cannot be <c>bool?</c> — which is exactly why this is a separate attribute rather than a named
+    ///     property on <c>[GenerateMap]</c>.
+    /// </remarks>
+    private static bool? ReadMapNullSkip(ISymbol symbol)
+    {
+        foreach (var attr in symbol.GetAttributes())
+        {
+            var ac = attr.AttributeClass;
+            if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 0
+                || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                continue;
+
+            // Parameterless usage means "enabled" — the constructor's default.
+            return attr.ConstructorArguments.Length == 0
+                   || attr.ConstructorArguments[0].Value is not bool b
+                   || b;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Reads the pair-scoped <c>[MapNullSkip&lt;TSource, TTarget&gt;]</c> declarations on a mapper class,
+    ///     keyed by the pair they configure.
+    /// </summary>
+    private static List<(ITypeSymbol Source, ITypeSymbol Target, bool Enabled)> ReadPairNullSkips(
+        INamedTypeSymbol classSymbol)
+    {
+        var result = new List<(ITypeSymbol, ITypeSymbol, bool)>();
+
+        foreach (var attr in classSymbol.GetAttributes())
+        {
+            var ac = attr.AttributeClass;
+            if (ac is null || ac.Name != KnownNames.MapNullSkip || ac.TypeArguments.Length != 2
+                || ac.ContainingNamespace?.ToDisplayString() != KnownNames.Ns)
+                continue;
+
+            var enabled = attr.ConstructorArguments.Length == 0
+                          || attr.ConstructorArguments[0].Value is not bool b
+                          || b;
+
+            result.Add((ac.TypeArguments[0], ac.TypeArguments[1], enabled));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     The effective null-skip setting for one pair: its own <c>[MapNullSkip&lt;S,T&gt;]</c> if declared,
+    ///     otherwise the mapper/assembly policy value.
+    /// </summary>
+    private static bool ResolvePairNullSkip(
+        IReadOnlyList<(ITypeSymbol Source, ITypeSymbol Target, bool Enabled)> pairNullSkips,
+        ITypeSymbol source, ITypeSymbol target, bool classDefault)
+    {
+        foreach (var (s, t, enabled) in pairNullSkips)
+            if (SymbolEqualityComparer.Default.Equals(s, source)
+                && SymbolEqualityComparer.Default.Equals(t, target))
+                return enabled;
+
+        return classDefault;
+    }
+
     private static bool ReadAllowNonPublic(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)

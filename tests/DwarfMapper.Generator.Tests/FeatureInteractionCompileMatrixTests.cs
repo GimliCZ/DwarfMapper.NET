@@ -54,6 +54,25 @@ public class FeatureInteractionCompileMatrixTests
                                                        [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
                                                        """);
 
+        // [MapNullSkip] / [MapNullSkip<S,T>] — the pair- and method-scope of SkipNullSourceMembers. Both
+        // forms in one case, on one mapper, because the interaction worth compiling is precisely that a
+        // single class can now carry BOTH null semantics (which is what forced a class split before).
+        yield return new FimMatrixCase("map_null_skip_scopes", """
+                                                              using DwarfMapper;
+                                                              namespace Fim;
+                                                              public class NsSrc { public string? S { get; set; } }
+                                                              public class NsDst { public string S { get; set; } = ""; }
+                                                              public class NsSrc2 { public string? S { get; set; } }
+                                                              [DwarfMapper]
+                                                              [GenerateMap<NsSrc2, NsDst>]
+                                                              [MapNullSkip<NsSrc2, NsDst>]
+                                                              public partial class M
+                                                              {
+                                                                  public partial void Replace(NsSrc s, NsDst d);
+                                                                  [MapNullSkip] public partial void Patch(NsSrc s, NsDst d);
+                                                              }
+                                                              """);
+
         yield return new FimMatrixCase("generate_wrapper_map", """
             using DwarfMapper;
             namespace Fim;

@@ -165,6 +165,12 @@ internal static partial class MapperExtractor
         var explicitOnly = !ReadAutoMatchMembers(opts); // trust-boundary guard (DWARF072)
         var ignoreObsolete = ReadIgnoreObsoleteMembers(opts);
         var skipNullSrc = ReadSkipNullSourceMembers(opts);
+
+        // Pair- and method-scoped overrides of the class-level null-skip policy. AutoMapper's ForAllMembers
+        // was configured PER MAP, so a profile mixing patch-merge maps with ordinary ones cannot translate
+        // to one class-level boolean — it had to be split across two mapper classes, and that split then
+        // synthesized the same nested pair twice with opposite null semantics. See MapNullSkipAttribute.
+        var pairNullSkips = ReadPairNullSkips(classSymbol);
         var allowNonPublic = ReadAllowNonPublic(opts);
         var nullCollections = ReadNullCollections(opts);
         var maxDepth = ReadMaxDepth(opts);
@@ -319,7 +325,10 @@ internal static partial class MapperExtractor
                     nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode,
                     implicitConversions, updMapValues, valueProviders,
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
-                    skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
+                    // Update-into is where patch-merge actually lives, so a method-level [MapNullSkip]
+                    // matters most here.
+                    skipNullSourceMembers: ReadMapNullSkip(method) ?? skipNullSrc,
+                    allowNonPublic: allowNonPublic,
                     explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                     stringFormats: ReadStringFormats(method),
                     mapperReservedConverters: mapperReservedConverters,
@@ -961,7 +970,7 @@ internal static partial class MapperExtractor
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
-                nameConvention, mapPropExtras, skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete,
+                nameConvention, mapPropExtras, ReadMapNullSkip(method) ?? skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete,
                 stringFormats, mapperReservedConverters,
                 // NOT gated on objInitOnly: a parameterless constructor can still carry
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
@@ -1211,7 +1220,9 @@ internal static partial class MapperExtractor
                 genConsumed, genRequiredInit, classAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 MatchPairValues(pairValues, genTgt), valueProviders,
-                mapPropertyExtras: genExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
+                mapPropertyExtras: genExtras,
+                skipNullSourceMembers: ResolvePairNullSkip(pairNullSkips, genSrc, genTgt, skipNullSrc),
+                allowNonPublic: allowNonPublic,
                 explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                 mapperReservedConverters: mapperReservedConverters,
                 requiredMembersAlreadySatisfied: genCtorSetsRequired,
@@ -1358,7 +1369,13 @@ internal static partial class MapperExtractor
                 // boundary, declare that pair's own [DwarfMapper(AutoMatchMembers = false)] mapper.
                 // ignoreObsolete DOES propagate (unlike explicitOnly): skipping an obsolete nested member just
                 // leaves it at its default — safe and consistent — with no "unmappable" hazard.
-                mapPropertyExtras: nestedExtras, skipNullSourceMembers: skipNullSrc, allowNonPublic: allowNonPublic,
+                mapPropertyExtras: nestedExtras,
+                // A synthesized nested pair honours its own [MapNullSkip<S,T>] if the author declared one,
+                // otherwise the enclosing class's policy. Without the pair-scoped lookup the enclosing
+                // class's value is the ONLY input, which is how one logical nested pair reached from two
+                // classes ended up with opposite null semantics.
+                skipNullSourceMembers: ResolvePairNullSkip(pairNullSkips, nestedSrc, nestedTgt, skipNullSrc),
+                allowNonPublic: allowNonPublic,
                 ignoreObsolete: ignoreObsolete,
                 // A synthesized nested mapper must not adopt a dedicated converter either — the author
                 // never wrote this pair, so they certainly did not offer it one.

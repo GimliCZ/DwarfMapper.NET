@@ -21,7 +21,7 @@ The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `
 | `NullStrategy` | `NullStrategy` | `Throw` | Nullable-value source → non-nullable target when null: `Throw`, or `SetDefault` (use the destination default). |
 | `NullCollections` | `NullCollectionStrategy` | `AsEmpty` | Null source collection → `AsEmpty` (never throws) or `AsNull` (propagates null **only** when the target member is nullable — a nullable reference or a nullable value-type collection like `ImmutableArray<T>?`; a non-nullable target silently degrades to `AsEmpty`). |
 | `AutoNest` | `bool` | `true` | Auto-synthesize a private mapper for a nested `(S,T)` pair with no declared method. `false` requires explicit declarations. |
-| `SkipNullSourceMembers` | `bool` | `false` | A null source member never overwrites the destination's default: emits `if (src.X is not null) dst.X = …;` for nullable-source, post-construction-settable members. The equivalent of AutoMapper's `ForAllMembers(o => o.Condition((_,_,src) => src != null))`. Non-nullable value-type sources and `required`/`init`-only targets are unaffected. |
+| `SkipNullSourceMembers` | `bool` | `false` | A null source member never overwrites the destination's default: emits `if (src.X is not null) dst.X = …;` for nullable-source, post-construction-settable members. The equivalent of AutoMapper's `ForAllMembers(o => o.Condition((_,_,src) => src != null))`. Non-nullable value-type sources and `required`/`init`-only targets are unaffected. **Narrow it to one pair or one method with [`[MapNullSkip]`](#mapnullskip--patch-merge-for-one-pair-or-one-method).** |
 | `AllowNonPublic` | `bool` | `false` | Opt in to using non-public but reachable **constructors AND members** — an `internal`/`protected internal` ctor, getter, or setter in the same assembly or one exposed via `[InternalsVisibleTo]`. `private`/`protected` are never usable (the generated code could not compile). Off by default: an internal ctor/accessor is non-public on purpose, so reaching it from a mapper should be a deliberate, stated choice. |
 | `ReferenceHandling` | `ReferenceHandlingStrategy` | `None` | `None` (depth-guarded, zero alloc) or `Preserve` (full topology reconstruction). |
 | `OnCycle` | `OnCycleStrategy` | `Throw` | In `None` mode: `Throw` (catchable depth exception) or `SetNull` (break cycles ≡ `System.Text.Json` IgnoreCycles). Ignored under `Preserve` → `DWARF037`. |
@@ -85,6 +85,8 @@ Put these on the mapping method (or the class, where noted).
 | `[MapIgnore<TTarget>("Member")]` | **Class-level, pair-scoped** ignore (suppresses `DWARF001`) for any pair targeting `TTarget`. Matches nothing → `DWARF056`. |
 | `[MapValue<TTarget>(tgt, const)]` / `[MapValue<TTarget>(tgt) { Use = … }]` | **Class-level, pair-scoped** constant/computed value for a source-less member of `TTarget`. Lets a `[GenerateMap]` pair be completed with no method. Matches nothing → `DWARF056`. |
 | `[MapConstructor<TSource, TTarget>(nameof(Factory))]` | **Class-level, pair-scoped** `ConstructUsing`: names a factory `TTarget Factory(TSource)` on the mapper; settable members are then filled from source. Invalid factory → `DWARF059`; matches nothing → `DWARF056`. |
+| `[MapNullSkip<TSource, TTarget>]` / `[MapNullSkip<TSource, TTarget>(false)]` | **Class-level, pair-scoped** `SkipNullSourceMembers` for that one pair, overriding the mapper and assembly setting. |
+| `[MapNullSkip]` / `[MapNullSkip(false)]` | **Method-level** `SkipNullSourceMembers` for that one mapping method. |
 | `[Flatten("Root")]` | Pull a complex member's sub-members up to same-named destination members. |
 | `[FlattenGraph(...)]` | Collapse an object graph to a flat collection. |
 | `[MapDerivedType<TDerivedSrc, TDerivedDst>]` | Polymorphic dispatch arm on a base-type method. |
@@ -94,6 +96,38 @@ Put these on the mapping method (or the class, where noted).
 | `[Reinterpret("Member")]` | Force the blittable/SIMD bulk-copy fast-path on an array member. |
 | `[AutoNest(false)]` | Disable auto-nesting for a single method even when the class enables it. |
 | `[DwarfMapperConstructor]` | Disambiguate which constructor to use on an immutable target. |
+
+## `[MapNullSkip]` — patch-merge for one pair or one method
+
+`SkipNullSourceMembers` is a **policy** option: it applies to every map on the mapper (or, via
+`[DwarfMapperDefaults]`, every mapper in the assembly). That is the right default — one statement of intent
+reads better than the same attribute repeated per pair.
+
+But a mapper often has genuinely both kinds of map: a **replace** map where a `null` means *"clear this"*, and
+a **patch** map where a `null` means *"leave this alone"*. `[MapNullSkip]` narrows the option to a single pair
+or method so those can live together:
+
+<!-- fence-exempt: contrasts two methods on ONE class to make the scoping point; no single sample file holds both -->
+```csharp
+[DwarfMapper]
+public partial class SettingsMappers
+{
+    // Full replace: a null in the DTO clears the destination member.
+    public partial void Replace(SettingsDto src, Settings dst);
+
+    // Patch-merge: a null in the DTO leaves the destination member alone.
+    [MapNullSkip]
+    public partial void Patch(SettingsDto src, Settings dst);
+}
+```
+
+`[MapNullSkip(false)]` carves one map out of a class that enables the option, and
+`[MapNullSkip<TSource, TTarget>]` does the same for attribute-declared `[GenerateMap]` pairs.
+
+> **Why it exists.** AutoMapper's `ForAllMembers(o => o.Condition((_,_,src) => src != null))` was configured
+> **per map**. Translating a profile that mixed both kinds therefore meant splitting it across two mapper
+> classes purely to carry one boolean — and that split had a real consequence: a nested pair reached from both
+> classes was synthesized twice, once guarded and once not, silently.
 
 ## See also
 
