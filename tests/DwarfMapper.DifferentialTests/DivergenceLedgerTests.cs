@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Reflection;
+
 namespace DwarfMapper.DifferentialTests;
 
 /// <summary>
@@ -77,6 +79,40 @@ public class DivergenceLedgerTests
             "Accepted divergence(s) that no comparison actually hit:\n  " + string.Join("\n  ", unused)
             + "\n\nEither the difference is gone — delete the entry, that is the ratchet tightening — or no "
             + "shape exercises it, in which case the entry is documenting something untested.");
+    }
+
+    [Fact]
+    public void Every_declared_pair_is_actually_compared()
+    {
+        // The shape-coverage half of the ratchet. Adding types to Shapes.cs and a method to MapperlyShapes
+        // without wiring them into ShapeCatalog.All() would leave the shape silently untested while the suite
+        // stayed green — "skipped and passed look identical", which this repository refuses everywhere else.
+        //
+        // Driven off Mapperly's partial methods rather than DwarfMapper's attributes on purpose: a shape is
+        // only comparable if an ORACLE maps it too, so the oracle's surface is the honest denominator.
+        var declared = typeof(MapperlyShapes)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => m.GetParameters().Length == 1 && m.ReturnType != typeof(void))
+            .Select(m => m.GetParameters()[0].ParameterType.Name + " -> " + m.ReturnType.Name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        var compared = ShapeCatalog.All()
+            .Where(c => c.Dwarf is not null && c.Oracle_ is not null)
+            .Select(c => c.Dwarf!.GetType().Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // A pair counts as compared when its TARGET type appears as a mapped result somewhere in the
+        // catalogue. Matching on the target keeps this immune to which source shape drives it.
+        var uncompared = declared
+            .Where(p => !compared.Contains(p.Split([" -> "], StringSplitOptions.None)[1]))
+            .ToList();
+
+        Assert.True(uncompared.Count == 0,
+            "Pair(s) declared on the oracle but never compared:\n  " + string.Join("\n  ", uncompared)
+            + "\n\nAdd them to ShapeCatalog.All(). A shape that exists but is not in the catalogue is a shape "
+            + "nobody is checking, wearing the appearance of coverage.");
     }
 
     private static string Key(AcceptedDivergence a) => $"{a.Shape}/{a.Oracle} at {a.PathPrefix}";

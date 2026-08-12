@@ -33,6 +33,13 @@ Three guards keep the list honest:
   while silently covering whatever else falls under its path prefix. If the difference is gone, delete the
   entry — that is the ratchet tightening.
 
+A fourth guard covers the shapes rather than the list: **every pair declared on the oracle is actually
+compared**. Types can be added to `Shapes.cs` and a method to `MapperlyShapes` without being wired into
+`ShapeCatalog.All()`, which would leave the shape untested while the suite stayed green. It found a hole on
+its first run — `Address -> AddressDto` was declared on all three mappers and reached only as somebody's
+nested member, so a divergence in the pair itself would have been visible exclusively through whichever
+container happened to hold it.
+
 The current list has one axis on it, deliberately chosen because the three mappers really do disagree:
 enum→string. DwarfMapper reads `[Description]`/`[EnumMember]` by default (which is why `DWARF083` exists);
 Mapperly and AutoMapper use the identifier. The *same shape* is also compared under
@@ -46,6 +53,23 @@ One of three things is true, and the harness cannot tell you which:
 1. **DwarfMapper is wrong** — the case this project exists to find.
 2. **The oracle is wrong.** It happens; say so in the accepted-divergence entry.
 3. **They differ deliberately** — add an `AcceptedDivergence` naming the axis *and* the reason.
+
+## The comparer
+
+`MemberComparer` is load-bearing: every claim this project makes passes through it, and a comparer that misses
+a difference makes the whole harness a very convincing way of proving nothing. `MemberComparerTests` pins its
+two judgement calls:
+
+- **Concrete collection type is not a difference.** A member declared `IReadOnlyList<T>` that one mapper
+  materialises as `List<T>` and another as `T[]` holds the same data, and a consumer reading through the
+  declared type cannot tell. A *differential* oracle compares what a consumer observes. Real DTOs use
+  interface-typed collections constantly, so without this the harness would cry wolf on its first harvested
+  shape — while element-wise differences are still reported, with an index.
+- **Dictionary keys are compared as sets, not by lookup.** Asking `actual.Contains(key)` uses the *actual*
+  dictionary's own comparer, so an `OrdinalIgnoreCase` target reports `"A"` as present when what it holds is
+  `"a"` — and the two mappers would agree on a dictionary whose keys are not the same.
+
+A polymorphic result that came back as the base type IS reported, and a self-referencing graph terminates.
 
 ## Adding shapes
 

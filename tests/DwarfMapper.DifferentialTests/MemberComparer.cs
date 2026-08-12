@@ -61,6 +61,21 @@ internal static class MemberComparer
                 return;
             }
 
+            // Compare the KEY SETS as sorted sequences before looking anything up. `actualDict.Contains(key)`
+            // asks the ACTUAL dictionary's own comparer, so a target built with OrdinalIgnoreCase would report
+            // "A" as present when what it really holds is "a" — the two mappers would then agree on a
+            // dictionary whose keys differ, which is the one thing this comparer must never do.
+            var expectedKeys = expectedDict.Keys.Cast<object>()
+                .Select(k => k.ToString() ?? "").OrderBy(k => k, StringComparer.Ordinal).ToList();
+            var actualKeys = actualDict.Keys.Cast<object>()
+                .Select(k => k.ToString() ?? "").OrderBy(k => k, StringComparer.Ordinal).ToList();
+
+            if (!expectedKeys.SequenceEqual(actualKeys, StringComparer.Ordinal))
+            {
+                found.Add($"{path}: keys [{string.Join(", ", expectedKeys)}] vs [{string.Join(", ", actualKeys)}]");
+                return;
+            }
+
             foreach (DictionaryEntry entry in expectedDict)
             {
                 if (!actualDict.Contains(entry.Key))
@@ -75,6 +90,11 @@ internal static class MemberComparer
             return;
         }
 
+        // Sequences are compared ELEMENT-WISE, deliberately before the runtime-type check below: a member
+        // declared IReadOnlyList<T> that DwarfMapper materialises as List<T> and AutoMapper as T[] holds the
+        // same data, and a consumer reading through the declared type cannot tell. A differential oracle
+        // compares what a consumer OBSERVES, so concrete-collection-type divergence is not a difference.
+        // (Pinned by MemberComparerTests — the ordering here is the whole of that policy.)
         if (expected is IEnumerable expectedSeq && actual is IEnumerable actualSeq)
         {
             var left = expectedSeq.Cast<object?>().ToList();

@@ -57,6 +57,16 @@ internal static class ShapeCatalog
         yield return new Comparison("FlatScalars", Oracles.Mapperly, Dwarf.Map(flat), Mapperly.ToFlat(flat));
         yield return new Comparison("FlatScalars", Oracles.AutoMapper, Dwarf.Map(flat), Auto.Map<FlatDst>(flat));
 
+        // Address -> AddressDto on its own, not only as somebody's nested member. Added because the
+        // coverage ratchet asked for it on its first run: the pair was declared on all three mappers and
+        // reached only through PersonSrc and BasketSrc, so a divergence in the pair ITSELF would have been
+        // visible exclusively through whichever container happened to hold it.
+        var address = new Address { City = "Erebor", Postcode = "LM1" };
+        yield return new Comparison("FlatNestedTypeAlone", Oracles.Mapperly,
+            Dwarf.Map(address), Mapperly.ToAddress(address));
+        yield return new Comparison("FlatNestedTypeAlone", Oracles.AutoMapper,
+            Dwarf.Map(address), Auto.Map<AddressDto>(address));
+
         var person = new PersonSrc { Name = "Dwalin", Home = new Address { City = "Erebor", Postcode = "LM1" } };
         yield return new Comparison("NestedObject", Oracles.Mapperly, Dwarf.Map(person), Mapperly.ToPerson(person));
         yield return new Comparison("NestedObject", Oracles.AutoMapper,
