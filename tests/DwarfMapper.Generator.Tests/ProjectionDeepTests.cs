@@ -625,9 +625,10 @@ public class ProjectionDeepTests
 
     // ── Constructor targets under projection (R18-32) ────────────────────────────────────────────────────
     // Projection used to bind constructor parameters by NAME alone and to RETURN the moment it had a
-    // constructor call. Three defects fell out of that, all found while fixing R18-31 and all fixed together
+    // constructor call. FOUR defects fell out of that, all found while fixing R18-31 and all fixed together
     // because they are one structural confusion: the constructor route and the member route could not
-    // co-exist, so whichever ran first won and the other was discarded.
+    // co-exist, so whichever ran first won and the other was discarded. The fourth — a camelCase parameter
+    // refusing the PascalCase member .Map binds it to — was found by the test below it, not by reading.
 
     [Fact]
     public void Projection_binds_a_ctor_param_from_a_dotted_explicit_map()
@@ -847,5 +848,32 @@ public class ProjectionDeepTests
         var gen = GeneratorAssert.CompilesClean(s);
 
         Assert.Contains("new global::D.Dst(__s.Id, __s.Name)", gen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_SETTABLE_member_matching_a_ctor_param_only_by_case_is_not_assigned_twice()
+    {
+        // The other side of that rule. `id` the parameter and `Id` the property are the same destination, so
+        // the property must count as already fed — otherwise the initializer assigns it a second time on top
+        // of the constructor that just took it. The class model uses a case-insensitive `consumedParams` for
+        // exactly this; the two sets have to agree.
+        const string s = """
+                         using DwarfMapper; using System.Linq;
+                         namespace D;
+                         public class Src { public int Id { get; set; } }
+                         public class Dst
+                         {
+                             public Dst(int id) { Id = id; }
+                             public int Id { get; set; }
+                         }
+                         [DwarfMapper] public partial class M
+                         {
+                             public partial IQueryable<Dst> Prj(IQueryable<Src> q);
+                         }
+                         """;
+        var gen = GeneratorAssert.CompilesClean(s);
+
+        Assert.Contains("new global::D.Dst(__s.Id)", gen, StringComparison.Ordinal);
+        Assert.DoesNotContain("Id = __s.Id", gen, StringComparison.Ordinal);
     }
 }

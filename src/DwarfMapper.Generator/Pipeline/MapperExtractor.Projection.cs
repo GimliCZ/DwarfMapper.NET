@@ -221,8 +221,8 @@ internal static partial class MapperExtractor
 
         // Parameter name → type, for resolving an explicit map whose target is a parameter rather than a
         // member. Ordinal, matching ResolveConstructorArguments' explicit-map index. Empty when the target
-        // will be built by member-init, where a map naming a parameter is still DWARF014 — the constructor
-        // is not used there, so there is nothing for it to bind to.
+        // will be built by member-init, where a map naming a parameter stays DWARF008 (unknown destination)
+        // — the constructor is not used there, so there is nothing for it to bind to.
         var ctorParamTypes = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
         if (projectionCtor is not null)
             foreach (var p in projectionCtor.Parameters)
@@ -365,11 +365,14 @@ internal static partial class MapperExtractor
             foreach (var p in projectionCtor.Parameters)
                 handled.Add(p.Name);
 
-            // A record's positional parameter also surfaces as an init PROPERTY, and the comparer may be
-            // case-insensitive or Flexible — match the property to the parameter under the same comparer the
-            // rest of this resolver uses, or `Start` the property gets assigned beside `start` the argument.
+            // A record's positional parameter also surfaces as an init PROPERTY, so the property has to be
+            // recognised as already-fed or `Start` gets assigned beside `start` the argument. Matched under
+            // the configured comparer OR case-insensitively, which is precisely the pair of rules the
+            // parameter itself binds under — the class model does the same thing with a case-insensitive
+            // `consumedParams`, and the two sets have to agree or one of them assigns twice.
             foreach (var m in writableMembers)
-                if (projectionCtor.Parameters.Any(p => comparer.Equals(p.Name, m.Name)))
+                if (projectionCtor.Parameters.Any(p =>
+                        comparer.Equals(p.Name, m.Name) || StringComparer.OrdinalIgnoreCase.Equals(p.Name, m.Name)))
                     handled.Add(m.Name);
         }
 

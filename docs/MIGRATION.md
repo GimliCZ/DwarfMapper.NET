@@ -110,7 +110,7 @@ has a static, compile-checked replacement.
 | AutoMapper 14 | DwarfMapper | Note |
 |---|---|---|
 | ctor/record mapping (automatic) | automatic (records, `record struct`, immutable structs) | every **mandatory** ctor param must be satisfied (`DWARF024`); optional/`params` take their default; deterministic selection (`[DwarfMapperConstructor]`) |
-| `.ForCtorParam("p", o=>o.MapFrom(s=>s.Y))` | `[MapProperty(nameof(S.Y), "p")]` | targets ctor param by name; conversions apply. A **dotted source path** (`"Window.Start"`) works here exactly as on a member target — `DWARF043`/`DWARF044` for an unknown segment / nullable hop |
+| `.ForCtorParam("p", o=>o.MapFrom(s=>s.Y))` | `[MapProperty(nameof(S.Y), "p")]` | targets ctor param by name; conversions apply. A **dotted source path** (`"Window.Start"`) works here exactly as on a member target — `DWARF043`/`DWARF044` for an unknown segment / nullable hop. Honoured by `Project` as well as `Map`, so the `ForCtorParam` + `ProjectTo` pair converts once |
 | `.ConstructUsing(s=>new D(...))` / `IDestinationFactory` | `[MapConstructor<S,D>(nameof(Factory))]` | names a `D Factory(S)` on the mapper (compile-time equivalent); settable members are then filled from source. Invalid factory → `DWARF059` |
 | `mapper.Map(src, existingDest)` | `partial void Update(S s, T d)` / `partial T Update(S s, T d)` | identity preserved; nested/collections **replaced, not merged** |
 

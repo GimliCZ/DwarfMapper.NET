@@ -183,6 +183,12 @@ one mapper is the failure this library exists to make impossible, and it is what
 actually suffering from. `ProjectionRuntimeParityTests` now sweeps constructor targets, which is the half of
 that invariant nothing had swept — every row there binds settable members.
 
+The emitted shape is also *executed*, not merely compiled:
+`ProjectionRuntimeTests.Projects_a_constructor_target_fed_by_a_dotted_explicit_map` materialises a
+`MemberInit` over a `New` with arguments, binding an `init`-only property — an expression tree shape no
+projection in this repository had produced before. That is LINQ-to-Objects; an EF provider's SQL translation
+of it is not exercised here, and neither is any other projection in the suite.
+
 ### A `[MapDerivedType]` arm that resolved to its own dispatcher
 
 A `[MapDerivedType]` dispatcher is excluded from resolving its own arms — otherwise a switch arm calls its own
