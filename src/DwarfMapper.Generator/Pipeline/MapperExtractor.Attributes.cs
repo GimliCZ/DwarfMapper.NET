@@ -51,6 +51,21 @@ internal static partial class MapperExtractor
     }
 
     /// <summary>
+    ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.RegisterCollectionShapes" />
+    ///     value. Defaults to <c>true</c> — the collection registrations are an opt-OUT, because the trap they
+    ///     close is invisible to every compile-time check and only fires at first use.
+    /// </summary>
+    private static bool ReadRegisterCollectionShapes(ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "RegisterCollectionShapes" && named.Value.Value is bool b)
+                return b;
+
+        return true;
+    }
+
+    /// <summary>
     ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.GenerateExtensions" /> value
     ///     from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c> (the convenience facade is opt-out).
     /// </summary>

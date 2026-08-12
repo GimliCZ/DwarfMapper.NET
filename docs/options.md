@@ -8,7 +8,7 @@ Set a house style once for the whole assembly with `[assembly: DwarfMapperDefaul
 inherits those values unless it sets its own. **Precedence: mapper > assembly defaults > built-in default.**
 The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `NullStrategy`, `NullCollections`,
 `ImplicitConversions`, `RequiredMapping`, `AllowNonPublic`, `AutoNest`, `AutoMatchMembers`, `IgnoreObsoleteMembers`,
-`SkipNullSourceMembers`); per-graph knobs (`MaxDepth`, `ReferenceHandling`, `OnCycle`) stay per-mapper.
+`SkipNullSourceMembers`, `RegisterCollectionShapes`); per-graph knobs (`MaxDepth`, `ReferenceHandling`, `OnCycle`) stay per-mapper.
 
 ## Class-level options — `[DwarfMapper(...)]`
 
@@ -31,6 +31,7 @@ The policy options layer (`CaseInsensitive`, `NameConvention`, `EnumStrategy`, `
 | `GenerateExtensions` | `bool` | `true` | Emit `source.ToTarget()` convenience extension methods (namespace `DwarfMapper.Extensions`). `false` suppresses them for this mapper. |
 | `AutoMatchMembers` | `bool` | `true` | `false` = explicit-only (trust-boundary guard): nothing is wired by name, every member needs `[MapProperty]`/`[MapValue]` or `[MapIgnore]`, and a would-be auto-match raises `DWARF072`. Stops an untrusted same-named field (e.g. `IsAdmin`) over-posting onto a protected member. |
 | `IgnoreObsoleteMembers` | `bool` | `false` | Drop `[Obsolete]` members from mapping: an obsolete destination is neither required nor auto-populated, an obsolete source needn't be consumed (no `DWARF039`). An explicit `[MapProperty]`/`[MapValue]` still opts a specific one back in. |
+| `RegisterCollectionShapes` | `bool` | `true` | Also register each declared object map into the ambient registry under the common **collection shapes**, so `IDwarfMapper.Map<ICollection<TTarget>>(listOfSources)` resolves without declaring a separate collection pair. Emitted at compile time — no reflection, no runtime synthesis. Six rows per pair, all keyed on `IEnumerable<TSource>`, so a `List`, an array, a `HashSet` and a lazy LINQ iterator are served by one entry. `false` keeps the table minimal for a mapper never reached through the facade over a collection. |
 <!-- endtable -->
 
 > **`CaseInsensitive` and `NameConvention` interact** — they both govern how member names are matched, so set

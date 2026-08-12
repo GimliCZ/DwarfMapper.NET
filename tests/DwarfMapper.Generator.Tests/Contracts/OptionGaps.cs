@@ -85,6 +85,23 @@ public static class OptionGaps
             [("GenerateExtensions", Endpoint.SpanMap)] =
                 "the extension is generated per mapper, not per span overload",
             [("GenerateExtensions", Endpoint.AsyncStream)] =
-                "the extension is generated per mapper, not per stream overload"
+                "the extension is generated per mapper, not per stream overload",
+
+            // RegisterCollectionShapes governs what goes into the AMBIENT REGISTRY, not how any endpoint maps.
+            // It is the same shape of option as GenerateExtensions above: it adds or withholds registration
+            // rows, and only a create map produces a (source)->(dest) delegate the registry can hold. Update-
+            // into mutates an existing instance (two arguments), projection emits an expression tree, and span
+            // maps take a ref struct — none of the three is registerable at all, so there is nothing here for
+            // the option to add or withhold.
+            [("RegisterCollectionShapes", Endpoint.UpdateInto)] =
+                "update-into is not ambient-registerable (two arguments, mutates an existing instance), so it "
+                + "has no registration rows for this option to add",
+            [("RegisterCollectionShapes", Endpoint.Projection)] =
+                "projection emits an expression tree, not a runtime delegate the registry can hold",
+            [("RegisterCollectionShapes", Endpoint.SpanMap)] =
+                "Span<T> is a ref struct and cannot be boxed through the registry's Func<object, object>",
+            [("RegisterCollectionShapes", Endpoint.AsyncStream)] =
+                "an async-stream map is already a sequence map; wrapping it in another collection shape is not "
+                + "a shape any call site asks for"
         };
 }

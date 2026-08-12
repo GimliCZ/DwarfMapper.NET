@@ -175,6 +175,8 @@ internal static class AggregateEmitter
         IReadOnlyList<MapperClassModel> models)
     {
         var regs = new List<(string Source, string Dest, string Field, string Method)>();
+        var collectionRegs = new List<(string Source, string Dest, string Field, string Method, bool AsArray)>();
+        var seenCollectionPairs = new HashSet<string>(StringComparer.Ordinal);
         var fields = new SortedSet<string>(StringComparer.Ordinal);
         var unregisterable = new List<string>();
         var seenPairs = new HashSet<string>(StringComparer.Ordinal);
@@ -205,6 +207,13 @@ internal static class AggregateEmitter
                 fields.Add(mapperFullName);
                 regs.Add((method.ParameterTypeFullName, method.ReturnTypeFullName, FieldName(mapperFullName),
                     method.MethodName));
+
+                if (!model.RegisterCollectionShapes) continue;
+
+                foreach (var (dest, asArray) in CollectionShapesFor(method))
+                    if (seenCollectionPairs.Add(method.ParameterTypeFullName + " " + dest))
+                        collectionRegs.Add((method.ParameterTypeFullName, dest, FieldName(mapperFullName),
+                            method.MethodName, asArray));
             }
         }
 
@@ -215,6 +224,14 @@ internal static class AggregateEmitter
         foreach (var r in regs)
             sb.Append("[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(")
                 .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("))]").Append('\n');
+
+        // The collection shapes are genuinely provided by this assembly, so the manifest must say so —
+        // otherwise DWARF061 would report a missing map for a pair that IS registered.
+        foreach (var r in collectionRegs)
+            sb.Append("[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(")
+                .Append(CollectionSourceOf(r.Source)).Append("), typeof(").Append(r.Dest).Append("))]")
+                .Append('\n');
+
         sb.AppendLine();
         sb.AppendLine("namespace DwarfMapper.Generated;");
         sb.AppendLine();
@@ -244,9 +261,84 @@ internal static class AggregateEmitter
                 .Append(r.Source).Append("), typeof(").Append(r.Dest).Append("), static __s => ")
                 .Append(r.Field).Append('.').Append(r.Method).Append("((").Append(r.Source).Append(")__s));")
                 .Append('\n');
+
+        if (collectionRegs.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("        // Collection shapes over the element maps above. AutoMapper derived these");
+            sb.AppendLine("        // implicitly; this registry resolves an EXACT pair, so they are registered");
+            sb.AppendLine("        // explicitly at COMPILE time - no reflection, no runtime synthesis.");
+            sb.AppendLine("        // Keyed on IEnumerable<TSource>: the registry's interface lookup then serves");
+            sb.AppendLine("        // a List, an array, a HashSet and a lazy LINQ iterator from this one entry.");
+        }
+
+        foreach (var r in collectionRegs)
+        {
+            var src = CollectionSourceOf(r.Source);
+            var listOf = "global::System.Collections.Generic.List<" + ElementOf(r.Dest) + ">";
+
+            sb.Append("        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(").Append(src)
+                .Append("), typeof(").Append(r.Dest).Append("), static __s => { var __r = new ").Append(listOf)
+                .Append("(); foreach (var __e in (").Append(src).Append(")__s) __r.Add(").Append(r.Field)
+                .Append('.').Append(r.Method).Append("(__e)); return ")
+                .Append(r.AsArray ? "__r.ToArray()" : "__r").Append("; });").Append('\n');
+        }
+
         sb.AppendLine("    }");
         sb.AppendLine("}");
         return (sb.ToString(), unregisterable);
+    }
+
+    /// <summary>
+    ///     The collection destination shapes to register for one element map, and whether each needs an array
+    ///     rather than a list.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Six rows per element pair, not thirty. All are keyed on <c>IEnumerable&lt;TSource&gt;</c> (see
+    ///         <see cref="CollectionSourceOf" />), so the SOURCE axis collapses to one — the registry's
+    ///         interface lookup then serves a <c>List</c>, an array, a <c>HashSet</c> and even a lazy LINQ
+    ///         iterator from the same entry. Only the requested DESTINATION varies, and that must be keyed
+    ///         exactly, because it is what the call site names.
+    ///     </para>
+    ///     <para>
+    ///         Skipped for maps that are already collection conversions: a collection-of-collections is not
+    ///         what a consumer means by <c>Map&lt;ICollection&lt;T&gt;&gt;(items)</c>, and registering one would
+    ///         compete with the element map for the same key.
+    ///     </para>
+    /// </remarks>
+    private static IEnumerable<(string Destination, bool AsArray)> CollectionShapesFor(MapMethodModel m)
+    {
+        if (m.IsTopLevelCollectionConversion || m.IsAsyncStreamMap) yield break;
+
+        var t = m.ReturnTypeFullName;
+
+        yield return ("global::System.Collections.Generic.List<" + t + ">", false);
+        yield return ("global::System.Collections.Generic.ICollection<" + t + ">", false);
+        yield return ("global::System.Collections.Generic.IEnumerable<" + t + ">", false);
+        yield return ("global::System.Collections.Generic.IReadOnlyList<" + t + ">", false);
+        yield return ("global::System.Collections.Generic.IReadOnlyCollection<" + t + ">", false);
+        yield return (t + "[]", true);
+    }
+
+    /// <summary>The single source key every collection shape is registered under.</summary>
+    private static string CollectionSourceOf(string elementSource)
+    {
+        return "global::System.Collections.Generic.IEnumerable<" + elementSource + ">";
+    }
+
+    /// <summary>
+    ///     The element type back out of a destination shape produced by <see cref="CollectionShapesFor" />.
+    ///     This parses only strings this class just built, never arbitrary user text, which is why a simple
+    ///     unwrap is sufficient and safe.
+    /// </summary>
+    private static string ElementOf(string destinationShape)
+    {
+        if (destinationShape.EndsWith("[]", StringComparison.Ordinal))
+            return destinationShape.Substring(0, destinationShape.Length - 2);
+
+        var open = destinationShape.IndexOf('<');
+        return destinationShape.Substring(open + 1, destinationShape.Length - open - 2);
     }
 
     /// <summary>

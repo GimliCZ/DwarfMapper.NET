@@ -91,6 +91,33 @@ public sealed class DwarfMapperAttribute : Attribute
     public bool SkipNullSourceMembers { get; set; }
 
     /// <summary>
+    ///     When <c>true</c> (the default), each declared object map is ALSO registered into the ambient
+    ///     registry under the common <b>collection shapes</b>, so
+    ///     <c>IDwarfMapper.Map&lt;ICollection&lt;TTarget&gt;&gt;(listOfSources)</c> resolves without declaring a
+    ///     separate collection pair.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         AutoMapper derived collection maps implicitly from the element map. DwarfMapper's registry
+    ///         resolves an EXACT pair, so before this option a facade call over a collection threw
+    ///         <c>DwarfMapMissingException</c> at first use — behind a green build, and invisible to the
+    ///         <c>DWARF061</c> validation root, which can only see the call site's static destination type. A
+    ///         real migration found 47 such call sites, every one of them latent.
+    ///     </para>
+    ///     <para>
+    ///         The registrations are emitted at COMPILE time — no reflection, no runtime synthesis, nothing
+    ///         that would compromise trimming or AOT. Each declared pair adds six rows, keyed on
+    ///         <c>IEnumerable&lt;TSource&gt;</c> so a <c>List</c>, an array, a <c>HashSet</c> and even a lazy
+    ///         LINQ iterator are all served by the same entry.
+    ///     </para>
+    ///     <para>
+    ///         Set to <c>false</c> to keep the registration table minimal when a mapper's maps are never
+    ///         reached through the ambient facade over a collection.
+    ///     </para>
+    /// </remarks>
+    public bool RegisterCollectionShapes { get; set; } = true;
+
+    /// <summary>
     ///     When <c>true</c>, the generator may use <b>non-public but reachable</b> constructors AND members —
     ///     an <c>internal</c> / <c>protected internal</c> constructor, getter, or setter that the generated
     ///     mapper's assembly can see, either because it is the same assembly or because the target's assembly

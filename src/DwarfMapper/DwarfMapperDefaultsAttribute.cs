@@ -53,4 +53,7 @@ public sealed class DwarfMapperDefaultsAttribute : Attribute
 
     /// <inheritdoc cref="DwarfMapperAttribute.SkipNullSourceMembers" />
     public bool SkipNullSourceMembers { get; set; }
+
+    /// <inheritdoc cref="DwarfMapperAttribute.RegisterCollectionShapes" />
+    public bool RegisterCollectionShapes { get; set; } = true;
 }

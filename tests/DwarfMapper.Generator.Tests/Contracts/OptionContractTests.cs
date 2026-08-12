@@ -52,6 +52,13 @@ public class OptionContractTests
         new("AllowNonPublic", CellStatus.Refused, "DWARF028",
             "an expression tree the provider translates cannot read a non-public member"),
 
+        new("RegisterCollectionShapes", CellStatus.NotApplicable, null,
+            "governs what goes into the AMBIENT REGISTRY, not how any endpoint maps. A projection emits an "
+            + "expression tree for a query provider, not a runtime Func<object, object> the registry can "
+            + "hold, so a projection contributes no registration rows for this option to add or withhold. "
+            + "NotApplicable rather than Refused: nothing is rejected, there is simply nothing here to "
+            + "configure"),
+
         new("NullStrategy", CellStatus.NotApplicable, null,
             "int?->int is refused with DWARF028 structurally, with or without this option, so the option is "
             + "never consulted. Recorded as NotApplicable rather than Refused because an earlier Refused "

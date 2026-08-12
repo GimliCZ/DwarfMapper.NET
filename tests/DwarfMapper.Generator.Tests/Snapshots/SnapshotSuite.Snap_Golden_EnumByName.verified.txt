@@ -33,6 +33,12 @@ public partial class M
 #nullable enable
 
 [assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::Demo.A), typeof(global::Demo.B))]
+[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.List<global::Demo.B>))]
+[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.ICollection<global::Demo.B>))]
+[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.IEnumerable<global::Demo.B>))]
+[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.IReadOnlyList<global::Demo.B>))]
+[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.IReadOnlyCollection<global::Demo.B>))]
+[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::Demo.B[]))]
 
 namespace DwarfMapper.Generated;
 
@@ -50,6 +56,18 @@ internal static class __DwarfMapperAmbientRegistration
     {
         if (global::System.Threading.Interlocked.Exchange(ref __registered, 1) != 0) return;
         global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::Demo.A), typeof(global::Demo.B), static __s => __Demo_M_56f0a3bf.Map((global::Demo.A)__s));
+
+        // Collection shapes over the element maps above. AutoMapper derived these
+        // implicitly; this registry resolves an EXACT pair, so they are registered
+        // explicitly at COMPILE time - no reflection, no runtime synthesis.
+        // Keyed on IEnumerable<TSource>: the registry's interface lookup then serves
+        // a List, an array, a HashSet and a lazy LINQ iterator from this one entry.
+        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.List<global::Demo.B>), static __s => { var __r = new global::System.Collections.Generic.List<global::Demo.B>(); foreach (var __e in (global::System.Collections.Generic.IEnumerable<global::Demo.A>)__s) __r.Add(__Demo_M_56f0a3bf.Map(__e)); return __r; });
+        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.ICollection<global::Demo.B>), static __s => { var __r = new global::System.Collections.Generic.List<global::Demo.B>(); foreach (var __e in (global::System.Collections.Generic.IEnumerable<global::Demo.A>)__s) __r.Add(__Demo_M_56f0a3bf.Map(__e)); return __r; });
+        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.IEnumerable<global::Demo.B>), static __s => { var __r = new global::System.Collections.Generic.List<global::Demo.B>(); foreach (var __e in (global::System.Collections.Generic.IEnumerable<global::Demo.A>)__s) __r.Add(__Demo_M_56f0a3bf.Map(__e)); return __r; });
+        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.IReadOnlyList<global::Demo.B>), static __s => { var __r = new global::System.Collections.Generic.List<global::Demo.B>(); foreach (var __e in (global::System.Collections.Generic.IEnumerable<global::Demo.A>)__s) __r.Add(__Demo_M_56f0a3bf.Map(__e)); return __r; });
+        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::System.Collections.Generic.IReadOnlyCollection<global::Demo.B>), static __s => { var __r = new global::System.Collections.Generic.List<global::Demo.B>(); foreach (var __e in (global::System.Collections.Generic.IEnumerable<global::Demo.A>)__s) __r.Add(__Demo_M_56f0a3bf.Map(__e)); return __r; });
+        global::DwarfMapper.DwarfMapperRegistry.Register(typeof(global::System.Collections.Generic.IEnumerable<global::Demo.A>), typeof(global::Demo.B[]), static __s => { var __r = new global::System.Collections.Generic.List<global::Demo.B>(); foreach (var __e in (global::System.Collections.Generic.IEnumerable<global::Demo.A>)__s) __r.Add(__Demo_M_56f0a3bf.Map(__e)); return __r.ToArray(); });
     }
 }
 // ==== DwarfMapper.Extensions.g.cs ====

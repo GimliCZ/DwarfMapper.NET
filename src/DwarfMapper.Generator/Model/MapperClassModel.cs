@@ -44,7 +44,13 @@ public sealed record MapperClassModel(
     /// unless the class both declares convention methods AND has no user-declared static constructor (the
     /// static-ctor slot is free).
     /// </summary>
-    EquatableArray<string> ConventionMethodNames = default) : IEquatable<MapperClassModel>
+    EquatableArray<string> ConventionMethodNames = default,
+    /// <summary>
+    /// Class-level <c>[DwarfMapper(RegisterCollectionShapes = …)]</c> value (default <c>true</c>). When true,
+    /// the ambient registration emitter also registers each declared object map under the common collection
+    /// shapes, so a facade call over a collection resolves without a separately declared collection pair.
+    /// </summary>
+    bool RegisterCollectionShapes = true) : IEquatable<MapperClassModel>
 {
     /// <summary>
     /// Unique per generated file. Includes the containing types: <c>Outer.M</c> and a namespace-level <c>M</c>

@@ -40,9 +40,10 @@ neither has a mapper class to carry a class-level option.
 | `NullStrategy` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `OnCycle` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `ReferenceHandling` | honoured | honoured | `DWARF028` | honoured | honoured |
+| `RegisterCollectionShapes` | honoured | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) |
 | `RequiredMapping` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` |
 | `SkipNullSourceMembers` | honoured | honoured | `DWARF028` | honoured | honoured |
 
 Option list and defaults scanned from `DwarfMapperAttribute`; each probe value derived
 from its default (invert a bool, pick another enum member, step an int), so a new option
-appears here without anyone maintaining a list. Probed with: `AllowNonPublic = true`, `AutoMatchMembers = false`, `AutoNest = false`, `CaseInsensitive = true`, `EnumStrategy = EnumStrategy.ByValue`, `GenerateExtensions = false`, `IgnoreObsoleteMembers = true`, `ImplicitConversions = false`, `MaxDepth = 1`, `NameConvention = NameConvention.Flexible`, `NullCollections = NullCollectionStrategy.AsNull`, `NullStrategy = NullStrategy.SetDefault`, `OnCycle = OnCycleStrategy.SetNull`, `ReferenceHandling = ReferenceHandlingStrategy.Preserve`, `RequiredMapping = RequiredMappingStrategy.Both`, `SkipNullSourceMembers = true`.
+appears here without anyone maintaining a list. Probed with: `AllowNonPublic = true`, `AutoMatchMembers = false`, `AutoNest = false`, `CaseInsensitive = true`, `EnumStrategy = EnumStrategy.ByValue`, `GenerateExtensions = false`, `IgnoreObsoleteMembers = true`, `ImplicitConversions = false`, `MaxDepth = 1`, `NameConvention = NameConvention.Flexible`, `NullCollections = NullCollectionStrategy.AsNull`, `NullStrategy = NullStrategy.SetDefault`, `OnCycle = OnCycleStrategy.SetNull`, `ReferenceHandling = ReferenceHandlingStrategy.Preserve`, `RegisterCollectionShapes = false`, `RequiredMapping = RequiredMappingStrategy.Both`, `SkipNullSourceMembers = true`.

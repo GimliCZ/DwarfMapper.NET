@@ -135,6 +135,7 @@ internal static partial class MapperExtractor
         var nameConvention = ReadNameConvention(opts); // 0 = Exact (default), 1 = Flexible
         var caseInsensitive = ReadCaseInsensitive(opts);
         var generateExtensions = ReadGenerateExtensions(opts); // default true (opt-out)
+        var registerCollectionShapes = ReadRegisterCollectionShapes(opts); // default true (opt-out)
         // The convenience facade caches a `new()` mapper singleton, so it can only be emitted for a mapper
         // that has an accessible parameterless constructor (the implicit one counts).
         // For separateEmit the cached facade singleton is `new <Host>Mapper()` — the generated mapper always
@@ -2371,7 +2372,8 @@ internal static partial class MapperExtractor
             generateExtensions,
             hasParameterlessCtor,
             EquatableArray.From(containingTypes),
-            EquatableArray.From(conventionRefs));
+            EquatableArray.From(conventionRefs),
+            registerCollectionShapes);
     }
 
     // ISSUE-044: required for the same reason as ReadableMembers/WritableMembers — this wrapper composes
