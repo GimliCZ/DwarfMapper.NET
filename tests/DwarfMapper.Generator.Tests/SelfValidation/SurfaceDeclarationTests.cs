@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using DwarfMapper;
+using DwarfMapper.Generator.Tests.Contracts;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
 
@@ -81,6 +82,133 @@ public sealed class SurfaceDeclarationTests
     {
         var total = Contracts.SurfaceCatalog.Elements.Sum(e => Contracts.SurfaceCatalog.CasesFor(e).Count);
         Assert.InRange(total, 60, 4000);
+    }
+
+    /// <summary>
+    ///     Every <c>[DwarfSurfaceSite]</c> narrowing is well-formed: it names only sites the element's
+    ///     <c>AttributeUsage</c> permits, no two claims cover one site, it states a reason, and it actually
+    ///     narrows something.
+    ///     <para>
+    ///         A malformed override is worse than a missing one. It reads as a reviewed, structural decision
+    ///         while the cells it was meant to govern are decided by the element default — a stale site (one
+    ///         removed from <c>AttributeUsage</c> later) is exactly how a claim quietly stops applying, and a
+    ///         second claim on the same site hands the site to whichever the reflection ordered first.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Every_declared_site_override_is_well_formed()
+    {
+        var problems = Contracts.SurfaceCatalog.Elements
+            .SelectMany(e => Contracts.SurfaceCatalog.ValidateSiteClaims(
+                e.UsageName, e.ValidOn, e.AppliesTo, e.SiteClaims))
+            .ToList();
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    /// <summary>
+    ///     Feeds <c>ValidateSiteClaims</c> each malformed shape directly. Against the two well-formed
+    ///     declarations the repository actually has, every branch of that validator passes vacuously, and a
+    ///     gate that has never fired is unverified code — the same reason
+    ///     <c>SurfaceProbe.FirstNewOccurrence</c> is a separated pure function with its own test.
+    /// </summary>
+    [Fact]
+    public void The_site_override_validator_rejects_every_malformed_shape()
+    {
+        const AttributeTargets validOn = AttributeTargets.Method | AttributeTargets.Property;
+        const SurfaceEndpoints def = SurfaceEndpoints.All;
+
+        static string[] Check(AttributeTargets on, SurfaceEndpoints fallback, params SurfaceSiteClaim[] cs) =>
+            Contracts.SurfaceCatalog.ValidateSiteClaims("Probe", on, fallback, cs).ToArray();
+
+        // A site AttributeUsage does not permit: the narrowing applies to nothing.
+        Assert.Contains("Field", Assert.Single(Check(validOn, def,
+            new SurfaceSiteClaim(AttributeTargets.Field, SurfaceEndpoints.Registry, "shape"))),
+            StringComparison.Ordinal);
+
+        // Partially illegal: Property is fine, Field is not, and the legal half must not excuse the other.
+        Assert.Contains("Field", Assert.Single(Check(validOn, def,
+            new SurfaceSiteClaim(AttributeTargets.Property | AttributeTargets.Field,
+                SurfaceEndpoints.Registry, "shape"))),
+            StringComparison.Ordinal);
+
+        // Two claims covering one site.
+        Assert.Contains("both cover", Assert.Single(Check(validOn, def,
+            new SurfaceSiteClaim(AttributeTargets.Property, SurfaceEndpoints.Registry, "shape"),
+            new SurfaceSiteClaim(AttributeTargets.Property, SurfaceEndpoints.CreateMap, "shape"))),
+            StringComparison.Ordinal);
+
+        // Overlapping rather than identical: Property is claimed twice, Method only once.
+        Assert.Contains("both cover", Assert.Single(Check(validOn, def,
+            new SurfaceSiteClaim(AttributeTargets.Property, SurfaceEndpoints.Registry, "shape"),
+            new SurfaceSiteClaim(AttributeTargets.Property | AttributeTargets.Method,
+                SurfaceEndpoints.CreateMap, "shape"))),
+            StringComparison.Ordinal);
+
+        // No reason stated.
+        Assert.Contains("states no reason", Assert.Single(Check(validOn, def,
+            new SurfaceSiteClaim(AttributeTargets.Property, SurfaceEndpoints.Registry, "   "))),
+            StringComparison.Ordinal);
+
+        // Restates the default: narrows nothing.
+        Assert.Contains("restates", Assert.Single(Check(validOn, def,
+            new SurfaceSiteClaim(AttributeTargets.Property, def, "shape"))),
+            StringComparison.Ordinal);
+
+        // Names no site at all.
+        Assert.Contains("no site at all", Assert.Single(Check(validOn, def,
+            new SurfaceSiteClaim(default, SurfaceEndpoints.Registry, "shape"))),
+            StringComparison.Ordinal);
+
+        // The well-formed shape the repository actually uses reports nothing.
+        Assert.Empty(Check(validOn, def,
+            new SurfaceSiteClaim(AttributeTargets.Property, SurfaceEndpoints.Registry, "shape")));
+    }
+
+    /// <summary>
+    ///     A <c>[DwarfSurfaceSite]</c> on a type with no <c>[DwarfSurface]</c> has no default to narrow, and
+    ///     <c>SurfaceCatalog</c> filters the type out of the element set entirely — so the override, and every
+    ///     cell it was written to govern, would vanish without a word.
+    /// </summary>
+    [Fact]
+    public void No_site_override_sits_on_a_type_that_declares_no_category()
+    {
+        var orphans = typeof(DwarfMapperAttribute).Assembly.GetExportedTypes()
+            .Where(t => t.GetCustomAttributes<DwarfSurfaceSiteAttribute>(inherit: false).Any()
+                        && t.GetCustomAttribute<DwarfSurfaceAttribute>(inherit: false) is null)
+            .Select(t => t.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(orphans.Count == 0,
+            "Type(s) carrying [DwarfSurfaceSite] but no [DwarfSurface]: " + string.Join(", ", orphans)
+            + ". The override narrows a default that does not exist, and the type is not in the catalogue at "
+            + "all, so neither the claim nor its cells are ever looked at.");
+    }
+
+    /// <summary>
+    ///     The site overrides are load-bearing, not decoration: at least one element must resolve DIFFERENT
+    ///     claims at two of its own sites. If every override were deleted — or <c>ClaimFor</c> stopped
+    ///     consulting them — this fails, rather than the matrix quietly going back to one claim per element
+    ///     and ~100 cells changing verdict with nothing to say so.
+    /// </summary>
+    [Fact]
+    public void At_least_one_element_claims_differently_at_two_of_its_sites()
+    {
+        var siteAware = Contracts.SurfaceCatalog.CrossProductElements
+            .Where(e => Contracts.SurfaceCatalog.SitesOf(e)
+                .Select(s => Contracts.SurfaceCatalog.ClaimFor(e, s))
+                .Distinct()
+                .Count() > 1)
+            .Select(e => e.UsageName)
+            .ToList();
+
+        Assert.True(siteAware.Count >= 2,
+            $"Only {siteAware.Count} element(s) resolve a different claim at different sites "
+            + $"({string.Join(", ", siteAware)}). Two do: MapProperty and MapIgnore, whose member placement "
+            + "is the [MapTo] registry form rather than a second way to configure a mapper. Fewer means "
+            + "either an override was deleted or ClaimFor stopped reading them, and ~100 member-site cells "
+            + "are back to being judged by the element-wide default.");
     }
 
     /// <summary>

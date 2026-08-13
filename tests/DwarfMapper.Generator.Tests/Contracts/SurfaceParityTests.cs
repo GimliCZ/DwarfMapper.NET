@@ -8,10 +8,18 @@ namespace DwarfMapper.Generator.Tests.Contracts;
 ///     The executed cross-product: every surface element, at every legal declaration site, in every case its
 ///     declaration admits, at every endpoint.
 ///     <para>
-///         Verified in BOTH directions against the element's own <c>AppliesTo</c> claim. A claimed endpoint
-///         where the element does nothing observable fails (the claim over-reaches); an unclaimed endpoint
-///         where it changes the output fails too (the claim under-reaches and the matrix would otherwise skip
-///         a live cell). There is therefore no value of <c>AppliesTo</c> that passes vacuously.
+///         Verified in BOTH directions against the element's own claim, resolved per (element, SITE) by
+///         <see cref="SurfaceCatalog.ClaimFor" />. A claimed endpoint where the element does nothing
+///         observable fails (the claim over-reaches); an unclaimed endpoint where it changes the output fails
+///         too (the claim under-reaches and the matrix would otherwise skip a live cell). There is therefore
+///         no claim value that passes vacuously.
+///     </para>
+///     <para>
+///         Nothing in this file decides a claim. Every cell's expectation is read off the type it describes —
+///         the element's <c>[DwarfSurface(AppliesTo)]</c>, refined for one site by <c>[DwarfSurfaceSite]</c>.
+///         A predicate used to live here deciding ~100 member-site cells, which is exactly the hand-kept,
+///         test-side knowledge this architecture exists to delete: nothing forced a newly added element to
+///         acquire an entry, and the cells it governed were reviewed by no one.
 ///     </para>
 ///     <para>
 ///         Traited so it can run as its own CI leg: this is roughly seven times the work of the option matrix.
@@ -48,7 +56,7 @@ public sealed class SurfaceParityTests
         string usageName, int arity, string axis, string site, Endpoint endpoint)
     {
         var (element, c) = Resolve(usageName, arity, axis, site);
-        var claimed = (element.AppliesTo & ToFlag(endpoint)) != 0;
+        var claimed = (SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) != 0;
         var (effect, detail) = SurfaceProbe.Classify(c, endpoint);
 
         // No cell to judge: the endpoint has no such site, or AttributeUsage forbids it and the compiler
@@ -60,8 +68,6 @@ public sealed class SurfaceParityTests
             if (effect is SurfaceEffect.Honoured or SurfaceEffect.Refused
                 or SurfaceEffect.UnhonouredButLoud) return;
 
-            if (MemberSiteIsNotADeclarationSite(element, c.Site, endpoint)) return;
-
             // Task 7 renames this to DeclaredDivergences.Reasons. Use the current name here so this task
             // compiles on its own; update the reference as part of that rename, not before it.
             if (OptionGaps.KnownSilent.TryGetValue($"{usageName}@{endpoint}", out var why))
@@ -71,25 +77,37 @@ public sealed class SurfaceParityTests
             }
 
             Assert.Fail(
-                $"{c.Rendered} on a {site} CLAIMS {endpoint} (AppliesTo) but is SILENT there: no diagnostic, "
-                + $"and output byte-identical to the same source without it. ({detail})\n\n"
-                + "The caller wrote something, the generator accepted it, changed nothing, and said nothing. "
-                + "Three ways out, in order of preference:\n"
+                $"{c.Rendered} on a {site} CLAIMS {endpoint} ({ClaimSource(element, c.Site)}) but is SILENT "
+                + $"there: no diagnostic, and output byte-identical to the same source without it. ({detail})"
+                + "\n\nThe caller wrote something, the generator accepted it, changed nothing, and said "
+                + "nothing. Three ways out, in order of preference:\n"
                 + $"  1. honour it at {endpoint};\n"
                 + $"  2. refuse it there with a diagnostic;\n"
-                + $"  3. drop {endpoint} from this element's AppliesTo — but only if it STRUCTURALLY cannot "
-                + "apply, not because it currently does not.");
+                + $"  3. drop {endpoint} from the claim — but only if it STRUCTURALLY cannot apply, not "
+                + "because it currently does not. If the element reaches this endpoint from ANOTHER site, "
+                + $"narrow this one alone with [DwarfSurfaceSite(AttributeTargets.{site}, …, \"why\")] rather "
+                + "than dropping the endpoint for every site at once.");
         }
         else
         {
             if (effect is SurfaceEffect.Silent or SurfaceEffect.UnhonouredButLoud) return;
 
             Assert.Fail(
-                $"{c.Rendered} on a {site} does NOT claim {endpoint} (AppliesTo) but is {effect} there "
-                + $"({detail}). The claim under-reaches: this cell is live and the matrix was told to skip "
-                + $"it. Add {endpoint} to the element's AppliesTo.");
+                $"{c.Rendered} on a {site} does NOT claim {endpoint} ({ClaimSource(element, c.Site)}) but is "
+                + $"{effect} there ({detail}). The claim under-reaches: this cell is live and the matrix was "
+                + $"told to skip it. Add {endpoint} to the claim that governs the {site} site.");
         }
     }
+
+    /// <summary>
+    ///     Which declaration decided this cell's claim — the element's default, or a site override. Named in
+    ///     both failure messages because the fix is a different edit in each case, and "AppliesTo" pointed at
+    ///     the wrong one as soon as site overrides existed.
+    /// </summary>
+    private static string ClaimSource(SurfaceElement element, AttributeTargets site) =>
+        element.SiteClaims.Any(sc => (sc.Site & site) == site)
+            ? $"[DwarfSurfaceSite({site})]"
+            : "[DwarfSurface(AppliesTo)]";
 
     /// <summary>
     ///     Counts an element as acting at <see cref="Endpoint.CreateMap" /> if ANY of its cases does, not just
@@ -139,50 +157,6 @@ public sealed class SurfaceParityTests
             "The (name, arity, axis, site) key is not unique: " + string.Join(", ", duplicates)
             + ". Add a discriminator to Cells() rather than letting one row stand in for two cases.");
     }
-
-    /// <summary>
-    ///     The endpoints whose mapping is declared on a MAPPER, separately from the DTO pair it maps.
-    /// </summary>
-    private static readonly Endpoint[] MapperDeclaredEndpoints =
-        [Endpoint.CreateMap, Endpoint.UpdateInto, Endpoint.Projection, Endpoint.SpanMap, Endpoint.AsyncStream];
-
-    /// <summary>
-    ///     Elements whose Property/Field placement is, by their own documentation, the <c>[MapTo]</c> REGISTRY
-    ///     form — not a second way to configure a mapper.
-    /// </summary>
-    private static readonly HashSet<string> MemberPlacementIsTheRegistryForm =
-        new(StringComparer.Ordinal) { "MapProperty", "MapIgnore" };
-
-    /// <summary>
-    ///     Whether this cell is a member-site placement at an endpoint whose mapping is declared on a mapper
-    ///     rather than on the DTO — in which case the DTO's members are not part of that mapper's declaration
-    ///     and there is nothing here for the element to configure.
-    ///     <para>
-    ///         This is a claim about the SHAPE of the endpoint, not about what the generator currently reads.
-    ///         At <see cref="Endpoint.Registry" /> the directive lives on the source TYPE and at
-    ///         <see cref="Endpoint.CoLocatedHost" /> on the target type, so in both the annotated DTO IS the
-    ///         declaration; at the five endpoints listed above the mapping is declared by a partial method on a
-    ///         separate <c>[DwarfMapper]</c> class, and the DTOs are ordinary types the consumer may not even
-    ///         own. <see cref="MapPropertyAttribute" /> and <see cref="MapIgnoreAttribute" /> say exactly this
-    ///         in their own summaries: the member-placement form is "(the <c>[MapTo]</c> registry)". Verified
-    ///         at source level as well — <c>MapperExtractor</c> reads these attributes off the class symbol or
-    ///         the method symbol, and only <c>Registry/MapToGenerator.cs</c> reads them off member symbols.
-    ///     </para>
-    ///     <para>
-    ///         It lives here, as a per-(element, site, endpoint) predicate, rather than in the element's own
-    ///         <c>AppliesTo</c>, because <c>AppliesTo</c> is per-ENDPOINT and cannot express it: at CreateMap
-    ///         <c>[MapProperty("Id", "Name")]</c> on the mapping METHOD is refused with DWARF038 while the same
-    ///         text on a DTO member is silent. Dropping CreateMap from the claim to satisfy the member cell
-    ///         would break the method cell in the other direction, so no value of the flags satisfies both.
-    ///         Making <c>[DwarfSurface]</c> site-aware is the real fix and is a maintainer decision.
-    ///     </para>
-    /// </summary>
-    private static bool MemberSiteIsNotADeclarationSite(SurfaceElement element, AttributeTargets site,
-        Endpoint endpoint) =>
-        site is AttributeTargets.Property or AttributeTargets.Field
-        && MemberPlacementIsTheRegistryForm.Contains(element.UsageName)
-        && element.Type.GetGenericArguments().Length == 0
-        && Array.IndexOf(MapperDeclaredEndpoints, endpoint) >= 0;
 
     private static (SurfaceElement, SurfaceCase) Resolve(string usageName, int arity, string axis, string site)
     {

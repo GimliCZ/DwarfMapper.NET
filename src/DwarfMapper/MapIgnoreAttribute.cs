@@ -16,6 +16,16 @@ namespace DwarfMapper;
 ///     </list>
 /// </summary>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurfaceSite(AttributeTargets.Property | AttributeTargets.Field,
+    SurfaceEndpoints.Registry | SurfaceEndpoints.CoLocatedHost,
+    "The member-placement form IS the registry form: the no-target constructor says 'never read THE ANNOTATED "
+    + "MEMBER', which only means anything where the annotated type is itself the declaration of the mapping. "
+    + "That holds at Registry ([MapTo] on the source type) and at CoLocatedHost ([GenerateMap<S,T>] on the "
+    + "target type), so both stay claimed. At the other five endpoints the mapping is declared by a partial "
+    + "method on a SEPARATE [DwarfMapper] class, which is also where the method/class form's completeness "
+    + "obligation lives; a member of the DTO pair — two ordinary types the consumer may not even own — is not "
+    + "part of that declaration and so has no destination set to exclude anything from. The two placements are "
+    + "two features sharing a name, not one feature the generator happens to read in one place.")]
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field,
     AllowMultiple = true, Inherited = false)]
 public sealed class MapIgnoreAttribute : Attribute

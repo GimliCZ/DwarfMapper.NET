@@ -5,8 +5,25 @@ using DwarfMapper;
 
 namespace DwarfMapper.Generator.Tests.Contracts;
 
+/// <summary>
+///     One <c>[DwarfSurfaceSite]</c> application, flattened out of the declaration.
+/// </summary>
+/// <param name="Site">The site(s) this claim replaces the element default for; may combine flags.</param>
+/// <param name="AppliesTo">The endpoints claimed when the element is written at <paramref name="Site" />.</param>
+/// <param name="Because">The structural reason, as stated at the declaration.</param>
+internal sealed record SurfaceSiteClaim(AttributeTargets Site, SurfaceEndpoints AppliesTo, string Because);
+
 /// <summary>One public surface element, as declared.</summary>
 /// <param name="UsageName">The name as written in source, with "Attribute" and any generic arity stripped.</param>
+/// <param name="AppliesTo">The element's DEFAULT claim; <paramref name="SiteClaims" /> refines it per site.</param>
+/// <param name="SiteClaims">
+///     The element's <c>[DwarfSurfaceSite]</c> narrowings. Being a collection, it compares by REFERENCE under
+///     the record's generated equality, so two elements built from the same type in two separate
+///     <see cref="SurfaceCatalog.Elements" /> constructions would not be equal. There is exactly one
+///     construction — <see cref="SurfaceCatalog.Elements" /> is built once and every consumer, including
+///     <c>CaseCache</c>, keys on those instances — so this changes nothing today. Whoever adds a second
+///     construction path must key the caches on <see cref="SurfaceElement.Type" /> instead.
+/// </param>
 internal sealed record SurfaceElement(
     Type Type,
     string UsageName,
@@ -14,7 +31,8 @@ internal sealed record SurfaceElement(
     SurfaceEndpoints AppliesTo,
     string? ProbeKey,
     AttributeTargets ValidOn,
-    bool AllowMultiple);
+    bool AllowMultiple,
+    IReadOnlyList<SurfaceSiteClaim> SiteClaims);
 
 /// <summary>
 ///     One cell input: this element, written this way, at this declaration site.
@@ -72,11 +90,96 @@ internal static class SurfaceCatalog
                     x.Surface.AppliesTo,
                     x.Surface.ProbeKey,
                     usage?.ValidOn ?? AttributeTargets.All,
-                    usage?.AllowMultiple ?? false);
+                    usage?.AllowMultiple ?? false,
+                    SiteClaimsOf(x.Type));
             })
             .OrderBy(e => e.UsageName, StringComparer.Ordinal)
             .ThenBy(e => e.Type.GetGenericArguments().Length)
             .ToList();
+    }
+
+    /// <summary>Every <c>[DwarfSurfaceSite]</c> on a type, in declaration order.</summary>
+    internal static IReadOnlyList<SurfaceSiteClaim> SiteClaimsOf(Type type) =>
+        type.GetCustomAttributes<DwarfSurfaceSiteAttribute>(inherit: false)
+            .Select(a => new SurfaceSiteClaim(a.Site, a.AppliesTo, a.Because))
+            .ToList();
+
+    /// <summary>
+    ///     What this element claims to affect WHEN WRITTEN AT <paramref name="site" />: the site's own
+    ///     <c>[DwarfSurfaceSite]</c> claim if it declares one, otherwise the element's default
+    ///     <c>AppliesTo</c>.
+    ///     <para>
+    ///         Every cell's claim resolves through here, so the claim is always readable at the type it
+    ///         describes. This replaced a per-(element, site, endpoint) predicate in
+    ///         <c>SurfaceParityTests</c> that decided ~100 cells from the test project — nothing forced a
+    ///         newly added element to acquire an entry there, and the cells it governed were reviewed by
+    ///         no one.
+    ///     </para>
+    ///     <para>
+    ///         <c>Single</c>, not <c>First</c>: two claims covering one site would hand the site to whichever
+    ///         the reflection ordered first and leave the other silently inert. The overlap is separately
+    ///         asserted by <c>SurfaceDeclarationTests</c>; this states the same invariant at the point of use
+    ///         rather than trusting the gate to have run.
+    ///     </para>
+    /// </summary>
+    public static SurfaceEndpoints ClaimFor(SurfaceElement element, AttributeTargets site)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        var matches = element.SiteClaims.Where(sc => (sc.Site & site) == site).ToList();
+        return matches.Count == 0 ? element.AppliesTo : matches.Single().AppliesTo;
+    }
+
+    /// <summary>
+    ///     Everything wrong with an element's <c>[DwarfSurfaceSite]</c> declarations, as reader-facing lines.
+    ///     <para>
+    ///         A pure function over the declaration's own values rather than an inline loop in the gate, so
+    ///         the malformed shapes can be fed to it directly. Every one of these checks passes vacuously
+    ///         against today's two well-formed declarations; a gate that has never fired is unverified code,
+    ///         and this is the same reason <see cref="SurfaceProbe.FirstNewOccurrence" /> is separated out.
+    ///     </para>
+    /// </summary>
+    /// <param name="name">The element's usage name, for the message.</param>
+    /// <param name="validOn">The element's <c>AttributeUsage.ValidOn</c>.</param>
+    /// <param name="defaultAppliesTo">The element's <c>[DwarfSurface(AppliesTo = …)]</c>.</param>
+    /// <param name="claims">Its <c>[DwarfSurfaceSite]</c> applications.</param>
+    internal static IReadOnlyList<string> ValidateSiteClaims(string name, AttributeTargets validOn,
+        SurfaceEndpoints defaultAppliesTo, IReadOnlyList<SurfaceSiteClaim> claims)
+    {
+        ArgumentNullException.ThrowIfNull(claims);
+        var problems = new List<string>();
+        AttributeTargets seen = default; // the sites an earlier claim already covers
+
+        foreach (var claim in claims)
+        {
+            if (claim.Site == 0)
+                problems.Add($"{name}: a [DwarfSurfaceSite] names no site at all, so it narrows nothing and "
+                             + "reads as a reviewed decision.");
+
+            var illegal = claim.Site & ~validOn;
+            if (illegal != 0)
+                problems.Add($"{name}: [DwarfSurfaceSite({claim.Site})] names {illegal}, which "
+                             + $"AttributeUsage does not permit (ValidOn = {validOn}). The element cannot be "
+                             + "written there at all, so the narrowing applies to nothing — this is how a "
+                             + "claim quietly stops applying after a site is removed from AttributeUsage.");
+
+            var overlap = claim.Site & seen;
+            if (overlap != 0)
+                problems.Add($"{name}: two [DwarfSurfaceSite] claims both cover {overlap}. One of them would "
+                             + "never be consulted, and which one depends on declaration order.");
+            seen |= claim.Site;
+
+            if (string.IsNullOrWhiteSpace(claim.Because))
+                problems.Add($"{name}: [DwarfSurfaceSite({claim.Site})] states no reason. The reason must be "
+                             + "about the SHAPE of the site; 'the generator does not read it there' is a "
+                             + "divergence to report, not a claim to encode.");
+
+            if (claim.AppliesTo == defaultAppliesTo)
+                problems.Add($"{name}: [DwarfSurfaceSite({claim.Site})] restates the element's own default "
+                             + $"({defaultAppliesTo}). It narrows nothing while reading as a reviewed "
+                             + "decision — delete it, or narrow it.");
+        }
+
+        return problems;
     }
 
     /// <summary>The declaration sites this element is legal on, one flag at a time.</summary>

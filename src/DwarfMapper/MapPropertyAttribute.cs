@@ -15,6 +15,16 @@ namespace DwarfMapper;
 ///     </list>
 /// </summary>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurfaceSite(AttributeTargets.Property | AttributeTargets.Field,
+    SurfaceEndpoints.Registry | SurfaceEndpoints.CoLocatedHost,
+    "The member-placement form IS the registry form: its one-argument constructor names the destination that "
+    + "THE ANNOTATED MEMBER supplies, which only means anything where the annotated type is itself the "
+    + "declaration of the mapping. That holds at Registry ([MapTo] on the source type) and at CoLocatedHost "
+    + "([GenerateMap<S,T>] on the target type), so both stay claimed. At the other five endpoints the mapping "
+    + "is declared by a partial method on a SEPARATE [DwarfMapper] class and the DTO pair is just two ordinary "
+    + "types the consumer may not even own — a member of them is not part of that mapper's declaration, so "
+    + "there is no directive here for the endpoint to reach. The two placements are two features sharing a "
+    + "name, not one feature the generator happens to read in one place.")]
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field,
     AllowMultiple = true, Inherited = false)]
 public sealed class MapPropertyAttribute : Attribute

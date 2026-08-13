@@ -102,9 +102,15 @@ internal sealed class DwarfSurfaceAttribute : Attribute
     public SurfaceCategory Category { get; }
 
     /// <summary>
-    ///     The endpoints this element CLAIMS to affect. Verified in both directions by
-    ///     <c>SurfaceParityTests</c>: a claimed endpoint where the element does nothing observable fails, and
-    ///     an unclaimed endpoint where it changes the output fails too.
+    ///     The endpoints this element CLAIMS to affect, at every declaration site its <c>AttributeUsage</c>
+    ///     permits. Verified in both directions by <c>SurfaceParityTests</c>: a claimed endpoint where the
+    ///     element does nothing observable fails, and an unclaimed endpoint where it changes the output fails
+    ///     too.
+    ///     <para>
+    ///         This is the DEFAULT claim, not the only one. An element whose reach genuinely differs by
+    ///         declaration site narrows the site with <see cref="DwarfSurfaceSiteAttribute" />; see there for
+    ///         why one value per element is not enough.
+    ///     </para>
     /// </summary>
     public SurfaceEndpoints AppliesTo { get; set; } = SurfaceEndpoints.All;
 
@@ -115,4 +121,59 @@ internal sealed class DwarfSurfaceAttribute : Attribute
     ///     by at least one element. Null means the default flat DTO pair suffices.
     /// </summary>
     public string? ProbeKey { get; set; }
+}
+
+/// <summary>
+///     Narrows <see cref="DwarfSurfaceAttribute.AppliesTo" /> for ONE declaration site, because an element's
+///     reach is not always uniform across the sites its <c>AttributeUsage</c> permits.
+///     <para>
+///         The forcing case is <c>[MapProperty]</c>. On a mapping METHOD it is a mapper directive; on a DTO
+///         MEMBER it is the <c>[MapTo]</c> registry form, where the annotated member supplies the destination.
+///         Those are two different features that happen to share a name, and they reach different endpoints:
+///         at <c>CreateMap</c> the method form is refused with DWARF038 while the member form has nothing to
+///         attach to at all. No single value of <see cref="DwarfSurfaceAttribute.AppliesTo" /> satisfies both
+///         cells — claim <c>CreateMap</c> and the member cell fails as over-reach, drop it and the method cell
+///         fails as under-reach. Roughly a hundred cells sat in that hole, and they were held by a predicate in
+///         the test project: exactly the hand-kept, test-side knowledge this architecture exists to delete,
+///         governing cells nobody reviewed and forcing no entry on a newly added element.
+///     </para>
+///     <para>
+///         <see cref="Because" /> is a CONSTRUCTOR argument rather than an optional property so a narrowing
+///         cannot be recorded without saying why, and the reason must be about the SHAPE of the site. "The
+///         generator does not read it there" is a divergence to report, not a claim to encode: narrowing to
+///         keep a cell green converts a live bug into documented intended behaviour, permanently and invisibly.
+///     </para>
+///     <para>
+///         Applying more than one to the same site, or naming a site the element's <c>AttributeUsage</c> does
+///         not permit, is an error rather than a silent no-op — a stale override is how a claim quietly stops
+///         applying. So is restating the element's own default, which reads as a reviewed decision while
+///         narrowing nothing. All four are asserted by <c>SurfaceDeclarationTests</c>.
+///     </para>
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface
+                | AttributeTargets.Enum, AllowMultiple = true, Inherited = false)]
+internal sealed class DwarfSurfaceSiteAttribute : Attribute
+{
+    public DwarfSurfaceSiteAttribute(AttributeTargets site, SurfaceEndpoints appliesTo, string because)
+    {
+        Site = site;
+        AppliesTo = appliesTo;
+        Because = because;
+    }
+
+    /// <summary>
+    ///     The declaration site(s) this claim replaces the element's default for. May combine flags
+    ///     (<c>Property | Field</c>) when one reason covers several sites; every flag must be one the element's
+    ///     own <c>AttributeUsage.ValidOn</c> permits.
+    /// </summary>
+    public AttributeTargets Site { get; }
+
+    /// <summary>The endpoints the element claims to affect WHEN WRITTEN AT <see cref="Site" />.</summary>
+    public SurfaceEndpoints AppliesTo { get; }
+
+    /// <summary>
+    ///     Why the element cannot reach the dropped endpoints from this site, stated in terms of the shape of
+    ///     the site. Mandatory, and asserted non-blank.
+    /// </summary>
+    public string Because { get; }
 }
