@@ -85,4 +85,96 @@ public sealed class SurfaceProbeTests
 
         GeneratorAssert.EmitsCompilableCode(source!);
     }
+
+    /// <summary>
+    ///     Regression guard for the Method/Property-Field routing bug: for every endpoint that HAS a mapping
+    ///     method (i.e. not <see cref="Endpoint.Registry" /> or <see cref="Endpoint.CoLocatedHost" />, where a
+    ///     Property/Field site already lands on a real member), the Method-site and Property-site sources for
+    ///     the same rendered text must differ. They were byte-identical before this fix — both routed through
+    ///     <c>memberAttribute</c> onto the mapping method — so a Property/Field cell silently measured
+    ///     METHOD-placement semantics. That is not <see cref="SurfaceEffect.NotCompilable" /> (the site is
+    ///     syntactically legal) and the containment guard above cannot see it (the attribute text IS present)
+    ///     — a plausible, wrong classification is exactly what this test exists to catch.
+    /// </summary>
+    [Fact]
+    public void Method_and_Property_sites_are_not_measured_as_the_same_source()
+    {
+        const string rendered = "[MapIgnore(\"Name\")]";
+        var methodBased = EndpointSources.All
+            .Where(e => e is not (Endpoint.Registry or Endpoint.CoLocatedHost));
+
+        foreach (var endpoint in methodBased)
+        {
+            var methodSource = EndpointSources.BuildAt(endpoint, AttributeTargets.Method, rendered);
+            var propertySource = EndpointSources.BuildAt(endpoint, AttributeTargets.Property, rendered);
+
+            Assert.NotEqual(methodSource, propertySource);
+        }
+    }
+
+    /// <summary>
+    ///     Declares, rather than silently absorbs, the fixtures that have no member slot
+    ///     (<see cref="EndpointSources.MemberSlotMarker" />) for the method-based endpoints' Property/Field
+    ///     sites. Each one means a whole run of Property/Field-site cells for that fixture reads
+    ///     <see cref="SurfaceEffect.NoSuchSite" /> instead of being measured — an honest "no cell" rather than
+    ///     a wrong classification, but still unmeasured coverage. If this count changes, it was a deliberate
+    ///     choice (a fixture gained or lost a marker), not a drift nobody noticed.
+    /// </summary>
+    [Fact]
+    public void Fixtures_without_a_member_slot_are_counted_not_silently_absent()
+    {
+        var missing = SurfaceFixtures.All
+            .Where(kv => !kv.Value.Contains(EndpointSources.MemberSlotMarker, StringComparison.Ordinal))
+            .Select(kv => kv.Key)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+
+        const int baseline = 14;
+        Assert.True(missing.Count == baseline,
+            $"{missing.Count} of {SurfaceFixtures.All.Count} fixtures have no {nameof(EndpointSources.MemberSlotMarker)}: "
+            + string.Join(", ", missing) + $". Each one means every Property/Field-site case that needs that "
+            + "fixture reads NoSuchSite for the method-based endpoints instead of being measured — declared "
+            + $"and counted, not silently dropped. Baseline is {baseline}; if you added a marker to a fixture, "
+            + "lower it deliberately, and if you added a fixture without one, raise it deliberately.");
+    }
+
+    /// <summary>
+    ///     The over-subtraction direction: a case that legitimately re-triggers a CS id the baseline already
+    ///     carries once must still read <see cref="SurfaceEffect.NotCompilable" />, not be masked because the
+    ///     id is already "known." Keying the baseline subtraction on id MEMBERSHIP (an earlier version of
+    ///     <see cref="SurfaceProbe.Classify" /> did exactly this) would treat "the id showed up before" and
+    ///     "the id showed up again, for an unrelated reason" as the same fact.
+    ///     <para>
+    ///         This cannot currently be constructed end-to-end through an actual compile: every class-model
+    ///         endpoint in <see cref="EndpointSources" /> declares exactly ONE partial mapping method, so
+    ///         <c>CS8795</c> — the id a blocking DWARF error produces, by leaving that one method unimplemented
+    ///         — tops out at one occurrence per compilation regardless of what the case under test does, and
+    ///         nothing in <see cref="EndpointSources.BuildAt" /> lets a case add a second partial method to
+    ///         fail independently. So <see cref="SurfaceProbe.FirstNewOccurrence" /> — the pure counting
+    ///         function <see cref="SurfaceProbe.Classify" /> delegates to — is verified directly instead.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void FirstNewOccurrence_flags_an_id_the_baseline_already_carries_once_when_the_case_doubles_it()
+    {
+        var baselineCounts = new Dictionary<string, int> { ["CS8795"] = 1 };
+        var withCounts = new Dictionary<string, int> { ["CS8795"] = 2 };
+
+        var result = SurfaceProbe.FirstNewOccurrence(withCounts, baselineCounts);
+
+        Assert.Equal("CS8795", result);
+    }
+
+    /// <summary>The correct-suppression direction, for contrast: an id whose count is unchanged from the
+    /// baseline is not new, however many times it already occurs.</summary>
+    [Fact]
+    public void FirstNewOccurrence_does_not_flag_an_id_whose_count_is_unchanged()
+    {
+        var baselineCounts = new Dictionary<string, int> { ["CS8795"] = 1 };
+        var withCounts = new Dictionary<string, int> { ["CS8795"] = 1 };
+
+        var result = SurfaceProbe.FirstNewOccurrence(withCounts, baselineCounts);
+
+        Assert.Null(result);
+    }
 }

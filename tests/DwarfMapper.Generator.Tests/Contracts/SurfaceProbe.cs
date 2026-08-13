@@ -43,8 +43,8 @@ internal enum SurfaceEffect
 /// </summary>
 internal static class SurfaceProbe
 {
-    private static readonly ConcurrentDictionary<string, (string[] DwarfKeys, string[] CompilerErrorIds,
-        string Generated)> Baselines = new();
+    private static readonly ConcurrentDictionary<string, (string[] DwarfKeys,
+        IReadOnlyDictionary<string, int> CompilerErrorCounts, string Generated)> Baselines = new();
 
     public static (SurfaceEffect Effect, string Detail) Classify(SurfaceCase c, Endpoint endpoint)
     {
@@ -52,7 +52,7 @@ internal static class SurfaceProbe
         var source = EndpointSources.BuildAt(endpoint, c.Site, c.Rendered, types);
         if (source is null) return (SurfaceEffect.NoSuchSite, "endpoint has no such declaration site");
 
-        var (baseDwarfKeys, baseCompilerErrorIds, baseline) = Baseline(endpoint, c.Element.ProbeKey, types);
+        var (baseDwarfKeys, baseCompilerErrorCounts, baseline) = Baseline(endpoint, c.Element.ProbeKey, types);
 
         // The C# COMPILER's verdict on the placement, not the generator's. GeneratorTestHarness.RunAll only
         // returns the diagnostics the GENERATOR itself reported (the out parameter of
@@ -67,12 +67,20 @@ internal static class SurfaceProbe
         // every case sharing that fixture as NotCompilable, no matter what the element actually did. Same
         // "only what changed" principle OptionProbe applies to DWARF diagnostics, applied here to CS.
         // Confirmed empirically against the "snake-case-member" fixture: see the task report.
-        var compilationErrors = GeneratorTestHarness.RunAndGetCompilationErrors(source);
-        var newCompilerError = compilationErrors.FirstOrDefault(d =>
-            d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("CS", StringComparison.Ordinal)
-            && !baseCompilerErrorIds.Contains(d.Id, StringComparer.Ordinal));
-        if (newCompilerError is not null)
-            return (SurfaceEffect.NotCompilable, newCompilerError.Id);
+        //
+        // Subtracted by OCCURRENCE COUNT, not id membership: an id present in the baseline once but the
+        // WITH-run twice is still a new failure the case introduced — keying on "is this id in the baseline
+        // at all" would mask it. See SurfaceProbeTests for why the harness cannot currently construct that
+        // scenario end-to-end (every class-model endpoint declares exactly one partial mapping method, so
+        // CS8795 tops out at one occurrence regardless of the case), and FirstNewOccurrence is verified
+        // directly instead.
+        var withCompilerErrorCounts = GeneratorTestHarness.RunAndGetCompilationErrors(source)
+            .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("CS", StringComparison.Ordinal))
+            .GroupBy(d => d.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        var newCompilerErrorId = FirstNewOccurrence(withCompilerErrorCounts, baseCompilerErrorCounts);
+        if (newCompilerErrorId is not null)
+            return (SurfaceEffect.NotCompilable, newCompilerErrorId);
 
         var (diagnostics, generated) = GeneratorTestHarness.RunAll(source);
 
@@ -95,21 +103,42 @@ internal static class SurfaceProbe
         return (SurfaceEffect.Silent, "no diagnostic, identical output, compiles");
     }
 
-    private static (string[] DwarfKeys, string[] CompilerErrorIds, string Generated) Baseline(Endpoint endpoint,
-        string? probeKey, string? types)
+    private static (string[] DwarfKeys, IReadOnlyDictionary<string, int> CompilerErrorCounts, string Generated)
+        Baseline(Endpoint endpoint, string? probeKey, string? types)
     {
         var cacheKey = $"{endpoint}|{probeKey ?? "<flat>"}";
         return Baselines.GetOrAdd(cacheKey, _ =>
         {
             var baselineSource = EndpointSources.Build(endpoint, types: types);
             var (d, g) = GeneratorTestHarness.RunAll(baselineSource);
-            var compilerErrorIds = GeneratorTestHarness.RunAndGetCompilationErrors(baselineSource)
-                .Where(x => x.Id.StartsWith("CS", StringComparison.Ordinal))
-                .Select(x => x.Id)
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
+            var compilerErrorCounts = GeneratorTestHarness.RunAndGetCompilationErrors(baselineSource)
+                .Where(x => x.Severity == DiagnosticSeverity.Error
+                            && x.Id.StartsWith("CS", StringComparison.Ordinal))
+                .GroupBy(x => x.Id, StringComparer.Ordinal)
+                .ToDictionary(g2 => g2.Key, g2 => g2.Count(), StringComparer.Ordinal);
             return (d.Select(x => x.Id + ":" + x.Severity).Distinct(StringComparer.Ordinal).ToArray(),
-                compilerErrorIds, g);
+                (IReadOnlyDictionary<string, int>)compilerErrorCounts, g);
         });
+    }
+
+    /// <summary>
+    ///     The first CS-prefixed diagnostic id whose occurrence count in <paramref name="withCounts" />
+    ///     exceeds its count in <paramref name="baselineCounts" /> (an id absent from the baseline counts as
+    ///     zero) — or <c>null</c> if none. A pure counting function, deliberately separated from
+    ///     <see cref="GeneratorTestHarness" /> so the over-subtraction direction (a case that legitimately
+    ///     re-triggers a CS id the baseline already carries once) is testable without needing an end-to-end
+    ///     compile that can actually produce two occurrences of the same id — see <c>SurfaceProbeTests</c> for
+    ///     why that scenario cannot currently be constructed through the real harness.
+    /// </summary>
+    internal static string? FirstNewOccurrence(IReadOnlyDictionary<string, int> withCounts,
+        IReadOnlyDictionary<string, int> baselineCounts)
+    {
+        foreach (var id in withCounts.Keys.OrderBy(k => k, StringComparer.Ordinal))
+        {
+            var baseCount = baselineCounts.TryGetValue(id, out var n) ? n : 0;
+            if (withCounts[id] > baseCount) return id;
+        }
+
+        return null;
     }
 }

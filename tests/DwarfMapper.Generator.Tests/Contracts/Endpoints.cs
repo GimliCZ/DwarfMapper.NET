@@ -38,10 +38,20 @@ public enum Endpoint
 /// </summary>
 public static class EndpointSources
 {
+    /// <summary>
+    ///     Marks the point inside a fixture's Src/Dst text where <see cref="BuildAtMember" /> splices a
+    ///     Property/Field-site attribute, immediately ahead of a real member. A fixture whose text does not
+    ///     contain this marker has no member slot — <see cref="BuildAt" /> returns <c>null</c> (NoSuchSite)
+    ///     for that fixture's Property/Field cells rather than placing the attribute somewhere that isn't
+    ///     actually a member, which is how <c>(Method, Property/Field)</c> ended up measuring identical
+    ///     source under two different labels.
+    /// </summary>
+    public const string MemberSlotMarker = "/*__MEMBER_SLOT__*/";
+
     /// <summary>The DTO pair every endpoint maps between. Deliberately trivial — the matrix varies the
     /// ATTRIBUTE and the ENDPOINT, so the types must contribute no complications of their own.</summary>
-    private const string Types = """
-        public sealed class Src { public int Id { get; set; } public string? Name { get; set; } }
+    private const string Types = $$"""
+        public sealed class Src { public int Id { get; set; } {{MemberSlotMarker}}public string? Name { get; set; } }
         public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
         """;
 
@@ -194,8 +204,19 @@ public static class EndpointSources
                 => null, // neither endpoint declares a mapping method to annotate
             AttributeTargets.Method
                 => Build(endpoint, memberAttribute: rendered, types: types),
+            // Registry and CoLocatedHost already place memberAttribute on a real DTO member (Registry's own
+            // template puts it on Src.Name; CoLocatedHost's puts it on Dst.Name) — that is a genuine member
+            // site, not a stand-in for a missing method. Every OTHER endpoint has a mapping method, and
+            // routing Property/Field there too would silently measure METHOD-placement semantics under a
+            // Property/Field label — a real, different code path in the generator (confirmed: MapperExtractor
+            // never reads MapIgnore/MapProperty off a Src/Dst member for the class-model endpoints; only
+            // MapToGenerator's registry path does). BuildAtMember places it on an actual member instead, or
+            // returns null when the fixture in play has none to place it on.
             AttributeTargets.Property or AttributeTargets.Field
+                when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
                 => Build(endpoint, memberAttribute: rendered, types: types),
+            AttributeTargets.Property or AttributeTargets.Field
+                => BuildAtMember(endpoint, rendered, types),
             AttributeTargets.Assembly
                 => InsertAssemblyAttribute(Build(endpoint, types: types), rendered),
             AttributeTargets.Struct or AttributeTargets.Constructor
@@ -237,5 +258,23 @@ public static class EndpointSources
             throw new InvalidOperationException(
                 $"Expected \"{marker}\" in the generated source; the assembly-attribute splice point moved.");
         return source[..idx] + "using Demo;\n" + assemblyForm + "\n" + source[idx..];
+    }
+
+    /// <summary>
+    ///     Splices <paramref name="rendered" /> immediately ahead of a real DTO member, for the endpoints
+    ///     whose Property/Field site must NOT fall back to the mapping method. Returns <c>null</c> — NoSuchSite
+    ///     — when the fixture in play (<paramref name="types" />, or the default <see cref="Types" />) carries
+    ///     no <see cref="MemberSlotMarker" />, rather than placing the attribute somewhere that silently
+    ///     measures a different code path. Fixture text is arbitrary: a fixture written before this slot
+    ///     existed has no marker to find, and that is an honest "no cell here," not a defect to paper over.
+    /// </summary>
+    private static string? BuildAtMember(Endpoint endpoint, string rendered, string? types)
+    {
+        var t = string.IsNullOrEmpty(types) ? Types : types;
+        var idx = t.IndexOf(MemberSlotMarker, StringComparison.Ordinal);
+        if (idx < 0) return null; // no member slot in this fixture: no cell, not a fallback to the method
+
+        var withMember = t[..idx] + rendered + " " + t[(idx + MemberSlotMarker.Length)..];
+        return Build(endpoint, types: withMember);
     }
 }
