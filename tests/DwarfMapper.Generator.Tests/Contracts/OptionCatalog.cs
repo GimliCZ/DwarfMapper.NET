@@ -43,7 +43,7 @@ public static class OptionCatalog
     ///     reads it directly, unioned with the element-level demand, so an option pointed at a key with no
     ///     fixture is reported rather than quietly assumed fine.
     /// </summary>
-    public static IReadOnlyDictionary<string, string> ProbeKeys { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
+    internal static IReadOnlyDictionary<string, string> ProbeKeys { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["AutoNest"] = "nested-pair",
         ["AllowNonPublic"] = "internal-member",

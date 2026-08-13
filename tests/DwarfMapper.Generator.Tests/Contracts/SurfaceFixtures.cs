@@ -110,9 +110,14 @@ internal static class SurfaceFixtures
         public sealed class Dst { public int Id { get; set; } public int[]? Items { get; set; } }
         """;
 
-    // A self-referencing graph, so there is a cycle for the policy to have an opinion about. Reused for
-    // MaxDepth: a fixed three-level chain does not exercise a depth budget — the generator simply walks it
-    // — whereas a self-referencing type forces depth tracking, which is what MaxDepth bounds.
+    // Shared by two demands, each carrying its own original reasoning verbatim:
+    //
+    // OnCycle — A self-referencing graph, so there is a cycle for the policy to have an opinion about.
+    //
+    // MaxDepth — Nesting deeper than the probe's MaxDepth (see ProbeOverrides), so the budget actually binds.
+    // A RECURSIVE graph. A fixed three-level chain does not exercise a depth budget — the generator
+    // simply walks it — whereas a self-referencing type forces depth tracking, which is what MaxDepth
+    // bounds.
     [SurfaceProbe("recursive-graph")]
     private static readonly string RecursiveGraph = """
         public sealed class Node { public int Id { get; set; } public Node? Next { get; set; } }
