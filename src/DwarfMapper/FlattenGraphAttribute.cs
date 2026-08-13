@@ -28,7 +28,7 @@ namespace DwarfMapper;
 ///         <c>IEnumerable&lt;TNodeDto&gt;</c>.
 ///     </para>
 /// </summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "nested-pair")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class FlattenGraphAttribute : Attribute
 {

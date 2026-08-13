@@ -45,7 +45,7 @@ namespace DwarfMapper;
 ///         is no null to skip, and no post-construction assignment to guard.
 ///     </para>
 /// </remarks>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "nullable-source-nonnull-target")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class MapNullSkipAttribute : Attribute
 {
@@ -84,7 +84,7 @@ public sealed class MapNullSkipAttribute : Attribute
 /// </remarks>
 /// <typeparam name="TSource">The source type of the pair this applies to.</typeparam>
 /// <typeparam name="TTarget">The destination type of the pair this applies to.</typeparam>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "nullable-source-nonnull-target")]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapNullSkipAttribute<TSource, TTarget> : Attribute
 {

@@ -20,7 +20,7 @@ namespace DwarfMapper;
 ///         default equality (<c>EqualityComparer&lt;TKey&gt;.Default</c>).
 ///     </para>
 /// </summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "nullable-collection-rebuild")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapCollectionKeyAttribute : Attribute
 {

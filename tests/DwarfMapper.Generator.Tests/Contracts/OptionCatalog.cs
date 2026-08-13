@@ -35,114 +35,31 @@ public sealed record OptionInfo(string Name, string NonDefault, object? Default,
 public static class OptionCatalog
 {
     /// <summary>
-    ///     The one thing that genuinely cannot be derived: the SHAPE that makes an option observable. No
-    ///     amount of reflection over <c>AutoNest</c> yields "you need a nested class pair here". These are
-    ///     inputs to the experiment, not a description of the API — and an option without one is reported as
-    ///     "not probed" rather than quietly assumed fine.
+    ///     The class-level options are PROPERTIES of one type (<see cref="DwarfMapperAttribute" />), so the
+    ///     type-level <c>[DwarfSurface(ProbeKey = ...)]</c> — which sits on <c>DwarfMapperAttribute</c> itself
+    ///     — cannot express a different fixture per property. This map is that irreducible remainder: it is
+    ///     not a duplicate of the element-level demand, it is the SECOND demand source, scoped to properties
+    ///     rather than types. <see cref="SelfValidation.SurfaceDeclarationTests.Every_declared_ProbeKey_binds_to_exactly_one_fixture" />
+    ///     reads it directly, unioned with the element-level demand, so an option pointed at a key with no
+    ///     fixture is reported rather than quietly assumed fine.
     /// </summary>
-    private static readonly Dictionary<string, string> TriggeringShapes = new(StringComparer.Ordinal)
+    public static IReadOnlyDictionary<string, string> ProbeKeys { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["AutoNest"] = """
-            public sealed class Inner { public int X { get; set; } }
-            public sealed class InnerDto { public int X { get; set; } }
-            public sealed class Src { public int Id { get; set; } public Inner Child { get; set; } = new(); }
-            public sealed class Dst { public int Id { get; set; } public InnerDto Child { get; set; } = new(); }
-            """,
-
-        ["AllowNonPublic"] = """
-            public sealed class Src { public int Id { get; set; } internal string? Name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-            """,
-
-        ["NameConvention"] = """
-            public sealed class Src { public int Id { get; set; } public string? user_name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string? UserName { get; set; } }
-            """,
-
-        ["CaseInsensitive"] = """
-            public sealed class Src { public int Id { get; set; } public string? name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-            """,
-
-        ["IgnoreObsoleteMembers"] = """
-            public sealed class Src { public int Id { get; set; } [System.Obsolete] public string? Name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } [System.Obsolete] public string? Name { get; set; } }
-            """,
-
-        ["SkipNullSourceMembers"] = """
-            public sealed class Src { public int Id { get; set; } public string? Name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string Name { get; set; } = ""; }
-            """,
-
-        ["NullStrategy"] = """
-            public sealed class Src { public int Id { get; set; } public int? Val { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public int Val { get; set; } }
-            """,
-
-        ["RequiredMapping"] = """
-            public sealed class Src { public int Id { get; set; } public string? Name { get; set; } public int Extra { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-            """,
-
-        // Two enums whose members are declared in DIFFERENT order, so ByName and ByValue genuinely disagree
-        // about the result. Same-order enums would map identically under both strategies and the cell would
-        // read "no effect" while the option was working perfectly.
-        ["EnumStrategy"] = """
-            public enum SrcKind { A, B }
-            public enum DstKind { B, A }
-            public sealed class Src { public int Id { get; set; } public SrcKind Kind { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public DstKind Kind { get; set; } }
-            """,
-
-        // An enum member whose [Description] differs from its identifier, mapped to a string — otherwise the
-        // two settings describe the same mapping and the option reads as having no effect.
-        ["EnumStringSource"] = """
-            public enum Kind { [System.ComponentModel.Description("in-progress")] InProgress, Done }
-            public sealed class Src { public int Id { get; set; } public Kind Kind { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string Kind { get; set; } = ""; }
-            """,
-
-        // A NULLABLE collection member: the option decides what a null source collection becomes.
-        // DIFFERENT collection types, so the mapper must REBUILD rather than assign the reference across.
-        // With List<int> on both sides it is a straight copy and the null policy never comes up, which read
-        // as "the option does nothing" when the fixture simply never asked it anything.
-        ["NullCollections"] = """
-            public sealed class Src { public int Id { get; set; } public System.Collections.Generic.List<int>? Items { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public int[]? Items { get; set; } }
-            """,
-
-        // A self-referencing graph, so there is a cycle for the policy to have an opinion about.
-        ["OnCycle"] = """
-            public sealed class Node { public int Id { get; set; } public Node? Next { get; set; } }
-            public sealed class NodeDto { public int Id { get; set; } public NodeDto? Next { get; set; } }
-            public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public NodeDto? Root { get; set; } }
-            """,
-
-        // Nesting deeper than the probe's MaxDepth (see ProbeOverrides), so the budget actually binds.
-        // A RECURSIVE graph. A fixed three-level chain does not exercise a depth budget — the generator
-        // simply walks it — whereas a self-referencing type forces depth tracking, which is what MaxDepth
-        // bounds.
-        ["MaxDepth"] = """
-            public sealed class Node { public int Id { get; set; } public Node? Next { get; set; } }
-            public sealed class NodeDto { public int Id { get; set; } public NodeDto? Next { get; set; } }
-            public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public NodeDto? Root { get; set; } }
-            """,
-
-        // A NARROWING pair. Widening (int->long) is allowed regardless, so it cannot distinguish the option;
-        // narrowing is what ImplicitConversions actually gates, by escalating DWARF038 to an error.
-        ["ImplicitConversions"] = """
-            public sealed class Src { public int Id { get; set; } public long Val { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public int Val { get; set; } }
-            """,
-
-        ["ReferenceHandling"] = """
-            public sealed class Inner { public int X { get; set; } }
-            public sealed class InnerDto { public int X { get; set; } }
-            public sealed class Src { public int Id { get; set; } public Inner? Child { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public InnerDto? Child { get; set; } }
-            """
+        ["AutoNest"] = "nested-pair",
+        ["AllowNonPublic"] = "internal-member",
+        ["NameConvention"] = "snake-case-member",
+        ["CaseInsensitive"] = "case-mismatched-member",
+        ["IgnoreObsoleteMembers"] = "obsolete-member",
+        ["SkipNullSourceMembers"] = "nullable-source-nonnull-target",
+        ["NullStrategy"] = "nullable-value-to-nonnull",
+        ["RequiredMapping"] = "unconsumed-source-member",
+        ["EnumStrategy"] = "divergent-order-enums",
+        ["EnumStringSource"] = "described-enum-to-string",
+        ["NullCollections"] = "nullable-collection-rebuild",
+        ["OnCycle"] = "recursive-graph",
+        ["MaxDepth"] = "recursive-graph",
+        ["ImplicitConversions"] = "narrowing-conversion",
+        ["ReferenceHandling"] = "shared-reference-graph"
     };
 
     /// <summary>
@@ -160,7 +77,7 @@ public static class OptionCatalog
 
     /// <summary>Options with a shape that makes them observable — the ones the matrix can actually judge.</summary>
     public static IReadOnlyList<string> WithTriggeringShape { get; } =
-        TriggeringShapes.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
+        ProbeKeys.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
 
     private static List<OptionInfo> Build()
     {
@@ -177,7 +94,7 @@ public static class OptionCatalog
                     p.Name,
                     ProbeOverrides.TryGetValue(p.Name, out var over) ? over : NonDefaultFor(p, def),
                     def,
-                    TriggeringShapes.TryGetValue(p.Name, out var shape) ? shape : null);
+                    ProbeKeys.TryGetValue(p.Name, out var key) ? SurfaceFixtures.Get(key) : null);
             })
             .ToList();
     }

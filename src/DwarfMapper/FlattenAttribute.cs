@@ -6,7 +6,7 @@ namespace DwarfMapper;
 ///     Flattens a complex source member: its readable sub-members are mapped to
 ///     destination members of the same name (e.g. <c>Address.City → City</c>). Apply to a mapping method.
 /// </summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "nested-pair")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class FlattenAttribute : Attribute
 {

@@ -82,4 +82,45 @@ public sealed class SurfaceDeclarationTests
         var total = Contracts.SurfaceCatalog.Elements.Sum(e => Contracts.SurfaceCatalog.CasesFor(e).Count);
         Assert.InRange(total, 60, 4000);
     }
+
+    /// <summary>
+    ///     There are two demand sources, not one. Element-level: <c>[DwarfSurface(ProbeKey = "…")]</c> on an
+    ///     attribute TYPE. Property-level: <c>OptionCatalog</c>'s option → key map, because the class-level
+    ///     options are PROPERTIES of a single type (<c>DwarfMapperAttribute</c>) and a type-level attribute
+    ///     cannot express a per-property fixture. Supply is <see cref="Contracts.SurfaceFixtures" />; the
+    ///     bijection holds against the UNION of both demand sources, not either alone.
+    /// </summary>
+    [Fact]
+    public void Every_declared_ProbeKey_binds_to_exactly_one_fixture()
+    {
+        var elementDemand = Contracts.SurfaceCatalog.Elements
+            .Where(e => e.ProbeKey is not null)
+            .Select(e => (Key: e.ProbeKey!, Source: "element " + e.UsageName));
+
+        var optionDemand = Contracts.OptionCatalog.ProbeKeys
+            .Select(kv => (Key: kv.Value, Source: "option " + kv.Key));
+
+        var demandSources = elementDemand.Concat(optionDemand)
+            .GroupBy(x => x.Key, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => string.Join(" & ", g.Select(x => x.Source)), StringComparer.Ordinal);
+
+        var demanded = demandSources.Keys.ToHashSet(StringComparer.Ordinal);
+        var supplied = Contracts.SurfaceFixtures.All.Keys.ToHashSet(StringComparer.Ordinal);
+
+        var unbound = demanded.Except(supplied).OrderBy(k => k, StringComparer.Ordinal)
+            .Select(k => $"{k} (demanded by {demandSources[k]})")
+            .ToList();
+        Assert.True(unbound.Count == 0,
+            "ProbeKey(s) declared with no fixture in SurfaceFixtures: " + string.Join(", ", unbound)
+            + ". The declaration states a demand — either an element's [DwarfSurface(ProbeKey = ...)] or an "
+            + "entry in OptionCatalog.ProbeKeys — and the fixture is the supply. An unbound key means the "
+            + "demanding element or option's probe silently falls back to the flat DTO pair, which cannot "
+            + "trigger it, and the cell reads 'no effect' while the feature works perfectly.");
+
+        var orphaned = supplied.Except(demanded).OrderBy(k => k, StringComparer.Ordinal).ToList();
+        Assert.True(orphaned.Count == 0,
+            "Fixture(s) in SurfaceFixtures claimed by no [DwarfSurface(ProbeKey = ...)] and no "
+            + "OptionCatalog.ProbeKeys entry: " + string.Join(", ", orphaned)
+            + ". An orphaned fixture is dead weight that reads as coverage.");
+    }
 }

@@ -8,7 +8,7 @@ namespace DwarfMapper;
 ///     uses <c>[DwarfMapper(RequiredMapping = RequiredMappingStrategy.Both)]</c>. The source-side mirror of
 ///     <see cref="MapIgnoreAttribute" />.
 /// </summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "unconsumed-source-member")]
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapIgnoreSourceAttribute : Attribute
 {
