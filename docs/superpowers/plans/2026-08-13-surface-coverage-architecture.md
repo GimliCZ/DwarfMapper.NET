@@ -988,8 +988,12 @@ place an attribute at an arbitrary `AttributeTargets` site. Add:
                 => Build(endpoint, memberAttribute: rendered, types: types),
             AttributeTargets.Property or AttributeTargets.Field
                 => Build(endpoint, memberAttribute: rendered, types: types),
+            // The assembly attribute must sit AFTER the using block and BEFORE the file-scoped namespace.
+            // Prepending it to Build's output is CS1529 ("a using clause must precede all other elements")
+            // for every assembly-site cell — and a syntactically broken template is indistinguishable from
+            // a genuine NotCompilable verdict from the outside, so verify this one by compiling it.
             AttributeTargets.Assembly
-                => "[assembly: " + rendered.Trim('[', ']') + "]\n" + Build(endpoint, types: types),
+                => InsertAssemblyAttribute(Build(endpoint, types: types), rendered),
             AttributeTargets.Struct or AttributeTargets.Constructor
                 => null, // no fixture in the endpoint set declares one; add a shape before claiming the site
             _ => null
@@ -1001,6 +1005,38 @@ place an attribute at an arbitrary `AttributeTargets` site. Add:
 mapping method, which is wrong for member-form attributes. If a cell fails for that reason, extend
 `EndpointSources` with a real member slot rather than working around it in the probe — the whole point is that
 adding a site is a single edit in `Endpoints.cs`.
+
+**Two template defects to fix while you are here** (both found empirically in the first implementation):
+
+- The `CoLocatedHost` template in `Build` consumes only `classAttribute` and ignores `memberAttribute`, so a
+  member-form attribute vanishes and the cell reads `Silent` while never having been tested. Add a real member
+  slot to that template.
+- The `Assembly` branch above, if written as a prepend, is CS1529 for every assembly-site cell.
+
+**Then close the gap that let both hide** — add this guard, which catches any future template that forgets a
+slot:
+
+```csharp
+    [Theory]
+    [MemberData(nameof(EveryEndpointAndSite))]
+    public void BuildAt_either_declines_the_cell_or_actually_places_the_attribute(
+        Endpoint endpoint, AttributeTargets site)
+    {
+        // A vacuous Silent is worse than a missing cell. If BuildAt returns a source at all, it is claiming
+        // this cell exists — and a source that silently drops the attribute reads as "the element did
+        // nothing" when in truth the element was never there. Task 5 triages Silent cells into "structurally
+        // inapplicable, narrow the claim", so a dropped attribute would permanently narrow an AppliesTo on
+        // the strength of a measurement bug.
+        const string rendered = "[MapIgnore(\"Name\")]";
+        var source = EndpointSources.BuildAt(endpoint, site, rendered);
+        if (source is null) return;   // NoSuchSite — an honest refusal to judge
+
+        Assert.Contains(rendered, source, StringComparison.Ordinal);
+    }
+```
+
+A genuine `NotCompilable` verdict and a syntactically broken harness template look identical from the outside.
+Verify the assembly-site fix by actually compiling one, not by reading it.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -1155,10 +1191,18 @@ public static class SurfaceProbe
 Run: `dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj --filter "FullyQualifiedName~SurfaceProbeTests"`
 Expected: both PASS.
 
-If `A_class_only_attribute_on_a_method_is_NotCompilable` reports `Silent` instead, `GeneratorTestHarness.RunAll`
-is not surfacing compiler diagnostics. Use `GeneratorTestHarness.RunAndGetCompilationErrors` for the
-`NotCompilable` determination and keep `RunAll` for the effect comparison; adjust `Classify` accordingly and
-say so in the commit message.
+**It does report `Silent`, and the remedy below is the correct one — treat it as part of the task, not a
+contingency.** `RunAll` returns only the generator's self-reported diagnostics, never the final compilation's
+compiler verdict. Use `GeneratorTestHarness.RunAndGetCompilationErrors` for the `NotCompilable` determination
+and keep `RunAll` for the effect comparison.
+
+**And subtract the baseline's CS errors before declaring `NotCompilable`.** Whenever a fixture already carries
+a blocking DWARF error, the baseline compilation also carries `CS8795` (an unimplemented partial method),
+because the generator declined to implement it. Attributing that to the element under test misclassifies
+*every case sharing that fixture* as `NotCompilable` — a whole fixture's worth of cells silently exempted from
+judgement. Only NEW compiler errors count, exactly as only new diagnostics count in `OptionProbe`. This is the
+same principle applied to a second channel, and it is the difference between a matrix that measures the
+element and one that measures the fixture.
 
 - [ ] **Step 6: Commit**
 
