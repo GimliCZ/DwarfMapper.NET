@@ -64,10 +64,6 @@ public static class OptionCatalog
 
     public static IReadOnlyList<OptionInfo> Options { get; } = Build();
 
-    /// <summary>Options with a shape that makes them observable — the ones the matrix can actually judge.</summary>
-    public static IReadOnlyList<string> WithTriggeringShape { get; } =
-        ProbeKeys.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
-
     private static List<OptionInfo> Build()
     {
         var probe = new DwarfMapperAttribute();

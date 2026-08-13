@@ -250,10 +250,10 @@ public sealed class SurfaceDeclarationTests
             .ToList();
         Assert.True(unbound.Count == 0,
             "ProbeKey(s) declared with no fixture in SurfaceFixtures: " + string.Join(", ", unbound)
-            + ". The declaration states a demand — either an element's [DwarfSurface(ProbeKey = ...)] or an "
-            + "entry in OptionCatalog.ProbeKeys — and the fixture is the supply. An unbound key means the "
-            + "demanding element or option's probe silently falls back to the flat DTO pair, which cannot "
-            + "trigger it, and the cell reads 'no effect' while the feature works perfectly.");
+            + ". The declaration states a demand — either an element's [DwarfSurface(ProbeKey = ...)] or a "
+            + "case's [DwarfSurfaceProbe(..., ProbeKey = ...)] — and the fixture is the supply. An unbound "
+            + "key means that case's probe silently falls back to the flat DTO pair, which cannot trigger "
+            + "it, and the cell reads 'no effect' while the feature works perfectly.");
 
         var orphaned = supplied.Except(demanded).OrderBy(k => k, StringComparer.Ordinal).ToList();
         Assert.True(orphaned.Count == 0,

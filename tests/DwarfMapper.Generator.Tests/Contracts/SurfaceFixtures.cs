@@ -157,11 +157,23 @@ internal static class SurfaceFixtures
     // A RECURSIVE navigation on the source and a FLAT collection on the destination — the two halves a graph
     // flatten needs. The nested-pair fixture has a single non-recursive complex member and no collection
     // anywhere, so [FlattenGraph] had neither a graph to walk nor anywhere to put the result.
+    //
+    // Src.Flat exists ONLY so the BASELINE compiles. Without it, Dst.Flat has no source member, the baseline
+    // is DWARF001 (Error) and emits nothing — so a [FlattenGraph] that did nothing produced byte-identical
+    // (empty) output beside an error and read UnhonouredButLoud, which passes a claimed endpoint AND an
+    // unclaimed one. The fixture would have swallowed the verdict it was built to produce: a fixture that
+    // cannot compile without the element under test can never show that element doing nothing. Here the
+    // directive's job is to REDIRECT Dst.Flat's source from the direct collection to a walk of Root's graph,
+    // which is a question with a visible answer either way.
+    //
+    // Contrast the case-mismatched-member / snake-case-member / internal-member fixtures, whose baselines are
+    // DWARF001 BY DESIGN: there the error is precisely what CaseInsensitive / NameConvention / AllowNonPublic
+    // exist to remove, so the element under test is expected to clear it and the cell reads Honoured.
     [SurfaceProbe("graph-navigation-to-flat-collection")]
     private static readonly string GraphNavigationToFlatCollection = """
         public sealed class Node { public int Id { get; set; } public System.Collections.Generic.List<Node> Children { get; set; } = new(); }
         public sealed class NodeDto { public int Id { get; set; } }
-        public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } }
+        public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } public System.Collections.Generic.List<Node> Flat { get; set; } = new(); }
         public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.List<NodeDto> Flat { get; set; } = new(); }
         """;
 

@@ -161,28 +161,118 @@ public sealed class SurfaceParityTests
     [Fact]
     public void The_cells_that_pose_no_question_are_declared_and_counted()
     {
-        var unaskable = new List<string>();
+        var unaskable = AllCells()
+            .Where(x => SurfaceProbe.PosesNoQuestion(x.Case, x.Effect))
+            .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint} — {x.Case.Unmeasured ?? x.Detail}")
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        AssertRatchet(unaskable, UnaskableCellCeiling,
+            "cells pose the generator no question",
+            "Close a hole instead: give the case a fixture that triggers it with "
+            + "[DwarfSurfaceProbe(ProbeKey = ...)], or an argument list that bites.");
+    }
+
+    /// <summary>The ceiling on cells the C# compiler rejects outright. Shrink-only, like the others.</summary>
+    private const int NotCompilableCellCeiling = 107;
+
+    /// <summary>The ceiling on cells that pass BOTH claim branches. Shrink-only, like the others.</summary>
+    private const int UnhonouredButLoudCellCeiling = 14;
+
+    /// <summary>
+    ///     The cells the C# compiler rejects, counted rather than merely returned from.
+    ///     <para>
+    ///         <see cref="SurfaceEffect.NotCompilable" /> passes without deciding anything, and most of the
+    ///         time that is honest — <c>AttributeUsage</c> forbids the site and the compiler agrees, which is
+    ///         the declaration telling the truth. But two other things wear the same label. A blocking
+    ///         generator error leaves the partial mapping method unimplemented (<c>CS8795</c>), which is the
+    ///         known ordering defect G4/R4; and generated code that does not compile — two identical
+    ///         <c>[FlattenGraph]</c> directives emit a duplicate member initialization, <c>CS1912</c> — is a
+    ///         real defect hiding behind a verdict that reads like a placement rule.
+    ///     </para>
+    ///     <para>
+    ///         An uncounted pass is a silent absence of coverage whatever its cause, which is the thing this
+    ///         architecture exists to delete. The ids are printed with the count so the three populations stay
+    ///         distinguishable while R4 is outstanding.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void The_cells_the_compiler_rejects_are_counted()
+    {
+        var rejected = AllCells()
+            .Where(x => x.Effect is SurfaceEffect.NotCompilable)
+            .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint} — {x.Detail}")
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        AssertRatchet(rejected, NotCompilableCellCeiling,
+            "cells are rejected by the C# compiler and therefore judged by nothing",
+            "Close one by making the placement legal, or — where the id is CS8795 or a CS error in GENERATED "
+            + "code — by fixing the ordering defect R4 names, so a refusal reads as Refused rather than as a "
+            + "placement rule.");
+    }
+
+    /// <summary>
+    ///     The cells that pass BOTH claim branches, counted.
+    ///     <para>
+    ///         <see cref="SurfaceEffect.UnhonouredButLoud" /> means "changed nothing, but the build fails
+    ///         anyway", and it is accepted on the claimed branch AND on the unclaimed one — so it decides
+    ///         nothing in either direction. That is not hypothetical: a fixture whose BASELINE carries a
+    ///         blocking error emits nothing at all, so an element that does nothing produces byte-identical
+    ///         (empty) output beside that error and lands here. The <c>graph-navigation-to-flat-collection</c>
+    ///         fixture did exactly that for eight cells until its <c>Src</c> gained the member that lets the
+    ///         baseline compile — a fixture that cannot compile without the element under test can never show
+    ///         that element doing nothing.
+    ///     </para>
+    ///     <para>
+    ///         Some of these are honest and permanent (a case that legitimately changes nothing at an endpoint
+    ///         whose baseline is broken for an unrelated, deliberate reason). Counting them is not a claim
+    ///         that they are wrong; it is a claim that their number must not grow unnoticed.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void The_cells_that_pass_both_claim_branches_are_counted()
+    {
+        var undecided = AllCells()
+            .Where(x => x.Effect is SurfaceEffect.UnhonouredButLoud)
+            .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint} (probe: {x.Case.ProbeKey ?? "flat"})")
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        AssertRatchet(undecided, UnhonouredButLoudCellCeiling,
+            "cells pass both the claimed and the unclaimed branch, so they decide nothing",
+            "Close one by making the fixture's BASELINE compile, so the element under test is the only "
+            + "difference between the two compilations and its verdict is legible again.");
+    }
+
+    /// <summary>Every cell, classified once, for the ratchets that count a whole population.</summary>
+    private static IEnumerable<(SurfaceCase Case, Endpoint Endpoint, SurfaceEffect Effect, string Detail,
+        string Rendered)> AllCells()
+    {
         foreach (var element in SurfaceCatalog.CrossProductElements)
         foreach (var c in SurfaceCatalog.CasesFor(element))
         foreach (var endpoint in EndpointSources.All)
         {
             var (effect, detail) = SurfaceProbe.Classify(c, endpoint);
-            if (SurfaceProbe.PosesNoQuestion(c, effect))
-                unaskable.Add($"  {c.Rendered.Replace("\n", " + ", StringComparison.Ordinal)} on a {c.Site} "
-                              + $"@ {endpoint} — {c.Unmeasured ?? detail}");
+            yield return (c, endpoint, effect, detail,
+                c.Rendered.Replace("\n", " + ", StringComparison.Ordinal));
         }
+    }
 
-        Assert.True(unaskable.Count <= UnaskableCellCeiling,
-            $"{unaskable.Count} cells pose the generator no question, above the stated ceiling of "
-            + $"{UnaskableCellCeiling}:\n" + string.Join("\n", unaskable.OrderBy(s => s, StringComparer.Ordinal))
-            + "\n\nThis number may only shrink. Raise it and the matrix loses coverage one cell at a time "
-            + "with nothing to say so. Close a hole instead: give the case a fixture that triggers it with "
-            + "[DwarfSurfaceProbe(ProbeKey = ...)], or an argument list that bites.");
+    /// <summary>
+    ///     Asserts a counted population against a stated ceiling in BOTH directions: it may not grow, and it
+    ///     may not sit well under the ceiling either, because an unratcheted ceiling lets the hole reopen
+    ///     silently after someone else's improvement paid for the slack.
+    /// </summary>
+    private static void AssertRatchet(List<string> cells, int ceiling, string what, string howToClose)
+    {
+        Assert.True(cells.Count <= ceiling,
+            $"{cells.Count} {what}, above the stated ceiling of {ceiling}:\n"
+            + string.Join("\n", cells) + "\n\nThis number may only shrink. " + howToClose);
 
-        Assert.True(unaskable.Count >= UnaskableCellCeiling - 10,
-            $"Only {unaskable.Count} cells pose no question, well under the ceiling of {UnaskableCellCeiling}. "
-            + "Lower the ceiling to lock the improvement in — an unratcheted ceiling permits the hole to "
-            + "reopen silently.");
+        Assert.True(cells.Count >= ceiling - 10,
+            $"Only {cells.Count} {what}, well under the ceiling of {ceiling}. Lower the ceiling to lock the "
+            + "improvement in.");
     }
 
     /// <summary>
