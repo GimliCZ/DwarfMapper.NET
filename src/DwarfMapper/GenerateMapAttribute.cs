@@ -47,6 +47,7 @@ namespace DwarfMapper;
 /// </summary>
 /// <typeparam name="TSource">The source type to map from.</typeparam>
 /// <typeparam name="TTarget">The destination type to map to.</typeparam>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class GenerateMapAttribute<TSource, TTarget> : Attribute
 {

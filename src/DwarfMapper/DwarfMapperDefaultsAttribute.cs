@@ -15,6 +15,7 @@ namespace DwarfMapper;
 ///         because they are usually specific to a given object graph.
 ///     </para>
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperDefaultsAttribute : Attribute
 {

@@ -26,6 +26,7 @@ namespace DwarfMapper;
 /// Envelope&lt;UserDto&gt; dto = new Mappers().Map(envelopeOfUser);
 /// </code>
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class GenerateWrapperMapAttribute : Attribute
 {

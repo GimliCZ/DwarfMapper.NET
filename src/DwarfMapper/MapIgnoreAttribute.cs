@@ -15,6 +15,7 @@ namespace DwarfMapper;
 ///         </item>
 ///     </list>
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field,
     AllowMultiple = true, Inherited = false)]
 public sealed class MapIgnoreAttribute : Attribute

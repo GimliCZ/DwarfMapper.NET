@@ -29,6 +29,7 @@ namespace DwarfMapper;
 ///         and refuses to generate the mapping method.
 ///     </para>
 /// </remarks>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Constructor, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperConstructorAttribute : Attribute
 {

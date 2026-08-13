@@ -10,6 +10,7 @@ namespace DwarfMapper;
 ///     is never shadowed by a base-type arm. Unregistered runtime types throw
 ///     <see cref="global::System.ArgumentException" /> (loud, never silent).
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapDerivedTypeAttribute<TSource, TTarget> : Attribute
     where TSource : class
@@ -18,6 +19,7 @@ public sealed class MapDerivedTypeAttribute<TSource, TTarget> : Attribute
 }
 
 /// <summary>Non-generic form of <see cref="MapDerivedTypeAttribute{TSource,TTarget}" />.</summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapDerivedTypeAttribute : Attribute
 {

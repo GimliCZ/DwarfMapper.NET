@@ -6,6 +6,7 @@ namespace DwarfMapper;
 ///     Marks a partial class as a DwarfMapper. The generator implements the
 ///     partial mapping methods declared on it at compile time.
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperAttribute : Attribute
 {

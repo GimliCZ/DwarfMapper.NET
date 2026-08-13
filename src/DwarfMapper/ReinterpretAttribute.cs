@@ -30,6 +30,7 @@ namespace DwarfMapper;
 ///         memory corruption, but the copied bytes will be misinterpreted.
 ///     </para>
 /// </remarks>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class ReinterpretAttribute : Attribute
 {

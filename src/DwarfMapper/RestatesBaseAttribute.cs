@@ -42,6 +42,7 @@ namespace DwarfMapper;
 /// </remarks>
 /// <typeparam name="TSource">The source type of the DERIVED pair — the one doing the restating.</typeparam>
 /// <typeparam name="TTarget">The destination type of the DERIVED pair.</typeparam>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class RestatesBaseAttribute<TSource, TTarget> : Attribute
 {

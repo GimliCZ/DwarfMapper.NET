@@ -7,6 +7,7 @@ namespace DwarfMapper;
 ///     Applying <c>[AutoNest(false)]</c> to a single mapping method disables auto-synthesis of nested
 ///     object mappers for that method, even when the enclosing class has <c>AutoNest = true</c>.
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class AutoNestAttribute : Attribute
 {

@@ -14,6 +14,7 @@ namespace DwarfMapper;
 ///         </item>
 ///     </list>
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field,
     AllowMultiple = true, Inherited = false)]
 public sealed class MapPropertyAttribute : Attribute

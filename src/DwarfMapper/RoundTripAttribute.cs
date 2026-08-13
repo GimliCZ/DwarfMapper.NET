@@ -8,6 +8,7 @@ namespace DwarfMapper;
 ///     <c>VerifyRoundTrip_&lt;method&gt;(seed, iterations)</c> method that fuzz-verifies
 ///     <c>backward(forward(x)) ≡ x</c>. Requires a reference to the DwarfMapper.Testing package.
 /// </summary>
+[DwarfSurface(SurfaceCategory.TestingOnly)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class RoundTripAttribute : Attribute
 {

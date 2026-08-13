@@ -7,6 +7,7 @@ namespace DwarfMapper;
 ///     <c>void Hook(TSource source, TTarget target)</c>. Applies to every mapping method whose
 ///     source/target types are assignable to the parameters.
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class AfterMapAttribute : Attribute
 {

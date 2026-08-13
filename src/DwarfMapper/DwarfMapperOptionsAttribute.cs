@@ -5,6 +5,7 @@ namespace DwarfMapper;
 /// <summary>
 ///     Assembly-wide DwarfMapper options. Apply once with <c>[assembly: DwarfMapperOptions(...)]</c>.
 /// </summary>
+[DwarfSurface(SurfaceCategory.EmissionShape)]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperOptionsAttribute : Attribute
 {

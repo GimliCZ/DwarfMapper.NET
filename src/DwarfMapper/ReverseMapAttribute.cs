@@ -10,6 +10,7 @@ namespace DwarfMapper;
 ///     <c>When</c>) is reported as <c>DWARF051</c> so you can declare the reverse explicitly. If no inverse
 ///     partial method exists, the forward method reports <c>DWARF052</c>.
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class ReverseMapAttribute : Attribute
 {
