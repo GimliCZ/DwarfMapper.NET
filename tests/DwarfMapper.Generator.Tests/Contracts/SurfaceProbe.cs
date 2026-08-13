@@ -67,7 +67,13 @@ internal static class SurfaceProbe
         // element-wide key here would leave every per-property refinement inert while appearing to apply.
         var types = SurfaceFixtures.Get(c.ProbeKey);
         var source = EndpointSources.BuildAt(endpoint, c.Site, c.Rendered, types, c.MapperOptions);
-        if (source is null) return (SurfaceEffect.NoSuchSite, "endpoint has no such declaration site");
+
+        // The CAUSE, not just the fact. Four different things produce this verdict and two of them are
+        // limitations of the endpoint templates rather than absences in the library, which "endpoint has no
+        // such declaration site" flattened into one unreviewable sentence for 137 cells.
+        if (source is null)
+            return (SurfaceEffect.NoSuchSite,
+                EndpointSources.SiteAbsenceReason(endpoint, c.Site, types) ?? "no declaration site");
 
         // The baseline carries the SAME ambient options. Otherwise the options themselves are the difference
         // between the two compilations and every such cell reads Honoured for the mapper's configuration

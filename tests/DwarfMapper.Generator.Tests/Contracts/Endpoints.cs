@@ -213,25 +213,61 @@ public static class EndpointSources
     public static IReadOnlyList<Endpoint> All { get; } = Enum.GetValues<Endpoint>();
 
     /// <summary>
+    ///     WHY this endpoint has no such declaration site, or <c>null</c> when it has one.
+    ///     <para>
+    ///         The single source of truth for every <c>NoSuchSite</c> verdict — <see cref="BuildAt" /> consults
+    ///         it first and never invents a null of its own, so the reason cannot drift from the behaviour it
+    ///         describes. It exists because "137 cells have no declaration site" is not a reviewable statement:
+    ///         four quite different things were producing that verdict, and two of them are limitations of
+    ///         these templates rather than absences in the library. Reported per cause by
+    ///         <c>SurfaceParityTests.The_cells_with_no_declaration_site_are_counted_by_cause</c>.
+    ///     </para>
+    /// </summary>
+    /// <param name="types">The fixture in play; its member slot decides the Property/Field case.</param>
+    public static string? SiteAbsenceReason(Endpoint endpoint, AttributeTargets site, string? types = null) =>
+        site switch
+        {
+            AttributeTargets.Class when endpoint is Endpoint.Registry
+                => "registry-has-no-mapper-class: intent lives on the source type",
+            AttributeTargets.Method when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
+                => "no-mapping-method: neither endpoint declares one to annotate",
+
+            // Registry and CoLocatedHost place the attribute on a real DTO member of their own templates, so
+            // the member site exists there regardless of the fixture.
+            AttributeTargets.Property or AttributeTargets.Field
+                when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost => null,
+            AttributeTargets.Property or AttributeTargets.Field
+                => (string.IsNullOrEmpty(types) ? Types : types)
+                   .Contains(MemberSlotMarker, StringComparison.Ordinal)
+                    ? null
+                    : "no-member-slot: the fixture in play carries no " + nameof(MemberSlotMarker),
+
+            AttributeTargets.Struct or AttributeTargets.Constructor
+                => "no-fixture-declares-one: a TEMPLATE limitation, not a structural absence — a struct "
+                   + "fixture and a constructor-bearing fixture could exist and do not",
+
+            AttributeTargets.Class or AttributeTargets.Method or AttributeTargets.Assembly => null,
+            _ => $"unmodelled-site: the endpoint templates model no {site} site at all"
+        };
+
+    /// <summary>
     ///     Places <paramref name="rendered" /> at the declaration site <paramref name="site" /> for this
     ///     endpoint, or returns null when the endpoint has no such site at all — a co-located host has no
     ///     mapping METHOD to annotate, and the registry front door has no mapper CLASS. Null is a distinct
     ///     answer from "the attribute did nothing": one means there was no cell, the other means the cell was
-    ///     empty.
+    ///     empty. Every null comes from <see cref="SiteAbsenceReason" />, so each one carries a stated cause.
     /// </summary>
     public static string? BuildAt(Endpoint endpoint, AttributeTargets site, string rendered,
         string? types = null, string? options = null)
     {
         ArgumentNullException.ThrowIfNull(rendered);
 
+        if (SiteAbsenceReason(endpoint, site, types) is not null) return null;
+
         return site switch
         {
-            AttributeTargets.Class when endpoint is Endpoint.Registry
-                => null, // the registry has no mapper class; intent lives on the source type
             AttributeTargets.Class
                 => Build(endpoint, classAttribute: rendered, types: types, options: options ?? ""),
-            AttributeTargets.Method when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
-                => null, // neither endpoint declares a mapping method to annotate
             AttributeTargets.Method
                 => Build(endpoint, memberAttribute: rendered, types: types, options: options ?? ""),
             // Registry and CoLocatedHost already place memberAttribute on a real DTO member (Registry's own
@@ -240,8 +276,8 @@ public static class EndpointSources
             // routing Property/Field there too would silently measure METHOD-placement semantics under a
             // Property/Field label — a real, different code path in the generator (confirmed: MapperExtractor
             // never reads MapIgnore/MapProperty off a Src/Dst member for the class-model endpoints; only
-            // MapToGenerator's registry path does). BuildAtMember places it on an actual member instead, or
-            // returns null when the fixture in play has none to place it on.
+            // MapToGenerator's registry path does). BuildAtMember places it on an actual member instead; the
+            // fixture is guaranteed to carry a slot, because SiteAbsenceReason returned above otherwise.
             AttributeTargets.Property or AttributeTargets.Field
                 when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
                 => Build(endpoint, memberAttribute: rendered, types: types, options: options ?? ""),
@@ -249,9 +285,9 @@ public static class EndpointSources
                 => BuildAtMember(endpoint, rendered, types, options),
             AttributeTargets.Assembly
                 => InsertAssemblyAttribute(Build(endpoint, types: types, options: options ?? ""), rendered),
-            AttributeTargets.Struct or AttributeTargets.Constructor
-                => null, // no fixture in the endpoint set declares one; add a shape before claiming the site
-            _ => null
+            _ => throw new InvalidOperationException(
+                $"{site} at {endpoint} has no absence reason and no template. SiteAbsenceReason and BuildAt "
+                + "must agree on which sites exist; one of them gained a case the other did not.")
         };
     }
 
@@ -298,11 +334,19 @@ public static class EndpointSources
     ///     measures a different code path. Fixture text is arbitrary: a fixture written before this slot
     ///     existed has no marker to find, and that is an honest "no cell here," not a defect to paper over.
     /// </summary>
-    private static string? BuildAtMember(Endpoint endpoint, string rendered, string? types, string? options)
+    private static string BuildAtMember(Endpoint endpoint, string rendered, string? types, string? options)
     {
         var t = string.IsNullOrEmpty(types) ? Types : types;
         var idx = t.IndexOf(MemberSlotMarker, StringComparison.Ordinal);
-        if (idx < 0) return null; // no member slot in this fixture: no cell, not a fallback to the method
+
+        // Unreachable: SiteAbsenceReason reports "no-member-slot" for exactly this fixture and BuildAt returns
+        // before getting here. Restated at the point of use rather than trusted, because the alternative to
+        // throwing is splicing the attribute somewhere that is not a member — which is how (Method,
+        // Property/Field) once measured identical source under two different labels.
+        if (idx < 0)
+            throw new InvalidOperationException(
+                $"BuildAtMember reached a fixture with no {nameof(MemberSlotMarker)}; SiteAbsenceReason should "
+                + "have reported no-member-slot and BuildAt should have returned null.");
 
         var withMember = t[..idx] + rendered + " " + t[(idx + MemberSlotMarker.Length)..];
         return Build(endpoint, types: withMember, options: options ?? "");
