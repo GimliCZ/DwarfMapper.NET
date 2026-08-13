@@ -44,4 +44,42 @@ public sealed class SurfaceDeclarationTests
             + "obligation gets assigned. See docs/superpowers/specs/"
             + "2026-08-13-surface-coverage-architecture-design.md for the category table.");
     }
+
+    [Fact]
+    public void SurfaceEndpoints_and_Endpoint_name_the_same_seven_endpoints()
+    {
+        // Two enums that drift apart would silently repoint every AppliesTo claim at the wrong endpoint,
+        // and the matrix would keep passing while measuring the wrong cell.
+        var flags = Enum.GetNames<SurfaceEndpoints>()
+            .Where(n => n is not ("None" or "All"))
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+        var endpoints = Enum.GetNames<Contracts.Endpoint>()
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(endpoints, flags);
+    }
+
+    [Fact]
+    public void Every_catalog_element_yields_at_least_one_case()
+    {
+        var barren = Contracts.SurfaceCatalog.Elements
+            .Where(e => Contracts.SurfaceCatalog.CasesFor(e).Count == 0)
+            .Select(e => e.UsageName)
+            .ToList();
+
+        Assert.True(barren.Count == 0,
+            "Surface element(s) that produce NO probe case, so the matrix silently skips them entirely:\n  "
+            + string.Join("\n  ", barren)
+            + "\n\nThis is the vacuity failure the whole arrangement exists to prevent: an element with no "
+            + "cases passes every cell it has, which is none.");
+    }
+
+    [Fact]
+    public void The_catalog_produces_a_case_count_in_the_expected_order_of_magnitude()
+    {
+        var total = Contracts.SurfaceCatalog.Elements.Sum(e => Contracts.SurfaceCatalog.CasesFor(e).Count);
+        Assert.InRange(total, 60, 4000);
+    }
 }
