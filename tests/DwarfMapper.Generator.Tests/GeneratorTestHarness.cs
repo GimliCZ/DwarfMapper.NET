@@ -82,13 +82,22 @@ internal static class GeneratorTestHarness
     ///         no observable effect at ANY endpoint, which is a property of the instrument rather than of the
     ///         generator — and it would have been published as fact.
     ///     </para>
+    ///     <para>
+    ///         ALL means both shipped generators. The package contains two — <see cref="DwarfGenerator" /> and
+    ///         the separate <see cref="DwarfMapper.Generator.Registry.MapToGenerator" /> — and a consumer's
+    ///         build runs both, so a harness that runs one is not measuring the product. Driving only
+    ///         <c>DwarfGenerator</c> made every <c>[MapTo]</c> source emit nothing at all, which the surface
+    ///         matrix then read as "the element is SILENT at the registry endpoint" for all 122 of that
+    ///         column's cells: the same instrument-not-generator confusion described above, one endpoint over.
+    ///     </para>
     /// </summary>
     public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) RunAll(string source,
         NullableContextOptions nullable = NullableContextOptions.Disable)
     {
         var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
 
-        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(),
+            new DwarfMapper.Generator.Registry.MapToGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
 
         var generated = string.Join("\n",
@@ -150,7 +159,10 @@ internal static class GeneratorTestHarness
     {
         var compilation = BuildCompilation("DwarfMapperCompileTestAsm", source, nullable);
 
-        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        // Both shipped generators, for the same reason as RunAll: a consumer's build runs both, and the
+        // registry's emitted extension class is as much "generated code that must compile" as the mapper's.
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(),
+            new DwarfMapper.Generator.Registry.MapToGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
 
         return outputCompilation.GetDiagnostics()

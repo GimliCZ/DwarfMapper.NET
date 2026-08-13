@@ -70,7 +70,16 @@ public static class EndpointSources
         // compile (AllowMultiple = false), so the option family needs its own slot rather than reusing
         // classAttribute, which exists for genuinely separate attributes like [MapIgnore].
         var dwarf = string.IsNullOrEmpty(options) ? "[DwarfMapper]" : $"[DwarfMapper({options})]";
-        var onClass = string.IsNullOrEmpty(classAttribute) ? dwarf : dwarf + "\n" + classAttribute;
+
+        // A class-site case that IS [DwarfMapper(...)] SUBSTITUTES for the template's own [DwarfMapper]
+        // rather than being appended beside it. [DwarfMapper] is AllowMultiple = false, so appending is
+        // CS0579 — and the surface matrix then read all nineteen of that element's class-site cases as
+        // NotCompilable at every method-based endpoint, i.e. the largest single element on the surface
+        // passed the matrix without one of its cells ever being measured. Substituting keeps the mapper
+        // class annotated exactly once, so the case under test is the annotation.
+        var onClass = string.IsNullOrEmpty(classAttribute) ? dwarf
+            : IsDwarfMapperAttribute(classAttribute) ? classAttribute
+            : dwarf + "\n" + classAttribute;
 
         // Some options only become observable against a shape that triggers them (an enum for EnumStrategy, a
         // nested class for AutoNest). A caller may substitute the DTO pair; the default stays deliberately
@@ -177,6 +186,19 @@ public static class EndpointSources
 
             _ => throw new ArgumentOutOfRangeException(nameof(endpoint), endpoint, "Unhandled endpoint")
         };
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="rendered" /> is an application of <c>[DwarfMapper]</c> itself — as opposed
+    ///     to a differently-named attribute that merely starts with the same letters, such as
+    ///     <c>[DwarfMapperOptions]</c>. Matched on the exact bare form or on the open parenthesis that must
+    ///     follow the name, so the prefix cannot swallow a longer sibling.
+    /// </summary>
+    private static bool IsDwarfMapperAttribute(string rendered)
+    {
+        var text = rendered.Trim();
+        return string.Equals(text, "[DwarfMapper]", StringComparison.Ordinal)
+               || text.StartsWith("[DwarfMapper(", StringComparison.Ordinal);
     }
 
     /// <summary>All endpoints, so the matrix and its growth ratchet iterate one list.</summary>

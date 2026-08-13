@@ -39,7 +39,11 @@ jobs:
 
       - run: dotnet restore DwarfMapper.NET.sln
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --collect:"XPlat Code Coverage" --results-directory TestResults
+      # Category!=SurfaceMatrix keeps the executed surface cross-product (854 cells, its own job below) out
+      # of the default leg. It is excluded for isolation, not for speed — it is the one leg whose red is
+      # expected to be a list of findings rather than a regression, so mixing it into the ordinary run would
+      # make every build look broken.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --collect:"XPlat Code Coverage" --results-directory TestResults
 
       # ── Coverage gate for DwarfMapper.Generator ─────────────────────────────
       # Thresholds: line ≥ 80% / branch ≥ 70% (achieved ≈84.5%/77.4%; gate is −5pp margin).
@@ -114,6 +118,29 @@ jobs:
           for fname, rate in sorted(file_rates.items()):
               print(f"  {fname}: {rate*100:.1f}%")
           PYEOF
+
+  # ── The executed surface cross-product ────────────────────────────────────
+  # Every [DwarfSurface] element, at every legal declaration site, in every case its declaration admits, at
+  # every endpoint — 854 cells, each verified in BOTH directions against the element's own AppliesTo claim.
+  # Its own leg because its red means something different from every other leg's: a failing cell is a
+  # measured statement that a caller wrote something the generator accepted, changed nothing for, and said
+  # nothing about. The default leg excludes it with Category!=SurfaceMatrix.
+  #
+  # NON-BLOCKING FOR NOW, and deliberately so. The first full run is red by design (see
+  # Issues/round20/SURFACE-MATRIX-FINDINGS.md): the remaining cells are enumerated divergences awaiting a
+  # maintainer decision plus cells the current case-space cannot ask a meaningful question about. Flip
+  # continue-on-error to false once that list is worked through — a gate that cannot fail is decoration, and
+  # this comment is the record that it is temporary. Runtime is ~15s: the baseline compile is memoized per
+  # (endpoint, fixture), so the cross-product costs one compile per cell rather than two.
+  surface-matrix:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix"
 
   aot-trim-gate:
     strategy:
@@ -216,7 +243,9 @@ jobs:
           dotnet --version
       - name: Build the generator against the floor, on a newer compiler
         run: dotnet build DwarfMapper.NET.sln -c Release
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build
+      # Same exclusion as build-test: this leg asks "does the generator still LOAD in a newer compiler", and
+      # the surface matrix's expected red would drown that answer.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix"
 
   codeql:
     runs-on: ubuntu-latest

@@ -5,7 +5,20 @@ namespace DwarfMapper;
 /// <summary>
 ///     Assembly-wide DwarfMapper options. Apply once with <c>[assembly: DwarfMapperOptions(...)]</c>.
 /// </summary>
-[DwarfSurface(SurfaceCategory.EmissionShape)]
+/// <remarks>
+///     <c>AppliesTo</c> omits the update-into, projection, span and async-stream endpoints because the only
+///     thing this attribute governs is the accessibility of the generated convenience extension, and that
+///     extension is create-shaped: it is the <c>source.ToTarget()</c> form. An update mutates an instance it
+///     is handed, a projection emits an expression tree, and the span and stream overloads are generated per
+///     MAPPER rather than per overload — none of the four produces an extension whose accessibility there is
+///     to decide. Same shape of reason, and the same four endpoints, as the <c>GenerateExtensions</c> rows in
+///     <c>OptionGaps.StructurallyInapplicable</c>. <see cref="SurfaceEndpoints.Registry" /> is deliberately still
+///     CLAIMED: the registry DOES emit an extension class (<c>__DwarfRegistry_Src</c>, with a public/internal
+///     choice of its own), so the option has something to govern there and simply does not — that is a
+///     divergence to fix, not a shape to declare away.
+/// </remarks>
+[DwarfSurface(SurfaceCategory.EmissionShape,
+    AppliesTo = SurfaceEndpoints.CreateMap | SurfaceEndpoints.Registry | SurfaceEndpoints.CoLocatedHost)]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperOptionsAttribute : Attribute
 {
