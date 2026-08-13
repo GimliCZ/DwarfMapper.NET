@@ -13,6 +13,28 @@ namespace DwarfMapper.Generator.Tests.Contracts;
 /// <param name="Because">The structural reason, as stated at the declaration.</param>
 internal sealed record SurfaceSiteClaim(AttributeTargets Site, SurfaceEndpoints AppliesTo, string Because);
 
+/// <summary>
+///     One <c>[DwarfSurfaceProbe]</c> application, flattened out of the declaration.
+/// </summary>
+/// <param name="Property">The writable property whose cases this refines, or null in the constructor form.</param>
+/// <param name="ConstructorArity">
+///     The constructor overload's parameter count, or <see cref="DwarfSurfaceProbeAttribute.NotAConstructor" />
+///     in the property form.
+/// </param>
+/// <param name="ProbeKey">The fixture this case is measured against, overriding the element's own.</param>
+/// <param name="Value">Property form: the initialiser value, replacing the derived single-value domain.</param>
+/// <param name="Arguments">Constructor form: the argument list, with <c>{Member}</c> placeholders.</param>
+/// <param name="MapperOptions">The <c>[DwarfMapper(...)]</c> options this case needs to be reachable.</param>
+/// <param name="Unmeasured">Why this case can pose no question at all, or null when it can.</param>
+internal sealed record SurfaceProbeClaim(
+    string? Property,
+    int ConstructorArity,
+    string? ProbeKey,
+    string? Value,
+    string? Arguments,
+    string? MapperOptions,
+    string? Unmeasured);
+
 /// <summary>One public surface element, as declared.</summary>
 /// <param name="UsageName">The name as written in source, with "Attribute" and any generic arity stripped.</param>
 /// <param name="AppliesTo">The element's DEFAULT claim; <paramref name="SiteClaims" /> refines it per site.</param>
@@ -24,6 +46,10 @@ internal sealed record SurfaceSiteClaim(AttributeTargets Site, SurfaceEndpoints 
 ///     <c>CaseCache</c>, keys on those instances — so this changes nothing today. Whoever adds a second
 ///     construction path must key the caches on <see cref="SurfaceElement.Type" /> instead.
 /// </param>
+/// <param name="ProbeClaims">
+///     The element's <c>[DwarfSurfaceProbe]</c> refinements, one per case that needs its own shape, value or
+///     argument list. Compares by reference for the same reason <paramref name="SiteClaims" /> does.
+/// </param>
 internal sealed record SurfaceElement(
     Type Type,
     string UsageName,
@@ -32,14 +58,35 @@ internal sealed record SurfaceElement(
     string? ProbeKey,
     AttributeTargets ValidOn,
     bool AllowMultiple,
-    IReadOnlyList<SurfaceSiteClaim> SiteClaims);
+    IReadOnlyList<SurfaceSiteClaim> SiteClaims,
+    IReadOnlyList<SurfaceProbeClaim> ProbeClaims);
 
 /// <summary>
 ///     One cell input: this element, written this way, at this declaration site.
 /// </summary>
 /// <param name="Rendered">The attribute exactly as it appears in source, brackets included.</param>
 /// <param name="Axis">A short label naming what this case varies, for the failure message.</param>
-internal sealed record SurfaceCase(SurfaceElement Element, AttributeTargets Site, string Rendered, string Axis);
+/// <param name="ProbeKey">
+///     The fixture THIS case is measured against — its own <c>[DwarfSurfaceProbe]</c> key if it declares one,
+///     otherwise the element's. Per-case rather than per-element because an option bag asks one question per
+///     property and one shape cannot answer eighteen of them.
+/// </param>
+/// <param name="Unmeasured">
+///     Why this case can pose no question at all, or null when it can. A cell of such a case is excused on the
+///     silent path and COUNTED, so the hole is declared rather than reported as a divergence.
+/// </param>
+/// <param name="MapperOptions">
+///     The <c>[DwarfMapper(...)]</c> options the endpoint's mapper must carry for this case to be reachable at
+///     all — the ambient conditions, stated at the declaration, under which the directive has anything to do.
+/// </param>
+internal sealed record SurfaceCase(
+    SurfaceElement Element,
+    AttributeTargets Site,
+    string Rendered,
+    string Axis,
+    string? ProbeKey,
+    string? Unmeasured,
+    string? MapperOptions = null);
 
 /// <summary>
 ///     The shipped surface and its case-space, DERIVED rather than listed.
@@ -91,7 +138,8 @@ internal static class SurfaceCatalog
                     x.Surface.ProbeKey,
                     usage?.ValidOn ?? AttributeTargets.All,
                     usage?.AllowMultiple ?? false,
-                    SiteClaimsOf(x.Type));
+                    SiteClaimsOf(x.Type),
+                    ProbeClaimsOf(x.Type));
             })
             .OrderBy(e => e.UsageName, StringComparer.Ordinal)
             .ThenBy(e => e.Type.GetGenericArguments().Length)
@@ -103,6 +151,22 @@ internal static class SurfaceCatalog
         type.GetCustomAttributes<DwarfSurfaceSiteAttribute>(inherit: false)
             .Select(a => new SurfaceSiteClaim(a.Site, a.AppliesTo, a.Because))
             .ToList();
+
+    /// <summary>Every <c>[DwarfSurfaceProbe]</c> on a type, in declaration order.</summary>
+    internal static IReadOnlyList<SurfaceProbeClaim> ProbeClaimsOf(Type type) =>
+        type.GetCustomAttributes<DwarfSurfaceProbeAttribute>(inherit: false)
+            .Select(a => new SurfaceProbeClaim(a.Property, a.ConstructorArity, a.ProbeKey, a.Value, a.Arguments,
+                a.MapperOptions, a.Unmeasured))
+            .ToList();
+
+    /// <summary>The refinement governing one writable property's cases, or null.</summary>
+    private static SurfaceProbeClaim? ProbeFor(SurfaceElement element, string property) =>
+        element.ProbeClaims.FirstOrDefault(
+            p => string.Equals(p.Property, property, StringComparison.Ordinal));
+
+    /// <summary>The refinement governing one constructor overload's case, or null.</summary>
+    private static SurfaceProbeClaim? ProbeFor(SurfaceElement element, int arity) =>
+        element.ProbeClaims.FirstOrDefault(p => p.Property is null && p.ConstructorArity == arity);
 
     /// <summary>
     ///     What this element claims to affect WHEN WRITTEN AT <paramref name="site" />: the site's own
@@ -182,11 +246,202 @@ internal static class SurfaceCatalog
         return problems;
     }
 
+    /// <summary>
+    ///     Everything wrong with an element's <c>[DwarfSurfaceProbe]</c> declarations, as reader-facing lines.
+    ///     <para>
+    ///         A pure function over the declaration's own values, for the same reason
+    ///         <see cref="ValidateSiteClaims" /> is one: a refinement that governs no case is worse than a
+    ///         missing one, because it reads as a reviewed decision while the cases it names are still probed
+    ///         against a shape that cannot ask them anything. Every branch here passes vacuously against
+    ///         today's well-formed declarations, so each is fed a malformed shape directly by
+    ///         <c>SurfaceDeclarationTests</c>.
+    ///     </para>
+    /// </summary>
+    /// <param name="name">The element's usage name, for the message.</param>
+    /// <param name="domainSizes">Each writable property's name and the size of its DERIVED value domain.</param>
+    /// <param name="arities">The parameter counts of the element's public constructors.</param>
+    /// <param name="elementProbeKey">The element's own <c>[DwarfSurface(ProbeKey = ...)]</c>.</param>
+    /// <param name="claims">Its <c>[DwarfSurfaceProbe]</c> applications.</param>
+    /// <param name="fixtureNames">
+    ///     Resolves the fixture a claim's key names to the member and type names it declares, or null when the
+    ///     key binds to no fixture — an unbound key is the bijection gate's finding, not this one's, and
+    ///     reporting it twice would name one defect in two places.
+    /// </param>
+    internal static IReadOnlyList<string> ValidateProbeClaims(string name,
+        IReadOnlyDictionary<string, int> domainSizes, IReadOnlyList<int> arities, string? elementProbeKey,
+        IReadOnlyList<SurfaceProbeClaim> claims,
+        Func<string?, (IReadOnlySet<string> Members, IReadOnlySet<string> Types)?> fixtureNames)
+    {
+        ArgumentNullException.ThrowIfNull(domainSizes);
+        ArgumentNullException.ThrowIfNull(arities);
+        ArgumentNullException.ThrowIfNull(claims);
+        ArgumentNullException.ThrowIfNull(fixtureNames);
+
+        var problems = new List<string>();
+        var seenProperties = new HashSet<string>(StringComparer.Ordinal);
+        var seenArities = new HashSet<int>();
+
+        foreach (var claim in claims)
+        {
+            var where = claim.Property is not null
+                ? $"[DwarfSurfaceProbe(\"{claim.Property}\")]"
+                : $"[DwarfSurfaceProbe(constructorArity: {claim.ConstructorArity})]";
+
+            if (claim.Property is not null)
+            {
+                if (!domainSizes.ContainsKey(claim.Property))
+                    problems.Add($"{name}: {where} names no readable/writable non-indexed property of the "
+                                 + "element, so it governs no case at all. Every cell it was written for is "
+                                 + "still probed against a shape that cannot ask it anything.");
+                else if (!seenProperties.Add(claim.Property))
+                    problems.Add($"{name}: two [DwarfSurfaceProbe] claims both refine '{claim.Property}'. One "
+                                 + "of them is never consulted, and which one depends on declaration order.");
+
+                if (claim.Arguments is not null)
+                    problems.Add($"{name}: {where} states Arguments, which only a CONSTRUCTOR case has. A "
+                                 + "property case is rendered as a named argument, so this value goes nowhere.");
+
+                if (claim.Value is not null && domainSizes.TryGetValue(claim.Property, out var size)
+                                            && size != 1)
+                    problems.Add($"{name}: {where} states a Value, but the derived domain of "
+                                 + $"'{claim.Property}' has {size} members. Replacing a multi-member domain "
+                                 + "with one value drops the others silently — and a domain whose second and "
+                                 + "third members were never probed reads exactly like a covered one.");
+            }
+            else
+            {
+                if (!arities.Contains(claim.ConstructorArity))
+                    problems.Add($"{name}: {where} names a constructor arity the element does not declare "
+                                 + $"(it has {string.Join(", ", arities.OrderBy(a => a))}), so it governs no "
+                                 + "case. This is how a refinement quietly stops applying after an overload "
+                                 + "is added or removed.");
+                else if (!seenArities.Add(claim.ConstructorArity))
+                    problems.Add($"{name}: two [DwarfSurfaceProbe] claims both refine the "
+                                 + $"{claim.ConstructorArity}-argument constructor. One is never consulted.");
+
+                if (claim.Value is not null)
+                    problems.Add($"{name}: {where} states a Value, which only a PROPERTY case has.");
+            }
+
+            if (claim.ProbeKey is null && claim.Value is null && claim.Arguments is null
+                && claim.MapperOptions is null && claim.Unmeasured is null)
+                problems.Add($"{name}: {where} states neither a ProbeKey, a Value, an argument list, mapper "
+                             + "options nor an Unmeasured reason. It refines nothing while reading as a "
+                             + "reviewed decision.");
+
+            if (claim.ProbeKey is not null
+                && string.Equals(claim.ProbeKey, elementProbeKey, StringComparison.Ordinal))
+                problems.Add($"{name}: {where} restates the element's own ProbeKey ('{elementProbeKey}'). It "
+                             + "refines nothing — delete it, or point it at the shape this case needs.");
+
+            problems.AddRange(UnmeasuredProblems(name, where, claim, domainSizes.Count));
+            problems.AddRange(ArgumentProblems(name, where, claim,
+                fixtureNames(claim.ProbeKey ?? elementProbeKey)));
+        }
+
+        return problems;
+    }
+
+    /// <summary>
+    ///     Why an <c>Unmeasured</c> declaration is not well-formed. Legal only on the zero-argument
+    ///     constructor of an element that HAS writable properties — an option bag whose bare form selects
+    ///     every default and therefore configures nothing.
+    ///     <para>
+    ///         That restriction is the whole safeguard. Excusing a cell is the same shape of act as narrowing
+    ///         a claim, and the brief for this work is explicit that narrowing to keep a cell green converts a
+    ///         live bug into documented intended behaviour. Confining the excuse to a case that renders with
+    ///         no arguments at all makes it structurally impossible to mark a case that actually says
+    ///         something as unmeasurable — the excuse cannot reach a cell where the generator had a decision
+    ///         to make.
+    ///     </para>
+    /// </summary>
+    private static IEnumerable<string> UnmeasuredProblems(string name, string where, SurfaceProbeClaim claim,
+        int writablePropertyCount)
+    {
+        if (claim.Unmeasured is null) yield break;
+
+        if (string.IsNullOrWhiteSpace(claim.Unmeasured))
+            yield return $"{name}: {where} declares the case unmeasurable but states no reason.";
+
+        if (claim.Property is not null || claim.ConstructorArity != 0)
+            yield return $"{name}: {where} declares a case unmeasurable that is not the zero-argument "
+                         + "constructor. Only a case that renders with NO arguments configures nothing by "
+                         + "construction; anywhere else this would excuse a cell the generator actually had "
+                         + "a decision to make, which is a divergence to report rather than a hole to declare.";
+
+        if (writablePropertyCount == 0)
+            yield return $"{name}: {where} declares the bare case unmeasurable, but the element has no "
+                         + "writable properties — so the bare form IS the element, and excusing it excuses "
+                         + "every question this element can pose.";
+
+        if (claim.ProbeKey is not null || claim.Value is not null || claim.Arguments is not null
+            || claim.MapperOptions is not null)
+            yield return $"{name}: {where} is both unmeasurable and given a shape to measure it with. One of "
+                         + "the two is wrong.";
+    }
+
+    /// <summary>
+    ///     Why a declared argument list does not match the fixture it is used with: a <c>{Member}</c>
+    ///     placeholder naming a member the fixture no longer declares, or a <c>typeof(X)</c> naming a type it
+    ///     does not. Without this the argument silently degrades back into the no-op cell the declaration was
+    ///     written to eliminate, and the resulting silence is indistinguishable from a real divergence.
+    /// </summary>
+    private static IEnumerable<string> ArgumentProblems(string name, string where, SurfaceProbeClaim claim,
+        (IReadOnlySet<string> Members, IReadOnlySet<string> Types)? fixture)
+    {
+        if (claim.Arguments is null || fixture is not { } f) yield break;
+
+        foreach (var member in MemberPlaceholders(claim.Arguments).Where(m => !f.Members.Contains(m)))
+            yield return $"{name}: {where} names member '{member}', which the fixture it is measured against "
+                         + $"does not declare (it has: {string.Join(", ", f.Members.OrderBy(x => x, StringComparer.Ordinal))}). "
+                         + "The argument would render as a name matching nothing, the directive would apply "
+                         + "to nothing, and the cell would read silent for a reason the generator had no "
+                         + "part in.";
+
+        foreach (var type in TypeReferences(claim.Arguments).Where(t => !f.Types.Contains(t)))
+            yield return $"{name}: {where} names type '{type}', which the fixture it is measured against does "
+                         + $"not declare (it has: {string.Join(", ", f.Types.OrderBy(x => x, StringComparer.Ordinal))}).";
+    }
+
+    /// <summary>Each writable property's name and the size of its DERIVED (un-refined) value domain.</summary>
+    internal static IReadOnlyDictionary<string, int> DomainSizesOf(SurfaceElement element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        return WritablePropertiesOf(element.Type)
+            .ToDictionary(p => p.Name, p => ValueDomain(p, element.Type).Count(), StringComparer.Ordinal);
+    }
+
+    /// <summary>The parameter counts of an element's public constructors.</summary>
+    internal static IReadOnlyList<int> ConstructorAritiesOf(SurfaceElement element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        return element.Type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+            .Select(c => c.GetParameters().Length).ToList();
+    }
+
+    /// <summary>
+    ///     The member and type names of the fixture a probe key resolves to — the flat pair for a null key,
+    ///     and <c>null</c> when the key names no fixture at all, which is the bijection gate's finding rather
+    ///     than the argument gate's.
+    /// </summary>
+    internal static (IReadOnlySet<string> Members, IReadOnlySet<string> Types)? FixtureNames(string? probeKey)
+    {
+        if (probeKey is null) return SurfaceFixtures.DeclaredNames(EndpointSources.DefaultTypes);
+        return SurfaceFixtures.Get(probeKey) is { } text ? SurfaceFixtures.DeclaredNames(text) : null;
+    }
+
     /// <summary>The declaration sites this element is legal on, one flag at a time.</summary>
     public static IReadOnlyList<AttributeTargets> SitesOf(SurfaceElement element) =>
         Enum.GetValues<AttributeTargets>()
             .Where(t => t != AttributeTargets.All && int.PopCount((int)t) == 1)
             .Where(t => (element.ValidOn & t) == t)
+            .ToList();
+
+    /// <summary>The properties the property axis varies — public, readable, writable, non-indexed.</summary>
+    internal static IReadOnlyList<PropertyInfo> WritablePropertiesOf(Type type) =>
+        type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p is { CanWrite: true, CanRead: true } && p.GetIndexParameters().Length == 0)
+            .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ToList();
 
     private static List<SurfaceCase> BuildCases(SurfaceElement element)
@@ -197,43 +452,100 @@ internal static class SurfaceCatalog
 
         foreach (var site in sites)
         {
-            // Axis 1 — each public constructor overload, with no properties set.
+            // Axis 1 — each public constructor overload, with no properties set. A declared argument list
+            // REPLACES the sampled one: which literal bites is irreducible knowledge (`false` for AutoNest,
+            // `true` for the identically shaped MapNullSkip next door), and a sampled non-question reads in
+            // the output exactly like a real silent divergence.
             foreach (var ctor in ctors)
             {
-                var args = string.Join(", ", ctor.GetParameters().Select(SampleArgument));
-                var rendered = Render(element, args, "");
-                cases.Add(new SurfaceCase(element, site, rendered, $"ctor({ctor.GetParameters().Length})"));
+                var arity = ctor.GetParameters().Length;
+                var claim = ProbeFor(element, arity);
+                cases.Add(new SurfaceCase(element, site,
+                    Render(element, ArgumentsFor(ctor, claim, variant: 1), ""), $"ctor({arity})",
+                    claim?.ProbeKey ?? element.ProbeKey, claim?.Unmeasured, claim?.MapperOptions));
             }
 
             // Axis 2 — each writable property crossed with its FULL value domain, on the shortest ctor.
             var shortest = ctors.OrderBy(c => c.GetParameters().Length).FirstOrDefault();
-            var baseArgs = shortest is null
-                ? ""
-                : string.Join(", ", shortest.GetParameters().Select(SampleArgument));
 
-            foreach (var p in element.Type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                         .Where(p => p is { CanWrite: true, CanRead: true }
-                                     && p.GetIndexParameters().Length == 0)
-                         .OrderBy(p => p.Name, StringComparer.Ordinal))
-            foreach (var value in ValueDomain(p, element.Type))
+            foreach (var p in WritablePropertiesOf(element.Type))
             {
-                var rendered = Render(element, baseArgs, $"{p.Name} = {value}");
-                cases.Add(new SurfaceCase(element, site, rendered, $"{p.Name}={value}"));
+                var claim = ProbeFor(element, p.Name);
+                var baseArgs = shortest is null
+                    ? ""
+                    : ArgumentsFor(shortest, ProbeFor(element, shortest.GetParameters().Length), variant: 1);
+
+                foreach (var value in ValueDomainFor(element, p, claim))
+                    cases.Add(new SurfaceCase(element, site,
+                        Render(element, baseArgs, $"{p.Name} = {value}"), $"{p.Name}={value}",
+                        claim?.ProbeKey ?? element.ProbeKey, claim?.Unmeasured, claim?.MapperOptions));
             }
 
-            // Axis 3 — multiplicity, where the attribute permits it.
+            // Axis 3 — multiplicity, where the attribute permits it. With a DECLARED argument list the two
+            // applications are identical, and deliberately so: "the same real directive stated twice" is the
+            // sharpest form of the multiplicity question, whereas inventing a second sampled argument would
+            // reintroduce the non-question the declaration exists to remove.
             if (element.AllowMultiple && ctors.Length > 0)
             {
-                var one = Render(element, string.Join(", ",
-                    ctors[0].GetParameters().Select(SampleArgument)), "");
-                var two = Render(element, string.Join(", ",
-                    ctors[0].GetParameters().Select(p => SampleArgument(p, variant: 2))), "");
-                cases.Add(new SurfaceCase(element, site, one + "\n" + two, "×2"));
+                var claim = ProbeFor(element, ctors[0].GetParameters().Length);
+                var one = Render(element, ArgumentsFor(ctors[0], claim, variant: 1), "");
+                var two = Render(element, ArgumentsFor(ctors[0], claim, variant: 2), "");
+                cases.Add(new SurfaceCase(element, site, one + "\n" + two, "×2",
+                    claim?.ProbeKey ?? element.ProbeKey, claim?.Unmeasured, claim?.MapperOptions));
             }
         }
 
         return cases;
     }
+
+    /// <summary>
+    ///     The argument list for one constructor case: the declaration's, with its <c>{Member}</c>
+    ///     placeholders expanded, or the sampled one.
+    ///     <para>
+    ///         The sampled path passes <paramref name="variant" /> through a lambda rather than a method
+    ///         group. <c>Select(SampleArgument)</c> binds the INDEXED overload of <c>Select</c>, so the
+    ///         parameter's position was silently passed as the variant — parameter 0 of every constructor was
+    ///         rendered with variant 0, and the multiplicity axis (variant 2) rendered the same literal again,
+    ///         emitting two byte-identical applications where the axis exists to vary them.
+    ///     </para>
+    /// </summary>
+    private static string ArgumentsFor(ConstructorInfo ctor, SurfaceProbeClaim? claim, int variant) =>
+        claim?.Arguments is { } declared
+            ? ExpandArguments(declared)
+            : string.Join(", ", ctor.GetParameters()
+                .Select((p, position) => SampleArgument(p, variant, position)));
+
+    /// <summary>
+    ///     Expands <c>{Member}</c> to a quoted member-name literal. Everything else is passed through
+    ///     verbatim, so a literal that deliberately is NOT a member — a constant value, a converter name —
+    ///     stays visibly unchecked. The names themselves are validated against the fixture by
+    ///     <see cref="ValidateProbeClaims" />; expansion is text, checking is the gate's job.
+    /// </summary>
+    internal static string ExpandArguments(string declared)
+    {
+        ArgumentNullException.ThrowIfNull(declared);
+        return System.Text.RegularExpressions.Regex.Replace(declared, @"\{(\w+)\}", m => $"\"{m.Groups[1].Value}\"");
+    }
+
+    /// <summary>Every <c>{Member}</c> placeholder in a declared argument list.</summary>
+    internal static IReadOnlyList<string> MemberPlaceholders(string declared) =>
+        System.Text.RegularExpressions.Regex.Matches(declared ?? "", @"\{(\w+)\}")
+            .Select(m => m.Groups[1].Value).ToList();
+
+    /// <summary>Every <c>typeof(X)</c> the declared argument list names.</summary>
+    internal static IReadOnlyList<string> TypeReferences(string declared) =>
+        System.Text.RegularExpressions.Regex.Matches(declared ?? "", @"typeof\(\s*(\w+)\s*\)")
+            .Select(m => m.Groups[1].Value).ToList();
+
+    /// <summary>
+    ///     The value domain for one property case: the declaration's single stated value where it has one,
+    ///     otherwise the derived full domain. Stating a value is only legal where the derived domain holds a
+    ///     single member (see <see cref="ValidateProbeClaims" />), so this can never quietly shrink an enum's
+    ///     domain to one member and report it as covered.
+    /// </summary>
+    private static IEnumerable<string> ValueDomainFor(SurfaceElement element, PropertyInfo p,
+        SurfaceProbeClaim? claim) =>
+        claim?.Value is { } stated ? [stated] : ValueDomain(p, element.Type);
 
     /// <summary>
     ///     Every value a property can take that differs from its default — the FULL domain, not the first
@@ -302,11 +614,33 @@ internal static class SurfaceCatalog
             + "catalogue exists to close.");
     }
 
-    /// <summary>A compilable literal for a constructor parameter.</summary>
-    private static string SampleArgument(ParameterInfo p, int variant = 1)
+    /// <summary>
+    ///     A compilable literal for a constructor parameter, varying by both <paramref name="variant" /> and
+    ///     the parameter's <paramref name="position" />.
+    ///     <para>
+    ///         Both dimensions are load-bearing and each was broken on its own axis. Position must vary so a
+    ///         two-string constructor does not render <c>("Name", "Name")</c> — an identity binding that
+    ///         auto-matching already produces, whose silence cannot be told from a discarded directive.
+    ///         Variant must vary so the multiplicity axis renders two DIFFERENT applications; it did not,
+    ///         because <c>Select(SampleArgument)</c> bound the INDEXED overload of <c>Select</c> and passed
+    ///         the position where the variant was expected, so a one-argument constructor emitted the same
+    ///         literal twice and the axis asked nothing it had not already asked.
+    ///     </para>
+    ///     <para>
+    ///         The two are combined into one rotation over the flat pair's member names, which keeps every
+    ///         variant-1 rendering byte-identical to what the matrix produced before the fix — the churn is
+    ///         confined to the second application of the multiplicity axis, where it belongs.
+    ///     </para>
+    /// </summary>
+    private static string SampleArgument(ParameterInfo p, int variant, int position)
     {
         var t = p.ParameterType;
-        if (t == typeof(string)) return variant == 1 ? "\"Name\"" : "\"Id\"";
+        if (t == typeof(string))
+        {
+            string[] names = ["Id", "Name"];
+            return $"\"{names[(position + variant - 1) % names.Length]}\"";
+        }
+
         if (t == typeof(Type)) return "typeof(Dst)";
         if (t == typeof(bool)) return "true";
         if (t == typeof(int)) return variant.ToString(System.Globalization.CultureInfo.InvariantCulture);

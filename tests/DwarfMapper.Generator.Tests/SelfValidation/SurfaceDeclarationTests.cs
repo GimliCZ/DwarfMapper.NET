@@ -213,10 +213,16 @@ public sealed class SurfaceDeclarationTests
 
     /// <summary>
     ///     There are two demand sources, not one. Element-level: <c>[DwarfSurface(ProbeKey = "…")]</c> on an
-    ///     attribute TYPE. Property-level: <c>OptionCatalog</c>'s option → key map, because the class-level
-    ///     options are PROPERTIES of a single type (<c>DwarfMapperAttribute</c>) and a type-level attribute
-    ///     cannot express a per-property fixture. Supply is <see cref="Contracts.SurfaceFixtures" />; the
-    ///     bijection holds against the UNION of both demand sources, not either alone.
+    ///     attribute TYPE, the shape its whole case-space is measured against. Case-level:
+    ///     <c>[DwarfSurfaceProbe(…, ProbeKey = "…")]</c>, which refines that for ONE option or ONE constructor
+    ///     overload, because an option bag asks eighteen different questions and one shape cannot answer them.
+    ///     Supply is <see cref="Contracts.SurfaceFixtures" />; the bijection holds against the UNION of both
+    ///     demand sources, not either alone.
+    ///     <para>
+    ///         The case-level source used to be a hand-written option → key map in <c>OptionCatalog</c>. It is
+    ///         now the same declarations read here, so there is one place a demand can be stated and the
+    ///         option matrix and the surface matrix cannot point at different shapes for one option.
+    ///     </para>
     /// </summary>
     [Fact]
     public void Every_declared_ProbeKey_binds_to_exactly_one_fixture()
@@ -225,10 +231,14 @@ public sealed class SurfaceDeclarationTests
             .Where(e => e.ProbeKey is not null)
             .Select(e => (Key: e.ProbeKey!, Source: "element " + e.UsageName));
 
-        var optionDemand = Contracts.OptionCatalog.ProbeKeys
-            .Select(kv => (Key: kv.Value, Source: "option " + kv.Key));
+        var caseDemand = Contracts.SurfaceCatalog.Elements
+            .SelectMany(e => e.ProbeClaims.Select(p => (Element: e, Claim: p)))
+            .Where(x => x.Claim.ProbeKey is not null)
+            .Select(x => (Key: x.Claim.ProbeKey!,
+                Source: $"{x.Element.UsageName}."
+                        + (x.Claim.Property ?? $"ctor({x.Claim.ConstructorArity})")));
 
-        var demandSources = elementDemand.Concat(optionDemand)
+        var demandSources = elementDemand.Concat(caseDemand)
             .GroupBy(x => x.Key, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => string.Join(" & ", g.Select(x => x.Source)), StringComparer.Ordinal);
 
@@ -248,7 +258,166 @@ public sealed class SurfaceDeclarationTests
         var orphaned = supplied.Except(demanded).OrderBy(k => k, StringComparer.Ordinal).ToList();
         Assert.True(orphaned.Count == 0,
             "Fixture(s) in SurfaceFixtures claimed by no [DwarfSurface(ProbeKey = ...)] and no "
-            + "OptionCatalog.ProbeKeys entry: " + string.Join(", ", orphaned)
+            + "[DwarfSurfaceProbe(ProbeKey = ...)] refinement: " + string.Join(", ", orphaned)
             + ". An orphaned fixture is dead weight that reads as coverage.");
+    }
+
+    /// <summary>
+    ///     Every <c>[DwarfSurfaceProbe]</c> refinement is well-formed: it names a property or a constructor
+    ///     arity the element actually has, no two refine the same case, it states something, and any declared
+    ///     argument list names members and types the fixture in play really declares.
+    ///     <para>
+    ///         A refinement that governs no case is worse than a missing one. It reads as a reviewed decision
+    ///         about a shape while the cases it names go on being probed against one that cannot ask them
+    ///         anything, which is precisely the reading this whole mechanism exists to stop producing.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Every_declared_probe_refinement_is_well_formed()
+    {
+        var problems = Contracts.SurfaceCatalog.Elements
+            .SelectMany(e => Contracts.SurfaceCatalog.ValidateProbeClaims(
+                e.UsageName, Contracts.SurfaceCatalog.DomainSizesOf(e),
+                Contracts.SurfaceCatalog.ConstructorAritiesOf(e), e.ProbeKey, e.ProbeClaims,
+                Contracts.SurfaceCatalog.FixtureNames))
+            .ToList();
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    /// <summary>
+    ///     Feeds <c>ValidateProbeClaims</c> each malformed shape directly, for the same reason
+    ///     <see cref="The_site_override_validator_rejects_every_malformed_shape" /> does: against the
+    ///     well-formed declarations the repository actually has, every branch of that validator passes
+    ///     vacuously, and a gate that has never fired is unverified code.
+    /// </summary>
+    [Fact]
+    public void The_probe_refinement_validator_rejects_every_malformed_shape()
+    {
+        var domains = new Dictionary<string, int>(StringComparer.Ordinal) { ["Flag"] = 1, ["Mode"] = 3 };
+        int[] arities = [0, 1];
+        var fixtureNames = new Dictionary<string, (IReadOnlySet<string>, IReadOnlySet<string>)>(
+            StringComparer.Ordinal)
+        {
+            ["shape"] = (new HashSet<string>(StringComparer.Ordinal) { "Extra" },
+                new HashSet<string>(StringComparer.Ordinal) { "Src", "Dst" })
+        };
+
+        string[] Check(params Contracts.SurfaceProbeClaim[] cs) =>
+            Contracts.SurfaceCatalog.ValidateProbeClaims("Probe", domains, arities, "element-key", cs,
+                key => key is not null && fixtureNames.TryGetValue(key, out var n) ? n : null).ToArray();
+
+        Contracts.SurfaceProbeClaim Property(string name, string? key = null, string? value = null,
+            string? args = null, string? options = null, string? unmeasured = null) =>
+            new(name, DwarfSurfaceProbeAttribute.NotAConstructor, key, value, args, options, unmeasured);
+
+        Contracts.SurfaceProbeClaim Ctor(int arity, string? key = null, string? value = null,
+            string? args = null, string? options = null, string? unmeasured = null) =>
+            new(null, arity, key, value, args, options, unmeasured);
+
+        // A property the element does not have: governs no case.
+        Assert.Contains("governs no case at all", Assert.Single(Check(Property("Nope", key: "shape"))),
+            StringComparison.Ordinal);
+
+        // Two refinements of one property.
+        Assert.Contains("both refine 'Flag'", Assert.Single(Check(
+            Property("Flag", key: "shape"), Property("Flag", key: "shape"))), StringComparison.Ordinal);
+
+        // A constructor arity the element does not declare.
+        Assert.Contains("does not declare", Assert.Single(Check(Ctor(7, key: "shape"))),
+            StringComparison.Ordinal);
+
+        // Two refinements of one constructor overload.
+        Assert.Contains("never consulted", Assert.Single(Check(
+            Ctor(1, args: "{Extra}"), Ctor(1, args: "{Extra}"))), StringComparison.Ordinal);
+
+        // States nothing at all.
+        Assert.Contains("refines nothing", Assert.Single(Check(Property("Flag"))), StringComparison.Ordinal);
+
+        // Restates the element's own key.
+        Assert.Contains("restates the element's own ProbeKey",
+            Assert.Single(Check(Property("Flag", key: "element-key"))), StringComparison.Ordinal);
+
+        // Arguments on a property case, and a Value on a constructor case: each goes nowhere.
+        Assert.Contains("only a CONSTRUCTOR case has",
+            Assert.Single(Check(Property("Flag", args: "{Extra}"))), StringComparison.Ordinal);
+        Assert.Contains("only a PROPERTY case has", Assert.Single(Check(Ctor(1, value: "1"))),
+            StringComparison.Ordinal);
+
+        // A stated Value would drop the other two members of a three-member domain.
+        Assert.Contains("has 3 members", Assert.Single(Check(Property("Mode", value: "Mode.X"))),
+            StringComparison.Ordinal);
+
+        // A placeholder naming a member the fixture does not declare, and a typeof naming a type it does not.
+        Assert.Contains("names member 'Gone'",
+            Assert.Single(Check(Ctor(1, key: "shape", args: "{Gone}"))), StringComparison.Ordinal);
+        Assert.Contains("names type 'Missing'",
+            Assert.Single(Check(Ctor(1, key: "shape", args: "typeof(Missing)"))), StringComparison.Ordinal);
+
+        // Unmeasured: blank, on a property, on a non-bare constructor, and combined with a shape.
+        Assert.Contains("states no reason", Assert.Single(Check(Ctor(0, unmeasured: "  "))),
+            StringComparison.Ordinal);
+        Assert.Contains("not the zero-argument constructor",
+            Assert.Single(Check(Ctor(1, unmeasured: "why"))), StringComparison.Ordinal);
+        Assert.Contains("not the zero-argument constructor",
+            Assert.Single(Check(Property("Flag", unmeasured: "why"))), StringComparison.Ordinal);
+        Assert.Contains("both unmeasurable and given a shape",
+            Assert.Single(Check(Ctor(0, key: "shape", unmeasured: "why"))), StringComparison.Ordinal);
+
+        // An element with no writable properties has nothing BUT its bare case, so excusing it excuses all.
+        Assert.Contains("excusing it excuses every question",
+            Assert.Single(Contracts.SurfaceCatalog.ValidateProbeClaims("Probe",
+                new Dictionary<string, int>(StringComparer.Ordinal), arities, null,
+                [Ctor(0, unmeasured: "why")], _ => null)),
+            StringComparison.Ordinal);
+
+        // The well-formed shapes the repository actually uses report nothing.
+        Assert.Empty(Check(Property("Flag", key: "shape"), Property("Mode", key: "shape"),
+            Ctor(1, args: "{Extra}, typeof(Dst)"), Ctor(0, unmeasured: "the bare form configures nothing")));
+    }
+
+    /// <summary>
+    ///     A <c>[DwarfSurfaceProbe]</c> on a type with no <c>[DwarfSurface]</c> has no case-space to refine,
+    ///     and <c>SurfaceCatalog</c> filters the type out of the element set entirely — so the refinement, and
+    ///     every case it was written to shape, would vanish without a word. Same reasoning as
+    ///     <see cref="No_site_override_sits_on_a_type_that_declares_no_category" />.
+    /// </summary>
+    [Fact]
+    public void No_probe_refinement_sits_on_a_type_that_declares_no_category()
+    {
+        var orphans = typeof(DwarfMapperAttribute).Assembly.GetExportedTypes()
+            .Where(t => t.GetCustomAttributes<DwarfSurfaceProbeAttribute>(inherit: false).Any()
+                        && t.GetCustomAttribute<DwarfSurfaceAttribute>(inherit: false) is null)
+            .Select(t => t.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(orphans.Count == 0,
+            "Type(s) carrying [DwarfSurfaceProbe] but no [DwarfSurface]: " + string.Join(", ", orphans)
+            + ". The type is not in the catalogue at all, so neither the refinement nor the cases it shapes "
+            + "are ever looked at.");
+    }
+
+    /// <summary>
+    ///     The refinements are load-bearing, not decoration: several cases of one element must resolve
+    ///     DIFFERENT fixtures. If every refinement were deleted — or <c>BuildCases</c> stopped consulting them
+    ///     — this fails, rather than the option bags quietly returning to one flat pair for eighteen options
+    ///     and ~150 cells changing verdict with nothing to say so.
+    /// </summary>
+    [Fact]
+    public void At_least_one_element_probes_its_cases_against_different_fixtures()
+    {
+        var shapes = Contracts.SurfaceCatalog.CrossProductElements
+            .Select(e => (e.UsageName, Distinct: Contracts.SurfaceCatalog.CasesFor(e)
+                .Select(c => c.ProbeKey).Distinct().Count()))
+            .Where(x => x.Distinct > 1)
+            .ToList();
+
+        Assert.True(shapes.Count >= 2 && shapes.Max(x => x.Distinct) >= 10,
+            "Only " + shapes.Count + " element(s) measure their cases against more than one fixture "
+            + $"(widest: {(shapes.Count == 0 ? 0 : shapes.Max(x => x.Distinct))}). [DwarfMapper] and "
+            + "[DwarfMapperDefaults] each demand a dozen-odd different shapes, one per option. Fewer means "
+            + "either the refinements were deleted or BuildCases stopped reading them, and the option bags "
+            + "are back to being asked eighteen questions with one flat DTO pair.");
     }
 }

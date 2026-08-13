@@ -10,7 +10,7 @@ public sealed class SurfaceProbeTests
         var element = SurfaceCatalog.Elements.Single(e =>
             string.Equals(e.UsageName, "MapIgnore", StringComparison.Ordinal)
             && e.Type.GetGenericArguments().Length == 0);
-        var c = new SurfaceCase(element, AttributeTargets.Method, "[MapIgnore(\"Name\")]", "ctor(1)");
+        var c = new SurfaceCase(element, AttributeTargets.Method, "[MapIgnore(\"Name\")]", "ctor(1)", element.ProbeKey, null);
 
         var (effect, detail) = SurfaceProbe.Classify(c, Endpoint.CreateMap);
 
@@ -26,7 +26,7 @@ public sealed class SurfaceProbeTests
         // AttributeTargets.Class and no test ever tries the illegal site to confirm the compiler agrees.
         var element = SurfaceCatalog.Elements.Single(e =>
             string.Equals(e.UsageName, "DwarfMapper", StringComparison.Ordinal));
-        var c = new SurfaceCase(element, AttributeTargets.Method, "[DwarfMapper]", "illegal-site");
+        var c = new SurfaceCase(element, AttributeTargets.Method, "[DwarfMapper]", "illegal-site", element.ProbeKey, null);
 
         var (effect, _) = SurfaceProbe.Classify(c, Endpoint.CreateMap);
 
@@ -129,7 +129,7 @@ public sealed class SurfaceProbeTests
             .OrderBy(k => k, StringComparer.Ordinal)
             .ToList();
 
-        const int baseline = 14;
+        const int baseline = 17;
         Assert.True(missing.Count == baseline,
             $"{missing.Count} of {SurfaceFixtures.All.Count} fixtures have no {nameof(EndpointSources.MemberSlotMarker)}: "
             + string.Join(", ", missing) + $". Each one means every Property/Field-site case that needs that "

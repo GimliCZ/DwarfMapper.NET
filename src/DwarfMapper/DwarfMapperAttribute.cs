@@ -7,6 +7,31 @@ namespace DwarfMapper;
 ///     partial mapping methods declared on it at compile time.
 /// </summary>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+// One fixture per OPTION, not per element. Every key below names a DTO shape that makes exactly that option
+// observable; probed against the flat pair the whole bag reads "no effect" while the options work perfectly.
+// The three unlisted options (AutoMatchMembers, GenerateExtensions, RegisterCollectionShapes) are already
+// observable against the flat pair, and an option with no fixture demand says so by not appearing here.
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.AutoNest), ProbeKey = "nested-pair")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.AllowNonPublic), ProbeKey = "internal-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NameConvention), ProbeKey = "snake-case-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.CaseInsensitive), ProbeKey = "case-mismatched-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.IgnoreObsoleteMembers), ProbeKey = "obsolete-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.SkipNullSourceMembers), ProbeKey = "nullable-source-nonnull-target")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NullStrategy), ProbeKey = "nullable-value-to-nonnull")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.RequiredMapping), ProbeKey = "unconsumed-source-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.EnumStrategy), ProbeKey = "divergent-order-enums")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.EnumStringSource), ProbeKey = "described-enum-to-string")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NullCollections), ProbeKey = "nullable-collection-rebuild")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.OnCycle), ProbeKey = "recursive-graph")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.ImplicitConversions), ProbeKey = "narrowing-conversion")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.ReferenceHandling), ProbeKey = "shared-reference-graph")]
+// A budget, not a count: stepping the default to 65 binds on nothing against a graph three deep. Value = "1"
+// is the only probe that makes a depth limit observable at all, and no reflection over an int reveals that.
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.MaxDepth), ProbeKey = "recursive-graph", Value = "1")]
+[DwarfSurfaceProbe(constructorArity: 0,
+    Unmeasured = "a bare [DwarfMapper] selects every option's default, so there is nothing here for any "
+                 + "endpoint to honour or refuse — the case is silent by construction, whatever the generator "
+                 + "does. The questions this element can actually pose are the eighteen option cases above.")]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperAttribute : Attribute
 {

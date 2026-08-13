@@ -35,43 +35,32 @@ public sealed record OptionInfo(string Name, string NonDefault, object? Default,
 public static class OptionCatalog
 {
     /// <summary>
-    ///     The class-level options are PROPERTIES of one type (<see cref="DwarfMapperAttribute" />), so the
-    ///     type-level <c>[DwarfSurface(ProbeKey = ...)]</c> — which sits on <c>DwarfMapperAttribute</c> itself
-    ///     — cannot express a different fixture per property. This map is that irreducible remainder: it is
-    ///     not a duplicate of the element-level demand, it is the SECOND demand source, scoped to properties
-    ///     rather than types. <see cref="SelfValidation.SurfaceDeclarationTests.Every_declared_ProbeKey_binds_to_exactly_one_fixture" />
-    ///     reads it directly, unioned with the element-level demand, so an option pointed at a key with no
-    ///     fixture is reported rather than quietly assumed fine.
+    ///     Each option's fixture, READ OFF <see cref="DwarfMapperAttribute" />'s own
+    ///     <c>[DwarfSurfaceProbe]</c> declarations rather than listed here.
+    ///     <para>
+    ///         This used to be a hand-written option → key map, kept here because the type-level
+    ///         <c>[DwarfSurface(ProbeKey = ...)]</c> could not express one fixture per property. It can now,
+    ///         so the map is derived and the option matrix and the surface matrix read the SAME declaration:
+    ///         one way to say a thing. A second copy would have been free to drift, and a drifted copy points
+    ///         one of the two matrices at a shape that cannot trigger the option it is measuring.
+    ///     </para>
     /// </summary>
-    internal static IReadOnlyDictionary<string, string> ProbeKeys { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
-    {
-        ["AutoNest"] = "nested-pair",
-        ["AllowNonPublic"] = "internal-member",
-        ["NameConvention"] = "snake-case-member",
-        ["CaseInsensitive"] = "case-mismatched-member",
-        ["IgnoreObsoleteMembers"] = "obsolete-member",
-        ["SkipNullSourceMembers"] = "nullable-source-nonnull-target",
-        ["NullStrategy"] = "nullable-value-to-nonnull",
-        ["RequiredMapping"] = "unconsumed-source-member",
-        ["EnumStrategy"] = "divergent-order-enums",
-        ["EnumStringSource"] = "described-enum-to-string",
-        ["NullCollections"] = "nullable-collection-rebuild",
-        ["OnCycle"] = "recursive-graph",
-        ["MaxDepth"] = "recursive-graph",
-        ["ImplicitConversions"] = "narrowing-conversion",
-        ["ReferenceHandling"] = "shared-reference-graph"
-    };
+    internal static IReadOnlyDictionary<string, string> ProbeKeys { get; } =
+        typeof(DwarfMapperAttribute).GetCustomAttributes<DwarfSurfaceProbeAttribute>(inherit: false)
+            .Where(a => a.Property is not null && a.ProbeKey is not null)
+            .ToDictionary(a => a.Property!, a => a.ProbeKey!, StringComparer.Ordinal);
 
     /// <summary>
-    ///     Probe values that cannot be derived sensibly from the default. Only <c>MaxDepth</c> so far: the
-    ///     generic rule for an int is "step it", which turns a default of 64 into 65 and binds on nothing.
-    ///     A depth BUDGET needs a value below the graph to have any effect, and no amount of reflection over
-    ///     an <c>int</c> property reveals that it is a limit rather than a count.
+    ///     Probe values that cannot be derived sensibly from the default — also read off the declaration,
+    ///     where <c>[DwarfSurfaceProbe(nameof(MaxDepth), Value = "1")]</c> states it. The generic rule for an
+    ///     int is "step it", which turns a default of 64 into 65 and binds on nothing; a depth BUDGET needs a
+    ///     value below the graph to have any effect, and no amount of reflection over an <c>int</c> property
+    ///     reveals that it is a limit rather than a count.
     /// </summary>
-    private static readonly Dictionary<string, string> ProbeOverrides = new(StringComparer.Ordinal)
-    {
-        ["MaxDepth"] = "MaxDepth = 1"
-    };
+    private static readonly Dictionary<string, string> ProbeOverrides =
+        typeof(DwarfMapperAttribute).GetCustomAttributes<DwarfSurfaceProbeAttribute>(inherit: false)
+            .Where(a => a.Property is not null && a.Value is not null)
+            .ToDictionary(a => a.Property!, a => $"{a.Property} = {a.Value}", StringComparer.Ordinal);
 
     public static IReadOnlyList<OptionInfo> Options { get; } = Build();
 

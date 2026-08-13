@@ -30,7 +30,12 @@ namespace DwarfMapper;
 ///         memory corruption, but the copied bytes will be misinterpreted.
 ///     </para>
 /// </remarks>
-[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "narrowing-conversion")]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "reinterpretable-array-member")]
+// A forced blit is an unmanaged ARRAY→ARRAY directive. The narrowing-conversion fixture has no array at all,
+// and the sampled "Id" named an int, so the case measured the generator's reaction to a directive that could
+// never apply. `Data` is int[] → uint[]: same width, both unmanaged, different types — exactly the shape the
+// automatic layout proof declines and this attribute exists to force.
+[DwarfSurfaceProbe(constructorArity: 1, Arguments = "{Data}")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class ReinterpretAttribute : Attribute
 {

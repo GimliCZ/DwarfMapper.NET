@@ -19,6 +19,10 @@ namespace DwarfMapper;
 /// </remarks>
 [DwarfSurface(SurfaceCategory.EmissionShape,
     AppliesTo = SurfaceEndpoints.CreateMap | SurfaceEndpoints.Registry | SurfaceEndpoints.CoLocatedHost)]
+[DwarfSurfaceProbe(constructorArity: 0,
+    Unmeasured = "a bare [assembly: DwarfMapperOptions] selects the default accessibility, which is what the "
+                 + "generator emits with no attribute at all — silent by construction. The PublicExtensions "
+                 + "case above is where this element's one question lives.")]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperOptionsAttribute : Attribute
 {

@@ -30,7 +30,22 @@ internal enum SurfaceEffect
     NotCompilable,
 
     /// <summary>The endpoint has no such declaration site, so there is no cell here to judge.</summary>
-    NoSuchSite
+    NoSuchSite,
+
+    /// <summary>
+    ///     The case demands a fixture shape, and this endpoint's template did not deliver it — the
+    ///     <c>Registry</c> and <c>CoLocatedHost</c> templates declare their own DTO pair and ignore the one a
+    ///     case asks for. The attribute was compiled against a shape that cannot trigger it, so the generator
+    ///     was never asked the question.
+    ///     <para>
+    ///         Kept distinct from <see cref="Silent" /> because they look identical in the output and mean
+    ///         opposite things: silence means the directive was discarded, this means nothing was said. Only a
+    ///         would-be-<see cref="Silent" /> cell is downgraded — a case that is honoured or refused against
+    ///         the flat pair anyway has plainly been asked something, and reclassifying it would erase a real
+    ///         reading.
+    ///     </para>
+    /// </summary>
+    Unasked
 }
 
 /// <summary>
@@ -48,11 +63,17 @@ internal static class SurfaceProbe
 
     public static (SurfaceEffect Effect, string Detail) Classify(SurfaceCase c, Endpoint endpoint)
     {
-        var types = SurfaceFixtures.Get(c.Element.ProbeKey);
-        var source = EndpointSources.BuildAt(endpoint, c.Site, c.Rendered, types);
+        // The CASE's key, not the element's: an option bag needs one shape per option, and reading the
+        // element-wide key here would leave every per-property refinement inert while appearing to apply.
+        var types = SurfaceFixtures.Get(c.ProbeKey);
+        var source = EndpointSources.BuildAt(endpoint, c.Site, c.Rendered, types, c.MapperOptions);
         if (source is null) return (SurfaceEffect.NoSuchSite, "endpoint has no such declaration site");
 
-        var (baseDwarfKeys, baseCompilerErrorCounts, baseline) = Baseline(endpoint, c.Element.ProbeKey, types);
+        // The baseline carries the SAME ambient options. Otherwise the options themselves are the difference
+        // between the two compilations and every such cell reads Honoured for the mapper's configuration
+        // rather than for the element under test.
+        var (baseDwarfKeys, baseCompilerErrorCounts, baseline) =
+            Baseline(endpoint, c.ProbeKey, types, c.MapperOptions);
 
         // The C# COMPILER's verdict on the placement, not the generator's. GeneratorTestHarness.RunAll only
         // returns the diagnostics the GENERATOR itself reported (the out parameter of
@@ -97,19 +118,59 @@ internal static class SurfaceProbe
         if (added.Count > 0) return (SurfaceEffect.Refused, string.Join(",", added));
         if (!string.Equals(generated, baseline, StringComparison.Ordinal))
             return (SurfaceEffect.Honoured, "output differs");
+
+        // A diagnostic the baseline raised and this run does not. Some directives exist ONLY to withdraw a
+        // diagnostic — [MapIgnoreSource]'s whole effect is to silence the source-coverage suggestion — and
+        // measuring only ADDED diagnostics and changed output reports those as doing nothing at all. The
+        // element plainly acted: the build says something different because of it.
+        var withoutKeys = diagnostics.Select(d => d.Id + ":" + d.Severity).ToHashSet(StringComparer.Ordinal);
+        var withdrawn = baseDwarfKeys.Where(k => !withoutKeys.Contains(k))
+            .OrderBy(k => k, StringComparer.Ordinal).ToList();
+        if (withdrawn.Count > 0)
+            return (SurfaceEffect.Honoured, "withdrew " + string.Join(",", withdrawn));
         if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
             return (SurfaceEffect.UnhonouredButLoud, "unhonoured, but the build fails regardless");
+
+        // Silence only means something if the question was asked. Checked LAST, on the silent path alone:
+        // MapNullSkip<Src,Dst> is Honoured at CoLocatedHost against that endpoint's own flat pair despite its
+        // fixture never being delivered, and a rule that fired before classification would erase that reading.
+        if (types is not null && !source.Contains(types, StringComparison.Ordinal))
+            return (SurfaceEffect.Unasked,
+                $"the '{c.ProbeKey}' fixture never reached this endpoint's source; the {endpoint} template "
+                + "declares its own DTO pair");
+
+        if (c.MapperOptions is not null && !source.Contains(c.MapperOptions, StringComparison.Ordinal))
+            return (SurfaceEffect.Unasked,
+                $"the ambient options this case needs ({c.MapperOptions}) never reached this endpoint's "
+                + $"source; the {endpoint} template declares no mapper class to carry them");
 
         return (SurfaceEffect.Silent, "no diagnostic, identical output, compiles");
     }
 
-    private static (string[] DwarfKeys, IReadOnlyDictionary<string, int> CompilerErrorCounts, string Generated)
-        Baseline(Endpoint endpoint, string? probeKey, string? types)
+    /// <summary>
+    ///     Whether this cell poses the generator no question — either the fixture the case demands never
+    ///     reached the endpoint, or the case is declared unmeasurable at the element and did indeed measure
+    ///     nothing.
+    ///     <para>
+    ///         One predicate, consulted by the parity theory (which excuses such a cell) and by the count that
+    ///         holds the total to a shrink-only ceiling. Two copies would drift, and a drifting copy is how an
+    ///         excused cell stops being counted.
+    ///     </para>
+    /// </summary>
+    public static bool PosesNoQuestion(SurfaceCase c, SurfaceEffect effect)
     {
-        var cacheKey = $"{endpoint}|{probeKey ?? "<flat>"}";
+        ArgumentNullException.ThrowIfNull(c);
+        return effect is SurfaceEffect.Unasked
+               || (c.Unmeasured is not null && effect is SurfaceEffect.Silent);
+    }
+
+    private static (string[] DwarfKeys, IReadOnlyDictionary<string, int> CompilerErrorCounts, string Generated)
+        Baseline(Endpoint endpoint, string? probeKey, string? types, string? options)
+    {
+        var cacheKey = $"{endpoint}|{probeKey ?? "<flat>"}|{options ?? "<none>"}";
         return Baselines.GetOrAdd(cacheKey, _ =>
         {
-            var baselineSource = EndpointSources.Build(endpoint, types: types);
+            var baselineSource = EndpointSources.Build(endpoint, types: types, options: options ?? "");
             var (d, g) = GeneratorTestHarness.RunAll(baselineSource);
             var compilerErrorCounts = GeneratorTestHarness.RunAndGetCompilationErrors(baselineSource)
                 .Where(x => x.Severity == DiagnosticSeverity.Error

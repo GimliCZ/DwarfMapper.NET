@@ -28,7 +28,11 @@ namespace DwarfMapper;
 ///         <c>IEnumerable&lt;TNodeDto&gt;</c>.
 ///     </para>
 /// </summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "nested-pair")]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "graph-navigation-to-flat-collection")]
+// A graph flatten needs a NAVIGATION on the source and a COLLECTION on the destination to fill; the
+// nested-pair fixture has neither, so both sampled arguments named scalars and the directive was nonsense at
+// every endpoint. `Root` enters the recursive graph, `Flat` is the collection it flattens into.
+[DwarfSurfaceProbe(constructorArity: 2, Arguments = "{Root}, {Flat}")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class FlattenGraphAttribute : Attribute
 {

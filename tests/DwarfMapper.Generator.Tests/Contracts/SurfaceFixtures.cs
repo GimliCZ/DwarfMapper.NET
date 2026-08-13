@@ -141,6 +141,39 @@ internal static class SurfaceFixtures
         public sealed class Src { public int Id { get; set; } public Inner? Child { get; set; } }
         public sealed class Dst { public int Id { get; set; } public InnerDto? Child { get; set; } }
         """;
+
+    // A collection whose ELEMENT type carries a key member, which is what a key-based upsert merges on.
+    // The nullable-collection-rebuild fixture next door has List<int> elements: they have no members at all,
+    // so [MapCollectionKey] could only ever name something that did not exist, and the resulting silence said
+    // nothing about upsert support. Same element type name on both sides so the key member has one name.
+    [SurfaceProbe("keyed-collection-elements")]
+    private static readonly string KeyedCollectionElements = """
+        public sealed class Item { public int Id { get; set; } public string? Label { get; set; } }
+        public sealed class ItemDto { public int Id { get; set; } public string? Label { get; set; } }
+        public sealed class Src { public int Id { get; set; } public System.Collections.Generic.List<Item> Items { get; set; } = new(); }
+        public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.List<ItemDto> Items { get; set; } = new(); }
+        """;
+
+    // A RECURSIVE navigation on the source and a FLAT collection on the destination — the two halves a graph
+    // flatten needs. The nested-pair fixture has a single non-recursive complex member and no collection
+    // anywhere, so [FlattenGraph] had neither a graph to walk nor anywhere to put the result.
+    [SurfaceProbe("graph-navigation-to-flat-collection")]
+    private static readonly string GraphNavigationToFlatCollection = """
+        public sealed class Node { public int Id { get; set; } public System.Collections.Generic.List<Node> Children { get; set; } = new(); }
+        public sealed class NodeDto { public int Id { get; set; } }
+        public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } }
+        public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.List<NodeDto> Flat { get; set; } = new(); }
+        """;
+
+    // Two UNMANAGED arrays of the same width and different element types. A forced blit is an array→array
+    // directive, and the automatic layout proof declines this pair precisely because the element types differ
+    // — which is the case [Reinterpret] exists to force. Against the narrowing-conversion fixture it was
+    // pointed at a scalar, so the directive could not apply and the cell measured nothing.
+    [SurfaceProbe("reinterpretable-array-member")]
+    private static readonly string ReinterpretableArrayMember = """
+        public sealed class Src { public int Id { get; set; } public int[] Data { get; set; } = System.Array.Empty<int>(); }
+        public sealed class Dst { public int Id { get; set; } public uint[] Data { get; set; } = System.Array.Empty<uint>(); }
+        """;
 #pragma warning restore CS0414, CA1802, CA1823, IDE0051
 
     public static IReadOnlyDictionary<string, string> All { get; } =
@@ -153,4 +186,40 @@ internal static class SurfaceFixtures
     /// <summary>The fixture for a key, or null for "the default flat DTO pair is sufficient".</summary>
     public static string? Get(string? key) =>
         key is not null && All.TryGetValue(key, out var text) ? text : null;
+
+    /// <summary>
+    ///     The member and type names a fixture declares, PARSED rather than string-matched.
+    ///     <para>
+    ///         A <c>{Member}</c> placeholder in a <c>[DwarfSurfaceProbe(Arguments = ...)]</c> declaration is
+    ///         checked against this, so an argument that stops naming a real member fails a gate instead of
+    ///         degrading back into the no-op cell the declaration was written to eliminate. Substring matching
+    ///         would accept a name that appears only inside a type argument or a comment; the fixtures are C#
+    ///         and the test project already has Roslyn, so the question is answered exactly.
+    ///     </para>
+    ///     <para>
+    ///         Members are gathered across EVERY type the fixture declares, not just <c>Src</c> and
+    ///         <c>Dst</c>: <c>[MapCollectionKey("Items", "Id")]</c> names a collection on the root and a key on
+    ///         its ELEMENT type, and both halves are equally part of the shape.
+    ///     </para>
+    /// </summary>
+    public static (IReadOnlySet<string> Members, IReadOnlySet<string> Types) DeclaredNames(string fixtureText)
+    {
+        var root = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(fixtureText).GetRoot();
+
+        var members = root.DescendantNodes().SelectMany(n => n switch
+            {
+                Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax p => [p.Identifier.ValueText],
+                Microsoft.CodeAnalysis.CSharp.Syntax.FieldDeclarationSyntax f =>
+                    f.Declaration.Variables.Select(v => v.Identifier.ValueText),
+                _ => Enumerable.Empty<string>()
+            })
+            .ToHashSet(StringComparer.Ordinal);
+
+        var types = root.DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.BaseTypeDeclarationSyntax>()
+            .Select(t => t.Identifier.ValueText)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return (members, types);
+    }
 }

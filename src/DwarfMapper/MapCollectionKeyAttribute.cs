@@ -20,7 +20,11 @@ namespace DwarfMapper;
 ///         default equality (<c>EqualityComparer&lt;TKey&gt;.Default</c>).
 ///     </para>
 /// </summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "nullable-collection-rebuild")]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "keyed-collection-elements")]
+// A key-based upsert needs a collection whose ELEMENT type has a key member. The nullable-collection-rebuild
+// fixture's element type is int, which has neither of the sampled names, so the directive named nothing that
+// existed. `Items` is the collection; `Id` is a member of its element type, which is where the key lives.
+[DwarfSurfaceProbe(constructorArity: 2, Arguments = "{Items}, {Id}")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapCollectionKeyAttribute : Attribute
 {

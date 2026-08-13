@@ -63,6 +63,12 @@ public sealed class SurfaceParityTests
         // agrees. Both are the declaration telling the truth.
         if (effect is SurfaceEffect.NoSuchSite or SurfaceEffect.NotCompilable) return;
 
+        // No question asked, so no answer to judge. Excused HERE rather than failed, because a cell the
+        // instrument could not pose is not a divergence and recording it as one would ratify a bug the
+        // generator never committed. It is not excused quietly: every such cell is counted by
+        // The_cells_that_pose_no_question_are_declared_and_counted, against a ceiling that can only shrink.
+        if (SurfaceProbe.PosesNoQuestion(c, effect)) return;
+
         if (claimed)
         {
             if (effect is SurfaceEffect.Honoured or SurfaceEffect.Refused
@@ -133,6 +139,72 @@ public sealed class SurfaceParityTests
             $"Only {acting} elements visibly act at CreateMap. Either the fixtures stopped triggering their "
             + "elements or Classify() is not observing correctly — in both cases the matrix is passing "
             + "without testing anything.");
+    }
+
+    /// <summary>
+    ///     The ceiling on cells the instrument cannot pose a question about. Measured, stated, and SHRINK-ONLY:
+    ///     raising it is how a coverage hole grows back one cell at a time with nobody the wiser.
+    /// </summary>
+    private const int UnaskableCellCeiling = 44;
+
+    /// <summary>
+    ///     Every cell the matrix excuses for posing no question is named and counted here.
+    ///     <para>
+    ///         These are the two shapes the instrument still cannot ask: a case declared <c>Unmeasured</c> at
+    ///         the element (a bare option bag, which selects every default and therefore configures nothing),
+    ///         and a case whose fixture the endpoint's template refused to carry (<c>Registry</c> and
+    ///         <c>CoLocatedHost</c> declare their own DTO pair). Neither is a divergence: the generator was
+    ///         never asked. But an unasked question that nothing counts is exactly the silent absence of
+    ///         coverage this whole arrangement exists to delete, so the total is pinned and the list printed.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void The_cells_that_pose_no_question_are_declared_and_counted()
+    {
+        var unaskable = new List<string>();
+        foreach (var element in SurfaceCatalog.CrossProductElements)
+        foreach (var c in SurfaceCatalog.CasesFor(element))
+        foreach (var endpoint in EndpointSources.All)
+        {
+            var (effect, detail) = SurfaceProbe.Classify(c, endpoint);
+            if (SurfaceProbe.PosesNoQuestion(c, effect))
+                unaskable.Add($"  {c.Rendered.Replace("\n", " + ", StringComparison.Ordinal)} on a {c.Site} "
+                              + $"@ {endpoint} — {c.Unmeasured ?? detail}");
+        }
+
+        Assert.True(unaskable.Count <= UnaskableCellCeiling,
+            $"{unaskable.Count} cells pose the generator no question, above the stated ceiling of "
+            + $"{UnaskableCellCeiling}:\n" + string.Join("\n", unaskable.OrderBy(s => s, StringComparer.Ordinal))
+            + "\n\nThis number may only shrink. Raise it and the matrix loses coverage one cell at a time "
+            + "with nothing to say so. Close a hole instead: give the case a fixture that triggers it with "
+            + "[DwarfSurfaceProbe(ProbeKey = ...)], or an argument list that bites.");
+
+        Assert.True(unaskable.Count >= UnaskableCellCeiling - 10,
+            $"Only {unaskable.Count} cells pose no question, well under the ceiling of {UnaskableCellCeiling}. "
+            + "Lower the ceiling to lock the improvement in — an unratcheted ceiling permits the hole to "
+            + "reopen silently.");
+    }
+
+    /// <summary>
+    ///     Every <c>Unmeasured</c> declaration must actually excuse a cell. One that excuses none reads as a
+    ///     reviewed decision about a hole that no longer exists — the same failure mode as a site override
+    ///     restating the element's own default, and the same reason that one is an error too.
+    /// </summary>
+    [Fact]
+    public void Every_Unmeasured_declaration_excuses_at_least_one_cell()
+    {
+        var idle = SurfaceCatalog.CrossProductElements
+            .SelectMany(SurfaceCatalog.CasesFor)
+            .Where(c => c.Unmeasured is not null)
+            .Where(c => !EndpointSources.All.Any(ep =>
+                SurfaceProbe.PosesNoQuestion(c, SurfaceProbe.Classify(c, ep).Effect)))
+            .Select(c => $"{c.Element.UsageName}: {c.Rendered} on a {c.Site}")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(idle.Count == 0,
+            "Case(s) declared Unmeasured that excuse no cell anywhere:\n  " + string.Join("\n  ", idle)
+            + "\n\nThe case is measured after all — delete the declaration and let the matrix judge it.");
     }
 
     /// <summary>

@@ -56,6 +56,14 @@ public static class EndpointSources
         """;
 
     /// <summary>
+    ///     The flat pair a case with no <c>ProbeKey</c> is measured against. Exposed so a
+    ///     <c>{Member}</c> placeholder in a declared argument list can be checked against the shape actually in
+    ///     play — for an undemanding case that shape is this one, and leaving it uncheckable would mean the
+    ///     gate covered only the cases that already carry a fixture.
+    /// </summary>
+    public static string DefaultTypes => Types;
+
+    /// <summary>
     ///     Emits a full compilation unit for <paramref name="endpoint" />, placing
     ///     <paramref name="memberAttribute" /> on the mapping method (or, for the registry, on the source
     ///     type) and <paramref name="classAttribute" /> on the mapper class.
@@ -212,7 +220,7 @@ public static class EndpointSources
     ///     empty.
     /// </summary>
     public static string? BuildAt(Endpoint endpoint, AttributeTargets site, string rendered,
-        string? types = null)
+        string? types = null, string? options = null)
     {
         ArgumentNullException.ThrowIfNull(rendered);
 
@@ -221,11 +229,11 @@ public static class EndpointSources
             AttributeTargets.Class when endpoint is Endpoint.Registry
                 => null, // the registry has no mapper class; intent lives on the source type
             AttributeTargets.Class
-                => Build(endpoint, classAttribute: rendered, types: types),
+                => Build(endpoint, classAttribute: rendered, types: types, options: options ?? ""),
             AttributeTargets.Method when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
                 => null, // neither endpoint declares a mapping method to annotate
             AttributeTargets.Method
-                => Build(endpoint, memberAttribute: rendered, types: types),
+                => Build(endpoint, memberAttribute: rendered, types: types, options: options ?? ""),
             // Registry and CoLocatedHost already place memberAttribute on a real DTO member (Registry's own
             // template puts it on Src.Name; CoLocatedHost's puts it on Dst.Name) — that is a genuine member
             // site, not a stand-in for a missing method. Every OTHER endpoint has a mapping method, and
@@ -236,11 +244,11 @@ public static class EndpointSources
             // returns null when the fixture in play has none to place it on.
             AttributeTargets.Property or AttributeTargets.Field
                 when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
-                => Build(endpoint, memberAttribute: rendered, types: types),
+                => Build(endpoint, memberAttribute: rendered, types: types, options: options ?? ""),
             AttributeTargets.Property or AttributeTargets.Field
-                => BuildAtMember(endpoint, rendered, types),
+                => BuildAtMember(endpoint, rendered, types, options),
             AttributeTargets.Assembly
-                => InsertAssemblyAttribute(Build(endpoint, types: types), rendered),
+                => InsertAssemblyAttribute(Build(endpoint, types: types, options: options ?? ""), rendered),
             AttributeTargets.Struct or AttributeTargets.Constructor
                 => null, // no fixture in the endpoint set declares one; add a shape before claiming the site
             _ => null
@@ -290,13 +298,13 @@ public static class EndpointSources
     ///     measures a different code path. Fixture text is arbitrary: a fixture written before this slot
     ///     existed has no marker to find, and that is an honest "no cell here," not a defect to paper over.
     /// </summary>
-    private static string? BuildAtMember(Endpoint endpoint, string rendered, string? types)
+    private static string? BuildAtMember(Endpoint endpoint, string rendered, string? types, string? options)
     {
         var t = string.IsNullOrEmpty(types) ? Types : types;
         var idx = t.IndexOf(MemberSlotMarker, StringComparison.Ordinal);
         if (idx < 0) return null; // no member slot in this fixture: no cell, not a fallback to the method
 
         var withMember = t[..idx] + rendered + " " + t[(idx + MemberSlotMarker.Length)..];
-        return Build(endpoint, types: withMember);
+        return Build(endpoint, types: withMember, options: options ?? "");
     }
 }

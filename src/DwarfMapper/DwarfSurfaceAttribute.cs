@@ -119,8 +119,139 @@ internal sealed class DwarfSurfaceAttribute : Attribute
     ///     divergent member order, or a self-referencing graph. Bound dynamically: the test project must
     ///     contain exactly one <c>[SurfaceProbe]</c> fixture with this key, and every fixture must be claimed
     ///     by at least one element. Null means the default flat DTO pair suffices.
+    ///     <para>
+    ///         This is the element-wide DEFAULT. An element whose individual cases need DIFFERENT shapes — an
+    ///         option bag, where every property asks its own question — refines it per case with
+    ///         <see cref="DwarfSurfaceProbeAttribute" />.
+    ///     </para>
     /// </summary>
     public string? ProbeKey { get; set; }
+}
+
+/// <summary>
+///     Refines <see cref="DwarfSurfaceAttribute.ProbeKey" /> — and supplies the argument or value that
+///     actually bites — for ONE case of an element, because one fixture per element cannot pose one question
+///     per option.
+///     <para>
+///         The forcing case is <c>[DwarfMapper]</c>. It has eighteen writable properties and each needs a
+///         different shape to become observable: <c>EnumStrategy</c> needs two enums in divergent member
+///         order, <c>MaxDepth</c> needs a recursive graph, <c>NullCollections</c> needs different collection
+///         types on each side. Probed against one flat DTO pair, every one of them reads "no effect" while the
+///         option works perfectly — a hundred and fifty cells of the matrix reporting silence that the
+///         instrument, not the generator, produced.
+///     </para>
+///     <para>
+///         The second forcing case is the constructor argument. The matrix samples plausible literals, which
+///         yields non-questions: <c>[AutoNest(true)]</c> restates the ambient default and therefore changes
+///         nothing by construction, and <c>[MapIgnoreSource("Id")]</c> names a member that is already
+///         consumed, so ignoring it is a no-op. A cell that reads silent because its argument was meaningless
+///         is indistinguishable in the output from a real silent divergence, so the argument list that bites
+///         is stated here. Member names are written as <c>{Member}</c> placeholders, which the test project
+///         expands to a quoted literal AFTER checking the name against the fixture actually in play — an
+///         argument that stops naming a real member fails a gate instead of quietly degrading to a no-op cell.
+///     </para>
+///     <para>
+///         Applying more than one to the same property or the same constructor arity is an error rather than a
+///         silent no-op, as is naming a property or an arity the element does not have, or restating the
+///         element's own <see cref="DwarfSurfaceAttribute.ProbeKey" />. All are asserted by
+///         <c>SurfaceDeclarationTests</c>, on the same reasoning as <see cref="DwarfSurfaceSiteAttribute" />:
+///         a stale refinement reads as a reviewed decision while governing nothing.
+///     </para>
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface
+                | AttributeTargets.Enum, AllowMultiple = true, Inherited = false)]
+internal sealed class DwarfSurfaceProbeAttribute : Attribute
+{
+    /// <summary>The <see cref="ConstructorArity" /> of a probe written in the PROPERTY form.</summary>
+    public const int NotAConstructor = -1;
+
+    /// <summary>Refines the cases that vary one writable property of this element.</summary>
+    /// <param name="property">
+    ///     The property's name, which must be a public readable/writable non-indexer property of the element —
+    ///     anything else governs zero cases.
+    /// </param>
+    public DwarfSurfaceProbeAttribute(string property)
+    {
+        Property = property;
+        ConstructorArity = NotAConstructor;
+    }
+
+    /// <summary>Refines the case that exercises one public constructor overload of this element.</summary>
+    /// <param name="constructorArity">
+    ///     The overload's parameter count, which is how <c>SurfaceCatalog</c> labels a constructor case. The
+    ///     element must declare exactly one public constructor with that many parameters.
+    /// </param>
+    public DwarfSurfaceProbeAttribute(int constructorArity)
+    {
+        ConstructorArity = constructorArity;
+    }
+
+    /// <summary>The writable property whose cases this refines, or null in the constructor form.</summary>
+    public string? Property { get; }
+
+    /// <summary>
+    ///     The constructor overload's parameter count, or <see cref="NotAConstructor" /> in the property form.
+    ///     An <c>int?</c> is not a legal attribute argument type, so the property form carries the sentinel.
+    /// </summary>
+    public int ConstructorArity { get; }
+
+    /// <summary>
+    ///     The fixture whose shape makes THIS case observable, overriding the element's own
+    ///     <see cref="DwarfSurfaceAttribute.ProbeKey" />. Bound to a <c>[SurfaceProbe]</c> fixture by the same
+    ///     bijection the element-level key uses: every declared key must have exactly one fixture, and every
+    ///     fixture must be claimed.
+    /// </summary>
+    public string? ProbeKey { get; set; }
+
+    /// <summary>
+    ///     Property form only: the initialiser value, replacing the one the matrix would derive. Needed where
+    ///     no amount of reflection reveals what a value MEANS — the generic rule for an <c>int</c> is "step
+    ///     it", which turns a <c>MaxDepth</c> default of 64 into 65 and binds on nothing, because nothing
+    ///     about the type says it is a budget rather than a count. Only legal where the derived domain holds a
+    ///     single value, so it can never silently drop members of an enum's full domain.
+    /// </summary>
+    public string? Value { get; set; }
+
+    /// <summary>
+    ///     Constructor form only: the argument list as written in source, with <c>{Member}</c> placeholders
+    ///     for member names of the fixture in play. <c>"{Extra}"</c> renders as <c>"Extra"</c> and fails a gate
+    ///     if the fixture stops declaring a member of that name; <c>typeof(X)</c> is checked the same way
+    ///     against the fixture's declared types. Everything else passes through verbatim, which is how a
+    ///     literal that is deliberately NOT a member — a constant value, a converter name — stays unchecked
+    ///     and visibly so.
+    /// </summary>
+    public string? Arguments { get; set; }
+
+    /// <summary>
+    ///     The <c>[DwarfMapper(...)]</c> options the surrounding mapper must carry for this case to have
+    ///     anything to do — the ambient conditions under which the directive is even reachable.
+    ///     <para>
+    ///         <c>[MapIgnoreSource]</c> is the forcing case: its entire effect is to silence the source-coverage
+    ///         suggestion, which is only raised under <c>RequiredMapping = Both</c>. Probed against a mapper
+    ///         with the default strategy there is no suggestion to silence, so the directive correctly does
+    ///         nothing and the cell reads as a divergence the generator never committed. No reflection over
+    ///         the attribute reveals which option switches its own effect on.
+    ///     </para>
+    ///     <para>
+    ///         Applied to the mapper class the endpoint template generates, so it reaches neither the registry
+    ///         nor the co-located host (neither declares one) — a cell where the options did not arrive is
+    ///         counted as unasked rather than read as silence.
+    ///     </para>
+    /// </summary>
+    public string? MapperOptions { get; set; }
+
+    /// <summary>
+    ///     Declares that this case cannot pose a question at all, and why. The matrix excuses its silent cells
+    ///     and COUNTS them against a shrink-only ceiling, so the hole is declared and visible rather than
+    ///     reported as a divergence the generator never committed.
+    ///     <para>
+    ///         Legal only on the zero-argument constructor of an element that has writable properties — an
+    ///         option BAG whose bare form sets nothing. That restriction is the point: it is structurally
+    ///         impossible to mark a case that actually says something as unmeasurable, so this cannot become
+    ///         the hatch that turns a live divergence green.
+    ///     </para>
+    /// </summary>
+    public string? Unmeasured { get; set; }
 }
 
 /// <summary>

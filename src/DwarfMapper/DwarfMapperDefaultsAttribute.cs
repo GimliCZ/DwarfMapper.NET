@@ -16,6 +16,26 @@ namespace DwarfMapper;
 ///     </para>
 /// </summary>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+// The same per-option fixtures as [DwarfMapper], for the same reason: these are the layered form of the very
+// same options, and one fixture per element cannot ask twelve different questions. AutoMatchMembers and
+// RegisterCollectionShapes are observable against the flat pair and therefore demand nothing.
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.AutoNest), ProbeKey = "nested-pair")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.AllowNonPublic), ProbeKey = "internal-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.NameConvention), ProbeKey = "snake-case-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.CaseInsensitive), ProbeKey = "case-mismatched-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.IgnoreObsoleteMembers), ProbeKey = "obsolete-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.SkipNullSourceMembers),
+    ProbeKey = "nullable-source-nonnull-target")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.NullStrategy), ProbeKey = "nullable-value-to-nonnull")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.RequiredMapping), ProbeKey = "unconsumed-source-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.EnumStrategy), ProbeKey = "divergent-order-enums")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.EnumStringSource), ProbeKey = "described-enum-to-string")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.NullCollections), ProbeKey = "nullable-collection-rebuild")]
+[DwarfSurfaceProbe(nameof(DwarfMapperDefaultsAttribute.ImplicitConversions), ProbeKey = "narrowing-conversion")]
+[DwarfSurfaceProbe(constructorArity: 0,
+    Unmeasured = "a bare [assembly: DwarfMapperDefaults] selects every option's default, so it changes no "
+                 + "mapper's behaviour anywhere — silent by construction rather than by anything the "
+                 + "generator decided. The twelve option cases above carry this element's questions.")]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperDefaultsAttribute : Attribute
 {
