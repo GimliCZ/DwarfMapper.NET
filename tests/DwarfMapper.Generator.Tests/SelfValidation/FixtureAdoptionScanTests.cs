@@ -30,7 +30,10 @@ public class FixtureAdoptionScanTests
 
     // Direct RunAndGetCompilationErrors calls that remain on purpose: they capture the errors and assert
     // something specific about them (a particular CS id, a count), which the fixture deliberately does not model.
-    private const int DirectCompileErrorCallBaseline = 50;
+    // Raised from 50 to 51 for SurfaceProbe.Classify (Task 4): it reads the specific CS ids the compiler
+    // rejected a placement with, to distinguish NotCompilable from a generator refusal — exactly the kind of
+    // assertion this exemption exists for.
+    private const int DirectCompileErrorCallBaseline = 51;
 
     private static IEnumerable<(string File, string Text)> TestSources()
     {

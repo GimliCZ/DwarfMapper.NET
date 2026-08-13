@@ -167,4 +167,36 @@ public static class EndpointSources
 
     /// <summary>All endpoints, so the matrix and its growth ratchet iterate one list.</summary>
     public static IReadOnlyList<Endpoint> All { get; } = Enum.GetValues<Endpoint>();
+
+    /// <summary>
+    ///     Places <paramref name="rendered" /> at the declaration site <paramref name="site" /> for this
+    ///     endpoint, or returns null when the endpoint has no such site at all — a co-located host has no
+    ///     mapping METHOD to annotate, and the registry front door has no mapper CLASS. Null is a distinct
+    ///     answer from "the attribute did nothing": one means there was no cell, the other means the cell was
+    ///     empty.
+    /// </summary>
+    public static string? BuildAt(Endpoint endpoint, AttributeTargets site, string rendered,
+        string? types = null)
+    {
+        ArgumentNullException.ThrowIfNull(rendered);
+
+        return site switch
+        {
+            AttributeTargets.Class when endpoint is Endpoint.Registry
+                => null, // the registry has no mapper class; intent lives on the source type
+            AttributeTargets.Class
+                => Build(endpoint, classAttribute: rendered, types: types),
+            AttributeTargets.Method when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
+                => null, // neither endpoint declares a mapping method to annotate
+            AttributeTargets.Method
+                => Build(endpoint, memberAttribute: rendered, types: types),
+            AttributeTargets.Property or AttributeTargets.Field
+                => Build(endpoint, memberAttribute: rendered, types: types),
+            AttributeTargets.Assembly
+                => "[assembly: " + rendered.Trim('[', ']') + "]\n" + Build(endpoint, types: types),
+            AttributeTargets.Struct or AttributeTargets.Constructor
+                => null, // no fixture in the endpoint set declares one; add a shape before claiming the site
+            _ => null
+        };
+    }
 }
