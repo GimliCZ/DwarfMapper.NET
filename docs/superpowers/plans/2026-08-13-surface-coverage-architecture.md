@@ -767,10 +767,16 @@ git commit -m "test(surface): derive the case-space from the declaration instead
 - Modify: attribute declarations that need a `ProbeKey`
 
 **Interfaces:**
-- Produces: `[AttributeUsage(AttributeTargets.Field)] sealed class SurfaceProbeAttribute(string key)` with
-  `string Key { get; }`.
-- Produces: `static class SurfaceFixtures` with `IReadOnlyDictionary<string, string> All` (key → DTO source
-  text) and `string? Get(string? key)`.
+- Produces: `[AttributeUsage(AttributeTargets.Field)] internal sealed class SurfaceProbeAttribute(string key)`
+  with `string Key { get; }`.
+- Produces: `internal static class SurfaceFixtures` with `IReadOnlyDictionary<string, string> All` (key → DTO
+  source text) and `string? Get(string? key)`.
+- Produces: `internal static IReadOnlyDictionary<string, string> OptionCatalog.ProbeKeys` — option property
+  name → fixture key. This is the second demand source; it is NOT duplication of
+  `[DwarfSurface(ProbeKey)]`, which sits on a type and cannot address a single property.
+
+**Visibility:** `internal`, not `public` — Task 2 established that these types carry `internal`-typed members
+(`SurfaceCategory`, `SurfaceEndpoints`), and a `public` record exposing them does not compile (CS0051).
 
 - [ ] **Step 1: Write the failing bijection test**
 
@@ -780,28 +786,40 @@ Append to `SurfaceDeclarationTests.cs`:
     [Fact]
     public void Every_declared_ProbeKey_binds_to_exactly_one_fixture()
     {
+        // There are TWO demand sources, and they are not interchangeable. An element-level key sits on an
+        // attribute TYPE via [DwarfSurface(ProbeKey = ...)]. A property-level key comes from OptionCatalog's
+        // option->key map, because the class-level options are PROPERTIES of one type (DwarfMapperAttribute)
+        // and a type-level attribute structurally cannot express a per-property shape. Checking only the
+        // first source reports every property-level fixture as an orphan.
         var demanded = Contracts.SurfaceCatalog.Elements
             .Select(e => e.ProbeKey)
             .Where(k => k is not null)
             .Select(k => k!)
+            .Concat(Contracts.OptionCatalog.ProbeKeys.Values)
             .ToHashSet(StringComparer.Ordinal);
 
         var supplied = Contracts.SurfaceFixtures.All.Keys.ToHashSet(StringComparer.Ordinal);
 
         var unbound = demanded.Except(supplied).OrderBy(k => k, StringComparer.Ordinal).ToList();
         Assert.True(unbound.Count == 0,
-            "ProbeKey(s) declared in src with no fixture in SurfaceFixtures: " + string.Join(", ", unbound)
-            + ". The declaration states a demand; the fixture is the supply. An unbound key means the "
-            + "element's probe silently falls back to the flat DTO pair, which cannot trigger it, and the "
-            + "cell reads 'no effect' while the feature works perfectly.");
+            "ProbeKey(s) demanded with no fixture in SurfaceFixtures: " + string.Join(", ", unbound)
+            + ". The declaration states a demand; the fixture is the supply. An unbound key means the probe "
+            + "silently falls back to the flat DTO pair, which cannot trigger it, and the cell reads "
+            + "'no effect' while the feature works perfectly. Check both demand sources: "
+            + "[DwarfSurface(ProbeKey = ...)] in src, and OptionCatalog.ProbeKeys.");
 
         var orphaned = supplied.Except(demanded).OrderBy(k => k, StringComparer.Ordinal).ToList();
         Assert.True(orphaned.Count == 0,
-            "Fixture(s) in SurfaceFixtures claimed by no [DwarfSurface(ProbeKey = ...)]: "
-            + string.Join(", ", orphaned)
+            "Fixture(s) in SurfaceFixtures claimed by neither a [DwarfSurface(ProbeKey = ...)] nor an "
+            + "OptionCatalog.ProbeKeys entry: " + string.Join(", ", orphaned)
             + ". An orphaned fixture is dead weight that reads as coverage.");
     }
 ```
+
+**Both sets must come out at 14.** `TriggeringShapes` holds 14 fixtures, all of them class-level option
+shapes; the nine element-level `ProbeKey` declarations in Step 4 reuse six of those keys rather than adding
+new ones. Checking only the element-level source reports eight false orphans — that is a defect in an earlier
+draft of this plan, corrected here.
 
 - [ ] **Step 2: Run it to verify it fails**
 
