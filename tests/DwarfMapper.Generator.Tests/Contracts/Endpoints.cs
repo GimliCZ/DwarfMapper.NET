@@ -147,6 +147,10 @@ public static class EndpointSources
                 }
                 """,
 
+            // A member-form attribute has no mapping METHOD to land on here (there is none), so — like the
+            // registry above — it goes on a member of the generated type instead of vanishing. Reuses
+            // onMethod (computed from memberAttribute) for the same reason Registry does: the name predates
+            // this endpoint needing a non-method slot, and renaming it is a larger diff than this fix.
             Endpoint.CoLocatedHost => $$"""
                 using System.Linq;
                 using DwarfMapper;
@@ -157,7 +161,7 @@ public static class EndpointSources
                 {{(string.IsNullOrEmpty(classAttribute) ? "" : classAttribute + "\n")}}public sealed class Dst
                 {
                     public int Id { get; set; }
-                    public string? Name { get; set; }
+                {{onMethod}}    public string? Name { get; set; }
                 }
                 """,
 
@@ -193,10 +197,45 @@ public static class EndpointSources
             AttributeTargets.Property or AttributeTargets.Field
                 => Build(endpoint, memberAttribute: rendered, types: types),
             AttributeTargets.Assembly
-                => "[assembly: " + rendered.Trim('[', ']') + "]\n" + Build(endpoint, types: types),
+                => InsertAssemblyAttribute(Build(endpoint, types: types), rendered),
             AttributeTargets.Struct or AttributeTargets.Constructor
                 => null, // no fixture in the endpoint set declares one; add a shape before claiming the site
             _ => null
         };
+    }
+
+    /// <summary>
+    ///     Rewrites <paramref name="rendered" /> as one or more assembly-targeted attributes and splices them
+    ///     between <paramref name="source" />'s <c>using</c> directives and its <c>namespace Demo;</c>
+    ///     declaration. A <c>using</c> directive must precede every other element in a compilation unit, so
+    ///     prepending the assembly attribute ahead of the source (as a naive concatenation would) is CS1529 —
+    ///     every assembly-site cell would read <c>NotCompilable</c> for a broken harness template, not for
+    ///     anything the compiler actually has an opinion about regarding the element itself.
+    ///     <para>
+    ///         <paramref name="rendered" /> may itself be more than one bracketed attribute, "\n"-joined (the
+    ///         multiplicity axis renders <c>[Foo(1)]\n[Foo(2)]</c>). Trimming '[' / ']' off the ends of the
+    ///         whole joined string — rather than off each line individually — corrupts every attribute but the
+    ///         first and last, so each line is rewritten on its own.
+    ///     </para>
+    ///     <para>
+    ///         Also adds <c>using Demo;</c> alongside the source's other <c>using</c> directives. An assembly
+    ///         attribute necessarily sits ABOVE <c>namespace Demo;</c>, so a constructor argument like
+    ///         <c>typeof(Dst)</c> is otherwise unqualified outside the very namespace <c>Dst</c> is declared
+    ///         in — CS0246, not because the placement is illegal, but because the harness's own scoping hides
+    ///         a type from an attribute argument that names it.
+    ///     </para>
+    /// </summary>
+    private static string InsertAssemblyAttribute(string source, string rendered)
+    {
+        var assemblyForm = string.Join("\n", rendered
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => "[assembly: " + line.Trim().Trim('[', ']') + "]"));
+
+        const string marker = "namespace Demo;";
+        var idx = source.IndexOf(marker, StringComparison.Ordinal);
+        if (idx < 0)
+            throw new InvalidOperationException(
+                $"Expected \"{marker}\" in the generated source; the assembly-attribute splice point moved.");
+        return source[..idx] + "using Demo;\n" + assemblyForm + "\n" + source[idx..];
     }
 }
