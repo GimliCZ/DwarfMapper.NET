@@ -64,6 +64,14 @@ try {
         Write-Host "== 4/4b Mutation testing (DocTooling) ==" -ForegroundColor Cyan
         dotnet stryker --config-file stryker-config.doctooling.json
         if ($LASTEXITCODE) { throw "mutation score below break threshold (doc tooling)" }
+
+        # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
+        # facade and the exception types have no derivable case-space — no AttributeUsage to decompose, no
+        # endpoint matrix to cross them against — so a surviving mutant is the only non-textual proof that a
+        # case is untested.
+        Write-Host "== 4/4c Mutation testing (runtime assembly) ==" -ForegroundColor Cyan
+        dotnet stryker --config-file stryker-config.runtime.json
+        if ($LASTEXITCODE) { throw "mutation score below break threshold (runtime)" }
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

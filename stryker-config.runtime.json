@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.Core/Stryker.Core/Schemas/stryker-config.json",
+  "comment": "Mutation testing for the SHIPPED RUNTIME assembly. A THIRD config because Stryker mutates one 'project' per run. Registry members, MapConfig, the IDwarfMapper facade and the exception types have no derivable case-space the way an attribute does — there is no AttributeUsage to decompose and no endpoint matrix to cross them against — so a surviving mutant is the only non-textual proof that a case is untested. This is what makes AmbiguousInterfaces and DestinationType (zero references in any test family, round 18) impossible rather than merely noticed. test-projects is DELIBERATELY not DwarfMapper.Generator.Tests: that project's references to the runtime types are overwhelmingly assertions over EMITTED SOURCE TEXT, not executions of this assembly, and its one genuine runtime executor (AutoValidateRuntimeTests) exercises Register/IsProvided paths that IntegrationTests already drives directly — at a fraction of the wall-clock. Run via scripts/housekeeping.ps1 -Mutation (needs: dotnet tool install -g dotnet-stryker). MEASUREMENT PENDING — break stays 0 until a run reports a score. NOTE: 'comment' lives OUTSIDE the 'stryker-config' object because Stryker 4.16 REJECTS unknown keys inside it — the two sibling configs kept theirs inside and could not run at all until this was found.",
+  "stryker-config": {
+    "project": "DwarfMapper.csproj",
+    "test-projects": [
+      "tests/DwarfMapper.IntegrationTests/DwarfMapper.IntegrationTests.csproj",
+      "tests/DwarfMapper.ConsumerTests/Host/DwarfMapper.ConsumerTests.Host.csproj"
+    ],
+    "mutate": [
+      "src/DwarfMapper/DwarfMapperRegistry.cs",
+      "src/DwarfMapper/IDwarfMapper.cs",
+      "src/DwarfMapper/MapConfig.cs",
+      "src/DwarfMapper/DwarfMapExceptions.cs",
+      "src/DwarfMapper/DwarfMappingDepthException.cs",
+      "src/DwarfMapper/DwarfRefContext.cs"
+    ],
+    "coverage-analysis": "perTest",
+    "thresholds": { "high": 90, "low": 80, "break": 0 },
+    "reporters": ["progress", "html", "json"]
+  }
+}
