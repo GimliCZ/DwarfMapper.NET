@@ -2,6 +2,15 @@
 
 # The surface matrix, first complete measurement
 
+> **STATUS, 2026-08-16 — everything below the line is the FIRST measurement and several of its readings have
+> since been superseded.** The case-space was enriched (task 5b), three instrument defects and one broken
+> fixture baseline were fixed, and the matrix was re-measured. The current state, and the write-up every entry
+> in `DeclaredDivergences.Reasons` links to, is **[the ratified findings](#ratified)** at the end of this
+> document: **23 findings over 162 cells, plus 12 cells excused as structural — 174 red cells, all accounted
+> for, matrix green.** Read the first measurement for how the buckets were arrived at; read the amendment for
+> what is true now. The single most severe item found in the whole exercise is **[N4](#N4)** and it is not a
+> silent divergence at all.
+
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case
 its constructors and writable properties admit, at all seven endpoints. **29 elements × 122 cases × 7
@@ -71,17 +80,22 @@ Its whole effect is the accessibility of the generated convenience extension, an
 create-shaped (`source.ToTarget()`). An update mutates an instance it is handed, a projection emits an
 expression tree, and the span and stream overloads are generated per *mapper* rather than per overload — none
 of the four produces an extension whose accessibility there is to decide. Same reason, and the same four
-endpoints, as the `GenerateExtensions` rows already in `OptionGaps.StructurallyInapplicable`.
+endpoints, as the `GenerateExtensions` rows already in `DeclaredDivergences.StructurallyInapplicable`.
 
 `AppliesTo` narrowed to `CreateMap | Registry | CoLocatedHost`. `Registry` is deliberately still claimed — the
 registry *does* emit an extension class with a public/internal choice of its own, and ignores this option.
-That is divergence D3, not a shape to declare away.
+That is divergence [D18](#D18) — the first measurement mis-numbered it D3 — not a shape to declare away.
 
 ---
 
 ## Bucket 2 — Real divergences (165 cells, 18 findings) — NOT ratified
 
-Nothing below has been added to `OptionGaps.KnownSilent` and nothing below had its `AppliesTo` narrowed. Each
+> **SUPERSEDED by [the ratified findings](#ratified).** The table below is the first measurement. Five of its
+> rows (D9, D10, D11, D12, D14) rested on constructor arguments that named nothing real, D17's scope
+> contradicted this document's own S2, three findings were not visible yet (D19, D20, D21), and the cell
+> counts have all moved. Kept as the record of how the buckets were arrived at; do not cite its numbers.
+
+Nothing below had been added to the divergence store and nothing below had its `AppliesTo` narrowed. Each
 is a maintainer decision: fix the generator, refuse with a diagnostic, or record the gap.
 
 The dominant shape is **the element-wise endpoints**. `SpanMap` and `AsyncStream` map the element pair through
@@ -213,4 +227,392 @@ declared in `EndpointSources.BuildAt`. Separately, the 14-fixture member-slot ga
 ```bash
 dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj \
   -c Release --filter "Category=SurfaceMatrix"
+```
+
+---
+
+<a id="ratified"></a>
+
+# Amendment, 2026-08-16 — the ratified findings
+
+The matrix was re-measured after task 5b enriched the case-space, fixed three instrument defects and repaired
+one fixture whose broken baseline was swallowing its own verdict. **174 cells are red. Every one is accounted
+for and the matrix is green:**
+
+| Population | Cells | Findings | Where it is recorded |
+| --- | ---: | ---: | --- |
+| Recorded divergences | **162** | **23** | `DeclaredDivergences.Reasons`, re-measured every run |
+| One option of an option bag, no surface at that endpoint | **12** | 2 options × 4 endpoints (+ the assembly-level twin) | `DeclaredDivergences.StructurallyInapplicable` |
+
+**Nothing was narrowed, widened or excused to reach that.** The 162 are named cell by cell — element, generic
+arity, axis, declaration site, endpoint — and `Every_declared_divergence_is_still_a_divergence` re-classifies
+each one on every run. A row whose cell stops being silent turns the build **red** until the row is deleted.
+That is the property that makes this a ratchet rather than an allowlist, and it is the reason recording a gap
+is safe: a fix cannot leave a fossil behind.
+
+Two further ratchets sit on the store itself. The **finding** count (23) fails if a new defect is written down
+instead of fixed. The **cell** count (162) fails if an existing entry's cell list is widened — which is the
+likelier mistake, because a fresh regression absorbed into an existing row would otherwise pass both the
+parity theory and the still-a-divergence gate with nothing registering that the surface got worse.
+
+## The severity order, before the list
+
+<a id="N4"></a>
+
+### N4 — the generator emits code that does not compile (CS1912) — **highest severity found**
+
+Two identical `[FlattenGraph("Root", "Flat")]` directives on one mapping method make the generator emit
+
+```csharp
+new Dst { Flat = …, Flat = … }
+```
+
+read directly out of the failing compilation:
+
+```
+CS1912: Duplicate initialization of member 'Flat'
+  @SourceFile(DwarfMapper.Generator\DwarfMapper.Generator.DwarfGenerator\Demo.M.g.cs[842..846))
+```
+
+**This is not a silent divergence and it is deliberately NOT in `DeclaredDivergences`.** That store holds
+cells that compile, do nothing and say nothing; this one is the opposite failure — the generator accepted a
+duplicate directive, resolved both to the same destination member, and produced invalid C#. It is louder than
+every finding below and strictly worse: a caller who writes it cannot build at all, and the diagnostic they
+get names generated code they did not write.
+
+It is not unpinned. `SurfaceParityTests.The_cells_the_compiler_rejects_are_counted` holds the `NotCompilable`
+population at 107 and **prints the CS id of every cell**, precisely so this one stays separable from the 96
+`CS8795` cells that are the G4/R4 mislabel and the 8 `CS0111` / 2 `CS7036` cells that are honest placement
+errors. The fix is a duplicate check in the `[FlattenGraph]` resolver, refusing with a DWARF diagnostic that
+names the repeated destination — after which the cell becomes `Refused`, the `NotCompilable` ceiling drops to
+106, and nothing here needs to change.
+
+**Where it should live**, as a recommendation rather than a decision: an issue against the generator, plus a
+pinning test in `NegativeCases` asserting the refusal once it exists. It does not want a store of its own —
+one store per failure mode is how the six allowlists this architecture is replacing came about.
+
+## The 23 findings
+
+Each has an anchor, because `DeclaredDivergences.Reasons` links to it. **Acts at** is the evidence the cell is
+a divergence rather than a shape: the same directive, at the same site, doing something observable somewhere
+else.
+
+<a id="MaxDepth"></a>
+
+### MaxDepth — `[DwarfMapper(MaxDepth = 1)]` at the element-wise endpoints — 2 cells
+
+*Class site → SpanMap, AsyncStream.* Acts at CreateMap and UpdateInto. The element pair's depth guard comes
+from the auto-synthesized mapper rather than the method model. The oldest entry in the store, and the first
+time the SURFACE matrix sees it — it was found by the option matrix once a recursive fixture existed. Full
+prose, including why its severity is lower than it sounds, is in the store.
+
+<a id="NullCollections"></a>
+
+### NullCollections — `NullCollections = AsNull` at Projection — 2 cells
+
+*`[DwarfMapper]` class site and `[assembly: DwarfMapperDefaults]` → Projection.* The one entry here that is a
+**design decision rather than an oversight**: a refusal was implemented and reverted because it amounted to
+"you cannot project a nullable collection under default options". Three candidate resolutions, and the
+argument against each, are recorded verbatim in the store — that text is the most valuable in the file and is
+carried unchanged.
+
+<a id="D1"></a>
+
+### D1 — `[MapIgnore("Id")]` does not reach the element-wise endpoints — 4 cells
+
+*Method and Class sites → SpanMap, AsyncStream.* Acts at CreateMap, UpdateInto, Projection (Honoured). One
+mapper therefore drops the member on three of its overloads and copies it on two, from one declaration.
+
+<a id="D2"></a>
+
+### D2 — `[MapProperty("Id", "Name")]` on a method: the refusal does not reach SpanMap/AsyncStream — 4 cells
+
+*Method site, `ctor(2)` and the ×2 case → SpanMap, AsyncStream.* Acts at CreateMap and UpdateInto, where it is
+**refused with DWARF038**. The generator has an opinion about this directive and states it at three endpoints;
+at the other two the identical text raises nothing and changes nothing.
+
+<a id="D3"></a>
+
+### D3 — `[MapProperty]`'s named arguments are discarded at every method endpoint — 20 cells
+
+*Method site, `Use` / `When` / `NullSubstitute` / `StringFormat` → all five mapper endpoints.* The sharpest
+finding on the surface. `[MapProperty("Id", Use = "probe")]` names a converter that does not exist and
+produces byte-identical output and no diagnostic at all five. Verified by hand as well as by the matrix.
+
+**Why it is a divergence and not a shape:** the pair-scoped `MapProperty<S,T>` form raises **DWARF014 /
+DWARF049 / DWARF050** for these exact named arguments. The refusals exist; this path never reaches them. The
+single-argument constructor is the registry form, so at a method site the whole named-argument payload — a
+converter, a predicate, a null substitute, a format string — is dropped in silence.
+
+<a id="D4"></a>
+
+### D4 — `RegistryDiagnostics.MapPropertyArity` does not fire — 2 cells
+
+*Property and Field sites → Registry.* The two-argument `[MapProperty("Id", "Name")]` is the METHOD form; on a
+source member at the `[MapTo]` registry the form takes one argument. **The descriptor for exactly this misuse
+exists** (`Registry/RegistryDiagnostics.cs`, raised from `MapToGenerator.cs:97`) and measured, it does not
+fire. A caller who used the wrong overload gets a binding that does nothing and a build that says nothing.
+
+<a id="D5"></a>
+
+### D5 — the no-target `[MapIgnore]` is accepted at a method or class site — 22 cells
+
+*Method site → all five mapper endpoints; Class site → those five plus CoLocatedHost; single and ×2 forms.*
+The no-target form is the REGISTRY form: the annotated member is the thing ignored. On a method or a class it
+names nothing at all. **The class model performs no arity check**, so a caller who believes they have excluded
+a member has excluded nothing. The mirror misuse at the registry has a descriptor (D4), which is what makes
+the absence here a gap rather than a shape.
+
+<a id="D6"></a>
+
+### D6 — `[MapNullSkip(true)]` on a method — 3 cells
+
+*Method site → Projection, SpanMap, AsyncStream.* Acts at CreateMap and UpdateInto (Honoured). Null-skipping
+decides whether a null source member overwrites the destination, so the caller gets one behaviour on two
+overloads and its opposite on three. Its pair-scoped twin proves the endpoints are reachable — see D7.
+
+<a id="D7"></a>
+
+### D7 — `[MapNullSkip<Src, Dst>(true)]` on the class is D6 inverted — 6 cells
+
+*Class site, `ctor(1)` and ×2 → CreateMap, UpdateInto, Projection.* Acts at SpanMap, AsyncStream and
+CoLocatedHost. Exactly the complement of D6: between the two forms a caller can reach every endpoint, and with
+either alone reaches roughly half, silently. **"Pair-scoped attributes do not reach method-declared pairs" is
+not the explanation** — `MapProperty<S,T>`, `MapValue<T>`, `MapIgnore<T>` and `MapConstructor<S,T>` all act at
+the method endpoints in the same run.
+
+<a id="D8"></a>
+
+### D8 — `[MapDerivedType]`, both forms, act only at CreateMap — 16 cells
+
+*Method site, open form `ctor(2)`/×2 and generic form `ctor(0)`/×2 → UpdateInto, Projection, SpanMap,
+AsyncStream.* Acts at CreateMap. A derived-type declaration is made for the mapper, not for one overload of
+it; on the other four the derived instance is mapped as its base and the extra members are dropped.
+
+<a id="D9"></a>
+
+### D9 — `[MapValue]` does not reach projection or the element-wise endpoints — 12 cells
+
+*Method site, `ctor(1)` / `ctor(2)` / `Use` / ×2 → Projection, SpanMap, AsyncStream.* Acts at CreateMap and
+UpdateInto (Honoured).
+
+**Evidence re-derived.** The first measurement filed this as "Create, Update (blocking)". That reading was a
+refusal of nonsense: the sampled argument assigned a string constant to an `int`. With an argument naming a
+real member the directive is genuinely honoured at Create/Update, so the three silences are a divergence
+rather than an artefact of a broken case.
+
+<a id="D10"></a>
+
+### D10 — `[Flatten]` does not reach projection or the element-wise endpoints — 6 cells
+
+*Method site, `ctor(1)` and ×2 → Projection, SpanMap, AsyncStream.* Acts at CreateMap and UpdateInto
+(Honoured). The flattened destination members are left at their defaults at the other three.
+
+**Evidence re-derived** for the same reason as D9: the original argument named a scalar member, so
+"Create, Update (blocking)" was a refusal, not an honouring. `[Flatten("Child")]` against a nested fixture is
+honoured.
+
+<a id="D11"></a>
+
+### D11 — `[FlattenGraph]` acts only at CreateMap — 8 cells
+
+*Method site, `ctor(2)` and ×2 → UpdateInto, Projection, SpanMap, AsyncStream.* Acts at CreateMap (Honoured).
+
+**This finding was proposed for WITHDRAWAL and the withdrawal was wrong.** The
+`graph-navigation-to-flat-collection` fixture gave `Dst` a collection with no source counterpart, so the
+fixture's own **baseline** was `DWARF001` and emitted nothing at all. With an empty baseline, an element that
+does nothing produces byte-identical (empty) output beside an error and reads `UnhonouredButLoud` — which
+passes on both claim branches and decides nothing. The general rule, now written into the fixture's own
+comment: **a fixture that cannot compile without the element under test can never show that element doing
+nothing.**
+
+With `Src` given the matching member so the baseline compiles, all eight cells were re-measured directly:
+
+```
+ctor(2)  @CreateMap     Honoured   (output differs)
+ctor(2)  @UpdateInto    Silent     (identical, compiles)
+ctor(2)  @Projection    Silent
+ctor(2)  @SpanMap       Silent
+ctor(2)  @AsyncStream   Silent
+x2       @CreateMap     NotCompilable (CS1912)  <- N4, NOT part of this finding
+x2       @UpdateInto/Projection/SpanMap/AsyncStream  Silent
+```
+
+The `×2` case at CreateMap is **[N4](#N4)**, a defect in the generated output, and is excluded from this
+finding's cells on purpose.
+
+<a id="D12"></a>
+
+### D12 — `[Reinterpret]` does not reach the element-wise endpoints — 4 cells
+
+*Method site, `ctor(1)` and ×2 → SpanMap, AsyncStream.* Acts at CreateMap, UpdateInto and Projection. These
+are the two endpoints whose entire purpose is bulk element throughput, and therefore the two where a caller
+reaching for a forced blit most expects it to apply.
+
+**Evidence re-derived:** the original argument pointed the directive at a scalar. Against an unmanaged
+array pair (`int[]` → `uint[]` — same width, both unmanaged, different types, exactly the pair the automatic
+layout proof declines) it acts at three endpoints and the two silences stand.
+
+<a id="D13"></a>
+
+### D13 — `[ReverseMap]` acts only at CreateMap — 4 cells
+
+*Method site → UpdateInto, Projection, SpanMap, AsyncStream.* A caller who wrote it on an update or a
+projection gets no inverse and no explanation, and discovers the absence at the call site of a method that was
+never generated.
+
+<a id="D14"></a>
+
+### D14 — `[MapCollectionKey]` acts only at UpdateInto — 8 cells
+
+*Method site, `ctor(2)` and ×2 → CreateMap, Projection, SpanMap, AsyncStream.* Acts at UpdateInto, the
+endpoint the directive is chiefly for.
+
+**Evidence re-derived:** the original argument named members of an `int` element type, which has none, so the
+directive could only ever apply to nothing. Against the `keyed-collection-elements` fixture
+(`List<Item>` → `List<ItemDto>` with `Id`/`Label` on the element) it acts at UpdateInto and the four silences
+stand.
+
+<a id="D15"></a>
+
+### D15 — `[GenerateWrapperMap]` on a `[DwarfMapper]` class does nothing and says nothing — 10 cells
+
+*Class site, `ctor(1)` and ×2 → all five mapper endpoints.* **Refused at CoLocatedHost with DWARF067**, so the
+generator reads the attribute and has an opinion about where it is valid. On a mapper class it produces
+neither the wrapper map the caller asked for nor the refusal the co-located host would have given them.
+Whichever of the two answers is right, silence is not it.
+
+<a id="D16"></a>
+
+### D16 — `[AfterMap]` at SpanMap — 1 cell
+
+*Method site → SpanMap.* Honoured at UpdateInto; blocks the build at CreateMap, Projection and AsyncStream.
+SpanMap alone compiles and never calls the hook, so a post-mapping fixup runs for every element of an async
+stream and for none of a span.
+
+<a id="D17"></a>
+
+### D17 — `RegisterCollectionShapes = false` is dropped by the registry front door — 1 cell
+
+*`[assembly: DwarfMapperDefaults]` → Registry.*
+
+**Scope corrected.** The first measurement filed D17 at 13 cells across five endpoints and two attributes,
+which **contradicted this document's own S2**: the option's silence at UpdateInto, Projection, SpanMap and
+AsyncStream is not a divergence at all — none of those four produces a registerable delegate, and
+`StructurallyInapplicable` has said so, with a per-endpoint reason, since before this matrix existed. Those
+cells are excused as structural (see below). The `GenerateExtensions` half of the original D17 is the same
+story.
+
+What remains is the sharp cell and the only one the original entry got right: the `[MapTo]` registry front
+door, whose entire output **is** registry rows, ignores the assembly-level instruction to withhold them.
+
+<a id="D18"></a>
+
+### D18 — `[assembly: DwarfMapperOptions(PublicExtensions = true)]` is ignored by the registry — 1 cell
+
+*Assembly site → Registry.* The registry emits an extension class (`__DwarfRegistry_Src`) with a
+public/internal choice of its own and ignores this option, so an assembly default is honoured for
+`[DwarfMapper]` classes and quietly overridden for `[MapTo]` types. **Registry is deliberately still claimed**
+by the element after S2 narrowed the other four endpoints away as shapes — precisely because there IS an
+extension here to decide about.
+
+**Scope corrected:** the original entry paired this with `[DwarfMapperDefaults(SkipNullSourceMembers = true)]`
+at Registry, which is no longer silent and is not part of the finding.
+
+<a id="D19"></a>
+
+### D19 — `[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]` is dropped by the registry — 1 cell
+
+*Assembly site → Registry.* Filed as **N3** by task 5b, and genuinely new: in neither the first measurement's
+table nor the option store. `AutoMatchMembers = false` is a **trust boundary** — nothing is mapped unless the
+caller said so. The mapper-level form acts at all five method endpoints and the assembly-level form is
+honoured everywhere else; the `[MapTo]` registry drops it, so an assembly that has switched auto-matching off
+still has every registry map auto-matching. Half a trust boundary is worse than none, because the developer
+believes they have one. Same shape as the DWARF077 gap, one endpoint over.
+
+<a id="D20"></a>
+
+### D20 — the co-located host reads no member-level directive — 20 cells
+
+*Property and Field sites → CoLocatedHost. Every `[MapProperty]` case (7) and every `[MapIgnore]` case (3), on
+both sites.*
+
+At the co-located host **the mapping is declared BY the annotated type** — `[GenerateMap<Src, Dst>]` sits on
+`Dst` — so a member of that type is part of the declaration. That is exactly why `MapPropertyAttribute`'s own
+`[DwarfSurfaceSite]` keeps `CoLocatedHost` claimed for the member sites while dropping the five mapper
+endpoints, where the DTOs are ordinary types the consumer may not own. The claim is right and the generator
+does not honour it.
+
+**One root cause, therefore one fix:** `[GenerateMap<S,T>]` is extracted by `MapperExtractor`, which reads
+these attributes off the class or the method symbol only; `MapToGenerator`'s registry path is the sole reader
+of the member-level forms.
+
+<a id="D21"></a>
+
+### D21 — the registry-form `[MapProperty("Id")]` is accepted at a method site — 5 cells
+
+*Method site, `ctor(1)` → all five mapper endpoints.*
+
+The one-argument overload is the MEMBER-placement form, as its own summary states; the documented method form
+takes two arguments. Written on a mapping method it resolves to `Source == Target`, which is the identity
+binding auto-matching already produces.
+
+**Why this is a defect whichever way the generator reads it** — and this matters, because task 5b named the
+cell as genuinely ambiguous between "honoured invisibly" and "discarded": if the directive is discarded, a
+caller's explicit binding evaporated; if it is honoured, it was honoured as a no-op the caller cannot have
+wanted. **Refusal is the right answer either way**, and the class model has no arity check to give it — the
+same missing check as D5, and the mirror of the one the registry has and does not fire (D4). Closure is
+observable only as a refusal, since honouring it is byte-identical by construction.
+
+**Rejected route, recorded so it is not retried:** giving this case
+`[DwarfSurfaceProbe(MapperOptions = "AutoMatchMembers = false")]` would make honouring visible, but it
+breaches two shrink-only ceilings — the member-site cells at CoLocatedHost go `Unasked`, because that template
+carries no mapper class to hold the options, and the Create/Update baselines stop compiling and land in
+`UnhonouredButLoud`, which is the verdict-swallowing trap D11 had to be rescued from.
+
+## The 12 cells excused as structural, and why they are not in the store
+
+| Option | Written at | Endpoints | Cells |
+| --- | --- | --- | ---: |
+| `GenerateExtensions` | `[DwarfMapper]` class | UpdateInto, Projection, SpanMap, AsyncStream | 4 |
+| `RegisterCollectionShapes` | `[DwarfMapper]` class | the same four | 4 |
+| `RegisterCollectionShapes` | `[assembly: DwarfMapperDefaults]` | the same four | 4 |
+
+Each has a per-endpoint reason already written and already consumed by the option matrix — "an update has no
+`source.ToTarget()` form to suppress", "`Span<T>` is a ref struct and cannot be boxed through the registry's
+`Func<object, object>`", and so on. Recording them as divergences would be a false defect report.
+
+**They cannot be expressed as an `AppliesTo` narrowing, and that is finding R3 in concrete form.** `AppliesTo`
+is per ELEMENT; `[DwarfMapper]` carries nineteen independent options. No value of the flags can say
+"`GenerateExtensions` has no surface at UpdateInto" without saying it about `EnumStrategy` too. So the surface
+matrix reads the claim from `StructurallyInapplicable`, which is keyed by option and endpoint with no element
+— the reason is about the endpoint's shape and holds wherever the option was written, which is also why the
+assembly-level twin resolves through the same rows.
+
+**This excuse is the only one in the matrix that is not self-retiring**, and it is counted for exactly that
+reason. A `Reasons` row fails the moment its cell starts working; a structural row cannot, because "there is
+nothing here to configure" and "it is configured correctly" are both non-failures. If UpdateInto ever grew a
+convenience extension the cell would flip Silent → Honoured and the entry would sit there unnoticed.
+`The_cells_excused_as_structural_are_counted` holds the population at 12, shrink-only, printing every cell.
+
+## What is NOT here, and where it is instead
+
+| | Cells | Counted by |
+| --- | ---: | --- |
+| **N4** — generated code that does not compile | 1 | `The_cells_the_compiler_rejects_are_counted` (prints CS ids) |
+| **G4/R4** — `NotCompilable` swallowing `Refused` (CS8795) | 96 | the same fact; the ordering defect is still open |
+| **G5** — `[MapTo]`@`Struct`, `[DwarfMapperConstructor]`@`Constructor`, no fixture declares either | 21 | `The_cells_with_no_declaration_site_are_counted_by_cause` |
+| Cells the instrument poses no question about | 44 | `The_cells_that_pose_no_question_are_declared_and_counted` |
+| Cells passing both claim branches | 14 | `The_cells_that_pass_both_claim_branches_are_counted` |
+
+None of these is a divergence and none belongs in the store. G5 and G4/R4 are **our** gaps, not the product's;
+the unaskable and both-branch populations are questions never asked. Recording any of them as a divergence
+would ratify a bug the generator never committed.
+
+## Reproducing the current state
+
+```bash
+dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj \
+  -c Release --filter "Category=SurfaceMatrix"
+# 865 passed, 0 failed  (854 cells + 11 facts)
 ```

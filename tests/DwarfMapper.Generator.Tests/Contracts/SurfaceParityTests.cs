@@ -74,11 +74,21 @@ public sealed class SurfaceParityTests
             if (effect is SurfaceEffect.Honoured or SurfaceEffect.Refused
                 or SurfaceEffect.UnhonouredButLoud) return;
 
-            // Task 7 renames this to DeclaredDivergences.Reasons. Use the current name here so this task
-            // compiles on its own; update the reference as part of that rename, not before it.
-            if (OptionGaps.KnownSilent.TryGetValue($"{usageName}@{endpoint}", out var why))
+            // There is nothing at this endpoint for this ONE OPTION of an option bag to configure. Not a
+            // narrowing of AppliesTo, because AppliesTo is per ELEMENT and [DwarfMapper] carries nineteen
+            // independent options — no value of the flags can say "GenerateExtensions has no surface at
+            // UpdateInto" without saying it about EnumStrategy too. The claim already exists, reviewed and
+            // consumed by the option matrix; reading it here rather than restating it is the same reason
+            // DeclaredDivergences is one file. Every such cell is counted by
+            // The_cells_excused_as_structural_are_counted, because unlike a divergence a structural entry
+            // does NOT fail when the shape changes.
+            if (StructurallyInapplicableOption(c.Axis, endpoint) is not null) return;
+
+            if (DeclaredDivergences.For(element.UsageName, arity, c.Axis, c.Site, ToFlag(endpoint))
+                is { } declared)
             {
-                Assert.False(string.IsNullOrWhiteSpace(why));
+                Assert.False(string.IsNullOrWhiteSpace(declared.Value.Why),
+                    $"{declared.Key} states no reason.");
                 return;
             }
 
@@ -92,7 +102,12 @@ public sealed class SurfaceParityTests
                 + $"  3. drop {endpoint} from the claim — but only if it STRUCTURALLY cannot apply, not "
                 + "because it currently does not. If the element reaches this endpoint from ANOTHER site, "
                 + $"narrow this one alone with [DwarfSurfaceSite(AttributeTargets.{site}, …, \"why\")] rather "
-                + "than dropping the endpoint for every site at once.");
+                + "than dropping the endpoint for every site at once.\n\n"
+                + "The fourth way out is a MAINTAINER DECISION, not a way past a red build: record it in "
+                + "DeclaredDivergences.Reasons, with the cell named exactly and a reason stating what a "
+                + "caller who wrote this reasonably expects. Adding a row there raises the declared-cell "
+                + "count, which is itself ratcheted, so a new divergence is a deliberate act with a number "
+                + "attached to it.");
         }
         else
         {
@@ -287,6 +302,209 @@ public sealed class SurfaceParityTests
         Assert.True(siteless.Count >= NoSuchSiteCellCeiling - 10,
             $"Only {siteless.Count} cells have no declaration site, well under the ceiling of "
             + $"{NoSuchSiteCellCeiling}:\n{byCause}\n\nLower the ceiling to lock the improvement in.");
+    }
+
+    /// <summary>
+    ///     The structural claim covering one option-bag case at one endpoint, or <c>null</c>.
+    ///     <para>
+    ///         An option-bag case renders as <c>Name = value</c> and its axis label is <c>Name=value</c>, so
+    ///         the option name is everything before the first <c>=</c>. Nothing restricts the lookup to the
+    ///         bags themselves and nothing needs to: <c>Every_exemption_names_a_real_option_and_endpoint</c>
+    ///         already holds every key in <see cref="DeclaredDivergences.StructurallyInapplicable" /> to a
+    ///         real <c>[DwarfMapper]</c> option name, so a directive's own named argument —
+    ///         <c>[MapProperty(Use = …)]</c>, axis <c>Use="probe"</c> — cannot collide with one.
+    ///     </para>
+    /// </summary>
+    private static string? StructurallyInapplicableOption(string axis, Endpoint endpoint)
+    {
+        var eq = axis.IndexOf('=', StringComparison.Ordinal);
+        if (eq <= 0) return null;
+        return DeclaredDivergences.StructurallyInapplicable
+            .TryGetValue((axis[..eq], endpoint), out var why) ? why : null;
+    }
+
+    /// <summary>The ceiling on cells excused as structural for one option of a bag. Shrink-only.</summary>
+    private const int StructurallyExcusedCellCeiling = 12;
+
+    /// <summary>
+    ///     Every cell excused because ONE OPTION of an option bag has no surface at that endpoint, counted.
+    ///     <para>
+    ///         This excuse is the only one in the matrix that is not self-retiring, and that asymmetry is why
+    ///         it is counted. A <see cref="DeclaredDivergences.Reasons" /> row fails the moment its cell
+    ///         starts working; a structural row cannot, because "there is nothing here to configure" and "it
+    ///         is configured correctly" are both non-failures on the claimed branch. If <c>UpdateInto</c> ever
+    ///         grew a convenience extension, the <c>GenerateExtensions</c> cell would flip Silent → Honoured
+    ///         and this entry would go on sitting there. The count is the containment: the population may not
+    ///         grow, so a new structural excuse is as deliberate an act as a new divergence.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void The_cells_excused_as_structural_are_counted()
+    {
+        var excused = new List<string>();
+        foreach (var element in SurfaceCatalog.CrossProductElements)
+        foreach (var c in SurfaceCatalog.CasesFor(element))
+        foreach (var endpoint in EndpointSources.All)
+        {
+            if ((SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) == 0) continue;
+            if (SurfaceProbe.Classify(c, endpoint).Effect is not SurfaceEffect.Silent) continue;
+            if (StructurallyInapplicableOption(c.Axis, endpoint) is not { } why) continue;
+            excused.Add($"  {element.UsageName}({c.Axis}) on a {c.Site} @ {endpoint} — {why}");
+        }
+
+        excused.Sort(StringComparer.Ordinal);
+        AssertRatchet(excused, StructurallyExcusedCellCeiling,
+            "cells are excused because one option of a bag has no surface at that endpoint",
+            "Close one by giving the endpoint the surface the option configures, and delete the "
+            + "StructurallyInapplicable row — nothing else will notice that it became stale.");
+    }
+
+    /// <summary>The number of FINDINGS recorded as unfixed divergences. Shrink-only.</summary>
+    private const int DivergenceFindingCeiling = 23;
+
+    /// <summary>The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.</summary>
+    private const int DivergentCellCeiling = 162;
+
+    /// <summary>
+    ///     Neither the number of recorded divergences nor the number of cells they cover may grow.
+    ///     <para>
+    ///         Two counts rather than one, because they fail on different mistakes. The FINDING count catches
+    ///         a new defect being written down instead of fixed. The CELL count catches the subtler and more
+    ///         likely one: widening an existing entry's cell list so a fresh regression is absorbed by a row
+    ///         that already exists. Without it, a new silent cell added to <c>D3</c>'s list would pass both
+    ///         the parity theory (it is declared) and the still-a-divergence gate (it is silent) with nothing
+    ///         anywhere registering that the surface got worse.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void The_recorded_divergences_are_counted()
+    {
+        var findings = DeclaredDivergences.Reasons
+            .Select(e => $"  {e.Key}: {e.Value.Cells.Count} case(s) — {e.Value.Section}")
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        const string maintainerDecision =
+            "A new divergence is a MAINTAINER DECISION, not a way past a red build: it says the generator "
+            + "has a defect that will ship. Fix the generator, or refuse the directive with a diagnostic. "
+            + "Only if neither is possible now does a row belong here — and then someone raises this number "
+            + "deliberately, in a commit that says why.";
+
+        AssertRatchet(findings, DivergenceFindingCeiling, "divergences are recorded as unfixed",
+            maintainerDecision);
+
+        var cells = DeclaredDivergences.AllDeclaredCells()
+            .Select(x => $"  {x.Id}: {x.Cell.UsageName}`{x.Cell.Arity}({x.Cell.Axis}) on a {x.Cell.Site} "
+                         + $"@ {x.Endpoint}")
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        AssertRatchet(cells, DivergentCellCeiling, "cells are covered by a recorded divergence",
+            maintainerDecision);
+    }
+
+    /// <summary>
+    ///     Every declared divergence is re-measured, and must STILL be one.
+    ///     <para>
+    ///         This is what separates this store from an allowlist, and it is the whole reason the store may
+    ///         exist at all. A row that merely permits a cell to fail is an exemption: it goes on passing
+    ///         forever, including after someone fixes the generator, and the next reader has no way to tell a
+    ///         live defect from a fossil. A row that FAILS when its cell starts working is a ratchet — the
+    ///         fix turns the build red, and the only way back to green is deleting the row.
+    ///     </para>
+    ///     <para>
+    ///         Three ways a row can go stale and all three fail here: the cell is no longer silent (someone
+    ///         honoured or refused it — delete the row); the cell no longer exists (an element, axis or site
+    ///         was renamed, so the row governs nothing while reading as a reviewed decision); and the cell's
+    ///         endpoint is no longer CLAIMED (a later <c>AppliesTo</c> narrowing took it, so the divergence
+    ///         was resolved by declaring it away and the row is now a second, contradictory record of the
+    ///         same cell).
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Every_declared_divergence_is_still_a_divergence()
+    {
+        var stale = new List<string>();
+
+        foreach (var (id, _, cell, endpointFlag) in DeclaredDivergences.AllDeclaredCells())
+        {
+            var where = $"{id}: {cell.UsageName}`{cell.Arity}({cell.Axis}) on a {cell.Site} @ {endpointFlag}";
+
+            var element = SurfaceCatalog.CrossProductElements.FirstOrDefault(
+                e => string.Equals(e.UsageName, cell.UsageName, StringComparison.Ordinal)
+                     && Arity(e) == cell.Arity);
+            var probed = element is null
+                ? null
+                : SurfaceCatalog.CasesFor(element).FirstOrDefault(
+                    x => string.Equals(x.Axis, cell.Axis, StringComparison.Ordinal) && x.Site == cell.Site);
+
+            if (probed is null)
+            {
+                stale.Add($"{where} — names no cell the matrix measures. The element, its axis or its site "
+                          + "changed; the row now governs nothing while reading as a reviewed decision.");
+                continue;
+            }
+
+            var endpoint = Enum.Parse<Endpoint>(endpointFlag.ToString());
+            if ((SurfaceCatalog.ClaimFor(element!, probed.Site) & endpointFlag) == 0)
+            {
+                stale.Add($"{where} — the element no longer CLAIMS this endpoint, so the cell is not judged "
+                          + "here any more. The divergence was declared away rather than fixed; delete the "
+                          + "row so one cell is not recorded twice in two contradictory ways.");
+                continue;
+            }
+
+            var (effect, detail) = SurfaceProbe.Classify(probed, endpoint);
+            if (effect is not SurfaceEffect.Silent)
+                stale.Add($"{where} — is now {effect} ({detail}), not Silent.");
+        }
+
+        Assert.True(stale.Count == 0,
+            $"{stale.Count} recorded divergence cell(s) are no longer divergent:\n  "
+            + string.Join("\n  ", stale)
+            + "\n\nDELETE the row. This gate is the difference between a ratchet and an allowlist: a fixed "
+            + "gap left on the list quietly re-permits the divergence if it ever comes back, and the reader "
+            + "of the list cannot tell which entries are live. If a FINDING has lost only some of its cells, "
+            + "narrow its cell list and lower DivergentCellCeiling to lock the improvement in.");
+    }
+
+    /// <summary>
+    ///     No cell is covered twice, and no finding covers nothing.
+    ///     <para>
+    ///         Two cells' worth of bookkeeping that decide whether the counts above mean anything. A finding
+    ///         covering no cell inflates the finding count while pinning nothing; two findings covering one
+    ///         cell make the cell count larger than the population it describes, so the ratchet has slack
+    ///         nobody put there on purpose — and deleting one of the two would leave the cell still excused,
+    ///         which is how an entry stops being load-bearing without anyone noticing.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Every_finding_covers_cells_and_no_cell_is_covered_twice()
+    {
+        var empty = DeclaredDivergences.Reasons
+            .Where(e => e.Value.Cells.Count == 0)
+            .Select(e => e.Key).ToList();
+        Assert.True(empty.Count == 0,
+            "Finding(s) covering no cell at all: " + string.Join(", ", empty)
+            + ". A finding that pins nothing is a note, not a record — delete it or name its cells.");
+
+        var duplicates = DeclaredDivergences.AllDeclaredCells()
+            .GroupBy(x => $"{x.Cell.UsageName}`{x.Cell.Arity}({x.Cell.Axis}) on a {x.Cell.Site} @ {x.Endpoint}",
+                StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key} — claimed by {string.Join(" and ", g.Select(x => x.Id))}")
+            .ToList();
+        Assert.True(duplicates.Count == 0,
+            "Cell(s) covered by more than one finding:\n  " + string.Join("\n  ", duplicates)
+            + "\n\nOne cell is evidence for one finding. Two rows over one cell means one of them can be "
+            + "deleted without the cell becoming visible again.");
+
+        foreach (var (id, divergence) in DeclaredDivergences.Reasons)
+            Assert.True(divergence.Section.StartsWith("Issues/", StringComparison.Ordinal)
+                        && divergence.Section.Contains('#', StringComparison.Ordinal),
+                $"{id} does not link to a section of the findings write-up ('{divergence.Section}'). The "
+                + "reason field states what a caller expects; the write-up carries the evidence, and a "
+                + "record with nowhere to read the evidence is an assertion.");
     }
 
     /// <summary>Every cell, classified once, for the ratchets that count a whole population.</summary>

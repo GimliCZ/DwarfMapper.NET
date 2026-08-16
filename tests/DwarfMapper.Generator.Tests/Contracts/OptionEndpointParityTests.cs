@@ -80,20 +80,16 @@ public class OptionEndpointParityTests
         var actual = OptionProbe.Classify(endpoint, cell.NonDefault, cell.Types);
         if (actual.Effect != OptionEffect.Silent) return;
 
-        if (OptionGaps.StructurallyInapplicable.TryGetValue((option, endpoint), out var why))
+        if (DeclaredDivergences.StructurallyInapplicable.TryGetValue((option, endpoint), out var why))
         {
             Assert.False(string.IsNullOrWhiteSpace(why));
             return;
         }
 
         // Known and recorded, but not yet fixed. Failing here would mean either hiding the gap or blocking
-        // every future change on fixing it; OptionGaps names it instead, and the ratchet there stops it
-        // spreading and forces removal once it is fixed.
-        if (OptionGaps.KnownSilent.TryGetValue(option, out var gap))
-        {
-            Assert.False(string.IsNullOrWhiteSpace(gap));
-            return;
-        }
+        // every future change on fixing it; DeclaredDivergences names it instead, and the ratchet there stops
+        // it spreading and forces removal once it is fixed.
+        if (DeclaredDivergences.CoversOption(option)) return;
 
         Assert.Fail(
             $"[DwarfMapper({cell.NonDefault})] is {reference.Effect} at CreateMap "
@@ -123,7 +119,7 @@ public class OptionEndpointParityTests
     {
         // A stale exemption silently re-permits the divergence it was written to excuse.
         var known = OptionCatalog.Options.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
-        foreach (var ((opt, ep), why) in OptionGaps.StructurallyInapplicable)
+        foreach (var ((opt, ep), why) in DeclaredDivergences.StructurallyInapplicable)
         {
             Assert.True(known.Contains(opt), $"Exemption names unknown option '{opt}'.");
             Assert.Contains(ep, ComparableEndpoints);

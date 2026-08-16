@@ -199,7 +199,7 @@ public class GeneratedDocsAreCurrentTests
             // ReferenceHandling is silent at CreateMap yet acts at Projection and the span endpoints, and
             // calling that row "not probed" would have hidden a real asymmetry.
             var effects = endpoints
-                .Select(e => OptionGaps.StructurallyInapplicable.ContainsKey((cell.Name, e))
+                .Select(e => DeclaredDivergences.StructurallyInapplicable.ContainsKey((cell.Name, e))
                     ? (Effect: OptionEffect.Silent, Detail: "structural")
                     : OptionProbe.Classify(e, cell.NonDefault, cell.Types))
                 .ToList();
@@ -249,13 +249,14 @@ public class GeneratedDocsAreCurrentTests
         var offenders = rows
             .Where(l => l.Contains("**SILENT**", StringComparison.Ordinal))
             .Select(l => l.Split('`')[1])
-            .Where(opt => !OptionGaps.KnownSilent.ContainsKey(opt))
+            .Where(opt => !DeclaredDivergences.CoversOption(opt))
             .ToList();
 
         Assert.True(offenders.Count == 0,
             "Option(s) newly SILENT at some endpoint — accepted, no effect, and the code still compiles:\n"
             + string.Join("\n", offenders)
-            + "\n\nHonour it there, refuse it with a diagnostic, or add it to OptionGaps.KnownSilent with the reason.");
+            + "\n\nHonour it there, refuse it with a diagnostic, or record it in DeclaredDivergences.Reasons "
+            + "with the reason and the cells it covers.");
     }
 
     [Fact]
@@ -271,10 +272,10 @@ public class GeneratedDocsAreCurrentTests
             .Select(l => l.Split('`')[1])
             .ToHashSet(StringComparer.Ordinal);
 
-        var fixedOnes = OptionGaps.KnownSilent.Keys.Where(k => !stillSilent.Contains(k)).ToList();
+        var fixedOnes = DeclaredDivergences.DeclaredOptions.Where(k => !stillSilent.Contains(k)).ToList();
         Assert.True(fixedOnes.Count == 0,
-            "OptionGaps.KnownSilent names option(s) that are no longer silent — remove them so the ratchet tightens: "
-            + string.Join(", ", fixedOnes));
+            "DeclaredDivergences.Reasons names option(s) that are no longer silent — remove them so the "
+            + "ratchet tightens: " + string.Join(", ", fixedOnes));
     }
 
     [Fact]

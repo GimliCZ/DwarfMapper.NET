@@ -326,7 +326,7 @@ internal static partial class MapperExtractor
                     // relative to its siblings. Passing it changes no generated output that any test can see:
                     // the depth guard for an element pair comes from the synthesized mapper, not this model.
                     // Kept for consistency, NOT claimed as a fix — the gap it looks like it should close is
-                    // recorded in OptionGaps.KnownSilent, still open.
+                    // recorded in DeclaredDivergences.Reasons["MaxDepth"], still open.
                     MaxDepth: maxDepth));
                 continue;
             }

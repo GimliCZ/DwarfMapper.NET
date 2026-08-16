@@ -12,7 +12,7 @@ namespace DwarfMapper;
 ///     is handed, a projection emits an expression tree, and the span and stream overloads are generated per
 ///     MAPPER rather than per overload — none of the four produces an extension whose accessibility there is
 ///     to decide. Same shape of reason, and the same four endpoints, as the <c>GenerateExtensions</c> rows in
-///     <c>OptionGaps.StructurallyInapplicable</c>. <see cref="SurfaceEndpoints.Registry" /> is deliberately still
+///     <c>DeclaredDivergences.StructurallyInapplicable</c>. <see cref="SurfaceEndpoints.Registry" /> is deliberately still
 ///     CLAIMED: the registry DOES emit an extension class (<c>__DwarfRegistry_Src</c>, with a public/internal
 ///     choice of its own), so the option has something to govern there and simply does not — that is a
 ///     divergence to fix, not a shape to declare away.

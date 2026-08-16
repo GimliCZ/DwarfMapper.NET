@@ -126,15 +126,15 @@ jobs:
   # measured statement that a caller wrote something the generator accepted, changed nothing for, and said
   # nothing about. The default leg excludes it with Category!=SurfaceMatrix.
   #
-  # NON-BLOCKING FOR NOW, and deliberately so. The first full run is red by design (see
-  # Issues/round20/SURFACE-MATRIX-FINDINGS.md): the remaining cells are enumerated divergences awaiting a
-  # maintainer decision plus cells the current case-space cannot ask a meaningful question about. Flip
-  # continue-on-error to false once that list is worked through — a gate that cannot fail is decoration, and
-  # this comment is the record that it is temporary. Runtime is ~15s: the baseline compile is memoized per
-  # (endpoint, fixture), so the cross-product costs one compile per cell rather than two.
+  # BLOCKING. It was non-blocking while the first full run was red by design; the 174 red cells are now
+  # either a recorded finding in DeclaredDivergences.Reasons (23 findings, 162 cells, each re-measured every
+  # run and each failing the build the moment it starts working) or one of twelve cells where a single option
+  # of an option bag has no surface at that endpoint. A leg that cannot fail is decoration, and the value of
+  # this one is entirely in the failure: a red cell here means a caller wrote something the generator
+  # accepted, changed nothing for, and said nothing about. Runtime ~25s: the baseline compile is memoized per
+  # (endpoint, fixture, options), so the cross-product costs one compile per cell rather than two.
   surface-matrix:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
