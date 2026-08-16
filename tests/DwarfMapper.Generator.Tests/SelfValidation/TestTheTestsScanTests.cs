@@ -17,10 +17,9 @@
 //
 //  Scan T3 — Enum-value in matrix or tests: every public enum VALUE from
 //             DwarfMapper.dll must appear in the FIM source OR in a test source file.
-//             Every TargetKind value must appear in the FIM source OR a test source.
+//             (T3b, the TargetKind half, was superseded 2026-08-17 — see its banner.)
 
 using System.Reflection;
-using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -342,28 +341,22 @@ public sealed class TestTheTestsScanTests
             "\nFix: add a matrix case or test that uses the missing value.");
     }
 
-    /// <summary>
-    ///     Every TargetKind value (internal enum, exposed via InternalsVisibleTo) must
-    ///     appear in FeatureInteractionCompileMatrixTests.cs OR in any test source file.
-    /// </summary>
-    [Fact]
-    public void T3b_Every_TargetKind_value_appears_in_matrix_or_tests()
-    {
-        var fimText = FimSourceText.Value;
-        var testText = AllTestSourceText.Value;
-        var combinedText = fimText + testText;
-
-        var missing = Enum.GetNames<CollectionConverter.TargetKind>()
-            .Where(name => !combinedText.Contains(name, StringComparison.Ordinal))
-            .Select(name => $"TargetKind.{name}")
-            .ToList();
-
-        Assert.True(missing.Count == 0,
-            "TargetKind value(s) with no coverage in the FIM or any test file:\n" +
-            string.Join("\n", missing.Select(m => "  " + m)) +
-            "\nFix: add a FimMatrixCase with this collection target type, " +
-            "or add it to a CollectionTaxonomyTests / ProjectionMatrixTests case.");
-    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCAN T3b — SUPERSEDED by CollectionCoverageSelfValidationTests (2026-08-17)
+    //
+    // Byte-for-byte the same defect as AssemblyScanTests' Scan6b, one file over, and removed for the same
+    // reason: it asked whether each TargetKind value's BARE name appeared in the FIM source or anywhere
+    // under tests/. Every value is a BCL type name — Array, List, HashSet, Queue, Stack, IEnumerable — so
+    // the needles matched ordinary C# in unrelated files, and substring nesting made it worse: `List` was
+    // discharged by any `IList`, `ISet` by any `IReadOnlySet`. Tightening it to the qualified
+    // `TargetKind.Value` form (the repair Scan6a took) is not available here either: no test source writes
+    // that form at all, because tests exercise the taxonomy through the mapped collection TYPE.
+    //
+    // CollectionCoverageSelfValidationTests reads the same enum reflectively — a new value still cannot
+    // escape — and then demands the value be EMITTED by the combinatorial matrix and by the fuzz schema,
+    // with ObjectFactory proven to populate the shape. Deleting Scan6b and leaving this one would have made
+    // that fix cosmetic.
+    // ─────────────────────────────────────────────────────────────────────────
 
     // ─────────────────────────────────────────────────────────────────────────
     // SCAN T4 (self-check) — Allowlist size gates

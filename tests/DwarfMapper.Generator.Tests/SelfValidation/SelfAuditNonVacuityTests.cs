@@ -56,7 +56,9 @@ public class SelfAuditNonVacuityTests
     [Fact]
     public void The_internal_taxonomy_enums_reflect_with_values()
     {
-        // Backs Scan6 (TargetKind) + InternalEnumCoverage (CountKind/DictTargetKind/NullHandling).
+        // Backs Scan6a (TargetKind referenced in generator source), CollectionCoverageSelfValidationTests
+        // (which took over the "covered by a test" half from Scan6b/T3b on 2026-08-17 and reads TargetKind
+        // reflectively by metadata name), and InternalEnumCoverage (CountKind/DictTargetKind/NullHandling).
         foreach (var metadataName in new[]
                  {
                      "DwarfMapper.Generator.Pipeline.CollectionConverter+TargetKind",

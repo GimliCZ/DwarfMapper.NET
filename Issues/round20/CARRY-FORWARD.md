@@ -58,7 +58,7 @@ which is precisely the class of thing this whole branch was built to eliminate.
 | 3.6 | `LATER` | **`DiagnosticCoverageRatchetTests` claims a property "holds by construction"**, but adding to `PredatesThisProject` is a visible-diff hatch that no test blocks. |
 | 3.7 | `LATER` | **`IsGeneratorAuthored`'s remarks omit the `*.g.cs` collision case.** A consumer's own generator emitting `Foo.g.cs`, or a checked-in `.g.cs`, is silently exempted from `DWARF086`. Permissive-only (false negative), can never redden a consumer build — but undocumented at the method that decides it. |
 | 3.8 | `LATER` | **"Shrink-only" is prose on both `PredatesTheChangelog` and `DiagnosticTestAllowlist`.** Nothing stops someone silently *appending* an id instead of writing the CHANGELOG entry. Exact membership is asserted, so the set cannot drift unnoticed — but growth is a one-line edit with no gate. Not a regression (it mirrors the pre-existing allowlist's convention), and the right fix is one guard covering both. |
-| 3.9 | `LATER` | **`Scan9_is_not_vacuous` guards corpus-emptiness but not tautology.** It would catch a mistyped path (the six-time historical failure, which is what it was asked to catch) but not `Scan9` itself being gutted to `Assert.True(true)`. The general shape — a control that proves the *corpus* is real but not that the *assertion* is — is worth a look across the scan family. |
+| 3.9 | `DONE` | **CLOSED by task B9.** `Scan9`'s and `Scan8`'s verdicts are now extracted as pure functions (`UnannouncedIds`, `StatesAFix`) and driven over known-bad input, so a gutted assertion reddens. Proved by reverting each to the gutted form: the two controls failed while `Scan6a`/`Scan9` **themselves passed** — the scans cannot see their own hollowness. Stated limit at the control: it pins the predicate, not the `[Fact]`'s wiring to it. Original: **`Scan9_is_not_vacuous` guards corpus-emptiness but not tautology.** It would catch a mistyped path (the six-time historical failure, which is what it was asked to catch) but not `Scan9` itself being gutted to `Assert.True(true)`. |
 
 ---
 
@@ -98,6 +98,17 @@ which is precisely the class of thing this whole branch was built to eliminate.
 | 5b.8 | `DECIDE` | **`ResetForTests` deletion, sharpened further.** Its IVT goes to `Generator.Tests`, but the registry tests live in `IntegrationTests`, **and** the Stryker runtime leg excludes `Generator.Tests` — so Task 10's two new `Clear()` lines are **unverifiable dead code by construction**. Deleting it also removes the only concrete reason for 5b.7's IVT. |
 
 ### The scan family that is text-satisfiable (all pre-existing, none introduced here)
+
+> **CLOSED by tasks B1 + B9 (2026-08-17).** Three of the six listed below were genuinely vacuous — `Scan6a`,
+> `Scan6b`, and `T3b` (the same defect as `Scan6b`, one file over, found by the sweep and not on this list).
+> `Scan6a`'s needle is now the qualified `TargetKind.<value>` form — **not** the file exclusion suggested
+> below, which was tried and failed 14 of 17 values for no defect, because `CollectionConverter.cs` holds the
+> switch arms as well as the declaration. `Scan6b`/`T3b` were deleted in favour of
+> `CollectionCoverageSelfValidationTests`, which reads the same enum reflectively and proves each value is
+> actually EMITTED. `Scan3` and both `Scan5`s had their own file (and, for `Scan3`, the sibling exemption
+> list) removed from their corpora; re-measured, nothing changed — the flaw was in the mechanism, not yet in
+> the result. Both floors tightened to their measured values: 40 → 60 and 40 → 84. Full write-up in
+> `.superpowers/sdd/2026-08-16-round20-generator-defects/task-B1-B9-report.md`.
 
 The review hunted for a third vacuous mechanism and **found one, plus a family around it**:
 
