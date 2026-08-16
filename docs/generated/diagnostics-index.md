@@ -90,5 +90,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF084` | Error | [RestatesBase] cannot identify the base pair |
 | `DWARF085` | Warning | Restated base configuration has drifted |
 | `DWARF086` | Error | Manifest attribute is emitted by the generator |
+| `DWARF087` | Error | Duplicate [FlattenGraph] destination collection |
 
-82 diagnostics.
+83 diagnostics.

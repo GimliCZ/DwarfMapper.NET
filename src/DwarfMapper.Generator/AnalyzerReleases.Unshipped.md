@@ -92,6 +92,7 @@ DWARF083 | DwarfMapper | Info | Enum maps to strings that are not its member ide
 DWARF084 | DwarfMapper | Error | [RestatesBase] cannot identify the base pair
 DWARF085 | DwarfMapper | Warning | Restated base configuration has drifted
 DWARF086 | DwarfMapper | Error | Manifest attribute is emitted by the generator
+DWARF087 | DwarfMapper | Error | Duplicate [FlattenGraph] destination collection
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

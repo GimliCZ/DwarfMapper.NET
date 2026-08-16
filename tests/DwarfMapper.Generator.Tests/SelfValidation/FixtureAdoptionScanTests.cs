@@ -33,7 +33,11 @@ public class FixtureAdoptionScanTests
     // Raised from 50 to 51 for SurfaceProbe.Classify (Task 4): it reads the specific CS ids the compiler
     // rejected a placement with, to distinguish NotCompilable from a generator refusal — exactly the kind of
     // assertion this exemption exists for.
-    private const int DirectCompileErrorCallBaseline = 51;
+    // Raised from 51 to 52 for FlattenGraphGeneratorTests.AssertNoDuplicateInitialization (DWARF087): it must
+    // assert that CS1912 SPECIFICALLY is gone, not that the emission compiles. A refused mapper emits nothing,
+    // so its partial method reports CS8795 and EmitsCompilableCode could never pass — while CS1912, the
+    // duplicate initializer the generator used to hand the consumer, must never come back.
+    private const int DirectCompileErrorCallBaseline = 52;
 
     private static IEnumerable<(string File, string Text)> TestSources()
     {

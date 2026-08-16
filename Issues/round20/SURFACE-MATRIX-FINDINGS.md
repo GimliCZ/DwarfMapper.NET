@@ -9,7 +9,8 @@
 > document: **23 findings over 162 cells, plus 12 cells excused as structural — 174 red cells, all accounted
 > for, matrix green.** Read the first measurement for how the buckets were arrived at; read the amendment for
 > what is true now. The single most severe item found in the whole exercise is **[N4](#N4)** and it is not a
-> silent divergence at all.
+> silent divergence at all — **fixed on 2026-08-16 as `DWARF087`**; see the resolution note in that section,
+> including why the `NotCompilable` count did not move.
 
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case
@@ -291,6 +292,48 @@ names the repeated destination — after which the cell becomes `Refused`, the `
 pinning test in `NegativeCases` asserting the refusal once it exists. It does not want a store of its own —
 one store per failure mode is how the six allowlists this architecture is replacing came about.
 
+> ### RESOLVED, 2026-08-16 — round 20, task 1 — as `DWARF087`
+>
+> **Fixed.** `ResolveFlattenGraphDirectives` now refuses a second directive naming an already-claimed
+> destination collection, with **`DWARF087` — "Duplicate [FlattenGraph] destination collection"** (Error).
+> Refused rather than collapsed, matching `DWARF011` on `[MapProperty]`, which is the exact structural sibling
+> (method site, `AllowMultiple`, two-string constructor, duplicate *destination*): a repeated directive is a
+> copy-paste mistake, and quietly keeping one of the two hides it from the only person able to fix it.
+>
+> **The defect was wider than this section describes.** It is keyed on the destination collection, not on the
+> two directives being character-identical — measured directly, `[FlattenGraph("Entry", "Nodes")]` beside
+> `[FlattenGraph("Other", "Nodes")]` emits the very same `CS1912` from two directives that are not duplicates
+> of each other at all. A check that only caught exact duplicates would have left half the defect class in
+> place. Both shapes are refused; several directives naming *different* collections are untouched, which is
+> what `[FlattenGraph]`'s `AllowMultiple = true` is for.
+>
+> **The prediction above about the matrix was wrong, and the correction is the interesting part.** This
+> section expected the cell to become `Refused` and the `NotCompilable` ceiling to drop 107 → 106. It did not.
+> Every DWARF **Error** in this generator suppresses the emission, so a refused mapper's partial method has no
+> implementing part and the cell reports `CS8795` — it *joined* the G4/R4 population rather than leaving
+> `NotCompilable`. Measured before and after:
+>
+> ```
+> before:  96 CS8795 +  8 CS0111 + 2 CS7036 + 1 CS1912  = 107
+> after:   97 CS8795 +  8 CS0111 + 2 CS7036 + 0 CS1912  = 107
+> ```
+>
+> **No ceiling moved**, and none should have: the population is unchanged and only its composition changed.
+> That is the correct end state rather than a shortfall — the cell is now indistinguishable from every other
+> refusal in the library, which is precisely what "no longer a generated-code defect" means here. It becomes
+> `Refused` when **R4** is fixed, along with the other 96; it is no longer a case R4 is hiding something worse
+> behind.
+>
+> Pinned by `FlattenGraphGeneratorTests.FlattenGraph_duplicate_directive_is_refused_with_DWARF087` (and the
+> non-identical variant), whose `AssertNoDuplicateInitialization` asserts `CS1912` specifically is gone rather
+> than that the emission compiles — the latter is unachievable for any Error in this generator and would have
+> been a test that could never pass. Message text and remedy wording are pinned by
+> `tests/DwarfMapper.NegativeCases/Cases/DWARF087_DuplicateFlattenGraphTarget.cs`
+> (`EXPECT: DWARF087, DWARF078` / `EXPECT-CS: CS8795` — the ordinary refusal cascade).
+>
+> No `DeclaredDivergences` entry was added or wanted: this was never a silence, and it is now a claimed
+> endpoint behaving correctly.
+
 ## The 23 findings
 
 Each has an anchor, because `DeclaredDivergences.Reasons` links to it. **Acts at** is the evidence the cell is
@@ -440,6 +483,10 @@ x2       @UpdateInto/Projection/SpanMap/AsyncStream  Silent
 
 The `×2` case at CreateMap is **[N4](#N4)**, a defect in the generated output, and is excluded from this
 finding's cells on purpose.
+
+> **2026-08-16:** N4 is [fixed](#N4) as `DWARF087`. That cell still reads `NotCompilable`, now with `CS8795`
+> rather than `CS1912` — the ordinary refusal cascade, i.e. G4/R4 and no longer a defect of its own. Its
+> exclusion from this finding's cells is unchanged.
 
 <a id="D12"></a>
 
@@ -599,8 +646,8 @@ convenience extension the cell would flip Silent → Honoured and the entry woul
 
 | | Cells | Counted by |
 | --- | ---: | --- |
-| **N4** — generated code that does not compile | 1 | `The_cells_the_compiler_rejects_are_counted` (prints CS ids) |
-| **G4/R4** — `NotCompilable` swallowing `Refused` (CS8795) | 96 | the same fact; the ordering defect is still open |
+| ~~**N4** — generated code that does not compile~~ **FIXED** (`DWARF087`) | 0 | `The_cells_the_compiler_rejects_are_counted` (prints CS ids) — the `CS1912` line is gone |
+| **G4/R4** — `NotCompilable` swallowing `Refused` (CS8795) | 97 | the same fact; the ordering defect is still open. **96 → 97**: N4's cell joined this population rather than leaving `NotCompilable`, because a refused mapper emits nothing and its partial method is unimplemented. Total still 107, so no ceiling moved |
 | **G5** — `[MapTo]`@`Struct`, `[DwarfMapperConstructor]`@`Constructor`, no fixture declares either | 21 | `The_cells_with_no_declaration_site_are_counted_by_cause` |
 | Cells the instrument poses no question about | 44 | `The_cells_that_pose_no_question_are_declared_and_counted` |
 | Cells passing both claim branches | 14 | `The_cells_that_pass_both_claim_branches_are_counted` |

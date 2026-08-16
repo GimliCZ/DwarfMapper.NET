@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF086`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF087`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -1130,6 +1130,44 @@ recognised as its own, so an ordinary multi-assembly build never sees this diagn
 > **Why this is refused rather than ignored.** Ignoring it would still leave the attribute reading, to the
 > next person, like a supported way of declaring a map — and the one thing it is guaranteed not to do is make
 > the map exist.
+
+---
+
+## dwarf087
+**Duplicate `[FlattenGraph]` destination collection** · Error
+
+`[FlattenGraph]` is `AllowMultiple`, so one method may flatten **several** graphs — but each directive
+contributes its own initializer for the collection it names, and two directives naming the **same** collection
+therefore assign it twice:
+
+<!-- fence-exempt: the shape IS the error; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[FlattenGraph("Entry", "Nodes")]
+[FlattenGraph("Entry", "Nodes")]   // DWARF087 — 'Nodes' is filled twice
+public partial RootDto Map(Root r);
+```
+
+Before this diagnostic existed the generator **accepted** that shape and emitted
+`new RootDto { Nodes = …, Nodes = … }`, so the consumer's build failed with
+`CS1912: Duplicate initialization of member 'Nodes'` — pointing at `Demo.M.g.cs`, a generated file they never
+wrote and cannot edit. That is why this is an `Error` rather than a `Warning`: there was no version of the
+program that built.
+
+**Fix:**
+
+| You meant | Do |
+|---|---|
+| the second directive is a copy-paste | delete it |
+| flatten a second graph as well | name a **different** collection member on the destination type, as [`FlattenGraph`](options.md) intends |
+| merge two navigations into one collection | not supported; give each its own collection, or flatten one and map the other with `[MapProperty]` |
+
+Keyed on the **destination collection**, not on the two directives being character-identical:
+`[FlattenGraph("Entry", "Nodes")]` beside `[FlattenGraph("Other", "Nodes")]` produced the same `CS1912` from
+two directives that are not duplicates of each other at all. Both shapes are refused.
+
+> **Refused rather than collapsed**, matching [`DWARF011`](#dwarf011) on `[MapProperty]`. Silently keeping one
+> of the two would hide a copy-paste mistake from the only person able to fix it — and if the intent was the
+> second directive rather than the first, the collapse would quietly pick the wrong one.
 
 ---
 

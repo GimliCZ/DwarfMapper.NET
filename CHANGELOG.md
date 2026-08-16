@@ -15,6 +15,18 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Two `[FlattenGraph]` directives filling one collection emitted code that does not compile.** Each
+  directive contributes its own initializer for the destination collection it names, and nothing checked that
+  two of them had not named the same one — so the generator accepted the shape and emitted
+  `new RootDto { Nodes = …, Nodes = … }`. The consumer's build failed with
+  `CS1912: Duplicate initialization of member 'Nodes'`, located in `Demo.M.g.cs`: a generated file they never
+  wrote and cannot edit. This is refused up front now, as `DWARF087` (see Added). Refusal is keyed on the
+  **destination collection**, not on the two directives being character-identical —
+  `[FlattenGraph("Entry", "Nodes")]` beside `[FlattenGraph("Other", "Nodes")]` emitted the very same CS1912
+  from two directives that are not duplicates of each other. `[FlattenGraph]` remains `AllowMultiple`:
+  several directives naming *different* collections are unaffected and are still the supported way to flatten
+  more than one graph into one DTO. Found by the surface matrix's derived `AllowMultiple ×2` axis. (round 20,
+  N4)
 - **A duplicate update-into registration was recorded against the CREATE table.** `DwarfMapperRegistry`
   keeps two key spaces on purpose — a pair can legitimately have both a `TDest Map(TSource)` and a
   `void Update(TSource, TDest)` — but only the create table had an ambiguity set, and `RegisterUpdate`
@@ -41,6 +53,12 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF087` — two `[FlattenGraph]` directives may not fill one destination collection.** An **Error**, and
+  the remedy is in the message: keep one directive per collection, or name a different collection member to
+  flatten a second graph. It replaces a `CS1912` against generated source with a diagnostic against the
+  attribute that caused it — see the entry under Fixed for what it was replacing. Refused rather than
+  collapsed to one directive, matching `DWARF011` on `[MapProperty]`: a repeated directive is a copy-paste
+  mistake, and quietly keeping one of the two hides it from the only person who can fix it. (round 20, N4)
 - **`DWARF086` — a manifest attribute the generator emits may not be hand-written.**
   `[assembly: DwarfProvidesMap(...)]` and `[assembly: DwarfRequiresMap(...)]` are the generator's *output*:
   the cross-assembly manifest that a `[DwarfMapperValidationRoot]` compilation reads back from referenced

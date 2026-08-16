@@ -409,8 +409,31 @@ internal static partial class MapperExtractor
         var directives = new List<FlattenGraphDirective>();
         var injected = new List<MemberMap>();
 
+        // DWARF087: one destination collection, one directive. Both branches below end in `injected.Add`
+        // keyed by tgtCollName, and `injected` is a list — so a second directive naming the same collection
+        // used to append a SECOND initializer for it and the emission became `new Dst { Flat = …, Flat = … }`,
+        // i.e. CS1912, reported against the generated file the consumer never wrote. The check is here rather
+        // than inside either branch precisely because both of them reach that Add, and it keys on the TARGET
+        // rather than on the pair, because ("Entry","Nodes") beside ("Other","Nodes") emitted the same CS1912
+        // from two directives that are not duplicates of each other.
+        //
+        // Report-and-skip, like every other per-directive check in this loop: the remaining directives are
+        // still validated in the same pass, so a method with two mistakes reports both. The skip is not what
+        // makes the build legible — an Error suppresses the whole emission anyway, and the ordinary
+        // CS8795/DWARF078 refusal cascade follows exactly as it does for DWARF008 or DWARF011. It is what
+        // guarantees the duplicate initializer cannot be emitted at all, including if this id's effective
+        // severity is ever configured below Error.
+        var seenTargets = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var (srcNavName, tgtCollName) in rawDirectives)
         {
+            if (!seenTargets.Add(tgtCollName))
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DuplicateFlattenGraphTarget, location,
+                    tgtCollName));
+                continue;
+            }
+
             // 1. Resolve source navigation member on sourceType
             ITypeSymbol? srcNavType = null;
             foreach (var m in ReadableMembers(sourceType, compilation, allowNonPublic))

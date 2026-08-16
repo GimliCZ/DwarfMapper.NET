@@ -908,4 +908,43 @@ public static class DiagnosticDescriptors
         + "the generator writes the manifest entry for you.",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf086");
+
+    /// <summary>
+    ///     Two or more <c>[FlattenGraph]</c> directives on one mapping method fill the same destination
+    ///     collection.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The one defect in round 20 that was not a silence: the generator ACCEPTED the shape and emitted
+    ///         <c>new Dst { Flat = …, Flat = … }</c>, which is <c>CS1912 "Duplicate initialization of member"</c>.
+    ///         The consumer therefore could not build at all, and the error they were shown pointed at
+    ///         <c>Demo.M.g.cs</c> — a generated file they never wrote and cannot edit. Emitting code that does
+    ///         not compile is strictly worse than any silent divergence, because there is no version of the
+    ///         program that runs.
+    ///     </para>
+    ///     <para>
+    ///         Refused rather than collapsed, matching DWARF011: a repeated directive is a copy-paste mistake,
+    ///         and quietly keeping one of them hides the mistake from the only person who can fix it. Keyed on
+    ///         the DESTINATION collection rather than on the directive being character-identical, because that
+    ///         is where the defect actually lives — <c>[FlattenGraph("Entry", "Nodes")]</c> next to
+    ///         <c>[FlattenGraph("Other", "Nodes")]</c> emits the same CS1912 from two directives that are not
+    ///         duplicates of each other at all. <c>[FlattenGraph]</c> stays <c>AllowMultiple</c>: several
+    ///         directives naming DIFFERENT destination collections remain the supported way to flatten more
+    ///         than one graph into one DTO.
+    ///     </para>
+    ///     <para>
+    ///         Found by the <c>AllowMultiple ×2</c> axis of the surface matrix, which exists only because the
+    ///         case space is derived from <c>AttributeUsage.AllowMultiple</c> rather than from a hand-written
+    ///         list of scenarios worth testing. Nobody would have written that test.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DuplicateFlattenGraphTarget = new(
+        "DWARF087",
+        "Duplicate [FlattenGraph] destination collection",
+        "Destination collection '{0}' is filled by more than one [FlattenGraph] directive on this method, "
+        + "which would emit an object initializer that assigns '{0}' twice (CS1912) — code that does not "
+        + "compile. Keep exactly one [FlattenGraph] per destination collection; to flatten a second graph, "
+        + "name a different collection member on the destination type.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf087");
 }

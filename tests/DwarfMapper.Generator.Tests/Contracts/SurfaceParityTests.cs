@@ -199,15 +199,27 @@ public sealed class SurfaceParityTests
     ///     <para>
     ///         <see cref="SurfaceEffect.NotCompilable" /> passes without deciding anything, and most of the
     ///         time that is honest — <c>AttributeUsage</c> forbids the site and the compiler agrees, which is
-    ///         the declaration telling the truth. But two other things wear the same label. A blocking
+    ///         the declaration telling the truth. But something else wears the same label: a blocking
     ///         generator error leaves the partial mapping method unimplemented (<c>CS8795</c>), which is the
-    ///         known ordering defect G4/R4; and generated code that does not compile — two identical
-    ///         <c>[FlattenGraph]</c> directives emit a duplicate member initialization, <c>CS1912</c> — is a
-    ///         real defect hiding behind a verdict that reads like a placement rule.
+    ///         known ordering defect G4/R4.
+    ///     </para>
+    ///     <para>
+    ///         A third thing used to wear it, and this is why the ids are printed rather than only counted.
+    ///         Two <c>[FlattenGraph]</c> directives filling one destination collection made the generator
+    ///         emit a duplicate member initialization — <c>CS1912</c>, located in <c>Demo.M.g.cs</c> — which
+    ///         is a categorically worse failure than any of the above: not a refusal the consumer can act on
+    ///         but invalid C# handed to them in a file they never wrote. It was legible here only because the
+    ///         printout separated it from the CS8795 crowd it was hiding in. It is now refused as
+    ///         <c>DWARF087</c>, and this cell has joined the CS8795 population (96 → 97) rather than leaving
+    ///         it: a refused mapper emits nothing, so its partial method is unimplemented exactly like every
+    ///         other DWARF error's. The count is therefore UNCHANGED at 107 — the fix moved a cell between
+    ///         causes instead of removing one, which is the right end state (the cell is now indistinguishable
+    ///         from an ordinary refusal) and is also why no ceiling moved for it. It becomes <c>Refused</c>
+    ///         when R4 does.
     ///     </para>
     ///     <para>
     ///         An uncounted pass is a silent absence of coverage whatever its cause, which is the thing this
-    ///         architecture exists to delete. The ids are printed with the count so the three populations stay
+    ///         architecture exists to delete. The ids are printed with the count so the populations stay
     ///         distinguishable while R4 is outstanding.
     ///     </para>
     /// </summary>
