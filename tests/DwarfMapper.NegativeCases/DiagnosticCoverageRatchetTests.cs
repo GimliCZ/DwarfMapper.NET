@@ -89,6 +89,46 @@ public class DiagnosticCoverageRatchetTests
             + "commit message.");
     }
 
+    /// <summary>
+    ///     REG-05: no id ships with an id-only assertion.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         All 81 live ids are accounted for today — every one has a case file or an entry in
+    ///         <see cref="PredatesThisProject" /> — but that accounting says only that the diagnostic FIRES.
+    ///         The remedy prose, the half that tells a reader with a red build what to write instead, is
+    ///         pinned by <c>EXPECT-MESSAGE</c>, and nothing required one: <c>A_case_gets_the_message_it_declares</c>
+    ///         returns early when a case declares none, so an id-only case is green and silent.
+    ///     </para>
+    ///     <para>
+    ///         Composed with the ratchet above, this closes the class rather than the instance. A new
+    ///         diagnostic must have a case file (or a visible exemption); a case file must pin wording. The
+    ///         property therefore holds by construction for every id that ever arrives, instead of holding by
+    ///         the diligence of whoever wrote the last one. It was green when written — <c>DWARF086</c> is the
+    ///         first id it had the chance to fail on.
+    ///     </para>
+    /// </remarks>
+    [Fact]
+    public void Every_covered_diagnostic_pins_its_remedy_wording()
+    {
+        // Without this, a Load() that returned cases whose headers failed to parse would leave both sets
+        // empty and the Except() below vacuously satisfied.
+        Assert.NotEmpty(NegativeCase.CoveredIds);
+
+        var unpinned = NegativeCase.CoveredIds
+            .Where(id => !NegativeCase.WordingPinnedIds.Contains(id, StringComparer.Ordinal))
+            .ToList();
+
+        Assert.True(unpinned.Count == 0,
+            "Diagnostic(s) with a case file that pins the id but not the wording:\n  "
+            + string.Join("\n  ", unpinned)
+            + "\n\nAdd an `// EXPECT-MESSAGE <id>: <substring>` line naming the part of the message a reader "
+            + "must be able to act on — the attribute to write instead, the option to set, the shape to "
+            + "change. Pinning the id alone lets the remedy prose rot into something that no longer tells "
+            + "anyone what to do, with every test still green: exactly the defect three Round-18 tasks "
+            + "existed to repair.");
+    }
+
     [Fact]
     public void The_exemption_list_does_not_name_a_retired_diagnostic()
     {

@@ -89,5 +89,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF083` | Info | Enum maps to strings that are not its member identifiers |
 | `DWARF084` | Error | [RestatesBase] cannot identify the base pair |
 | `DWARF085` | Warning | Restated base configuration has drifted |
+| `DWARF086` | Error | Manifest attribute is emitted by the generator |
 
-81 diagnostics.
+82 diagnostics.

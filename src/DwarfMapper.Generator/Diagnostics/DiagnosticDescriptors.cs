@@ -877,4 +877,35 @@ public static class DiagnosticDescriptors
         + "or make the destination member nullable.",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf070");
+
+    /// <summary>
+    ///     A cross-assembly manifest attribute the generator emits, written by hand instead.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>[assembly: DwarfProvidesMap]</c> and <c>[assembly: DwarfRequiresMap]</c> are output, not
+    ///         input: the generator writes one entry per map this assembly registers or consumes, and the
+    ///         <c>[DwarfMapperValidationRoot]</c> compilation reads those entries out of referenced metadata to
+    ///         decide DWARF061. Nothing else describes the graph, so the root can only be as truthful as the
+    ///         manifest is.
+    ///     </para>
+    ///     <para>
+    ///         A hand-written entry breaks that in the direction nothing catches. A fabricated <c>Provides</c>
+    ///         row satisfies a <c>Requires</c> row for a map no assembly registers, so the compile-time check
+    ///         passes and the failure moves to the first call site at run time — which is the exact failure
+    ///         DWARF061 exists to pull forward. Refused rather than ignored, because an ignored entry still
+    ///         reads to the next person as a supported way of declaring a map.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor HandWrittenManifestAttribute = new(
+        "DWARF086",
+        "Manifest attribute is emitted by the generator",
+        "'{0}' is emitted by the generator onto the assembly and must not be hand-written: it declares a map "
+        + "the generator never produced, so the cross-assembly manifest stops describing this assembly and "
+        + "the [DwarfMapperValidationRoot] check (DWARF061) trusts the difference. Delete it. To CONSUME a "
+        + "cross-assembly map, declare it with [UsesMap<TSource, TDestination>]; to PROVIDE one, declare the "
+        + "map itself ([GenerateMap] on a [DwarfMapper] class, or [ProvidesMap] on a hand-written method) and "
+        + "the generator writes the manifest entry for you.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf086");
 }

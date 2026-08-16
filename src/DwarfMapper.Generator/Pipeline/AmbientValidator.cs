@@ -2,9 +2,17 @@
 
 using System.Collections.Immutable;
 using System.Text;
+using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Pipeline;
+
+/// <summary>
+///     One hand-written cross-assembly manifest attribute: its simple name (for the message) and where it was
+///     written (for the squiggle). A record rather than a tuple because it travels through an incremental
+///     pipeline node, where reference equality on the carrier would re-report the diagnostic on every keystroke.
+/// </summary>
+internal sealed record HandWrittenManifest(string AttributeName, LocationInfo? Location);
 
 /// <summary>
 ///     Whole-graph cross-assembly linkage validation, performed ONLY in the compilation marked
@@ -74,6 +82,46 @@ internal static class AmbientValidator
             }
 
         return (provided.ToImmutable(), required.ToImmutable());
+    }
+
+    /// <summary>
+    ///     The manifest attributes THIS compilation carries in hand-written source — each one a DWARF086.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Scoped to <c>compilation.Assembly</c> on purpose: a referenced assembly's manifest is metadata
+    ///         written by ITS build and is not this compilation's to judge, and refusing it would make every
+    ///         consumer of a correctly-generated provider red.
+    ///     </para>
+    ///     <para>
+    ///         The generator's own emission is excluded by
+    ///         <see cref="GeneratedSourceExtensions.IsGeneratorAuthored" /> rather than by relying on Roslyn
+    ///         handing generators the pre-generation compilation. That happens to be true today — see this
+    ///         type's <see cref="ReadReferenced" /> remarks — but it is an ordering property of the host, and a
+    ///         refusal whose correctness rests on the check never meeting its own output is one host change
+    ///         away from failing every multi-assembly build.
+    ///     </para>
+    /// </remarks>
+    public static IReadOnlyList<HandWrittenManifest> HandWrittenManifests(Compilation compilation)
+    {
+        var found = new List<HandWrittenManifest>();
+
+        foreach (var a in compilation.Assembly.GetAttributes())
+        {
+            var name = a.AttributeClass?.ToDisplayString();
+            if (name != KnownNames.DwarfProvidesMapFqn && name != KnownNames.DwarfRequiresMapFqn)
+                continue;
+
+            var reference = a.ApplicationSyntaxReference;
+            if (GeneratedSourceExtensions.IsGeneratorAuthored(reference?.SyntaxTree))
+                continue;
+
+            found.Add(new HandWrittenManifest(
+                a.AttributeClass!.Name,
+                LocationInfo.From(Location.Create(reference!.SyntaxTree, reference.Span))));
+        }
+
+        return found;
     }
 
     private static (string Source, string Destination)? ReadPair(AttributeData a)

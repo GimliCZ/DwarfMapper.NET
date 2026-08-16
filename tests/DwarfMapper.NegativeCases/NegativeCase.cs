@@ -168,6 +168,22 @@ internal sealed record NegativeCase(
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToImmutableArray();
 
+    /// <summary>
+    ///     The ids some case pins the WORDING of, not merely the presence of — the input to the remedy ratchet.
+    /// </summary>
+    /// <remarks>
+    ///     A subset of <see cref="CoveredIds" /> by construction, and the gap between the two is what
+    ///     <c>DiagnosticCoverageRatchetTests.Every_covered_diagnostic_pins_its_remedy_wording</c> refuses to
+    ///     let open: <c>A_case_gets_the_message_it_declares</c> returns early for a case with no
+    ///     <c>EXPECT-MESSAGE</c> line, so an id-only case satisfies the coverage ratchet while asserting
+    ///     nothing about the half of the diagnostic that tells the reader what to write instead.
+    /// </remarks>
+    public static ImmutableArray<string> WordingPinnedIds { get; } =
+        All.SelectMany(c => c.ExpectedMessages.Select(m => m.Id))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToImmutableArray();
+
     public string Describe() => string.Create(CultureInfo.InvariantCulture,
         $"{Name}: {Title}\n  why: {Why}");
 }

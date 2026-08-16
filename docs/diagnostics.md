@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF083`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF086`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -1096,6 +1096,40 @@ Not reported for `[Flags]` enums: their string form is the comma-joined list `En
 identifiers, so the attributes do not apply.
 
 > Round 18 came within one code review of shipping the `Next-Day` case into a live MongoDB collection.
+
+---
+
+## dwarf086
+**Manifest attribute is emitted by the generator** · Error
+
+`[assembly: DwarfProvidesMap(…)]` and `[assembly: DwarfRequiresMap(…)]` are **output, not input**. The
+generator writes one entry per map an assembly registers or consumes, and the `[DwarfMapperValidationRoot]`
+compilation reads those entries back out of referenced metadata to decide [`DWARF061`](#dwarf061). Writing one
+by hand is therefore not a shortcut — it is an assertion about this assembly that nothing checked:
+
+<!-- fence-exempt: the shape IS the error; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[assembly: DwarfProvidesMap(typeof(Legacy), typeof(Modern))]   // DWARF086
+```
+
+That row satisfies a `DwarfRequiresMap` row for a pair no assembly actually registers, so the whole-graph
+check passes and the failure moves back to the first call site at run time (`DwarfMapMissingException`) —
+which is precisely what `DWARF061` exists to pull forward.
+
+**Fix — declare the thing itself and let the generator write the manifest:**
+
+| You meant | Write this instead |
+|---|---|
+| this assembly **consumes** a cross-assembly map | `[assembly: UsesMap<TSource, TDestination>]` — or nothing at all, since a direct `IDwarfMapper.Map<…>` call site is detected automatically |
+| this assembly **provides** a map | declare the map: `[GenerateMap<TSource, TTarget>]` on a `[DwarfMapper]` class, or `[ProvidesMap]` on a hand-written method |
+| I was mirroring a referenced assembly's manifest | delete it; the root reads that assembly's own metadata directly |
+
+Only **hand-written** occurrences are refused. The generator's own emission arrives in a `.g.cs` file and is
+recognised as its own, so an ordinary multi-assembly build never sees this diagnostic.
+
+> **Why this is refused rather than ignored.** Ignoring it would still leave the attribute reading, to the
+> next person, like a supported way of declaring a map — and the one thing it is guaranteed not to do is make
+> the map exist.
 
 ---
 
