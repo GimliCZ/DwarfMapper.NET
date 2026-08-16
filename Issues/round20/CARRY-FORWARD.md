@@ -99,8 +99,9 @@ which is precisely the class of thing this whole branch was built to eliminate.
 
 ### The scan family that is text-satisfiable (all pre-existing, none introduced here)
 
-> **CLOSED by tasks B1 + B9 (2026-08-17).** Three of the six listed below were genuinely vacuous — `Scan6a`,
-> `Scan6b`, and `T3b` (the same defect as `Scan6b`, one file over, found by the sweep and not on this list).
+> **CLOSED by tasks B1 + B9 (2026-08-17).** Two of the five flagged below were genuinely vacuous — `Scan6a`
+> and `Scan6b` — plus their unlisted twin `T3b` (the same defect as `Scan6b`, one file over, found by the
+> sweep). Three vacuous scans in all.
 > `Scan6a`'s needle is now the qualified `TargetKind.<value>` form — **not** the file exclusion suggested
 > below, which was tried and failed 14 of 17 values for no defect, because `CollectionConverter.cs` holds the
 > switch arms as well as the declaration. `Scan6b`/`T3b` were deleted in favour of
