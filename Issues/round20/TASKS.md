@@ -28,7 +28,7 @@ Nothing pushed. Surface matrix green at 865/865; whole solution builds 0 warning
 
 | | |
 |---|---|
-| **In flight** | **A4 review** — implementation done, under task review. A2 review outstanding. |
+| **In flight** | **A4 review** — implementation done, under task review. |
 | **Next** | **A7** (it shares the `MapProperty`/`MapIgnore` extractor region with A4, which ran first — ordering ruled in the ledger), then A5, A6, A8, A9, then **A10 last among the refusal tasks**, then A11. |
 | **Blocked on a human** | **D-e only.** ~80 diagnostics predate the CHANGELOG and have never been announced; `Scan9` guards only *new* ids. Harmless until the first tag, then not. |
 | **Round 19** | Complete — 10 tasks + 5a/5b/5c, final whole-branch review returned *merge after must-fixes*, and those must-fixes were **A0**. Merge itself is **F1** below and needs your say-so. |
@@ -36,6 +36,10 @@ Nothing pushed. Surface matrix green at 865/865; whole solution builds 0 warning
 **Live counts, read from the code rather than from a report** (I had been repeating 23 / 162 from Task 5c's
 report; the source says otherwise — see the ledger's controller-error entry):
 **18 divergence findings · 93 declared cells · 302 unjudged-but-counted cells across four ratchets.**
+
+**Layer 0 is complete** (C2, B2, B1, B9 — the instrument repairs). Measurements from here are trustworthy in
+a way they demonstrably were not before: B2 alone found **70** cells that had been reading the right answer
+for the wrong reason, and the B1/B9 sweep found a **seventh** vacuous mechanism nobody had flagged.
 
 ### Why A10 runs late — the one ordering fact worth knowing
 
@@ -59,7 +63,7 @@ values.
 |---|---|---|---|
 | A0 | `DONE` | CHANGELOG must-fixes + `Scan9` (every diagnostic id must be announced) | CF §1.1–1.3 |
 | A1 | `DONE` | Duplicate `[FlattenGraph]` destination emitted uncompilable code → `DWARF087` | N4 |
-| A2 | `WIP` | The missing arity checks — under review. `DWARFR04` reused for D4 (**no new id**: the brief was wrong that its descriptor was dead; it checks *stacked-attribute* arity, a different thing). `DWARF088` added for D5+D21, one check, two call sites. | D4, D5, D21 |
+| A2 | `DONE` | The missing arity checks — under review. `DWARFR04` reused for D4 (**no new id**: the brief was wrong that its descriptor was dead; it checks *stacked-attribute* arity, a different thing). `DWARF088` added for D5+D21, one check, two call sites. | D4, D5, D21 |
 | A3 | `DONE` | **Closed by A2, unplanned.** D3's cells are `ctor(1)` + a property initializer — named arguments ride on the one-argument constructor — so A2's check fires on them. The narrower alternative was rejected: it would leave `[MapProperty("Id")]` refused and `[MapProperty("Id", Use=…)]` silent. | D3 |
 | A4 | `DONE` | Co-located host reads no member-level directives. Fixed: `MapperExtractor` reads them off the host's own members through the one `MemberDirectives` parser the registry already used; the method forms written there are refused as the new **`DWARF089`**. Measured: **2 Honoured, 18 Refused** — of which 6 are the directive ACTING beside a pre-existing `DWARF038`, 6 are named arguments refused on their merits, and 8 are `DWARF089`. Ceilings 19/113 → **18/93**. Found three issues, filed as **B15–B17**. | D20 |
 | A5 | `TODO` | `MapToGenerator` ignores assembly-level config — **D19 is a trust boundary** | D17, D18, D19 |
@@ -74,15 +78,15 @@ values.
 
 | # | Status | Task | Source |
 |---|---|---|---|
-| B1 | `TODO` | **`Scan6a` passes by construction** — searches for an enum's members in a corpus containing the enum's own declaration. `Scan2` already excludes its own defining file; copy that. Check `Scan3`, `Scan6b`, `Scan5`-options for the same shape, and the `>=40` floors sitting against actual 59 and 82. | CF §5b |
-| B2 | `TODO` | **`Property`/`Field` share one `BuildAt` arm that discards `site`** — every Field cell is byte-identical to its Property cell, so a field-only divergence is invisible while reading as measured. ~11 of 162 cells. Deserves a declared **G6** entry, not a silent fix. | CF §5b.3 |
+| B1 | `DONE` | **`Scan6a` passes by construction** — searches for an enum's members in a corpus containing the enum's own declaration. `Scan2` already excludes its own defining file; copy that. Check `Scan3`, `Scan6b`, `Scan5`-options for the same shape, and the `>=40` floors sitting against actual 59 and 82. | CF §5b |
+| B2 | `DONE` | **`Property`/`Field` share one `BuildAt` arm that discards `site`** — every Field cell is byte-identical to its Property cell, so a field-only divergence is invisible while reading as measured. ~11 of 162 cells. Deserves a declared **G6** entry, not a silent fix. | CF §5b.3 |
 | B3 | `TODO` | **The option matrix's excuse class cannot go stale-red** — `OptionContractTests` accepts `NotApplicable` on a non-blank *reason* alone, never re-measured, never counted (8 of 18 `ProjectionCells`). The surface matrix re-classifies live; this does not. Also `DeclaredDivergences.CoversOption` is endpoint-blind. | CF §5b.4 |
 | B4 | `TODO` | **No test pins that same-source, different-destination `[FlattenGraph]` stays accepted** (`("Entry","NodesA")` + `("Entry","NodesB")`). The one shape a source-keyed refusal would wrongly reject. Guards a brand-new build-breaking Error. | Task 1 review |
 | B5 | `TODO` | Fixture-baseline rule is a comment, not a gate. **Trap:** a naive "baseline must compile" check fires on four legitimate `DWARF001`-by-design fixtures. | CF §3.2 |
 | B6 | `TODO` | `NoSuchSite` ratchet gates the total only — offsetting per-cause drift passes silently. | CF §3.1 |
 | B7 | `TODO` | `CrossAssembly` obligation is placement-blind — a row confined to one project satisfies the one category whose claim is that it is only observable *across* assemblies. | CF §3.4 |
 | B8 | `TODO` | "Shrink-only" is prose on both `PredatesTheChangelog` and `DiagnosticTestAllowlist`. One guard covers both. | CF §3.8 |
-| B9 | `TODO` | `Scan9`'s control proves the *corpus* is real, not that the *assertion* is. Sweep the scan family for the same shape. | CF §3.9 |
+| B9 | `DONE` | `Scan9`'s control proves the *corpus* is real, not that the *assertion* is. Sweep the scan family for the same shape. | CF §3.9 |
 | B10 | `TODO` | `CorpusFor`'s throwing default arm is unreached by any test. | CF §3.3 |
 | B11 | `TODO` | `DiagnosticCoverageRatchetTests` claims "holds by construction"; `PredatesThisProject` is a hatch no test blocks. | CF §3.6 |
 | B12 | `TODO` | Nothing forbids a cell being in both `Reasons` and `StructurallyInapplicable` (double-count). Theoretical today. | CF §3.5 |
@@ -97,7 +101,7 @@ values.
 | # | Status | Task | Source |
 |---|---|---|---|
 | C1 | `TODO` | **Stryker runs in no CI job at all.** The 66.95% is a manual leg, free to regress silently. | CF §5b.1 |
-| C2 | `TODO` | **`.git`-as-a-file breaks the doc tests in any worktree** — and forced Task 1 to hand-render a generated file. Fix `RepoRoot` to accept both. | CF §4.1 |
+| C2 | `DONE` | **`.git`-as-a-file breaks the doc tests in any worktree** — and forced Task 1 to hand-render a generated file. Fix `RepoRoot` to accept both. | CF §4.1 |
 | C3 | `TODO` | Both sibling Stryker configs are parse-fixed but never run; `break: 70` is inherited and unvalidated. | CF §4.2 |
 | C4 | `TODO` | `docs/research/testing-conformance-REPORT.md:22` still says "Mutation testing — none". | CF §5b.2 |
 | C5 | `TODO` | Drift: `ci.yml` says "854 cells" (actual 861/865); a ratchet open-codes `AssertRatchet`; `AssemblyScanTests` keeps a private repo-root walk `RepoPaths` exists to replace. | CF §5b.6 |
