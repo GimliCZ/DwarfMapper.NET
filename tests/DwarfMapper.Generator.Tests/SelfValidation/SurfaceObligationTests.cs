@@ -130,11 +130,19 @@ public sealed class SurfaceObligationTests
     }
 
     /// <summary>
-    ///     Every member of <see cref="SurfaceCategory" /> is claimed by a theory below.
+    ///     Every member of <see cref="SurfaceCategory" /> is claimed by a theory below, AND by the
+    ///     option-level resolver.
     ///     <para>
     ///         The load-bearing assertion of this file. Adding a category with no obligation would restore
     ///         exactly what the allowlists were — a place to put an element so that nothing is asked of it —
     ///         and it would do so silently, because an unclaimed category simply produces no theory rows.
+    ///     </para>
+    ///     <para>
+    ///         Both levels are checked, because they can diverge. The element theories and
+    ///         <see cref="CorpusFor" /> are separate lists of categories, so a seventh member could acquire an
+    ///         obligation at element level and fall into a default arm at option level — where every option
+    ///         redirected to it would be scanned against whatever corpus the arm happened to name. That is the
+    ///         same hole one level down, which is why <see cref="CorpusFor" /> throws rather than defaulting.
     ///     </para>
     /// </summary>
     [Fact]
@@ -155,6 +163,16 @@ public sealed class SurfaceObligationTests
             + "\n\nA category with no obligation is an allowlist with an enum member's name on it: an element "
             + "assigned to it is asked for nothing, and nothing says so. Add the theory, then add the member "
             + "to the list above.");
+
+        // The option level, which the list above does not reach. A category CorpusFor cannot resolve throws,
+        // so this fails loudly rather than silently scanning an option against an arbitrary corpus.
+        foreach (var category in Enum.GetValues<SurfaceCategory>())
+        {
+            var (corpus, corpusName, remedy) = CorpusFor(category);
+            Assert.False(string.IsNullOrWhiteSpace(corpus), $"{category}: option corpus is empty.");
+            Assert.False(string.IsNullOrWhiteSpace(corpusName));
+            Assert.False(string.IsNullOrWhiteSpace(remedy));
+        }
     }
 
     // ── The obligations, one per category ───────────────────────────────────────────────────────────
@@ -241,8 +259,12 @@ public sealed class SurfaceObligationTests
             + "consumer-shaped assembly writes it. A testing helper nobody outside the package has used is a "
             + "helper whose ergonomics have never been measured.");
 
-        Assert.True(TestingContractCorpus.Contains(usageName, StringComparison.Ordinal),
-            $"[{usageName}] is TestingOnly but tests/DwarfMapper.Testing.Tests does not mention it. The "
+        // IsWritten, not Contains: `RoundTripException` satisfies a bare Contains("RoundTrip"), which is the
+        // prefix collision this file's own negative controls exist to catch. It passes today on a real
+        // [RoundTrip], so this was hygiene rather than breakage — but a scan that CAN be discharged by a
+        // neighbouring type name is the failure mode, not an instance of it.
+        Assert.True(IsWritten(TestingContractCorpus, usageName),
+            $"[{usageName}] is TestingOnly but tests/DwarfMapper.Testing.Tests never writes it. The "
             + "testing surface needs its own contract row: it ships to consumers, so a change to it is a "
             + "breaking change to them.");
     }
@@ -279,26 +301,7 @@ public sealed class SurfaceObligationTests
             .Single(e => e.Type == typeof(DwarfMapperAttribute));
         var category = SurfaceCatalog.CategoryOfOption(element, option);
 
-        // Written as an ASSIGNMENT, and against comment-stripped text. Both halves are load-bearing and both
-        // were breached by the excuses this replaced: `SkipNullSourceMembers` appears in samples only inside
-        // a section header, and `GenerateExtensions` only inside a prose line that happens to quote the
-        // assignment. A bare Contains() over raw text greened both while neither was ever written.
-        var (corpus, corpusName, remedy) = category switch
-        {
-            SurfaceCategory.ConsumerDirective => (SampleCorpus, "a runnable sample under samples/",
-                "Add a Conformance feature asserting the option's observable runtime difference, or a "
-                + "Gallery example if it deserves prose."),
-            SurfaceCategory.BuildFailureOnly => (NegativeCorpus, "a NegativeCases row",
-                "Add a case file whose `// EXPECT:` names the exact diagnostic set the option provokes."),
-            SurfaceCategory.EmissionShape => (GeneratorTestCorpus, "a generator test",
-                "Assert over the emitted text — presence, absence or accessibility of the generated member."),
-            SurfaceCategory.CrossAssembly => (MultiAssemblyCorpus, "the multi-assembly fixture",
-                "Exercise it in tests/DwarfMapper.ConsumerTests, where an assembly boundary exists."),
-            SurfaceCategory.TestingOnly => (TestingContractCorpus, "the testing contract suite",
-                "Pin it in tests/DwarfMapper.Testing.Tests."),
-            _ => (GeneratorTestCorpus, "a generator test",
-                "Assert what the generator does with it.")
-        };
+        var (corpus, corpusName, remedy) = CorpusFor(category);
 
         Assert.True(IsAssigned(corpus, option),
             $"[DwarfMapper({option} = …)] is categorised {category} but is never WRITTEN in {corpusName}.\n\n"
@@ -325,6 +328,47 @@ public sealed class SurfaceObligationTests
     }
 
     // ── Machinery ───────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    ///     The corpus one category's obligation is measured against at the OPTION level, with the name and
+    ///     remedy for the message.
+    ///     <para>
+    ///         Every option is matched as an ASSIGNMENT (<c>Name =</c>) against comment-stripped text. Both
+    ///         halves are load-bearing and both were breached by the excuses this replaced:
+    ///         <c>SkipNullSourceMembers</c> appeared in <c>samples/</c> only inside a section header, and
+    ///         <c>GenerateExtensions</c> only inside a prose line that happens to quote the assignment. A bare
+    ///         <c>Contains</c> over raw text greened both while neither was ever written.
+    ///     </para>
+    ///     <para>
+    ///         There is deliberately no default arm. A category this cannot resolve would otherwise be scanned
+    ///         against whatever corpus the arm happened to name — an obligation nobody chose, silently — which
+    ///         is the same hole as a category with no obligation, one level down.
+    ///         <see cref="Every_category_carries_an_obligation" /> calls this for every enum member so the
+    ///         throw is reached by a test rather than by a consumer of the matrix.
+    ///     </para>
+    /// </summary>
+    private static (string Corpus, string Name, string Remedy) CorpusFor(SurfaceCategory category) =>
+        category switch
+        {
+            SurfaceCategory.ConsumerDirective => (SampleCorpus, "a runnable sample under samples/",
+                "Add a Conformance feature asserting the option's observable runtime difference, or a "
+                + "Gallery example if it deserves prose."),
+            SurfaceCategory.BuildFailureOnly => (NegativeCorpus, "a NegativeCases row",
+                "Add a case file whose `// EXPECT:` names the exact diagnostic set the option provokes."),
+            SurfaceCategory.EmissionShape => (GeneratorTestCorpus, "a generator test",
+                "Assert over the emitted text — presence, absence or accessibility of the generated member."),
+            SurfaceCategory.CrossAssembly => (MultiAssemblyCorpus, "the multi-assembly fixture",
+                "Exercise it in tests/DwarfMapper.ConsumerTests, where an assembly boundary exists."),
+            SurfaceCategory.TestingOnly => (TestingContractCorpus, "the testing contract suite",
+                "Pin it in tests/DwarfMapper.Testing.Tests."),
+            SurfaceCategory.GeneratorEmitted => (GeneratorTestCorpus, "a generator test",
+                "Assert that a generator run emits it."),
+            _ => throw new InvalidOperationException(
+                $"SurfaceCategory.{category} has no option-level obligation. Add an arm naming the corpus an "
+                + "option redirected to this category must be written in. Defaulting here would scan the "
+                + "option against a corpus nobody chose for it, which is the allowlist this file deleted, "
+                + "wearing an enum member's name.")
+        };
 
     private static List<string> OptionNames { get; } =
         typeof(DwarfMapperAttribute).GetProperties(BindingFlags.Public | BindingFlags.Instance)

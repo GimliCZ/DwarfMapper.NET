@@ -1,11 +1,15 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
+using System.Reflection;
 using ConsumerTests.Contracts;
 using DwarfMapper;
 using Microsoft.Extensions.DependencyInjection;
 
-// See CustomerService for why this cannot be auto-detected.
-[assembly: UsesMap(typeof(Customer), typeof(CustomerDto))]
+// The ELEMENT pair behind Map<ICollection<PartDto>>(List<Part>). Auto-detection records what the call site
+// names — (List<Part>, ICollection<PartDto>) — and the pair that actually maps each element is nowhere in
+// the manifest, so a validation root would check the collection shape and never the thing inside it.
+// Measured, not assumed: see Both_UsesMap_forms_contribute_to_this_assemblys_requires_manifest.
+[assembly: UsesMap(typeof(Part), typeof(PartDto))]
 
 namespace ConsumerTests.Host;
 
@@ -269,6 +273,44 @@ public sealed class ConsumerSurfaceTests
             .ToDtos([new AliasCommand { Id = 1, Alias = "!x" }])[0].Alias);
     }
 
+    // ── 5b. The consumption manifest this assembly publishes ────────────────────────────────────────
+
+    /// <summary>
+    ///     Both <c>[UsesMap]</c> forms actually reach this assembly's <c>DwarfRequiresMap</c> manifest.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Without this, the two <c>[UsesMap]</c> declarations were compiled text that nothing read: the
+    ///         host declares no validation root (it must not — it deliberately references no provider, so a
+    ///         whole-graph check here would fail on maps that are correctly wired), and no other assertion in
+    ///         this project touches the manifest. If the attribute stopped contributing, everything would
+    ///         still pass. That is exactly the "satisfies a scan, proves nothing" shape this suite exists to
+    ///         refuse, and it is worst here, because these rows are what discharge the CrossAssembly
+    ///         obligation — the category whose whole claim is that it is only observable across a boundary.
+    ///     </para>
+    ///     <para>
+    ///         Both pairs are chosen to be uniquely attributable, which was measured rather than assumed.
+    ///         Deleting the two declarations drops the manifest from nine entries to eight and removes exactly
+    ///         these two: auto-detection records what a call site NAMES, so a collection call contributes
+    ///         <c>(List&lt;Part&gt;, ICollection&lt;PartDto&gt;)</c> and never the element pair, and a
+    ///         <c>List&lt;Command&gt;</c> call site cannot name the derived <c>AliasCommand</c> arm at all.
+    ///         A pair that is also auto-detected — <c>(Customer, CustomerDto)</c>, which has a direct
+    ///         <c>Map&lt;CustomerDto&gt;</c> call site — would keep this test green with the attribute
+    ///         deleted, and the first draft of this row used precisely that pair.
+    ///     </para>
+    /// </remarks>
+    [Fact]
+    public void Both_UsesMap_forms_contribute_to_this_assemblys_requires_manifest()
+    {
+        var required = typeof(ConsumerSurfaceTests).Assembly
+            .GetCustomAttributes<DwarfRequiresMapAttribute>()
+            .Select(a => (a.Source, a.Destination))
+            .ToList();
+
+        Assert.Contains((typeof(Part), typeof(PartDto)), required);
+        Assert.Contains((typeof(AliasCommand), typeof(CommandDto)), required);
+    }
+
     // ── 6. Shapes the generator cannot express, registered by declaration ───────────────────────────
 
     [Fact]
@@ -364,13 +406,10 @@ public sealed class ConsumerSurfaceTests
 ///     A service shaped like a consumer's: it takes the facade and maps a collection.
 /// </summary>
 /// <remarks>
-///     <c>[UsesMap]</c> states the element consumption the generator cannot see. At
-///     <c>Map&lt;ICollection&lt;CustomerDto&gt;&gt;(list)</c> only the DESTINATION is static — the call site
-///     names a collection shape, not the element pair — so auto-detection has nothing to key on, and the
-///     assembly's <c>DwarfRequiresMap</c> manifest would omit the pair a validation root is supposed to check.
-///     That is the blind spot Round 18 found as 47 latent runtime throws, and it is why the attribute exists.
-///     Written at the ASSEMBLY here and per-CLASS on <see cref="CommandService" />, because
-///     <c>AttributeUsage</c> permits both and the two sites are read by different parts of the collector.
+///     The facade call names a COLLECTION shape, so that is what the manifest records; the element pair each
+///     item maps through is not in it. See the assembly-level <c>[UsesMap]</c> at the top of this file, which
+///     states the one behind the sibling <c>Part</c> call site. That gap is the blind spot Round 18 found as
+///     47 latent runtime throws, and it is why the attribute exists.
 /// </remarks>
 public sealed class CustomerService(IDwarfMapper mapper)
 {
