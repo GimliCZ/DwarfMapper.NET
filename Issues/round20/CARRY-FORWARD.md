@@ -17,13 +17,19 @@ planned.
 
 ## 1. Consumer-facing — the ones that reach a user
 
+**All three are one edit to `CHANGELOG.md`, and it is round-20 Task 0.**
+
 | # | Status | Item |
 |---|---|---|
-| 1.1 | `MUST` | **`CHANGELOG.md`: the new public member is not under `### Added`.** `IsUpdateAmbiguous` is genuine new public surface but appears only inside the `Fixed` prose. A consumer scanning `Added` for new API will miss it entirely. |
-| 1.2 | `MUST` | **`CHANGELOG.md`: a consumer-facing `Fixed` entry for `ResetForTests`**, which is `internal`, `[InternalsVisibleTo]` a single test project, and unreachable by any consumer. It should not be in a consumer changelog at all. |
+| 1.1 | `MUST` | **`DWARF086` is absent from `CHANGELOG.md`.** It is in `AnalyzerReleases.Unshipped.md`, `docs/diagnostics.md` and `docs/generated/diagnostics-index.md` — but the CHANGELOG's own preamble **mandates an entry for any new diagnostic id**, and the release workflow publishes that section verbatim as the GitHub Release notes. **A new build-breaking `Error` would ship unannounced.** Nothing guards this: `AssemblyScanTests` syncs descriptors ↔ AnalyzerReleases only, and **no test in the repository reads `CHANGELOG.md` at all**. |
+| 1.2 | `MUST` | **The new public member is not under `### Added`.** `IsUpdateAmbiguous` is genuine new public surface but appears only inside the `Fixed` prose. A consumer scanning `Added` for new API will miss it. |
+| 1.3 | `MUST` | **A consumer-facing `Fixed` entry for `ResetForTests`**, which is `internal`, IVT to a single test project, and unreachable by any consumer. It does not belong in consumer release notes. |
 
-These two are the only items on this page that a user of the package could trip over. Everything else is
-internal.
+These three are the only items on this page a user of the package could trip over. Everything else is internal.
+
+**Strongly recommended alongside:** a test that fails when a new `DWARF` id has no `CHANGELOG` line. The rule
+forbidding an unannounced diagnostic is **the one stated invariant in this repository with no test behind it** —
+which is precisely the class of thing this whole branch was built to eliminate.
 
 ---
 
@@ -75,6 +81,40 @@ internal.
 
 ---
 
+## 5b. Found by the final whole-branch review (new — not in the per-task records)
+
+| # | Status | Item |
+|---|---|---|
+| 5b.1 | `LATER` | **Stryker runs in no CI job at all.** `.github/workflows/` has zero references. The 66.95% is a manual 44-minute `housekeeping.ps1 -Mutation` leg recorded in a JSON comment — **free to regress silently**, which is the exact property the rest of the branch spends 5,000 lines preventing. |
+| 5b.2 | `LATER` | **`docs/research/testing-conformance-REPORT.md:22` still reads "Mutation testing (Stryker.NET) — none"**, which now actively contradicts three configs and a measured score. Pre-existing, newly wrong. |
+| 5b.3 | `LATER` | **`Endpoints.cs:281-285`: `AttributeTargets.Property or AttributeTargets.Field` is one arm that discards `site`.** For the two elements legal on both (`MapIgnore`, `MapProperty`), **every Field cell is byte-identical to its Property cell at all seven endpoints** — so a field-only divergence is invisible while the matrix reads as measured. ~11 of the 162 ratcheted cells. Same family as the Task-4 Critical (Method/Property producing identical source) and the G5 template gaps. Per this branch's own convention this deserves a **declared G6 entry**, not a silent fix. |
+| 5b.4 | `LATER` | **The allowlist replacement never reached the sibling option matrix.** `OptionContractTests.cs:193-196` accepts `CellStatus.NotApplicable` on a **non-blank reason alone** — never re-measured, never counted (8 of 18 `ProjectionCells`). It is the one excuse class on the branch that **cannot go stale-red**, in direct contrast to `SurfaceParityTests.cs:457`, which re-classifies live. Related: `DeclaredDivergences.CoversOption` (`:543`) is endpoint-blind, so the option matrix can excuse collateral cells outside the 162 ceiling. |
+| 5b.5 | `LATER` | **`SurfaceParityTests.cs:511` checks the evidence link's *shape*, not that the file and anchor resolve.** All 23 `<a id="D…">` anchors exist today, so this is latent rather than broken. |
+| 5b.6 | `LATER` | Drift: `ci.yml:42,124` say "854 cells" (actual 861/865); `The_cells_with_no_declaration_site_are_counted_by_cause` open-codes `AssertRatchet`'s two asserts instead of calling it; `AssemblyScanTests.cs:72` still carries a private repo-root walk that `RepoPaths` exists to delete. |
+| 5b.7 | `DECIDE` | **The `internal` + IVT decision, sharpened.** `src/DwarfMapper/AssemblyInfo.cs` is new — **the shipped, unsigned package previously had zero `[InternalsVisibleTo]`**. This is compile-time accessibility, not a vulnerability, but it grants full internal access to any assembly *named* `DwarfMapper.Generator.Tests`, and the concrete thing it exposes is `ResetForTests()`, which mutates process-wide static state. That sits badly against this project's honor-accessibility and CRA-defensive stance. The four meta-attributes themselves are harmless — inert metadata, zero runtime reads. |
+| 5b.8 | `DECIDE` | **`ResetForTests` deletion, sharpened further.** Its IVT goes to `Generator.Tests`, but the registry tests live in `IntegrationTests`, **and** the Stryker runtime leg excludes `Generator.Tests` — so Task 10's two new `Clear()` lines are **unverifiable dead code by construction**. Deleting it also removes the only concrete reason for 5b.7's IVT. |
+
+### The scan family that is text-satisfiable (all pre-existing, none introduced here)
+
+The review hunted for a third vacuous mechanism and **found one, plus a family around it**:
+
+- **`AssemblyScanTests.cs:428` `Scan6a_TargetKind_values_are_referenced_in_generator_source`** — its corpus is
+  all of `src/DwarfMapper.Generator/**`, which **includes the file declaring `enum TargetKind`**
+  (`Pipeline/CollectionConverter.cs:1011`). Every needle matches its own declaration text; `missing` is empty
+  **by construction**, and deleting the test changes nothing. `Scan2` (`:344`) excludes its own defining file
+  for exactly this reason — the fix is one line, already demonstrated five scans above.
+- `Scan3` (`:363`) is discharged by the literal id array at `DiagnosticCoverageRatchetTests.cs:36-61`.
+- `Scan6b` (`:444`) does bare `Contains` on BCL type names (`Array`, `List`).
+- `Scan5`-options (`:117`) is self-satisfied by a comment in its own file.
+- The `>= 40` floors at `:551`/`:556` sit against actual values of 59 and 82 — slack from birth.
+
+Ruled out by the same sweep, and worth recording as *verified sound*: all six obligation corpora are guarded by
+`Every_corpus_is_non_empty` (an empty corpus makes obligations **fail**, not pass); the four cell ratchets are
+two-sided at their measured values; `IsWritten`/`IsAssigned` carry explicit prose-mention negative controls;
+`Assert-MutantsWereTested` is sound; the `SurfaceMatrix` trait filter degrades benignly.
+
+---
+
 ## 6. The pattern worth remembering
 
 Four separate times on this branch, a mechanism **reported success while measuring nothing**:
@@ -92,3 +132,32 @@ non-vacuity guards in this codebase are worth their weight.
 
 A fifth instance, caught before it shipped: a test proposed to kill a mutation survivor **would have passed
 without killing it** (item 5.4) — the false-credit failure appearing *inside* the tool built to detect it.
+
+A sixth, found by the final review and **pre-existing rather than introduced**: `Scan6a` searches for an enum's
+members in a corpus that includes the enum's own declaration, so it has always passed by construction. It sits
+five scans below the one this branch deleted for being text-satisfiable, in a file this branch edited.
+
+**The through-line:** every one of the six is the same failure — *a mechanism reporting success while measuring
+nothing* — and not one was found by reading. That is the case for the non-vacuity guards in this codebase, and
+the reason item 3.2 (the unenforced fixture-baseline rule) is worth closing rather than leaving as a comment.
+
+---
+
+## 7. Merge verdict from the final whole-branch review
+
+**Merge after must-fixes.** The shortest path to mergeable is **one edit to `CHANGELOG.md`** (§1 above).
+Nothing else found blocks.
+
+Production code was reviewed clean: zero reflection anywhere in `src/DwarfMapper/*.cs`, trim/AOT posture
+intact with the AOT gate still asserting NativeAOT-ness and running the binary, `DWARF086` double-guarded
+against firing on the generator's own emission (`CompilationProvider` is pre-generation **and**
+`IsGeneratorAuthored` checks `.g.cs`; all nine hint names end `.g.cs`) and scoped to `compilation.Assembly` so
+referenced metadata is never judged, and the registry fix pinned by a guard asserting the exact triple.
+
+**On the headline claim:** TRUE, with qualifications that are honestly stated — *but only where a test-reader
+looks*. "Case-complete" means the executed cross-product for `ConsumerDirective` + `EmissionShape`; the other
+six shipped attributes get executed-but-not-case-complete category obligations. That is the design, declared at
+each element, not a hole. The disclosure is dense and accurate — and lives entirely in test sources,
+`Issues/round20/`, and a Stryker config comment. **There is zero mention in `README`, `CHANGELOG` or `docs/`.**
+No unqualified claim ships anywhere, which is the important half; but a reader of the shipped documentation
+learns nothing about what is and is not covered.
