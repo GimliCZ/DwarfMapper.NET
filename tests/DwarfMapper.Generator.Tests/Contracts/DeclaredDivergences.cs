@@ -501,20 +501,27 @@ internal static class DeclaredDivergences
     ///     The finding covering one cell, or <c>null</c>. Every component of the key must match: an entry
     ///     covers the cells someone measured and named, never a family of cells that happen to share an
     ///     element.
+    ///     <para>
+    ///         <c>Single</c>, not <c>First</c>. Two findings over one cell would hand the cell to whichever
+    ///         the dictionary happened to order first, so deleting the other would leave it still excused —
+    ///         an entry that has quietly stopped being load-bearing. <c>SurfaceParityTests</c> asserts the
+    ///         same invariant separately; this states it at the point of use rather than trusting that gate
+    ///         to have run, for the same reason <see cref="SurfaceCatalog.ClaimFor" /> does.
+    ///     </para>
     /// </summary>
     public static KeyValuePair<string, Divergence>? For(string usageName, int arity, string axis,
         AttributeTargets site, SurfaceEndpoints endpoint)
     {
-        foreach (var entry in Reasons)
-        foreach (var cell in entry.Value.Cells)
-            if (string.Equals(cell.UsageName, usageName, StringComparison.Ordinal)
+        var matches = Reasons
+            .Where(entry => entry.Value.Cells.Any(cell =>
+                string.Equals(cell.UsageName, usageName, StringComparison.Ordinal)
                 && cell.Arity == arity
                 && string.Equals(cell.Axis, axis, StringComparison.Ordinal)
                 && cell.Site == site
-                && (cell.Endpoints & endpoint) != 0)
-                return entry;
+                && (cell.Endpoints & endpoint) != 0))
+            .ToList();
 
-        return null;
+        return matches.Count == 0 ? null : matches.Single();
     }
 
     /// <summary>Every cell every finding declares, one flag expanded per row, for the ratchets and the gates.</summary>

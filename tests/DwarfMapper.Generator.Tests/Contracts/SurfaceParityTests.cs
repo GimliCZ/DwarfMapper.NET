@@ -500,11 +500,20 @@ public sealed class SurfaceParityTests
             + "deleted without the cell becoming visible again.");
 
         foreach (var (id, divergence) in DeclaredDivergences.Reasons)
+        {
+            // Checked over EVERY entry rather than at the point each is consulted, because the option
+            // matrix's lookup is by option name and would never reach an entry that only the surface matrix
+            // covers. A row with no reason is a permission slip.
+            Assert.False(string.IsNullOrWhiteSpace(divergence.Why),
+                $"{id} states no reason. The reason is the whole difference between a recorded defect and an "
+                + "exemption: it must say what a caller who wrote this reasonably expects.");
+
             Assert.True(divergence.Section.StartsWith("Issues/", StringComparison.Ordinal)
                         && divergence.Section.Contains('#', StringComparison.Ordinal),
                 $"{id} does not link to a section of the findings write-up ('{divergence.Section}'). The "
                 + "reason field states what a caller expects; the write-up carries the evidence, and a "
                 + "record with nowhere to read the evidence is an assertion.");
+        }
     }
 
     /// <summary>Every cell, classified once, for the ratchets that count a whole population.</summary>
