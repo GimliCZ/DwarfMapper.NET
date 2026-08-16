@@ -29,11 +29,11 @@ internal sealed record DivergentCell(
 ///     One FINDING: a defect in the generator, the cells that prove it, and why a caller is entitled to
 ///     expect otherwise.
 ///     <para>
-///         One entry per finding rather than per cell, deliberately. 113 per-cell rows would be an
-///         inventory of a red build; nineteen findings are nineteen things a maintainer can pick up
+///         One entry per finding rather than per cell, deliberately. 93 per-cell rows would be an
+///         inventory of a red build; eighteen findings are eighteen things a maintainer can pick up
 ///         and fix, each of which retires its whole group at once. That is not a claim about the grouping:
 ///         one arity check closed four of the original twenty-three in a single change, forty-nine cells at
-///         once.
+///         once, and one reader taught to a second call site closed a fifth, twenty cells more.
 ///     </para>
 /// </summary>
 /// <param name="Why">
@@ -86,7 +86,7 @@ internal static class DeclaredDivergences
     private const string Findings = "Issues/round20/SURFACE-MATRIX-FINDINGS.md";
 
     /// <summary>
-    ///     The findings, keyed by the id their write-up carries. 19 findings over 113 cells, every one
+    ///     The findings, keyed by the id their write-up carries. 18 findings over 93 cells, every one
     ///     measured by <c>SurfaceParityTests</c> rather than reasoned about.
     ///     <para>
     ///         The maintainer's ruling that produced this list: record the divergences now, fix them
@@ -95,7 +95,7 @@ internal static class DeclaredDivergences
     ///         in which nobody reads it.
     ///     </para>
     ///     <para>
-    ///         The dominant shape, thirteen of the nineteen (every finding with a cell at <c>SpanMap</c> or
+    ///         The dominant shape, thirteen of the eighteen (every finding with a cell at <c>SpanMap</c> or
     ///         <c>AsyncStream</c>): the ELEMENT-WISE endpoints. <c>SpanMap</c>
     ///         and <c>AsyncStream</c> map the element pair through an auto-synthesized mapper, and a directive
     ///         attached to the mapping method does not reach it. That is the same root cause as the DWARF077
@@ -377,47 +377,12 @@ internal static class DeclaredDivergences
             [
                 new DivergentCell("DwarfMapperDefaults", 0, "AutoMatchMembers=false", AttributeTargets.Assembly,
                     SurfaceEndpoints.Registry)
-            ]),
-
-        ["D20"] = new(
-            "At the co-located host the mapping is declared BY the annotated type — [GenerateMap<Src, Dst>] "
-            + "sits on Dst — so a member of that type is part of the declaration, which is exactly why "
-            + "MapProperty's own [DwarfSurfaceSite] keeps CoLocatedHost claimed for the member sites while "
-            + "dropping the five mapper endpoints, where the DTOs are ordinary types the consumer may not "
-            + "own. Measured: every member-level [MapProperty] and [MapIgnore] case, on both the Property and "
-            + "the Field site, is byte-identical and silent there. One root cause and therefore one fix: "
-            + "[GenerateMap<S,T>] is extracted by MapperExtractor, which reads these attributes off the class "
-            + "or the method symbol only, and MapToGenerator's registry path is the sole reader of the "
-            + "member-level forms.",
-            Findings + "#D20",
-            [
-                new DivergentCell("MapProperty", 0, "ctor(1)", AttributeTargets.Property, CoLocated),
-                new DivergentCell("MapProperty", 0, "ctor(1)", AttributeTargets.Field, CoLocated),
-                new DivergentCell("MapProperty", 0, "ctor(2)", AttributeTargets.Property, CoLocated),
-                new DivergentCell("MapProperty", 0, "ctor(2)", AttributeTargets.Field, CoLocated),
-                new DivergentCell("MapProperty", 0, "×2", AttributeTargets.Property, CoLocated),
-                new DivergentCell("MapProperty", 0, "×2", AttributeTargets.Field, CoLocated),
-                new DivergentCell("MapProperty", 0, "Use=\"probe\"", AttributeTargets.Property, CoLocated),
-                new DivergentCell("MapProperty", 0, "Use=\"probe\"", AttributeTargets.Field, CoLocated),
-                new DivergentCell("MapProperty", 0, "When=\"probe\"", AttributeTargets.Property, CoLocated),
-                new DivergentCell("MapProperty", 0, "When=\"probe\"", AttributeTargets.Field, CoLocated),
-                new DivergentCell("MapProperty", 0, "NullSubstitute=\"probe\"", AttributeTargets.Property,
-                    CoLocated),
-                new DivergentCell("MapProperty", 0, "NullSubstitute=\"probe\"", AttributeTargets.Field,
-                    CoLocated),
-                new DivergentCell("MapProperty", 0, "StringFormat=\"probe\"", AttributeTargets.Property,
-                    CoLocated),
-                new DivergentCell("MapProperty", 0, "StringFormat=\"probe\"", AttributeTargets.Field, CoLocated),
-                new DivergentCell("MapIgnore", 0, "ctor(0)", AttributeTargets.Property, CoLocated),
-                new DivergentCell("MapIgnore", 0, "ctor(0)", AttributeTargets.Field, CoLocated),
-                new DivergentCell("MapIgnore", 0, "ctor(1)", AttributeTargets.Property, CoLocated),
-                new DivergentCell("MapIgnore", 0, "ctor(1)", AttributeTargets.Field, CoLocated),
-                new DivergentCell("MapIgnore", 0, "×2", AttributeTargets.Property, CoLocated),
-                new DivergentCell("MapIgnore", 0, "×2", AttributeTargets.Field, CoLocated)
             ])
 
-        // D21 was here; see the note where D3/D4/D5 were. It is the same finding as D5 with the other
-        // attribute, which is why one check retired both.
+        // D20 was here — the co-located host read no member-level directive, twenty cells across the
+        // Property and Field sites. Closed by teaching MapperExtractor's co-located path to read those
+        // forms off the host's own members, through the one MemberDirectives parser the [MapTo] registry
+        // already used. D21 was here too; see the note where D3/D4/D5 were.
     };
 
     /// <summary>The five endpoints declared by a partial method on a <c>[DwarfMapper]</c> class.</summary>
@@ -433,9 +398,6 @@ internal static class DeclaredDivergences
     /// <summary>Projection plus the two element-wise endpoints — a directive that acts on create and update.</summary>
     private const SurfaceEndpoints ProjectionAndElementWise =
         SurfaceEndpoints.Projection | SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream;
-
-    /// <summary>Spelled out so the twenty D20 cells read as a list of sites rather than of endpoints.</summary>
-    private const SurfaceEndpoints CoLocated = SurfaceEndpoints.CoLocatedHost;
 
     /// <summary>
     ///     The finding covering one cell, or <c>null</c>. Every component of the key must match: an entry

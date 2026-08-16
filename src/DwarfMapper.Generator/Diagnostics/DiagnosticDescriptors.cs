@@ -1000,4 +1000,42 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf088");
+
+    /// <remarks>
+    ///     <para>
+    ///         The exact inverse of <see cref="MemberFormDirectiveOnMapper" />, and the reason it is a second
+    ///         id rather than a second message under the first: <c>DWARF088</c> says "you wrote the member
+    ///         form where there is no member", this says "you wrote the method form on a member, or wrote a
+    ///         member directive the declared pairs cannot receive". Same family, opposite mistake, different
+    ///         remedy — folding them together would produce a title that is false for half the cells it fires
+    ///         on.
+    ///     </para>
+    ///     <para>
+    ///         A co-located <c>[GenerateMap&lt;S,T&gt;]</c> host declares its own mapping, so a member of the
+    ///         host IS part of that declaration and carries the MEMBER form: <c>[MapProperty("SourceMember")]</c>
+    ///         names where the annotated destination member is filled from, and a bare <c>[MapIgnore]</c>
+    ///         excludes it. Everything else written there acts on nothing, and acted on nothing in silence
+    ///         until this check existed (surface-matrix finding D20).
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF088</c> is one: a blocking error would suppress the
+    ///         whole host's emission, so the generated <c>&lt;Host&gt;Mapper</c>, its convenience extension
+    ///         and its DI registration would all vanish and the refusal would reach the consumer as
+    ///         <c>CS1061</c> at every call site instead. The offending directive is dropped and the rest of
+    ///         the host's mapping is emitted as if it had not been written; escalate with
+    ///         <c>dotnet_diagnostic.DWARF089.severity = error</c> where the stricter reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because the four shapes need four remedies — the two method-form placements, a directive count
+    ///         that does not match the declared pairs, and a host that is not the destination of any pair it
+    ///         declares.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MisplacedDirectiveOnCoLocatedHostMember = new(
+        "DWARF089",
+        "Directive on a co-located host member cannot be applied",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf089");
 }

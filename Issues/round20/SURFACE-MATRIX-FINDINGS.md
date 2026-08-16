@@ -6,7 +6,7 @@
 > since been superseded.** The case-space was enriched (task 5b), three instrument defects and one broken
 > fixture baseline were fixed, and the matrix was re-measured. The current state, and the write-up every entry
 > in `DeclaredDivergences.Reasons` links to, is **[the ratified findings](#ratified)** at the end of this
-> document: **19 findings over 113 cells, plus 12 cells excused as structural — 125 red cells, all accounted
+> document: **18 findings over 93 cells, plus 12 cells excused as structural — 105 red cells, all accounted
 > for, matrix green.** Read the first measurement for how the buckets were arrived at; read the amendment for
 > what is true now. The single most severe item found in the whole exercise is **[N4](#N4)** and it is not a
 > silent divergence at all — **fixed on 2026-08-16 as `DWARF087`**; see the resolution note in that section,
@@ -17,6 +17,12 @@
 > saying nothing. One arity check on each side of the library retired all four findings and forty-nine cells
 > at once — `DWARFR04` at the `[MapTo]` registry (a descriptor that already existed and checked a *different*
 > arity), `DWARF088` in the class model. Each section carries its resolution note.
+>
+> **2026-08-17, third fix — 19 / 113 to 18 / 93.** `D20`: the co-located `[GenerateMap]` host now reads the
+> member-placement `[MapProperty]` / `[MapIgnore]` its own `[DwarfSurfaceSite]` had always claimed it did,
+> through the one parser the `[MapTo]` registry already used; the method forms written on a host member are
+> refused as the new `DWARF089`. Ten of the twenty cells went Honoured and ten Refused — the first finding on
+> this branch that did **not** resolve to a single verdict. See [D20](#D20).
 
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case
@@ -73,6 +79,12 @@ annotated DTO *is* the declaration, which is why those two are excluded from thi
 
 Confirmed at source level as well: `MapperExtractor` reads these attributes off the class symbol or the method
 symbol; only `Registry/MapToGenerator.cs` reads them off member symbols.
+
+> **Amended 2026-08-17.** That last sentence was the *evidence for* [D20](#D20) and is no longer true of the
+> co-located host: `MapperExtractor` now reads member symbols too, through the shared `MemberDirectives`
+> parser — but **only the annotated host's own members, and only for pairs the host is the destination of.**
+> The claim S1 makes is unchanged and was re-measured after that change: at the five mapper-declared
+> endpoints nothing reads a DTO member, and all 100 cells are byte-identical.
 
 **Where it is declared, and why not in `AppliesTo`:** as
 `SurfaceParityTests.MemberSiteIsNotADeclarationSite`, a per-`(element, site, endpoint)` predicate. `AppliesTo`
@@ -290,21 +302,22 @@ dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj
 
 The matrix was re-measured after task 5b enriched the case-space, fixed three instrument defects and repaired
 one fixture whose broken baseline was swallowing its own verdict — and again after the arity fix recorded in
-D3/D4/D5/D21 below. **125 cells are red. Every one is accounted for and the matrix is green:**
+D3/D4/D5/D21 below, and again after D20 was closed on 2026-08-17. **105 cells are red. Every one is
+accounted for and the matrix is green:**
 
 | Population | Cells | Findings | Where it is recorded |
 | --- | ---: | ---: | --- |
-| Recorded divergences | **113** | **19** | `DeclaredDivergences.Reasons`, re-measured every run |
+| Recorded divergences | **93** | **18** | `DeclaredDivergences.Reasons`, re-measured every run |
 | One option of an option bag, no surface at that endpoint | **12** | 2 options × 4 endpoints (+ the assembly-level twin) | `DeclaredDivergences.StructurallyInapplicable` |
 
-**Nothing was narrowed, widened or excused to reach that.** The 113 are named cell by cell — element, generic
+**Nothing was narrowed, widened or excused to reach that.** The 93 are named cell by cell — element, generic
 arity, axis, declaration site, endpoint — and `Every_declared_divergence_is_still_a_divergence` re-classifies
 each one on every run. A row whose cell stops being silent turns the build **red** until the row is deleted.
 That is the property that makes this a ratchet rather than an allowlist, and it is the reason recording a gap
 is safe: a fix cannot leave a fossil behind.
 
-Two further ratchets sit on the store itself. The **finding** count (19) fails if a new defect is written down
-instead of fixed. The **cell** count (113) fails if an existing entry's cell list is widened — which is the
+Two further ratchets sit on the store itself. The **finding** count (18) fails if a new defect is written down
+instead of fixed. The **cell** count (93) fails if an existing entry's cell list is widened — which is the
 likelier mistake, because a fresh regression absorbed into an existing row would otherwise pass both the
 parity theory and the still-a-divergence gate with nothing registering that the surface got worse.
 
@@ -386,9 +399,9 @@ one store per failure mode is how the six allowlists this architecture is replac
 > No `DeclaredDivergences` entry was added or wanted: this was never a silence, and it is now a claimed
 > endpoint behaving correctly.
 
-## The findings — 19 live, 4 fixed
+## The findings — 18 live, 5 fixed
 
-Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The four marked **RESOLVED** keep their
+Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The five marked **RESOLVED** keep their
 sections: the store entry is gone (a fixed gap left on the list is a fossil), but the write-up is what the
 next reader needs to know the gap existed and how it was closed. **Acts at** is the evidence the cell is
 a divergence rather than a shape: the same directive, at the same site, doing something observable somewhere
@@ -685,7 +698,55 @@ believes they have one. Same shape as the DWARF077 gap, one endpoint over.
 
 <a id="D20"></a>
 
-### D20 — the co-located host reads no member-level directive — 20 cells
+### D20 — the co-located host reads no member-level directive — 20 cells — RESOLVED
+
+> **RESOLVED 2026-08-17.** The co-located path now reads the member forms off the host's own members, through
+> the same `MemberDirectives` parser the `[MapTo]` registry uses; the method forms written there are refused
+> as the new `DWARF089`. All twenty cells re-measured, **ten Honoured and ten Refused** — see the table below.
+> `DivergenceFindingCeiling` 19 → **18**, `DivergentCellCeiling` 113 → **93**; no other ratchet moved, and
+> none was raised. Matrix green at 865/865, whole solution 0 warnings / 0 errors.
+>
+> **This one did not resolve to a single verdict, unlike D3/D4/D5/D21.** Those four were one mistake with one
+> answer (refuse). Here the two placements are two different things at the same site: the member form
+> *should* act and now does, and the method form written on a member should not and now says so. Splitting
+> the twenty cells that way was the substance of the task; the ceilings are the bookkeeping.
+>
+> | Case, both sites | Before | After |
+> | --- | --- | --- |
+> | `[MapProperty("Id")]` | Silent | `Refused (DWARF038 (Warning))` — **honoured**; the warning is the pre-existing one about the implicit `int → string` conversion the rename now implies |
+> | `[MapProperty("Id", StringFormat="probe")]` | Silent | `Refused (DWARF038 (Warning))` — **honoured**, emitting `ToString("probe", InvariantCulture)` |
+> | `[MapProperty("Id", Use="probe")]` | Silent | `Refused (DWARF014)` — the named converter does not exist |
+> | `[MapProperty("Id", When="probe")]` | Silent | `Refused (DWARF038 (Warning), DWARF050)` — the named predicate does not exist |
+> | `[MapProperty("Id", NullSubstitute="probe")]` | Silent | `Refused (DWARF038 (Warning), DWARF049)` — a null substitute cannot ride a converter |
+> | `[MapIgnore]` | Silent | `Honoured` — the member is no longer assigned |
+> | `[MapProperty("Id","Name")]`, and ×2 | Silent | `Refused (DWARF089 (Warning))` — the method form on a member |
+> | `[MapIgnore("Id")]` | Silent | `Refused (DWARF089 (Warning))` — the method/class form on a member |
+> | `[MapIgnore]` ×2 | Silent | `Refused (DWARF089 (Warning))` — two directives, one declared pair |
+>
+> **Field and Property behave identically** — same verdict, same diagnostic ids, all ten shapes. This is the
+> first finding measured after **B2** gave the `Field` site its own slot (gap G6), so it is the first place a
+> field-only divergence *could* have shown up. There is none: one reader, one member-symbol loop, and
+> `IPropertySymbol` / `IFieldSymbol` reach it on the same terms.
+>
+> **The boundary held, measured rather than assumed.** The whole 854-cell matrix was classified before and
+> after: **exactly 20 rows differ, all at `CoLocatedHost`, 10 `Property` + 10 `Field`.** Every `Registry`
+> cell and every cell at the five mapper endpoints is byte-identical. Populations: `Honoured` 148 → 150,
+> `Refused` 175 → 193, `Silent` 248 → 228; `NoSuchSite` 137, `NotCompilable` 107, `Unasked` 25,
+> `UnhonouredButLoud` 14 all unchanged. That boundary is the reason the fix is gated on
+> `separateEmit && the pair's target IS the annotated class`: `[GenerateMap]` on a `[DwarfMapper]` class
+> (mode 1) and the five mapper endpoints never reach the reader at all, because there the DTO pair is two
+> ordinary types the consumer may not own.
+>
+> **`DWARF088` re-verified, not assumed.** A2's reviewer established that the paths did not collide because
+> `ExtractGenerateMapHost` returns null for `[DwarfMapper]` classes; this change alters that path, so both
+> directions were re-measured. `[MapIgnore]` at the **class** site of a co-located host still reports
+> `DWARF088` alone, and the member sites report `DWARF089` alone — no double-report either way. The two
+> checks cannot collide by construction: `ReportMemberFormDirectives` is called on the class symbol and on
+> mapping-method symbols, never on a member symbol, and the new check reads member symbols only.
+>
+> **Known cosmetic wart, pre-existing and left alone:** `DWARF088`'s message calls a co-located host "this
+> mapper class" when the bare `[MapIgnore]` is written on one. It came in with A2 and is not made worse here;
+> fixing it silently inside this task would have moved a cell nobody was measuring.
 
 *Property and Field sites → CoLocatedHost. Every `[MapProperty]` case (7) and every `[MapIgnore]` case (3), on
 both sites.*

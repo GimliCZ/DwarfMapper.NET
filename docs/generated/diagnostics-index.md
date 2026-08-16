@@ -92,5 +92,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF086` | Error | Manifest attribute is emitted by the generator |
 | `DWARF087` | Error | Duplicate [FlattenGraph] destination collection |
 | `DWARF088` | Warning | Member-placement directive written on a mapper |
+| `DWARF089` | Warning | Directive on a co-located host member cannot be applied |
 
-84 diagnostics.
+85 diagnostics.

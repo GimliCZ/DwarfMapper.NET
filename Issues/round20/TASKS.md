@@ -28,14 +28,14 @@ Nothing pushed. Surface matrix green at 865/865; whole solution builds 0 warning
 
 | | |
 |---|---|
-| **In flight** | **A2 review** — implementation done, under task review. |
-| **Next** | A4 → A7 (they share the `MapProperty`/`MapIgnore` extractor region — ordering ruled in the ledger), then A5, A6, A8, A9, then **A10 last among the refusal tasks**, then A11. |
+| **In flight** | **A4 review** — implementation done, under task review. A2 review outstanding. |
+| **Next** | **A7** (it shares the `MapProperty`/`MapIgnore` extractor region with A4, which ran first — ordering ruled in the ledger), then A5, A6, A8, A9, then **A10 last among the refusal tasks**, then A11. |
 | **Blocked on a human** | **D-e only.** ~80 diagnostics predate the CHANGELOG and have never been announced; `Scan9` guards only *new* ids. Harmless until the first tag, then not. |
 | **Round 19** | Complete — 10 tasks + 5a/5b/5c, final whole-branch review returned *merge after must-fixes*, and those must-fixes were **A0**. Merge itself is **F1** below and needs your say-so. |
 
 **Live counts, read from the code rather than from a report** (I had been repeating 23 / 162 from Task 5c's
 report; the source says otherwise — see the ledger's controller-error entry):
-**19 divergence findings · 113 declared cells · 302 unjudged-but-counted cells across four ratchets.**
+**18 divergence findings · 93 declared cells · 302 unjudged-but-counted cells across four ratchets.**
 
 ### Why A10 runs late — the one ordering fact worth knowing
 
@@ -52,7 +52,8 @@ commit.** Predicted movement has proven unreliable.
 ## A. Generator defects — the round-20 plan
 
 Fixing any of these turns the build **red** until its `DeclaredDivergences` entry is deleted and the three
-ceilings (findings 23 / declared cells 162 / structural 12) are lowered to their newly measured values.
+ceilings (findings / declared cells / structural — **now 18 / 93 / 12**) are lowered to their newly measured
+values.
 
 | # | Status | Task | Closes |
 |---|---|---|---|
@@ -60,7 +61,7 @@ ceilings (findings 23 / declared cells 162 / structural 12) are lowered to their
 | A1 | `DONE` | Duplicate `[FlattenGraph]` destination emitted uncompilable code → `DWARF087` | N4 |
 | A2 | `WIP` | The missing arity checks — under review. `DWARFR04` reused for D4 (**no new id**: the brief was wrong that its descriptor was dead; it checks *stacked-attribute* arity, a different thing). `DWARF088` added for D5+D21, one check, two call sites. | D4, D5, D21 |
 | A3 | `DONE` | **Closed by A2, unplanned.** D3's cells are `ctor(1)` + a property initializer — named arguments ride on the one-argument constructor — so A2's check fires on them. The narrower alternative was rejected: it would leave `[MapProperty("Id")]` refused and `[MapProperty("Id", Use=…)]` silent. | D3 |
-| A4 | `TODO` | Co-located host reads no member-level directives | D20 |
+| A4 | `DONE` | Co-located host reads no member-level directives. Fixed: `MapperExtractor` reads them off the host's own members through the one `MemberDirectives` parser the registry already used; the method forms written there are refused as the new **`DWARF089`**. 10 cells Honoured, 10 Refused. Ceilings 19/113 → **18/93**. | D20 |
 | A5 | `TODO` | `MapToGenerator` ignores assembly-level config — **D19 is a trust boundary** | D17, D18, D19 |
 | A6 | `TODO` | `[MapNullSkip]` class and method forms are exact inverses — one is wrong | D6, D7 |
 | A7 | `TODO` | Element-wise endpoints do not inherit method-level directives | D1, D2, D16 |

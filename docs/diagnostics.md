@@ -1215,6 +1215,46 @@ binding. A caller named a conversion method and got auto-matching.
 
 ---
 
+## dwarf089
+**Directive on a co-located host member cannot be applied** · Warning
+
+The inverse of [`DWARF088`](#dwarf088). A co-located `[GenerateMap<S, T>]` host **declares its own mapping**,
+so a member of the host *is* part of that declaration and takes the **member** form. The host is the
+destination, so the one argument names the **source** member it is filled from — the mirror image of the
+`[MapTo]` registry, where the annotated type is the source and the argument names the destination.
+`[MapProperty("Full")]` on a `Name` member means *`Name` comes from `Person.Full`*; a bare `[MapIgnore]` means
+*never assign this member*. Anything else acts on nothing:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[GenerateMap<Person, PersonDto>]
+public sealed class PersonDto
+{
+    [MapProperty("Full", "Name")] public string Name { get; set; } = "";  // DWARF089 — method form
+    [MapIgnore("Age")]            public int Age { get; set; }            // DWARF089 — names it twice
+}
+```
+
+Refused rather than dropped, in all four shapes:
+
+| You wrote, on a host member | Why it cannot apply | Write |
+|---|---|---|
+| `[MapProperty("Full", "Name")]` | the method form names a source *and* a destination; here the destination is the annotated member | `[MapProperty("Full")]` |
+| `[MapIgnore("Age")]` | the method/class form names what to exclude; here that is the annotated member | `[MapIgnore]`, or `[MapIgnore("Age")]` on the **host class** |
+| two directives, one declared pair | stacked directives bind **positionally**, one per pair in source order | one directive (it applies to every pair), or exactly one per pair |
+| any member directive on a host that is not the destination of a pair it declares | its members are part of no mapping | move it to the destination type, or use `[MapProperty<TSource, TTarget>]` / `[MapIgnore<TTarget>]` on the class |
+
+The named arguments ride on that same one-argument constructor, so `Use`, `When`, `NullSubstitute` and
+`StringFormat` are carried with the binding — and were discarded with it before this check existed.
+
+> **Why a Warning.** A blocking error suppresses the whole host's emission, so the generated `<Host>Mapper`,
+> its convenience extension and its DI registration all vanish and every call site meets `CS1061` instead of
+> the refusal — the same reasoning as [`DWARF088`](#dwarf088). The offending directive is dropped and the rest
+> of the host's mapping is emitted as though it had not been written. Escalate with
+> `dotnet_diagnostic.DWARF089.severity = error` where the stricter reading is wanted.
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather

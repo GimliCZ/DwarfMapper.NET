@@ -44,8 +44,6 @@ public sealed class MapToGenerator : IIncrementalGenerator
     private const bool RegistryAllowNonPublic = false;
 
     private const string MapToAttr = "DwarfMapper.MapToAttribute";
-    private const string MapPropAttr = "DwarfMapper.MapPropertyAttribute";
-    private const string MapIgnoreAttr = "DwarfMapper.MapIgnoreAttribute";
 
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -88,10 +86,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
         var targetCount = targets.Count;
 
         // Per-member directives in source order; each aligns positionally to a [MapTo] target.
-        var members = new List<(ISymbol Sym, ITypeSymbol Type, List<(bool Ignore, string? Name)> Directives)>();
+        var members = new List<(ISymbol Sym, ITypeSymbol Type, List<MemberDirective> Directives)>();
         foreach (var (srcSym, _, srcType) in MemberFacts.Readable(source, RegistryCompilation, RegistryAllowNonPublic))
         {
-            var directives = ParseDirectives(srcSym);
+            var directives = MemberDirectives.Read(srcSym);
 
             // TWO arities can be wrong here and only one of them was checked. The second — how many values
             // ONE [MapProperty] carries — reached this loop as a directive with no name at all, because
@@ -105,17 +103,17 @@ public sealed class MapToGenerator : IIncrementalGenerator
             // targets", which is precisely this statement made about one attribute's values rather than
             // about how many attributes were stacked. Checked BEFORE the stacked-count rule so a member that
             // gets both wrong reports the arity that is actually the mistake, and reported once either way.
-            if (HasNonMemberFormMapProperty(srcSym))
+            if (HasNonMemberFormMapProperty(directives))
             {
                 diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArity, location, $"'{srcSym.Name}'"));
                 hasError = true;
-                directives = new List<(bool, string?)>();
+                directives = new List<MemberDirective>();
             }
             else if (directives.Count > 1 && targetCount > 0 && directives.Count != targetCount)
             {
                 diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArity, location, $"'{srcSym.Name}'"));
                 hasError = true;
-                directives = new List<(bool, string?)>();
+                directives = new List<MemberDirective>();
             }
 
             members.Add((srcSym, srcType, directives));
@@ -278,49 +276,16 @@ public sealed class MapToGenerator : IIncrementalGenerator
     ///         refused here by default instead of being silently accepted and discarded, which is the failure
     ///         this check exists to end.
     ///     </para>
+    ///     <para>
+    ///         Asked of the PARSED directives rather than of the attribute list a second time, so the arity
+    ///         this check judges is the one <see cref="MemberDirectives.Read" /> actually recorded. The
+    ///         <c>[MapIgnore]</c> half is deliberately not judged here: the registry has always accepted
+    ///         <c>[MapIgnore("x")]</c> as a plain ignore of the annotated member, discarding the argument, and
+    ///         changing that is a separate decision from this one.
+    ///     </para>
     /// </summary>
-    private static bool HasNonMemberFormMapProperty(ISymbol member)
-    {
-        foreach (var a in member.GetAttributes())
-            if (a.AttributeClass?.ToDisplayString() == MapPropAttr && a.ConstructorArguments.Length != 1)
-                return true;
-
-        return false;
-    }
-
-    /// <summary>A member's [MapProperty]/[MapIgnore] directives in source order; i-th → i-th [MapTo] target.</summary>
-    private static List<(bool Ignore, string? Name)> ParseDirectives(ISymbol member)
-    {
-        var ordered = new List<(string File, int Pos, bool Ignore, string? Name)>();
-        foreach (var a in member.GetAttributes())
-        {
-            var cls = a.AttributeClass?.ToDisplayString();
-            if (cls != MapPropAttr && cls != MapIgnoreAttr) continue;
-            var reference = a.ApplicationSyntaxReference;
-            // Span.Start alone orders attributes only within ONE file. A partial property (C# 13) can carry
-            // directives in two files, where the spans are independent offsets and the ordering — which decides
-            // WHICH [MapTo] target each directive binds to — would depend on GetAttributes()' cross-file order.
-            // Including the file path makes it total and stable across builds.
-            var file = reference?.SyntaxTree.FilePath ?? string.Empty;
-            var pos = reference?.Span.Start ?? 0;
-            if (cls == MapIgnoreAttr)
-            {
-                ordered.Add((file, pos, true, null));
-            }
-            else
-            {
-                var name = a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null;
-                ordered.Add((file, pos, false, name));
-            }
-        }
-
-        ordered.Sort((x, y) =>
-        {
-            var byFile = string.CompareOrdinal(x.File, y.File);
-            return byFile != 0 ? byFile : x.Pos.CompareTo(y.Pos);
-        });
-        return ordered.Select(x => (x.Ignore, x.Name)).ToList();
-    }
+    private static bool HasNonMemberFormMapProperty(List<MemberDirective> directives) =>
+        directives.Exists(d => !d.Ignore && d.ArgumentCount != 1);
 
     private static string Fq(ITypeSymbol t)
     {

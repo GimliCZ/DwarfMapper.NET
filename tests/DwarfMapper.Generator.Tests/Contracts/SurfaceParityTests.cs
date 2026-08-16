@@ -378,8 +378,12 @@ public sealed class SurfaceParityTests
     ///         <c>D5</c> and <c>D21</c> were one shape — the wrong OVERLOAD of a directive, accepted in
     ///         silence — and one arity check on each side of the library retired all four.
     ///     </para>
+    ///     <para>
+    ///         19 → 18 when <c>D20</c> was closed by the co-located host learning to read the member forms
+    ///         its own <c>[DwarfSurfaceSite]</c> had always claimed it did.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 19;
+    private const int DivergenceFindingCeiling = 18;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -391,8 +395,17 @@ public sealed class SurfaceParityTests
     ///         ordering defect and would have moved these cells into
     ///         <see cref="NotCompilableCellCeiling" />'s population rather than out of this one.
     ///     </para>
+    ///     <para>
+    ///         113 → 93 when <c>D20</c> was closed: the co-located host now reads the member-placement
+    ///         <c>[MapProperty]</c> / <c>[MapIgnore]</c> forms off its own members. Unlike the four above,
+    ///         this one did not resolve to a single verdict — ten of the twenty are <c>Honoured</c> or
+    ///         honoured-with-a-warning (the directive acts) and ten are <c>Refused</c> as <c>DWARF089</c>
+    ///         (the method form written on a member). Both leave the population; neither enters
+    ///         <see cref="NotCompilableCellCeiling" />'s, because <c>DWARF089</c> is a Warning and the host
+    ///         declares no partial method there would be a <c>CS8795</c> for.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 113;
+    private const int DivergentCellCeiling = 93;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

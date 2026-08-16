@@ -220,6 +220,14 @@ internal static partial class MapperExtractor
                 genPairs.Add((ac.TypeArguments[0], gt));
         }
 
+        // Member-level directives written on the CO-LOCATED HOST itself, read before the wrapper expansion
+        // appends synthetic pairs: a host member says something about the pairs the host DECLARED, and a
+        // wrapper instantiation W<S> -> W<T> has neither the host's members nor a position a stacked
+        // directive could bind to.
+        var hostDirectives = separateEmit
+            ? ReadCoLocatedHostDirectives(classSymbol, genPairs, diagnostics)
+            : EmptyHostDirectives;
+
         ExpandWrapperMaps(classSymbol, genComp, genPairs, diagnostics, genLoc);
 
         // A [GenerateMap<S,T>] emits a `public T Map(S)` overload that is, to every caller, indistinguishable
@@ -1146,12 +1154,30 @@ internal static partial class MapperExtractor
         // e.g. AutoMapper's CreateMap<A,B>() is a near-mechanical 1:1 replace with [GenerateMap<A,B>].
         // genPairs / genComp / genLoc are computed near the top of Extract, because element and member
         // resolution has to be able to SEE these pairs long before this loop emits them.
-        foreach (var (genSrc, genTgt) in genPairs)
+        // Indexed rather than a foreach because a co-located host's MEMBER directives bind to the pairs
+        // POSITIONALLY, exactly as a [MapTo] source member's do to its targets — so which pair this iteration
+        // is emitting is part of the config, not just a loop variable.
+        for (var genIndex = 0; genIndex < genPairs.Count; genIndex++)
         {
+            var (genSrc, genTgt) = genPairs[genIndex];
+
             // Pair-scoped [MapProperty<S,T>] / [MapIgnore<T>] config for this declared pair.
             var (genExplicit, genExtras) = MatchPairProps(pairProps, genSrc, genTgt);
             var genIgnores = new HashSet<string>(classIgnores);
             foreach (var im in MatchPairIgnores(pairIgnores, genTgt)) genIgnores.Add(im);
+
+            // Member-level [MapProperty("SourceMember")] / [MapIgnore] written on the co-located host itself.
+            // Layered ON TOP of the pair-scoped config rather than instead of it: the two are different
+            // placements of the same intent and a host may reasonably carry both. Empty for every other
+            // shape, so nothing below this line behaves differently for a [DwarfMapper] class.
+            Dictionary<string, string>? genFormats = null;
+            if (hostDirectives.TryGetValue(genIndex, out var hostConfig))
+            {
+                genExplicit.AddRange(hostConfig.Explicit);
+                genExtras.AddRange(hostConfig.Extras);
+                foreach (var hm in hostConfig.Ignores) genIgnores.Add(hm);
+                genFormats = hostConfig.StringFormats;
+            }
 
             // Top-level collection/dictionary [GenerateMap<Coll, Coll>]: route through the collection/dict
             // converter (as a declared partial method does, see "Fix 1" above) instead of object-mapping the
@@ -1298,6 +1324,9 @@ internal static partial class MapperExtractor
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 MatchPairValues(pairValues, genTgt), valueProviders,
                 mapPropertyExtras: genExtras,
+                // StringFormat rides on the SAME [MapProperty] the rename does, so a path that reads the
+                // directive and does not thread this drops the format in silence — D20 in miniature.
+                stringFormats: genFormats,
                 skipNullSourceMembers: ResolvePairNullSkip(pairNullSkips, genSrc, genTgt, skipNullSrc),
                 allowNonPublic: allowNonPublic,
                 explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,

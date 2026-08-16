@@ -15,6 +15,16 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A co-located `[GenerateMap<S, T>]` host read no member-level `[MapProperty]` / `[MapIgnore]` at all.**
+  At that endpoint the mapping is declared **by** the annotated type, so a member of the host is part of the
+  declaration and carries the member form — `[MapProperty("Full")]` on a `Name` member means *`Name` comes
+  from the source's `Full`*, and a bare `[MapIgnore]` means *never assign this member*. Neither was read:
+  `[GenerateMap]` is extracted by `MapperExtractor`, which took these attributes off the class or the method
+  symbol only, and the `[MapTo]` registry was the sole reader of the member forms. Every case compiled,
+  changed nothing, and said nothing — including the `Use` converter, the `When` predicate, the
+  `NullSubstitute` and the `StringFormat` that ride on the same one-argument constructor. Both placements now
+  go through **one** parser, so they cannot drift apart. Found by the surface matrix, which measured all
+  twenty cells — every case, on both the property and the field site — as silent (`D20`). (round 20)
 - **The wrong *overload* of `[MapProperty]` or `[MapIgnore]` was accepted and discarded in silence.** Both
   attributes cover two placements behind one name, each with its own constructor: the member form
   (`[MapProperty("Dest")]`, bare `[MapIgnore]`) belongs on a member of a type that declares its own mapping,
@@ -68,6 +78,17 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF089` — a directive on a co-located `[GenerateMap]` host member that cannot be applied.** The exact
+  inverse of `DWARF088`: that one refuses the *member* form where there is no member, this one refuses the
+  *method* form on a member — `[MapProperty(source, target)]` and `[MapIgnore(destination)]` both name a
+  destination the placement has already named. It also covers two shapes the placement alone cannot decide:
+  stacked directives whose count does not match the `[GenerateMap]` pairs the host is the destination of
+  (they bind positionally, one per pair, as they do to `[MapTo]` targets), and a member directive on a host
+  that is the destination of no pair it declares. A **Warning**, for the reason `DWARF088` is one: a blocking
+  error would suppress the host's emission, so the generated `<Host>Mapper`, its convenience extension and
+  its DI registration would all vanish and every call site would meet `CS1061` instead of the refusal. The
+  offending directive is dropped and the rest of the host's mapping is emitted; escalate with
+  `dotnet_diagnostic.DWARF089.severity = error` where the stricter reading is wanted. (round 20, D20)
 - **`DWARF088` — the member-placement overload of `[MapProperty]` / `[MapIgnore]` written on a mapper.** A
   **Warning**, and the remedy is in the message: supply the argument the method form takes
   (`[MapProperty("Name", "FullName")]`, `[MapIgnore("Extra")]`). Refusal is right whichever way the directive
