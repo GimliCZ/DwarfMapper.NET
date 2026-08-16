@@ -13,7 +13,35 @@ behind these items — the detail is worth keeping, it just should not be where 
 
 **Where the detail lives:** `CF §n` = `Issues/round20/CARRY-FORWARD.md` section n · `Dn` = an entry in
 `tests/DwarfMapper.Generator.Tests/Contracts/DeclaredDivergences.cs` · `R21` =
-`Issues/round21/RESEARCH.md`.
+`Issues/round21/RESEARCH.md` · ledger = `.superpowers/sdd/2026-08-16-round20-generator-defects/progress.md`
+(git-ignored; rulings and per-task history live there).
+
+---
+
+## NOW — state of the work
+
+Everything below this line is a backlog. This section is what is *actually happening*, so it can be read
+without asking.
+
+**Branch:** `feat/surface-coverage-architecture`, worktree `C:/Users/Jouda/RiderProjects/DwarfMapper-surface`.
+Nothing pushed. Surface matrix green at 865/865; whole solution builds 0 warnings / 0 errors.
+
+| | |
+|---|---|
+| **In flight** | **A2** — the missing arity checks (D4/D5/D21). Dispatched, running. |
+| **Next** | A3 → A4 → A7 in that order (they share the `MapProperty`/`MapIgnore` extractor region — ordering ruled in the ledger), then A5, A6, A8, A9, then **A10 last among the refusal tasks**, then A11. |
+| **Blocked on a human** | **D-e only.** ~80 diagnostics predate the CHANGELOG and have never been announced; `Scan9` guards only *new* ids. Harmless until the first tag, then not. |
+| **Round 19** | Complete — 10 tasks + 5a/5b/5c, final whole-branch review returned *merge after must-fixes*, and those must-fixes were **A0**. Merge itself is **F1** below and needs your say-so. |
+
+### Why A10 runs late — the one ordering fact worth knowing
+
+Every DWARF **Error** suppresses emission, so a newly-refused cell reports `CS8795` and stays
+`NotCompilable` rather than becoming `Refused`. Task A1 proved this empirically: its fix moved a cell from
+one `NotCompilable` sub-population to another and **no ceiling moved at all.** A10 reclassifies that whole
+population once, so running it before the refusal tasks means measuring the same ceilings twice.
+
+Standing ruling from the same finding: **no task may lower a ceiling it did not re-measure in the same
+commit.** Predicted movement has proven unreliable.
 
 ---
 
@@ -89,6 +117,17 @@ Full reasoning is in the ledger under `Ruling:`.
 | E2 | `TODO` | **Time the torture collection × 49** — I wrongly recorded this hypothesis as refuted on kill-count, which is not time-cost. Genuinely unmeasured. See R21-3. |
 | E3 | `TODO` | Check from the existing JSON whether any mutant was killed **only** by an accidental toucher — de-risks E1 with no run at all. |
 | E4 | `TODO` | Isolate the culture-swapping tests into their own collection so the rest of `IntegrationTests` can parallelise. **Bigger than it looks:** a second shared-state hazard (the registry static) the existing comment never mentions. See R21-3. |
+
+## F. Branch and process — the work that is not a code fix
+
+Previously invisible: it lived only in the SDD ledger and in my head. It belongs here like everything else.
+
+| # | Status | Task |
+|---|---|---|
+| F1 | `TODO` | **Merge `feat/surface-coverage-architecture`.** Round 19's final whole-branch review returned *merge after must-fixes*; those were A0 and are done. **Needs your say-so — a merge is a side effect outside this worktree, so I do not do it on a ruling.** 30 commits, `+6.4k/−0.5k`, of which `src/` is only +729. |
+| F2 | `TODO` | Decide the fate of the worktree after merge. It is a real git worktree at a sibling path, plus a git-ignored `.superpowers/sdd/` workspace holding the ledger, briefs and reports. The ledger is the only record of ~15 rulings; **capture it before deleting anything.** |
+| F3 | `TODO` | Round-19 plan and spec live in `docs/superpowers/`; round-20's plan is on the branch. If the branch merges, three plan documents land in `docs/` — decide whether they stay as history or move under `Issues/`. |
+| F4 | `DONE` | Pre-flight conflict scan for the round-20 plan (table + four ordering rulings) — recorded in the ledger. Was skipped before A0 and run late. |
 
 ---
 

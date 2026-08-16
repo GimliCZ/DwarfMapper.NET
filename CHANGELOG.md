@@ -15,6 +15,21 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **The wrong *overload* of `[MapProperty]` or `[MapIgnore]` was accepted and discarded in silence.** Both
+  attributes cover two placements behind one name, each with its own constructor: the member form
+  (`[MapProperty("Dest")]`, bare `[MapIgnore]`) belongs on a member of a type that declares its own mapping,
+  and the method form (`[MapProperty(source, target)]`, `[MapIgnore(destination)]`) on a mapper class or a
+  mapping method. Written at the other placement, each was skipped without a word — `ReadExplicitMaps` accepts
+  only the two-argument application and `ReadIgnores` only the one-argument one. Three consequences a caller
+  could not see: a bare `[MapIgnore]` on a method or class excluded **nothing** while its author believed a
+  member was excluded; `[MapProperty("Name")]` on a method bound `Name` to itself, which is what auto-matching
+  already does; and — sharpest — the named arguments ride on that same one-argument constructor, so
+  `[MapProperty("Name", Use = nameof(F))]` dropped the **converter** along with the binding, and likewise
+  `When`, `NullSubstitute` and `StringFormat`. All are refused now as `DWARF088` (see Added). The mirror
+  misuse at the `[MapTo]` registry — the two-name method form on a source member — now reports `DWARFR04`,
+  which existed for a *different* arity (how many `[MapProperty]` attributes were stacked, not how many values
+  one of them carries) and so never fired for this. Found by the surface matrix, which measured all four as
+  silent divergences (`D3`, `D4`, `D5`, `D21`, forty-nine cells). (round 20)
 - **Two `[FlattenGraph]` directives filling one collection emitted code that does not compile.** Each
   directive contributes its own initializer for the destination collection it names, and nothing checked that
   two of them had not named the same one — so the generator accepted the shape and emitted
@@ -53,6 +68,16 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF088` — the member-placement overload of `[MapProperty]` / `[MapIgnore]` written on a mapper.** A
+  **Warning**, and the remedy is in the message: supply the argument the method form takes
+  (`[MapProperty("Name", "FullName")]`, `[MapIgnore("Extra")]`). Refusal is right whichever way the directive
+  is read — honouring `[MapProperty("Name")]` at a method would bind `Name` to itself, a no-op nobody writes
+  on purpose, and discarding it evaporates a binding the caller stated explicitly. A Warning rather than an
+  Error deliberately: a blocking DwarfMapper error suppresses the whole class's emission, so the refusal would
+  reach the consumer as a wall of `CS8795` from the unimplemented partial methods; escalate with
+  `dotnet_diagnostic.DWARF088.severity = error` where the stricter reading is wanted. Its registry mirror
+  `DWARFR04` stays an Error, having no partial declaration to strand. See the entry under Fixed for what it
+  was replacing. (round 20)
 - **`DWARF087` — two `[FlattenGraph]` directives may not fill one destination collection.** An **Error**, and
   the remedy is in the message: keep one directive per collection, or name a different collection member to
   flatten a second graph. It replaces a `CS1912` against generated source with a diagnostic against the

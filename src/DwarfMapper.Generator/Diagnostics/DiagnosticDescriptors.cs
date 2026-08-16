@@ -947,4 +947,57 @@ public static class DiagnosticDescriptors
         + "name a different collection member on the destination type.",
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf087");
+
+    /// <summary>
+    ///     The MEMBER-placement overload of <c>[MapProperty]</c> or <c>[MapIgnore]</c>, written on a mapper
+    ///     class or a mapping method where there is no annotated member for it to be about.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Both attributes carry two placements behind one name, and each placement has its own
+    ///         constructor. <c>[MapProperty("X")]</c> names the destination THE ANNOTATED MEMBER supplies and
+    ///         a bare <c>[MapIgnore]</c> says "never read THE ANNOTATED MEMBER" — statements that only mean
+    ///         something where the annotated type is itself the declaration of the mapping (the <c>[MapTo]</c>
+    ///         registry, the co-located host). On a mapper class or a mapping method there is no annotated
+    ///         member: the mapping is declared by the method, and the DTO pair is two ordinary types.
+    ///     </para>
+    ///     <para>
+    ///         Until this id existed both were discarded without a word — <c>ReadExplicitMaps</c> accepts only
+    ///         the two-argument application and <c>ReadIgnores</c> only the one-argument one, and each simply
+    ///         skipped anything else. The <c>[MapProperty]</c> half is the worse of the two, because the named
+    ///         arguments ride on that same one-argument constructor: <c>[MapProperty("X", Use = "F")]</c> is
+    ///         <c>ctor(1)</c> plus a property initializer, so the converter, the <c>When</c> predicate, the
+    ///         null substitute and the format string went into the same bin as the binding. The caller named a
+    ///         conversion method and got auto-matching.
+    ///     </para>
+    ///     <para>
+    ///         Refused rather than honoured, and the reasoning survives either reading. Honouring
+    ///         <c>[MapProperty("X")]</c> at a method would bind <c>X</c> to itself — the identity binding
+    ///         auto-matching already produces, so it is a no-op by construction and the caller cannot have
+    ///         meant it. Discarding it evaporates a binding they wrote explicitly. Both are wrong; only saying
+    ///         so lets them fix it. A bare <c>[MapIgnore]</c> has no honourable reading at all: it names
+    ///         nothing.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, where its registry mirror <c>DWARFR04</c> is an Error, and the asymmetry is
+    ///         measured rather than stylistic: every blocking DwarfMapper error suppresses the whole class's
+    ///         emission, so the partial mapping method loses its implementing part and the consumer meets
+    ///         <c>CS8795</c> — this refusal buried under the cascade the G4/R4 ordering defect produces. The
+    ///         registry emits free-standing extension methods and has no partial declaration to strand, so it
+    ///         can refuse outright. Escalate with
+    ///         <c>dotnet_diagnostic.DWARF088.severity = error</c> where the stricter reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because the two attributes need different remedies: one says "supply both names", the other
+    ///         "name the destination to exclude". One descriptor for both regardless — they are one defect
+    ///         wearing two attribute names, and two ids would have said the same thing twice.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MemberFormDirectiveOnMapper = new(
+        "DWARF088",
+        "Member-placement directive written on a mapper",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf088");
 }

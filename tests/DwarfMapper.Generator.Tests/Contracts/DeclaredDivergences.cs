@@ -29,9 +29,11 @@ internal sealed record DivergentCell(
 ///     One FINDING: a defect in the generator, the cells that prove it, and why a caller is entitled to
 ///     expect otherwise.
 ///     <para>
-///         One entry per finding rather than per cell, deliberately. 162 per-cell rows would be an
-///         inventory of a red build; twenty-three findings are twenty-three things a maintainer can pick up
-///         and fix, each of which retires its whole group at once.
+///         One entry per finding rather than per cell, deliberately. 113 per-cell rows would be an
+///         inventory of a red build; nineteen findings are nineteen things a maintainer can pick up
+///         and fix, each of which retires its whole group at once. That is not a claim about the grouping:
+///         one arity check closed four of the original twenty-three in a single change, forty-nine cells at
+///         once.
 ///     </para>
 /// </summary>
 /// <param name="Why">
@@ -84,7 +86,7 @@ internal static class DeclaredDivergences
     private const string Findings = "Issues/round20/SURFACE-MATRIX-FINDINGS.md";
 
     /// <summary>
-    ///     The findings, keyed by the id their write-up carries. 23 findings over 162 cells, every one
+    ///     The findings, keyed by the id their write-up carries. 19 findings over 113 cells, every one
     ///     measured by <c>SurfaceParityTests</c> rather than reasoned about.
     ///     <para>
     ///         The maintainer's ruling that produced this list: record the divergences now, fix them
@@ -93,7 +95,8 @@ internal static class DeclaredDivergences
     ///         in which nobody reads it.
     ///     </para>
     ///     <para>
-    ///         The dominant shape, seventeen of the twenty-three: the ELEMENT-WISE endpoints. <c>SpanMap</c>
+    ///         The dominant shape, thirteen of the nineteen (every finding with a cell at <c>SpanMap</c> or
+    ///         <c>AsyncStream</c>): the ELEMENT-WISE endpoints. <c>SpanMap</c>
     ///         and <c>AsyncStream</c> map the element pair through an auto-synthesized mapper, and a directive
     ///         attached to the mapping method does not reach it. That is the same root cause as the DWARF077
     ///         explicit-only gap, which was closed for <c>AutoMatchMembers</c> alone; the matrix now shows it
@@ -174,56 +177,11 @@ internal static class DeclaredDivergences
                     SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)
             ]),
 
-        ["D3"] = new(
-            "The sharpest finding on the surface. [MapProperty(\"Id\", Use = \"probe\")] on a mapping method "
-            + "names a converter that does not exist, and compiles to byte-identical output with no "
-            + "diagnostic at every one of the five mapper endpoints — as do When, NullSubstitute and "
-            + "StringFormat. A caller has named a converter, a predicate, a null substitute and a format "
-            + "string, and the whole named-argument payload is discarded in silence. That it is a divergence "
-            + "and not a structural limit is settled by the generator's own code: the pair-scoped "
-            + "MapProperty<S,T> form raises DWARF014 / DWARF049 / DWARF050 for these exact named arguments, "
-            + "so the refusals exist and this path never reaches them.",
-            Findings + "#D3",
-            [
-                new DivergentCell("MapProperty", 0, "Use=\"probe\"", AttributeTargets.Method, MapperEndpoints),
-                new DivergentCell("MapProperty", 0, "When=\"probe\"", AttributeTargets.Method, MapperEndpoints),
-                new DivergentCell("MapProperty", 0, "NullSubstitute=\"probe\"", AttributeTargets.Method,
-                    MapperEndpoints),
-                new DivergentCell("MapProperty", 0, "StringFormat=\"probe\"", AttributeTargets.Method,
-                    MapperEndpoints)
-            ]),
-
-        ["D4"] = new(
-            "The two-argument [MapProperty(\"Id\", \"Name\")] is the METHOD form; on a source member at the "
-            + "[MapTo] registry the form is one argument, naming the destination the annotated member "
-            + "supplies. Writing the method form there is precisely the misuse "
-            + "RegistryDiagnostics.MapPropertyArity was written for — the descriptor exists, and measured, it "
-            + "does not fire: the cell is silent from both the Property and the Field site. A caller who used "
-            + "the wrong overload gets a mapping that binds nothing and a build that says so nowhere.",
-            Findings + "#D4",
-            [
-                new DivergentCell("MapProperty", 0, "ctor(2)", AttributeTargets.Property,
-                    SurfaceEndpoints.Registry),
-                new DivergentCell("MapProperty", 0, "ctor(2)", AttributeTargets.Field, SurfaceEndpoints.Registry)
-            ]),
-
-        ["D5"] = new(
-            "The no-target [MapIgnore] is the REGISTRY form: the annotated member is the thing ignored. "
-            + "Written on a mapping method or a mapper class it names nothing at all, and the class model "
-            + "performs no arity check — so a caller who believes they have excluded a member has excluded "
-            + "nothing and is told nothing. The mirror misuse at the registry has a descriptor (see D4), "
-            + "which is what makes the absence here a gap rather than a shape. Measured silent at all five "
-            + "mapper endpoints from the method site, and at those five plus CoLocatedHost from the class "
-            + "site, in both the single and the doubled form.",
-            Findings + "#D5",
-            [
-                new DivergentCell("MapIgnore", 0, "ctor(0)", AttributeTargets.Method, MapperEndpoints),
-                new DivergentCell("MapIgnore", 0, "×2", AttributeTargets.Method, MapperEndpoints),
-                new DivergentCell("MapIgnore", 0, "ctor(0)", AttributeTargets.Class,
-                    MapperEndpoints | SurfaceEndpoints.CoLocatedHost),
-                new DivergentCell("MapIgnore", 0, "×2", AttributeTargets.Class,
-                    MapperEndpoints | SurfaceEndpoints.CoLocatedHost)
-            ]),
+        // D3, D4, D5 and D21 lived here and are FIXED, not deleted for convenience: all four were one shape —
+        // a caller reaching for the wrong overload of a directive and the build saying nothing. D4's mirror at
+        // the registry now reports DWARFR04 (the descriptor existed and checked a different arity); the other
+        // three report DWARF088. Forty-nine cells went Silent → Refused, which is why the two ceilings below
+        // dropped by exactly that many. See Issues/round20/SURFACE-MATRIX-FINDINGS.md for the resolutions.
 
         ["D6"] = new(
             "[MapNullSkip(true)] on a mapping method is honoured at CreateMap and UpdateInto and silent at "
@@ -456,28 +414,10 @@ internal static class DeclaredDivergences
                 new DivergentCell("MapIgnore", 0, "ctor(1)", AttributeTargets.Field, CoLocated),
                 new DivergentCell("MapIgnore", 0, "×2", AttributeTargets.Property, CoLocated),
                 new DivergentCell("MapIgnore", 0, "×2", AttributeTargets.Field, CoLocated)
-            ]),
-
-        ["D21"] = new(
-            "The one-argument [MapProperty(\"Id\")] is the MEMBER-placement form, as its own summary states; "
-            + "the documented method form takes two arguments. Written on a mapping method it resolves to "
-            + "Source == Target, which is the identity binding auto-matching already produces — so the caller "
-            + "used the wrong overload and the build accepts it at all five mapper endpoints without a word. "
-            + "The reason this is a defect whichever way the generator reads it: if the directive is "
-            + "discarded, a caller's explicit binding evaporated; if it is honoured, it was honoured as a "
-            + "no-op the caller cannot have wanted. Refusal is the right answer either way, and the class "
-            + "model has no arity check to give it — the same missing check as D5, and the mirror of the one "
-            + "the registry has and does not fire (D4). Closure is observable only as a refusal, since "
-            + "honouring it is byte-identical by construction.\n\n"
-            + "Rejected route, so the next person does not retry it: giving this case "
-            + "MapperOptions = \"AutoMatchMembers = false\" would make honouring visible, but it breaches two "
-            + "shrink-only ceilings — the member-site cells at CoLocatedHost go Unasked because that template "
-            + "carries no mapper class, and the Create/Update baselines stop compiling and land in "
-            + "UnhonouredButLoud, which is the verdict-swallowing trap D11 was rescued from.",
-            Findings + "#D21",
-            [
-                new DivergentCell("MapProperty", 0, "ctor(1)", AttributeTargets.Method, MapperEndpoints)
             ])
+
+        // D21 was here; see the note where D3/D4/D5 were. It is the same finding as D5 with the other
+        // attribute, which is why one check retired both.
     };
 
     /// <summary>The five endpoints declared by a partial method on a <c>[DwarfMapper]</c> class.</summary>

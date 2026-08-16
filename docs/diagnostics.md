@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF087`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF088`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -106,7 +106,7 @@ DWARF0xx self-validation scans that the rest of this reference is held to.
 | `DWARFR01` | **Invalid `[MapTo]` target** — the target type isn't a mappable class/struct. |
 | `DWARFR02` | **Destination member is not mapped** — the registry's completeness gate (the `[MapTo]` counterpart of `DWARF001`). Add a source member, a `[MapProperty]` binding, or drop it. Member enumeration now walks the base-type chain exactly as the `[DwarfMapper]` class model does, so this gate also covers **inherited destination members** — a base-class member that was never mapped before now trips `DWARFR02`. Because `DWARFR02` is Error severity, this can turn a project that built yesterday into a build failure today. **Fix:** supply the inherited member (a source member, a `[MapProperty]` binding) or `[MapIgnore]` it. |
 | `DWARFR03` | **Conflicting sources for one destination member** — more than one source claims it; give them distinct positional `[MapProperty]` names. Inherited members now participate too: a member the source class picks up from a base class can conflict with one declared directly, and a derived member renamed onto a name its base also supplies is now a conflict where it previously wasn't. |
-| `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. `[MapProperty]` on a base class is now read for every derived `[MapTo]` source, not just the class that declares it — so a base annotated for a 2-target derived type can emit `DWARFR04` on a 1-target sibling derived type that inherits the same attribute. |
+| `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. Two arities can be wrong and both report this code. **How many attributes are stacked:** `[MapProperty]` on a base class is read for every derived `[MapTo]` source, not just the class that declares it — so a base annotated for a 2-target derived type can emit `DWARFR04` on a 1-target sibling derived type that inherits the same attribute. **How many values one of them carries:** `[MapProperty("A", "X")]` on a source member is the `[DwarfMapper]` class model's *method* form; the member form takes the single destination name this member supplies. It used to bind nothing at all and the member fell back to its own name — silently. Drop the first argument. |
 | `DWARFR05` | **No conversion between mapped members** — the member types are incompatible; use the `[DwarfMapper]` class model for a custom `Use=` converter. |
 | `DWARFR06` | **Recursive nested mapping is not supported by the registry** — the front door threads no reference context; use the `[DwarfMapper]` class model (`ReferenceHandling`/`OnCycle`) for cyclic graphs. |
 | `DWARFR08` | **Two `[MapTo]` targets generate the same method name** — targets whose *simple* names collide (`Foo.Order` and `Bar.Order`) would each emit `ToOrder(this Src)` into one static class (CS0111). Rename a target, or use the `[DwarfMapper]` class model where every method is named explicitly. |
@@ -1168,6 +1168,50 @@ two directives that are not duplicates of each other at all. Both shapes are ref
 > **Refused rather than collapsed**, matching [`DWARF011`](#dwarf011) on `[MapProperty]`. Silently keeping one
 > of the two would hide a copy-paste mistake from the only person able to fix it — and if the intent was the
 > second directive rather than the first, the collapse would quietly pick the wrong one.
+
+---
+
+## dwarf088
+**Member-placement directive written on a mapper** · Warning
+
+`[MapProperty]` and `[MapIgnore]` each cover **two placements** behind one name, and each placement has its
+own constructor. The member form belongs on a member of a type that declares its own mapping — a `[MapTo]`
+source, a `[GenerateMap]` host — where "the annotated member" is a real thing:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[MapProperty("Name")]              // DWARF088 — member form: binds 'Name' to itself
+[MapIgnore]                        // DWARF088 — member form: names nothing to ignore
+public partial Target Map(Source s);
+```
+
+On a mapper class or a mapping method there **is** no annotated member: the mapping is declared by the method
+and the DTO pair is two ordinary types. Both directives were previously discarded without a word.
+
+**Fix — supply the argument the method form takes:**
+
+| You wrote | You meant | Write |
+|---|---|---|
+| `[MapProperty("Name")]` | map a source member to a differently-named destination | `[MapProperty("Name", "FullName")]` |
+| `[MapProperty("Name", Use = nameof(F))]` | convert a member with `F` | `[MapProperty("Name", "Name", Use = nameof(F))]` |
+| `[MapIgnore]` | exclude a destination member from `DWARF001` | `[MapIgnore("Extra")]` |
+
+The `[MapProperty]` half is the sharper of the two, because the named arguments ride on that **same**
+one-argument constructor: `[MapProperty("Name", Use = "F")]` is `ctor(1)` plus a property initializer, so the
+converter, the `When` predicate, the `NullSubstitute` and the `StringFormat` were discarded along with the
+binding. A caller named a conversion method and got auto-matching.
+
+> **Refused whichever way you read it.** Honouring `[MapProperty("Name")]` at a method would bind `Name` to
+> itself — the identity binding auto-matching already produces, so it is a no-op by construction and cannot be
+> what the caller wanted. Discarding it evaporates a binding they wrote explicitly. Only saying so lets them
+> fix it.
+
+> **Why a Warning here and an `Error` for its registry mirror `DWARFR04`.** A blocking DwarfMapper error
+> suppresses the whole class's emission, so the partial mapping method loses its implementing part and the
+> refusal arrives buried under a wall of `CS8795` (see [`DWARF078`](#dwarf078)). A warning states it where you
+> can act on it and still hands you a mapper that builds. The registry emits free-standing extension methods
+> and has no partial declaration to strand, so it refuses outright. Escalate with
+> `dotnet_diagnostic.DWARF088.severity = error` where the stricter reading is wanted.
 
 ---
 

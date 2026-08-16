@@ -93,6 +93,7 @@ DWARF084 | DwarfMapper | Error | [RestatesBase] cannot identify the base pair
 DWARF085 | DwarfMapper | Warning | Restated base configuration has drifted
 DWARF086 | DwarfMapper | Error | Manifest attribute is emitted by the generator
 DWARF087 | DwarfMapper | Error | Duplicate [FlattenGraph] destination collection
+DWARF088 | DwarfMapper | Warning | Member-placement directive written on a mapper
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

@@ -80,6 +80,30 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR04");
     }
 
+    // DWARFR04 again, for the OTHER arity a caller can get wrong: not how many [MapProperty] attributes
+    // were stacked, but how many values ONE of them carries. The member form takes a single name — the
+    // destination this member supplies; the two-name form is the class model's METHOD form. Written here it
+    // used to bind nothing: ParseDirectives reads a name only off a one-argument application, so the
+    // directive became "no name at all" and the member quietly fell back to its own. The fixture is chosen so
+    // that fallback SUCCEEDS (Dto.A is satisfied by Src.A), because a fixture where it fails reports DWARFR02
+    // instead and the silence this pins would be invisible.
+    [Fact]
+    public void MapProperty_method_form_on_a_registry_member_reports_DWARFR04()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))]
+                         public class Src
+                         {
+                             [MapProperty("A", "X")]
+                             public int A { get; set; }
+                         }
+                         public class Dto { public int A { get; set; } }
+                         """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR04");
+    }
+
     // DWARFR05 — mapped members whose types have no built-in conversion (object member -> int).
     [Fact]
     public void No_conversion_reports_DWARFR05()

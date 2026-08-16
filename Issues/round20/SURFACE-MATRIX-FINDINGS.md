@@ -6,11 +6,17 @@
 > since been superseded.** The case-space was enriched (task 5b), three instrument defects and one broken
 > fixture baseline were fixed, and the matrix was re-measured. The current state, and the write-up every entry
 > in `DeclaredDivergences.Reasons` links to, is **[the ratified findings](#ratified)** at the end of this
-> document: **23 findings over 162 cells, plus 12 cells excused as structural — 174 red cells, all accounted
+> document: **19 findings over 113 cells, plus 12 cells excused as structural — 125 red cells, all accounted
 > for, matrix green.** Read the first measurement for how the buckets were arrived at; read the amendment for
 > what is true now. The single most severe item found in the whole exercise is **[N4](#N4)** and it is not a
 > silent divergence at all — **fixed on 2026-08-16 as `DWARF087`**; see the resolution note in that section,
 > including why the `NotCompilable` count did not move.
+>
+> **2026-08-16, second fix — the ratified count fell from 23 / 162 to 19 / 113.** `D3`, `D4`, `D5` and `D21`
+> turned out to be one shape: a caller reaching for the wrong **overload** of a directive, and the build
+> saying nothing. One arity check on each side of the library retired all four findings and forty-nine cells
+> at once — `DWARFR04` at the `[MapTo]` registry (a descriptor that already existed and checked a *different*
+> arity), `DWARF088` in the class model. Each section carries its resolution note.
 
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case
@@ -237,22 +243,22 @@ dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj
 # Amendment, 2026-08-16 — the ratified findings
 
 The matrix was re-measured after task 5b enriched the case-space, fixed three instrument defects and repaired
-one fixture whose broken baseline was swallowing its own verdict. **174 cells are red. Every one is accounted
-for and the matrix is green:**
+one fixture whose broken baseline was swallowing its own verdict — and again after the arity fix recorded in
+D3/D4/D5/D21 below. **125 cells are red. Every one is accounted for and the matrix is green:**
 
 | Population | Cells | Findings | Where it is recorded |
 | --- | ---: | ---: | --- |
-| Recorded divergences | **162** | **23** | `DeclaredDivergences.Reasons`, re-measured every run |
+| Recorded divergences | **113** | **19** | `DeclaredDivergences.Reasons`, re-measured every run |
 | One option of an option bag, no surface at that endpoint | **12** | 2 options × 4 endpoints (+ the assembly-level twin) | `DeclaredDivergences.StructurallyInapplicable` |
 
-**Nothing was narrowed, widened or excused to reach that.** The 162 are named cell by cell — element, generic
+**Nothing was narrowed, widened or excused to reach that.** The 113 are named cell by cell — element, generic
 arity, axis, declaration site, endpoint — and `Every_declared_divergence_is_still_a_divergence` re-classifies
 each one on every run. A row whose cell stops being silent turns the build **red** until the row is deleted.
 That is the property that makes this a ratchet rather than an allowlist, and it is the reason recording a gap
 is safe: a fix cannot leave a fossil behind.
 
-Two further ratchets sit on the store itself. The **finding** count (23) fails if a new defect is written down
-instead of fixed. The **cell** count (162) fails if an existing entry's cell list is widened — which is the
+Two further ratchets sit on the store itself. The **finding** count (19) fails if a new defect is written down
+instead of fixed. The **cell** count (113) fails if an existing entry's cell list is widened — which is the
 likelier mistake, because a fresh regression absorbed into an existing row would otherwise pass both the
 parity theory and the still-a-divergence gate with nothing registering that the surface got worse.
 
@@ -334,9 +340,11 @@ one store per failure mode is how the six allowlists this architecture is replac
 > No `DeclaredDivergences` entry was added or wanted: this was never a silence, and it is now a claimed
 > endpoint behaving correctly.
 
-## The 23 findings
+## The findings — 19 live, 4 fixed
 
-Each has an anchor, because `DeclaredDivergences.Reasons` links to it. **Acts at** is the evidence the cell is
+Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The four marked **RESOLVED** keep their
+sections: the store entry is gone (a fixed gap left on the list is a fossil), but the write-up is what the
+next reader needs to know the gap existed and how it was closed. **Acts at** is the evidence the cell is
 a divergence rather than a shape: the same directive, at the same site, doing something observable somewhere
 else.
 
@@ -376,7 +384,23 @@ at the other two the identical text raises nothing and changes nothing.
 
 <a id="D3"></a>
 
-### D3 — `[MapProperty]`'s named arguments are discarded at every method endpoint — 20 cells
+### D3 — `[MapProperty]`'s named arguments are discarded at every method endpoint — 20 cells — RESOLVED
+
+> **RESOLVED 2026-08-16 as `DWARF088`, and it was the same defect as D21.** The reading that closed it: the
+> named arguments ride on the **one-argument constructor** — `[MapProperty("Id", Use = "probe")]` is `ctor(1)`
+> plus a property initializer, not a second overload. So this was never "the payload is dropped"; it was
+> "the whole directive is dropped, payload included", because `ReadExplicitMaps` accepts only the two-argument
+> application. Writing the method form (`[MapProperty("Id", "Id", Use = "probe")]`) reaches DWARF014 exactly as
+> this section predicted it should — that path was always live and the wrong overload never entered it.
+>
+> Refused rather than honoured, which was a real fork: `[MapProperty("Id", Use = "F")]` at a method has a
+> *sensible* reading (bind Id to itself, convert with F), unlike D21's bare form. It is refused anyway, so the
+> one rule is "the member-placement overload is not the method-placement overload" rather than a rule that
+> looks away when named arguments are present. The caller is told what to write and their converter then runs;
+> a maintainer who later prefers to honour it deletes a check. Twenty cells, Silent → Refused.
+>
+> **This finding was not in task 2's brief.** It fell out of the check written for D21 and was found by
+> `Every_declared_divergence_is_still_a_divergence` turning red, which is that gate working as designed.
 
 *Method site, `Use` / `When` / `NullSubstitute` / `StringFormat` → all five mapper endpoints.* The sharpest
 finding on the surface. `[MapProperty("Id", Use = "probe")]` names a converter that does not exist and
@@ -389,7 +413,26 @@ converter, a predicate, a null substitute, a format string — is dropped in sil
 
 <a id="D4"></a>
 
-### D4 — `RegistryDiagnostics.MapPropertyArity` does not fire — 2 cells
+### D4 — `RegistryDiagnostics.MapPropertyArity` does not fire — 2 cells — RESOLVED
+
+> **RESOLVED 2026-08-16. No new id was needed, and the diagnosis in the paragraph below was wrong in a way
+> worth recording.** The descriptor is not unreachable and not dead: `MapPropertyArity` (`DWARFR04`) is
+> reported from `MapToGenerator.cs` and has had a triggering test since it was written
+> (`RegistryDiagnosticsGenTests.MapProperty_arity_mismatch_reports_DWARFR04`). It checks a **different
+> arity** — how many `[MapProperty]` attributes are *stacked* on a member versus how many `[MapTo]` targets
+> the type declares. The arity this cell gets wrong is how many values **one** attribute carries, and that one
+> was checked nowhere.
+>
+> Where it actually went: `ParseDirectives` reads a destination name only off a one-argument application
+> (`a.ConstructorArguments.Length == 1 ? … : null`), so the two-name method form arrived as a directive naming
+> nothing, and the member fell back to binding its **own** name a few lines later. In the matrix's fixture
+> that fallback happens to satisfy the destination, which is exactly why the cell read Silent rather than
+> `DWARFR02`.
+>
+> The fix is a second branch reporting the **same** `DWARFR04` — its message ("must have either one value (all
+> targets) or exactly one value per `[MapTo]` target") is already the right sentence for one attribute
+> carrying two values. Two cells, Silent → Refused, and `DWARFR04` stays an **Error** because the registry
+> emits free-standing extension methods and has no partial declaration to strand in `CS8795`.
 
 *Property and Field sites → Registry.* The two-argument `[MapProperty("Id", "Name")]` is the METHOD form; on a
 source member at the `[MapTo]` registry the form takes one argument. **The descriptor for exactly this misuse
@@ -398,7 +441,24 @@ fire. A caller who used the wrong overload gets a binding that does nothing and 
 
 <a id="D5"></a>
 
-### D5 — the no-target `[MapIgnore]` is accepted at a method or class site — 22 cells
+### D5 — the no-target `[MapIgnore]` is accepted at a method or class site — 22 cells — RESOLVED
+
+> **RESOLVED 2026-08-16 as `DWARF088`, by the same single check that closed D3 and D21.** One check, three
+> findings: `ReportMemberFormDirectives` runs once over the mapper class symbol and once per partial mapping
+> method, and reports the member-placement overload of either attribute — `[MapProperty]` with one argument,
+> `[MapIgnore]` with none. Two checks were not needed and would have been wrong: the mistake is the same one,
+> and a per-attribute split would have produced two ids saying one sentence.
+>
+> The two SITES did need two call sites, and that is the part the finding names correctly — `classIgnores` and
+> the per-method read are separate paths, and a check on either alone would have left the other silent. That
+> is the shape the matrix found it in. Twenty-two cells, Silent → Refused, including both `CoLocatedHost`
+> cells: the co-located host is extracted by the same `MapperExtractor.Extract`, so the class-site check
+> reaches it for free.
+>
+> A **Warning**, unlike its registry mirror `DWARFR04`. Measured, not stylistic: every blocking DwarfMapper
+> error suppresses the whole class's emission, so an Error here would have moved these cells into the
+> `CS8795` / `NotCompilable` population — the G4/R4 ordering defect — instead of out of the divergence store.
+> The refusal would have been correct and invisible.
 
 *Method site → all five mapper endpoints; Class site → those five plus CoLocatedHost; single and ×2 forms.*
 The no-target form is the REGISTRY form: the annotated member is the thing ignored. On a method or a class it
@@ -596,7 +656,16 @@ of the member-level forms.
 
 <a id="D21"></a>
 
-### D21 — the registry-form `[MapProperty("Id")]` is accepted at a method site — 5 cells
+### D21 — the registry-form `[MapProperty("Id")]` is accepted at a method site — 5 cells — RESOLVED
+
+> **RESOLVED 2026-08-16 as `DWARF088`.** Refused, as this section argued it had to be, and the prediction
+> underneath it held exactly: closure is observable **only** as a refusal, and the five cells went
+> Silent → Refused with the generated text unchanged. The rejected `AutoMatchMembers = false` route was not
+> retried and did not need to be.
+>
+> The measured verdict is `Refused (DWARF088 (Warning))` rather than `Refused (DWARF088)` because the id is a
+> Warning — see D5's note for why an Error would have hidden the refusal under `CS8795` instead of closing the
+> cells.
 
 *Method site, `ctor(1)` → all five mapper endpoints.*
 

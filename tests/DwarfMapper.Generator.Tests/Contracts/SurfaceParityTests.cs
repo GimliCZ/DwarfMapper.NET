@@ -371,11 +371,28 @@ public sealed class SurfaceParityTests
             + "StructurallyInapplicable row — nothing else will notice that it became stale.");
     }
 
-    /// <summary>The number of FINDINGS recorded as unfixed divergences. Shrink-only.</summary>
-    private const int DivergenceFindingCeiling = 23;
+    /// <summary>
+    ///     The number of FINDINGS recorded as unfixed divergences. Shrink-only.
+    ///     <para>
+    ///         23 → 19 when <c>DWARF088</c> and the <c>DWARFR04</c> wiring fix landed: <c>D3</c>, <c>D4</c>,
+    ///         <c>D5</c> and <c>D21</c> were one shape — the wrong OVERLOAD of a directive, accepted in
+    ///         silence — and one arity check on each side of the library retired all four.
+    ///     </para>
+    /// </summary>
+    private const int DivergenceFindingCeiling = 19;
 
-    /// <summary>The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.</summary>
-    private const int DivergentCellCeiling = 162;
+    /// <summary>
+    ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
+    ///     <para>
+    ///         162 → 113, the forty-nine cells those four findings covered, every one re-measured as
+    ///         <c>Refused</c> rather than reasoned about. They became <c>Refused</c> and not
+    ///         <c>NotCompilable</c> because <c>DWARF088</c> is a WARNING: an Error suppresses the class's
+    ///         emission and the refusal would have arrived as <c>CS8795</c> instead, which is the G4/R4
+    ///         ordering defect and would have moved these cells into
+    ///         <see cref="NotCompilableCellCeiling" />'s population rather than out of this one.
+    ///     </para>
+    /// </summary>
+    private const int DivergentCellCeiling = 113;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

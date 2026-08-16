@@ -121,6 +121,13 @@ internal static partial class MapperExtractor
         var classIgnores = ReadIgnores(classSymbol).ToList();
         var classIgnoreSources = ReadIgnoreSources(classSymbol).ToList();
 
+        // ReadIgnores above accepts the one-argument [MapIgnore("Member")] and drops everything else. What it
+        // drops is the no-argument MEMBER form, which named nothing here and left the caller believing they
+        // had excluded a member. Checked at the class symbol for the class site; the method loop below does
+        // the same for each mapping method.
+        ReportMemberFormDirectives(classSymbol, "mapper class",
+            LocationInfo.From(classSyntax.Identifier.GetLocation()), diagnostics);
+
         // Assembly-wide default options ([assembly: DwarfMapperDefaults(...)]) layer UNDER the mapper's own
         // options. Every option reader returns the first matching named argument across the attribute list, so
         // appending the assembly-defaults attribute AFTER the class's [DwarfMapper] attribute gives exactly the
@@ -271,6 +278,12 @@ internal static partial class MapperExtractor
             }
 
             var methodLocation = LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None);
+
+            // Before any endpoint-specific handling, because the mistake is the same one at all of them: this
+            // loop is the single point every partial mapping method passes through, and a check placed inside
+            // one endpoint's branch would have refused the directive on a create map and gone on discarding it
+            // on the span and stream overloads of the very same mapper.
+            ReportMemberFormDirectives(method, "mapping method", methodLocation, diagnostics);
 
             // ── Zero-alloc span map: void Map(ReadOnlySpan<S>/Span<S> src, Span<D> dst) ──
             // Maps element-wise into a caller-provided destination buffer (no allocation). The
@@ -2631,6 +2644,69 @@ internal static partial class MapperExtractor
             .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
             .Where(s => s is not null)
             .Select(s => s!);
+    }
+
+    /// <summary>
+    ///     Reports <c>DWARF088</c> for every MEMBER-placement <c>[MapProperty]</c> / <c>[MapIgnore]</c> found
+    ///     on a mapper class or a mapping method — the overloads <see cref="ReadExplicitMaps" /> and
+    ///     <see cref="ReadIgnores" /> skip, and skipped in silence until this check existed.
+    ///     <para>
+    ///         ONE check for both attributes and both sites, because it is one mistake: the caller reached for
+    ///         the placement that belongs on a member of a type that declares its own mapping. Splitting it
+    ///         per attribute would have produced two ids saying the same sentence, and splitting it per site
+    ///         would have left whichever site was written second silent — the shape the surface matrix found
+    ///         it in.
+    ///     </para>
+    ///     <para>
+    ///         Reported per APPLICATION rather than per symbol: both attributes are <c>AllowMultiple</c>, and
+    ///         two wrong ones are two mistakes to fix.
+    ///     </para>
+    /// </summary>
+    /// <param name="symbol">The mapper class, or one partial mapping method on it.</param>
+    /// <param name="site">
+    ///     How the message names the place — "mapper class" or "mapping method". Passed in rather than
+    ///     derived from <paramref name="symbol" /> so the two call sites read as the two cases they are.
+    /// </param>
+    private static void ReportMemberFormDirectives(ISymbol symbol, string site, LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        foreach (var attr in symbol.GetAttributes())
+        {
+            var cls = attr.AttributeClass?.ToDisplayString();
+            string message;
+
+            if (cls == KnownNames.MapPropertyFqn && attr.ConstructorArguments.Length == 1)
+            {
+                // The name is a string by construction (both constructors take strings only), but a
+                // half-typed application in the IDE can hand us an error constant; fall back rather than
+                // reporting a message with the word "null" in it.
+                var name = attr.ConstructorArguments[0].Value as string ?? "…";
+                message =
+                    $"[MapProperty(\"{name}\")] on this {site} uses the MEMBER-placement overload, which names "
+                    + "the destination THE ANNOTATED MEMBER supplies — it is the form for a member of a "
+                    + "[MapTo] source or a [GenerateMap] host, where the annotated type declares the mapping. "
+                    + $"Here it binds '{name}' to itself, which is what auto-matching already does, and any "
+                    + "Use / When / NullSubstitute / StringFormat written beside it is discarded with it "
+                    + $"(they are named arguments on this same overload). Supply both names: "
+                    + $"[MapProperty(\"{name}\", \"<destination>\")].";
+            }
+            else if (cls == KnownNames.MapIgnoreFqn && attr.ConstructorArguments.Length == 0)
+            {
+                message =
+                    $"[MapIgnore] with no argument on this {site} uses the MEMBER-placement overload, where "
+                    + "THE ANNOTATED MEMBER is the thing ignored — it is the form for a member of a [MapTo] "
+                    + $"source or a [GenerateMap] host. On a {site} it names nothing and excludes nothing, so "
+                    + "the completeness gate goes on demanding the member you meant to exclude. Name it: "
+                    + "[MapIgnore(\"<destination>\")].";
+            }
+            else
+            {
+                continue;
+            }
+
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.MemberFormDirectiveOnMapper, location, message));
+        }
     }
 
     private static List<(string Source, string Target, string? Use)> ReadExplicitMaps(ISymbol method)

@@ -92,7 +92,26 @@ public sealed class MapToGenerator : IIncrementalGenerator
         foreach (var (srcSym, _, srcType) in MemberFacts.Readable(source, RegistryCompilation, RegistryAllowNonPublic))
         {
             var directives = ParseDirectives(srcSym);
-            if (directives.Count > 1 && targetCount > 0 && directives.Count != targetCount)
+
+            // TWO arities can be wrong here and only one of them was checked. The second — how many values
+            // ONE [MapProperty] carries — reached this loop as a directive with no name at all, because
+            // ParseDirectives reads a name only off a one-argument application and yields null for anything
+            // else; the member then fell back to binding its OWN name a few lines below. So the caller who
+            // wrote the class model's two-name METHOD form on a registry member got a binding they did not
+            // ask for, or (where the fallback happened to satisfy the destination) exactly the mapping they
+            // would have had with no attribute at all — and in neither case a word from the build.
+            //
+            // Same descriptor, deliberately: DWARFR04 already says "the value count does not match the
+            // targets", which is precisely this statement made about one attribute's values rather than
+            // about how many attributes were stacked. Checked BEFORE the stacked-count rule so a member that
+            // gets both wrong reports the arity that is actually the mistake, and reported once either way.
+            if (HasNonMemberFormMapProperty(srcSym))
+            {
+                diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArity, location, $"'{srcSym.Name}'"));
+                hasError = true;
+                directives = new List<(bool, string?)>();
+            }
+            else if (directives.Count > 1 && targetCount > 0 && directives.Count != targetCount)
             {
                 diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArity, location, $"'{srcSym.Name}'"));
                 hasError = true;
@@ -248,6 +267,25 @@ public sealed class MapToGenerator : IIncrementalGenerator
                && !t.IsAbstract
                && !t.AllInterfaces.Any(i =>
                    i.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T);
+    }
+
+    /// <summary>
+    ///     Whether some <c>[MapProperty]</c> on this member was written with an overload OTHER than the
+    ///     one-name member form — in practice the class model's <c>[MapProperty(source, target)]</c>, the only
+    ///     other constructor the attribute has.
+    ///     <para>
+    ///         Keyed on "not one argument" rather than on "exactly two", so a constructor added later is
+    ///         refused here by default instead of being silently accepted and discarded, which is the failure
+    ///         this check exists to end.
+    ///     </para>
+    /// </summary>
+    private static bool HasNonMemberFormMapProperty(ISymbol member)
+    {
+        foreach (var a in member.GetAttributes())
+            if (a.AttributeClass?.ToDisplayString() == MapPropAttr && a.ConstructorArguments.Length != 1)
+                return true;
+
+        return false;
     }
 
     /// <summary>A member's [MapProperty]/[MapIgnore] directives in source order; i-th → i-th [MapTo] target.</summary>
