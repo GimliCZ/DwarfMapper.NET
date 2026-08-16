@@ -214,6 +214,52 @@ checks, or splitting CS8795 out from genuine placement errors, would fix it.
 declared in `EndpointSources.BuildAt`. Separately, the 14-fixture member-slot gap counted by
 `SurfaceProbeTests.Fixtures_without_a_member_slot_are_counted_not_silently_absent` still stands unchanged.
 
+### G6. The `Field` site was measured against the `Property` slot — 70 cells, CLOSED
+
+`EndpointSources.BuildAt` handled `AttributeTargets.Property or AttributeTargets.Field` in **one switch arm
+that discarded `site`**, and every endpoint template declared only properties. For the two elements legal on
+both — `MapProperty` and `MapIgnore` — **every Field cell produced byte-identical source to its Property
+cell, at all seven endpoints**: 10 cases × 7 endpoints = **70 cells** that read as measured while measuring
+the property code path under a field label. A field-only divergence was invisible by construction, and 10 of
+those cells sit inside `D20`'s declared list, i.e. inside a ratcheted population.
+
+**This is the third instance of one shape on this branch.** Task 4 found `Method` and `Property`/`Field`
+producing identical source; G5 found sites claimed but unmeasurable for want of a template slot; this is the
+same family one level down. The governing rule is unchanged: **an honest refusal to judge beats a confident
+wrong answer** — `BuildAt` must never fall through to a slot other than the one named.
+
+**Resolution.** The existing slot-marker mechanism was extended per SITE rather than replaced:
+`MemberSlotMarker` became `PropertySlotMarker`, a `FieldSlotMarker` twin was added, and `SlotMarkerFor(site)`
+is the single fact both `SiteAbsenceReason` and `BuildAt` consult. Every endpoint's DTO pair gained a real
+field (`Tag`, declared on both sides so the baseline still maps completely), and the two endpoints that
+declare their own pair — `Registry`, `CoLocatedHost` — now route their member sites through the same splice
+as the other five instead of a special-cased `memberAttribute`. Where a fixture carries no marker for the site
+under test, the answer stays `NoSuchSite` with a per-site cause, never a fall-through.
+
+**Re-measured, whole matrix, before and after:**
+
+| | Before | After |
+| --- | ---: | ---: |
+| Field-site cells whose source was byte-identical to their Property twin | **70** | **0** |
+| Cells whose source text changed at all (the `Tag` member is in every template) | — | 502 |
+| Cells whose VERDICT changed | — | **0** |
+| `NoSuchSite` / `NotCompilable` / `Unasked` / `UnhonouredButLoud` | 137 / 107 / 25 / 14 | 137 / 107 / 25 / 14 |
+| `Honoured` / `Refused` / `Silent` | 148 / 175 / 248 | 148 / 175 / 248 |
+
+Not one verdict moved, so **no ratchet moved and none was raised**. That is the finding, not an absence of
+one: the 70 cells were reading the right answer for the wrong reason. The seven `Registry` Field cells refuse
+with the same `DWARFR02`/`R03`/`R04` ids now that the directive sits on `Src.Tag` — `MemberFacts.Readable`
+enumerates fields alongside properties, so `MapToGenerator` genuinely sees them. The ten `CoLocatedHost` Field
+cells are still `Silent`, because `MapperExtractor` reads these attributes off the class or method symbol
+only. **`D20`'s entry therefore remains accurate** — and for the first time its Field rows rest on a Field
+measurement rather than on a Property one wearing a Field label.
+
+The guard that makes the class unrepeatable is
+`SurfaceProbeTests.Property_and_Field_sites_are_not_measured_as_the_same_source`, the twin of the Method/Property
+one task 4 added. It derives the "legal on both" element set from `AttributeUsage.ValidOn`, so a third element
+becoming legal on both sites acquires the guard with no edit, and it accepts "both sites honestly decline"
+because a cell that does not exist is not a cell measured under the wrong label.
+
 ---
 
 ## Recommendations
@@ -718,6 +764,7 @@ convenience extension the cell would flip Silent → Honoured and the entry woul
 | ~~**N4** — generated code that does not compile~~ **FIXED** (`DWARF087`) | 0 | `The_cells_the_compiler_rejects_are_counted` (prints CS ids) — the `CS1912` line is gone |
 | **G4/R4** — `NotCompilable` swallowing `Refused` (CS8795) | 97 | the same fact; the ordering defect is still open. **96 → 97**: N4's cell joined this population rather than leaving `NotCompilable`, because a refused mapper emits nothing and its partial method is unimplemented. Total still 107, so no ceiling moved |
 | **G5** — `[MapTo]`@`Struct`, `[DwarfMapperConstructor]`@`Constructor`, no fixture declares either | 21 | `The_cells_with_no_declaration_site_are_counted_by_cause` |
+| ~~**G6** — the `Field` site measured against the `Property` slot~~ **CLOSED** | 0 (was 70) | `Property_and_Field_sites_are_not_measured_as_the_same_source`. No verdict changed and no ratchet moved: the 70 cells were reading the right answer for the wrong reason |
 | Cells the instrument poses no question about | 44 | `The_cells_that_pose_no_question_are_declared_and_counted` |
 | Cells passing both claim branches | 14 | `The_cells_that_pass_both_claim_branches_are_counted` |
 

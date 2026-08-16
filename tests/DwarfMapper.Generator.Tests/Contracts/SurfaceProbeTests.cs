@@ -113,26 +113,88 @@ public sealed class SurfaceProbeTests
     }
 
     /// <summary>
-    ///     Declares, rather than silently absorbs, the fixtures that have no member slot
-    ///     (<see cref="EndpointSources.MemberSlotMarker" />) for the method-based endpoints' Property/Field
-    ///     sites. Each one means a whole run of Property/Field-site cells for that fixture reads
-    ///     <see cref="SurfaceEffect.NoSuchSite" /> instead of being measured — an honest "no cell" rather than
-    ///     a wrong classification, but still unmeasured coverage. If this count changes, it was a deliberate
-    ///     choice (a fixture gained or lost a marker), not a drift nobody noticed.
+    ///     Regression guard for the Property/Field routing bug, and the twin of
+    ///     <see cref="Method_and_Property_sites_are_not_measured_as_the_same_source" /> one level down. A
+    ///     single <c>BuildAt</c> arm handled <c>AttributeTargets.Property or AttributeTargets.Field</c> and
+    ///     DISCARDED the site, so for the two elements legal on both — <c>MapProperty</c> and
+    ///     <c>MapIgnore</c> — every Field cell produced byte-identical source to its Property cell at all
+    ///     seven endpoints. The matrix read as fully measured while a field-only divergence was invisible.
+    ///     <para>
+    ///         Neither of the guards next door can see this: the placement is legal, so it is not
+    ///         <see cref="SurfaceEffect.NotCompilable" />, and the rendered attribute text IS present, so the
+    ///         containment guard passes. Only comparing the two sites' sources exposes it — which is also why
+    ///         "both sites honestly decline" is accepted here: a cell that does not exist is not a cell
+    ///         measured under the wrong label.
+    ///     </para>
+    ///     <para>
+    ///         The element set is DERIVED from <c>AttributeUsage.ValidOn</c> rather than listed, so a third
+    ///         element becoming legal on both sites acquires this guard with no edit here.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Property_and_Field_sites_are_not_measured_as_the_same_source()
+    {
+        var legalOnBoth = SurfaceCatalog.Elements
+            .Where(e => (e.ValidOn & AttributeTargets.Property) == AttributeTargets.Property
+                        && (e.ValidOn & AttributeTargets.Field) == AttributeTargets.Field)
+            .ToList();
+
+        // Non-vacuity: an empty element set, or a set whose cases stopped producing comparable pairs, would
+        // pass this test without comparing anything at all.
+        Assert.NotEmpty(legalOnBoth);
+
+        var offenders = new List<string>();
+        var compared = 0;
+        foreach (var element in legalOnBoth)
+        foreach (var c in SurfaceCatalog.CasesFor(element).Where(x => x.Site == AttributeTargets.Property))
+        foreach (var endpoint in EndpointSources.All)
+        {
+            var types = SurfaceFixtures.Get(c.ProbeKey);
+            var atProperty = EndpointSources.BuildAt(
+                endpoint, AttributeTargets.Property, c.Rendered, types, c.MapperOptions);
+            var atField = EndpointSources.BuildAt(
+                endpoint, AttributeTargets.Field, c.Rendered, types, c.MapperOptions);
+
+            if (atProperty is null && atField is null) continue; // Both decline: no cell claimed either way.
+            compared++;
+            if (string.Equals(atProperty, atField, StringComparison.Ordinal))
+                offenders.Add($"{element.UsageName}({c.Axis}) @ {endpoint}");
+        }
+
+        Assert.True(compared > 0, "No (Property, Field) pair was compared at all — the case space or the "
+                                  + "site enumeration collapsed and this guard is measuring nothing.");
+        Assert.True(offenders.Count == 0,
+            "Property-site and Field-site sources are byte-identical for: " + string.Join(", ", offenders)
+            + ". A Field cell answered with the property slot measures the property code path under a field "
+            + $"label. Give the endpoint's DTO pair a {nameof(EndpointSources.FieldSlotMarker)} ahead of a "
+            + "real field, or return null (NoSuchSite) for the Field site — never fall through to the other "
+            + "site's slot.");
+    }
+
+    /// <summary>
+    ///     Declares, rather than silently absorbs, the fixtures that have no member slot — neither
+    ///     <see cref="EndpointSources.PropertySlotMarker" /> nor <see cref="EndpointSources.FieldSlotMarker" />
+    ///     — for the method-based endpoints' Property/Field sites. Each one means a whole run of
+    ///     Property/Field-site cells for that fixture reads <see cref="SurfaceEffect.NoSuchSite" /> instead of
+    ///     being measured — an honest "no cell" rather than a wrong classification, but still unmeasured
+    ///     coverage. If this count changes, it was a deliberate choice (a fixture gained or lost a marker),
+    ///     not a drift nobody noticed.
     /// </summary>
     [Fact]
     public void Fixtures_without_a_member_slot_are_counted_not_silently_absent()
     {
         var missing = SurfaceFixtures.All
-            .Where(kv => !kv.Value.Contains(EndpointSources.MemberSlotMarker, StringComparison.Ordinal))
+            .Where(kv => !kv.Value.Contains(EndpointSources.PropertySlotMarker, StringComparison.Ordinal)
+                         && !kv.Value.Contains(EndpointSources.FieldSlotMarker, StringComparison.Ordinal))
             .Select(kv => kv.Key)
             .OrderBy(k => k, StringComparer.Ordinal)
             .ToList();
 
         const int baseline = 17;
         Assert.True(missing.Count == baseline,
-            $"{missing.Count} of {SurfaceFixtures.All.Count} fixtures have no {nameof(EndpointSources.MemberSlotMarker)}: "
-            + string.Join(", ", missing) + $". Each one means every Property/Field-site case that needs that "
+            $"{missing.Count} of {SurfaceFixtures.All.Count} fixtures carry neither "
+            + $"{nameof(EndpointSources.PropertySlotMarker)} nor {nameof(EndpointSources.FieldSlotMarker)}: "
+            + string.Join(", ", missing) + ". Each one means every Property/Field-site case that needs that "
             + "fixture reads NoSuchSite for the method-based endpoints instead of being measured — declared "
             + $"and counted, not silently dropped. Baseline is {baseline}; if you added a marker to a fixture, "
             + "lower it deliberately, and if you added a fixture without one, raise it deliberately.");

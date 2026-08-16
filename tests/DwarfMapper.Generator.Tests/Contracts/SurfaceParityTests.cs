@@ -307,7 +307,7 @@ public sealed class SurfaceParityTests
             $"{siteless.Count} cells have no declaration site and are therefore judged by nothing, above the "
             + $"stated ceiling of {NoSuchSiteCellCeiling}:\n{byCause}\n\nThis number may only shrink. Two of "
             + "the causes are TEMPLATE limitations rather than structural absences — a struct fixture and a "
-            + "constructor-bearing fixture could exist, and a fixture could carry a MemberSlotMarker. Close "
+            + "constructor-bearing fixture could exist, and a fixture could carry a member slot marker. Close "
             + "one of those; the two structural causes (registry-has-no-mapper-class, no-mapping-method) "
             + "cannot move, because there is nothing at those endpoints for a template to annotate.");
 
