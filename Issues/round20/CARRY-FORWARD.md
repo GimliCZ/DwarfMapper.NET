@@ -57,6 +57,8 @@ which is precisely the class of thing this whole branch was built to eliminate.
 | 3.5 | `LATER` | **Nothing forbids a cell being both in `DeclaredDivergences.Reasons` and `StructurallyInapplicable`**, which would double-count it against two ratchets. Currently disjoint (`Registry` is not a `StructurallyInapplicable` endpoint) and creating overlap needs a deliberate ceiling raise. Theoretical. |
 | 3.6 | `LATER` | **`DiagnosticCoverageRatchetTests` claims a property "holds by construction"**, but adding to `PredatesThisProject` is a visible-diff hatch that no test blocks. |
 | 3.7 | `LATER` | **`IsGeneratorAuthored`'s remarks omit the `*.g.cs` collision case.** A consumer's own generator emitting `Foo.g.cs`, or a checked-in `.g.cs`, is silently exempted from `DWARF086`. Permissive-only (false negative), can never redden a consumer build — but undocumented at the method that decides it. |
+| 3.8 | `LATER` | **"Shrink-only" is prose on both `PredatesTheChangelog` and `DiagnosticTestAllowlist`.** Nothing stops someone silently *appending* an id instead of writing the CHANGELOG entry. Exact membership is asserted, so the set cannot drift unnoticed — but growth is a one-line edit with no gate. Not a regression (it mirrors the pre-existing allowlist's convention), and the right fix is one guard covering both. |
+| 3.9 | `LATER` | **`Scan9_is_not_vacuous` guards corpus-emptiness but not tautology.** It would catch a mistyped path (the six-time historical failure, which is what it was asked to catch) but not `Scan9` itself being gutted to `Assert.True(true)`. The general shape — a control that proves the *corpus* is real but not that the *assertion* is — is worth a look across the scan family. |
 
 ---
 
