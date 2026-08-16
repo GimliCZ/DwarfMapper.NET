@@ -136,6 +136,60 @@ push. Making it fast enough to automate is the outcome that matters — the scor
 
 ---
 
+## R21-3 — Would parallelisation help? (measured 2026-08-16)
+
+**Short answer: a little, and it is the wrong lever. Scoping beats it outright, and one of the two available
+parallelism knobs is load-bearing for correctness.**
+
+### What is already parallel, and what is not
+
+| Layer | State | Detail |
+|---|---|---|
+| **Stryker across mutants** | **already on** | `concurrency` is not set in any of the three configs, so it takes Stryker's default of `ProcessorCount / 2` — **6 of this machine's 12 logical CPUs**. |
+| **xUnit within each test host** | **fully OFF** | `tests/DwarfMapper.IntegrationTests/AssemblyInfo.cs:8` — `[assembly: CollectionBehavior(DisableTestParallelization = true)]`. Every test in the assembly runs serially, inside every one of the ~111 test-host runs. |
+
+### The reason it is off is real — and its cost justification has silently expired
+
+The attribute carries its own rationale, and it is a good one:
+
+> *The security regression tests temporarily swap `CultureInfo.CurrentCulture` (to prove our generated
+> `Parse`/`ToString` stay invariant). That mutation is process-thread-wide, so running tests in parallel could
+> let the de-DE window bleed into a concurrently-running test. Disabling parallelization keeps the suite
+> deterministic;* **it costs little (the whole integration suite runs in well under a second).**
+
+That last clause was true when written and is **no longer true in the context it now also governs.** Under
+`dotnet test` the suite runs **once**. Under the mutation leg it runs **once per mutant**, and for the two hot
+files against essentially the whole 5,592-test set. A cost that was negligible × 1 is not negligible × 111.
+
+This is the same shape as most of what round 19 found: **a narrow, correct constraint applied at too broad a
+scope, with a cost justification that expired without anything noticing.** The constraint is needed by a
+handful of culture-swapping tests; it is imposed assembly-wide.
+
+### The three levers, ranked
+
+1. **Scope the leg to the intentional tests — do this first.** 91 tests do all the killing; 5,592 pay for it
+   (§ *The decisive number*). That is a **~61× waste factor**, and no amount of parallelism removes waste — it
+   only buys more machines to do it on. Zero correctness risk.
+2. **Isolate the culture-swapping tests into their own `[Collection]`** and let the rest of the assembly run in
+   parallel. This is the standard xUnit remedy and it preserves the exact property the comment protects: the
+   de-DE window stays inside a serial collection, everything else parallelises. This is the *right* fix for
+   parallelism, and it is worth doing on its own merits — it also speeds up ordinary `dotnet test`.
+3. **Raise Stryker `concurrency`** from the default 6 toward 10–12. Cheapest to try, smallest ceiling, and it
+   **competes with lever 2 for the same 12 cores** — six test hosts each running multi-threaded xUnit will
+   oversubscribe. Pick one axis or tune both together; do not assume they compose.
+
+### Why parallelism cannot be the answer
+
+Even *perfect* 12× scaling takes 44 minutes to **~3.7 minutes**. Scoping alone should reach **~1 minute**, at
+no correctness risk and no extra hardware. And the goal (`CARRY-FORWARD.md` §5b.1) is a leg fast enough to run
+in CI on every push — where a shared runner has far fewer cores than this machine, so a parallelism-dependent
+speedup largely evaporates precisely where it is needed.
+
+**Order of work, if round 21 takes this on:** scope first, measure again, then decide whether either
+parallelism lever is still worth its complexity. It may simply stop mattering.
+
+---
+
 ## R21-2 — Should the runtime mutation leg cover the generator's runtime dependencies?
 
 Deferred from round 19. `DwarfMapper.Generator.Tests` was excluded from the runtime mutation leg to keep the
