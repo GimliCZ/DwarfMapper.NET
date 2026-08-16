@@ -399,13 +399,13 @@ public sealed class SurfaceParityTests
     ///         113 → 93 when <c>D20</c> was closed: the co-located host now reads the member-placement
     ///         <c>[MapProperty]</c> / <c>[MapIgnore]</c> forms off its own members. Unlike the four above,
     ///         this one did not resolve to a single verdict — measured, <b>2 cells are Honoured and 18
-    ///         Refused</b>, and the 18 are three different things: 6 directives that ACT while a
-    ///         pre-existing warning fires about the conversion the rename implies (so the probe, which
-    ///         checks diagnostics before output, labels them Refused), 6 refusals of a named argument the
-    ///         binding now reaches at all, and 8 <c>DWARF089</c> — the method form written on a member. All
-    ///         three leave this population; none enters <see cref="NotCompilableCellCeiling" />'s, because
-    ///         <c>DWARF089</c> is a Warning and the host declares no partial method there would be a
-    ///         <c>CS8795</c> for.
+    ///         Refused</b>, and the twenty are three different things: <b>6</b> where the directive ACTS
+    ///         (the 2 <c>Honoured</c>, plus <b>4</b> labelled <c>Refused</c> only because the rename they
+    ///         perform raises the pre-existing <c>DWARF038</c> and the probe checks diagnostics before it
+    ///         compares output), <b>6</b> refusals of a named argument the binding now reaches at all, and
+    ///         <b>8</b> <c>DWARF089</c> — the method form written on a member. All three leave this
+    ///         population; none enters <see cref="NotCompilableCellCeiling" />'s, because <c>DWARF089</c> is
+    ///         a Warning and the host declares no partial method there would be a <c>CS8795</c> for.
     ///     </para>
     /// </summary>
     private const int DivergentCellCeiling = 93;

@@ -21,10 +21,11 @@
 > **2026-08-17, third fix — 19 / 113 to 18 / 93.** `D20`: the co-located `[GenerateMap]` host now reads the
 > member-placement `[MapProperty]` / `[MapIgnore]` its own `[DwarfSurfaceSite]` had always claimed it did,
 > through the one parser the `[MapTo]` registry already used; the method forms written on a host member are
-> refused as the new `DWARF089`. Measured, **2 cells went Honoured and 18 Refused** — but the 18 are three
-> different things (6 directives that act while a pre-existing conversion warning fires, 6 refusals of a
-> named argument the binding now reaches, 8 `DWARF089`), so this is the first finding on this branch that
-> did **not** resolve to a single verdict. See [D20](#D20).
+> refused as the new `DWARF089`. Measured, **2 cells went Honoured and 18 Refused** — but the twenty are
+> three different things (**6** where the directive acts: the 2 Honoured plus **4** labelled Refused only by
+> a pre-existing `DWARF038`; **6** refusals of a named argument the binding now reaches; **8** `DWARF089`),
+> so this is the first finding on this branch that did **not** resolve to a single verdict. See
+> [D20](#D20).
 
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case

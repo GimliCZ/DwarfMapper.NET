@@ -90,6 +90,9 @@ internal static partial class MapperExtractor
                     continue;
                 }
 
+                // `!` is carried by DirectivesArePlaceable, which drops the member's whole directive SET
+                // unless every non-ignore one names something — arity one does not imply a name, because
+                // [MapProperty(null)] is a legal application and a half-typed one leaves an error constant.
                 config.Explicit.Add((d.Name!, member.Name, d.Use));
                 if (d.HasNullSub || d.When is not null)
                     config.Extras.Add((member.Name, d.HasNullSub, d.NullSub, d.When, null));
@@ -127,6 +130,25 @@ internal static partial class MapperExtractor
                     + "source AND a destination because a mapping method has no annotated member to be one. "
                     + $"On a host member the destination IS '{member.Name}', so name only the source it is "
                     + $"filled from: [MapProperty(\"<source>\")]."));
+                placeable = false;
+            }
+            // Arity one does NOT imply a name. [MapProperty(null)] binds the string overload and is at most
+            // CS8625; a half-typed application in the IDE leaves an error constant in its place, and the
+            // generator runs on every keystroke. Either way `Name` is null here, and a null source name
+            // reaches member resolution as a name that does not exist — which threw, surfacing as CS8785
+            // against a file the consumer never wrote. Refused as unplaceable instead: BEFORE this reader
+            // existed the shape was ignored entirely, and a generator that fails on input it used to ignore
+            // is worse than the gap it was closing. Every sibling path guards the same thing —
+            // MapToGenerator's `!string.IsNullOrEmpty`, ReadExplicitMaps' `is string`, and DWARF088's own
+            // `as string ?? "…"`, whose comment names this hazard.
+            else if (!d.Ignore && string.IsNullOrEmpty(d.Name))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.MisplacedDirectiveOnCoLocatedHostMember, d.Loc,
+                    $"[MapProperty] on '{member.Name}' of the co-located host '{host.Name}' names no source "
+                    + "member — the argument is null, empty, or not a constant string. The member form's one "
+                    + $"argument is the SOURCE member '{member.Name}' is filled from, so there is nothing "
+                    + "here to bind to: [MapProperty(\"<source>\")]."));
                 placeable = false;
             }
             else if (d.Ignore && d.ArgumentCount != 0)

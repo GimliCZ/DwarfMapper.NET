@@ -238,6 +238,15 @@ public sealed class CoLocatedHostMemberDirectiveTests
     ///     is two ordinary types the consumer may not own, and the mapper class's own members are converters
     ///     and hooks, not destination members. Nothing here may be read as a directive — which is what makes
     ///     it safe for the co-located path to read them at all.
+    ///     <para>
+    ///         <b>The <c>DWARF089</c> assertion is the claim; the absence of any other diagnostic is NOT.</b>
+    ///         A member-form directive on a member of a <c>[DwarfMapper]</c> class is reported by nothing at
+    ///         all today — <c>DWARF088</c> is raised off the class and method symbols, never off a member —
+    ///         so this shape is swallowed. That swallow PREDATES this reader and no cell of the surface
+    ///         matrix measures it; it is recorded as <b>B18</b> rather than fixed here, because fixing it
+    ///         would move a cell nobody is watching. This test pins the boundary, not that silence: read the
+    ///         two assertions as "the co-located reader did not reach into mode 1", and nothing more.
+    ///     </para>
     /// </summary>
     [Fact]
     public void A_DwarfMapper_class_declaring_a_pair_does_not_read_its_own_members()
@@ -256,6 +265,57 @@ public sealed class CoLocatedHostMemberDirectiveTests
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF089");
         Assert.Contains("Full = src.Full", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     <c>[MapProperty(null)]</c> is a legal application — the argument is a string parameter and
+    ///     <c>null</c> is a constant, so the compiler emits at most <c>CS8625</c>. The arity is one, so an
+    ///     arity-only check accepts it, and the name it hands downstream is <c>null</c>. Refused as
+    ///     unplaceable instead, because the alternative is a NAME that does not exist reaching member
+    ///     resolution: nothing downstream takes a null source name, and before A4 this shape was ignored
+    ///     entirely — a generator that fails on input it used to ignore is worse than the gap A4 closed.
+    /// </summary>
+    [Fact]
+    public void A_null_name_on_a_host_member_reports_DWARF089_rather_than_reaching_resolution()
+    {
+        const string src = Src + """
+
+                                 [GenerateMap<Person, PersonDto>]
+                                 public sealed class PersonDto
+                                 {
+                                     [MapProperty(null)] public string Full { get; set; } = "";
+                                     public int Age { get; set; }
+                                 }
+                                 """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF089");
+        Assert.DoesNotContain(diagnostics,
+            d => d.Id.StartsWith("CS", StringComparison.Ordinal) && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    /// <summary>
+    ///     The same guard reached the other way: an argument the compiler could not bind to <c>string</c>
+    ///     leaves an ERROR constant in the attribute application, which is what a half-typed directive looks
+    ///     like to a generator running in the IDE on every keystroke. The build is already failing; the
+    ///     generator must not add a crash to it.
+    /// </summary>
+    [Fact]
+    public void A_non_string_name_on_a_host_member_does_not_crash_the_generator()
+    {
+        const string src = Src + """
+
+                                 [GenerateMap<Person, PersonDto>]
+                                 public sealed class PersonDto
+                                 {
+                                     [MapProperty(42)] public string Full { get; set; } = "";
+                                     public int Age { get; set; }
+                                 }
+                                 """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+
+        // CS8785 is "the generator failed to generate source": the crash this guards against, reported
+        // against a file the consumer never wrote.
+        Assert.DoesNotContain(diagnostics, d => d.Id == "CS8785");
     }
 
     /// <summary>

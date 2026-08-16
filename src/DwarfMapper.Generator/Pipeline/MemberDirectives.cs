@@ -20,7 +20,12 @@ namespace DwarfMapper.Generator.Pipeline;
 /// </summary>
 /// <param name="Ignore"><c>true</c> for <c>[MapIgnore]</c>, <c>false</c> for <c>[MapProperty]</c>.</param>
 /// <param name="ArgumentCount">Constructor arguments as written — the arity that decides the placement.</param>
-/// <param name="Name">The single constructor argument, or <c>null</c> when the arity is not one.</param>
+/// <param name="Name">
+///     The single constructor argument, or <c>null</c> — when the arity is not one, but ALSO when it is one
+///     and the argument is not a constant string. <c>[MapProperty(null)]</c> binds the string overload and is
+///     at most <c>CS8625</c>, and a half-typed application leaves an error constant behind; a consumer that
+///     reads arity as a proof of name hands a null downstream. Both consumers here check the name itself.
+/// </param>
 /// <param name="Use">The <c>Use =</c> converter name, or null.</param>
 /// <param name="When">The <c>When =</c> predicate name, or null.</param>
 /// <param name="HasNullSub">Whether <c>NullSubstitute =</c> was written at all (null is a legal value).</param>
