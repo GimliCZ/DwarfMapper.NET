@@ -15,6 +15,20 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A duplicate update-into registration was recorded against the CREATE table.** `DwarfMapperRegistry`
+  keeps two key spaces on purpose — a pair can legitimately have both a `TDest Map(TSource)` and a
+  `void Update(TSource, TDest)` — but only the create table had an ambiguity set, and `RegisterUpdate`
+  marked its duplicates there. Two update registrations for a pair with no create map therefore left
+  `IsAmbiguous(S, T)` returning `true` while `IsProvided(S, T)` returned `false`: a contested map that had
+  never been registered. `RegisterUpdate` now marks its own set, surfaced by the new `IsUpdateAmbiguous`.
+  **Behaviour change:** `IsAmbiguous` no longer reports duplicates that belong to the update table. If you
+  worked around the false positive by treating "ambiguous but not provided" as an update-table duplicate,
+  ask `IsUpdateAmbiguous` instead. Nothing inside the package read that set — the generator-emitted
+  `DwarfMap.Validate()` calls `IsProvided` only, and compile-time ambiguity (`DWARF063`) is computed from
+  the manifests — so no diagnostic or validation result changes. The duplicate delegate itself was already
+  first-wins and still is. (round 19, REG-06)
+- **`ResetForTests` did not clear the update table.** It cleared `Maps`, `Ambiguous` and `InterfaceMaps` but
+  not `UpdateMaps`, so a "reset" registry still held every update map ever registered.
 - **Member visibility was dropped on twenty code paths.** `ReadableMembers`/`WritableMembers` defaulted their
   `compilation` and `allowNonPublic` arguments, so paths that omitted them answered "which members can I read
   from this type?" as if the mapper had never set `[DwarfMapper(AllowNonPublic = true)]`. Legal code was
