@@ -185,8 +185,98 @@ no correctness risk and no extra hardware. And the goal (`CARRY-FORWARD.md` §5b
 in CI on every push — where a shared runner has far fewer cores than this machine, so a parallelism-dependent
 speedup largely evaporates precisely where it is needed.
 
-**Order of work, if round 21 takes this on:** scope first, measure again, then decide whether either
-parallelism lever is still worth its complexity. It may simply stop mattering.
+---
+
+### How the time is actually spent — and a correction to §*MEASURED*
+
+The "21.2 ms per test execution" figure above is **wall-clock ÷ executions, and it is not a per-test cost.**
+It is an average over a quantity that was never billed that way. Stryker does not invoke tests one at a time:
+per mutant it starts **one** test session with a filter naming the covering set, so the real cost model is
+
+```
+total ≈ Σ over mutants of ( host startup + discovery + time to run that mutant's covering SET )
+```
+
+Two consequences the flat average hides:
+
+- **A mutant with 13 covering tests and one with 5,589 do not differ by 430×.** They differ by the marginal
+  cost of the extra tests on top of a shared fixed overhead. For the 43 low-coverage mutants (216 executions
+  between them) the cost is essentially **all** fixed overhead — the tests are free, the process start is not.
+- **Conversely, `executions` overstates the hot files' share and understates the fixed floor.** Real per-mutant
+  fixed cost for a .NET test host is seconds; × 111 mutants that is minutes of the 44 before a single
+  assertion runs.
+
+**Where 6-way concurrency does and does not apply.** Stryker parallelises *across mutants*, so the fixed
+overhead is the part that parallelises best — 111 host starts spread over 6 slots. What does **not** parallelise
+is any single mutant's covering-set run, because `DisableTestParallelization` makes it strictly serial inside
+its host. So the workload is: an embarrassingly-parallel outer loop over an irreducibly-serial inner body, and
+the inner body for 68 of the 111 mutants is **the entire suite, run end to end, single-threaded**.
+
+That is the precise shape where lever 2 pays and lever 3 does not: adding Stryker slots multiplies an already
+parallel loop; making the inner body parallel attacks the part that is currently serial by construction.
+
+### A correction I owe: kill-count is not time-cost
+
+Above I recorded hypothesis (2) — the 240-round torture suite — as **REFUTED**, on the grounds that
+`RegistryConcurrencyTortureTests` accounts for only 4 kills. **That reasoning does not hold.** Kills measure
+*diagnostic value*; they say nothing about *wall-clock*. A suite can contribute almost no kills and still
+dominate the run.
+
+And the mechanism is live: if the torture collection is in the covering set of the 49 `DwarfMapperRegistry`
+mutants — which it certainly is, it exercises that exact static — then **its full runtime is paid 49 times,
+serially, inside a `DisableParallelization` assembly.** At even 10 s per pass that is ~8 minutes of the 44; at
+20 s it is a third of the run. Round-19 Task 10 raised it from 60 to 240 rounds for detection power, which
+would have **quadrupled** whatever that contribution is.
+
+So the honest status is: **(2) is not refuted, it is unmeasured.** What is refuted is that it is the *whole*
+story — the covering-set explosion is real and independently large. Both can be true, and the cheap experiment
+below separates them.
+
+### A measurement caveat on the 44 minutes
+
+That run happened while other agents in the same session were building and testing the same solution. Some of
+the 2,642 s may be contention rather than work. **The number is an upper bound on a loaded machine, not a clean
+benchmark**, and anyone tuning against it should re-baseline on a quiet one first. This does not affect the
+*ratios* — 91 killers vs 5,592 coverers, and the 99.8% concentration in two files — which come from the report's
+own structure rather than from timing.
+
+### Lever 2 has a second hazard the comment does not mention
+
+The `DisableTestParallelization` comment cites exactly one reason: thread-wide `CultureInfo` swapping. But this
+assembly also exercises **`DwarfMapperRegistry`, a process-wide mutable static populated by module
+initializers**. Enabling assembly-wide parallelism means different xUnit *collections* run concurrently, and
+several of them touch that registry.
+
+The torture tests are partly protected already — they mint unique type markers (`Src<T>`/`Dst<T>`/
+`FreshType(depth)`), so concurrent registrations of *different* keys should not collide. But any test that
+asserts over **global** registry state rather than a specific key is exposed; `ConsumerSurfaceTests`
+`Every_registration_in_the_container_resolves` is exactly that shape — it enumerates, and enumerating a
+concurrent dictionary while another collection registers into it is a moving target.
+
+**So lever 2 is "isolate the culture tests" *plus* an audit of every test that reads registry-global state.**
+That is still very doable, and the payoff is real — it also speeds ordinary `dotnet test` — but it is a larger
+job than the one-line `[Collection]` move the comment's single stated reason implies. Anyone who reads only the
+comment will under-scope it.
+
+### The cheap experiments, in order
+
+None needs a full Stryker re-run:
+
+1. **Time the torture collection alone.** `dotnet test tests/DwarfMapper.IntegrationTests --filter
+   "FullyQualifiedName~RegistryConcurrencyTortureTests"`. Multiply by 49. If that lands near a third of 44
+   minutes, hypothesis (2) is confirmed as a major co-cause and the 240-round decision needs revisiting for
+   the mutation leg specifically.
+2. **Time the full assembly**, quiet machine. Multiply by 68. That is the covering-set explosion's true bill,
+   and it either does or does not account for the remainder.
+3. **Only then** try `--concurrency 12` on a single file's mutants (`DwarfMapExceptions.cs`, 33 mutants, 93
+   executions — dominated by fixed overhead, so it isolates lever 3 cleanly) and compare against the same
+   subset at 6.
+4. **Check whether scoping loses kills**: for each killed mutant, does its `killedBy` set contain at least one
+   test from the intentional list? Answerable from the existing JSON, no run at all.
+
+**Order of work, if round 21 takes this on:** scope first (experiment 4 de-risks it), re-measure, and only then
+decide whether either parallelism lever still earns its complexity. On the current numbers it may simply stop
+mattering — and lever 2 is worth doing on its own merits regardless of what mutation testing needs.
 
 ---
 
