@@ -16,6 +16,43 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Stryker EXITS 0 when its `mutate` filter matches nothing. Every mutant comes back "Removed by mutate
+# filter", no score is calculated, and `if ($LASTEXITCODE) { throw }` sees success — a leg that tested
+# nothing passes the gate. That is not hypothetical: it is exactly what stryker-config.runtime.json did
+# on 2026-08-16, because `mutate` globs resolve against the PROJECT directory and the file listed them
+# repo-root-relative.
+#
+# So the exit code is necessary but not sufficient. Each leg must also prove it actually scored some
+# mutants. Requires the "json" reporter, which all three configs declare.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-MutantsWereTested {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [Parameter(Mandatory)][datetime]$Since
+    )
+    $report = Get-ChildItem -Path (Join-Path $root 'StrykerOutput') -Recurse -Filter 'mutation-report.json' `
+                            -ErrorAction SilentlyContinue |
+              Where-Object { $_.LastWriteTime -ge $Since } |
+              Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $report) {
+        throw "mutation ($Leg): no mutation-report.json was written for this run — the leg produced no report at all"
+    }
+    # Counted over the raw text rather than ConvertFrom-Json: the report embeds every mutated file's full
+    # source, so it runs to tens of megabytes and parsing it buys nothing this check needs.
+    $raw = Get-Content -Raw -LiteralPath $report.FullName
+    $scoreable = ([regex]::Matches($raw, '"status"\s*:\s*"(Killed|Survived|Timeout|NoCoverage)"')).Count
+    if ($scoreable -eq 0) {
+        throw ("mutation ($Leg): 0 scoreable mutants — the run was VACUOUS and Stryker still exited 0. " +
+               "Check that the config's 'mutate' globs are PROJECT-relative ('**/Name.cs'), not " +
+               "repo-root-relative ('src/Proj/Name.cs'), which silently matches nothing.")
+    }
+    # ${Leg} braced, not $Leg: — a bare '$Leg:' parses as a SCOPE-qualified variable reference, not the
+    # variable followed by a colon, and the script fails to parse at all.
+    Write-Host "   ${Leg}: $scoreable scoreable mutants" -ForegroundColor DarkGray
+}
+
 Push-Location $root
 try {
     if ($Heal) {
@@ -55,23 +92,29 @@ try {
 
     if ($Mutation) {
         Write-Host "== 4/4 Mutation testing (Stryker — install: dotnet tool install -g dotnet-stryker) ==" -ForegroundColor Cyan
+        $legStart = Get-Date
         dotnet stryker
         if ($LASTEXITCODE) { throw "mutation score below break threshold (generator)" }
+        Assert-MutantsWereTested -Leg 'generator' -Since $legStart
 
         # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
         # this leg the doc tests are trusted on the strength of being green — the evidence a vacuous test
         # also provides.
         Write-Host "== 4/4b Mutation testing (DocTooling) ==" -ForegroundColor Cyan
+        $legStart = Get-Date
         dotnet stryker --config-file stryker-config.doctooling.json
         if ($LASTEXITCODE) { throw "mutation score below break threshold (doc tooling)" }
+        Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
 
         # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
         # facade and the exception types have no derivable case-space — no AttributeUsage to decompose, no
         # endpoint matrix to cross them against — so a surviving mutant is the only non-textual proof that a
         # case is untested.
         Write-Host "== 4/4c Mutation testing (runtime assembly) ==" -ForegroundColor Cyan
+        $legStart = Get-Date
         dotnet stryker --config-file stryker-config.runtime.json
         if ($LASTEXITCODE) { throw "mutation score below break threshold (runtime)" }
+        Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

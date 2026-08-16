@@ -13,6 +13,6 @@
       "**/Diagnostics/LocationInfo.cs"
     ],
     "thresholds": { "high": 90, "low": 80, "break": 70 },
-    "reporters": ["progress", "html"]
+    "reporters": ["progress", "html", "json"]
   }
 }
