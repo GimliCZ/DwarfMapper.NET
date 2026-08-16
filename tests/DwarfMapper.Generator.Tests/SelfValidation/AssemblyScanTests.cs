@@ -17,6 +17,7 @@ using System.Text.RegularExpressions;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Pipeline;
 using DwarfMapper.Generator.Registry;
+using DwarfMapper.Generator.Tests.Contracts;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
@@ -47,6 +48,46 @@ file static class DiagnosticTestAllowlist
 {
     // intentionally empty — every non-reserved id must appear in at least one test source
     public static readonly IReadOnlySet<string> Ids = new HashSet<string>(StringComparer.Ordinal);
+}
+
+/// <summary>
+///     DWARF0xx ids that existed before <c>CHANGELOG.md</c> did. The file's own preamble mandates an entry
+///     for every new/retired/re-severitied diagnostic id — Scan9 below enforces it — but that mandate is
+///     forward-looking: it was written the same round <c>CHANGELOG.md</c> was created (see the file's own
+///     "This file" bullet under <c>### Added</c>), and cannot retroactively demand prose for a diagnostic
+///     that shipped before the file existed to hold it.
+///     <para>
+///         This set is CLOSED, not an escape hatch: it is exactly "DWARF0xx ids present when
+///         <c>CHANGELOG.md</c> was introduced, minus the ones already documented at that point", frozen at
+///         commit b723ece (2026-08-16). It may only SHRINK — remove an id the moment somebody writes its
+///         entry — and Scan9 pins it by EXACT membership (not a count) so one id silently swapping for
+///         another fails the build instead of passing as a wash. The eventual write-up is tracked as a
+///         `LATER` item in <c>Issues/round20/CARRY-FORWARD.md</c> §1.
+///     </para>
+///     <para>
+///         Scope: DWARF0xx only, deliberately. The DWARFR (registry) family is announced in
+///         <c>CHANGELOG.md</c> as the range "DWARFR01–DWARFR09" (see the <c>### Added</c> entry for
+///         ISSUE-047) — a per-id substring scan would fail on DWARFR02..08 despite the family being fully
+///         announced. Do not "fix" that by adding DWARFR ids here or to Scan9; the range notation is the
+///         intended announcement.
+///     </para>
+/// </summary>
+file static class PredatesTheChangelog
+{
+    public static readonly IReadOnlySet<string> Ids = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "DWARF002", "DWARF003", "DWARF005", "DWARF007", "DWARF008", "DWARF009", "DWARF010",
+        "DWARF011", "DWARF012", "DWARF013", "DWARF015", "DWARF016", "DWARF017", "DWARF018",
+        "DWARF020", "DWARF021", "DWARF022", "DWARF023", "DWARF024", "DWARF025", "DWARF026",
+        "DWARF027", "DWARF028", "DWARF030", "DWARF031", "DWARF032", "DWARF033", "DWARF034",
+        "DWARF035", "DWARF036", "DWARF037", "DWARF038", "DWARF039", "DWARF040", "DWARF041",
+        "DWARF042", "DWARF044", "DWARF046", "DWARF047", "DWARF048", "DWARF049", "DWARF050",
+        "DWARF051", "DWARF052", "DWARF053", "DWARF054", "DWARF055", "DWARF056", "DWARF057",
+        "DWARF058", "DWARF059", "DWARF060", "DWARF061", "DWARF062", "DWARF064", "DWARF065",
+        "DWARF066", "DWARF067", "DWARF068", "DWARF069", "DWARF070", "DWARF071", "DWARF072",
+        "DWARF073", "DWARF074", "DWARF075", "DWARF076", "DWARF077", "DWARF078", "DWARF079",
+        "DWARF080", "DWARF081", "DWARF082", "DWARF083", "DWARF084", "DWARF085"
+    };
 }
 
 public sealed class AssemblyScanTests
@@ -554,6 +595,69 @@ public sealed class AssemblyScanTests
         var docText = File.ReadAllText(Path.Combine(RepoRoot, "docs", "diagnostics.md"));
         var headings = Regex.Count(docText, @"(?im)^##\s+dwarf\d{3}\b");
         Assert.True(headings >= 40, $"Expected to parse many doc sections, parsed {headings}.");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCAN 9 — Every live DWARF0xx id is announced in CHANGELOG.md
+    // ─────────────────────────────────────────────────────────────────────────
+    // Found by the final round-20 whole-branch review: DWARF086 was correctly present in
+    // AnalyzerReleases.Unshipped.md, docs/diagnostics.md and the generated index, but CHANGELOG.md's own
+    // preamble mandates an entry for any new/retired/re-severitied diagnostic id, and
+    // .github/workflows/release.yml publishes the matching section verbatim as the GitHub Release notes —
+    // so a new build-breaking Error would have shipped unannounced. No test in this repository read
+    // CHANGELOG.md at all before this scan; AssemblyScanTests otherwise stopped at the descriptor ↔
+    // AnalyzerReleases sync (Scan1) and never looked past it.
+
+    [Fact]
+    public void Scan9_Every_diagnostic_id_is_announced_in_the_changelog()
+    {
+        var changelogPath = Path.Combine(RepoPaths.Root, "CHANGELOG.md");
+        Assert.True(File.Exists(changelogPath), $"CHANGELOG.md not found at {changelogPath}");
+        var changelogText = File.ReadAllText(changelogPath);
+
+        var missing = GetAllDescriptors()
+            .Select(d => d.Descriptor.Id)
+            .Where(id => !ReservedIds.Ids.Contains(id))
+            .Where(id => !PredatesTheChangelog.Ids.Contains(id))
+            .Where(id => !changelogText.Contains(id, StringComparison.Ordinal))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(missing.Count == 0,
+            "Diagnostic id(s) with no CHANGELOG.md entry (add one under the current Unreleased heading — a "
+            + "new/retired/re-severitied diagnostic id is a user-visible change per the file's own preamble; "
+            + "if the id genuinely predates CHANGELOG.md, that belongs in PredatesTheChangelog instead, which "
+            + "may only shrink):\n" + string.Join("\n", missing));
+    }
+
+    [Fact]
+    public void Scan9_is_not_vacuous_it_actually_inspects_the_changelog()
+    {
+        // Non-vacuity guard (Issues/round20/CARRY-FORWARD.md §6 — this repository has hit "a scan finds
+        // nothing and passes by construction" six times, most recently a scan whose corpus included the
+        // very declaration it was meant to check). Three independent checks: the descriptor corpus Scan9
+        // draws from is a real, substantial set; CHANGELOG.md actually loaded and contains a known-present
+        // id; and every frozen PredatesTheChangelog entry is still a live descriptor, so a descriptor
+        // rename/removal makes the baseline itself fail rather than silently stop meaning anything.
+        var liveIds = GetAllDescriptors()
+            .Select(d => d.Descriptor.Id)
+            .Where(id => !ReservedIds.Ids.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(liveIds.Count >= 80,
+            $"Expected Scan9 to inspect a substantial number of live DWARF0xx ids, saw {liveIds.Count}.");
+
+        var changelogText = File.ReadAllText(Path.Combine(RepoPaths.Root, "CHANGELOG.md"));
+        Assert.Contains("DWARF063", changelogText, StringComparison.Ordinal);
+
+        var staleBaselineEntries = PredatesTheChangelog.Ids
+            .Where(id => !liveIds.Contains(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+        Assert.True(staleBaselineEntries.Count == 0,
+            "PredatesTheChangelog contains id(s) that are no longer live descriptors (remove them — the set "
+            + "may only shrink, towards ids that still need writing up):\n"
+            + string.Join("\n", staleBaselineEntries));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

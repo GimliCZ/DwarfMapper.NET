@@ -24,6 +24,7 @@ planned.
 | 1.1 | `MUST` | **`DWARF086` is absent from `CHANGELOG.md`.** It is in `AnalyzerReleases.Unshipped.md`, `docs/diagnostics.md` and `docs/generated/diagnostics-index.md` — but the CHANGELOG's own preamble **mandates an entry for any new diagnostic id**, and the release workflow publishes that section verbatim as the GitHub Release notes. **A new build-breaking `Error` would ship unannounced.** Nothing guards this: `AssemblyScanTests` syncs descriptors ↔ AnalyzerReleases only, and **no test in the repository reads `CHANGELOG.md` at all**. |
 | 1.2 | `MUST` | **The new public member is not under `### Added`.** `IsUpdateAmbiguous` is genuine new public surface but appears only inside the `Fixed` prose. A consumer scanning `Added` for new API will miss it. |
 | 1.3 | `MUST` | **A consumer-facing `Fixed` entry for `ResetForTests`**, which is `internal`, IVT to a single test project, and unreachable by any consumer. It does not belong in consumer release notes. |
+| 1.4 | `LATER` | **~80 diagnostics predate `CHANGELOG.md` and have never been announced.** The project has not shipped (`AnalyzerReleases.Shipped.md` is empty), so the first release notes should enumerate them. `PredatesTheChangelog` (in `AssemblyScanTests.cs`) is the worklist and shrinks as they are written. |
 
 These three are the only items on this page a user of the package could trip over. Everything else is internal.
 

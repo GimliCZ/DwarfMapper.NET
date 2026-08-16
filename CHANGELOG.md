@@ -20,15 +20,13 @@ so a version with no section here ships with no notes.
   `void Update(TSource, TDest)` — but only the create table had an ambiguity set, and `RegisterUpdate`
   marked its duplicates there. Two update registrations for a pair with no create map therefore left
   `IsAmbiguous(S, T)` returning `true` while `IsProvided(S, T)` returned `false`: a contested map that had
-  never been registered. `RegisterUpdate` now marks its own set, surfaced by the new `IsUpdateAmbiguous`.
-  **Behaviour change:** `IsAmbiguous` no longer reports duplicates that belong to the update table. If you
-  worked around the false positive by treating "ambiguous but not provided" as an update-table duplicate,
-  ask `IsUpdateAmbiguous` instead. Nothing inside the package read that set — the generator-emitted
-  `DwarfMap.Validate()` calls `IsProvided` only, and compile-time ambiguity (`DWARF063`) is computed from
-  the manifests — so no diagnostic or validation result changes. The duplicate delegate itself was already
-  first-wins and still is. (round 19, REG-06)
-- **`ResetForTests` did not clear the update table.** It cleared `Maps`, `Ambiguous` and `InterfaceMaps` but
-  not `UpdateMaps`, so a "reset" registry still held every update map ever registered.
+  never been registered. `RegisterUpdate` now marks its own set, surfaced by `IsUpdateAmbiguous` (new API,
+  see Added below). **Behaviour change:** `IsAmbiguous` no longer reports duplicates that belong to the
+  update table. If you worked around the false positive by treating "ambiguous but not provided" as an
+  update-table duplicate, ask `IsUpdateAmbiguous` instead. Nothing inside the package read that set — the
+  generator-emitted `DwarfMap.Validate()` calls `IsProvided` only, and compile-time ambiguity (`DWARF063`)
+  is computed from the manifests — so no diagnostic or validation result changes. The duplicate delegate
+  itself was already first-wins and still is. (round 19, REG-06)
 - **Member visibility was dropped on twenty code paths.** `ReadableMembers`/`WritableMembers` defaulted their
   `compilation` and `allowNonPublic` arguments, so paths that omitted them answered "which members can I read
   from this type?" as if the mapper had never set `[DwarfMapper(AllowNonPublic = true)]`. Legal code was
@@ -43,6 +41,17 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF086` — a manifest attribute the generator emits may not be hand-written.**
+  `[assembly: DwarfProvidesMap(...)]` and `[assembly: DwarfRequiresMap(...)]` are the generator's *output*:
+  the cross-assembly manifest that a `[DwarfMapperValidationRoot]` compilation reads back from referenced
+  metadata to decide `DWARF061`. A hand-written entry claims a map the generator never produced, so the
+  root validates against a manifest that no longer describes the assembly, and the failure reappears at the
+  first call site at run time (`DwarfMapMissingException`) instead of at compile time — the exact failure
+  `DWARF061` exists to pull forward. Refused as an **Error**; only hand-written occurrences are refused, the
+  generator's own `.g.cs` emission is unaffected. (round 19)
+- **`DwarfMapperRegistry.IsUpdateAmbiguous(Type, Type)`.** Mirrors `IsAmbiguous`, but reads the update-into
+  table's own duplicate set rather than the create table's — see the `RegisterUpdate` entry under Fixed,
+  above, for why the two tables needed separate sets. (round 19, REG-06)
 - **`DWARFR01`–`DWARFR09` are release-tracked.** The registry (`[MapTo]`) diagnostics suppressed
   `RS2000`/`RS2001` and appeared in no `AnalyzerReleases` file, despite shipping in the same package and
   surfacing in the same IDE error list as the `DWARF0xx` rules. They now have rows, the suppressions are
