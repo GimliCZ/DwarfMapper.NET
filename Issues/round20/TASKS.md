@@ -28,10 +28,14 @@ Nothing pushed. Surface matrix green at 865/865; whole solution builds 0 warning
 
 | | |
 |---|---|
-| **In flight** | **A2** — the missing arity checks (D4/D5/D21). Dispatched, running. |
-| **Next** | A3 → A4 → A7 in that order (they share the `MapProperty`/`MapIgnore` extractor region — ordering ruled in the ledger), then A5, A6, A8, A9, then **A10 last among the refusal tasks**, then A11. |
+| **In flight** | **A2 review** — implementation done, under task review. |
+| **Next** | A4 → A7 (they share the `MapProperty`/`MapIgnore` extractor region — ordering ruled in the ledger), then A5, A6, A8, A9, then **A10 last among the refusal tasks**, then A11. |
 | **Blocked on a human** | **D-e only.** ~80 diagnostics predate the CHANGELOG and have never been announced; `Scan9` guards only *new* ids. Harmless until the first tag, then not. |
 | **Round 19** | Complete — 10 tasks + 5a/5b/5c, final whole-branch review returned *merge after must-fixes*, and those must-fixes were **A0**. Merge itself is **F1** below and needs your say-so. |
+
+**Live counts, read from the code rather than from a report** (I had been repeating 23 / 162 from Task 5c's
+report; the source says otherwise — see the ledger's controller-error entry):
+**19 divergence findings · 113 declared cells · 302 unjudged-but-counted cells across four ratchets.**
 
 ### Why A10 runs late — the one ordering fact worth knowing
 
@@ -54,8 +58,8 @@ ceilings (findings 23 / declared cells 162 / structural 12) are lowered to their
 |---|---|---|---|
 | A0 | `DONE` | CHANGELOG must-fixes + `Scan9` (every diagnostic id must be announced) | CF §1.1–1.3 |
 | A1 | `DONE` | Duplicate `[FlattenGraph]` destination emitted uncompilable code → `DWARF087` | N4 |
-| A2 | `WIP` | The missing arity checks | D4, D5, D21 |
-| A3 | `TODO` | `[MapProperty]`'s named-argument payload discarded in silence | D3 |
+| A2 | `WIP` | The missing arity checks — under review. `DWARFR04` reused for D4 (**no new id**: the brief was wrong that its descriptor was dead; it checks *stacked-attribute* arity, a different thing). `DWARF088` added for D5+D21, one check, two call sites. | D4, D5, D21 |
+| A3 | `DONE` | **Closed by A2, unplanned.** D3's cells are `ctor(1)` + a property initializer — named arguments ride on the one-argument constructor — so A2's check fires on them. The narrower alternative was rejected: it would leave `[MapProperty("Id")]` refused and `[MapProperty("Id", Use=…)]` silent. | D3 |
 | A4 | `TODO` | Co-located host reads no member-level directives | D20 |
 | A5 | `TODO` | `MapToGenerator` ignores assembly-level config — **D19 is a trust boundary** | D17, D18, D19 |
 | A6 | `TODO` | `[MapNullSkip]` class and method forms are exact inverses — one is wrong | D6, D7 |
@@ -128,6 +132,45 @@ Previously invisible: it lived only in the SDD ledger and in my head. It belongs
 | F2 | `TODO` | Decide the fate of the worktree after merge. It is a real git worktree at a sibling path, plus a git-ignored `.superpowers/sdd/` workspace holding the ledger, briefs and reports. The ledger is the only record of ~15 rulings; **capture it before deleting anything.** |
 | F3 | `TODO` | Round-19 plan and spec live in `docs/superpowers/`; round-20's plan is on the branch. If the branch merges, three plan documents land in `docs/` — decide whether they stay as history or move under `Issues/`. |
 | F4 | `DONE` | Pre-flight conflict scan for the round-20 plan (table + four ordering rulings) — recorded in the ledger. Was skipped before A0 and run late. |
+
+## G. Every machine that holds work and executes steps
+
+The inventory. Each of these holds a list and drains it — and until now most existed only implicitly, which is
+how the same item ended up recorded in three places and the ceilings ended up misquoted in a fourth.
+
+| Machine | Where | Holds | Drained by |
+|---|---|---|---|
+| **Round-20 task list** | `Issues/round20/TASKS.md` | this file — ~40 items | the standing rule: every issue lands here |
+| **Divergence store** | `Contracts/DeclaredDivergences.cs` | **19 findings / 113 cells**, each asserting its defect *still exists* | section **A**; an entry deleted per fix |
+| **`PredatesTheChangelog`** | `SelfValidation/AssemblyScanTests.cs` | **76** diagnostics never announced | **D-e** — needs a human before the first tag |
+| **Mutation survivors** | `StrykerOutput/…/mutation-report.json` | **39**, kill-list ranked | **C6** |
+| **Round-19 SDD workspace** | `.superpowers/sdd/2026-08-13-…/` | ledger + briefs + reports, **git-ignored** | complete; **F2** — the ledger is the only record of its rulings |
+| **Round-20 SDD workspace** | `.superpowers/sdd/2026-08-16-…/` | ledger + briefs + reports, **git-ignored** | in use |
+| **Worktrees** | `DwarfMapper.NET` (master), `DwarfMapper-surface` (branch) | 30 unmerged commits | **F1** merge, **F2** cleanup |
+| **CI** | `.github/workflows/ci.yml`, `release.yml` | build/test legs incl. the `SurfaceMatrix` trait leg | **C1** — no mutation leg exists; **C5** — says "854 cells" |
+| **Scripts** | `scripts/` — `housekeeping.ps1`, `mutation-battery.sh`, `conformance-gate.sh`, `run-aot-bench.ps1`, `git-hooks/` | the `-Mutation` legs and the non-vacuity guard | **C1**, **C3** |
+| **Stryker configs** | `stryker-config{,.doctooling,.runtime}.json` | three mutation legs | **C3** — two never run to completion; `break: 70` unvalidated |
+| **Research** | `Issues/round21/RESEARCH.md` | 3 items, one already measured | section **E** |
+| **Reasoning archive** | `Issues/round20/CARRY-FORWARD.md` | the *why* behind these items | not a worklist — do not track work there |
+
+### The ten shrink-only ratchets
+
+Each is a population that may only get smaller. **No task may lower one it did not re-measure in the same
+commit** — predicted movement has proven unreliable (A1 moved a cell between two `NotCompilable`
+sub-populations and no ceiling changed at all).
+
+| Ratchet | Value | Meaning |
+|---|---:|---|
+| `NoSuchSiteCellCeiling` | 137 | no declaration site exists — 21 of these are **A11**'s template gap |
+| `NotCompilableCellCeiling` | 107 | compiler rejected the placement — **96 carry the wrong verdict**, that is **A10** |
+| `UnaskableCellCeiling` | 44 | the case-space cannot pose a question |
+| `UnhonouredButLoudCellCeiling` | 14 | changed nothing, but the build fails anyway |
+| `DivergentCellCeiling` | 113 | cells covered by a recorded divergence |
+| `DivergenceFindingCeiling` | 19 | recorded divergences |
+| `StructurallyExcusedCellCeiling` | 12 | shape-based, not behavioural |
+| `PredatesTheChangelog` | 76 | diagnostics never announced |
+| `DirectCompileErrorCallBaseline` | 52 | direct `RunAndGetCompilationErrors` call sites |
+| `MapMethodModelBoolFlagBaseline` | 15 | signature-triggered map modes |
 
 ---
 
