@@ -40,10 +40,51 @@ public class GeneratedDocsAreCurrentTests
         {
             if (_repoRoot is not null) return _repoRoot;
             var dir = AppContext.BaseDirectory;
-            while (dir is not null && !Directory.Exists(Path.Combine(dir, ".git")))
+            while (dir is not null && !HasGitMarker(dir))
                 dir = Path.GetDirectoryName(dir);
             Assert.NotNull(dir);
             return _repoRoot = dir;
+        }
+    }
+
+    /// <summary>
+    ///     True when <paramref name="dir" /> holds the repo-root marker. In a plain clone ".git" is a
+    ///     directory; in a git WORKTREE it is a FILE containing a "gitdir:" pointer instead. Either way the
+    ///     repo root is the directory containing it, so both must stop the walk — a directory-only check never
+    ///     terminates inside a worktree, and <see cref="RepoRoot" /> silently returned null there, which hid
+    ///     the three tests in this file for an entire round of work before anyone ran them here.
+    /// </summary>
+    private static bool HasGitMarker(string dir)
+    {
+        var marker = Path.Combine(dir, ".git");
+        return File.Exists(marker) || Directory.Exists(marker);
+    }
+
+    [Fact]
+    public void HasGitMarker_accepts_a_git_file_as_well_as_a_git_directory()
+    {
+        // Regression for the defect that hid every test in this file: a git WORKTREE has ".git" as a FILE
+        // (a "gitdir:" pointer), not a directory. A directory-only check never matches it, so the walk in
+        // RepoRoot climbs past the filesystem root, dir goes null, and Assert.NotNull(dir) fails inside
+        // get_RepoRoot() before any document is ever read — three tests dead without a real doc-drift finding
+        // among them. Exercised directly against temp directories so it needs no actual worktree to prove.
+        var probe = Path.Combine(Path.GetTempPath(), "dwarfmapper-hasgitmarker-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(probe);
+        try
+        {
+            Assert.False(HasGitMarker(probe), "a bare directory with no .git of any shape must not match");
+
+            var gitFile = Path.Combine(probe, ".git");
+            File.WriteAllText(gitFile, "gitdir: ../.git/worktrees/example\n");
+            Assert.True(HasGitMarker(probe), ".git as a FILE (the worktree shape) must be accepted");
+            File.Delete(gitFile);
+
+            Directory.CreateDirectory(gitFile);
+            Assert.True(HasGitMarker(probe), ".git as a DIRECTORY (the plain-clone shape) must still be accepted");
+        }
+        finally
+        {
+            Directory.Delete(probe, recursive: true);
         }
     }
 
