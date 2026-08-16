@@ -42,7 +42,10 @@ public class DiagnosticCoverageRatchetTests
         "DWARF023", "DWARF024", "DWARF025", "DWARF026",
         "DWARF027", "DWARF028", "DWARF030", "DWARF031",
         "DWARF032", "DWARF033", "DWARF034", "DWARF035",
-        "DWARF036", "DWARF037", "DWARF038", "DWARF039",
+        // DWARF038 removed 2026-08-16: [DwarfMapper(ImplicitConversions = false)] has no observable effect
+        // OTHER than escalating this suggestion to a refusal, so the option's own proof obligation is this
+        // case. The ratchet tightening, again as intended.
+        "DWARF036", "DWARF037", "DWARF039",
         "DWARF040", "DWARF041", "DWARF042", "DWARF043",
         "DWARF044", "DWARF045", "DWARF046", "DWARF047",
         "DWARF048", "DWARF049", "DWARF050", "DWARF051",
@@ -50,7 +53,9 @@ public class DiagnosticCoverageRatchetTests
         // DWARF058 removed 2026-08-12: DWARF081's case declares it, because two mappers from one source type
         // provoke it inherently. The ratchet tightening, exactly as intended.
         "DWARF056", "DWARF057", "DWARF059",
-        "DWARF060", "DWARF061", "DWARF062", "DWARF063",
+        // DWARF061 removed 2026-08-16: the validation root's whole observable effect is this refusal, so it
+        // is where [assembly: DwarfMapperValidationRoot] is proved to do anything at all.
+        "DWARF060", "DWARF062", "DWARF063",
         "DWARF064", "DWARF065", "DWARF066", "DWARF067",
         "DWARF068", "DWARF069", "DWARF070", "DWARF071",
         "DWARF073", "DWARF074", "DWARF075", "DWARF076",

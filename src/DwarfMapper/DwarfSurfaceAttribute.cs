@@ -255,6 +255,61 @@ internal sealed class DwarfSurfaceProbeAttribute : Attribute
 }
 
 /// <summary>
+///     Assigns a <see cref="SurfaceCategory" /> to ONE writable property of an option-bag element, because a
+///     category is declared per TYPE and the properties of an option bag are not all the same kind of surface.
+///     <para>
+///         The forcing case is <c>[DwarfMapper]</c>, whose eighteen options include at least two that are not
+///         consumer-demonstrable in the way the element as a whole is.
+///         <c>ImplicitConversions = false</c> turns a warning into a BUILD ERROR, so the sample that would
+///         demonstrate the difference could not compile; <c>GenerateExtensions = false</c> has no runtime
+///         effect at all — its whole observable result is the ABSENCE of generated extension methods.
+///         Both used to sit in a test-side <c>NotDemonstrable</c> dictionary as one-line excuses. Here they
+///         are redirected: each names the category whose obligation it must satisfy INSTEAD, and that
+///         obligation runs.
+///     </para>
+///     <para>
+///         Not folded into <see cref="DwarfSurfaceProbeAttribute" />, which also addresses individual
+///         properties. An enum is not nullable in attribute metadata, so a category property there would need
+///         an "unset" member — which is the <c>Exempt</c> member this design refuses, under another name. A
+///         separate attribute makes "this property's category was set" the presence of a declaration rather
+///         than a sentinel value.
+///     </para>
+///     <para>
+///         Naming a property the element does not have, declaring the same property twice, or stating no
+///         reason are all errors rather than silent no-ops, asserted by <c>SurfaceDeclarationTests</c> — a
+///         redirect that governs nothing reads as a reviewed decision while the option it names falls back to
+///         an obligation nobody chose for it.
+///     </para>
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Interface
+                | AttributeTargets.Enum, AllowMultiple = true, Inherited = false)]
+internal sealed class DwarfSurfaceOptionAttribute : Attribute
+{
+    public DwarfSurfaceOptionAttribute(string option, SurfaceCategory category, string because)
+    {
+        Option = option;
+        Category = category;
+        Because = because;
+    }
+
+    /// <summary>
+    ///     The writable property this redirects. Must be a public readable/writable non-indexed property of
+    ///     the element — anything else redirects nothing.
+    /// </summary>
+    public string Option { get; }
+
+    /// <summary>The category whose obligation this option must satisfy, in place of the element's own.</summary>
+    public SurfaceCategory Category { get; }
+
+    /// <summary>
+    ///     Why this option's proof lives somewhere other than the element's. Mandatory and asserted non-blank,
+    ///     for the same reason <see cref="DwarfSurfaceSiteAttribute.Because" /> is: an unexplained redirect is
+    ///     an allowlist entry with a category name on it.
+    /// </summary>
+    public string Because { get; }
+}
+
+/// <summary>
 ///     Narrows <see cref="DwarfSurfaceAttribute.AppliesTo" /> for ONE declaration site, because an element's
 ///     reach is not always uniform across the sites its <c>AttributeUsage</c> permits.
 ///     <para>

@@ -4,6 +4,9 @@ using ConsumerTests.Contracts;
 using DwarfMapper;
 using Microsoft.Extensions.DependencyInjection;
 
+// See CustomerService for why this cannot be auto-detected.
+[assembly: UsesMap(typeof(Customer), typeof(CustomerDto))]
+
 namespace ConsumerTests.Host;
 
 /// <summary>
@@ -357,14 +360,34 @@ public sealed class ConsumerSurfaceTests
     }
 }
 
-/// <summary>A service shaped like a consumer's: it takes the facade and maps a collection.</summary>
+/// <summary>
+///     A service shaped like a consumer's: it takes the facade and maps a collection.
+/// </summary>
+/// <remarks>
+///     <c>[UsesMap]</c> states the element consumption the generator cannot see. At
+///     <c>Map&lt;ICollection&lt;CustomerDto&gt;&gt;(list)</c> only the DESTINATION is static — the call site
+///     names a collection shape, not the element pair — so auto-detection has nothing to key on, and the
+///     assembly's <c>DwarfRequiresMap</c> manifest would omit the pair a validation root is supposed to check.
+///     That is the blind spot Round 18 found as 47 latent runtime throws, and it is why the attribute exists.
+///     Written at the ASSEMBLY here and per-CLASS on <see cref="CommandService" />, because
+///     <c>AttributeUsage</c> permits both and the two sites are read by different parts of the collector.
+/// </remarks>
 public sealed class CustomerService(IDwarfMapper mapper)
 {
     public ICollection<CustomerDto> ToDtos(IEnumerable<Customer> customers) =>
         mapper.Map<ICollection<CustomerDto>>(customers.ToList());
 }
 
-/// <summary>The polymorphic-collection call site, behind DI, exactly as an API controller would have it.</summary>
+/// <summary>
+///     The polymorphic-collection call site, behind DI, exactly as an API controller would have it.
+/// </summary>
+/// <remarks>
+///     The static element type here is <c>Command</c>; the pair that actually maps when the list holds an
+///     <c>AliasCommand</c> is <c>(AliasCommand, CommandDto)</c>, declared in an assembly this one does not
+///     reference. No call site in this assembly names it, so the generic <c>[UsesMap&lt;S, T&gt;]</c> is the
+///     only way it reaches the manifest.
+/// </remarks>
+[UsesMap<AliasCommand, CommandDto>]
 public sealed class CommandService(IDwarfMapper mapper)
 {
     public List<CommandDto> ToDtos(List<Command> commands) => mapper.Map<List<CommandDto>>(commands);

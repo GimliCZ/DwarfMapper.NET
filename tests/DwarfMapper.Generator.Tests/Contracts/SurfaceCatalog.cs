@@ -35,6 +35,14 @@ internal sealed record SurfaceProbeClaim(
     string? MapperOptions,
     string? Unmeasured);
 
+/// <summary>
+///     One <c>[DwarfSurfaceOption]</c> application, flattened out of the declaration.
+/// </summary>
+/// <param name="Option">The writable property whose obligation this redirects.</param>
+/// <param name="Category">The category whose obligation that option must satisfy instead.</param>
+/// <param name="Because">Why its proof lives elsewhere, as stated at the declaration.</param>
+internal sealed record SurfaceOptionClaim(string Option, SurfaceCategory Category, string Because);
+
 /// <summary>One public surface element, as declared.</summary>
 /// <param name="UsageName">The name as written in source, with "Attribute" and any generic arity stripped.</param>
 /// <param name="AppliesTo">The element's DEFAULT claim; <paramref name="SiteClaims" /> refines it per site.</param>
@@ -50,6 +58,10 @@ internal sealed record SurfaceProbeClaim(
 ///     The element's <c>[DwarfSurfaceProbe]</c> refinements, one per case that needs its own shape, value or
 ///     argument list. Compares by reference for the same reason <paramref name="SiteClaims" /> does.
 /// </param>
+/// <param name="OptionClaims">
+///     The element's <c>[DwarfSurfaceOption]</c> redirects, one per writable property whose proof obligation
+///     is not the element's own. Compares by reference for the same reason <paramref name="SiteClaims" /> does.
+/// </param>
 internal sealed record SurfaceElement(
     Type Type,
     string UsageName,
@@ -59,7 +71,8 @@ internal sealed record SurfaceElement(
     AttributeTargets ValidOn,
     bool AllowMultiple,
     IReadOnlyList<SurfaceSiteClaim> SiteClaims,
-    IReadOnlyList<SurfaceProbeClaim> ProbeClaims);
+    IReadOnlyList<SurfaceProbeClaim> ProbeClaims,
+    IReadOnlyList<SurfaceOptionClaim> OptionClaims);
 
 /// <summary>
 ///     One cell input: this element, written this way, at this declaration site.
@@ -139,7 +152,8 @@ internal static class SurfaceCatalog
                     usage?.ValidOn ?? AttributeTargets.All,
                     usage?.AllowMultiple ?? false,
                     SiteClaimsOf(x.Type),
-                    ProbeClaimsOf(x.Type));
+                    ProbeClaimsOf(x.Type),
+                    OptionClaimsOf(x.Type));
             })
             .OrderBy(e => e.UsageName, StringComparer.Ordinal)
             .ThenBy(e => e.Type.GetGenericArguments().Length)
@@ -158,6 +172,76 @@ internal static class SurfaceCatalog
             .Select(a => new SurfaceProbeClaim(a.Property, a.ConstructorArity, a.ProbeKey, a.Value, a.Arguments,
                 a.MapperOptions, a.Unmeasured))
             .ToList();
+
+    /// <summary>Every <c>[DwarfSurfaceOption]</c> on a type, in declaration order.</summary>
+    internal static IReadOnlyList<SurfaceOptionClaim> OptionClaimsOf(Type type) =>
+        type.GetCustomAttributes<DwarfSurfaceOptionAttribute>(inherit: false)
+            .Select(a => new SurfaceOptionClaim(a.Option, a.Category, a.Because))
+            .ToList();
+
+    /// <summary>
+    ///     The category one writable property of an element must satisfy: its own
+    ///     <c>[DwarfSurfaceOption]</c> redirect if it declares one, otherwise the ELEMENT's category.
+    ///     <para>
+    ///         Falling back to the element rather than to nothing is what makes the mechanism a redirect and
+    ///         not an allowlist. An option nobody has thought about carries its element's obligation — for
+    ///         <c>[DwarfMapper]</c> that is <c>ConsumerDirective</c>, i.e. "demonstrate it where a reader can
+    ///         run it" — so the way to say less about an option is to state a different obligation, never to
+    ///         say nothing.
+    ///     </para>
+    /// </summary>
+    public static SurfaceCategory CategoryOfOption(SurfaceElement element, string option)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        var matches = element.OptionClaims
+            .Where(c => string.Equals(c.Option, option, StringComparison.Ordinal)).ToList();
+        return matches.Count == 0 ? element.Category : matches.Single().Category;
+    }
+
+    /// <summary>
+    ///     Everything wrong with an element's <c>[DwarfSurfaceOption]</c> redirects, as reader-facing lines.
+    ///     A pure function over the declaration's own values, for the same reason
+    ///     <see cref="ValidateSiteClaims" /> is one: every branch passes vacuously against the well-formed
+    ///     declarations the repository actually has, and a gate that has never fired is unverified code.
+    /// </summary>
+    /// <param name="name">The element's usage name, for the message.</param>
+    /// <param name="options">The element's writable property names.</param>
+    /// <param name="elementCategory">The element's own <c>[DwarfSurface]</c> category.</param>
+    /// <param name="claims">Its <c>[DwarfSurfaceOption]</c> applications.</param>
+    internal static IReadOnlyList<string> ValidateOptionClaims(string name, IReadOnlySet<string> options,
+        SurfaceCategory elementCategory, IReadOnlyList<SurfaceOptionClaim> claims)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(claims);
+
+        var problems = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var claim in claims)
+        {
+            var where = $"[DwarfSurfaceOption(\"{claim.Option}\")]";
+
+            if (!options.Contains(claim.Option))
+                problems.Add($"{name}: {where} names no writable property of the element (it has: "
+                             + $"{string.Join(", ", options.OrderBy(o => o, StringComparer.Ordinal))}), so it "
+                             + "redirects nothing. The option it was written for still carries the element's "
+                             + "obligation, and nothing says so.");
+            else if (!seen.Add(claim.Option))
+                problems.Add($"{name}: two [DwarfSurfaceOption] claims both redirect '{claim.Option}'. One is "
+                             + "never consulted, and which one depends on declaration order.");
+
+            if (string.IsNullOrWhiteSpace(claim.Because))
+                problems.Add($"{name}: {where} states no reason. An unexplained redirect is an allowlist "
+                             + "entry with a category name on it.");
+
+            if (claim.Category == elementCategory)
+                problems.Add($"{name}: {where} restates the element's own category ({elementCategory}). It "
+                             + "redirects nothing while reading as a reviewed decision — delete it, or name "
+                             + "the category whose obligation this option actually satisfies.");
+        }
+
+        return problems;
+    }
 
     /// <summary>The refinement governing one writable property's cases, or null.</summary>
     private static SurfaceProbeClaim? ProbeFor(SurfaceElement element, string property) =>

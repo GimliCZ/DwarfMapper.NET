@@ -28,6 +28,18 @@ namespace DwarfMapper;
 // A budget, not a count: stepping the default to 65 binds on nothing against a graph three deep. Value = "1"
 // is the only probe that makes a depth limit observable at all, and no reflection over an int reveals that.
 [DwarfSurfaceProbe(nameof(DwarfMapperAttribute.MaxDepth), ProbeKey = "recursive-graph", Value = "1")]
+// Two of the eighteen options are not the same KIND of surface as the bag they sit in, so they do not carry
+// the element's ConsumerDirective obligation ("demonstrate it where a reader can run it"). Each names the
+// obligation it satisfies instead; there is no way to name none. MaxDepth deliberately has no redirect — its
+// former excuse ("a sample that throws on purpose reads as a broken sample") went stale the day AotSample
+// began catching DwarfMappingDepthException on purpose, and it now passes the ordinary obligation on evidence.
+[DwarfSurfaceOption(nameof(DwarfMapperAttribute.GenerateExtensions), SurfaceCategory.EmissionShape,
+    "its whole observable effect is the ABSENCE of a generated `source.ToTarget()` extension, which no "
+    + "running sample can show; the proof is a structural assertion over the generated text")]
+[DwarfSurfaceOption(nameof(DwarfMapperAttribute.ImplicitConversions), SurfaceCategory.BuildFailureOnly,
+    "true is the default and changes nothing to observe; false turns the DWARF038 narrowing-conversion "
+    + "warning into a refusal, so the sample that would demonstrate the difference could not compile. The "
+    + "proof is a NegativeCases row pinning the id and its remedy wording")]
 [DwarfSurfaceProbe(constructorArity: 0,
     Unmeasured = "a bare [DwarfMapper] selects every option's default, so there is nothing here for any "
                  + "endpoint to honour or refuse — the case is silent by construction, whatever the generator "

@@ -7,7 +7,7 @@
 //  1. DWARF descriptor <=> AnalyzerReleases sync (both directions + metadata match)
 //  2. No dead/orphan diagnostic (every descriptor is actually emittable)
 //  3. Every diagnostic id has a triggering test
-//  4. Every public Attribute type has at least one test reference
+//  4. SUPERSEDED — see the banner at scan 4's former position
 //  5. Every public enum VALUE has at least one test reference
 //  6. TargetKind completeness via [InternalsVisibleTo] from the generator
 
@@ -377,40 +377,19 @@ public sealed class AssemblyScanTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SCAN 4 — Every public Attribute type has a test reference
+    // SCAN 4 — SUPERSEDED by SurfaceObligationTests (2026-08-16)
+    //
+    // It asked whether every public attribute's NAME appeared anywhere in the test sources, which a
+    // doc-comment mentioning it satisfied — so an attribute could sit at zero real use and still pass,
+    // and thirteen of them did. The replacement asks a different question per attribute, chosen at the
+    // attribute's own declaration: SurfaceDeclarationTests forces every public attribute to carry a
+    // [DwarfSurface] category, SurfaceObligationTests forces every category to carry an obligation, and
+    // the obligations demand a written USE in the corpus that category names — a consumer assembly and a
+    // runnable sample, a NegativeCases row, a multi-assembly fixture, or an assertion over emitted text.
+    //
+    // Nothing is lost by the removal: the set this scan covered is the set SurfaceDeclarationTests
+    // requires a category for, so a new attribute cannot escape by being added after this deletion.
     // ─────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Scan4_Every_public_attribute_type_has_a_test_reference()
-    {
-        var testText = AllTestSourceText.Value;
-
-        // Reflect all public Attribute subclasses from the DwarfMapper assembly.
-        // Strip the "Attribute" suffix for the usage form check (e.g. [MapProperty]).
-        var attrTypes = DwarfMapperAssembly
-            .GetTypes()
-            .Where(t => t.IsPublic && !t.IsAbstract && typeof(Attribute).IsAssignableFrom(t))
-            .ToList();
-
-        var missing = new List<string>();
-        foreach (var t in attrTypes)
-        {
-            // For generic types (MapDerivedTypeAttribute`2) strip the backtick suffix.
-            var rawName = t.Name;
-            var usageName = rawName.EndsWith("Attribute", StringComparison.Ordinal)
-                ? rawName[..^"Attribute".Length]
-                : rawName;
-            // Also handle generic mangling: e.g. "MapDerivedTypeAttribute`2" → "MapDerivedType"
-            var backtickIdx = usageName.IndexOf('`', StringComparison.Ordinal);
-            if (backtickIdx >= 0) usageName = usageName[..backtickIdx];
-
-            if (!testText.Contains(usageName, StringComparison.Ordinal))
-                missing.Add($"{t.FullName ?? t.Name} (searched for '{usageName}')");
-        }
-
-        Assert.True(missing.Count == 0,
-            "Public attribute type(s) with no test reference:\n" + string.Join("\n", missing));
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // SCAN 5 — Every public enum VALUE has a test reference

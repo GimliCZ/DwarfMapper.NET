@@ -289,5 +289,23 @@ R.Check("F46 [RestatesBase] base pair converts", f46.Map(new F46Command { Raw = 
 R.Check("F46 [RestatesBase] restated pair converts too",
     f46.Map(new F46AliasCommand { Raw = "  hi  ", Alias = "a" }) is { Text: "hi", Alias: "a" });
 
+// F47 SkipNullSourceMembers on the MAPPER — patch semantics with no per-method annotation. F31 shows the
+// [MapNullSkip] narrowing of the same setting; this is the scope a migrating consumer starts from.
+var f47 = new F47D { Name = "kept", Note = "kept" };
+new F47M().Patch(new F47S { Name = "new" }, f47);
+#pragma warning disable CA1508
+R.Check("F47 class-scoped patch keeps", f47 is { Name: "new", Note: "kept" });
+#pragma warning restore CA1508
+
+// F48 RegisterCollectionShapes = false — the element map is registered, the collection shapes are not. Both
+// halves are asserted: without the first, "it threw" would be indistinguishable from a mapper that never
+// registered anything at all.
+RuntimeHelpers.RunModuleConstructor(typeof(F48M).Module.ModuleHandle);
+R.Check("F48 element map still registered",
+    ((F48D)DwarfMapperRegistry.Map(new F48S { Id = 5 }, typeof(F48D))).Id == 5);
+R.Check("F48 collection shape withheld",
+    R.Throws<DwarfMapMissingException>(() => DwarfMapperRegistry.Map(
+        new List<F48S> { new() { Id = 1 } }, typeof(ICollection<F48D>))));
+
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;

@@ -166,6 +166,89 @@ public sealed class SurfaceDeclarationTests
     }
 
     /// <summary>
+    ///     Every <c>[DwarfSurfaceOption]</c> redirect is well-formed: it names a writable property the element
+    ///     actually has, no two redirect the same one, it states a reason, and it redirects somewhere other
+    ///     than the element's own category.
+    ///     <para>
+    ///         A redirect that governs nothing is the failure mode this mechanism was built to replace. The
+    ///         option it names silently falls back to the element's obligation while the declaration reads as
+    ///         a reviewed decision about where that option's proof lives — which is a <c>NotDemonstrable</c>
+    ///         entry again, in better handwriting.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Every_declared_option_redirect_is_well_formed()
+    {
+        var problems = Contracts.SurfaceCatalog.Elements
+            .SelectMany(e => Contracts.SurfaceCatalog.ValidateOptionClaims(
+                e.UsageName,
+                Contracts.SurfaceCatalog.WritablePropertiesOf(e.Type)
+                    .Select(p => p.Name).ToHashSet(StringComparer.Ordinal),
+                e.Category, e.OptionClaims))
+            .ToList();
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    /// <summary>
+    ///     Feeds <c>ValidateOptionClaims</c> each malformed shape directly, for the same reason
+    ///     <see cref="The_site_override_validator_rejects_every_malformed_shape" /> does: against the two
+    ///     well-formed redirects the repository has, every branch of that validator passes vacuously.
+    /// </summary>
+    [Fact]
+    public void The_option_redirect_validator_rejects_every_malformed_shape()
+    {
+        var options = new HashSet<string>(StringComparer.Ordinal) { "Flag", "Mode" };
+
+        static string[] Check(IReadOnlySet<string> known, params SurfaceOptionClaim[] cs) =>
+            Contracts.SurfaceCatalog.ValidateOptionClaims("Probe", known,
+                SurfaceCategory.ConsumerDirective, cs).ToArray();
+
+        // Names a property the element does not have: the redirect governs nothing.
+        Assert.Contains("no writable property", Assert.Single(Check(options,
+            new SurfaceOptionClaim("Gone", SurfaceCategory.EmissionShape, "why"))),
+            StringComparison.Ordinal);
+
+        // Two redirects on one option: one is never consulted.
+        Assert.Contains("both redirect", Assert.Single(Check(options,
+            new SurfaceOptionClaim("Flag", SurfaceCategory.EmissionShape, "why"),
+            new SurfaceOptionClaim("Flag", SurfaceCategory.BuildFailureOnly, "why"))),
+            StringComparison.Ordinal);
+
+        // No reason stated.
+        Assert.Contains("states no reason", Assert.Single(Check(options,
+            new SurfaceOptionClaim("Flag", SurfaceCategory.EmissionShape, "  "))),
+            StringComparison.Ordinal);
+
+        // Restates the element's own category: redirects nothing.
+        Assert.Contains("restates", Assert.Single(Check(options,
+            new SurfaceOptionClaim("Flag", SurfaceCategory.ConsumerDirective, "why"))),
+            StringComparison.Ordinal);
+
+        // The well-formed shape the repository actually uses reports nothing.
+        Assert.Empty(Check(options, new SurfaceOptionClaim("Flag", SurfaceCategory.EmissionShape, "why")));
+    }
+
+    /// <summary>
+    ///     A <c>[DwarfSurfaceOption]</c> on a type with no <c>[DwarfSurface]</c> redirects an obligation the
+    ///     type does not have, and the type is not in the catalogue at all — so the redirect is never read.
+    /// </summary>
+    [Fact]
+    public void No_option_redirect_sits_on_a_type_that_declares_no_category()
+    {
+        var orphans = typeof(DwarfMapperAttribute).Assembly.GetExportedTypes()
+            .Where(t => t.GetCustomAttributes<DwarfSurfaceOptionAttribute>(inherit: false).Any()
+                        && t.GetCustomAttribute<DwarfSurfaceAttribute>(inherit: false) is null)
+            .Select(t => t.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(orphans.Count == 0,
+            "Type(s) carrying [DwarfSurfaceOption] but no [DwarfSurface]: " + string.Join(", ", orphans)
+            + ". The redirect names an obligation for a type that has none.");
+    }
+
+    /// <summary>
     ///     A <c>[DwarfSurfaceSite]</c> on a type with no <c>[DwarfSurface]</c> has no default to narrow, and
     ///     <c>SurfaceCatalog</c> filters the type out of the element set entirely — so the override, and every
     ///     cell it was written to govern, would vanish without a word.

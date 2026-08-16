@@ -797,7 +797,7 @@ verification.)
 feature — flat/rename/conversions, enum strategies, nested/collections, projection, all three cycle strategies,
 `[MapTo]`, `[Flatten]`/`[FlattenGraph]`, `[Reinterpret]`, hooks, `[ReverseMap]`, ambient registry, `[RoundTrip]` — plus
 adversarial "dirty paths" (null source → `ArgumentNullException`, narrowing overflow → `OverflowException` with no
-silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **72 runtime assertions**. It doubles
+silent truncation, bad parse → `FormatException`, unguarded cycle → throw), with **75 runtime assertions**. It doubles
 as living documentation.
 
 ---
