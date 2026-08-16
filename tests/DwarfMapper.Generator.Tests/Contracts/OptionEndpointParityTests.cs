@@ -54,22 +54,30 @@ public class OptionEndpointParityTests
     public static readonly Endpoint[] ComparableEndpoints =
         [Endpoint.UpdateInto, Endpoint.Projection, Endpoint.SpanMap, Endpoint.AsyncStream];
 
-    public static TheoryData<string, Endpoint> Cells()
+    /// <summary>
+    ///     One row per option VALUE per endpoint. The value label is part of the key, not decoration: an
+    ///     option whose domain holds several non-default values contributes several rows, xUnit collapses
+    ///     rows whose arguments compare equal, and two rows keyed on the option name alone would silently
+    ///     become one — reintroducing, at the theory level, the very under-probing the full-domain
+    ///     enumeration in <see cref="OptionCatalog.ValueDomain" /> exists to prevent.
+    /// </summary>
+    public static TheoryData<string, string, Endpoint> Cells()
     {
-        var data = new TheoryData<string, Endpoint>();
+        var data = new TheoryData<string, string, Endpoint>();
         foreach (var cell in OptionCatalog.Options)
         foreach (var endpoint in ComparableEndpoints)
-            data.Add(cell.Name, endpoint);
+            data.Add(cell.Name, cell.ValueLabel, endpoint);
         return data;
     }
 
     [Theory]
     [MemberData(nameof(Cells))]
     public void An_option_that_acts_at_CreateMap_does_not_go_silent_at_another_endpoint(
-        string option, Endpoint endpoint)
+        string option, string value, Endpoint endpoint)
     {
-        var cell = OptionCatalog.Options
-            .Single(c => string.Equals(c.Name, option, StringComparison.Ordinal));
+        var cell = OptionCatalog.Options.Single(
+            c => string.Equals(c.Name, option, StringComparison.Ordinal)
+                 && string.Equals(c.ValueLabel, value, StringComparison.Ordinal));
 
         var reference = OptionProbe.Classify(Endpoint.CreateMap, cell.NonDefault, cell.Types);
 

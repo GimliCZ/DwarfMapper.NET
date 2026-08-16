@@ -190,9 +190,22 @@ public class GeneratedDocsAreCurrentTests
         foreach (var _ in endpoints) sb.Append("---|");
         sb.Append('\n');
 
+        // An option whose domain holds several non-default values contributes several rows, and two rows
+        // labelled identically would read as one option measured twice. The value is appended only when it
+        // disambiguates, so a single-valued option's row is unchanged — and the option NAME stays alone in
+        // the first backtick pair, which is what the two ratchets below parse the row back to.
+        var multiValued = OptionCatalog.Options
+            .GroupBy(c => c.Name, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
         foreach (var cell in OptionCatalog.Options)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"| `{cell.Name}` |");
+            var label = multiValued.Contains(cell.Name)
+                ? $"`{cell.Name}` = `{cell.ValueLabel}`"
+                : $"`{cell.Name}`";
+            sb.Append(CultureInfo.InvariantCulture, $"| {label} |");
 
             // A row silent at EVERY endpoint means the fixture never triggers the option — a gap in the
             // probe, not a verdict on the code. Gating on the reference endpoint alone was too coarse:
