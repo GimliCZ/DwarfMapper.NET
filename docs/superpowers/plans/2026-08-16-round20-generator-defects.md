@@ -66,6 +66,40 @@ until you have also:
 
 ---
 
+### Task 0: the `CHANGELOG` must-fixes, and a test so it cannot recur
+
+**Do this first.** It is the only thing the final whole-branch review found blocking merge, and it is one file.
+
+**Files:** `CHANGELOG.md`; a new test wherever the diagnostic-sync scans live
+(`tests/DwarfMapper.Generator.Tests/SelfValidation/AssemblyScanTests.cs` is the natural home).
+
+- [ ] **Step 1: Fix the three entries.**
+  - Add a `DWARF086` entry. The CHANGELOG's own preamble **mandates** one for any new diagnostic id, and the
+    release workflow publishes that section verbatim as the GitHub Release notes — so today a new
+    **build-breaking `Error`** would ship unannounced.
+  - Move `IsUpdateAmbiguous` to `### Added`. It is new public surface and currently appears only inside `Fixed`
+    prose.
+  - Drop (or reword) the `ResetForTests` bullet — it is `internal` and unreachable by any consumer, so it does
+    not belong in consumer release notes.
+
+- [ ] **Step 2: Write the guard that does not exist.** **No test in this repository reads `CHANGELOG.md` at
+      all.** `AssemblyScanTests` syncs descriptors ↔ `AnalyzerReleases` and stops there. Add a scan: every live
+      descriptor id must appear in `CHANGELOG.md`, excluding the documented retired set (`DWARF006`,
+      `DWARF019`, `DWARF029`).
+
+      Write the test first and watch it fail on `DWARF086` before fixing Step 1's entry, so you know the scan
+      is not vacuous. Give it a non-empty-corpus guard — a mistyped path would make it pass by finding nothing,
+      which is the failure mode this repository has hit **six** times (see
+      `Issues/round20/CARRY-FORWARD.md` §6).
+
+- [ ] **Step 3:** Whole-solution build; commit.
+
+**Why this task is worth its own slot rather than being folded in:** the rule forbidding an unannounced
+diagnostic is *the one stated invariant in this repository with no test behind it*. Closing it is the same
+move as everything else in round 19, applied to the one place round 19 missed.
+
+---
+
 ### Task 1: N4 — duplicate `[FlattenGraph]` emits uncompilable code
 
 **Highest severity in round 20: the generator produces source that does not compile.**
