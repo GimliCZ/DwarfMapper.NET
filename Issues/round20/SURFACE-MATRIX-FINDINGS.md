@@ -21,8 +21,10 @@
 > **2026-08-17, third fix — 19 / 113 to 18 / 93.** `D20`: the co-located `[GenerateMap]` host now reads the
 > member-placement `[MapProperty]` / `[MapIgnore]` its own `[DwarfSurfaceSite]` had always claimed it did,
 > through the one parser the `[MapTo]` registry already used; the method forms written on a host member are
-> refused as the new `DWARF089`. Ten of the twenty cells went Honoured and ten Refused — the first finding on
-> this branch that did **not** resolve to a single verdict. See [D20](#D20).
+> refused as the new `DWARF089`. Measured, **2 cells went Honoured and 18 Refused** — but the 18 are three
+> different things (6 directives that act while a pre-existing conversion warning fires, 6 refusals of a
+> named argument the binding now reaches, 8 `DWARF089`), so this is the first finding on this branch that
+> did **not** resolve to a single verdict. See [D20](#D20).
 
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case
@@ -702,14 +704,21 @@ believes they have one. Same shape as the DWARF077 gap, one endpoint over.
 
 > **RESOLVED 2026-08-17.** The co-located path now reads the member forms off the host's own members, through
 > the same `MemberDirectives` parser the `[MapTo]` registry uses; the method forms written there are refused
-> as the new `DWARF089`. All twenty cells re-measured, **ten Honoured and ten Refused** — see the table below.
-> `DivergenceFindingCeiling` 19 → **18**, `DivergentCellCeiling` 113 → **93**; no other ratchet moved, and
-> none was raised. Matrix green at 865/865, whole solution 0 warnings / 0 errors.
+> as the new `DWARF089`. All twenty cells re-measured: by matrix verdict **2 Honoured and 18 Refused** —
+> `Honoured` 148 → 150, `Refused` 175 → 193, `Silent` 248 → 228. `DivergenceFindingCeiling` 19 → **18**,
+> `DivergentCellCeiling` 113 → **93**; no other ratchet moved, and none was raised. Matrix green at 865/865,
+> whole solution 0 warnings / 0 errors.
 >
 > **This one did not resolve to a single verdict, unlike D3/D4/D5/D21.** Those four were one mistake with one
 > answer (refuse). Here the two placements are two different things at the same site: the member form
-> *should* act and now does, and the method form written on a member should not and now says so. Splitting
-> the twenty cells that way was the substance of the task; the ceilings are the bookkeeping.
+> *should* act and now does, and the method form written on a member should not and now says so. The 18
+> `Refused` are three unlike things, which is why the verdict alone is a poor summary of this finding:
+>
+> | What the cell now does | Cells | Verdict |
+> | --- | ---: | --- |
+> | the directive ACTS (a rename, a format, an exclusion) | **6** | 2 `Honoured`; 4 read `Refused` because a pre-existing `DWARF038` fires about the conversion the rename implies, and the probe checks diagnostics before output |
+> | a named argument the binding now reaches is refused on its merits | **6** | `Refused` — `DWARF014` / `DWARF050` / `DWARF049` |
+> | the method form written on a member | **8** | `Refused (DWARF089 (Warning))` |
 >
 > | Case, both sites | Before | After |
 > | --- | --- | --- |
