@@ -1,0 +1,100 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+
+# The task list
+
+**Standing rule, adopted 2026-08-16: every issue found goes in here, as a task, when it is found.**
+Not into a ledger line, not into a report addendum, not into a category table. Here. One store.
+
+This file supersedes the issue-tracking role of `CARRY-FORWARD.md` (which stays as the written-up *reasoning*
+behind these items — the detail is worth keeping, it just should not be where work is tracked).
+
+**Status:** `TODO` · `WIP` · `DONE` · `DECIDE` (blocked on a maintainer ruling, not on work) ·
+`DROP` (considered and rejected — kept so nobody re-raises it).
+
+**Where the detail lives:** `CF §n` = `Issues/round20/CARRY-FORWARD.md` section n · `Dn` = an entry in
+`tests/DwarfMapper.Generator.Tests/Contracts/DeclaredDivergences.cs` · `R21` =
+`Issues/round21/RESEARCH.md`.
+
+---
+
+## A. Generator defects — the round-20 plan
+
+Fixing any of these turns the build **red** until its `DeclaredDivergences` entry is deleted and the three
+ceilings (findings 23 / declared cells 162 / structural 12) are lowered to their newly measured values.
+
+| # | Status | Task | Closes |
+|---|---|---|---|
+| A0 | `DONE` | CHANGELOG must-fixes + `Scan9` (every diagnostic id must be announced) | CF §1.1–1.3 |
+| A1 | `DONE` | Duplicate `[FlattenGraph]` destination emitted uncompilable code → `DWARF087` | N4 |
+| A2 | `WIP` | The missing arity checks | D4, D5, D21 |
+| A3 | `TODO` | `[MapProperty]`'s named-argument payload discarded in silence | D3 |
+| A4 | `TODO` | Co-located host reads no member-level directives | D20 |
+| A5 | `TODO` | `MapToGenerator` ignores assembly-level config — **D19 is a trust boundary** | D17, D18, D19 |
+| A6 | `TODO` | `[MapNullSkip]` class and method forms are exact inverses — one is wrong | D6, D7 |
+| A7 | `TODO` | Element-wise endpoints do not inherit method-level directives | D1, D2, D16 |
+| A8 | `TODO` | Projection does not honour member directives | D9, D10 |
+| A9 | `TODO` | Directives acting at exactly one endpoint (**take one directive per commit**) | D8, D11–D15 |
+| A10 | `TODO` | `CS8795` read as `NotCompilable` where it means `Refused` — 96 cells judged for the first time | G4/R4 |
+| A11 | `TODO` | No struct / constructor slot in the endpoint templates — 21 cells unmeasurable | G5 |
+
+## B. Test-infrastructure holes
+
+| # | Status | Task | Source |
+|---|---|---|---|
+| B1 | `TODO` | **`Scan6a` passes by construction** — searches for an enum's members in a corpus containing the enum's own declaration. `Scan2` already excludes its own defining file; copy that. Check `Scan3`, `Scan6b`, `Scan5`-options for the same shape, and the `>=40` floors sitting against actual 59 and 82. | CF §5b |
+| B2 | `TODO` | **`Property`/`Field` share one `BuildAt` arm that discards `site`** — every Field cell is byte-identical to its Property cell, so a field-only divergence is invisible while reading as measured. ~11 of 162 cells. Deserves a declared **G6** entry, not a silent fix. | CF §5b.3 |
+| B3 | `TODO` | **The option matrix's excuse class cannot go stale-red** — `OptionContractTests` accepts `NotApplicable` on a non-blank *reason* alone, never re-measured, never counted (8 of 18 `ProjectionCells`). The surface matrix re-classifies live; this does not. Also `DeclaredDivergences.CoversOption` is endpoint-blind. | CF §5b.4 |
+| B4 | `TODO` | **No test pins that same-source, different-destination `[FlattenGraph]` stays accepted** (`("Entry","NodesA")` + `("Entry","NodesB")`). The one shape a source-keyed refusal would wrongly reject. Guards a brand-new build-breaking Error. | Task 1 review |
+| B5 | `TODO` | Fixture-baseline rule is a comment, not a gate. **Trap:** a naive "baseline must compile" check fires on four legitimate `DWARF001`-by-design fixtures. | CF §3.2 |
+| B6 | `TODO` | `NoSuchSite` ratchet gates the total only — offsetting per-cause drift passes silently. | CF §3.1 |
+| B7 | `TODO` | `CrossAssembly` obligation is placement-blind — a row confined to one project satisfies the one category whose claim is that it is only observable *across* assemblies. | CF §3.4 |
+| B8 | `TODO` | "Shrink-only" is prose on both `PredatesTheChangelog` and `DiagnosticTestAllowlist`. One guard covers both. | CF §3.8 |
+| B9 | `TODO` | `Scan9`'s control proves the *corpus* is real, not that the *assertion* is. Sweep the scan family for the same shape. | CF §3.9 |
+| B10 | `TODO` | `CorpusFor`'s throwing default arm is unreached by any test. | CF §3.3 |
+| B11 | `TODO` | `DiagnosticCoverageRatchetTests` claims "holds by construction"; `PredatesThisProject` is a hatch no test blocks. | CF §3.6 |
+| B12 | `TODO` | Nothing forbids a cell being in both `Reasons` and `StructurallyInapplicable` (double-count). Theoretical today. | CF §3.5 |
+| B13 | `TODO` | `SurfaceParityTests` checks the evidence link's *shape*, not that file and anchor resolve. Latent. | CF §5b.5 |
+| B14 | `TODO` | `IsGeneratorAuthored`'s remarks omit the `*.g.cs` collision case (permissive-only, undocumented). | CF §3.7 |
+
+## C. Tooling and environment
+
+| # | Status | Task | Source |
+|---|---|---|---|
+| C1 | `TODO` | **Stryker runs in no CI job at all.** The 66.95% is a manual leg, free to regress silently. | CF §5b.1 |
+| C2 | `TODO` | **`.git`-as-a-file breaks the doc tests in any worktree** — and forced Task 1 to hand-render a generated file. Fix `RepoRoot` to accept both. | CF §4.1 |
+| C3 | `TODO` | Both sibling Stryker configs are parse-fixed but never run; `break: 70` is inherited and unvalidated. | CF §4.2 |
+| C4 | `TODO` | `docs/research/testing-conformance-REPORT.md:22` still says "Mutation testing — none". | CF §5b.2 |
+| C5 | `TODO` | Drift: `ci.yml` says "854 cells" (actual 861/865); a ratchet open-codes `AssertRatchet`; `AssemblyScanTests` keeps a private repo-root walk `RepoPaths` exists to replace. | CF §5b.6 |
+| C6 | `TODO` | Kill the top mutation survivors: `DwarfMapperRegistry.cs:76` (duplicate `Register` → `InterfaceMaps`, stated invariant, **zero tests**), `DwarfMappingDepthException.cs:32`, `DwarfMapExceptions.cs:95`. **Do not** attempt `:291` — equivalent in practice, see CF §5.4. | CF §5.3–5.4 |
+
+## D. Maintainer decisions — blocked on a ruling, not on work
+
+| # | Status | Question |
+|---|---|---|
+| D-a | `DECIDE` | **`NullCollections` silent at `Projection`.** Three candidate resolutions recorded, a refusal implemented and reverted (broke seven tests, one asserting the current behaviour on purpose). Pick one before anyone implements. |
+| D-b | `DECIDE` | **Delete `ResetForTests`?** Zero callers repo-wide; its IVT goes to a project whose tests do not use it; the mutation leg excludes that project — so Task 10's additions to it are unverifiable dead code by construction. |
+| D-c | `DECIDE` | **`CLAUDE.md`'s working note is stale and describes a superseded mechanism.** By its own stated rule it should be deleted, not corrected. |
+| D-d | `DECIDE` | **`internal` + `[InternalsVisibleTo]` was sized for one meta-attribute; there are now four.** The shipped, unsigned package previously had zero IVT, and what it now exposes is `ResetForTests`. Sits against the honor-accessibility / CRA-defensive stance. Coupled to D-b. |
+| D-e | `DECIDE` | **~80 diagnostics predate `CHANGELOG.md` and have never been announced.** The project has never shipped, so the first release notes should enumerate them. `PredatesTheChangelog` is the worklist. |
+
+## E. Research — measure before changing anything
+
+| # | Status | Task |
+|---|---|---|
+| E1 | `TODO` | **Mutation leg costs 44 min because 91 tests do all the killing and 5,592 pay for it** (~61× waste). Scope to the intentional tests. See R21-1. |
+| E2 | `TODO` | **Time the torture collection × 49** — I wrongly recorded this hypothesis as refuted on kill-count, which is not time-cost. Genuinely unmeasured. See R21-3. |
+| E3 | `TODO` | Check from the existing JSON whether any mutant was killed **only** by an accidental toucher — de-risks E1 with no run at all. |
+| E4 | `TODO` | Isolate the culture-swapping tests into their own collection so the rest of `IntegrationTests` can parallelise. **Bigger than it looks:** a second shared-state hazard (the registry static) the existing comment never mentions. See R21-3. |
+
+---
+
+## The honest caveat about this list
+
+There are **~40 open items** here. That is a real risk in itself: a list where everything is a task is a list
+nobody finishes, and it can feel like progress while nothing closes.
+
+**Suggested cut line, if one is wanted:** everything in **A** (they are measured product defects with a ratchet
+already asserting they exist), plus **B1–B4** (each is a mechanism currently reporting success while measuring
+nothing — the failure mode that has now appeared **six** times), plus **C1–C2** (both make other work
+untrustworthy). That is ~18 items. Everything else is genuinely deferrable, and **D** is not work at all until
+it is ruled on.
