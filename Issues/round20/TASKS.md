@@ -67,15 +67,19 @@ ceilings (findings 23 / declared cells 162 / structural 12) are lowered to their
 | C5 | `TODO` | Drift: `ci.yml` says "854 cells" (actual 861/865); a ratchet open-codes `AssertRatchet`; `AssemblyScanTests` keeps a private repo-root walk `RepoPaths` exists to replace. | CF §5b.6 |
 | C6 | `TODO` | Kill the top mutation survivors: `DwarfMapperRegistry.cs:76` (duplicate `Register` → `InterfaceMaps`, stated invariant, **zero tests**), `DwarfMappingDepthException.cs:32`, `DwarfMapExceptions.cs:95`. **Do not** attempt `:291` — equivalent in practice, see CF §5.4. | CF §5.3–5.4 |
 
-## D. Maintainer decisions — blocked on a ruling, not on work
+## D. Decisions — **ruled**, now ordinary work
 
-| # | Status | Question |
-|---|---|---|
-| D-a | `DECIDE` | **`NullCollections` silent at `Projection`.** Three candidate resolutions recorded, a refusal implemented and reverted (broke seven tests, one asserting the current behaviour on purpose). Pick one before anyone implements. |
-| D-b | `DECIDE` | **Delete `ResetForTests`?** Zero callers repo-wide; its IVT goes to a project whose tests do not use it; the mutation leg excludes that project — so Task 10's additions to it are unverifiable dead code by construction. |
-| D-c | `DECIDE` | **`CLAUDE.md`'s working note is stale and describes a superseded mechanism.** By its own stated rule it should be deleted, not corrected. |
-| D-d | `DECIDE` | **`internal` + `[InternalsVisibleTo]` was sized for one meta-attribute; there are now four.** The shipped, unsigned package previously had zero IVT, and what it now exposes is `ResetForTests`. Sits against the honor-accessibility / CRA-defensive stance. Coupled to D-b. |
-| D-e | `DECIDE` | **~80 diagnostics predate `CHANGELOG.md` and have never been announced.** The project has never shipped, so the first release notes should enumerate them. `PredatesTheChangelog` is the worklist. |
+These were parked awaiting a maintainer. Under the execution rule adopted 2026-08-16 they were ruled on
+instead, each with what it costs if the ruling is wrong. **Every one is reversible in a single commit.**
+Full reasoning is in the ledger under `Ruling:`.
+
+| # | Status | Ruling | Cost if wrong |
+|---|---|---|---|
+| D-a | `TODO` | **`NullCollections`@`Projection`: keep today's behaviour, keep the divergence entry, and document it** in `docs/options.md` as *projection's collection null-semantics are `AsNull` by nature*. Option (a) risks failing inside a translated query at runtime — worse than a documented divergence. Option (b) was implemented and reverted after breaking seven tests. | Nothing changes at runtime; the entry stays recorded and (a)/(b) remain open to a later maintainer. |
+| D-b | `TODO` | **Delete `ResetForTests`.** Zero callers; its IVT targets a project whose registry tests do not use it; the mutation leg excludes that project — so round-19's additions to it are unverifiable dead code *by construction*. | A future test wants a reset hook and re-adds ~8 lines. |
+| D-c | `TODO` | **Delete the stale items from `CLAUDE.md`'s working note** — the file's own rule is to delete each once decided, and one describes a fence-allowlist mechanism that no longer exists. ⚠️ This edits the agent's own instructions, so it is called out rather than done quietly. | Two historical notes lost — both preserved here and in `CARRY-FORWARD.md`. |
+| D-d | `DONE` | **Keep `internal` + `[InternalsVisibleTo]`.** The four meta-attributes need it; public would grow the shipped API for test-only metadata, and a separate assembly breaks the single-package delivery story. The CRA objection was about what the IVT *exposes* — **D-b resolves it**, leaving only inert metadata with zero runtime reads. | If the CRA posture later demands zero IVT, the meta-attributes move to their own assembly — a contained refactor. |
+| D-e | `TODO` | **Keep deferring the ~80 unannounced diagnostics** to a first-release-notes task; `PredatesTheChangelog` is the worklist. The project has never shipped, so nothing is currently mis-announced. | First release notes ship incomplete. `Scan9` guards only *new* ids, so **this one needs a human before the first tag.** |
 
 ## E. Research — measure before changing anything
 
