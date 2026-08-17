@@ -58,8 +58,10 @@ public class FlattenAndMapValueReachTests
             }
             """);
 
-        // The runtime map has always done this; the projection did nothing at all.
-        Assert.Contains("s.Child.X", generated, StringComparison.Ordinal);
+        // The runtime map has always done this; the projection did nothing at all. The create-map assertion
+        // carries its "= " prefix deliberately: bare "s.Child.X" is a SUBSTRING of "__s.Child.X", so without
+        // it the first check would pass on the projection's own output and pin nothing.
+        Assert.Contains("= s.Child.X", generated, StringComparison.Ordinal);
         Assert.Contains("__s.Child.X", generated, StringComparison.Ordinal);
     }
 
