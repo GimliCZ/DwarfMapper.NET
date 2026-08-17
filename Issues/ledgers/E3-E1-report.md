@@ -176,6 +176,22 @@ cannot hang. The only mechanism that produces a Timeout for it is the *test sess
 timeout — and that is exactly what a 5,589-test covering set does inside a
 `[CollectionBehavior(DisableTestParallelization = true)]` assembly, run end to end, once per mutant.
 
+**One of the seven settles it outright: it is an equivalent mutant.** `DwarfRefContext.cs` L77's Equality
+mutation turns the clamp's lower bound `maxDepth < 1` into `maxDepth <= 1`. The two differ on exactly one input,
+`maxDepth == 1`, and there they agree anyway: the original falls through to `1 > AbsoluteMaxDepth` (1000), which
+is false, and yields `maxDepth` = 1; the mutant takes the true branch and yields the literal 1. Identical output
+for every input, so **no test can possibly detect it** — that is what "equivalent mutant" means. It is
+nonetheless recorded as a *detected* Timeout in the baseline. A mutation that provably cannot be detected being
+credited as a detection is not an implausibility argument; it is proof that the Timeout bucket was measuring the
+clock rather than the mutant.
+
+**Why the artifact preferentially collects survivors.** Stryker's bail is on by default
+(`--disable-bail` defaults to False): a mutant with a killer aborts its session at the first failing test, but a
+mutant that **nothing** kills has to run all 5,589 covering tests serially to completion — the slowest possible
+session, and the one most likely to exceed the timeout. So the baseline's Timeout bucket is biased towards
+exactly the mutants that survive. That is why 7 of the 11 came back Survived, while the 4 that had real (but
+late-ordered) killers came back Killed.
+
 The same effect ran the other way for four mutants, which is the corroborating evidence: `DwarfMapperRegistry.cs`
 L68/69/70 and `DwarfRefContext.cs` L78 (equality) were **Timeout in the baseline and cleanly Killed in the
 scoped run** — L68-70 by `AmbientRegistryTests`, L78 by `CollectionGraphNodeRuntimeTests`,
@@ -183,8 +199,9 @@ scoped run** — L68-70 by `AmbientRegistryTests`, L78 by `CollectionGraphNodeRu
 simply timed out before the assertion was reached and credited the timeout instead.
 
 **So `Timeout` in the 2026-08-16 run was largely a symptom of the covering-set explosion, not a diagnosis of the
-mutant.** The 66.95 % ratchet was resting on timing noise: 7 of its 79 detections were mutants that no test
-detects. **61.02 % is the honest score of the same 118 mutants**, and it is *more* precise, not less — four
+mutant.** The 66.95 % ratchet was resting on timing noise: 7 of its 79 detections have no demonstrated
+detection, and one of the seven provably cannot be detected at all. **61.02 % is the honest score of the same
+118 mutants**, and it is *more* precise, not less — four
 mutants moved from the vague "Timeout" bucket into a named killer.
 
 ### The four coverage holes this exposed
@@ -197,9 +214,16 @@ Previously masked as "detected", now correctly Survived — genuine, actionable 
 2. **`Key.GetHashCode`'s hash mixing is unpinned** (L301): `* 397` → `/ 397` survives. The registry still
    *works* with a degenerate hash (equality is what decides lookups), so only a distribution or collision
    assertion would catch it.
-3. **Three of the four `DwarfRefContext` depth-clamp branches are unasserted** (L77 ×2, L78 conditional-false).
-   Only the `maxDepth > AbsoluteMaxDepth` equality boundary is pinned. The clamp's lower bound (`maxDepth < 1`)
-   and its false-branch have no test.
+3. **Two of the four `DwarfRefContext` depth-clamp branches are unasserted.** Only the
+   `maxDepth > AbsoluteMaxDepth` equality boundary is pinned. The L77 Equality mutant is *equivalent* (see above)
+   and should be ignored rather than chased — it belongs in an `ignore-mutations` entry, not in a test.
+
+**One honest caveat on the seventh mutant.** `DwarfRefContext.cs` L78's conditional-false mutation removes the
+*upper* clamp, so `MaxDepth` becomes unbounded — and that is the one mutation among the seven that genuinely
+*could* hang, by recursing far deeper before `DwarfMappingDepthException` fires. For that one, "no test detects
+it" is stronger than the evidence supports; the defensible claim is **no demonstrated detection** — no test in
+the 288 detects it, and whether some excluded test hangs on it was not measured. The other six are settled: four
+cannot hang by construction, and one cannot be detected at all.
 
 ### `Assert-MutantsWereTested` still passes
 
