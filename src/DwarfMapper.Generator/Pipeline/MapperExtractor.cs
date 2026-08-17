@@ -362,7 +362,7 @@ internal static partial class MapperExtractor
             {
                 var updSrc = method.Parameters[0].Type;
                 var comp = ctx.SemanticModel.Compilation;
-                var updIgnores = new HashSet<string>(classIgnores);
+                var updIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var ig in ReadIgnores(method)) updIgnores.Add(ig);
                 var updExplicit = ReadExplicitMaps(method);
                 var updMapValues = ReadMapValues(method);
@@ -577,7 +577,7 @@ internal static partial class MapperExtractor
                 && IsQueryable(method.Parameters[0].Type, out var projSource)
                 && projTarget is INamedTypeSymbol projTargetNamed)
             {
-                var projIgnores = new HashSet<string>(classIgnores);
+                var projIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var i in ReadIgnores(method)) projIgnores.Add(i);
 
                 // Plan 19D: DWARF028 — ReferenceHandling != None is incompatible with projection
@@ -951,7 +951,7 @@ internal static partial class MapperExtractor
                 methodLocation, out var objInitOnly, allowNonPublic, sourceType, explicitMaps);
             if (ctor is null) continue;
 
-            var ignores = new HashSet<string>(classIgnores);
+            var ignores = new HashSet<string>(classIgnores, IgnoreNameComparer);
             foreach (var i in ReadIgnores(method)) ignores.Add(i);
             // A forward [ReverseMap] method with no inverse declared → DWARF052.
             if (HasReverseMap(method))
@@ -1157,7 +1157,7 @@ internal static partial class MapperExtractor
 
             // Pair-scoped [MapProperty<S,T>] / [MapIgnore<T>] config for this declared pair.
             var (genExplicit, genExtras) = MatchPairProps(pairProps, genSrc, genTgt);
-            var genIgnores = new HashSet<string>(classIgnores);
+            var genIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
             foreach (var im in MatchPairIgnores(pairIgnores, genTgt)) genIgnores.Add(im);
 
             // Member-level [MapProperty("SourceMember")] / [MapIgnore] written on the co-located host itself.
@@ -2647,6 +2647,35 @@ internal static partial class MapperExtractor
         return result;
     }
 
+    /// <summary>
+    ///     The comparer every <c>[MapIgnore]</c> destination-name set uses, declared once.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <b>Ordinal — an ignore name must match the member's casing exactly.</b> It was already ordinal
+    ///         at every site (the default comparer for <c>string</c> is, and <c>ResolveMembers</c> /
+    ///         <c>ResolveProjectionMembers</c> additionally restate it), but it was ordinal by four separate
+    ///         coincidences rather than by one decision. Naming it is what stops the next reader of the set from
+    ///         picking a different comparer and being right locally and wrong overall.
+    ///     </para>
+    ///     <para>
+    ///         Hoisted because a consumer got it wrong immediately. <c>DWARF090</c>'s member-existence filter
+    ///         was written with <c>OrdinalIgnoreCase</c>, reasoning that a case-differing member is one the
+    ///         caller plausibly meant and so is worth reporting. That is backwards: the ignore set is ordinal,
+    ///         so <c>[MapIgnore("id")]</c> against a property <c>Id</c> excludes nothing at the create map
+    ///         either — there is no element-wise GAP, and reporting one told the caller to switch to a
+    ///         pair-scoped form that would not work at all. A diagnostic that decides whether a directive was
+    ///         DROPPED has to ask the question with the same comparer the thing that drops it uses.
+    ///     </para>
+    ///     <para>
+    ///         That a name matching nothing is inert at every endpoint with no diagnostic at all is a separate
+    ///         gap, recorded as <c>B20</c>; whether <c>[DwarfMapper(CaseInsensitive = true)]</c> ought to make
+    ///         this comparer follow suit is <c>B21</c>. Neither is settled here — this member only ensures the
+    ///         answer is written in one place when it is.
+    ///     </para>
+    /// </remarks>
+    private static readonly StringComparer IgnoreNameComparer = StringComparer.Ordinal;
+
     private static IEnumerable<string> ReadIgnores(ISymbol symbol)
     {
         return symbol.GetAttributes()
@@ -2744,14 +2773,18 @@ internal static partial class MapperExtractor
                 // error. That is the objection the [MapProperty] exclusion below already makes; it belongs to
                 // both attributes, and applying it to one was the defect.
                 //
-                // Case-INSENSITIVE on purpose, and it is the conservative direction: a member differing only in
-                // case is one the caller plausibly meant, so it is still reported. The filter exists to drop
-                // reports about a pair the directive has nothing to do with, never to lose a real one.
+                // Matched with IgnoreNameComparer — the comparer the ignore set resolution consults is built
+                // with — rather than a comparer chosen here. This asks "would real resolution have honoured
+                // this name?", and only the set's own comparer can answer it. Written case-INSENSITIVE first,
+                // on the reasoning that a member differing only in case is one the caller plausibly meant:
+                // backwards, because the set is ordinal, so [MapIgnore("id")] against a property Id excludes
+                // nothing at the create map either. There is no element-wise gap to report, and reporting one
+                // prescribed a pair-scoped form that would not work at all.
                 if (isClassSite)
                 {
                     elementTargetMembers ??= new HashSet<string>(
                         MemberFacts.Writable(tgtElement, compilation, allowNonPublic).Select(m => m.Name),
-                        StringComparer.OrdinalIgnoreCase);
+                        IgnoreNameComparer);
                     if (!elementTargetMembers.Contains(ignored)) continue;
                 }
 

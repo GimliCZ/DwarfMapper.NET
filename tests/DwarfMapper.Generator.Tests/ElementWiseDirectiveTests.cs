@@ -78,6 +78,45 @@ public class ElementWiseDirectiveTests
     ///     is a mistake worth reporting rather than an unrelated pair's business — and the caller gets the
     ///     same message either way, which is the point.
     /// </summary>
+    /// <summary>
+    ///     A CASE-MISMATCHED class-level ignore must not be reported either — because there is no gap to
+    ///     report. The ignore set real resolution matches against is <c>StringComparer.Ordinal</c>, so
+    ///     <c>[MapIgnore("id")]</c> against a property <c>Id</c> is inert at the create map as well;
+    ///     <c>DWARF090</c> would be telling the caller to switch to a pair-scoped form that does not work
+    ///     either.
+    /// </summary>
+    /// <remarks>
+    ///     The companion assertion is the load-bearing one: it establishes the premise ON THE CREATE MAP,
+    ///     where the directive is supposedly honoured. Without it this test pins a comparer choice against
+    ///     nothing, and the first person to make the ignore set case-insensitive would make it wrong while it
+    ///     went on passing.
+    /// </remarks>
+    [Fact]
+    public void A_case_mismatched_class_level_MapIgnore_is_inert_everywhere_so_it_is_not_reported()
+    {
+        const string s = """
+                         using System;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int Id { get; set; } public string Name { get; set; } }
+                         public class Dst { public int Id { get; set; } public string Name { get; set; } }
+                         [DwarfMapper]
+                         [MapIgnore("id")]
+                         public partial class M
+                         {
+                             public partial Dst Map(Src s);
+                             public partial void MapSpan(ReadOnlySpan<Src> src, Span<Dst> dst);
+                         }
+                         """;
+
+        // The premise: `id` excludes nothing from the CREATE map either. Id is still assigned there, so the
+        // element-wise endpoints are not diverging from anything.
+        var gen = GeneratorAssert.CompilesClean(s);
+        Assert.Contains("Id = s.Id", gen, StringComparison.Ordinal);
+
+        GeneratorAssert.DoesNotReport(s, "DWARF090");
+    }
+
     [Fact]
     public void Method_level_MapIgnore_on_the_span_method_is_reported_even_when_it_names_nothing()
     {

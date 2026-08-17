@@ -155,7 +155,7 @@ internal static partial class MapperExtractor
         {
             var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
             foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
-            ignores = new HashSet<string>(ignores, StringComparer.Ordinal);
+            ignores = new HashSet<string>(ignores, IgnoreNameComparer);
             foreach (var name in ObsoleteMemberNames(targetType))
                 if (!explicitTargets.Contains(name))
                     ignores.Add(name);
