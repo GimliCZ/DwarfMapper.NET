@@ -152,6 +152,16 @@ so a version with no section here ships with no notes.
 - **`DwarfMapperRegistry.IsUpdateAmbiguous(Type, Type)`.** Mirrors `IsAmbiguous`, but reads the update-into
   table's own duplicate set rather than the create table's — see the `RegisterUpdate` entry under Fixed,
   above, for why the two tables needed separate sets. (round 19, REG-06)
+- **`DWARFR10` — a `[MapTo]` member auto-matched across a trust boundary the assembly had closed.** The
+  registry counterpart of `DWARF072`. `[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]` says nothing
+  is mapped unless the caller said so; the mapper-level `[DwarfMapper(AutoMatchMembers = false)]` acts at all
+  five method endpoints, and the assembly-level form was honoured everywhere **except** the `[MapTo]` front
+  door — which read no assembly-level configuration at all. So an assembly that had switched auto-matching off
+  still had every registry map auto-matching, silently, and the completeness gate could not notice because the
+  member *was* mapped. Half a trust boundary is worse than none, because the developer believes they have one.
+  A destination reached by a name the caller wrote (`[MapProperty("Dest")]`) still maps; one reached only
+  because the names line up is refused, and does **not** also draw `DWARFR02`. Found by the surface matrix
+  (`D19`). (round 20)
 - **`DWARFR01`–`DWARFR09` are release-tracked.** The registry (`[MapTo]`) diagnostics suppressed
   `RS2000`/`RS2001` and appeared in no `AnalyzerReleases` file, despite shipping in the same package and
   surfacing in the same IDE error list as the `DWARF0xx` rules. They now have rows, the suppressions are
@@ -168,6 +178,17 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **BREAKING: the `[MapTo]` extension class is now `internal` unless the assembly opts in.**
+  `[assembly: DwarfMapperOptions(PublicExtensions = true)]` decides the accessibility of the generated
+  convenience extensions, and its documented default has always been *"all generated extensions are
+  assembly-internal"*. The registry front door read no assembly-level configuration, so it emitted
+  `public static class __DwarfRegistry_<Source>` whenever the source and every target were public — a caller
+  got the assembly default honoured for their `[DwarfMapper]` classes and quietly overridden for their
+  `[MapTo]` types. Both emitters now read the same option. **If you ship `[MapTo]` types for another assembly
+  to consume, add `[assembly: DwarfMapperOptions(PublicExtensions = true)]`**; in-assembly use is unaffected.
+  As before, the opt-in is a ceiling and not a decision: a pair involving a non-public type stays internal,
+  since a public member over an internal type does not compile. Found by the surface matrix (`D18`).
+  (round 20)
 - **Roslyn floor raised to `Microsoft.CodeAnalysis` 5.0.0** (from 4.14.0; `Microsoft.CodeAnalysis.Analyzers`
   3.11.0 → 5.3.0). The declared toolchain requirement is now **SDK 10.0.100+ / Roslyn 5.0+** — an older SDK
   cannot load the generator at all, since Roslyn refuses an analyzer compiled against a newer compiler than

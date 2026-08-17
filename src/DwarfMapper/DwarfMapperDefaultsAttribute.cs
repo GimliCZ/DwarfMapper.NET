@@ -14,6 +14,13 @@ namespace DwarfMapper;
 ///         strategy); per-graph knobs (<c>MaxDepth</c>, <c>ReferenceHandling</c>, <c>OnCycle</c>) stay per-mapper
 ///         because they are usually specific to a given object graph.
 ///     </para>
+///     <para>
+///         <b>Not only <c>[DwarfMapper]</c> classes:</b> <c>AutoMatchMembers</c> is a trust boundary,
+///         not a house style, so the <c>[MapTo]</c> registry front door honours it too — a same-named
+///         destination it would otherwise auto-wire is refused with <c>DWARFR10</c>, the registry counterpart
+///         of <c>DWARF072</c>. That front door has no mapper class of its own, so the assembly default is its
+///         whole option list rather than a fallback layer under one.
+///     </para>
 /// </summary>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
 // The same per-option fixtures as [DwarfMapper], for the same reason: these are the layered form of the very

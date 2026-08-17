@@ -73,6 +73,20 @@ internal static class RegistryDiagnostics
         "Implicit conversion {0} crosses numeric categories and loses precision for large magnitudes (the [DwarfMapper] class model reports this as DWARF038)",
         Category, DiagnosticSeverity.Info, true);
 
+    // The trust boundary, mirroring DWARF072 in the class model — and a separate id rather than a reuse of it,
+    // because DWARF072's message names [DwarfMapper(AutoMatchMembers = false)] and there is no mapper class at
+    // this front door: the instruction arrives as [assembly: DwarfMapperDefaults(AutoMatchMembers = false)] and
+    // the fixes are written on the SOURCE member, not on a mapping method.
+    public static readonly DiagnosticDescriptor AutoMatchDisabled = new(
+        "DWARFR10",
+        "Member has a source match but auto-matching is disabled",
+        "Destination member {0} would be wired from a same-named source member, but this assembly is "
+        + "explicit-only ([assembly: DwarfMapperDefaults(AutoMatchMembers = false)]) so nothing is auto-wired "
+        + "across the trust boundary. Name the destination deliberately with [MapProperty] on the source "
+        + "member, or exclude the source member with [MapIgnore]. This is what stops an untrusted same-named "
+        + "member (e.g. IsAdmin) from silently over-posting onto a protected one.",
+        Category, DiagnosticSeverity.Error, true);
+
     public static readonly DiagnosticDescriptor RecursiveNesting = new(
         "DWARFR06",
         "Recursive nested mapping is not supported by the registry",

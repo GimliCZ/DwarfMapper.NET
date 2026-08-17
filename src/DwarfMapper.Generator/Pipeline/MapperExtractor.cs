@@ -134,8 +134,9 @@ internal static partial class MapperExtractor
         // precedence we want — mapper > assembly defaults > built-in default — with no reader changes. Options
         // not present on DwarfMapperDefaults (MaxDepth, ReferenceHandling, OnCycle, GenerateExtensions) simply
         // never match there and stay per-mapper.
-        var asmDefaults = ctx.SemanticModel.Compilation.Assembly.GetAttributes()
-            .FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == KnownNames.DwarfMapperDefaultsFqn);
+        // The LOOKUP is AssemblyConfiguration's, shared with the [MapTo] registry front door, which had no
+        // sight of assembly-level configuration at all until it called the same reader.
+        var asmDefaults = AssemblyConfiguration.Defaults(ctx.SemanticModel.Compilation);
         var opts = asmDefaults is null ? ctx.Attributes : ctx.Attributes.Add(asmDefaults);
 
         var requiredMapping = ReadRequiredMapping(opts); // 0 = Target (default), 1 = Both

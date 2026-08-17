@@ -6,7 +6,7 @@
 > since been superseded.** The case-space was enriched (task 5b), three instrument defects and one broken
 > fixture baseline were fixed, and the matrix was re-measured. The current state, and the write-up every entry
 > in `DeclaredDivergences.Reasons` links to, is **[the ratified findings](#ratified)** at the end of this
-> document: **15 findings over 84 cells, plus 12 cells excused as structural — 96 red cells, all accounted
+> document: **13 findings over 82 cells, plus 12 cells excused as structural — 94 red cells, all accounted
 > for, matrix green.** Read the first measurement for how the buckets were arrived at; read the amendment for
 > what is true now. The single most severe item found in the whole exercise is **[N4](#N4)** and it is not a
 > silent divergence at all — **fixed on 2026-08-16 as `DWARF087`**; see the resolution note in that section,
@@ -41,6 +41,19 @@
 > was also wrong — `DWARF038` is `ImplicitConversionApplied`, not a refusal of `[MapProperty]` — and the
 > correction is in its section. `NotCompilableCellCeiling` fell 107 → 99 as eight hook cells left the `CS8795`
 > population for `Refused`. See [D1](#D1), [D2](#D2), [D16](#D16).
+>
+> **2026-08-17, fifth fix (A5) — 15 / 84 to 13 / 82.** `D17`, `D18` and `D19` shared one root cause —
+> `MapToGenerator` read **no** assembly-level configuration at all — and one hoist closed **two** of the three.
+> The lookup now lives once, in `Pipeline/AssemblyConfiguration`, and all three front doors call it: the class
+> model for its defaults layer, the aggregate emitter for `PublicExtensions` (an inline copy until now), and
+> the `[MapTo]` registry for both. `D19` is the trust boundary and is refused as the new **`DWARFR10`**; `D18`
+> made the registry's extension class `internal` unless the assembly opts in, which is what the option's own
+> documentation always said its default was — a **BREAKING** change, announced in `CHANGELOG.md`.
+> `D17` did **not** close, and the reason its entry gave was measurably false: the `[MapTo]` front door emits
+> an extension class and no ambient registry rows whatever, so `RegisterCollectionShapes = false` has nothing
+> there to withhold. It stays recorded, with the measurement in place of the false justification and the three
+> ways out set down for the maintainer. Re-measured across all 854 cells before and after: **exactly two rows
+> differ**, both at `Registry` on the `Assembly` site. See [D17](#D17), [D18](#D18), [D19](#D19).
 
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case
@@ -417,9 +430,9 @@ one store per failure mode is how the six allowlists this architecture is replac
 > No `DeclaredDivergences` entry was added or wanted: this was never a silence, and it is now a claimed
 > endpoint behaving correctly.
 
-## The findings — 15 live, 8 fixed
+## The findings — 13 live, 10 fixed
 
-Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The eight marked **RESOLVED** keep their
+Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The ten marked **RESOLVED** keep their
 sections: the store entry is gone (a fixed gap left on the list is a fossil), but the write-up is what the
 next reader needs to know the gap existed and how it was closed. **Acts at** is the evidence the cell is
 a divergence rather than a shape: the same directive, at the same site, doing something observable somewhere
@@ -776,7 +789,29 @@ stream and for none of a span.
 
 <a id="D17"></a>
 
-### D17 — `RegisterCollectionShapes = false` is dropped by the registry front door — 1 cell
+### D17 — `RegisterCollectionShapes = false` is dropped by the registry front door — 1 cell — STANDS, reason corrected
+
+> **RE-MEASURED 2026-08-17 (A5). Not closed, and the stated reason below is wrong.** A5 closed D18 and D19 —
+> which shared D17's root cause exactly, `MapToGenerator` reading no assembly-level configuration — and this
+> cell did not come with them. The sentence "the `[MapTo]` registry front door, whose entire output **is**
+> registry rows" is a pun on the word *registry*, and it is false. Measured: that front door emits an
+> extension class and **nothing else** — no `[assembly: DwarfProvidesMap]`, no
+> `DwarfMapperRegistry.Register` call, and so no collection-shape rows for this option to withhold. Only
+> `DwarfGenerator`/`AggregateEmitter` emit ambient registration, and only for `[DwarfMapper]` classes and
+> co-located hosts.
+>
+> So the cell is real (the option IS silent there) but it cannot be closed by plumbing. **Three ways out, and
+> the choice is the maintainer's:**
+>
+> | Option | What it costs |
+> | --- | --- |
+> | **(a) Honour it** — give `[MapTo]` maps ambient registration, then gate the collection shapes on the option | A feature, not a fix: manifest emission, `DWARF061` (required-not-provided), `DWARF063` (ambiguous provider), and competition with a `[DwarfMapper]` class that maps the same pair. Arguably right — a front door named *registry* that is absent from the registry is its own oddity — but out of A5's scope. |
+> | **(b) Refuse it** — a diagnostic at every `[MapTo]` type in an assembly that set the option | Noise. The assembly attribute is a house style set for the assembly's `[DwarfMapper]` classes; complaining about it at an unrelated type is the A7 mistake (a diagnostic about something the caller never mentioned). |
+> | **(c) Reclassify structural** — a `StructurallyInapplicable` row saying there are no registry rows here | Honest as a statement, but it **raises `StructurallyExcusedCellCeiling` 12 → 13**, and no ratchet may be raised in this round without a deliberate decision. |
+>
+> A5 took none of the three. The row stays in `DeclaredDivergences.Reasons`, with the false justification
+> replaced by the measurement, so nothing is closed by narrowing a claim or by moving a cell somewhere
+> unjudged.
 
 *`[assembly: DwarfMapperDefaults]` → Registry.*
 
@@ -792,7 +827,25 @@ door, whose entire output **is** registry rows, ignores the assembly-level instr
 
 <a id="D18"></a>
 
-### D18 — `[assembly: DwarfMapperOptions(PublicExtensions = true)]` is ignored by the registry — 1 cell
+### D18 — `[assembly: DwarfMapperOptions(PublicExtensions = true)]` is ignored by the registry — 1 cell — RESOLVED
+
+> **RESOLVED 2026-08-17 (A5).** The registry now reads the option through `AssemblyConfiguration`, the same
+> reader the aggregate facade uses, so `__DwarfRegistry_<Source>` is **`internal` unless the assembly opts
+> in** — which is what `PublicExtensions`' own XML documentation has always said its default was ("Defaults to
+> false — all generated extensions are assembly-internal"). Cell re-measured `Silent` → **`Honoured`**.
+>
+> **This is a shipped-behaviour change, and the only closure available.** With the old public-by-default there
+> is no value of the option that changes registry output, so the cell could not become `Honoured` without the
+> flip. It is defensible on three counts: the emitted accessibility contradicted the option's documented
+> contract; `[MapTo]` is a documented prototype/experimental tier; and no in-repo consumer relies on the
+> public form (Conformance F18 and Gallery 16 are both in-assembly, and both still pass). The cost is real and
+> announced in `CHANGELOG.md` under **Changed/BREAKING**: a library shipping `[MapTo]` types for another
+> assembly to consume must now add `[assembly: DwarfMapperOptions(PublicExtensions = true)]`, since
+> `source.MapTo<TTarget>()` is the only way to invoke a registry map — there is no mapper instance to fall
+> back on. The opt-in remains a ceiling, not a decision: a pair involving a non-public type stays internal.
+>
+> Five `Snap_Golden_Registry*` snapshots and the golden manifest moved, each by exactly one line
+> (`public static class` → `internal static class`), which is itself the evidence that the flip is scoped.
 
 *Assembly site → Registry.* The registry emits an extension class (`__DwarfRegistry_Src`) with a
 public/internal choice of its own and ignores this option, so an assembly default is honoured for
@@ -805,7 +858,33 @@ at Registry, which is no longer silent and is not part of the finding.
 
 <a id="D19"></a>
 
-### D19 — `[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]` is dropped by the registry — 1 cell
+### D19 — `[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]` is dropped by the registry — 1 cell — RESOLVED
+
+> **RESOLVED 2026-08-17 (A5).** The trust boundary now closes at the `[MapTo]` front door too. The registry
+> asks the question with `MapperExtractor.ReadAutoMatchMembers` — the *same* reader the class model uses, not a
+> second copy — against `AssemblyConfiguration.OptionsFor(compilation)`, and refuses the implicit by-name wire
+> as the new **`DWARFR10`** (Error), the registry counterpart of `DWARF072`. Cell re-measured `Silent` →
+> **`Refused (DWARFR10)`**.
+>
+> A separate id rather than a reuse of `DWARF072`, deliberately: that message names
+> `[DwarfMapper(AutoMatchMembers = false)]` and there is no mapper class at this front door — the instruction
+> arrives at the assembly and the fixes are written on the *source member*. Reusing the id would have handed
+> the caller a message naming a construct their code does not contain.
+>
+> Three edges, each with its own test in `RegistryDiagnosticsGenTests`:
+>
+> - **A destination the caller NAMED still maps.** `[MapProperty("Id")]` is a decision; a by-name match is a
+>   coincidence. Without this the guard could be "refuse everything" and still look right.
+> - **A `[MapProperty]` whose one argument names nothing** (`MemberDirectives.Name` is null for a non-constant
+>   or empty argument) falls back to the member's own name — so it is an *implicit* match and is refused, not
+>   credited to the attribute's mere presence.
+> - **A member refused by `DWARFR10` does not also draw `DWARFR02`.** "Has no source member" would be false —
+>   it has one, and declining to wire it is the point. Two diagnostics about one member, one of them untrue,
+>   sends the reader to the wrong fix.
+>
+> Not propagated into `SynthNested`, mirroring `MapperExtractor`'s deliberate non-propagation into an
+> auto-synthesized nested mapper: the boundary guards the pair the caller declared, and a synthesized helper
+> has no member-level directives to satisfy it with.
 
 *Assembly site → Registry.* Filed as **N3** by task 5b, and genuinely new: in neither the first measurement's
 table nor the option store. `AutoMatchMembers = false` is a **trust boundary** — nothing is mapped unless the

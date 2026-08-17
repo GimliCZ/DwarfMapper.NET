@@ -73,6 +73,15 @@ public sealed class MapToGenerator : IIncrementalGenerator
         var resolver = new Resolver(compilation, diags, location);
         var hasError = false;
 
+        // Assembly-level configuration, through the SAME reader the [DwarfMapper] class model resolves its
+        // defaults with. [MapTo] takes no options of its own, so the assembly defaults are the whole option
+        // list here — there is no per-mapper layer above them. Reading the shared resolution rather than
+        // re-parsing the attribute is what brings the mapper path's guards along for free: a non-bool value
+        // falls through to the built-in default in one place, and an option DwarfMapperDefaults does not
+        // declare at all (MaxDepth, GenerateExtensions) is refused by the compiler before this runs.
+        var assemblyOptions = AssemblyConfiguration.OptionsFor(compilation);
+        var explicitOnly = !MapperExtractor.ReadAutoMatchMembers(assemblyOptions);
+
         // Declared targets across all [MapTo] attributes, in declaration order.
         var targets = new List<INamedTypeSymbol>();
         foreach (var attr in ctx.Attributes)
@@ -144,9 +153,18 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             // destName -> chosen source member (resolved per target, independently).
             var chosen = new Dictionary<string, (ISymbol Sym, ITypeSymbol Type)>();
+            // Destinations the trust boundary refused below. Kept so the completeness gate does not go on to
+            // report DWARFR02 about them: "has no source member" would be false — it has one, and refusing to
+            // wire it is the entire point. Two diagnostics about one member, one of them a lie, is how a caller
+            // ends up reading the wrong one.
+            var autoMatchRefused = new HashSet<string>(StringComparer.Ordinal);
             foreach (var m in members)
             {
                 string destName;
+                // Whether the caller NAMED this destination, as opposed to the names happening to line up.
+                // That distinction is the trust boundary: an explicit binding is a decision, a by-name match is
+                // the mass-assignment surface.
+                var namedByCaller = false;
                 if (m.Directives.Count == 0)
                 {
                     destName = m.Sym.Name;
@@ -155,11 +173,37 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 {
                     var d = m.Directives.Count == 1 ? m.Directives[0] : m.Directives[ti];
                     if (d.Ignore) continue;
-                    destName = !string.IsNullOrEmpty(d.Name) ? d.Name! : m.Sym.Name;
+                    // A [MapProperty] whose one argument is not a usable constant string names nothing (see
+                    // MemberDirectives.Name), so the binding below is still the member's own name — an
+                    // implicit match, and treated as one here rather than credited to the attribute's presence.
+                    if (!string.IsNullOrEmpty(d.Name))
+                    {
+                        destName = d.Name!;
+                        namedByCaller = true;
+                    }
+                    else
+                    {
+                        destName = m.Sym.Name;
+                    }
                 }
 
                 var w = writables.FirstOrDefault(x => x.Name == destName);
                 if (w.Symbol is null) continue;
+
+                // Explicit-only (trust boundary): the by-name match must NOT silently auto-wire. Exactly the
+                // rule MapperExtractor applies for [DwarfMapper(AutoMatchMembers = false)] — the completeness
+                // gate would never notice, because the member IS mapped. Refuse it and make the caller decide.
+                // Deliberately NOT propagated into SynthNested below, for the same reason the class model does
+                // not propagate it into an auto-synthesized nested mapper: the boundary guards the pair the
+                // caller declared, and a synthesized helper has no member-level directives to satisfy it with.
+                if (explicitOnly && !namedByCaller)
+                {
+                    diags.Add(new DiagnosticInfo(RegistryDiagnostics.AutoMatchDisabled, location,
+                        $"'{destName}' on '{target.Name}'"));
+                    hasError = true;
+                    autoMatchRefused.Add(destName);
+                    continue;
+                }
 
                 if (chosen.ContainsKey(destName))
                 {
@@ -179,6 +223,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
             {
                 if (!chosen.TryGetValue(w.Name, out var src))
                 {
+                    // Already refused by the trust boundary; DWARFR02 would contradict DWARFR10 about the
+                    // same member.
+                    if (autoMatchRefused.Contains(w.Name)) continue;
+
                     diags.Add(new DiagnosticInfo(RegistryDiagnostics.UnmappedDestination, location,
                         $"'{w.Name}' on '{target.Name}'"));
                     hasError = true;
@@ -215,10 +263,20 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
         var ns = source.ContainingNamespace is { IsGlobalNamespace: false } n ? n.ToDisplayString() : null;
         var helpers = resolver.Synth.Values.OrderBy(h => h.Name, StringComparer.Ordinal).ToArray();
-        // Public extension class when the source and every target are effectively public, so callers in
-        // OTHER assemblies can use x.MapTo<T>(); otherwise internal (a public method on an internal type
-        // would not compile). Mirrors the class-model convenience-extension visibility policy.
-        var isPublic = IsAccessiblePublic(source) && targets.All(IsAccessiblePublic);
+        // Public extension class only when the assembly OPTED IN with
+        // [assembly: DwarfMapperOptions(PublicExtensions = true)] and the source and every target are
+        // effectively public — a public method on an internal type would not compile, so the type check
+        // narrows the opt-in rather than substituting for it.
+        //
+        // The opt-in used to be missing here: this front door read no assembly configuration and chose public
+        // whenever the types allowed it. That contradicted the option's own documented contract ("Defaults to
+        // false — all generated extensions are assembly-internal") and meant a caller got the assembly default
+        // honoured for their [DwarfMapper] classes and quietly overridden for their [MapTo] types. Making the
+        // registry read the SAME resolution the facade reads is what closes that; the cost is that a library
+        // shipping [MapTo] types for another assembly to consume must now say so, exactly as one shipping
+        // [DwarfMapper] classes always had to.
+        var isPublic = AssemblyConfiguration.PublicExtensions(compilation)
+                       && IsAccessiblePublic(source) && targets.All(IsAccessiblePublic);
         return new Model(
             source.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             ns,

@@ -318,46 +318,34 @@ internal static class DeclaredDivergences
 
         ["D17"] = new(
             "[assembly: DwarfMapperDefaults(RegisterCollectionShapes = false)] withholds the collection-shape "
-            + "rows from the AMBIENT REGISTRY, and the [MapTo] registry front door is the endpoint whose "
-            + "entire output is registry rows — so it is the one endpoint where the option is most clearly "
-            + "about something that exists there. Measured silent at Registry. (The same option's silence at "
-            + "UpdateInto, Projection, SpanMap and AsyncStream is NOT part of this finding and is not a "
-            + "divergence: none of those four produces a registerable delegate at all, which is recorded as a "
-            + "shape in StructurallyInapplicable.)",
+            + "rows from the AMBIENT REGISTRY. Measured silent at Registry — and the ORIGINAL reason given for "
+            + "the cell was wrong: the entry said the [MapTo] front door 'is the endpoint whose entire output "
+            + "is registry rows', which is a pun on the word registry. Re-measured for A5: that front door "
+            + "emits an extension class and NOTHING ELSE — no [assembly: DwarfProvidesMap], no "
+            + "DwarfMapperRegistry.Register call, and therefore no collection shapes for this option to "
+            + "withhold. So the cell does not close by plumbing, as D18 and D19 did: honouring it means giving "
+            + "[MapTo] maps ambient registration first, which is a feature with manifest, DWARF061 and "
+            + "DWARF063 consequences, and refusing it means complaining at every [MapTo] type in an assembly "
+            + "whose house style was set for its [DwarfMapper] classes. It stays recorded rather than "
+            + "reclassified: turning it into a StructurallyInapplicable row would RAISE that ceiling, and "
+            + "'there is nothing here to configure' is a maintainer's call, not a way past this measurement. "
+            + "(The same option's silence at UpdateInto, Projection, SpanMap and AsyncStream is NOT part of "
+            + "this finding and is not a divergence: none of those four produces a registerable delegate at "
+            + "all, which is recorded as a shape in StructurallyInapplicable.)",
             Findings + "#D17",
             [
                 new DivergentCell("DwarfMapperDefaults", 0, "RegisterCollectionShapes=false",
                     AttributeTargets.Assembly, SurfaceEndpoints.Registry)
-            ]),
-
-        ["D18"] = new(
-            "[assembly: DwarfMapperOptions(PublicExtensions = true)] decides the accessibility of the "
-            + "generated convenience extensions. The registry DOES emit an extension class, with a "
-            + "public/internal choice of its own, and ignores this option — so a caller who set the assembly "
-            + "default gets it honoured for their [DwarfMapper] classes and quietly overridden for their "
-            + "[MapTo] types. This is the one endpoint deliberately kept in the element's claim when the "
-            + "other four were narrowed away as shapes, precisely because there IS an extension here to "
-            + "decide about.",
-            Findings + "#D18",
-            [
-                new DivergentCell("DwarfMapperOptions", 0, "PublicExtensions=true", AttributeTargets.Assembly,
-                    SurfaceEndpoints.Registry)
-            ]),
-
-        ["D19"] = new(
-            "[assembly: DwarfMapperDefaults(AutoMatchMembers = false)] is a TRUST BOUNDARY: it says nothing "
-            + "is mapped unless the caller said so. The mapper-level [DwarfMapper(AutoMatchMembers = false)] "
-            + "acts at all five method endpoints, and the assembly-level form is honoured everywhere else and "
-            + "dropped by the [MapTo] registry — so an assembly that has switched auto-matching off still has "
-            + "every registry map auto-matching, silently. Half a trust boundary is worse than none, because "
-            + "the developer believes they have one; this is the same shape as the DWARF077 gap and it is a "
-            + "different endpoint.",
-            Findings + "#D19",
-            [
-                new DivergentCell("DwarfMapperDefaults", 0, "AutoMatchMembers=false", AttributeTargets.Assembly,
-                    SurfaceEndpoints.Registry)
             ])
 
+        // D18 and D19 were here — [assembly: DwarfMapperOptions(PublicExtensions = true)] overridden by the
+        // registry's own accessibility choice, and [assembly: DwarfMapperDefaults(AutoMatchMembers = false)]
+        // dropped by it. One root cause: MapToGenerator read no assembly-level configuration at all. Closed by
+        // hoisting that lookup into AssemblyConfiguration, which all three front doors now call — the class
+        // model for its defaults layer, the aggregate emitter for PublicExtensions, and the registry for both.
+        // D19 refuses the by-name wire as the new DWARFR10; D18 made the registry's extension class internal
+        // unless the assembly opts in, which is what the option's own documentation always said it was.
+        //
         // D20 was here — the co-located host read no member-level directive, twenty cells across the
         // Property and Field sites. Closed by teaching MapperExtractor's co-located path to read those
         // forms off the host's own members, through the one MemberDirectives parser the [MapTo] registry

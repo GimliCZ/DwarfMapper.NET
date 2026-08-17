@@ -66,7 +66,7 @@ mostly have a better in-place answer already — `[MapIgnore]`, `[MapValue]`, `[
 
 `DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
 
-The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR06` family — see
+The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR10` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
 
 ### Adopting incrementally (the strictness valve)
@@ -109,6 +109,7 @@ DWARF0xx self-validation scans that the rest of this reference is held to.
 | `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. Two arities can be wrong and both report this code. **How many attributes are stacked:** `[MapProperty]` on a base class is read for every derived `[MapTo]` source, not just the class that declares it — so a base annotated for a 2-target derived type can emit `DWARFR04` on a 1-target sibling derived type that inherits the same attribute. **How many values one of them carries:** `[MapProperty("A", "X")]` on a source member is the `[DwarfMapper]` class model's *method* form; the member form takes the single destination name this member supplies. It used to bind nothing at all and the member fell back to its own name — silently. Drop the first argument. |
 | `DWARFR05` | **No conversion between mapped members** — the member types are incompatible; use the `[DwarfMapper]` class model for a custom `Use=` converter. |
 | `DWARFR06` | **Recursive nested mapping is not supported by the registry** — the front door threads no reference context; use the `[DwarfMapper]` class model (`ReferenceHandling`/`OnCycle`) for cyclic graphs. |
+| `DWARFR10` | **Member has a source match but auto-matching is disabled** — the registry counterpart of `DWARF072`. Under `[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]` nothing is auto-wired by name, so a destination the names merely happen to line up with is refused rather than copied. The front door read no assembly-level configuration before, which meant an assembly that had switched auto-matching off still had every `[MapTo]` map auto-matching — half a trust boundary. **Fix:** name the destination deliberately with `[MapProperty("Dest")]` on the source member, or exclude the source member with `[MapIgnore]`. A member refused here does *not* also draw `DWARFR02`. |
 | `DWARFR08` | **Two `[MapTo]` targets generate the same method name** — targets whose *simple* names collide (`Foo.Order` and `Bar.Order`) would each emit `ToOrder(this Src)` into one static class (CS0111). Rename a target, or use the `[DwarfMapper]` class model where every method is named explicitly. |
 | `DWARFR09` | **`[MapTo]` target has no accessible parameterless constructor** — the registry constructs targets with `new T { … }`. Add a public parameterless constructor, or use the `[DwarfMapper]` class model, which supports constructor mapping. |
 | `DWARFR07` | **Lossy implicit numeric conversion** (Info) — the conversion is implicit in C# but crosses numeric categories (`long`→`double`, `int`→`float`, `long`→`decimal`) and loses precision for large magnitudes. The `[DwarfMapper]` class model reports the same thing as `DWARF038`; map through an explicit member type if the precision matters. |

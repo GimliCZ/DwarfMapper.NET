@@ -244,6 +244,116 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR09");
     }
 
+    // DWARFR10 — the explicit-only trust boundary, asked of the front door that used to read no
+    // assembly-level configuration at all. [assembly: DwarfMapperDefaults(AutoMatchMembers = false)] means
+    // nothing is mapped unless the caller said so; the by-name wire here is exactly the mass-assignment
+    // surface, and the completeness gate could never notice it because the member IS mapped.
+    [Fact]
+    public void Auto_matched_member_under_an_explicit_only_assembly_reports_DWARFR10()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         [assembly: DwarfMapperDefaults(AutoMatchMembers = false)]
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto { public int Id { get; set; } }
+                         """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR10");
+    }
+
+    // The other half of the boundary: a destination the caller NAMED is a decision, not a coincidence, so it
+    // maps. Without this the guard could be "refuse everything" and still pass the fact above.
+    [Fact]
+    public void An_explicitly_named_destination_is_not_flagged_by_DWARFR10()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         [assembly: DwarfMapperDefaults(AutoMatchMembers = false)]
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { [MapProperty("Id")] public int Id { get; set; } }
+                         public class Dto { public int Id { get; set; } }
+                         """;
+        Assert.Empty(GeneratorTestHarness.RunMapTo(s).Where(d => d.Severity == DiagnosticSeverity.Error));
+    }
+
+    // No assembly default, no boundary: the ordinary by-name wire must stay silent, or every [MapTo] in every
+    // assembly would now be an error.
+    [Fact]
+    public void DWARFR10_is_silent_when_the_assembly_says_nothing()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto { public int Id { get; set; } }
+                         """;
+        Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR10");
+    }
+
+    // A refused member must NOT also draw DWARFR02. "Has no source member" would be false — it has one, and
+    // declining to wire it is the whole point; two diagnostics about one member, one of them untrue, sends the
+    // reader to the wrong fix.
+    [Fact]
+    public void A_member_refused_by_DWARFR10_is_not_also_reported_as_unmapped()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         [assembly: DwarfMapperDefaults(AutoMatchMembers = false)]
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto { public int Id { get; set; } }
+                         """;
+        Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR02");
+    }
+
+    // ── the accessibility of the emitted extension class ────────────────────────
+    // Not a diagnostic, but the same defect at the same front door: the registry chose public whenever the
+    // types allowed it and never read [assembly: DwarfMapperOptions(PublicExtensions = true)], so the assembly
+    // default was honoured for a caller's [DwarfMapper] classes and overridden for their [MapTo] types. Both
+    // directions asserted, because a one-sided check passes for an emitter that hard-codes either answer.
+    [Fact]
+    public void The_registry_extension_class_is_internal_unless_the_assembly_opts_in()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto { public int Id { get; set; } }
+                         """;
+        Assert.Contains("internal static class __DwarfRegistry_Src",
+            GeneratorTestHarness.RunAll(s).GeneratedSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_registry_extension_class_is_public_when_the_assembly_opts_in()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         [assembly: DwarfMapperOptions(PublicExtensions = true)]
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto { public int Id { get; set; } }
+                         """;
+        Assert.Contains("public static class __DwarfRegistry_Src",
+            GeneratorTestHarness.RunAll(s).GeneratedSource, StringComparison.Ordinal);
+    }
+
+    // The opt-in is a ceiling, not a decision: a non-public type still gets an internal extension class,
+    // because a public member over an internal type does not compile.
+    [Fact]
+    public void The_opt_in_does_not_make_an_internal_typed_registry_extension_public()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         [assembly: DwarfMapperOptions(PublicExtensions = true)]
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] internal class Src { public int Id { get; set; } }
+                         internal class Dto { public int Id { get; set; } }
+                         """;
+        Assert.Contains("internal static class __DwarfRegistry_Src",
+            GeneratorTestHarness.RunAll(s).GeneratedSource, StringComparison.Ordinal);
+    }
+
     // ── the standing completeness gate ──────────────────────────────────────────
     // Mirrors AssemblyScanTests Scan3 (every id tested) + Scan7 (every id documented), but over the registry's
     // OWN descriptor class, which those scans deliberately skip. It does NOT assert AnalyzerReleases sync — the

@@ -390,8 +390,15 @@ public sealed class SurfaceParityTests
     ///         19 → 18 when <c>D20</c> was closed by the co-located host learning to read the member forms
     ///         its own <c>[DwarfSurfaceSite]</c> had always claimed it did.
     ///     </para>
+    ///     <para>
+    ///         15 → 13 when <c>D18</c> and <c>D19</c> were closed together: <c>MapToGenerator</c> read no
+    ///         assembly-level configuration at all, and one hoisted reader
+    ///         (<c>Pipeline/AssemblyConfiguration</c>) gave that front door the same resolution the other two
+    ///         already used. <c>D17</c> shared the root cause and did NOT close — the option withholds ambient
+    ///         registry rows and that front door emits none — so it stays here with its reason corrected.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 15;
+    private const int DivergenceFindingCeiling = 13;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -415,8 +422,15 @@ public sealed class SurfaceParityTests
     ///         population; none enters <see cref="NotCompilableCellCeiling" />'s, because <c>DWARF089</c> is
     ///         a Warning and the host declares no partial method there would be a <c>CS8795</c> for.
     ///     </para>
+    ///     <para>
+    ///         84 → 82 with <c>D18</c> and <c>D19</c>, one cell each, and one verdict each: <c>D19</c> is now
+    ///         <c>Refused (DWARFR10)</c> and <c>D18</c> <c>Honoured</c>. Re-measured across the whole matrix
+    ///         before and after — <b>exactly those two rows differ</b>, both at <c>Registry</c> on the
+    ///         <c>Assembly</c> site, which is the boundary the flip had to respect: the registry now emits an
+    ///         <c>internal</c> extension class by default, and every other cell is byte-identical.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 84;
+    private const int DivergentCellCeiling = 82;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

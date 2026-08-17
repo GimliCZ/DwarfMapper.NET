@@ -28,14 +28,14 @@ Nothing pushed. Surface matrix green at 865/865; whole solution builds 0 warning
 
 | | |
 |---|---|
-| **In flight** | **A4 review** — implementation done, under task review. |
-| **Next** | **A7** (it shares the `MapProperty`/`MapIgnore` extractor region with A4, which ran first — ordering ruled in the ledger), then A5, A6, A8, A9, then **A10 last among the refusal tasks**, then A11. |
+| **In flight** | **A5 review** — implementation done, under task review. |
+| **Next** | **A6**, then A8, A9, then **A10 last among the refusal tasks**, then A11. (A7 and A5 are done.) |
 | **Blocked on a human** | **D-e only.** ~80 diagnostics predate the CHANGELOG and have never been announced; `Scan9` guards only *new* ids. Harmless until the first tag, then not. |
 | **Round 19** | Complete — 10 tasks + 5a/5b/5c, final whole-branch review returned *merge after must-fixes*, and those must-fixes were **A0**. Merge itself is **F1** below and needs your say-so. |
 
 **Live counts, read from the code rather than from a report** (I had been repeating 23 / 162 from Task 5c's
 report; the source says otherwise — see the ledger's controller-error entry):
-**18 divergence findings · 93 declared cells · 302 unjudged-but-counted cells across four ratchets.**
+**13 divergence findings · 82 declared cells · 294 unjudged-but-counted cells across four ratchets.**
 
 **Layer 0 is complete** (C2, B2, B1, B9 — the instrument repairs). Measurements from here are trustworthy in
 a way they demonstrably were not before: B2 alone found **70** cells that had been reading the right answer
@@ -66,7 +66,7 @@ values.
 | A2 | `DONE` | The missing arity checks — under review. `DWARFR04` reused for D4 (**no new id**: the brief was wrong that its descriptor was dead; it checks *stacked-attribute* arity, a different thing). `DWARF088` added for D5+D21, one check, two call sites. | D4, D5, D21 |
 | A3 | `DONE` | **Closed by A2, unplanned.** D3's cells are `ctor(1)` + a property initializer — named arguments ride on the one-argument constructor — so A2's check fires on them. The narrower alternative was rejected: it would leave `[MapProperty("Id")]` refused and `[MapProperty("Id", Use=…)]` silent. | D3 |
 | A4 | `DONE` | Co-located host reads no member-level directives. Fixed: `MapperExtractor` reads them off the host's own members through the one `MemberDirectives` parser the registry already used; the method forms written there are refused as the new **`DWARF089`**. Measured: **2 Honoured, 18 Refused** — the twenty split 6 (the directive ACTS: 2 Honoured + 4 labelled Refused only by a pre-existing `DWARF038`) / 6 (named arguments refused on their merits) / 8 (`DWARF089`). Ceilings 19/113 → **18/93**. Found four issues, filed as **B15–B18**. | D20 |
-| A5 | `TODO` | `MapToGenerator` ignores assembly-level config — **D19 is a trust boundary** | D17, D18, D19 |
+| A5 | `DONE` | `MapToGenerator` ignored assembly-level config. Fixed **structurally**: the lookup is hoisted into `Pipeline/AssemblyConfiguration`, and all three front doors read it — the class model for its defaults layer, `DwarfGenerator` for `PublicExtensions` (an inline copy until now), and the registry for both. **One change closed two of three.** D19: the by-name wire is refused as the new **`DWARFR10`**, asked with `MapperExtractor.ReadAutoMatchMembers` itself, not a copy. D18: the registry extension class is now `internal` unless the assembly opts in — what `PublicExtensions` always documented as its default; **BREAKING**, in `CHANGELOG.md`. **D17 did NOT close and its stated reason was measurably false** — the `[MapTo]` front door emits an extension class and *no* ambient registry rows, so `RegisterCollectionShapes` has nothing there to withhold; three ways out recorded, none of them A5's to take. Ceilings 15/84 → **13/82**; no other ratchet moved, none raised. Re-measured: exactly 2 of 854 rows differ. | D18, D19 (D17 stands) |
 | A6 | `TODO` | `[MapNullSkip]` class and method forms are exact inverses — one is wrong | D6, D7 |
 | A7 | `DONE` | Element-wise endpoints do not inherit method-level directives — **two root causes, not one.** D1+D2 are one shape: the twice-written `DWARF077` check is now a single element-wise gate (`ReportElementWiseDirectiveGaps`) reporting the new **`DWARF090`**, whose message names the pair-scoped remedy (`[MapIgnore<TTarget>]`, `[MapProperty<TSource,TTarget>]`) — measured `Honoured` at those endpoints, so the refusal has a working replacement. **8 cells Silent → Refused.** D16 needed its own fix, the new **`DWARF091`**: `CollectHooks` accepted the partial mapping method as a hook, which at UpdateInto emitted `Update(s, d);` *inside* `Update` — shipped infinite recursion **the matrix scored `Honoured`** (filed as **B19**). **1 cell Silent → Refused, 8 more `NotCompilable` → Refused.** D2's filed evidence was wrong (`DWARF038` is `ImplicitConversionApplied`, not a placement refusal); corrected in its section. Ceilings 18/93 → **15/84**, `NotCompilable` 107 → **99**. | D1, D2, D16 |
 | A8 | `TODO` | Projection does not honour member directives | D9, D10 |

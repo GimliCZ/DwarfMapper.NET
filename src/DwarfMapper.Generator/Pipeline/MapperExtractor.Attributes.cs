@@ -161,7 +161,15 @@ internal static partial class MapperExtractor
     ///     Defaults to <c>true</c>. When <c>false</c> the mapper is explicit-only (the trust-boundary guard) and
     ///     nothing is auto-wired by name — see <see cref="DiagnosticDescriptors.AutoMatchDisabled" />.
     /// </summary>
-    private static bool ReadAutoMatchMembers(ImmutableArray<AttributeData> attributes)
+    /// <remarks>
+    ///     <c>internal</c>, unlike its siblings, because the <c>[MapTo]</c> registry front door enforces the
+    ///     same trust boundary and must ask the question with THIS reader rather than one of its own. The
+    ///     boundary is the reason: an assembly that switched auto-matching off but had it silently re-enabled at
+    ///     one front door has half a guard, and a developer who believes they have one is worse off than a
+    ///     developer who knows they do not. The registry passes
+    ///     <see cref="AssemblyConfiguration.OptionsFor" />, since it has no mapper class of its own.
+    /// </remarks>
+    internal static bool ReadAutoMatchMembers(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)
         foreach (var named in attr.NamedArguments)

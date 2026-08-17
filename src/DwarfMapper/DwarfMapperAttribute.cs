@@ -105,6 +105,12 @@ public sealed class DwarfMapperAttribute : Attribute
     ///         and constructor parameters still resolve — they are all explicit or structurally required. Only
     ///         the implicit by-name matching of settable members is disabled.
     ///     </para>
+    ///     <para>
+    ///         The <b>assembly-level</b> form (<c>[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]</c>)
+    ///         closes the boundary for the <c>[MapTo]</c> registry front door as well, which refuses the by-name
+    ///         wire there with <c>DWARFR10</c>. A guard honoured at only some front doors is worse than no guard,
+    ///         because the developer believes they have one.
+    ///     </para>
     /// </summary>
     public bool AutoMatchMembers { get; set; } = true;
 

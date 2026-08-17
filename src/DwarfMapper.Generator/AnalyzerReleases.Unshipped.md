@@ -112,3 +112,4 @@ DWARFR06 | DwarfMapper.Registry | Error | Recursive nested mapping is not suppor
 DWARFR07 | DwarfMapper.Registry | Info | Lossy implicit numeric conversion
 DWARFR08 | DwarfMapper.Registry | Error | Two [MapTo] targets generate the same method name
 DWARFR09 | DwarfMapper.Registry | Error | [MapTo] target has no accessible parameterless constructor
+DWARFR10 | DwarfMapper.Registry | Error | Member has a source match but auto-matching is disabled

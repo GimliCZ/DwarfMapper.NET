@@ -3,7 +3,7 @@
 #nullable enable
 namespace Demo
 {
-    public static class __DwarfRegistry_Src
+    internal static class __DwarfRegistry_Src
     {
         public static TTarget MapTo<TTarget>(this global::Demo.Src source)
         {

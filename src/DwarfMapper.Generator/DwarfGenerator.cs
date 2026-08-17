@@ -92,14 +92,9 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         {
             var di = compilation.GetTypeByMetadataName(
                 "Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null;
-            var publicExtensions = false;
-            foreach (var a in compilation.Assembly.GetAttributes())
-            {
-                if (a.AttributeClass?.ToDisplayString() != KnownNames.DwarfMapperOptionsFqn) continue;
-                foreach (var na in a.NamedArguments)
-                    if (na.Key == "PublicExtensions" && na.Value.Value is bool b)
-                        publicExtensions = b;
-            }
+            // Read through AssemblyConfiguration, not inline: the [MapTo] registry emits an extension class of
+            // its own and must reach the same answer, and two readers of one option drift.
+            var publicExtensions = AssemblyConfiguration.PublicExtensions(compilation);
 
             return (Di: di, PublicExtensions: publicExtensions, AsmNs: SanitizeNamespace(compilation.AssemblyName));
         });
