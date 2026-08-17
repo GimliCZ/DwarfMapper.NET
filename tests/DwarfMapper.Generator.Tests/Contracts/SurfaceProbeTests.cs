@@ -222,31 +222,50 @@ public sealed class SurfaceProbeTests
     ///         <c>CS8795</c> — the id a blocking DWARF error produces, by leaving that one method unimplemented
     ///         — tops out at one occurrence per compilation regardless of what the case under test does, and
     ///         nothing in <see cref="EndpointSources.BuildAt" /> lets a case add a second partial method to
-    ///         fail independently. So <see cref="SurfaceProbe.FirstNewOccurrence" /> — the pure counting
+    ///         fail independently. So <see cref="SurfaceProbe.NewOccurrences" /> — the pure counting
     ///         function <see cref="SurfaceProbe.Classify" /> delegates to — is verified directly instead.
     ///     </para>
     /// </summary>
     [Fact]
-    public void FirstNewOccurrence_flags_an_id_the_baseline_already_carries_once_when_the_case_doubles_it()
+    public void NewOccurrences_flags_an_id_the_baseline_already_carries_once_when_the_case_doubles_it()
     {
         var baselineCounts = new Dictionary<string, int> { ["CS8795"] = 1 };
         var withCounts = new Dictionary<string, int> { ["CS8795"] = 2 };
 
-        var result = SurfaceProbe.FirstNewOccurrence(withCounts, baselineCounts);
+        var result = SurfaceProbe.NewOccurrences(withCounts, baselineCounts);
 
-        Assert.Equal("CS8795", result);
+        Assert.Equal(["CS8795"], result);
     }
 
     /// <summary>The correct-suppression direction, for contrast: an id whose count is unchanged from the
     /// baseline is not new, however many times it already occurs.</summary>
     [Fact]
-    public void FirstNewOccurrence_does_not_flag_an_id_whose_count_is_unchanged()
+    public void NewOccurrences_does_not_flag_an_id_whose_count_is_unchanged()
     {
         var baselineCounts = new Dictionary<string, int> { ["CS8795"] = 1 };
         var withCounts = new Dictionary<string, int> { ["CS8795"] = 1 };
 
-        var result = SurfaceProbe.FirstNewOccurrence(withCounts, baselineCounts);
+        var result = SurfaceProbe.NewOccurrences(withCounts, baselineCounts);
 
-        Assert.Null(result);
+        Assert.Empty(result);
+    }
+
+    /// <summary>
+    ///     ALL new ids, not just the first — the property <see cref="SurfaceProbe.Classify" />'s refusal rule
+    ///     depends on. That rule reads "every CS id the case introduced is an absent-emission id", and a
+    ///     counting function returning only the first would answer that question about one id while the case
+    ///     introduced two: a <c>CS8795</c> ordered ahead of a genuine <c>CS0111</c> would let a real placement
+    ///     defect be reclassified as a clean refusal and disappear from the counted population.
+    /// </summary>
+    [Fact]
+    public void NewOccurrences_returns_every_new_id_not_only_the_first()
+    {
+        var baselineCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var withCounts = new Dictionary<string, int>(StringComparer.Ordinal)
+            { ["CS8795"] = 1, ["CS0111"] = 1 };
+
+        var result = SurfaceProbe.NewOccurrences(withCounts, baselineCounts);
+
+        Assert.Equal(["CS0111", "CS8795"], result);
     }
 }

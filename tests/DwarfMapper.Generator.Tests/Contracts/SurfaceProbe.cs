@@ -11,7 +11,15 @@ internal enum SurfaceEffect
     /// <summary>The element changed the emitted output.</summary>
     Honoured,
 
-    /// <summary>The element produced a diagnostic — a refusal the caller can see.</summary>
+    /// <summary>
+    ///     The element produced a diagnostic — a refusal the caller can see.
+    ///     <para>
+    ///         Includes a BLOCKING refusal, whose emitted consequence is that no mapper is generated and the
+    ///         endpoint's partial method is left unimplemented (<c>CS8795</c>). That compiler error is the
+    ///         refusal's shadow, not a separate verdict; reading it as one is the defect
+    ///         <see cref="SurfaceProbe.Classify" />'s discrimination rule exists to prevent.
+    ///     </para>
+    /// </summary>
     Refused,
 
     /// <summary>Accepted, changed nothing observable, compiled. The dangerous one.</summary>
@@ -24,8 +32,15 @@ internal enum SurfaceEffect
     UnhonouredButLoud,
 
     /// <summary>
-    ///     The site is illegal per <c>AttributeUsage</c> and the compiler rejects it — the declaration is
-    ///     telling the truth.
+    ///     The C# compiler rejects the source the case produced — the site is illegal per
+    ///     <c>AttributeUsage</c>, the case duplicates a declaration, its sampled arguments fit no constructor.
+    ///     The declaration is telling the truth and there is nothing here for the generator to be judged on.
+    ///     <para>
+    ///         NOT a generator refusal. A blocking DWARF diagnostic also ends in a compiler error — the
+    ///         unimplemented partial method — and wore this label for 86 cells until the rule in
+    ///         <see cref="SurfaceProbe.Classify" /> separated the two. Those cells read
+    ///         <see cref="Refused" /> now and are judged against their claim like every other cell.
+    ///     </para>
     /// </summary>
     NotCompilable,
 
@@ -99,27 +114,69 @@ internal static class SurfaceProbe
         // WITH-run twice is still a new failure the case introduced — keying on "is this id in the baseline
         // at all" would mask it. See SurfaceProbeTests for why the harness cannot currently construct that
         // scenario end-to-end (every class-model endpoint declares exactly one partial mapping method, so
-        // CS8795 tops out at one occurrence regardless of the case), and FirstNewOccurrence is verified
+        // CS8795 tops out at one occurrence regardless of the case), and NewOccurrences is verified
         // directly instead.
+        //
+        // Collected here but NOT decided on here: the verdict needs the generator's own diagnostics, which are
+        // read below. See "THE DISCRIMINATION".
         var withCompilerErrorCounts = GeneratorTestHarness.RunAndGetCompilationErrors(source)
             .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("CS", StringComparison.Ordinal))
             .GroupBy(d => d.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
-        var newCompilerErrorId = FirstNewOccurrence(withCompilerErrorCounts, baseCompilerErrorCounts);
-        if (newCompilerErrorId is not null)
-            return (SurfaceEffect.NotCompilable, newCompilerErrorId);
+        var newCompilerErrorIds = NewOccurrences(withCompilerErrorCounts, baseCompilerErrorCounts);
 
         var (diagnostics, generated) = GeneratorTestHarness.RunAll(source);
 
-        var added = diagnostics
+        var addedDiagnostics = diagnostics
             .Where(d => !baseDwarfKeys.Contains(d.Id + ":" + d.Severity, StringComparer.Ordinal))
             // DWARF078 is the cascade signpost that accompanies ANY blocking error; including it appends a
-            // meaningless suffix to every refused cell and tells the reader nothing about the element.
+            // meaningless suffix to every refused cell and tells the reader nothing about the element. Filtered
+            // FIRST, before the blocking-error test below reads this list, so the signpost can never be the
+            // sole evidence that the generator refused: it accompanies a refusal, it is never the refusal.
             .Where(d => !string.Equals(d.Id, "DWARF078", StringComparison.Ordinal))
+            .ToList();
+
+        var added = addedDiagnostics
             .Select(d => d.Severity == DiagnosticSeverity.Error ? d.Id : $"{d.Id} ({d.Severity})")
             .Distinct(StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToList();
+
+        // THE DISCRIMINATION. A new CS error used to end the classification right here, before the generator's
+        // own diagnostics were ever read, and that conflated two opposite events under one verdict:
+        //
+        //   * the C# compiler rejected the PLACEMENT (an illegal AttributeUsage site, a duplicate member
+        //     declaration, a constructor the sampled arguments do not fit) — the declaration told the truth
+        //     and there is genuinely nothing here to judge; and
+        //   * the GENERATOR refused, loudly and correctly. A blocking DWARF error suppresses emission, so the
+        //     partial mapping method the endpoint template declares is left unimplemented, and the FINAL
+        //     compilation reports CS8795 as a consequence. The element did the most visible thing it can do —
+        //     it produced a diagnostic the caller can act on — and the cell was recorded as "the compiler
+        //     rejected the placement" and then SKIPPED by the bidirectional claim check.
+        //
+        // The second is Refused; only the first is NotCompilable. The rule discriminates on both halves of the
+        // causal story, because either half alone is wrong:
+        //
+        //   * every new CS id must be an ABSENT-EMISSION id (CS8795 and nothing else). A case that also
+        //     introduces CS0111 or CS7036 has a real placement problem on top of whatever the generator said,
+        //     and calling that Refused would hide the placement defect behind the refusal; and
+        //   * a new BLOCKING DWARF diagnostic must exist. Without one, an unimplemented partial method is the
+        //     generator declining to emit while saying nothing — which is not a refusal the caller can see,
+        //     and must keep failing the count rather than being absorbed into the judged population.
+        //
+        // Both directions are pinned in SurfaceProbeTests: a CS8795-with-blocking-DWARF cell that must read
+        // Refused, and a real placement rejection that must stay NotCompilable. A mistake here does not
+        // produce a red cell — it produces a matrix that is confidently wrong.
+        if (newCompilerErrorIds.Count > 0)
+        {
+            var generatorRefused = addedDiagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)
+                                   && newCompilerErrorIds.All(
+                                       id => AbsentEmissionErrorIds.Contains(id, StringComparer.Ordinal));
+            if (!generatorRefused)
+                return (SurfaceEffect.NotCompilable, string.Join(",", newCompilerErrorIds));
+
+            return (SurfaceEffect.Refused, string.Join(",", added));
+        }
 
         if (added.Count > 0) return (SurfaceEffect.Refused, string.Join(",", added));
         if (!string.Equals(generated, baseline, StringComparison.Ordinal))
@@ -189,23 +246,46 @@ internal static class SurfaceProbe
     }
 
     /// <summary>
-    ///     The first CS-prefixed diagnostic id whose occurrence count in <paramref name="withCounts" />
-    ///     exceeds its count in <paramref name="baselineCounts" /> (an id absent from the baseline counts as
-    ///     zero) — or <c>null</c> if none. A pure counting function, deliberately separated from
+    ///     The CS error ids that mean "the mapping method has no implementation", which is what a generator
+    ///     that declined to emit leaves behind — as opposed to an id that means the caller's own source is
+    ///     wrong. Only these are eligible to be re-read as a refusal by <see cref="Classify" />.
+    ///     <para>
+    ///         Deliberately a list of exactly one and deliberately not a prefix test. Every class-model
+    ///         endpoint in <see cref="EndpointSources" /> declares its mapping method <c>partial</c>, so
+    ///         suppressed emission surfaces as <c>CS8795</c> and nothing else; a second id appearing here later
+    ///         would be a new endpoint template shape, which is a change someone should have to make on
+    ///         purpose. Everything outside this set — <c>CS0111</c> (the case duplicates a declaration),
+    ///         <c>CS7036</c> (the sampled arguments do not fit a constructor), <c>CS1912</c> (invalid C# in
+    ///         GENERATED code, which is worse than any refusal and must never be absorbed into one) — is the
+    ///         compiler rejecting something real, and stays <see cref="SurfaceEffect.NotCompilable" />.
+    ///     </para>
+    /// </summary>
+    private static readonly string[] AbsentEmissionErrorIds = ["CS8795"];
+
+    /// <summary>
+    ///     Every CS-prefixed diagnostic id whose occurrence count in <paramref name="withCounts" /> exceeds its
+    ///     count in <paramref name="baselineCounts" /> (an id absent from the baseline counts as zero), in
+    ///     ordinal id order — empty if none. A pure counting function, deliberately separated from
     ///     <see cref="GeneratorTestHarness" /> so the over-subtraction direction (a case that legitimately
     ///     re-triggers a CS id the baseline already carries once) is testable without needing an end-to-end
     ///     compile that can actually produce two occurrences of the same id — see <c>SurfaceProbeTests</c> for
     ///     why that scenario cannot currently be constructed through the real harness.
+    ///     <para>
+    ///         ALL of them, not just the first: <see cref="Classify" />'s refusal rule is a universal
+    ///         quantifier over the ids the case introduced, and a function that returns only the first would
+    ///         let a case whose CS8795 is accompanied by a genuine placement error read as a clean refusal.
+    ///     </para>
     /// </summary>
-    internal static string? FirstNewOccurrence(IReadOnlyDictionary<string, int> withCounts,
+    internal static IReadOnlyList<string> NewOccurrences(IReadOnlyDictionary<string, int> withCounts,
         IReadOnlyDictionary<string, int> baselineCounts)
     {
+        var newIds = new List<string>();
         foreach (var id in withCounts.Keys.OrderBy(k => k, StringComparer.Ordinal))
         {
             var baseCount = baselineCounts.TryGetValue(id, out var n) ? n : 0;
-            if (withCounts[id] > baseCount) return id;
+            if (withCounts[id] > baseCount) newIds.Add(id);
         }
 
-        return null;
+        return newIds;
     }
 }
