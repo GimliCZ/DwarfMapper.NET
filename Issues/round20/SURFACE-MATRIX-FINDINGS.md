@@ -168,7 +168,7 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D12 | ~~`[Reinterpret("Data")]`, and ×2~~ | **CLOSED by A9b** as `DWARF090` — all 4 cells `Refused`; its "acts at Projection" was false, see the entry | — | 0 |
 | D13 | ~~`[ReverseMap]`~~ | **CLOSED by A9a** as `DWARF092` — all 4 cells `Refused`; its mechanism was misstated, see the entry | — | 0 |
 | D14 | ~~`[MapCollectionKey("Items","Id")]`, and ×2~~ | **CLOSED by A9b** as `DWARF092` — all 8 cells `Refused`; its evidence was false, see the entry | — | 0 |
-| D15 | `[GenerateWrapperMap(typeof(Dst))]` on the mapper class, and ×2 | CoLocatedHost (DWARF067) | all five mapper endpoints | 10 |
+| D15 | ~~`[GenerateWrapperMap(typeof(Dst))]` on the mapper class, and ×2~~ | **CLOSED by A9b** as the new `DWARF093` — all 10 cells `Refused`; its stated mechanism was wrong, see the entry | — | 0 |
 | D16 | `[AfterMap]` on the mapping method | UpdateInto (Honoured), Create/Projection/Async (blocking) | **SpanMap** | 1 |
 | D17 | `[DwarfMapper(GenerateExtensions=false)]` and `(RegisterCollectionShapes=false)`; same two on `[DwarfMapperDefaults]` | CreateMap, CoLocatedHost (Honoured) | Update, Projection, SpanMap, AsyncStream, **Registry** | 13 |
 | D18 | `[DwarfMapperDefaults(SkipNullSourceMembers=true)]` and `[DwarfMapperOptions(PublicExtensions=true)]` | Honoured at four and two endpoints respectively | **Registry** | 2 |
@@ -1038,7 +1038,43 @@ endpoint the directive is chiefly for.
 
 <a id="D15"></a>
 
-### D15 — `[GenerateWrapperMap]` on a `[DwarfMapper]` class does nothing and says nothing — 10 cells
+### D15 — `[GenerateWrapperMap]` on a `[DwarfMapper]` class does nothing and says nothing — 10 cells — RESOLVED
+
+> **RESOLVED 2026-08-17 as the new `DWARF093` (task A9b), a Warning.** All ten cells read `Refused`.
+>
+> **The entry's stated MECHANISM was wrong, and the fork rested on it.** *"Refused at CoLocatedHost with
+> DWARF067, so the generator reads the attribute and has an opinion about where it is valid."* `DWARF067` is
+> an opinion about the **wrapper type** — *"the wrapper must be a generic type with exactly one type
+> parameter"* — and says nothing about placement. It fired at the co-located host only because that
+> template declares `[GenerateMap<Src, Dst>]` while `SurfaceCatalog` samples a `Type` argument as
+> `typeof(Dst)`, which is not a single-parameter generic. At the five mapper endpoints the templates declare a
+> partial mapping **method** and no `[GenerateMap]` at all, and `ExpandWrapperMaps` returned early on the
+> empty pair list — before the wrapper was validated, before anything. The silence was the early return.
+>
+> **The fork — emit the wrapper map, or refuse there too — was decided REFUSE**, argued from what the
+> attribute means rather than from which is easier to implement. It is defined *relative to* `[GenerateMap]`:
+> its own documentation opens *"for every `[GenerateMap<A, B>]` declared on the same `[DwarfMapper]` class"*,
+> and `ExpandWrapperMaps` is literally an append to that pair list. A pair declared as a partial mapping
+> method is a different mechanism with a different signature — and four of the five endpoints are not create
+> maps at all: an update-into, a projection, a span map and an async-stream map have no `W<A> -> W<B>` shape
+> to synthesize, so expanding them would hand the caller a create map they never asked for. Emitting would
+> have been feature work at **one** endpoint and would still have left the other four needing this refusal.
+>
+> Reported **before** the wrapper's shape is validated, deliberately: with no pairs to expand even a
+> well-formed `Envelope<T>` expands nothing, so `DWARF067` would send the caller to fix something that changes
+> no output — and it is an **Error**, which would have put these ten cells into `NotCompilable`'s population
+> rather than out of the divergence one. A class that *does* declare a pair still gets `DWARF067`; pinned in
+> both directions.
+>
+> **Remedy measured, including its sharp edge.** `[GenerateMap<Src, Dst>]` beside `[GenerateWrapperMap]`
+> emits `Envelope<Dst> Map(Envelope<Src>)` cleanly — but `[GenerateMap]` also emits its own `Dst Map(Src)`,
+> so on a class that already declares `partial Dst Map(Src s)` over the same pair the combination is
+> **`CS0111`**. The message says so rather than sending a create-map caller into a duplicate-member error.
+> That `CS0111` arriving with no DWARF diagnostic of its own is filed as **B27**.
+>
+> Ceilings re-measured in the same commit: findings **7 → 6**, declared cells **22 → 12**. `NotCompilable`
+> **96**, `UnhonouredButLoud` **14**, `Unaskable` **44**, `NoSuchSite` **137**, `StructurallyExcused` **12**
+> unchanged.
 
 *Class site, `ctor(1)` and ×2 → all five mapper endpoints.* **Refused at CoLocatedHost with DWARF067**, so the
 generator reads the attribute and has an opinion about where it is valid. On a mapper class it produces

@@ -352,17 +352,38 @@ internal static class DeclaredDivergences
         // update-into branch alone. That case is now DWARF092's, and could never have been DWARF074's once it
         // was written: DWARF074 is an Error, and an error suppresses the class's emission.
 
-        ["D15"] = new(
-            "[GenerateWrapperMap(typeof(Dst))] on a mapper class is REFUSED at CoLocatedHost with DWARF067, "
-            + "so the generator does read it and does have an opinion about where it is valid. On a "
-            + "[DwarfMapper] class at any of the five mapper endpoints it produces nothing and says nothing: "
-            + "neither the wrapper map the caller asked for nor the refusal the co-located host would have "
-            + "given them. Whichever of the two answers is right, silence is not it.",
-            Findings + "#D15",
-            [
-                new DivergentCell("GenerateWrapperMap", 0, "ctor(1)", AttributeTargets.Class, MapperEndpoints),
-                new DivergentCell("GenerateWrapperMap", 0, "×2", AttributeTargets.Class, MapperEndpoints)
-            ]),
+        // D15 closed 2026-08-17 (task A9b) as the new DWARF093, a Warning. All TEN cells read Refused.
+        //
+        // THE ENTRY'S MECHANISM WAS WRONG, and the wrong part is the sentence the fork rested on: "REFUSED at
+        // CoLocatedHost with DWARF067, so the generator does read it and does have an opinion about where it
+        // is valid." DWARF067 is an opinion about the WRAPPER TYPE — "the wrapper must be a generic type with
+        // exactly one type parameter" — and has nothing to say about placement. It fired at CoLocatedHost only
+        // because that template declares [GenerateMap<Src, Dst>] and SurfaceCatalog samples a Type argument as
+        // typeof(Dst), which is not a single-parameter generic. At the five mapper endpoints the templates
+        // declare a partial mapping METHOD and no [GenerateMap] at all, and ExpandWrapperMaps returned early
+        // on the empty pair list — before the wrapper was validated, before anything. The silence was the
+        // early return, not an opinion.
+        //
+        // THE FORK, and the answer: EMIT the wrapper map at the mapper endpoints, or REFUSE there too.
+        // Refused, argued from what [GenerateWrapperMap] MEANS rather than from what is easier. It is defined
+        // relative to [GenerateMap] — its own documentation opens "for every [GenerateMap<A, B>] declared on
+        // the same [DwarfMapper] class" — and ExpandWrapperMaps is literally an append to that pair list. A
+        // pair declared as a partial mapping method is a different mechanism with a different signature, and
+        // four of the five endpoints are not create maps at all: an update-into, a projection, a span map and
+        // an async-stream map have no W<A> -> W<B> shape to synthesize, so expanding them would hand the
+        // caller a create map they never asked for. Emitting would have been feature work at ONE endpoint and
+        // would still have left the other four needing this refusal.
+        //
+        // Reported BEFORE the wrapper's shape is validated, deliberately: with no pairs to expand even a
+        // well-formed Envelope<T> expands nothing, so DWARF067 would send the caller to fix something that
+        // changes no output — and it is an Error, which would have put these ten cells into
+        // NotCompilableCellCeiling's population rather than out of the divergence one.
+        //
+        // Remedy MEASURED, including its sharp edge: [GenerateMap<Src, Dst>] beside [GenerateWrapperMap] emits
+        // `Envelope<Dst> Map(Envelope<Src>)`, clean at an update-into — but [GenerateMap] also emits its own
+        // `Dst Map(Src)`, so on a class that already declares `partial Dst Map(Src s)` over the same pair the
+        // combination is CS0111. The message says so rather than sending a create-map caller into a
+        // duplicate-member error. (That CS0111 arriving with no DWARF diagnostic of its own is filed as B27.)
 
         ["D17"] = new(
             "[assembly: DwarfMapperDefaults(RegisterCollectionShapes = false)] withholds the collection-shape "
@@ -419,10 +440,10 @@ internal static class DeclaredDivergences
         // already used. D21 was here too; see the note where D3/D4/D5 were.
     };
 
-    /// <summary>The five endpoints declared by a partial method on a <c>[DwarfMapper]</c> class.</summary>
-    private const SurfaceEndpoints MapperEndpoints =
-        SurfaceEndpoints.CreateMap | SurfaceEndpoints.UpdateInto | SurfaceEndpoints.Projection
-        | SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream;
+    // `MapperEndpoints` — the five endpoints declared by a partial method on a [DwarfMapper] class — was here,
+    // and it is gone for the reason `ElementWiseAndMore` below is: its last user did. D15 was the only entry
+    // whose cells spanned all five, and task A9b closed it as DWARF093. Not kept "in case": an unused constant
+    // in this file reads as a shape somebody is still recording, and the next entry that needs it can say so.
 
     // `ElementWiseAndMore` — every mapper endpoint but the create map, the shape of a directive that acts
     // only there — was here, and it is gone because its last user did. D8, D11 and D13 were the three

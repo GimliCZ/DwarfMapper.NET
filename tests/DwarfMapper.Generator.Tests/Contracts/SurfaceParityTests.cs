@@ -463,8 +463,18 @@ public sealed class SurfaceParityTests
     ///         update-into branches read it. That cell is <c>UnhonouredButLoud</c> and stays there —
     ///         <see cref="UnhonouredButLoudCellCeiling" /> re-measured at 14, unchanged.
     ///     </para>
+    ///     <para>
+    ///         7 → <b>6</b> when <c>D15</c> closed, as the new <c>DWARF093</c>. Its stated mechanism was wrong
+    ///         and the fork rested on it: the <c>DWARF067</c> at <c>CoLocatedHost</c> is an opinion about the
+    ///         WRAPPER TYPE, not about placement, and it fired there only because that template declares a
+    ///         <c>[GenerateMap]</c> pair while the sampled <c>typeof(Dst)</c> is not a single-parameter
+    ///         generic. The mapper-endpoint silence was <c>ExpandWrapperMaps</c> returning early on an empty
+    ///         pair list. Refused rather than emitted, argued from the attribute's own contract — it is an
+    ///         expansion of the <c>[GenerateMap]</c> list, and four of the five endpoints have no
+    ///         <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> create-map shape to synthesize at all.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 7;
+    private const int DivergenceFindingCeiling = 6;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -561,8 +571,15 @@ public sealed class SurfaceParityTests
     ///         <see cref="UnhonouredButLoudCellCeiling" /> at 14, the latter because the <c>Projection</c>
     ///         cell the entry wrongly held up as working is left exactly where it was.
     ///     </para>
+    ///     <para>
+    ///         22 → <b>12</b> when <c>D15</c> closed: ten cells, one verdict — <b>10 Refused (DWARF093)</b>,
+    ///         <c>[GenerateWrapperMap]</c> at all five mapper endpoints for both of its axes. A Warning, and
+    ///         reported BEFORE the wrapper's shape is validated, precisely so these ten land here rather than
+    ///         in <see cref="NotCompilableCellCeiling" />'s population: <c>DWARF067</c> is an Error.
+    ///         Re-measured, and it stayed at <b>96</b>.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 22;
+    private const int DivergentCellCeiling = 12;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

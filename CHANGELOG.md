@@ -15,6 +15,24 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[GenerateWrapperMap]` on a mapper class that declares no `[GenerateMap]` pair did nothing and said
+  nothing.** The attribute is an *expansion* of the `[GenerateMap<A, B>]` pair list — it appends the closed
+  wrapper instantiation `W<A> -> W<B>` per declared pair — and the expansion routine returned early on an
+  empty list, before any validation at all. So on a `[DwarfMapper]` class whose maps are declared as partial
+  mapping *methods*, the opt-in was read by nobody at every one of the five mapper endpoints: no wrapper map,
+  no refusal. It is now refused as the new **`DWARF093`** (a Warning, so the mapper is still emitted), naming
+  the working form — and naming its one sharp edge, which was measured: `[GenerateMap<A, B>]` emits its own
+  `B Map(A)`, so adding it beside a `partial B Map(A)` over the same pair is `CS0111`, and there the pair must
+  be declared with `[GenerateMap]` *instead of* the partial method. Refused rather than widened, argued from
+  what the attribute means: it is defined relative to `[GenerateMap]`, a partial mapping method is a different
+  declaration mechanism, and four of the five endpoints — update-into, projection, span map, async stream —
+  have no `W<A> -> W<B>` create-map shape to synthesize at all. The check runs *before* the wrapper's shape is
+  validated, because with no pairs to expand even a perfectly-shaped wrapper expands nothing. Found by the
+  surface matrix as `D15`; all ten of its cells close. **The finding's stated mechanism was wrong**: it read
+  the `DWARF067` at the co-located host as the generator having an opinion about *where* the attribute is
+  valid, and `DWARF067` is an opinion about the *wrapper type* — it fired there only because that template
+  declares a `[GenerateMap]` pair and the probe's sampled `typeof(Dst)` is not a single-parameter generic.
+  (round 20, D15)
 - **`[Reinterpret]` was dropped by the two endpoints whose whole purpose is bulk element throughput.** A
   forced blit reinterprets one array's memory as another in a single block copy, and it is exactly what a
   caller reaches for when moving elements in bulk — yet `[Reinterpret("Data")]` on a span map or an

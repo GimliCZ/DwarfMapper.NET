@@ -37,7 +37,11 @@ public class FixtureAdoptionScanTests
     // assert that CS1912 SPECIFICALLY is gone, not that the emission compiles. A refused mapper emits nothing,
     // so its partial method reports CS8795 and EmitsCompilableCode could never pass — while CS1912, the
     // duplicate initializer the generator used to hand the consumer, must never come back.
-    private const int DirectCompileErrorCallBaseline = 52;
+    // Raised from 52 to 53 for WrapperMapExpansionReachTests.The_message_names_the_CS0111_edge_and_that_edge_is_real
+    // (DWARF093): the message tells a caller that adding [GenerateMap<A, B>] beside a `partial B Map(A)` over
+    // the same pair is CS0111, and that sentence has to be measured rather than believed. The assertion is on
+    // that ONE id — the emission deliberately does not compile, so EmitsCompilableCode could never express it.
+    private const int DirectCompileErrorCallBaseline = 53;
 
     private static IEnumerable<(string File, string Text)> TestSources()
     {

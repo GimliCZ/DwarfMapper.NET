@@ -1519,6 +1519,52 @@ what made the silence worth a diagnostic, since at the home endpoint even nonsen
 
 ---
 
+## dwarf093
+**[GenerateWrapperMap] has no declared pair to expand** · Warning
+
+`[GenerateWrapperMap(typeof(W<>))]` is an **expansion** of the `[GenerateMap<A, B>]` pair list: for every pair
+declared on the class it appends the closed instantiation `W<A> -> W<B>`. On a class that declares **no** such
+pair there is nothing to expand — and the attribute was neither honoured nor refused, at any of the five
+mapper endpoints, because the expansion returned early on the empty list before any validation ran:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+[GenerateWrapperMap(typeof(Envelope<>))]           // DWARF093 — no [GenerateMap] pair on this class
+public partial class M
+{
+    public partial Dst Map(Src s);                 // a partial METHOD is a different declaration mechanism
+}
+
+[DwarfMapper]
+[GenerateMap<Src, Dst>]                            // the fix: the pair the wrapper family expands
+[GenerateWrapperMap(typeof(Envelope<>))]           // Envelope<Src> -> Envelope<Dst> is emitted
+public partial class N
+{
+}
+```
+
+**Fix:** declare the payload pair as `[GenerateMap<A, B>]` on the class — that is the list this attribute
+expands, and against it `Envelope<Src> Map(Envelope<Dst>)` is emitted. One sharp edge, measured rather than
+assumed: `[GenerateMap<A, B>]` emits its **own** `B Map(A)`, so adding it to a class that already declares a
+`partial B Map(A)` over the same pair is `CS0111`. There, declare the pair with `[GenerateMap]` *instead of*
+the partial method — which is why the two classes above are separate.
+
+> **Why refused rather than widened to partial methods.** The attribute is defined *relative to*
+> `[GenerateMap]` — "for every `[GenerateMap<A, B>]` declared on the same class". A partial mapping method is
+> a different declaration mechanism with a different signature, and four of the five mapping endpoints are not
+> create maps at all: an update-into, a projection, a span map and an async-stream map have no
+> `W<A> -> W<B>` shape to synthesize, so expanding them would hand the caller a create map they never asked
+> for.
+
+> **Why it is reported before the wrapper's shape.** With no pairs to expand, even a perfectly-shaped
+> `Envelope<T>` expands nothing, so [`DWARF067`](#dwarf067) would send you to fix something that changes no
+> output. `DWARF067` is also an **Error**, and raising it here would strand every partial mapping method on the
+> class behind `CS8795`. A class that *does* declare a pair still gets `DWARF067` for a wrapper that does not
+> qualify.
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather

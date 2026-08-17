@@ -96,5 +96,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF090` | Warning | Member directive is not applied element-wise |
 | `DWARF091` | Warning | Mapping hook on a partial method with no body |
 | `DWARF092` | Warning | Directive is not read at this mapping endpoint |
+| `DWARF093` | Warning | [GenerateWrapperMap] has no declared pair to expand |
 
-88 diagnostics.
+89 diagnostics.

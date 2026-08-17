@@ -1249,4 +1249,59 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf092");
+
+    /// <summary>
+    ///     <c>[GenerateWrapperMap(typeof(W&lt;&gt;))]</c> on a class that declares no
+    ///     <c>[GenerateMap&lt;A, B&gt;]</c> pair — an opt-in with an empty list to expand.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The attribute is defined RELATIVE to <c>[GenerateMap]</c>, and that is the whole of the
+    ///         argument for refusing rather than widening it. Its own documentation opens "for every
+    ///         <c>[GenerateMap&lt;A, B&gt;]</c> declared on the same <c>[DwarfMapper]</c> class", and
+    ///         <c>ExpandWrapperMaps</c> is literally an append to that pair list: it takes the declared pairs
+    ///         and adds <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> per pair. A pair declared as a partial mapping
+    ///         METHOD is a different mechanism with a different signature, and four of the five mapping
+    ///         endpoints are not create maps at all — an update-into, a projection, a span map and an
+    ///         async-stream map have no <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> shape to synthesize. Expanding
+    ///         those would hand the caller a create map they never asked for.
+    ///     </para>
+    ///     <para>
+    ///         Measured on the surface matrix as finding <c>D15</c>: on a <c>[DwarfMapper]</c> class at any of
+    ///         the five mapper endpoints the attribute produced NOTHING and said nothing. And the mechanism
+    ///         the finding gave for that was wrong. It read the <c>DWARF067</c> at the co-located host as the
+    ///         generator "having an opinion about where the attribute is valid" — <c>DWARF067</c> is an
+    ///         opinion about the WRAPPER TYPE, not about placement, and it fired there only because the
+    ///         co-located host template declares <c>[GenerateMap&lt;Src, Dst&gt;]</c> and the sampled argument
+    ///         <c>typeof(Dst)</c> is not a single-parameter generic. The mapper-endpoint silence was
+    ///         <c>ExpandWrapperMaps</c> returning early on an empty pair list, before any validation at all.
+    ///     </para>
+    ///     <para>
+    ///         Reported BEFORE the wrapper's shape is validated, deliberately. With no pairs to expand, even a
+    ///         perfectly-shaped <c>Envelope&lt;T&gt;</c> expands nothing, so "there is nothing to expand" is
+    ///         the actionable statement and "your wrapper is the wrong shape" would send the caller to fix
+    ///         something that changes no output. It also keeps the class emitting: <c>DWARF067</c> is an
+    ///         <b>Error</b>, and raising it here would strand every partial mapping method on the class behind
+    ///         <c>CS8795</c>. The co-located host still validates the wrapper, because there the pair list is
+    ///         not empty.
+    ///     </para>
+    ///     <para>
+    ///         The remedy was MEASURED before it was prescribed, and so was its ONE sharp edge:
+    ///         <c>[GenerateMap&lt;A, B&gt;]</c> beside <c>[GenerateWrapperMap]</c> emits the wrapper map
+    ///         cleanly — but <c>[GenerateMap]</c> also emits its own <c>B Map(A)</c>, so adding it to a class
+    ///         that already declares a <c>partial B Map(A)</c> over the SAME pair is <c>CS0111</c>. The
+    ///         message says so rather than sending a create-map caller into a duplicate-member error.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF088</c> and <c>DWARF092</c> are, and the message is
+    ///         composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>) because it quotes
+    ///         the wrapper the caller wrote.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor WrapperMapExpandsNothing = new(
+        "DWARF093",
+        "[GenerateWrapperMap] has no declared pair to expand",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf093");
 }
