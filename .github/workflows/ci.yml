@@ -142,6 +142,68 @@ jobs:
           dotnet-version: '10.0.101'
       - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix"
 
+  # ── Mutation testing for the SHIPPED RUNTIME assembly ─────────────────────────────────────────────────
+  # This leg previously ran in NO job at all — it existed only as a config someone had to remember to invoke
+  # via `housekeeping.ps1 -Mutation`. A score nobody measures is free to regress silently in either
+  # direction, which makes it decoration rather than a gate; that gap, not the score, is what this job
+  # closes. It is affordable now only because the leg was scoped from 5,592 tests to the 288 that actually
+  # kill something (see stryker-config.runtime.json's comment and Issues/ledgers/E3-E1-report.md): 44 min
+  # before, 2 min 50 s after, on the same 111 mutants.
+  #
+  # Only the runtime config is run here. The generator and doc-tooling legs are still housekeeping-only —
+  # they have not been scoped and remain far too slow for every push.
+  runtime-mutation:
+    runs-on: ubuntu-latest
+    # A mutation run that hangs would otherwise burn the full 6-hour job budget. 2:50 measured on 12 cores;
+    # a GitHub runner has far fewer, so this is deliberately generous rather than tight.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      # Pinned, like CycloneDX in the sbom job. An unpinned Stryker would contradict the SDK-drift assertion
+      # in build-test, and it matters more here than for most tools: 'test-projects' is inert in this setup
+      # (Stryker enumerates every test project in the solution), so a future version that starts honouring it
+      # would silently change which tests run — and therefore the score — with no config edit to point at.
+      # The tool targets net8.0, but its runtimeconfig sets rollForwardOnNoCandidateFx=2 (Major), so it runs
+      # on the pinned 10.0.101 runtime with no .NET 8 installed. Verified locally on a machine carrying only
+      # runtimes 7/9/10.
+      - run: dotnet tool install --global dotnet-stryker --version 4.16.0
+      # Exits non-zero when the score falls below thresholds.break (61). See the config comment for why 61 is
+      # the honest floor and why the earlier 66 must not be "restored" — it counted timeouts on mutants that
+      # cannot hang, and one provably equivalent mutant, as detections.
+      - run: dotnet stryker --config-file stryker-config.runtime.json
+      # The exit code is necessary but NOT sufficient: Stryker exits 0 when its `mutate` globs match nothing.
+      # Every mutant comes back "Removed by mutate filter", no score is calculated, and a leg that tested
+      # NOTHING passes. That is not hypothetical — it is what this very config did on 2026-08-16, because the
+      # globs must be PROJECT-relative ('**/Name.cs'), not repo-root-relative. This mirrors
+      # Assert-MutantsWereTested in scripts/housekeeping.ps1; the two must stay in step.
+      - name: Assert the run was not vacuous
+        run: |
+          set -euo pipefail
+          report=$(find StrykerOutput -name mutation-report.json -print | sort | tail -n 1)
+          if [ -z "$report" ]; then
+            echo "::error::runtime mutation: no mutation-report.json was written — the leg produced no report at all"
+            exit 1
+          fi
+          # Counted over the raw text rather than parsed: the report embeds every mutated file's full source,
+          # so it runs to megabytes and parsing buys nothing this check needs.
+          scoreable=$(grep -o '"status"[[:space:]]*:[[:space:]]*"\(Killed\|Survived\|Timeout\|NoCoverage\)"' "$report" | wc -l)
+          echo "runtime: $scoreable scoreable mutants"
+          if [ "$scoreable" -eq 0 ]; then
+            echo "::error::runtime mutation: 0 scoreable mutants — the run was VACUOUS and Stryker still exited 0." \
+                 "Check that the config's 'mutate' globs are PROJECT-relative ('**/Name.cs')."
+            exit 1
+          fi
+      # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
+      # only thing that distinguishes a real regression from a re-classification.
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-report-runtime
+          path: StrykerOutput/**/reports/mutation-report.*
+
   aot-trim-gate:
     strategy:
       matrix:

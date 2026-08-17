@@ -155,9 +155,11 @@ so the filter narrowed the test set without de-covering a single mutant.
 **The speedup is real and large: 44:02 → 02:50, a 15.5× reduction**, from a 19.4× reduction in the test set.
 Nothing about *what is mutated* changed — same 111 mutants, same 7 NoCoverage, same 8 CompileError.
 
-**The score fell, so per this branch's rules the work STOPS here and `break` was NOT lowered.**
-`stryker-config.runtime.json` is reverted to its committed state; `break` remains **66**. Nothing was committed
-that changes what the leg measures.
+**The score fell, so the work stopped here and `break` was not lowered unilaterally** — a dropped score is
+exactly the signal this branch's no-lowering rule exists to catch, and the config was reverted pending a ruling.
+The evidence below then showed the drop to be **baseline inflation, not a lost kill**, and the maintainer ruled
+to accept 61 as the honest floor. `break: 61` is committed on that ruling, with the reasoning recorded in the
+config comment so the number is not "restored" to 66 by someone who sees only that it went down.
 
 ### But the drop is not a lost kill — the baseline was inflated
 
@@ -204,7 +206,7 @@ detection, and one of the seven provably cannot be detected at all. **61.02 % is
 118 mutants**, and it is *more* precise, not less — four
 mutants moved from the vague "Timeout" bucket into a named killer.
 
-### The four coverage holes this exposed
+### The four coverage holes the re-classification exposed
 
 Previously masked as "detected", now correctly Survived — genuine, actionable gaps:
 
@@ -225,6 +227,13 @@ it" is stronger than the evidence supports; the defensible claim is **no demonst
 the 288 detects it, and whether some excluded test hangs on it was not measured. The other six are settled: four
 cannot hang by construction, and one cannot be detected at all.
 
+### Coverage itself did not move — only the timeout artifacts did
+
+Worth stating precisely, because it is what rules out scoping having hidden something: the **7 `NoCoverage`
+mutants are a byte-identical set in both runs** (same files, mutators, lines, replacements). Scoping changed
+which tests *run*, and it changed nothing about which mutants are *covered*. Combined with "no mutant went
+`Killed → anything`", the entire 5.93 pp delta is the 7 timeout re-classifications and nothing else.
+
 ### `Assert-MutantsWereTested` still passes
 
 Verified against the new run's report by re-implementing the guard's own logic — a regex count of
@@ -241,42 +250,116 @@ under similar conditions, so the 15.5× *ratio* is the trustworthy part.
 
 ---
 
-## C1 — NOT reached, and deliberately so
+## The concrete holes behind the honest 61.02 %
 
-E1 came in at 02:50, comfortably under the ~5-minute gate, so the *timing* precondition is met. C1 is
-nevertheless **not** done, because the leg as scoped **exits non-zero against the committed `break: 66`** — it
-scores 61.02 %. Adding a leg to CI that fails on the first push would be worse than the current gap, and the
-only ways to make it green are the two things this branch forbids: lowering the ratchet, or narrowing what is
-mutated.
+**Not fixed here — this is the list to file tasks from.** All 46 undetected mutants (39 Survived + 7
+NoCoverage), grouped into **13 holes** by member and missing case. Lines are `src/DwarfMapper/`. "Newly honest"
+marks the ones the re-classification exposed; the rest were already Survived at 66.95 % and are simply
+unaddressed.
 
-**C1 is unblocked the moment the `break` question is decided** — it is one small job, and it is the actual prize
-(§5b.1: the leg runs in no CI job at all today, so the score is free to regress silently).
+### Argument-guard holes — a whole family, and an asymmetry
 
-## What the maintainer has to decide
+Every one of these is a `ArgumentNullException.ThrowIfNull(x)` statement that can be **deleted** with no test
+noticing. `Register`'s first three guards (L68-70) *are* pinned, by `AmbientRegistryTests` — so the create path
+is partly tested and the rest of the surface is not.
 
-This needs a judgement call that is explicitly not the agent's to make, because it means **loosening a
-ratchet**:
+| # | Member | Mutants | Missing case |
+|---|---|---|---|
+| 1 | `DwarfMapperRegistry.RegisterUpdate` | L200, L201, L202 — **newly honest** | No null-argument test **at all**: each of `source`, `destination`, `map` being null must throw `ArgumentNullException`. |
+| 2 | `DwarfMapperRegistry.Update` | L252, L253, L254, L255 | Four guards, none asserted — the update entry point has no null-argument test. |
+| 3 | `DwarfMapperRegistry.Map` | L133, L134 | Two guards unasserted on the primary map entry point. |
+| 4 | `DwarfMapperRegistry.Register` | L76 | The fourth statement of an otherwise-pinned guard block. |
 
-- **Accept 61 as the honest floor.** Set `break: 61`, keep `test-case-filter`, and the leg costs ~3 minutes and
-  can go into CI immediately. The recorded 66.95 % is not reproducible and never described real coverage; 7 of
-  its detections were timing artifacts. This is the recommended path — it trades a number that was never true
-  for a leg that runs on every push.
-- **Or keep 66 and first close the holes.** Kill the seven newly-honest survivors (a `RegisterUpdate` null-guard
-  test, a hash-distribution assertion, two clamp-boundary tests) and the scoped score rises back through 66 on
-  its own merits. Then `break: 66` is real for the first time, and CI can adopt the leg without a ratchet
-  change. Slower to land; strictly better ratchet.
+### `Key` — the registry's dictionary key is barely pinned
 
-Either way the filter itself is sound: it loses **zero** kills, and the only thing it "lost" was the run being
-slow enough to time out.
+| # | Member | Mutants | Missing case |
+|---|---|---|---|
+| 5 | `Key.GetHashCode` | L301 Arithmetic (`* 397` → `/ 397`) — **newly honest**; L301 Bitwise (`~(...)`) | Nothing asserts the hash *mixing*. Lookups are decided by `Equals`, so a degenerate hash still works — only a distribution/collision assertion catches this. |
+| 6 | `Key.Equals(Key)` | L291 Logical (`&&` → `\|\|`) | Two keys sharing **only** `Source` **or** only `Destination` must **not** be equal. Today that mutation survives, i.e. a half-matching key compares equal. This is the most consequential survivor in the list — it is a registry mis-lookup. |
+| 7 | `Key.Equals(object)` | L295 Block removal — `NoCoverage` | The `object`-typed override is never invoked by any test; the generic overload is always used. |
 
-## What is and is not committed
+### `DwarfRefContext` — the depth clamp and one uncovered guard
 
-- **Committed:** this report only.
-- **Reverted, deliberately:** the `test-case-filter` key and the widened `test-projects` list in
-  `stryker-config.runtime.json`. The file is byte-identical to `7fe1b80`, so the committed leg still measures
-  66.95 % and still passes `break: 66`. No unmeasured behaviour change is being merged.
-- **Not changed:** `scripts/housekeeping.ps1` (its guard needed no edit and still holds), `.github/workflows/ci.yml`.
+| # | Member | Mutants | Missing case |
+|---|---|---|---|
+| 8 | `DwarfRefContext` ctor, lower clamp | L77 Conditional-false — **newly honest** | `maxDepth <= 0` must clamp to `MaxDepth == 1`. (The sibling L77 Equality mutant is **equivalent** — see above — and should be silenced via `ignore-mutations`, not chased with a test.) |
+| 9 | `DwarfRefContext` ctor, upper clamp | L78 Conditional-false — **newly honest**; L78 Equality (`>=`) | `maxDepth > AbsoluteMaxDepth` (1000) must clamp to 1000, and the boundary `maxDepth == 1000` must pass through unchanged. The `<` form is killed; the `>=` boundary is not. |
+| 10 | `DwarfRefContext.TryEnterNode` | L155 Boolean → `false` — `NoCoverage` | Not reached by any test in the leg. |
 
-The exact filter that produced 02:50 / 61.02 %, ready to paste back once `break` is decided, is the OR-chain of
-`FullyQualifiedName~<Class>` over the 23 classes tabulated above, with `test-projects` widened to include
-`tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj`.
+### Exception message text is entirely unasserted
+
+| # | Member | Mutants | Missing case |
+|---|---|---|---|
+| 11 | `DwarfMapMissingException.FormatMessage` | 16 survivors, L81-L106 | Every literal fragment can be emptied and the equality/boolean/conditional branches flipped with no test noticing. Nothing asserts the message a consumer actually reads — including the compiler-generated-type branch (L95, L97) that exists to explain a specific failure. |
+| 12 | `DwarfMappingDepthException` ctor | L28-L31 String, L32 Block removal | Same shape: the depth-exhaustion message is unpinned, and the ctor body can be emptied. |
+
+### Facade
+
+| # | Member | Mutants | Missing case |
+|---|---|---|---|
+| 13 | `IDwarfMapper.Map` (facade) | L73 Logical (`&&` → `\|\|`) | The `TryGet` guard's two conditions are not independently asserted. |
+
+**`DwarfMapperRegistry.ResetForTests` (L271-275, 5× `NoCoverage`)** is deliberately excluded from the list
+above: it is a test-only reset hook that **no test in this leg calls**. It is uncovered in *both* runs, so it is
+not a scoping artefact. Either something should call it or it is dead code — that is a question, not a hole.
+
+---
+
+## C1 — landed
+
+The maintainer ruled on the `break` question — **accept 61 as the honest floor** — on the grounds recorded
+above: no kill was lost, and the old number counted non-detections as detections. The no-lowering rule exists to
+stop a ratchet absorbing a *regression*, not to freeze a number that was measured wrong. So C1 proceeded.
+
+**Added: the `runtime-mutation` job in `.github/workflows/ci.yml`**, placed immediately after `surface-matrix`
+(the other filtered-test-quality leg) and before `aot-trim-gate`. The workflow's structure is unchanged — it is
+one more independent job following the same checkout / setup-dotnet shape as its siblings. It:
+
+- pins the tool (`dotnet tool install --global dotnet-stryker --version 4.16.0`), matching the `sbom` job's
+  pinned `CycloneDX`. The pin matters more here than for most tools: because `test-projects` is inert
+  (NOTE 3), a future Stryker that *started* honouring it would change which tests run — and therefore the
+  score — with no config edit to point at;
+- runs only the runtime config. The generator and doc-tooling legs remain housekeeping-only: neither has been
+  scoped and both are still far too slow for every push;
+- carries `timeout-minutes: 30`, so a hung run cannot burn the default 6-hour budget. Generous on purpose — the
+  measured 3 min is on 12 cores and a hosted runner has far fewer;
+- **re-implements the vacuity guard inline**, mirroring `Assert-MutantsWereTested`, because CI is precisely
+  where that hazard was unguarded;
+- uploads the report with `if: always()`, so a score drop can be diagnosed from the run that failed.
+
+**One CI risk checked rather than assumed:** `dotnet-stryker` 4.16 targets `net8.0` while the job installs only
+SDK 10.0.101. Its `Stryker.CLI.runtimeconfig.json` sets `rollForwardOnNoCandidateFx: 2` (Major), so it runs on
+the .NET 10 runtime with no .NET 8 present — confirmed locally on a machine carrying only runtimes 7, 9 and 10.
+No extra `dotnet-version` entry is needed.
+
+## Confirming run — the committed config, measured
+
+The committed config (filter + `break: 61`) was re-run to prove the gate passes rather than inferring it from
+the earlier `break: 66` run:
+
+| | |
+|---|---|
+| Wall-clock | **03:07** (18:30:45 → 18:33:52) |
+| Score | **61.02 %** — Killed 72, Survived 39, Timeout 0, NoCoverage 7 |
+| Exit code | **0** (passes `break: 61`) |
+
+Two independent runs of the scoped config produced **the identical score**, so 61.02 % is reproducible and not a
+one-off. The 03:07 vs 02:50 spread between them is machine load, not configuration.
+
+`Assert-MutantsWereTested` was then verified by executing its **actual logic** from `scripts/housekeeping.ps1`
+against this run's report — the `Get-ChildItem`/`LastWriteTime` selection followed by the
+`"status"\s*:\s*"(Killed|Survived|Timeout|NoCoverage)"` regex count — which picked
+`StrykerOutput/2026-08-17.18-30-46/reports/mutation-report.json` and returned **118**, passing its `> 0` demand.
+The CI job's `grep` form of the same count returns 118 on the same file, so the two implementations agree.
+
+## What is committed
+
+- `stryker-config.runtime.json` — `test-case-filter` (23 derived killer classes), `test-projects` widened to
+  the three projects that contain killers, `break: 61`, and a comment rewritten to record the new measurement,
+  why 66 was inflated and must not be "restored", that `test-projects` is inert (NOTE 3), and that the former
+  "measured cost is ZERO" claim for excluding `Generator.Tests` is false (NOTE 4 — 37 kills, 8 exclusive).
+- `.github/workflows/ci.yml` — the `runtime-mutation` job.
+- `Issues/ledgers/E3-E1-report.md` — this report.
+- **Not changed:** `scripts/housekeeping.ps1`. Its guard needed no edit; it was verified, not modified.
+
+`dotnet build DwarfMapper.NET.sln -c Release` is 0 warnings / 0 errors at this base, samples included.
