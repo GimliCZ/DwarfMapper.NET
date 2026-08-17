@@ -219,3 +219,15 @@ member rule, small population.
 
 Layer 1 continues: A7 dispatched (BASE 069987f). Closes D1, D2, D16 - all three are the element-wise endpoints
 failing to inherit method-level directives, the same shape as the DWARF077 gap already fixed once.
+A7: PAUSED MID-TASK for a power interruption, committed durably at b2eff56. BUILDS CLEAN (0/0, samples) and
+matrix green 865/865 with ceilings lowered 18->15 findings, 93->84 cells, NotCompilable 107->99. None raised.
+INCOMPLETE: doc sync for two new ids (DWARF090/DWARF091) - CHANGELOG (Scan9), docs/diagnostics.md (Scan7),
+diagnostics-index, two NegativeCases files, and the D1/D2/D16 resolution notes. THOSE SCANS WILL FAIL until
+written, so the suite is red even though the build is clean. Resume by writing the CHANGELOG entries FIRST.
+TWO FINDINGS TO CARRY (detail in Issues/ledgers/A7-wip-notes.md, committed):
+  1. SEVERE PRODUCT BUG. [AfterMap] on `void Update(Src,Dst)` was emitting `Update(s, d);` INSIDE Update -
+     shipped INFINITE RECURSION. The surface matrix scored that cell HONOURED. This is the first case in the
+     whole effort where the matrix gave a confidently WRONG POSITIVE - it graded broken behaviour as working,
+     rather than failing to measure it. Worth its own look at how many other Honoured cells assert only that
+     output CHANGED, not that it is correct.
+  2. The brief's D2 premise was wrong: DWARF038 is ImplicitConversionApplied, not a refusal.
