@@ -272,6 +272,64 @@ public class FlattenAndMapValueReachTests
         GeneratorAssert.CompilesClean(Flat + source);
     }
 
+    [Theory]
+    [InlineData("new[] { 1 }")]
+    [InlineData("typeof(Src)")]
+    public void A_constant_this_library_cannot_render_falls_back_to_the_bare_form_and_never_to_null(string arg)
+    {
+        // TypedConstant.Value THROWS for an array kind and answers an ITypeSymbol for a typeof — so the
+        // element-wise arm's own rule ("echo what was written") had two ways to break it: crash the
+        // generator, or silently print `null` beside a target the caller never wrote null for. Neither is a
+        // rendering; both are the arm quoting something other than the source. The bare form is honest —
+        // the target is still named, and the constant is left out rather than invented.
+        var diagnostic = GeneratorAssert.Reports(Flat + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapValue("Name", {{arg}})]
+                public partial void MapSpan(System.ReadOnlySpan<Src> s, System.Span<Dst> d);
+            }
+            """, "DWARF090")[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+
+        Assert.Contains("[MapValue(\"Name\")] on this mapping method", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("[MapValue<Dst>(\"Name\")]", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("null", diagnostic, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Both_prescribed_remedies_are_pinned_at_AsyncStream_and_not_only_at_SpanMap()
+    {
+        // The remedies are named at BOTH element-wise endpoints, so measuring one and asserting the other is
+        // the assumption D6/D7 exist to forbid: [MapNullSkip]'s two forms reached exactly complementary
+        // halves of this surface, and nothing about "it works over a span" carries to an async stream on its
+        // own. The surface matrix cannot pin the [MapValue] one here either — its generic form's probe
+        // arguments are the nonsense shape recorded as B25 — so a unit test is the only instrument there is.
+        var withValue = GeneratorAssert.EmitsCompilableCode(Flat + """
+
+            [DwarfMapper]
+            [MapValue<Dst>("Name", "probe")]
+            public partial class M
+            {
+                public partial System.Collections.Generic.IAsyncEnumerable<Dst> MapStream(
+                    System.Collections.Generic.IAsyncEnumerable<Src> s);
+            }
+            """);
+        Assert.Contains("Name = \"probe\"", withValue, StringComparison.Ordinal);
+
+        var withFlatten = GeneratorAssert.EmitsCompilableCode(Types + """
+
+            [DwarfMapper]
+            [MapProperty<Src, Dst>("Child.X", "X")]
+            public partial class M
+            {
+                public partial System.Collections.Generic.IAsyncEnumerable<Dst> MapStream(
+                    System.Collections.Generic.IAsyncEnumerable<Src> s);
+            }
+            """);
+        Assert.Contains("Child.X", withFlatten, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_MapValue_whose_constant_does_not_fit_the_destination_is_still_refused_at_the_create_map()
     {

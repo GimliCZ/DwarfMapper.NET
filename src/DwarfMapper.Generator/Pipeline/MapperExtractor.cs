@@ -2903,10 +2903,14 @@ internal static partial class MapperExtractor
         // mapper class reads Honoured at SpanMap and at AsyncStream, output differing by the assigned constant.
         foreach (var mv in ReadMapValues(method))
         {
+            // A constant this library does not render (an array, a typeof, an error constant) falls back to
+            // the BARE form rather than to a quoted "null": the target is still named and the value is simply
+            // left out, which is honest, where printing a constant the caller did not write is not.
+            var constant = mv.IsConstant ? FormatWrittenConstant(mv.Value) : null;
             var written = mv.Use is not null
                 ? $"[MapValue(\"{mv.Target}\", Use = \"{mv.Use}\")]"
-                : mv.IsConstant
-                    ? $"[MapValue(\"{mv.Target}\", {FormatWrittenConstant(mv.Value)})]"
+                : constant is not null
+                    ? $"[MapValue(\"{mv.Target}\", {constant})]"
                     : $"[MapValue(\"{mv.Target}\")]";
             var remedy = "[MapValue<" + tgt + ">" + written.Substring("[MapValue".Length);
             // The tail says "reaches", not "is honoured": a well-formed [MapValue] is assigned at those two
@@ -2942,21 +2946,46 @@ internal static partial class MapperExtractor
     }
 
     /// <summary>
+    ///     Whether a <c>[MapValue]</c> constant is one this library can spell at all — the ONE statement of
+    ///     that rule, consulted by both readers of these attributes.
+    ///     <para>
+    ///         It is a shared predicate rather than a check in each place because
+    ///         <see cref="TypedConstant.Value" /> <b>throws</b> <see cref="InvalidOperationException" /> for an
+    ///         array kind, and <c>[MapValue("Name", new[] { 1 })]</c> is legal C# — the constructor's parameter
+    ///         is <c>object?</c>. <c>TryFormatConstant</c> had guarded that since it was written; the
+    ///         element-wise gate was added later, read <c>.Value</c> directly, and crashed the whole generator.
+    ///         A second copy of the guard would have fixed the instance and left the shape, which on this
+    ///         branch is how the same defect has arrived seven times.
+    ///     </para>
+    ///     <para>
+    ///         <c>Type</c> (a <c>typeof(X)</c> argument) is excluded for a quieter reason: it does not throw,
+    ///         it answers an <see cref="ITypeSymbol" /> that <see cref="SymbolDisplay.FormatPrimitive" /> then
+    ///         declines to render — so the caller's <c>typeof</c> came back as the word <c>null</c>, which is
+    ///         a different constant from the one they wrote.
+    ///     </para>
+    /// </summary>
+    private static bool IsRenderableConstant(TypedConstant tc) =>
+        tc.Kind is not (TypedConstantKind.Array or TypedConstantKind.Type or TypedConstantKind.Error);
+
+    /// <summary>
     ///     A <c>[MapValue]</c> constant as it should appear back in a diagnostic's quoted source — quoted for a
-    ///     string, bare for a number, <c>null</c> for a value <see cref="SymbolDisplay.FormatPrimitive" /> does
-    ///     not recognise.
+    ///     string, bare for a number, <c>null</c> for a written <c>null</c> — or <c>null</c> when the value is
+    ///     not one this library renders, so the caller sees the bare <c>[MapValue("Target")]</c> form instead
+    ///     of an invented constant.
     ///     <para>
     ///         Separate from <c>RenderConstantLiteral</c> on purpose: that one renders a literal to be COMPILED
     ///         into the generated mapper and therefore needs the destination type to cast against. This one
     ///         renders text a human reads and copies back into their own source, where no destination type is
-    ///         in hand and a cast would be noise.
+    ///         in hand and a cast would be noise. They share <see cref="IsRenderableConstant" />, which is the
+    ///         part that must not differ.
     ///     </para>
     /// </summary>
-    private static string FormatWrittenConstant(TypedConstant value) =>
-        value.Value is null
-            ? "null"
-            : SymbolDisplay.FormatPrimitive(value.Value, quoteStrings: true, useHexadecimalNumbers: false)
-              ?? "null";
+    private static string? FormatWrittenConstant(TypedConstant value) =>
+        !IsRenderableConstant(value)
+            ? null
+            : value.Value is null
+                ? "null"
+                : SymbolDisplay.FormatPrimitive(value.Value, quoteStrings: true, useHexadecimalNumbers: false);
 
     /// <summary>
     ///     The tail of <c>DWARF090</c>'s message for the two member directives: where the unscoped form DOES
@@ -3123,7 +3152,7 @@ internal static partial class MapperExtractor
     {
         literal = "";
         why = "";
-        if (tc.Kind is TypedConstantKind.Array or TypedConstantKind.Type or TypedConstantKind.Error)
+        if (!IsRenderableConstant(tc))
         {
             why =
                 $"[MapValue] constant for '{targetType.ToDisplayString()}' must be a string, bool, char, numeric, enum, or null";
