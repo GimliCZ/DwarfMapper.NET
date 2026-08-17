@@ -2850,10 +2850,15 @@ internal static partial class MapperExtractor
         if (ReadMapNullSkip(method) is { } nullSkip)
         {
             var arg = nullSkip ? "true" : "false";
+            // The tail states only what was MEASURED. An earlier draft claimed the method form is "refused at
+            // projection (DWARF028)" — it is not: the projection resolver is deliberately not fed the scoped
+            // forms (see the call site), so the method form is SILENT there, which is what DeclaredDivergences
+            // D6 records. A diagnostic that tells a caller an endpoint is handled when it is silent is the
+            // defect this whole matrix exists to find, shipped inside the fix for it.
             Report($"[MapNullSkip({arg})] on this mapping method", $"[MapNullSkip<{src}, {tgt}>({arg})]",
-                "The method form is honoured at the create-map and update-into endpoints and refused at "
-                + "projection (DWARF028, which an object initializer cannot express), so these two endpoints "
-                + "are the only ones where it decided nothing at all. "
+                "The method form is honoured at the create-map and update-into endpoints, and silent at "
+                + "projection (recorded as D6 — an object initializer constructs the destination, so \"keep "
+                + "its current value\" has nothing to keep). "
                 + "[DwarfMapper(SkipNullSourceMembers = " + arg + ")] reaches the element pair too, if the "
                 + "policy is meant to be the whole mapper's.");
         }

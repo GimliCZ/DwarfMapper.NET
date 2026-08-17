@@ -248,6 +248,42 @@ public class MapNullSkipScopeTests
     }
 
     [Fact]
+    public void The_element_wise_remedy_carries_the_value_that_was_written_not_the_default()
+    {
+        // The assertion above uses a BARE [MapNullSkip], whose remedy renders (true) — indistinguishable from
+        // the constructor default, so it cannot tell a message that echoes the caller's value from one that
+        // always prints `true`. This is the case that can: a written `false` must come back as `false`.
+        //
+        // It is the hazard the arm was built around. [MapNullSkip(false)] on a class that enables skipping means
+        // "replace, do not patch"; a remedy of [MapNullSkip<Dto, Entity>] or [MapNullSkip<Dto, Entity>(true)]
+        // copied out in answer to it would turn the guard ON — actively harmful advice, worse than the silence
+        // DWARF090 replaced, and it would look correct in a diff.
+        var reported = GeneratorAssert.Reports(Types + """
+
+            [DwarfMapper(SkipNullSourceMembers = true)]
+            public partial class M
+            {
+                [MapNullSkip(false)]
+                public partial void MapSpan(System.ReadOnlySpan<Dto> s, System.Span<Entity> d);
+            }
+            """, "DWARF090");
+
+        var message = Assert.Single(
+            reported.Select(d => d.GetMessage(CultureInfo.InvariantCulture)),
+            m => m.Contains("MapNullSkip", StringComparison.Ordinal));
+
+        Assert.Contains("[MapNullSkip(false)] on this mapping method", message, StringComparison.Ordinal);
+        Assert.Contains("[MapNullSkip<Dto, Entity>(false)]", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("(true)", message, StringComparison.Ordinal);
+
+        // And the tail must not claim an endpoint the method form does not reach. It said "refused at
+        // projection (DWARF028)" and shipped that way for one commit; projection is SILENT for this form, which
+        // is what D6 records. Pinned so the sentence cannot drift back.
+        Assert.Contains("silent at projection", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("refused at projection", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_malformed_or_absent_argument_falls_back_to_enabled_at_every_scope()
     {
         // The three-state reader treats "present but unreadable" as the constructor's default rather than as
