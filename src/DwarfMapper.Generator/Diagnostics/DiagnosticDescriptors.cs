@@ -1151,10 +1151,16 @@ public static class DiagnosticDescriptors
     ///         on the identical mapper class means one thing on one overload and nothing on the next four
     ///         (findings <c>D8</c>, <c>D11</c> and <c>D13</c>). The refusal is the closure rather than the
     ///         feature, because all three directives are about the destination the create map BUILDS —
-    ///         <c>[FlattenGraph]</c> replaces the source of a destination collection with a graph walk,
-    ///         <c>[MapDerivedType]</c> chooses which destination type to construct, and <c>[ReverseMap]</c>
-    ///         asks for a second method to be generated beside the one it sits on — and an update-into or a
-    ///         projection has no such construction step to redirect.
+    ///         <c>[FlattenGraph]</c> replaces the source of a destination collection with a graph walk and
+    ///         <c>[MapDerivedType]</c> chooses which destination type to construct, so at an update-into —
+    ///         which writes into an instance the caller already built — there is no construction step for
+    ///         either to redirect. <c>[ReverseMap]</c> shares the endpoint, not the reason: it makes a
+    ///         SEPARATELY-DECLARED inverse method inherit this one's simple renames with their ends swapped,
+    ///         and the match is by signature — a forward <c>TDto Map(TSource s)</c> against an inverse
+    ///         <c>TSource Back(TDto d)</c>, both one-parameter create maps, which no other endpoint's
+    ///         signature is. It does not GENERATE a method, and a missing inverse is <c>DWARF052</c> rather
+    ///         than a silence; task A9a's own finding entry (<c>D13</c>) asserted otherwise and was
+    ///         measurably wrong, so the wrong model is restated here only to say it is wrong.
     ///     </para>
     ///     <para>
     ///         One id and one gate rather than three, for the reason <c>DWARF088</c> is one check over two

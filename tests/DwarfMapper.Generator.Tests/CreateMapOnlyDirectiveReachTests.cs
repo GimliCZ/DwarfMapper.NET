@@ -466,6 +466,28 @@ public class CreateMapOnlyDirectiveReachTests
     }
 
     [Fact]
+    public void A_typeof_naming_a_type_that_does_not_exist_is_reported_without_crashing()
+    {
+        // Measured, because the reasoning was WRONG. The first write-up of this said the application "falls
+        // out at ReadDerivedTypeAttributes' `is INamedTypeSymbol` patterns" — it does not: IErrorTypeSymbol
+        // IMPLEMENTS INamedTypeSymbol, so the pattern matches and the arm IS reported. The outcome is still
+        // safe (no crash, the name echoed as written, CS0246 from the compiler regardless, and the create-map
+        // path reaches the same symbol and refuses it as DWARF035), but "safe for the reason I gave" was not
+        // true and this test is what makes the claim measured instead of reasoned.
+        var message = GeneratorAssert.Reports(Hierarchy + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapDerivedType(typeof(NoSuchType), typeof(DstDerived))]
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains("NoSuchType", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_refusal_is_a_warning_so_the_rest_of_the_mapper_is_still_emitted()
     {
         // A blocking error suppresses the class's emission, and every partial mapping method on it then

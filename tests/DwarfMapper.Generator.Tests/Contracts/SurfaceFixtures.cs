@@ -206,6 +206,12 @@ internal static class SurfaceFixtures
     // directive, and the automatic layout proof declines this pair precisely because the element types differ
     // — which is the case [Reinterpret] exists to force. Against the narrowing-conversion fixture it was
     // pointed at a scalar, so the directive could not apply and the cell measured nothing.
+    [SurfaceProbe("reinterpretable-array-member")]
+    private static readonly string ReinterpretableArrayMember = """
+        public sealed class Src { public int Id { get; set; } public int[] Data { get; set; } = System.Array.Empty<int>(); }
+        public sealed class Dst { public int Id { get; set; } public uint[] Data { get; set; } = System.Array.Empty<uint>(); }
+        """;
+
     // A real base/derived HIERARCHY on both sides, which is the only shape [MapDerivedType] has anything to
     // say about: it registers a dispatch arm from a DERIVED source type to a DERIVED destination type on a
     // method whose parameter is the base. Against the flat pair the sampled arguments were
@@ -234,12 +240,6 @@ internal static class SurfaceFixtures
         public sealed class SrcDerived : Src { public string? Extra { get; set; } }
         public class Dst { public int Id { get; set; } }
         public sealed class DstDerived : Dst { public string? Extra { get; set; } }
-        """;
-
-    [SurfaceProbe("reinterpretable-array-member")]
-    private static readonly string ReinterpretableArrayMember = """
-        public sealed class Src { public int Id { get; set; } public int[] Data { get; set; } = System.Array.Empty<int>(); }
-        public sealed class Dst { public int Id { get; set; } public uint[] Data { get; set; } = System.Array.Empty<uint>(); }
         """;
 #pragma warning restore CS0414, CA1802, CA1823, IDE0051
 
