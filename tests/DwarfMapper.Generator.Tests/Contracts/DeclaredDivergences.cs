@@ -95,12 +95,14 @@ internal static class DeclaredDivergences
     ///         in which nobody reads it.
     ///     </para>
     ///     <para>
-    ///         The dominant shape, thirteen of the eighteen (every finding with a cell at <c>SpanMap</c> or
-    ///         <c>AsyncStream</c>): the ELEMENT-WISE endpoints. <c>SpanMap</c>
-    ///         and <c>AsyncStream</c> map the element pair through an auto-synthesized mapper, and a directive
-    ///         attached to the mapping method does not reach it. That is the same root cause as the DWARF077
-    ///         explicit-only gap, which was closed for <c>AutoMatchMembers</c> alone; the matrix now shows it
-    ///         across ten more attributes. Whoever fixes it properly retires most of this file in one change.
+    ///         The dominant shape when this file was written: thirteen of the eighteen findings then recorded
+    ///         had a cell at <c>SpanMap</c> or <c>AsyncStream</c>, the ELEMENT-WISE endpoints. Those two map
+    ///         the element pair through an auto-synthesized mapper, and a directive attached to the mapping
+    ///         method does not reach it. Same root cause as the DWARF077 explicit-only gap, which was closed
+    ///         for <c>AutoMatchMembers</c> alone. Whoever fixes it properly retires most of this file in one
+    ///         change — and the two that have been closed so far both went the OTHER way, by refusing the
+    ///         unreachable form as DWARF090 with the pair-scoped remedy named in the message (<c>D1</c>/<c>D2</c>,
+    ///         then <c>D6</c>, which is why <c>D6</c> is no longer one of the thirteen).
     ///     </para>
     /// </summary>
     public static readonly Dictionary<string, Divergence> Reasons = new(StringComparer.Ordinal)

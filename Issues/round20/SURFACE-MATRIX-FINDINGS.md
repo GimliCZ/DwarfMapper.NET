@@ -686,8 +686,9 @@ this one.
 
 **Six cells close. `DivergentCellCeiling` 82 → 76**; `DivergenceFindingCeiling` stays at **13**, because both
 findings survive with their Projection cell. Re-measured across every other population in the same run and all
-five are byte-for-byte unchanged: `NotCompilable` 99, `UnhonouredButLoud` 14, `Unaskable` 44, `NoSuchSite` 137,
-`StructurallyExcused` 12. Surface matrix 865/865 before and after.
+five COUNTS are unchanged: `NotCompilable` 99, `UnhonouredButLoud` 14, `Unaskable` 44, `NoSuchSite` 137,
+`StructurallyExcused` 12. Counts, not per-cell lists — the printed lists were not diffed, so a flat count does
+not by itself exclude two cells swapping populations. Surface matrix 865/865 before and after.
 
 **Why Projection did not close, measured rather than assumed.** It looks like it should fall out for free, and
 the one-line change was made and then reverted. `ResolveProjectionMembers` *already* refuses an untranslatable
