@@ -405,8 +405,14 @@ public sealed class SurfaceParityTests
     ///         <c>Refused</c> read so because of an incidental <c>DWARF044</c> nullable-hop warning. A finding
     ///         can be wrong about the endpoint it holds up as working, and this one was.
     ///     </para>
+    ///     <para>
+    ///         12 → <b>11</b> when <c>D11</c> closed. <c>[FlattenGraph]</c> was read on the create map and
+    ///         discarded on the same mapper's four other overloads; the new <c>DWARF092</c> gate
+    ///         (<c>MapperExtractor.ReportCreateMapOnlyDirectives</c>, one function, four call sites) refuses
+    ///         it at all four. Re-measured in the same commit, not predicted.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 12;
+    private const int DivergenceFindingCeiling = 11;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -462,8 +468,17 @@ public sealed class SurfaceParityTests
     ///         <c>DWARF041</c>, which are Errors, so <see cref="NotCompilableCellCeiling" />'s population
     ///         measured 99 → 102 — the same R4 ordering defect, and forbidden.
     ///     </para>
+    ///     <para>
+    ///         62 → <b>54</b> when <c>D11</c> closed: eight cells, one verdict — <b>8 Refused
+    ///         (DWARF092)</b>, <c>[FlattenGraph]</c> at <c>UpdateInto</c>, <c>Projection</c>, <c>SpanMap</c>
+    ///         and <c>AsyncStream</c> for both of its axes. A <b>Warning</b>, deliberately, so the cells land
+    ///         in this population's complement rather than in
+    ///         <see cref="NotCompilableCellCeiling" />'s — which is the whole reason <c>D6</c>/<c>D7</c> and
+    ///         <c>D9</c> could not be closed the same way. That ceiling was re-measured at <b>99</b>,
+    ///         unchanged.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 62;
+    private const int DivergentCellCeiling = 54;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

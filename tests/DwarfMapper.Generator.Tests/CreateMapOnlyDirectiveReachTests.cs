@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
+using System.Globalization;
+
+namespace DwarfMapper.Generator.Tests;
+
+/// <summary>
+///     The directives the generator reads only where the destination is CONSTRUCTED and RETURNED, and what
+///     the other four endpoints now say about them — <c>DWARF092</c>.
+/// </summary>
+/// <remarks>
+///     <para>
+///         The surface matrix recorded the identical shape three times: a directive honoured at
+///         <c>CreateMap</c> and SILENT at <c>UpdateInto</c>, <c>Projection</c>, <c>SpanMap</c> and
+///         <c>AsyncStream</c> — accepted, no diagnostic, output byte-identical to the same mapper without it
+///         (<c>D11</c>, and its two siblings <c>D8</c> and <c>D13</c>). One declaration on one mapper class
+///         meant one thing on one overload and nothing on the next four.
+///     </para>
+///     <para>
+///         The remedy the message names was MEASURED before it was prescribed, which on this branch is not a
+///         formality: a <c>DWARF090</c> tail asserting an endpoint behaviour that was false has already
+///         shipped here once and been reverted. At the two element-wise endpoints the claim is specific —
+///         the emitted loop calls a declared create map for the element pair — and it is pinned below by
+///         reading the emitted loop, not by trusting the sentence.
+///     </para>
+/// </remarks>
+public class CreateMapOnlyDirectiveReachTests
+{
+    /// <summary>
+    ///     A recursive source navigation and a flat destination collection: the two halves a graph flatten
+    ///     needs. <c>Src.Flat</c> exists so the BASELINE compiles — without it the directive is the only thing
+    ///     supplying <c>Dst.Flat</c> and a fixture that cannot compile without the element under test can
+    ///     never show that element doing nothing.
+    /// </summary>
+    private const string Types = """
+        using System;
+        using System.Linq;
+        using System.Collections.Generic;
+        using DwarfMapper;
+        namespace Demo;
+        public class Node { public int Id { get; set; } public List<Node> Children { get; set; } = new(); }
+        public class NodeDto { public int Id { get; set; } }
+        public class Src { public int Id { get; set; } public Node Root { get; set; } public List<Node> Flat { get; set; } = new(); }
+        public class Dst { public int Id { get; set; } public List<NodeDto> Flat { get; set; } = new(); }
+        """;
+
+    // ── The four endpoints that do not read it now say so ────────────────────
+
+    [Theory]
+    [InlineData("public partial void Update(Src s, Dst d);", "Update", "update-into")]
+    [InlineData("public partial IQueryable<Dst> Project(IQueryable<Src> q);", "Project", "projection")]
+    [InlineData("public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);", "MapSpan", "span-map")]
+    [InlineData("public partial IAsyncEnumerable<Dst> MapStream(IAsyncEnumerable<Src> s);", "MapStream",
+        "async-stream")]
+    public void A_graph_flatten_written_anywhere_but_a_create_map_is_refused_and_names_the_endpoint(
+        string signature, string methodName, string endpointName)
+    {
+        var reported = GeneratorAssert.Reports(Types + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Root", "Flat")]
+                {{signature}}
+            }
+            """, "DWARF092");
+
+        var message = reported[0].GetMessage(CultureInfo.InvariantCulture);
+
+        // The written form is echoed rather than described, so a reader can find the line it is about.
+        Assert.Contains("[FlattenGraph(\"Root\", \"Flat\")]", message, StringComparison.Ordinal);
+        Assert.Contains($"on '{methodName}'", message, StringComparison.Ordinal);
+        Assert.Contains($"the {endpointName} endpoint", message, StringComparison.Ordinal);
+        Assert.Contains("Declare it on a create map over the same pair", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_element_wise_endpoints_alone_claim_the_create_map_is_reached_from_here()
+    {
+        const string claim = "so that create map is what this method's loop calls";
+
+        foreach (var signature in new[]
+                 {
+                     "public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);",
+                     "public partial IAsyncEnumerable<Dst> MapStream(IAsyncEnumerable<Src> s);"
+                 })
+            Assert.Contains(claim, Message(signature), StringComparison.Ordinal);
+
+        // Pinned in BOTH directions. An update-into and a projection resolve their own members and never call
+        // a sibling create map, so the transfer claim is FALSE there — and a message that tells a caller an
+        // endpoint is handled when it is not is the defect this whole matrix exists to find.
+        foreach (var signature in new[]
+                 {
+                     "public partial void Update(Src s, Dst d);",
+                     "public partial IQueryable<Dst> Project(IQueryable<Src> q);"
+                 })
+            Assert.DoesNotContain(claim, Message(signature), StringComparison.Ordinal);
+
+        string Message(string signature) => GeneratorAssert.Reports(Types + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Root", "Flat")]
+                {{signature}}
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+    }
+
+    // ── The remedy, measured rather than asserted ────────────────────────────
+
+    [Theory]
+    [InlineData("public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);", "d[__i] = Map(s[__i]);")]
+    [InlineData("public partial IAsyncEnumerable<Dst> MapStream(IAsyncEnumerable<Src> s);",
+        "yield return Map(")]
+    public void The_prescribed_remedy_really_does_carry_the_flatten_to_an_element_wise_endpoint(
+        string signature, string expectedCall)
+    {
+        var generated = GeneratorAssert.EmitsCompilableCode(Types + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Root", "Flat")]
+                public partial Dst Map(Src s);
+
+                {{signature}}
+            }
+            """);
+
+        // The element pair resolves to the DECLARED create map, so the walk runs per element through the
+        // method that carries the directive. Without this the message would be prescribing a form nobody ran.
+        Assert.Contains(expectedCall, generated, StringComparison.Ordinal);
+        Assert.Contains("__DwarfMap_FlattenGraph_", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_remedy_is_not_reported_as_a_gap_on_the_create_map_that_carries_it()
+    {
+        // The gate is called from four branches and deliberately not from the fifth. A copy of it in the
+        // create-map branch would refuse the very shape the message tells the caller to write.
+        GeneratorAssert.DoesNotReport(Types + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Root", "Flat")]
+                public partial Dst Map(Src s);
+            }
+            """, "DWARF092");
+    }
+
+    // ── Malformed input, through the create map's own reader ─────────────────
+
+    [Fact]
+    public void A_null_directive_argument_produces_no_report_and_no_crash()
+    {
+        // ReadFlattenGraphAttributes — the reader the create-map branch resolves with — requires both
+        // constructor arguments to be strings, so an application it never resolved is never reported as one
+        // it dropped. The gate calls that reader rather than re-parsing the attributes, which is what stops
+        // the word "null" appearing in a remedy. Both of this branch's generator crashes came from a second
+        // reader that did re-parse.
+        GeneratorAssert.DoesNotReport(Types + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph(null, null)]
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092");
+    }
+
+    [Fact]
+    public void A_directive_naming_members_that_do_not_exist_is_still_reported_and_echoed_verbatim()
+    {
+        // Reported per APPLICATION, malformed included: at a create map this is DWARF034, and here it was
+        // refused as nothing at all — so "it does not reach this endpoint" is the true statement either way.
+        // Echoed as written, not normalized, so the caller can find the line.
+        var message = GeneratorAssert.Reports(Types + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("NoSuchNavigation", "NoSuchCollection")]
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains("[FlattenGraph(\"NoSuchNavigation\", \"NoSuchCollection\")]", message,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("null", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_same_directive_written_twice_is_reported_twice()
+    {
+        // Two wrong applications are two mistakes to fix, the rule DWARF088 and DWARF090 already follow.
+        var reported = GeneratorAssert.Reports(Types + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Root", "Flat")]
+                [FlattenGraph("Root", "Flat")]
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092");
+
+        Assert.Equal(2, reported.Count);
+    }
+
+    [Fact]
+    public void The_refusal_is_a_warning_so_the_rest_of_the_mapper_is_still_emitted()
+    {
+        // A blocking error suppresses the class's emission, and every partial mapping method on it then
+        // arrives as CS8795 with this refusal buried underneath — which would also move the cells into the
+        // "judged by nothing" population rather than out of it.
+        var reported = GeneratorAssert.Reports(Types + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Root", "Flat")]
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092");
+
+        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Warning, reported[0].Severity);
+
+        var generated = GeneratorAssert.EmitsCompilableCode(Types + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Root", "Flat")]
+                public partial void Update(Src s, Dst d);
+            }
+            """);
+        Assert.Contains("public partial void Update(", generated, StringComparison.Ordinal);
+    }
+}

@@ -15,6 +15,18 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[FlattenGraph]` was read on a create map and discarded on the mapper's other four overloads.** A graph
+  flatten replaces the source of a destination collection with a breadth-first walk of a source navigation.
+  Only the create-map branch resolved one, so `[FlattenGraph("Root", "Flat")]` on an update-into, a
+  projection, a span map or an async-stream map was read by nobody and reported by nobody: the destination
+  collection was filled by ordinary direct mapping instead. One declaration, one mapper, a walked graph on one
+  overload and a shallow copy on the next four — in silence. All four endpoints now refuse it as the new
+  **`DWARF092`** (a Warning, so the mapper is still emitted), naming the create map as the place to declare
+  it. At the two element-wise endpoints that remedy is more than advice and was measured before it was
+  printed: a span or stream map adopts a **declared** mapping method for its element pair, so the emitted loop
+  is `d[__i] = Map(s[__i]);` and the walk runs per element through the create map that carries the directive.
+  At update-into and projection nothing carries it, and the message says only that the create map honours it.
+  Found by the surface matrix as `D11`; all eight of its cells close. (round 20, D11)
 - **A projection did not read `[Flatten]`, and neither element-wise endpoint read `[Flatten]` or
   `[MapValue]`.** Projection is emitted by a **separate translator** from the runtime map, and it had no copy
   of the flatten walk at all: `[Flatten("Child")]` pulled `Child`'s members up through `.Map` and left the

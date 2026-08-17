@@ -97,6 +97,7 @@ DWARF088 | DwarfMapper | Warning | Member-placement directive written on a mappe
 DWARF089 | DwarfMapper | Warning | Directive on a co-located host member cannot be applied
 DWARF090 | DwarfMapper | Warning | Member directive is not applied element-wise
 DWARF091 | DwarfMapper | Warning | Mapping hook on a partial method with no body
+DWARF092 | DwarfMapper | Warning | Directive is read only at the create-map endpoint
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

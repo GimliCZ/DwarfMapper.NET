@@ -1375,6 +1375,55 @@ mapped types: `void Hook(TSource)` for `[BeforeMap]`, `void Hook(TTarget)` or `v
 
 ---
 
+## dwarf092
+**Directive is read only at the create-map endpoint** · Warning
+
+Some directives are about the destination the mapper **constructs and returns**. Only the create map does
+that, so only the create map reads them. Written on an update-into, a projection, a span map or an
+async-stream map they were read by nobody and reported by nobody:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [FlattenGraph("Root", "Flat")]                 // honoured — Flat is a walk of Root's graph
+    public partial TreeDto Map(Tree t);
+
+    [FlattenGraph("Root", "Flat")]                 // DWARF092 — Flat is a shallow copy here
+    public partial void Update(Tree t, TreeDto d);
+}
+```
+
+One mapper, one declaration, two answers: `.Map` returned a flattened graph and `.Update` copied the source
+collection straight across, silently — surface-matrix finding `D11`.
+
+**Fix:** declare the directive on a create map over the same pair. At the two **element-wise** endpoints that
+is more than advice: a span or async-stream map resolves its element pair through a **declared** mapping
+method for that pair where one exists, so the create map carrying the directive is what the emitted loop
+calls, and the directive reaches the element-wise endpoint through it. Measured, not asserted:
+
+| You wrote | Write instead | What the matrix measures for the replacement |
+|---|---|---|
+| `[FlattenGraph("Root", "Flat")]` on `void MapSpan(ReadOnlySpan<Tree>, Span<TreeDto>)` | the same on a `partial TreeDto Map(Tree t)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` — the walk runs per element |
+| `[FlattenGraph("Root", "Flat")]` on `void Update(Tree, TreeDto)` or on a projection | the same on a `partial TreeDto Map(Tree t)` | `Honoured` **at the create map**. Nothing carries it to the update or the projection; those resolve their own members and never call a sibling create map |
+
+Reported per **application**, malformed ones included. A `[FlattenGraph]` naming members that do not exist is
+refused as [`DWARF034`](#dwarf034) at a create map and was refused as nothing at all here — that asymmetry is
+half of what made the silence worth a diagnostic, since at the create map even nonsense is validated.
+
+> **Why refused rather than honoured.** These directives redirect how the destination is **built**, and an
+> update-into writes into an instance the caller already constructed. There is no construction step at the
+> other four endpoints for a graph walk to replace.
+
+> **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
+> it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see
+> [`DWARF078`](#dwarf078)) — the same reasoning as [`DWARF088`](#dwarf088). The directive is dropped for this
+> endpoint and the rest of the mapper is emitted. Escalate with
+> `dotnet_diagnostic.DWARF092.severity = error` where the stricter reading is wanted.
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather

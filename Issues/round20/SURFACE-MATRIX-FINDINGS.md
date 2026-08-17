@@ -164,7 +164,7 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D8 | `[MapDerivedType]`, both the open and the generic form | CreateMap | Update, Projection, SpanMap, AsyncStream | 16 |
 | D9 | `[MapValue("Name", …)]`, all four cases | Create, Update — `ctor(2)` Honoured, the other three `CS8795` | **Projection** (SpanMap/AsyncStream closed as `DWARF090`) | 4 |
 | D10 | ~~`[Flatten("Id")]`, and ×2~~ | **CLOSED by A8** — and its evidence was false; see the entry | — | 0 |
-| D11 | `[FlattenGraph("Id","Name")]`, and ×2 | CreateMap (blocking) | Update, Projection, SpanMap, AsyncStream | 8 |
+| D11 | ~~`[FlattenGraph("Root","Flat")]`, and ×2~~ | **CLOSED by A9a** as `DWARF092` — all 8 cells `Refused`; its evidence held as filed | — | 0 |
 | D12 | `[Reinterpret("Id")]`, and ×2 | Create, Update (blocking), Projection (loud) | SpanMap, AsyncStream | 4 |
 | D13 | `[ReverseMap]` | CreateMap (blocking) | Update, Projection, SpanMap, AsyncStream | 4 |
 | D14 | `[MapCollectionKey("Id","Name")]`, and ×2 | UpdateInto (blocking) | Create, Projection, SpanMap, AsyncStream | 8 |
@@ -430,9 +430,9 @@ one store per failure mode is how the six allowlists this architecture is replac
 > No `DeclaredDivergences` entry was added or wanted: this was never a silence, and it is now a claimed
 > endpoint behaving correctly.
 
-## The findings — 13 live, 10 fixed
+## The findings — 12 live, 11 fixed
 
-Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The ten marked **RESOLVED** keep their
+Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The eleven marked **RESOLVED** keep their
 sections: the store entry is gone (a fixed gap left on the list is a fossil), but the write-up is what the
 next reader needs to know the gap existed and how it was closed. **Acts at** is the evidence the cell is
 a divergence rather than a shape: the same directive, at the same site, doing something observable somewhere
@@ -793,7 +793,44 @@ ctor(1) @AsyncStream  Refused    (DWARF090 (Warning))
 
 <a id="D11"></a>
 
-### D11 — `[FlattenGraph]` acts only at CreateMap — 8 cells
+### D11 — `[FlattenGraph]` acts only at CreateMap — 8 cells — RESOLVED
+
+> **RESOLVED 2026-08-17 (A9a) as the new `DWARF092`. All eight cells close, one verdict.** The entry's
+> evidence held **exactly as filed** — the one of A9a's three findings whose did (D8's and D13's did not; see
+> those entries). Re-measured before anything was changed, against the same fixture:
+>
+> ```
+> ctor(2)  @CreateMap   Honoured (output differs)   ×2 @CreateMap   NotCompilable (CS8795)
+> ctor(2)  @UpdateInto  Silent                      ×2 @UpdateInto  Silent
+> ctor(2)  @Projection  Silent                      ×2 @Projection  Silent
+> ctor(2)  @SpanMap     Silent                      ×2 @SpanMap     Silent
+> ctor(2)  @AsyncStream Silent                      ×2 @AsyncStream Silent
+> ```
+>
+> **The fix is a refusal, and a structural one.** `MapperExtractor.ReportCreateMapOnlyDirectives` is a single
+> gate called from the update-into, projection, span-map and async-stream branches — the four that are not the
+> create map — reporting `DWARF092` (a **Warning**, so no `CS8795` cascade follows and the cells land as
+> `Refused` rather than in the population A10 owns). It reads through `ReadFlattenGraphAttributes`, the
+> create-map branch's own reader, so a `[FlattenGraph(null, null)]` the resolver never saw is never reported
+> as one the resolver dropped, and a malformed-but-well-typed application *is* reported, echoed verbatim.
+>
+> **The remedy was measured before it was prescribed.** At the two **element-wise** endpoints it is more than
+> advice: a span or async-stream map resolves its element pair through a *declared* mapping method for that
+> pair where one exists, so a create map beside it carrying the directive is what the emitted loop calls.
+> Measured, from the generated source, at both:
+>
+> ```
+> for (int __i = 0; __i < s.Length; __i++)
+>     d[__i] = Map(s[__i]);          // Map carries [FlattenGraph]; __DwarfMap_FlattenGraph_… runs per element
+> ```
+>
+> At **update-into and projection nothing of the sort happens** — those resolve their own members and never
+> call a sibling create map — so the message there claims only that the create map honours it, and the claim
+> is pinned in both directions (`The_element_wise_endpoints_alone_claim_the_create_map_is_reached_from_here`).
+>
+> Final reading, all eight cells: `Refused (DWARF092 (Warning))`. Ceilings: findings **12 → 11**, declared
+> cells **62 → 54**; `NotCompilable` **99**, `UnhonouredButLoud` **14**, `Unaskable` **44**, `NoSuchSite`
+> **137**, `StructurallyExcused` **12** — all six re-measured in the same commit, all unchanged.
 
 *Method site, `ctor(2)` and ×2 → UpdateInto, Projection, SpanMap, AsyncStream.* Acts at CreateMap (Honoured).
 

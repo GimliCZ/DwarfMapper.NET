@@ -270,23 +270,17 @@ internal static class DeclaredDivergences
                 new DivergentCell("MapValue", 0, "×2", AttributeTargets.Method, SurfaceEndpoints.Projection)
             ]),
 
-        ["D11"] = new(
-            "[FlattenGraph(\"Root\", \"Flat\")] walks a recursive source navigation into a flat destination "
-            + "collection. Honoured at CreateMap and silent at UpdateInto, Projection, SpanMap and "
-            + "AsyncStream — where the destination collection is filled by the ordinary direct mapping "
-            + "instead, so the same declaration produces a walked graph on one overload and a shallow copy on "
-            + "four. This finding was proposed for WITHDRAWAL and the withdrawal was wrong: the fixture's own "
-            + "baseline did not compile, so the eight cells read UnhonouredButLoud and decided nothing. With "
-            + "a baseline that compiles they are silent, and the finding stands — a fixture that cannot "
-            + "compile without the element under test can never show that element doing nothing. NOTE: the "
-            + "×2 case at CreateMap is NOT part of this finding; two identical directives make the generator "
-            + "emit duplicate member initialization (CS1912), which is a defect in the OUTPUT and is recorded "
-            + "as N4 rather than as a silence.",
-            Findings + "#D11",
-            [
-                new DivergentCell("FlattenGraph", 0, "ctor(2)", AttributeTargets.Method, ElementWiseAndMore),
-                new DivergentCell("FlattenGraph", 0, "×2", AttributeTargets.Method, ElementWiseAndMore)
-            ]),
+        // D11 closed 2026-08-17 (task A9a). [FlattenGraph("Root", "Flat")] was honoured at CreateMap and
+        // silent at the other four, where the destination collection was filled by ordinary direct mapping
+        // instead — a walked graph on one overload of a mapper and a shallow copy on the next four. All
+        // EIGHT cells are now Refused (DWARF092, a Warning, so no CS8795 cascade follows): the new
+        // MapperExtractor.ReportCreateMapOnlyDirectives gate is called from the update-into, projection,
+        // span-map and async-stream branches and reports every application the create map would have read,
+        // through ReadFlattenGraphAttributes — the create map's own reader — rather than a second parse.
+        //
+        // The entry's evidence held exactly as filed; it is the one of A9a's three that did. Its own note
+        // about the ×2 CreateMap cell being N4 rather than a silence is also still true: that cell reads
+        // NotCompilable (CS8795 behind DWARF087) and is untouched by this commit.
 
         ["D12"] = new(
             "[Reinterpret(\"Data\")] forces a blit the automatic layout proof declines to make on its own. It "

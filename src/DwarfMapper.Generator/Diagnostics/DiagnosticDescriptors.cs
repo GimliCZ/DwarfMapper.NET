@@ -1138,4 +1138,56 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf091");
+
+    /// <summary>
+    ///     A directive the generator reads only where the destination is CONSTRUCTED and RETURNED — the
+    ///     create map — written on an update-into, projection, span or async-stream mapping method, where it
+    ///     is discarded.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Measured on the surface matrix, which found the same shape three times over: a directive that
+    ///         acts at <c>CreateMap</c> and says nothing at the other four endpoints, so the identical text
+    ///         on the identical mapper class means one thing on one overload and nothing on the next four
+    ///         (findings <c>D8</c>, <c>D11</c> and <c>D13</c>). The refusal is the closure rather than the
+    ///         feature, because all three directives are about the destination the create map BUILDS —
+    ///         <c>[FlattenGraph]</c> replaces the source of a destination collection with a graph walk,
+    ///         <c>[MapDerivedType]</c> chooses which destination type to construct, and <c>[ReverseMap]</c>
+    ///         asks for a second method to be generated beside the one it sits on — and an update-into or a
+    ///         projection has no such construction step to redirect.
+    ///     </para>
+    ///     <para>
+    ///         One id and one gate rather than three, for the reason <c>DWARF088</c> is one check over two
+    ///         attributes and two sites: it is one mistake, made about three directives, and a per-directive
+    ///         id would leave whichever directive was added last silent at whichever endpoint was written
+    ///         last. Every branch that is not the create map calls the same gate, and each directive joins it
+    ///         as its finding is closed — <c>[FlattenGraph]</c> first.
+    ///     </para>
+    ///     <para>
+    ///         The remedy the message names was MEASURED before it was prescribed. At the two ELEMENT-WISE
+    ///         endpoints a create map declared beside the span or stream method over the same pair is adopted
+    ///         as the element converter — the emitted loop is literally <c>d[__i] = Map(s[__i]);</c> — so
+    ///         moving the directive onto that create map really does make it reach this method. At
+    ///         update-into and projection nothing of the sort happens, and the message says only that the
+    ///         create map honours it; a remedy nobody ran is how a diagnostic sends a caller in a circle.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF088</c>, <c>DWARF090</c> and <c>DWARF091</c> are: a
+    ///         blocking error suppresses the whole class's emission, so every partial mapping method on it
+    ///         loses its implementing part and the consumer meets a wall of <c>CS8795</c> with this refusal
+    ///         buried under it. The directive is dropped for this endpoint and the rest of the mapper is
+    ///         emitted; escalate with <c>dotnet_diagnostic.DWARF092.severity = error</c> where the stricter
+    ///         reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because it names the directive as written, the method, the endpoint and the pair.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DirectiveNotReadOutsideCreateMap = new(
+        "DWARF092",
+        "Directive is read only at the create-map endpoint",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf092");
 }
