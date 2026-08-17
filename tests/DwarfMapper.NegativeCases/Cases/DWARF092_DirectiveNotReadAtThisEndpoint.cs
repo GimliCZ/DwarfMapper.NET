@@ -34,6 +34,19 @@
 //       (finding D13). The inverse update below is declared, and still does not inherit the rename.
 // EXPECT-MESSAGE DWARF092: [ReverseMap] on 'UpdateRenamed' is not read at the update-into endpoint
 // EXPECT-MESSAGE DWARF092: separately-declared inverse method
+//
+//       [MapCollectionKey] is the MIRROR IMAGE, and the reason this id is no longer named after the create
+//       map. A key-based upsert merges the source elements into the List<T> the destination already holds,
+//       so it needs a destination to merge INTO — and the create map, the projection, the span map and the
+//       async stream all build a fresh one. Written on any of those four it was discarded and the collection
+//       was rebuilt wholesale, which is what it would have been without the directive (finding D14). Its
+//       message names the UPDATE-INTO as the home endpoint and carries no transfer claim anywhere: what an
+//       element-wise loop adopts is a declared CREATE map for its element pair, and an update-into is not
+//       one. DWARF074 already validated this directive at the update-into and its own documentation named
+//       "not an update-into method" as a case it covered — no call site ever asked that question.
+// EXPECT-MESSAGE DWARF092: [MapCollectionKey("Items", "Id")] on 'MapOrder' is not read at the create-map endpoint
+// EXPECT-MESSAGE DWARF092: Declare it on an update-into over the same pair
+// EXPECT-MESSAGE DWARF092: A key-based upsert MERGES the source elements
 
 using System;
 using System.Collections.Generic;
@@ -90,6 +103,27 @@ public sealed class PolyDerivedDto : PolyBaseDto
     public string? Extra { get; set; }
 }
 
+public sealed class OrderLine
+{
+    public int Id { get; set; }
+
+    public string? Label { get; set; }
+}
+
+public sealed class Order
+{
+    public int Id { get; set; }
+
+    public List<OrderLine> Items { get; set; } = new();
+}
+
+public sealed class OrderDto
+{
+    public int Id { get; set; }
+
+    public List<OrderLine> Items { get; set; } = new();
+}
+
 public sealed class RenamedSrc
 {
     public int Id { get; set; }
@@ -125,4 +159,7 @@ public partial class CreateMapOnlyDirectiveMapper
 
     [MapProperty("B", "A")]
     public partial void BackRenamed(RenamedDst dst, RenamedSrc src);
+
+    [MapCollectionKey("Items", "Id")]
+    public partial OrderDto MapOrder(Order src);
 }

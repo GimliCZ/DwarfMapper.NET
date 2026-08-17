@@ -1376,11 +1376,15 @@ mapped types: `void Hook(TSource)` for `[BeforeMap]`, `void Hook(TTarget)` or `v
 ---
 
 ## dwarf092
-**Directive is read only at the create-map endpoint** · Warning
+**Directive is not read at this mapping endpoint** · Warning
 
-Some directives are about the destination the mapper **constructs and returns**. Only the create map does
-that, so only the create map reads them. Written on an update-into, a projection, a span map or an
-async-stream map they were read by nobody and reported by nobody:
+Some directives are read at **one** mapping endpoint and at no other. Written on one of the other four they
+were read by nobody and reported by nobody — the identical text on the identical mapper class meaning one
+thing on one overload and nothing on the next four.
+
+Two families share this id, pointing in opposite directions. Three directives are about the destination the
+mapper **constructs and returns**, so only the create map reads them; one is about a destination that
+**already exists**, so only the update-into reads it. First the create-map three:
 
 <!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
 ```csharp
@@ -1435,7 +1439,33 @@ public partial class M
 }
 ```
 
-**Fix:** declare the directive on a create map over the same pair. At the two **element-wise** endpoints that
+`[MapCollectionKey]` is the mirror image, and it is the reason this id is no longer named after the create
+map. A key-based upsert **merges** the source elements into the list the destination already holds — matching
+on the named key, replacing what matches and appending what does not, so untouched elements survive. That
+needs a destination to merge **into**, and the create map, the projection, the span map and the async stream
+all build a fresh one. Written on any of those four it was discarded and the collection was rebuilt by
+whole-collection replacement, which is what it would have been without the directive — finding `D14`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapCollectionKey("Items", "Id")]              // honoured — d.Items is merged by Id
+    public partial void Update(Order o, OrderDto d);
+
+    [MapCollectionKey("Items", "Id")]              // DWARF092 — Items is rebuilt wholesale here
+    public partial OrderDto Map(Order o);
+}
+```
+
+[`DWARF074`](#dwarf074) already validates this directive at the update-into, and its documentation already
+named "not an update-into method" as a case it covered — but no call site ever asked that question, because
+the upsert path is reached from the update-into branch alone. The check could not have lived on `DWARF074`
+in any case: that id is an **Error**, and an error here suppresses the whole class's emission.
+
+**Fix:** declare the directive at its **home** endpoint over the same pair — a create map for the first three,
+an update-into for `[MapCollectionKey]`. For the create-map three, at the two **element-wise** endpoints that
 is more than advice: a span or async-stream map resolves its element pair through a **declared** mapping
 method for that pair where one exists, so the create map carrying the directive is what the emitted loop
 calls, and the directive reaches the element-wise endpoint through it. Measured, not asserted:
@@ -1446,21 +1476,24 @@ calls, and the directive reaches the element-wise endpoint through it. Measured,
 | `[FlattenGraph("Root", "Flat")]` on `void Update(Tree, TreeDto)` or on a projection | the same on a `partial TreeDto Map(Tree t)` | `Honoured` **at the create map**. Nothing carries it to the update or the projection; those resolve their own members and never call a sibling create map |
 | `[MapDerivedType<Dog, DogDto>]` on `void MapSpan(ReadOnlySpan<Animal>, Span<AnimalDto>)` | the same on a `partial AnimalDto Map(Animal a)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` and that create map is the runtime-type switch, so the dispatch runs per element |
 | `[ReverseMap]` on **any** of the four | the same on a `partial Dst Map(Src s)`, with the inverse declared as a `partial Src Back(Dst d)` | the inverse emits `A = d.B`; without `[ReverseMap]` the same two methods are `DWARF001`. **No transfer**, at any of the four — `[ReverseMap]` does not change what the create map emits, so the element-wise adoption above does not carry it, and the message deliberately does not claim it does |
+| `[MapCollectionKey("Items", "Id")]` on **any** of the other four | the same on a `partial void Update(Order o, OrderDto d)` beside it | the update-into emits the key index and the replace-or-append merge, and the method you wrote it on is unchanged. **No transfer**, at any of the four, including element-wise — what a span or stream loop adopts is a declared **create** map for the element pair, and an update-into is not one |
 
 The directive is quoted back in the **form you wrote it** — `[MapDerivedType<Dog, DogDto>]` stays generic and
 `[MapDerivedType(typeof(Dog), typeof(DogDto))]` stays open — rather than normalized into whichever one the
 reader happens to build, so the remedy is text you can paste.
 
 Reported per **application**, malformed ones included. A `[FlattenGraph]` naming members that do not exist is
-refused as [`DWARF034`](#dwarf034) at a create map, and a `[MapDerivedType]` naming an unassignable type as
-[`DWARF035`](#dwarf035); both were refused as nothing at all here — that asymmetry is half of what made the
-silence worth a diagnostic, since at the create map even nonsense is validated.
+refused as [`DWARF034`](#dwarf034) at a create map, a `[MapDerivedType]` naming an unassignable type as
+[`DWARF035`](#dwarf035), and a `[MapCollectionKey]` naming a member that is not a mapped `List<T>` as
+[`DWARF074`](#dwarf074) at an update-into; all were refused as nothing at all here — that asymmetry is half of
+what made the silence worth a diagnostic, since at the home endpoint even nonsense is validated.
 
-> **Why refused rather than honoured.** These directives redirect how the destination is **built**, and an
+> **Why refused rather than honoured.** The create-map three redirect how the destination is **built**, and an
 > update-into writes into an instance the caller already constructed — one whose type the caller chose, which
 > is precisely what a dispatch arm would be overriding. There is no construction step at the other four
 > endpoints for a graph walk to replace or for a dispatch arm to redirect, and no create-map-shaped inverse
-> for `[ReverseMap]` to find.
+> for `[ReverseMap]` to find. `[MapCollectionKey]` is refused for the opposite half of the same fact: a merge
+> needs an existing destination collection, and the other four endpoints have none to merge into.
 
 > **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
 > it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see

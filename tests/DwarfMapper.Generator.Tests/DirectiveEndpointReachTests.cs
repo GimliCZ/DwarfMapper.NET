@@ -5,16 +5,23 @@ using System.Globalization;
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
-///     The directives the generator reads only where the destination is CONSTRUCTED and RETURNED, and what
-///     the other four endpoints now say about them — <c>DWARF092</c>.
+///     The directives the generator reads at ONE mapping endpoint only, and what the other four now say about
+///     them — <c>DWARF092</c>.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         The surface matrix recorded the identical shape three times: a directive honoured at
-///         <c>CreateMap</c> and SILENT at <c>UpdateInto</c>, <c>Projection</c>, <c>SpanMap</c> and
+///         The surface matrix recorded the identical shape three times pointing one way: a directive honoured
+///         at <c>CreateMap</c> and SILENT at <c>UpdateInto</c>, <c>Projection</c>, <c>SpanMap</c> and
 ///         <c>AsyncStream</c> — accepted, no diagnostic, output byte-identical to the same mapper without it
 ///         (<c>D11</c>, and its two siblings <c>D8</c> and <c>D13</c>). One declaration on one mapper class
 ///         meant one thing on one overload and nothing on the next four.
+///     </para>
+///     <para>
+///         And once pointing the other way: <c>[MapCollectionKey]</c> is honoured at <c>UpdateInto</c> and was
+///         silent at the other four, the CREATE MAP included (<c>D14</c>). The gate is therefore called from
+///         all five branches with each arm naming its own home endpoint, and the tests below assert the
+///         skip-at-home in both directions — an arm that fired at its own home would refuse the one place the
+///         directive works.
 ///     </para>
 ///     <para>
 ///         The remedy the message names was MEASURED before it was prescribed, which on this branch is not a
@@ -24,7 +31,7 @@ namespace DwarfMapper.Generator.Tests;
 ///         reading the emitted loop, not by trusting the sentence.
 ///     </para>
 /// </remarks>
-public class CreateMapOnlyDirectiveReachTests
+public class DirectiveEndpointReachTests
 {
     /// <summary>
     ///     A recursive source navigation and a flat destination collection: the two halves a graph flatten
@@ -137,8 +144,9 @@ public class CreateMapOnlyDirectiveReachTests
     [Fact]
     public void The_remedy_is_not_reported_as_a_gap_on_the_create_map_that_carries_it()
     {
-        // The gate is called from four branches and deliberately not from the fifth. A copy of it in the
-        // create-map branch would refuse the very shape the message tells the caller to write.
+        // The gate is called from ALL FIVE branches, and this arm names the create map as its home and is
+        // skipped there. An arm that did not skip its own home would refuse the very shape the message tells
+        // the caller to write.
         GeneratorAssert.DoesNotReport(Types + """
 
             [DwarfMapper]
@@ -515,5 +523,189 @@ public class CreateMapOnlyDirectiveReachTests
             }
             """);
         Assert.Contains("public partial void Update(", generated, StringComparison.Ordinal);
+    }
+
+    // ── [MapCollectionKey]: the mirror image, whose home is the UPDATE-INTO ───
+
+    /// <summary>
+    ///     A <c>List&lt;T&gt;</c> member with the SAME element type on both sides and a key on that element.
+    ///     The v1 upsert requires the same element type — a differing one is <c>DWARF074</c>, an Error — and
+    ///     the surface fixture that had <c>Item</c> / <c>ItemDto</c> could therefore never show the directive
+    ///     working at the one endpoint it exists for. That is what falsified <c>D14</c>'s filed evidence.
+    /// </summary>
+    private const string KeyedTypes = """
+        using System;
+        using System.Linq;
+        using System.Collections.Generic;
+        using DwarfMapper;
+        namespace Demo;
+        public class Item { public int Id { get; set; } public string Label { get; set; } }
+        public class Src { public int Id { get; set; } public List<Item> Items { get; set; } = new(); }
+        public class Dst { public int Id { get; set; } public List<Item> Items { get; set; } = new(); }
+        """;
+
+    [Theory]
+    [InlineData("public partial Dst Map(Src s);", "Map", "create-map")]
+    [InlineData("public partial IQueryable<Dst> Project(IQueryable<Src> q);", "Project", "projection")]
+    [InlineData("public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);", "MapSpan", "span-map")]
+    [InlineData("public partial IAsyncEnumerable<Dst> MapStream(IAsyncEnumerable<Src> s);", "MapStream",
+        "async-stream")]
+    public void A_collection_key_written_anywhere_but_an_update_into_is_refused_and_names_the_endpoint(
+        string signature, string methodName, string endpointName)
+    {
+        var message = GeneratorAssert.Reports(KeyedTypes + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapCollectionKey("Items", "Id")]
+                {{signature}}
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains("[MapCollectionKey(\"Items\", \"Id\")]", message, StringComparison.Ordinal);
+        Assert.Contains($"on '{methodName}'", message, StringComparison.Ordinal);
+        Assert.Contains($"the {endpointName} endpoint", message, StringComparison.Ordinal);
+        Assert.Contains("Declare it on an update-into over the same pair", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The half that makes the gate one gate rather than two: an arm is skipped AT ITS OWN HOME. Asserted
+    ///     in both directions, because an arm that fired at home would refuse the one endpoint where the
+    ///     directive works, and an arm that fired nowhere would restore the silence.
+    /// </summary>
+    [Fact]
+    public void Each_arm_is_skipped_at_its_own_home_endpoint()
+    {
+        GeneratorAssert.DoesNotReport(KeyedTypes + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapCollectionKey("Items", "Id")]
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092");
+
+        GeneratorAssert.DoesNotReport(Types + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [FlattenGraph("Root", "Flat")]
+                public partial Dst Map(Src s);
+            }
+            """, "DWARF092");
+    }
+
+    /// <summary>
+    ///     The remedy, MEASURED rather than asserted: the update-into declared beside the refused method emits
+    ///     the key index and the replace-or-append merge, so moving the directive there really does make it
+    ///     act. A remedy nobody ran is how a diagnostic sends a caller in a circle.
+    /// </summary>
+    [Theory]
+    [InlineData("public partial Dst Map(Src s);")]
+    [InlineData("public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);")]
+    public void The_named_update_into_remedy_emits_the_key_based_merge(string sibling)
+    {
+        var generated = GeneratorAssert.EmitsCompilableCode(KeyedTypes + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                {{sibling}}
+                [MapCollectionKey("Items", "Id")]
+                public partial void Update(Src s, Dst d);
+            }
+            """);
+
+        Assert.Contains("Dictionary<int, int>", generated, StringComparison.Ordinal);
+        Assert.Contains("__idx.TryGetValue(__e.Id, out var __j)", generated, StringComparison.Ordinal);
+        Assert.Contains("d.Items.Add(__e);", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     No transfer claim, at any endpoint. <c>[ReverseMap]</c> suppresses the element-wise adoption
+    ///     sentence because it changes nothing about the method it sits on; <c>[MapCollectionKey]</c>
+    ///     suppresses it for a sharper reason — what a span or stream loop adopts is a declared CREATE map for
+    ///     the element pair, and a declared update-into is not one.
+    /// </summary>
+    [Theory]
+    [InlineData("public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);")]
+    [InlineData("public partial IAsyncEnumerable<Dst> MapStream(IAsyncEnumerable<Src> s);")]
+    public void A_collection_key_never_claims_an_element_wise_transfer(string signature)
+    {
+        var message = GeneratorAssert.Reports(KeyedTypes + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapCollectionKey("Items", "Id")]
+                {{signature}}
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.DoesNotContain("so that create map is what this method's loop calls", message,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     Malformed input, through the one reader. <c>ReadCollectionKeys</c> requires both arguments to be
+    ///     strings, so a null pair yields no directive and reaches neither the model nor a message — the
+    ///     guard that already existed on the apply path, inherited rather than rewritten.
+    /// </summary>
+    [Fact]
+    public void A_null_collection_key_argument_produces_no_report_and_no_crash()
+    {
+        GeneratorAssert.DoesNotReport(KeyedTypes + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapCollectionKey(null, null)]
+                public partial Dst Map(Src s);
+            }
+            """, "DWARF092");
+    }
+
+    /// <summary>
+    ///     A key or collection naming nothing real is still reported and echoed VERBATIM: at the update-into
+    ///     even nonsense is validated (<c>DWARF074</c>), and here it was validated by nothing at all, so "it
+    ///     does not reach this endpoint" is the true statement in both cases.
+    /// </summary>
+    [Theory]
+    [InlineData("\"NoSuchCollection\", \"NoSuchKey\"")]
+    [InlineData("\"\", \"\"")]
+    public void A_collection_key_naming_nothing_real_is_still_reported_and_echoed_verbatim(string arguments)
+    {
+        var message = GeneratorAssert.Reports(KeyedTypes + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapCollectionKey({{arguments}})]
+                public partial Dst Map(Src s);
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains($"[MapCollectionKey({arguments})]", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("null", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_same_collection_key_written_twice_is_reported_twice()
+    {
+        var reported = GeneratorAssert.Reports(KeyedTypes + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapCollectionKey("Items", "Id")]
+                [MapCollectionKey("Items", "Id")]
+                public partial Dst Map(Src s);
+            }
+            """, "DWARF092");
+
+        Assert.Equal(2, reported.Count);
     }
 }

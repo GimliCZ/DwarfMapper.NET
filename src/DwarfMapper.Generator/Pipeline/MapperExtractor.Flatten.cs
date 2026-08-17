@@ -248,14 +248,10 @@ internal static partial class MapperExtractor
         IMethodSymbol method, ITypeSymbol srcType, INamedTypeSymbol tgtType, Compilation compilation,
         bool allowNonPublic, LocationInfo? location, List<DiagnosticInfo> diagnostics, List<MemberMap> members)
     {
-        foreach (var attr in method.GetAttributes())
+        // Read through ReadCollectionKeys, which is also what the endpoints that DISCARD this directive
+        // report through — so a refusal names exactly the applications this apply path would have acted on.
+        foreach (var (collectionMember, keyMember) in ReadCollectionKeys(method))
         {
-            if (attr.AttributeClass?.ToDisplayString() != KnownNames.MapCollectionKeyFqn
-                || attr.ConstructorArguments.Length < 2
-                || attr.ConstructorArguments[0].Value is not string collectionMember
-                || attr.ConstructorArguments[1].Value is not string keyMember)
-                continue;
-
             var idx = members.FindIndex(m => StringComparer.Ordinal.Equals(m.EmitTargetName, collectionMember));
             if (idx < 0)
             {

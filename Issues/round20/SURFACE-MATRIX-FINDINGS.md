@@ -167,7 +167,7 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D11 | ~~`[FlattenGraph("Root","Flat")]`, and ×2~~ | **CLOSED by A9a** as `DWARF092` — all 8 cells `Refused`; its evidence held as filed | — | 0 |
 | D12 | `[Reinterpret("Id")]`, and ×2 | Create, Update (blocking), Projection (loud) | SpanMap, AsyncStream | 4 |
 | D13 | ~~`[ReverseMap]`~~ | **CLOSED by A9a** as `DWARF092` — all 4 cells `Refused`; its mechanism was misstated, see the entry | — | 0 |
-| D14 | `[MapCollectionKey("Id","Name")]`, and ×2 | UpdateInto (blocking) | Create, Projection, SpanMap, AsyncStream | 8 |
+| D14 | ~~`[MapCollectionKey("Items","Id")]`, and ×2~~ | **CLOSED by A9b** as `DWARF092` — all 8 cells `Refused`; its evidence was false, see the entry | — | 0 |
 | D15 | `[GenerateWrapperMap(typeof(Dst))]` on the mapper class, and ×2 | CoLocatedHost (DWARF067) | all five mapper endpoints | 10 |
 | D16 | `[AfterMap]` on the mapping method | UpdateInto (Honoured), Create/Projection/Async (blocking) | **SpanMap** | 1 |
 | D17 | `[DwarfMapper(GenerateExtensions=false)]` and `(RegisterCollectionShapes=false)`; same two on `[DwarfMapperDefaults]` | CreateMap, CoLocatedHost (Honoured) | Update, Projection, SpanMap, AsyncStream, **Registry** | 13 |
@@ -965,15 +965,44 @@ never generated.
 
 <a id="D14"></a>
 
-### D14 — `[MapCollectionKey]` acts only at UpdateInto — 8 cells
+### D14 — `[MapCollectionKey]` acts only at UpdateInto — 8 cells — RESOLVED
+
+> **RESOLVED 2026-08-17 as `DWARF092` (task A9b).** All eight cells read `Refused`. The create-map-only gate
+> is generalized into `MapperExtractor.ReportDirectivesNotReadHere`, called from **all five** branches, where
+> each arm names its own **home** endpoint and is skipped there: the create map for `[FlattenGraph]`,
+> `[MapDerivedType]` and `[ReverseMap]`, the update-into for `[MapCollectionKey]`. `DWARF092`'s title changes
+> to *"Directive is not read at this mapping endpoint"* accordingly — one id, one shape, two directions. Read
+> through the new `ReadCollectionKeys`, hoisted out of `ApplyCollectionKeyUpserts`, so the refusal names
+> exactly the applications the upsert path would have acted on.
+>
+> **Its evidence was FALSE, and in the same way `D10`'s and `D8`'s were — the fixture, not the generator.**
+> The re-derivation below said "against the `keyed-collection-elements` fixture it acts at UpdateInto". It did
+> not. That fixture declared `List<Item>` on the source and `List<ItemDto>` on the destination, and the v1
+> upsert **requires the same element type** — `MapperExtractor.Flatten.cs` refuses a differing one as
+> `DWARF074`, an Error — so at the one endpoint this directive exists for the cell read
+> `NotCompilable (CS8795)`. Literal reading, before anything was changed:
+>
+> ```
+> MapCollectionKey | ctor(2) | Method | UpdateInto  => NotCompilable (CS8795)
+> MapCollectionKey | ctor(2) | Method | CreateMap   => Silent
+> ```
+>
+> The fixture now declares ONE element type on both sides, and the upsert is emitted — a
+> `Dictionary<int,int>` index over the existing `d.Items`, `TryGetValue`, replace-or-`Add`. Both `UpdateInto`
+> cells moved OUT of the `NotCompilable` population: **98 → 96**.
+>
+> **Also corrected, at `DWARF074`'s descriptor.** Its comment listed *"not an update-into method"* as a case
+> it covered, and **no call site ever implemented it** — `ApplyCollectionKeyUpserts` is reached from the
+> update-into branch alone. That case is now `DWARF092`'s, and could never have been `DWARF074`'s once it was
+> written: `DWARF074` is an **Error**, and an error suppresses the class's emission, which would have moved
+> these eight cells into `NotCompilable` rather than out of the divergence population.
+>
+> Ceilings re-measured in the same commit: findings **9 → 8**, declared cells **34 → 26**, `NotCompilable`
+> **98 → 96**; `UnhonouredButLoud` **14**, `Unaskable` **44**, `NoSuchSite` **137**, `StructurallyExcused`
+> **12** unchanged.
 
 *Method site, `ctor(2)` and ×2 → CreateMap, Projection, SpanMap, AsyncStream.* Acts at UpdateInto, the
 endpoint the directive is chiefly for.
-
-**Evidence re-derived:** the original argument named members of an `int` element type, which has none, so the
-directive could only ever apply to nothing. Against the `keyed-collection-elements` fixture
-(`List<Item>` → `List<ItemDto>` with `Id`/`Label` on the element) it acts at UpdateInto and the four silences
-stand.
 
 <a id="D15"></a>
 

@@ -188,8 +188,18 @@ public sealed class SurfaceParityTests
             + "[DwarfSurfaceProbe(ProbeKey = ...)], or an argument list that bites.");
     }
 
-    /// <summary>The ceiling on cells the C# compiler rejects outright. Shrink-only, like the others.</summary>
-    private const int NotCompilableCellCeiling = 98;
+    /// <summary>
+    ///     The ceiling on cells the C# compiler rejects outright. Shrink-only, like the others.
+    ///     <para>
+    ///         99 → 98 when <c>D8</c> closed and 98 → <b>96</b> when <c>D14</c> did, both for the same reason
+    ///         and neither because of a generator change: a fixture that could not pose its question had been
+    ///         counting cells here. <c>keyed-collection-elements</c> declared a DIFFERENT element type on each
+    ///         side, which the v1 key-based upsert refuses as <c>DWARF074</c> — an Error, hence <c>CS8795</c>
+    ///         — so the one endpoint <c>[MapCollectionKey]</c> exists for was in this population rather than
+    ///         reading <c>Honoured</c>.
+    ///     </para>
+    /// </summary>
+    private const int NotCompilableCellCeiling = 96;
 
     /// <summary>The ceiling on cells that pass BOTH claim branches. Shrink-only, like the others.</summary>
     private const int UnhonouredButLoudCellCeiling = 14;
@@ -434,8 +444,18 @@ public sealed class SurfaceParityTests
     ///         inverted, and a missing inverse is <c>DWARF052</c> rather than a silent absence. Corrected
     ///         where the entry stood, and the message deliberately does not repeat the wrong model.
     ///     </para>
+    ///     <para>
+    ///         9 → <b>8</b> when <c>D14</c> closed. <c>[MapCollectionKey]</c> is the MIRROR image of the three
+    ///         above — read at the <c>UpdateInto</c> endpoint and discarded at the other four, the create map
+    ///         included — so the <c>DWARF092</c> gate is generalized into
+    ///         <c>MapperExtractor.ReportDirectivesNotReadHere</c>, called from all FIVE branches with each arm
+    ///         naming its own home endpoint. And, for the third time, the finding's evidence was false about
+    ///         the endpoint it held up as working: <c>keyed-collection-elements</c> declared <c>List&lt;Item&gt;</c>
+    ///         against <c>List&lt;ItemDto&gt;</c>, the v1 upsert requires the same element type, and the
+    ///         <c>UpdateInto</c> cell was <c>DWARF074</c> behind <c>CS8795</c>. Re-measured in the same commit.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 9;
+    private const int DivergenceFindingCeiling = 8;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -517,8 +537,16 @@ public sealed class SurfaceParityTests
     ///         not a second method. It is a template limitation adjacent to G5's, not a divergence, and it is
     ///         why that ceiling stayed at 98 rather than moving again.
     ///     </para>
+    ///     <para>
+    ///         34 → <b>26</b> when <c>D14</c> closed: eight cells, one verdict — <b>8 Refused (DWARF092)</b>,
+    ///         <c>[MapCollectionKey]</c> at <c>CreateMap</c>, <c>Projection</c>, <c>SpanMap</c> and
+    ///         <c>AsyncStream</c> for both of its axes. <see cref="NotCompilableCellCeiling" /> moved too, and
+    ///         DOWN, for the same reason it did under <c>D8</c>: the fixture could not pose its question. With
+    ///         ONE element type on both sides the upsert is emitted, so both <c>UpdateInto</c> cells read
+    ///         <c>Honoured</c> rather than <c>CS8795</c> behind a <c>DWARF074</c> — measured <b>98 → 96</b>.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 34;
+    private const int DivergentCellCeiling = 26;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

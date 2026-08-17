@@ -20,6 +20,37 @@ internal static partial class MapperExtractor
         return members;
     }
 
+    /// <summary>
+    ///     Every well-formed <c>[MapCollectionKey("Collection", "Key")]</c> on a mapping method, as written.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Hoisted out of <c>ApplyCollectionKeyUpserts</c>, which was the only reader until the endpoints
+    ///         that DISCARD this directive had to name it back to the caller (finding <c>D14</c>). A second
+    ///         parse beside a first is the shape that has shipped two generator crashes on this branch, and it
+    ///         is also how a message comes to quote an application real resolution never saw: the pair of
+    ///         string arguments is the one condition under which the directive exists at all, and both the
+    ///         apply path and the refusal path must agree on it exactly.
+    ///     </para>
+    ///     <para>
+    ///         An application whose arguments are absent, <c>null</c>, or not both strings yields nothing —
+    ///         so it reaches neither the model nor a diagnostic message, rather than reaching one as the word
+    ///         <c>null</c>.
+    ///     </para>
+    /// </remarks>
+    private static List<(string Collection, string Key)> ReadCollectionKeys(ISymbol method)
+    {
+        var keys = new List<(string, string)>();
+        foreach (var attr in method.GetAttributes())
+            if (attr.AttributeClass?.ToDisplayString() == KnownNames.MapCollectionKeyFqn
+                && attr.ConstructorArguments.Length >= 2
+                && attr.ConstructorArguments[0].Value is string collection
+                && attr.ConstructorArguments[1].Value is string key)
+                keys.Add((collection, key));
+
+        return keys;
+    }
+
     private static EnumStrategy ReadEnumStrategy(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)

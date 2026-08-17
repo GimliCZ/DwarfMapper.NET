@@ -311,10 +311,10 @@ internal static partial class MapperExtractor
             {
                 var spanComp = ctx.SemanticModel.Compilation;
                 var spanAutoNest = ReadMethodAutoNest(method, classAutoNest);
-                // Before the element-wise gate and before resolution, so a create-map-only directive is
-                // reported whatever else this method turns out to be wrong about.
-                ReportCreateMapOnlyDirectives(method, spanComp, spanSrcElem, spanDstElem, "span-map",
-                    adoptsACreateMap: true, methodLocation, diagnostics);
+                // Before the element-wise gate and before resolution, so a directive read only at another
+                // endpoint is reported whatever else this method turns out to be wrong about.
+                ReportDirectivesNotReadHere(method, spanComp, spanSrcElem, spanDstElem,
+                    MapEndpointKind.SpanMap, methodLocation, diagnostics);
                 if (ReportElementWiseDirectiveGaps(method, classSymbol, spanSrcElem, spanDstElem, explicitOnly,
                         spanComp, allowNonPublic, methodLocation, diagnostics))
                     continue;
@@ -372,10 +372,10 @@ internal static partial class MapperExtractor
             {
                 var updSrc = method.Parameters[0].Type;
                 var comp = ctx.SemanticModel.Compilation;
-                // Before resolution, so a create-map-only directive is reported whatever else this method
-                // turns out to be wrong about. An update-into does NOT reach a sibling create map.
-                ReportCreateMapOnlyDirectives(method, comp, updSrc, updTgt, "update-into",
-                    adoptsACreateMap: false, methodLocation, diagnostics);
+                // Before resolution, so a directive read only at another endpoint is reported whatever else
+                // this method turns out to be wrong about. An update-into does NOT reach a sibling create map.
+                ReportDirectivesNotReadHere(method, comp, updSrc, updTgt, MapEndpointKind.UpdateInto,
+                    methodLocation, diagnostics);
                 var updIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var ig in ReadIgnores(method)) updIgnores.Add(ig);
                 var updExplicit = ReadExplicitMaps(method);
@@ -539,8 +539,8 @@ internal static partial class MapperExtractor
             {
                 var asComp = ctx.SemanticModel.Compilation;
                 var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
-                ReportCreateMapOnlyDirectives(method, asComp, asSrcElem, asDstElem, "async-stream",
-                    adoptsACreateMap: true, methodLocation, diagnostics);
+                ReportDirectivesNotReadHere(method, asComp, asSrcElem, asDstElem,
+                    MapEndpointKind.AsyncStream, methodLocation, diagnostics);
                 if (ReportElementWiseDirectiveGaps(method, classSymbol, asSrcElem, asDstElem, explicitOnly,
                         asComp, allowNonPublic, methodLocation, diagnostics))
                     continue;
@@ -596,8 +596,8 @@ internal static partial class MapperExtractor
                 // Before the DWARF028 early exit below, which adds the method with empty projection members
                 // and continues: a directive dropped here is dropped whether or not reference handling also
                 // refuses the endpoint.
-                ReportCreateMapOnlyDirectives(method, ctx.SemanticModel.Compilation, projSource,
-                    projTargetNamed, "projection", adoptsACreateMap: false, methodLocation, diagnostics);
+                ReportDirectivesNotReadHere(method, ctx.SemanticModel.Compilation, projSource,
+                    projTargetNamed, MapEndpointKind.Projection, methodLocation, diagnostics);
 
                 var projIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var i in ReadIgnores(method)) projIgnores.Add(i);
@@ -748,6 +748,14 @@ internal static partial class MapperExtractor
             }
 
             var sourceType = method.Parameters[0].Type;
+
+            // The FIFTH call site of the one gate, and the reason it is not named after the create map any
+            // more. Every branch above this one is some other endpoint, so this is the create map — and a
+            // directive whose home is the UPDATE-INTO ([MapCollectionKey], finding D14) is discarded HERE
+            // exactly as the create-map-only trio is discarded there. Before resolution, so the refusal does
+            // not depend on what else this method turns out to be wrong about.
+            ReportDirectivesNotReadHere(method, ctx.SemanticModel.Compilation, sourceType, targetType,
+                MapEndpointKind.CreateMap, methodLocation, diagnostics);
 
             // Phase 5: parameters after the source are extra named value sources, matched to destination
             // members by name (precedence: explicit > extra parameter > by-name). Pre-format their
@@ -2962,112 +2970,186 @@ internal static partial class MapperExtractor
     }
 
     /// <summary>
-    ///     The one gate every mapping method that is NOT a create map passes through: the directives the
-    ///     generator reads only where the destination is CONSTRUCTED and RETURNED, written somewhere that
-    ///     never constructs one.
+    ///     Which of the five mapping endpoints a gate is speaking about.
+    ///     <para>
+    ///         Introduced so <see cref="ReportDirectivesNotReadHere" /> can be called from ALL FIVE branches
+    ///         and decide for itself what each one is: the endpoint's reader-facing name and whether it
+    ///         adopts a sibling create map were two separate parameters passed by hand at every call site,
+    ///         and both are functions of the endpoint alone. A per-call-site copy of a derivable fact is how
+    ///         a sixth endpoint gets one of the two wrong.
+    ///     </para>
+    /// </summary>
+    private enum MapEndpointKind
+    {
+        CreateMap,
+        UpdateInto,
+        Projection,
+        SpanMap,
+        AsyncStream
+    }
+
+    /// <summary>
+    ///     The one gate every mapping method passes through: a directive the generator reads at ONE endpoint
+    ///     only, written at one of the other four, where it is discarded without a word.
     ///     <para>
     ///         Hoisted from the start rather than written per endpoint, which is the shape this branch has
-    ///         had to unpick seven times. The silence these directives share is not element-wise — it also
-    ///         covers update-into and projection, so <see cref="ReportElementWiseDirectiveGaps" /> is the
-    ///         wrong home for it — and it is not one directive: the surface matrix recorded the identical
-    ///         finding for <c>[FlattenGraph]</c>, <c>[MapDerivedType]</c> and <c>[ReverseMap]</c> (D11, D8,
-    ///         D13). Four call sites of one function, so a fifth endpoint inherits the check instead of
-    ///         having to be taught it.
+    ///         had to unpick seven times. The silence is not element-wise — it also covers update-into,
+    ///         projection and the create map, so <see cref="ReportElementWiseDirectiveGaps" /> is the wrong
+    ///         home for it — and it is not one directive: the surface matrix recorded the identical finding
+    ///         for <c>[FlattenGraph]</c>, <c>[MapDerivedType]</c> and <c>[ReverseMap]</c> (D11, D8, D13),
+    ///         whose home is the CREATE MAP, and then again for <c>[MapCollectionKey]</c> (D14), whose home
+    ///         is the UPDATE-INTO. Five call sites of one function, so a sixth endpoint inherits the check
+    ///         instead of having to be taught it.
     ///     </para>
     ///     <para>
-    ///         The readers are the SAME ones the create-map branch resolves with, so this reports exactly the
+    ///         Each arm names its own home endpoint and is skipped there. That is what makes this one gate
+    ///         rather than two mirror-image ones: "read at exactly one endpoint" is the shape, and which
+    ///         endpoint that is belongs to the directive, not to the gate.
+    ///     </para>
+    ///     <para>
+    ///         The readers are the SAME ones the honouring branch resolves with, so this reports exactly the
     ///         applications that would have been read there and nothing else. Re-parsing the attributes here
     ///         would drift from what is actually dropped and would re-open the malformed-argument hole those
-    ///         readers close — <c>[FlattenGraph(null, null)]</c> yields no directive and must reach neither
-    ///         the model nor a message.
+    ///         readers close — <c>[FlattenGraph(null, null)]</c> and <c>[MapCollectionKey(null, null)]</c>
+    ///         yield no directive and must reach neither the model nor a message.
     ///     </para>
     ///     <para>
     ///         Reported per APPLICATION, malformed applications included, for the reason A8's
     ///         <c>[MapValue]</c> arm gives: a <c>[FlattenGraph]</c> naming members that do not exist is
     ///         refused as <c>DWARF034</c> at the create map and refused as nothing at all here, so "it does
     ///         not reach this endpoint" is the true statement in both cases. That asymmetry is half of what
-    ///         makes the silence worth a diagnostic — at the create map even nonsense is validated.
+    ///         makes the silence worth a diagnostic — at its home endpoint even nonsense is validated.
     ///     </para>
     /// </summary>
-    /// <param name="method">The update-into, projection, span or async-stream mapping method.</param>
+    /// <param name="method">The create-map, update-into, projection, span or async-stream method.</param>
     /// <param name="compilation">Handed to <see cref="ReadDerivedTypeAttributes" />, which takes one.</param>
     /// <param name="srcType">The pair's source type — the element type at the two element-wise endpoints.</param>
     /// <param name="tgtType">The pair's target type — the element type at the two element-wise endpoints.</param>
-    /// <param name="endpointName">The endpoint as a caller would say it: "update-into", "projection", …</param>
-    /// <param name="adoptsACreateMap">
-    ///     <c>true</c> at the two ELEMENT-WISE endpoints only. A span or async-stream map resolves its element
-    ///     pair through <see cref="TryResolveConversion" />, which adopts a DECLARED mapping method for that
-    ///     pair before synthesizing one — so a create map carrying the directive is what the emitted loop
-    ///     calls (<c>d[__i] = Map(s[__i]);</c>) and the directive genuinely arrives. MEASURED at both of them
-    ///     before the message said it. Update-into and projection resolve their own members and never call a
-    ///     sibling create map, so there the message claims only that the create map honours the directive —
-    ///     A8's revert is the standing proof that a prescribed remedy nobody ran is worse than none.
+    /// <param name="endpoint">
+    ///     Which endpoint this method is. The reader-facing endpoint name and the adoption claim are both
+    ///     DERIVED from it here rather than passed: a span or async-stream map resolves its element pair
+    ///     through <see cref="TryResolveConversion" />, which adopts a DECLARED mapping method for that pair
+    ///     before synthesizing one, so a create map carrying the directive is what the emitted loop calls
+    ///     (<c>d[__i] = Map(s[__i]);</c>) and the directive genuinely arrives. MEASURED at both of them
+    ///     before the message said it. Update-into, projection and the create map resolve their own members
+    ///     and never call a sibling, so there the message claims only that the home endpoint honours the
+    ///     directive — A8's revert is the standing proof that a prescribed remedy nobody ran is worse than
+    ///     none. The adoption is of a CREATE map specifically, so it is claimed only by arms whose home is
+    ///     the create map: nothing adopts a sibling update-into.
     /// </param>
-    private static void ReportCreateMapOnlyDirectives(
+    /// <param name="location">Where to report, or null.</param>
+    /// <param name="diagnostics">The list every arm appends to.</param>
+    private static void ReportDirectivesNotReadHere(
         IMethodSymbol method, Compilation compilation, ITypeSymbol srcType, ITypeSymbol tgtType,
-        string endpointName, bool adoptsACreateMap, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+        MapEndpointKind endpoint, LocationInfo? location, List<DiagnosticInfo> diagnostics)
     {
         var src = srcType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
         var tgt = tgtType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-
-        // [FlattenGraph], read through the reader the create-map branch reads with, which already drops an
-        // application whose two arguments are not both strings.
-        foreach (var (navigation, collection) in ReadFlattenGraphAttributes(method))
-            Report($"[FlattenGraph(\"{navigation}\", \"{collection}\")]",
-                $"A graph flatten replaces the source of the destination collection '{collection}' with a "
-                + $"breadth-first walk of '{navigation}', and only the create map resolves one. Here the "
-                + $"directive is discarded and '{collection}' is filled by ordinary direct mapping instead, "
-                + "so the same declaration produces a walked graph on one overload of this mapper and a "
-                + "shallow copy on this one.");
-
-        // [MapDerivedType], in BOTH of its forms, through the reader the create-map branch reads with — which
-        // is also where the WRITTEN form comes from, so the message quotes the syntax the caller typed rather
-        // than normalizing one into the other. `compilation` is the reader's own parameter; it is passed
-        // rather than a second reader written, because a second reader of these attributes is precisely the
-        // shape that has shipped two generator crashes on this branch.
-        foreach (var (derivedSrc, derivedTgt, writtenGeneric) in ReadDerivedTypeAttributes(method, compilation))
+        var endpointName = endpoint switch
         {
-            var dSrc = derivedSrc.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-            var dTgt = derivedTgt.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-            Report(
-                writtenGeneric
-                    ? $"[MapDerivedType<{dSrc}, {dTgt}>]"
-                    : $"[MapDerivedType(typeof({dSrc}), typeof({dTgt}))]",
-                $"A dispatch arm decides which destination TYPE to construct — a '{dSrc}' becomes a "
-                + $"'{dTgt}' rather than a '{tgt}' — from the source's RUNTIME type, and only the create map "
-                + $"constructs one. Here the directive is discarded and a '{dSrc}' is mapped as a '{src}', so "
-                + $"every member '{dTgt}' declares beyond '{tgt}' is dropped. The create map also VALIDATES "
-                + "these arms (DWARF035 for a type that is not assignable, a duplicate source type, or a pair "
-                + "that is not mappable); nothing validated them here either.");
+            MapEndpointKind.CreateMap => "create-map",
+            MapEndpointKind.UpdateInto => "update-into",
+            MapEndpointKind.Projection => "projection",
+            MapEndpointKind.SpanMap => "span-map",
+            _ => "async-stream"
+        };
+        var adoptsACreateMap = endpoint is MapEndpointKind.SpanMap or MapEndpointKind.AsyncStream;
+
+        // ── Arms whose home is the CREATE MAP, skipped there ──────────────────────────────────────────────
+        if (endpoint != MapEndpointKind.CreateMap)
+        {
+            // [FlattenGraph], read through the reader the create-map branch reads with, which already drops an
+            // application whose two arguments are not both strings.
+            foreach (var (navigation, collection) in ReadFlattenGraphAttributes(method))
+                Report($"[FlattenGraph(\"{navigation}\", \"{collection}\")]",
+                    $"A graph flatten replaces the source of the destination collection '{collection}' with a "
+                    + $"breadth-first walk of '{navigation}', and only the create map resolves one. Here the "
+                    + $"directive is discarded and '{collection}' is filled by ordinary direct mapping instead, "
+                    + "so the same declaration produces a walked graph on one overload of this mapper and a "
+                    + "shallow copy on this one.",
+                    MapEndpointKind.CreateMap);
+
+            // [MapDerivedType], in BOTH of its forms, through the reader the create-map branch reads with —
+            // which is also where the WRITTEN form comes from, so the message quotes the syntax the caller
+            // typed rather than normalizing one into the other. `compilation` is the reader's own parameter;
+            // it is passed rather than a second reader written, because a second reader of these attributes is
+            // precisely the shape that has shipped two generator crashes on this branch.
+            foreach (var (derivedSrc, derivedTgt, writtenGeneric) in
+                     ReadDerivedTypeAttributes(method, compilation))
+            {
+                var dSrc = derivedSrc.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                var dTgt = derivedTgt.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                Report(
+                    writtenGeneric
+                        ? $"[MapDerivedType<{dSrc}, {dTgt}>]"
+                        : $"[MapDerivedType(typeof({dSrc}), typeof({dTgt}))]",
+                    $"A dispatch arm decides which destination TYPE to construct — a '{dSrc}' becomes a "
+                    + $"'{dTgt}' rather than a '{tgt}' — from the source's RUNTIME type, and only the create "
+                    + $"map constructs one. Here the directive is discarded and a '{dSrc}' is mapped as a "
+                    + $"'{src}', so every member '{dTgt}' declares beyond '{tgt}' is dropped. The create map "
+                    + "also VALIDATES these arms (DWARF035 for a type that is not assignable, a duplicate "
+                    + "source type, or a pair that is not mappable); nothing validated them here either.",
+                    MapEndpointKind.CreateMap);
+            }
+
+            // [ReverseMap], through HasReverseMap — the same predicate CollectReverseRenames and the DWARF052
+            // check both consult, so this reports exactly the methods a create map would have treated as
+            // forward ones. AllowMultiple is false on this attribute, so there is one application or none.
+            //
+            // carriedByTheAdoptedSibling is FALSE here even at the element-wise endpoints, and that is the
+            // point of the flag. The adoption sentence is true of a directive that changes what the create map
+            // EMITS, because that emission is what the loop calls. [ReverseMap] changes nothing about the
+            // method it sits on: it makes a SEPARATE, separately-declared inverse method inherit this one's
+            // renames, inverted. Appending the sentence would have told a caller their inverse reaches the
+            // span map, which is not a claim about anything.
+            if (HasReverseMap(method))
+                Report("[ReverseMap]",
+                    $"[ReverseMap] makes a separately-declared inverse method — '{src} <Name>({tgt} t)' — "
+                    + "inherit this one's simple renames with their ends swapped, and only the create map "
+                    + "looks for one. The match is by signature: a forward "
+                    + $"'{tgt} <Name>({src} s)' against an inverse "
+                    + $"'{src} <Name>({tgt} t)', both one-parameter create maps, which no other endpoint's "
+                    + "signature is. Here nothing looks for an inverse and nothing inherits a rename — and no "
+                    + "DWARF052 is raised either, because that check lives on the same create-map path.",
+                    MapEndpointKind.CreateMap, carriedByTheAdoptedSibling: false);
         }
 
-        // [ReverseMap], through HasReverseMap — the same predicate CollectReverseRenames and the DWARF052
-        // check both consult, so this reports exactly the methods a create map would have treated as forward
-        // ones. AllowMultiple is false on this attribute, so there is one application or none.
+        // ── Arms whose home is the UPDATE-INTO, skipped there ─────────────────────────────────────────────
         //
-        // carriedByTheAdoptedCreateMap is FALSE here even at the element-wise endpoints, and that is the
-        // point of the flag. The adoption sentence is true of a directive that changes what the create map
-        // EMITS, because that emission is what the loop calls. [ReverseMap] changes nothing about the method
-        // it sits on: it makes a SEPARATE, separately-declared inverse method inherit this one's renames,
-        // inverted. Appending the sentence would have told a caller their inverse reaches the span map, which
-        // is not a claim about anything.
-        if (HasReverseMap(method))
-            Report("[ReverseMap]",
-                $"[ReverseMap] makes a separately-declared inverse method — '{src} <Name>({tgt} t)' — inherit "
-                + "this one's simple renames with their ends swapped, and only the create map looks for one. "
-                + $"The match is by signature: a forward '{tgt} <Name>({src} s)' against an inverse "
-                + $"'{src} <Name>({tgt} t)', both one-parameter create maps, which no other endpoint's "
-                + "signature is. Here nothing looks for an inverse and nothing inherits a rename — and no "
-                + "DWARF052 is raised either, because that check lives on the same create-map path.",
-                carriedByTheAdoptedCreateMap: false);
+        // [MapCollectionKey], read through ReadCollectionKeys — the reader ApplyCollectionKeyUpserts itself
+        // reads with, so this reports exactly the applications the upsert path would have acted on and an
+        // application whose two arguments are not both strings reaches neither.
+        //
+        // carriedByTheAdoptedSibling is FALSE even at the element-wise endpoints, and for a sharper reason
+        // than [ReverseMap]'s: what a span or async-stream loop adopts is a declared CREATE map for the
+        // element pair, and a declared update-into is not one. There is no sibling here whose emission this
+        // method's loop calls, so claiming the directive arrives through one would be false.
+        if (endpoint != MapEndpointKind.UpdateInto)
+            foreach (var (collection, key) in ReadCollectionKeys(method))
+                Report($"[MapCollectionKey(\"{collection}\", \"{key}\")]",
+                    $"A key-based upsert MERGES the source elements into the '{collection}' list the "
+                    + "destination already holds — matching on '" + key + "', replacing what matches and "
+                    + "appending what does not, so untouched elements survive. That needs an existing "
+                    + $"destination to merge into, and the {endpointName} endpoint builds a fresh one. Here "
+                    + $"the directive is discarded and '{collection}' is built by whole-collection "
+                    + "replacement, which is what it would have been without it. The update-into also "
+                    + "VALIDATES this directive (DWARF074 for a member that is not mapped, is not a "
+                    + "List<T> on both sides, has differing element types, or names a key the element type "
+                    + "does not have); nothing validated it here either.",
+                    MapEndpointKind.UpdateInto);
 
-        void Report(string written, string what, bool carriedByTheAdoptedCreateMap = true) =>
+        void Report(string written, string what, MapEndpointKind home,
+            bool carriedByTheAdoptedSibling = true) =>
             diagnostics.Add(new DiagnosticInfo(
-                DiagnosticDescriptors.DirectiveNotReadOutsideCreateMap, location,
+                DiagnosticDescriptors.DirectiveNotReadAtThisEndpoint, location,
                 $"{written} on '{method.Name}' is not read at the {endpointName} endpoint. {what} "
-                + $"Declare it on a create map over the same pair — {written} on a "
-                + $"`partial {tgt} <Name>({src} s)` on this mapper class — which does honour it."
-                + (adoptsACreateMap && carriedByTheAdoptedCreateMap
+                + (home == MapEndpointKind.CreateMap
+                    ? $"Declare it on a create map over the same pair — {written} on a "
+                      + $"`partial {tgt} <Name>({src} s)` on this mapper class — which does honour it."
+                    : $"Declare it on an update-into over the same pair — {written} on a "
+                      + $"`partial void <Name>({src} s, {tgt} d)` on this mapper class — which does honour "
+                      + "it.")
+                + (adoptsACreateMap && carriedByTheAdoptedSibling && home == MapEndpointKind.CreateMap
                     ? $" An element-wise map resolves its element pair through a declared '{src}' to '{tgt}' "
                       + "mapping method where one exists, so that create map is what this method's loop "
                       + "calls and the directive reaches this endpoint through it."

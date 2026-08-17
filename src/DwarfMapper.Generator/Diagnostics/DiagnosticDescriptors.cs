@@ -612,9 +612,17 @@ public static class DiagnosticDescriptors
     // member unmapped and forces a visible [MapProperty]/[MapIgnore] choice.
     // [MapProperty(StringFormat = "...")] used where it cannot apply: the destination is not string, the source
     // is not IFormattable, or a Use= converter is also present (the converter already owns the transform).
-    // [MapCollectionKey] used where the v1 key-based upsert cannot apply: not an update-into method, the named
-    // member is not a List<T>, the element type differs between source and target, or the key member is not
-    // found on the element type. Loud rather than silently falling back to whole-collection replacement.
+    // [MapCollectionKey] used where the v1 key-based upsert cannot apply: the named member is not a mapped
+    // destination member, is not a List<T> on both sides, the element type differs between source and target,
+    // or the key member is not found on the element type. Loud rather than silently falling back to
+    // whole-collection replacement.
+    //
+    // "Not an update-into method" was listed here for four rounds and NO call site ever implemented it:
+    // ApplyCollectionKeyUpserts is reached from the update-into branch alone, so a [MapCollectionKey] written
+    // anywhere else reached this id's checks not at all and was discarded in silence (finding D14). That case
+    // now lives on DWARF092 — a Warning, because an Error here would suppress the whole class's emission and
+    // bury the refusal under a wall of CS8795 — and is deliberately NOT this id's. Stated rather than deleted:
+    // a descriptor comment that documents a check nobody wrote is how a gap reads as covered.
     // [FlattenGraph] could not flatten a data-bearing complex leaf (a nested object, collection or dictionary
     // member of a graph node). Only reachable under ReferenceHandling = Preserve, where the synthesized helper
     // for such a leaf may later be force-marked recursion-capable (3-param) and would then be called with one
@@ -1140,17 +1148,25 @@ public static class DiagnosticDescriptors
         helpLinkUri: HelpBase + "dwarf091");
 
     /// <summary>
-    ///     A directive the generator reads only where the destination is CONSTRUCTED and RETURNED — the
-    ///     create map — written on an update-into, projection, span or async-stream mapping method, where it
-    ///     is discarded.
+    ///     A directive the generator reads at ONE mapping endpoint only, written on a mapping method that is
+    ///     one of the other four, where it is discarded.
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         Measured on the surface matrix, which found the same shape three times over: a directive that
-    ///         acts at <c>CreateMap</c> and says nothing at the other four endpoints, so the identical text
-    ///         on the identical mapper class means one thing on one overload and nothing on the next four
-    ///         (findings <c>D8</c>, <c>D11</c> and <c>D13</c>). The refusal is the closure rather than the
-    ///         feature, because all three directives are about the destination the create map BUILDS —
+    ///         Two families share this id, and they point in opposite directions. Three directives are read
+    ///         only where the destination is CONSTRUCTED and RETURNED — the create map — and are discarded on
+    ///         an update-into, projection, span or async-stream method. One is read only where the
+    ///         destination ALREADY EXISTS — the update-into — and is discarded everywhere else, the create
+    ///         map included. What they have in common is the shape, not the direction: a directive read at
+    ///         exactly one endpoint, so the identical text on the identical mapper class means one thing on
+    ///         one overload and nothing on the next four.
+    ///     </para>
+    ///     <para>
+    ///         Measured on the surface matrix, which found the create-map shape three times over (findings
+    ///         <c>D8</c>, <c>D11</c> and <c>D13</c>) and the update-into shape once
+    ///         (<c>[MapCollectionKey]</c>, finding <c>D14</c>). The refusal is the closure rather than the
+    ///         feature in both directions: the three create-map directives are about the destination the
+    ///         create map BUILDS —
     ///         <c>[FlattenGraph]</c> replaces the source of a destination collection with a graph walk and
     ///         <c>[MapDerivedType]</c> chooses which destination type to construct, so at an update-into —
     ///         which writes into an instance the caller already built — there is no construction step for
@@ -1163,11 +1179,25 @@ public static class DiagnosticDescriptors
     ///         measurably wrong, so the wrong model is restated here only to say it is wrong.
     ///     </para>
     ///     <para>
-    ///         One id and one gate rather than three, for the reason <c>DWARF088</c> is one check over two
-    ///         attributes and two sites: it is one mistake, made about three directives, and a per-directive
+    ///         <c>[MapCollectionKey]</c> is the mirror image and is here for the same reason. A key-based
+    ///         upsert merges the source elements into the list the destination already holds, matching on the
+    ///         named key, so untouched elements survive; that needs a destination to merge INTO, and the
+    ///         create map, the projection, the span map and the async stream all build a fresh one. Its own
+    ///         <c>DWARF074</c> already validates the directive at the update-into and its documentation
+    ///         already named "not an update-into method" as a case it covered — but no call site ever asked
+    ///         that question, because <c>ApplyCollectionKeyUpserts</c> is only reached from the update-into
+    ///         branch. The check could not live on <c>DWARF074</c> once it was written: that id is an
+    ///         <b>Error</b>, and an error here suppresses the whole class's emission (see the severity note
+    ///         below).
+    ///     </para>
+    ///     <para>
+    ///         One id and one gate rather than four, for the reason <c>DWARF088</c> is one check over two
+    ///         attributes and two sites: it is one mistake, made about four directives, and a per-directive
     ///         id would leave whichever directive was added last silent at whichever endpoint was written
-    ///         last. Every branch that is not the create map calls the same gate — <c>[FlattenGraph]</c>,
-    ///         <c>[MapDerivedType]</c> in both of its forms, and <c>[ReverseMap]</c>.
+    ///         last. All five branches call the same gate, and each ARM names its own home endpoint and is
+    ///         skipped there — <c>[FlattenGraph]</c>, <c>[MapDerivedType]</c> in both of its forms and
+    ///         <c>[ReverseMap]</c> are at home on the create map, <c>[MapCollectionKey]</c> on the
+    ///         update-into.
     ///     </para>
     ///     <para>
     ///         <c>[ReverseMap]</c> is the one whose message carries NO transfer claim, even element-wise. The
@@ -1184,6 +1214,9 @@ public static class DiagnosticDescriptors
     ///         moving the directive onto that create map really does make it reach this method. At
     ///         update-into and projection nothing of the sort happens, and the message says only that the
     ///         create map honours it; a remedy nobody ran is how a diagnostic sends a caller in a circle.
+    ///         <c>[MapCollectionKey]</c>'s remedy names an update-into and carries NO adoption claim at any
+    ///         endpoint, which is a sharper point than <c>[ReverseMap]</c>'s: what an element-wise loop adopts
+    ///         is a declared CREATE map for the element pair, and a declared update-into is not one.
     ///     </para>
     ///     <para>
     ///         A <b>Warning</b>, for the reason <c>DWARF088</c>, <c>DWARF090</c> and <c>DWARF091</c> are: a
@@ -1198,9 +1231,9 @@ public static class DiagnosticDescriptors
     ///         because it names the directive as written, the method, the endpoint and the pair.
     ///     </para>
     /// </remarks>
-    public static readonly DiagnosticDescriptor DirectiveNotReadOutsideCreateMap = new(
+    public static readonly DiagnosticDescriptor DirectiveNotReadAtThisEndpoint = new(
         "DWARF092",
-        "Directive is read only at the create-map endpoint",
+        "Directive is not read at this mapping endpoint",
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf092");

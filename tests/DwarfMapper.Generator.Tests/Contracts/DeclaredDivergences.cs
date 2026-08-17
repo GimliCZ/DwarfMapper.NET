@@ -319,22 +319,28 @@ internal static class DeclaredDivergences
         // always fires. That is a limitation of the templates, adjacent to A11's, and no fixture can lift it:
         // a fixture supplies TYPES, not a second method.
 
-        ["D14"] = new(
-            "[MapCollectionKey(\"Items\", \"Id\")] declares the key by which an existing destination "
-            + "collection is MERGED rather than rebuilt. It acts at UpdateInto — the endpoint it is chiefly "
-            + "for — and is silent at CreateMap, Projection, SpanMap and AsyncStream. Re-measured for this "
-            + "record: the originally filed evidence named members the fixture's `int` element type did not "
-            + "have, so the directive could only ever apply to nothing; against a keyed element fixture it "
-            + "acts at UpdateInto and the four silences stand.",
-            Findings + "#D14",
-            [
-                new DivergentCell("MapCollectionKey", 0, "ctor(2)", AttributeTargets.Method,
-                    SurfaceEndpoints.CreateMap | SurfaceEndpoints.Projection | SurfaceEndpoints.SpanMap
-                    | SurfaceEndpoints.AsyncStream),
-                new DivergentCell("MapCollectionKey", 0, "×2", AttributeTargets.Method,
-                    SurfaceEndpoints.CreateMap | SurfaceEndpoints.Projection | SurfaceEndpoints.SpanMap
-                    | SurfaceEndpoints.AsyncStream)
-            ]),
+        // D14 closed 2026-08-17 (task A9b). [MapCollectionKey("Items", "Id")] acted at UpdateInto and was
+        // silent at CreateMap, Projection, SpanMap and AsyncStream. All EIGHT of those cells are now Refused
+        // (DWARF092, a Warning, so no CS8795 cascade follows): the create-map-only gate is generalized into
+        // MapperExtractor.ReportDirectivesNotReadHere, called from ALL FIVE branches, where each arm names its
+        // own HOME endpoint and is skipped there. [MapCollectionKey]'s home is the update-into; the
+        // create-map-only trio's is the create map. Read through the new ReadCollectionKeys, hoisted out of
+        // ApplyCollectionKeyUpserts so the refusal names exactly the applications the upsert path would act on.
+        //
+        // ITS EVIDENCE WAS FALSE, and in the same way D10's and D8's were — the fixture, not the generator.
+        // The re-measurement note above this entry said "against a keyed element fixture it acts at
+        // UpdateInto". It did not. keyed-collection-elements declared List<Item> on the source and
+        // List<ItemDto> on the destination, and the v1 upsert requires the SAME element type, so at the one
+        // endpoint this directive exists for the cell read NotCompilable (CS8795 behind DWARF074, "requires
+        // the same element type on source and destination (v1)"). The fixture could not pose its question at
+        // all. With one element type on both sides the upsert IS emitted — a Dictionary<int,int> index over
+        // the existing d.Items, TryGetValue, replace-or-Add — and BOTH UpdateInto cells moved out of the
+        // NotCompilable population: 98 -> 96.
+        //
+        // Also corrected, at DWARF074's descriptor: its comment listed "not an update-into method" as a case
+        // it covered, and no call site ever implemented it — ApplyCollectionKeyUpserts is reached from the
+        // update-into branch alone. That case is now DWARF092's, and could never have been DWARF074's once it
+        // was written: DWARF074 is an Error, and an error suppresses the class's emission.
 
         ["D15"] = new(
             "[GenerateWrapperMap(typeof(Dst))] on a mapper class is REFUSED at CoLocatedHost with DWARF067, "

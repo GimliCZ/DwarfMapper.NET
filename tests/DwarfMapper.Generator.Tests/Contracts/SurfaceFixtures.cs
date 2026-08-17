@@ -145,13 +145,22 @@ internal static class SurfaceFixtures
     // A collection whose ELEMENT type carries a key member, which is what a key-based upsert merges on.
     // The nullable-collection-rebuild fixture next door has List<int> elements: they have no members at all,
     // so [MapCollectionKey] could only ever name something that did not exist, and the resulting silence said
-    // nothing about upsert support. Same element type name on both sides so the key member has one name.
+    // nothing about upsert support.
+    //
+    // The SAME element type on both sides, and that is the whole question rather than a tidying choice. The
+    // v1 upsert requires it — MapperExtractor.Flatten.cs refuses a differing element type as DWARF074, "member
+    // 'Items' requires the same element type on source and destination (v1)" — so the earlier Item/ItemDto
+    // pair could only ever be refused. Measured before it was changed: at UpdateInto, the endpoint this
+    // directive exists for, the Item/ItemDto fixture read NotCompilable (CS8795 behind that DWARF074), so the
+    // finding built on it (D14) asserted "it acts at UpdateInto" against a fixture in which it demonstrably
+    // could not. With one element type the upsert IS emitted — a Dictionary<int,int> index over the existing
+    // d.Items, TryGetValue, replace-or-Add — which is the reading the four silences are worth stating against.
+    // Same shape as D10's and D8's false evidence: the fixture, not the generator.
     [SurfaceProbe("keyed-collection-elements")]
     private static readonly string KeyedCollectionElements = """
         public sealed class Item { public int Id { get; set; } public string? Label { get; set; } }
-        public sealed class ItemDto { public int Id { get; set; } public string? Label { get; set; } }
         public sealed class Src { public int Id { get; set; } public System.Collections.Generic.List<Item> Items { get; set; } = new(); }
-        public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.List<ItemDto> Items { get; set; } = new(); }
+        public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.List<Item> Items { get; set; } = new(); }
         """;
 
     // A RECURSIVE navigation on the source and a FLAT collection on the destination — the two halves a graph

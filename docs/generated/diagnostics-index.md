@@ -95,6 +95,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF089` | Warning | Directive on a co-located host member cannot be applied |
 | `DWARF090` | Warning | Member directive is not applied element-wise |
 | `DWARF091` | Warning | Mapping hook on a partial method with no body |
-| `DWARF092` | Warning | Directive is read only at the create-map endpoint |
+| `DWARF092` | Warning | Directive is not read at this mapping endpoint |
 
 88 diagnostics.

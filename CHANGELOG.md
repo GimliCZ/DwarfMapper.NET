@@ -15,6 +15,26 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[MapCollectionKey]` was read on an update-into and discarded on the mapper's other four overloads.** A
+  key-based upsert **merges** the source elements into the `List<T>` the destination already holds — matching
+  on the named key, replacing what matches and appending what does not, so untouched elements survive. Only
+  the update-into branch ever read it. Written on a create map, a projection, a span map or an async-stream
+  map it was discarded without a word and the collection was rebuilt by whole-collection replacement, which
+  is what it would have been without the directive: one mapper, one declaration, a merge on one overload and
+  a wholesale rebuild on the next four. All four endpoints now refuse it as **`DWARF092`**, naming the
+  update-into as the place to declare it — measured before it was printed, and carrying **no** transfer claim
+  at any endpoint, element-wise included, because what a span or stream loop adopts is a declared *create*
+  map for its element pair and an update-into is not one. `DWARF092`'s title changes from *"Directive is read
+  only at the create-map endpoint"* to **"Directive is not read at this mapping endpoint"**: the id now
+  carries both directions of one shape, and the gate behind it (`ReportDirectivesNotReadHere`) is called from
+  all five branches with each arm naming its own home endpoint. `DWARF074`'s documentation had listed "not an
+  update-into method" as a case it covered since it was written, and no call site ever implemented it; that
+  comment is corrected where it stood. Found by the surface matrix as `D14`; all eight of its cells close.
+  **The finding's own evidence was false** and the correction is worth reading: it claimed the directive
+  "acts at UpdateInto", and against the fixture it was measured on it could not — that fixture declared
+  `List<Item>` on the source and `List<ItemDto>` on the destination, and the v1 upsert requires the same
+  element type, so the one endpoint the directive exists for was a `DWARF074` error behind `CS8795`.
+  (round 20, D14)
 - **`[ReverseMap]` was read on a create map and discarded on the mapper's other four overloads.** It makes a
   **separately-declared** inverse method inherit the forward method's simple renames with their ends swapped,
   matched by signature — a forward `TDto Map(TSource s)` against an inverse `TSource Back(TDto d)`, both
