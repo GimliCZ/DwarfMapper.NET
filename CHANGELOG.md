@@ -15,6 +15,19 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[ReverseMap]` was read on a create map and discarded on the mapper's other four overloads.** It makes a
+  **separately-declared** inverse method inherit the forward method's simple renames with their ends swapped,
+  matched by signature — a forward `TDto Map(TSource s)` against an inverse `TSource Back(TDto d)`, both
+  create maps. No other endpoint's signature is that shape, so a `[ReverseMap]` on an update-into, a
+  projection, a span map or an async-stream map made nothing look for an inverse and nothing inherit a
+  rename — and raised no `DWARF052` either, because that check lives on the same create-map path. The caller
+  was left with an inverse that silently maps nothing across the renamed member. All four endpoints now
+  refuse it as **`DWARF092`**. Its message is the one that carries **no** transfer claim, even at the
+  element-wise endpoints where the other two directives do: `[ReverseMap]` changes nothing about the method
+  it sits on, so "the element-wise loop calls that create map" says nothing about it. Found by the surface
+  matrix as `D13`; all four of its cells close. The entry's mechanism is corrected where it stood —
+  `[ReverseMap]` does not *generate* an inverse, and a missing one is `DWARF052` rather than a silent
+  absence. (round 20, D13)
 - **`[MapDerivedType]` was read on a create map and discarded on the mapper's other four overloads, in both
   of its forms.** A dispatch arm decides which destination **type** to construct from the source's runtime
   type, and only the create-map branch resolved one. Written on an update-into, a projection, a span map or an

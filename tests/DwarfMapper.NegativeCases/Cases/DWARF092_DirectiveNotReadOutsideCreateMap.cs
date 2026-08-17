@@ -26,6 +26,14 @@
 // EXPECT-MESSAGE DWARF092: [MapDerivedType<PolyDerived, PolyDerivedDto>] on 'UpdatePoly'
 // EXPECT-MESSAGE DWARF092: [MapDerivedType(typeof(PolyDerived), typeof(PolyDerivedDto))] on 'ProjectPoly'
 // EXPECT-MESSAGE DWARF092: from the source's RUNTIME type, and only the create map constructs one
+//
+//       [ReverseMap] is the third, and the one whose message carries NO transfer claim even element-wise: it
+//       does not change what the create map emits, it makes a SEPARATELY-DECLARED inverse inherit the forward
+//       renames with their ends swapped. Written on an update-into, nothing looks for an inverse, nothing
+//       inherits a rename, and no DWARF052 is raised either — that check lives on the same create-map path
+//       (finding D13). The inverse update below is declared, and still does not inherit the rename.
+// EXPECT-MESSAGE DWARF092: [ReverseMap] on 'UpdateRenamed' is not read at the update-into endpoint
+// EXPECT-MESSAGE DWARF092: separately-declared inverse method
 
 using System;
 using System.Collections.Generic;
@@ -82,6 +90,20 @@ public sealed class PolyDerivedDto : PolyBaseDto
     public string? Extra { get; set; }
 }
 
+public sealed class RenamedSrc
+{
+    public int Id { get; set; }
+
+    public string? A { get; set; }
+}
+
+public sealed class RenamedDst
+{
+    public int Id { get; set; }
+
+    public string? B { get; set; }
+}
+
 [DwarfMapper]
 public partial class CreateMapOnlyDirectiveMapper
 {
@@ -96,4 +118,11 @@ public partial class CreateMapOnlyDirectiveMapper
 
     [MapDerivedType(typeof(PolyDerived), typeof(PolyDerivedDto))]
     public partial IQueryable<PolyBaseDto> ProjectPoly(IQueryable<PolyBase> q);
+
+    [ReverseMap]
+    [MapProperty("A", "B")]
+    public partial void UpdateRenamed(RenamedSrc src, RenamedDst dst);
+
+    [MapProperty("B", "A")]
+    public partial void BackRenamed(RenamedDst dst, RenamedSrc src);
 }

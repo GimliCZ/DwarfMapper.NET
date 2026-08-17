@@ -303,15 +303,21 @@ internal static class DeclaredDivergences
                     SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)
             ]),
 
-        ["D13"] = new(
-            "[ReverseMap] asks for the inverse mapping to be generated alongside the declared one. It acts at "
-            + "CreateMap and is silent at UpdateInto, Projection, SpanMap and AsyncStream: a caller who "
-            + "wrote it on an update or a projection gets no inverse and no explanation, and discovers the "
-            + "absence at the call site of a method that was never generated.",
-            Findings + "#D13",
-            [
-                new DivergentCell("ReverseMap", 0, "ctor(0)", AttributeTargets.Method, ElementWiseAndMore)
-            ]),
+        // D13 closed 2026-08-17 (task A9a), the third directive on the same DWARF092 gate. All four cells
+        // read Refused. Its evidence held on the substance — the four silences are real, measured — and was
+        // imprecise on the mechanism, which is worth stating because the entry's own sentence was the source:
+        // [ReverseMap] does NOT "ask for the inverse mapping to be GENERATED", so nobody discovers "a method
+        // that was never generated". It makes a SEPARATELY DECLARED inverse partial inherit the forward
+        // method's simple renames with their ends swapped; the caller declares the inverse themselves, and a
+        // missing one is DWARF052. Measured: with [ReverseMap] on a forward create map and an inverse create
+        // map declared, the inverse emits `A = d.B` and the pair compiles; without it the same pair is
+        // DWARF001 (Error). On an update-into with an inverse UPDATE declared, the renames are not inherited
+        // and the pair is DWARF001 — the silence, exactly.
+        //
+        // Its CreateMap cell is NOT part of what closed. It reads NotCompilable (CS8795) because the endpoint
+        // templates declare exactly ONE mapping method, so no inverse can exist there and DWARF052 (an Error)
+        // always fires. That is a limitation of the templates, adjacent to A11's, and no fixture can lift it:
+        // a fixture supplies TYPES, not a second method.
 
         ["D14"] = new(
             "[MapCollectionKey(\"Items\", \"Id\")] declares the key by which an existing destination "
@@ -402,10 +408,11 @@ internal static class DeclaredDivergences
         SurfaceEndpoints.CreateMap | SurfaceEndpoints.UpdateInto | SurfaceEndpoints.Projection
         | SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream;
 
-    /// <summary>Every mapper endpoint but the create map — the shape of a directive that acts only there.</summary>
-    private const SurfaceEndpoints ElementWiseAndMore =
-        SurfaceEndpoints.UpdateInto | SurfaceEndpoints.Projection | SurfaceEndpoints.SpanMap
-        | SurfaceEndpoints.AsyncStream;
+    // `ElementWiseAndMore` — every mapper endpoint but the create map, the shape of a directive that acts
+    // only there — was here, and it is gone because its last user did. D8, D11 and D13 were the three
+    // findings of that shape and task A9a closed all three on one gate (DWARF092). The constant is not kept
+    // "in case": a shared name with no user is how the next entry of a different shape gets written against
+    // it by accident.
 
     /// <summary>
     ///     The finding covering one cell, or <c>null</c>. Every component of the key must match: an entry

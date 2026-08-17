@@ -3041,13 +3041,33 @@ internal static partial class MapperExtractor
                 + "that is not mappable); nothing validated them here either.");
         }
 
-        void Report(string written, string what) =>
+        // [ReverseMap], through HasReverseMap — the same predicate CollectReverseRenames and the DWARF052
+        // check both consult, so this reports exactly the methods a create map would have treated as forward
+        // ones. AllowMultiple is false on this attribute, so there is one application or none.
+        //
+        // carriedByTheAdoptedCreateMap is FALSE here even at the element-wise endpoints, and that is the
+        // point of the flag. The adoption sentence is true of a directive that changes what the create map
+        // EMITS, because that emission is what the loop calls. [ReverseMap] changes nothing about the method
+        // it sits on: it makes a SEPARATE, separately-declared inverse method inherit this one's renames,
+        // inverted. Appending the sentence would have told a caller their inverse reaches the span map, which
+        // is not a claim about anything.
+        if (HasReverseMap(method))
+            Report("[ReverseMap]",
+                $"[ReverseMap] makes a separately-declared inverse method — '{src} <Name>({tgt} t)' — inherit "
+                + "this one's simple renames with their ends swapped, and only the create map looks for one. "
+                + $"The match is by signature: a forward '{tgt} <Name>({src} s)' against an inverse "
+                + $"'{src} <Name>({tgt} t)', both one-parameter create maps, which no other endpoint's "
+                + "signature is. Here nothing looks for an inverse and nothing inherits a rename — and no "
+                + "DWARF052 is raised either, because that check lives on the same create-map path.",
+                carriedByTheAdoptedCreateMap: false);
+
+        void Report(string written, string what, bool carriedByTheAdoptedCreateMap = true) =>
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.DirectiveNotReadOutsideCreateMap, location,
                 $"{written} on '{method.Name}' is not read at the {endpointName} endpoint. {what} "
                 + $"Declare it on a create map over the same pair — {written} on a "
                 + $"`partial {tgt} <Name>({src} s)` on this mapper class — which does honour it."
-                + (adoptsACreateMap
+                + (adoptsACreateMap && carriedByTheAdoptedCreateMap
                     ? $" An element-wise map resolves its element pair through a declared '{src}' to '{tgt}' "
                       + "mapping method where one exists, so that create map is what this method's loop "
                       + "calls and the directive reaches this endpoint through it."

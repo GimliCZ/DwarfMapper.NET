@@ -1160,8 +1160,16 @@ public static class DiagnosticDescriptors
     ///         One id and one gate rather than three, for the reason <c>DWARF088</c> is one check over two
     ///         attributes and two sites: it is one mistake, made about three directives, and a per-directive
     ///         id would leave whichever directive was added last silent at whichever endpoint was written
-    ///         last. Every branch that is not the create map calls the same gate, and each directive joins it
-    ///         as its finding is closed — <c>[FlattenGraph]</c> first.
+    ///         last. Every branch that is not the create map calls the same gate — <c>[FlattenGraph]</c>,
+    ///         <c>[MapDerivedType]</c> in both of its forms, and <c>[ReverseMap]</c>.
+    ///     </para>
+    ///     <para>
+    ///         <c>[ReverseMap]</c> is the one whose message carries NO transfer claim, even element-wise. The
+    ///         adoption sentence is true of a directive that changes what the create map EMITS, because that
+    ///         emission is what the element-wise loop calls; <c>[ReverseMap]</c> changes nothing about the
+    ///         method it sits on and instead makes a separately-declared inverse inherit its renames. Saying
+    ///         otherwise would have told a caller their inverse reaches the span map, which is not a claim
+    ///         about anything.
     ///     </para>
     ///     <para>
     ///         The remedy the message names was MEASURED before it was prescribed. At the two ELEMENT-WISE

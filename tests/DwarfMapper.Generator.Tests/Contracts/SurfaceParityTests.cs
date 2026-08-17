@@ -427,8 +427,15 @@ public sealed class SurfaceParityTests
     ///         source parameter and the cell read <c>NotCompilable</c>. A finding can be wrong about the
     ///         endpoint it holds up as working, and that is now twice.
     ///     </para>
+    ///     <para>
+    ///         10 → <b>9</b> when <c>D13</c> closed, the third and last directive on the <c>DWARF092</c>
+    ///         gate. Its evidence held on the substance and was imprecise on the mechanism: <c>[ReverseMap]</c>
+    ///         does not GENERATE an inverse, it makes a separately-declared one inherit the forward renames
+    ///         inverted, and a missing inverse is <c>DWARF052</c> rather than a silent absence. Corrected
+    ///         where the entry stood, and the message deliberately does not repeat the wrong model.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 10;
+    private const int DivergenceFindingCeiling = 9;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -501,8 +508,17 @@ public sealed class SurfaceParityTests
     ///         <c>ctor(2)</c> cell at <c>CreateMap</c> is <c>Honoured</c> rather than <c>DWARF035</c> behind
     ///         <c>CS8795</c>, measured <b>99 → 98</b>.
     ///     </para>
+    ///     <para>
+    ///         38 → <b>34</b> when <c>D13</c> closed: four cells, <b>4 Refused (DWARF092)</b>,
+    ///         <c>[ReverseMap]</c> at the four non-create-map endpoints. Its <c>CreateMap</c> cell is NOT part
+    ///         of that and stays in <see cref="NotCompilableCellCeiling" />'s population: the endpoint
+    ///         templates declare exactly ONE mapping method, so no inverse can exist there and
+    ///         <c>DWARF052</c> — an Error — always fires. No fixture can lift that; a fixture supplies TYPES,
+    ///         not a second method. It is a template limitation adjacent to G5's, not a divergence, and it is
+    ///         why that ceiling stayed at 98 rather than moving again.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 38;
+    private const int DivergentCellCeiling = 34;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

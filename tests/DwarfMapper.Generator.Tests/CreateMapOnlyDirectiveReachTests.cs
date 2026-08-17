@@ -318,6 +318,129 @@ public class CreateMapOnlyDirectiveReachTests
             StringComparison.Ordinal);
     }
 
+    // ── [ReverseMap] ─────────────────────────────────────────────────────────
+
+    /// <summary>A pair with a RENAME, which is the only thing <c>[ReverseMap]</c> inherits.</summary>
+    private const string Renamed = """
+        using System;
+        using System.Linq;
+        using System.Collections.Generic;
+        using DwarfMapper;
+        namespace Demo;
+        public class Src { public int Id { get; set; } public string A { get; set; } }
+        public class Dst { public int Id { get; set; } public string B { get; set; } }
+        """;
+
+    [Theory]
+    [InlineData("public partial void Update(Src s, Dst d);", "update-into")]
+    [InlineData("public partial IQueryable<Dst> Project(IQueryable<Src> q);", "projection")]
+    [InlineData("public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);", "span-map")]
+    [InlineData("public partial IAsyncEnumerable<Dst> MapStream(IAsyncEnumerable<Src> s);", "async-stream")]
+    public void A_ReverseMap_outside_a_create_map_is_refused_and_never_claims_a_transfer(
+        string signature, string endpointName)
+    {
+        var message = GeneratorAssert.Reports(Renamed + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [ReverseMap]
+                [MapProperty("A", "B")]
+                {{signature}}
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains("[ReverseMap]", message, StringComparison.Ordinal);
+        Assert.Contains($"the {endpointName} endpoint", message, StringComparison.Ordinal);
+
+        // NO transfer claim, at ANY of the four — including the two element-wise ones, where the other two
+        // directives do carry one. [ReverseMap] does not change what the create map emits; it makes a
+        // separately-declared inverse inherit renames, and "your inverse reaches the span map" is not a claim
+        // about anything. This is the assertion that would have caught the false-tail defect this branch
+        // already shipped once.
+        Assert.DoesNotContain("so that create map is what this method's loop calls", message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_message_does_not_say_the_inverse_is_generated_because_it_is_not()
+    {
+        // The finding's own wording said [ReverseMap] "asks for the inverse mapping to be GENERATED", and the
+        // caller "discovers the absence at the call site of a method that was never generated". Measured: the
+        // caller DECLARES the inverse partial themselves, [ReverseMap] only makes it inherit the forward
+        // renames inverted, and a missing inverse is DWARF052 rather than a silent absence. A message that
+        // repeated the entry's mechanism would have taught a reader the wrong model of the feature.
+        var message = GeneratorAssert.Reports(Renamed + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [ReverseMap]
+                [MapProperty("A", "B")]
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains("separately-declared inverse", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("generated", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_prescribed_remedy_really_does_invert_the_rename_on_a_create_map_pair()
+    {
+        // Measured before it was prescribed. The inverse inherits `A <- B`; without [ReverseMap] the same two
+        // methods are DWARF001, because Src.A has no source on the way back.
+        var generated = GeneratorAssert.EmitsCompilableCode(Renamed + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [ReverseMap]
+                [MapProperty("A", "B")]
+                public partial Dst Map(Src s);
+
+                public partial Src Back(Dst d);
+            }
+            """);
+
+        Assert.Contains("A = d.B", generated, StringComparison.Ordinal);
+
+        GeneratorAssert.Reports(Renamed + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapProperty("A", "B")]
+                public partial Dst Map(Src s);
+
+                public partial Src Back(Dst d);
+            }
+            """, "DWARF001");
+    }
+
+    [Fact]
+    public void An_inverse_UPDATE_does_not_inherit_the_renames_which_is_the_silence_being_refused()
+    {
+        // The shape a caller who wrote [ReverseMap] on an update-into actually has: an inverse update
+        // declared, and the renames not inherited — DWARF001, from the same pair that compiles clean when
+        // both halves are create maps. The refusal now sits beside it and says why.
+        const string source = Renamed + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [ReverseMap]
+                [MapProperty("A", "B")]
+                public partial void Update(Src s, Dst d);
+
+                public partial void Back(Dst d, Src s);
+            }
+            """;
+
+        GeneratorAssert.Reports(source, "DWARF001");
+        GeneratorAssert.Reports(source, "DWARF092");
+    }
+
     [Fact]
     public void The_refusal_is_a_warning_so_the_rest_of_the_mapper_is_still_emitted()
     {

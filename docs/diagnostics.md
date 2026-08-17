@@ -1417,6 +1417,24 @@ The create map also **validates** these arms — [`DWARF035`](#dwarf035) for a t
 duplicate source type, or a pair that is not mappable. Nothing validated them at the other four endpoints
 either, which is the second half of the asymmetry below.
 
+`[ReverseMap]` is the third, and the one whose remedy carries no transfer. It makes a **separately-declared**
+inverse method inherit the forward renames with their ends swapped, matched by signature — a forward
+`TDto Map(TSource s)` against an inverse `TSource Back(TDto d)`, both **create maps**. No other endpoint's
+signature is that shape, so nothing looked for an inverse and nothing inherited a rename — finding `D13`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [ReverseMap]                                   // DWARF092 — Back inherits nothing, and DWARF052
+    [MapProperty("A", "B")]                        //            is not raised here either
+    public partial void Update(Src s, Dst d);
+
+    public partial void Back(Dst d, Src s);        // still DWARF001: Src.A has no source on the way back
+}
+```
+
 **Fix:** declare the directive on a create map over the same pair. At the two **element-wise** endpoints that
 is more than advice: a span or async-stream map resolves its element pair through a **declared** mapping
 method for that pair where one exists, so the create map carrying the directive is what the emitted loop
@@ -1427,6 +1445,7 @@ calls, and the directive reaches the element-wise endpoint through it. Measured,
 | `[FlattenGraph("Root", "Flat")]` on `void MapSpan(ReadOnlySpan<Tree>, Span<TreeDto>)` | the same on a `partial TreeDto Map(Tree t)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` — the walk runs per element |
 | `[FlattenGraph("Root", "Flat")]` on `void Update(Tree, TreeDto)` or on a projection | the same on a `partial TreeDto Map(Tree t)` | `Honoured` **at the create map**. Nothing carries it to the update or the projection; those resolve their own members and never call a sibling create map |
 | `[MapDerivedType<Dog, DogDto>]` on `void MapSpan(ReadOnlySpan<Animal>, Span<AnimalDto>)` | the same on a `partial AnimalDto Map(Animal a)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` and that create map is the runtime-type switch, so the dispatch runs per element |
+| `[ReverseMap]` on **any** of the four | the same on a `partial Dst Map(Src s)`, with the inverse declared as a `partial Src Back(Dst d)` | the inverse emits `A = d.B`; without `[ReverseMap]` the same two methods are `DWARF001`. **No transfer**, at any of the four — `[ReverseMap]` does not change what the create map emits, so the element-wise adoption above does not carry it, and the message deliberately does not claim it does |
 
 The directive is quoted back in the **form you wrote it** — `[MapDerivedType<Dog, DogDto>]` stays generic and
 `[MapDerivedType(typeof(Dog), typeof(DogDto))]` stays open — rather than normalized into whichever one the
@@ -1440,7 +1459,8 @@ silence worth a diagnostic, since at the create map even nonsense is validated.
 > **Why refused rather than honoured.** These directives redirect how the destination is **built**, and an
 > update-into writes into an instance the caller already constructed — one whose type the caller chose, which
 > is precisely what a dispatch arm would be overriding. There is no construction step at the other four
-> endpoints for a graph walk to replace or for a dispatch arm to redirect.
+> endpoints for a graph walk to replace or for a dispatch arm to redirect, and no create-map-shaped inverse
+> for `[ReverseMap]` to find.
 
 > **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
 > it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see

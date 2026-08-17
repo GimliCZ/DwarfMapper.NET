@@ -166,7 +166,7 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D10 | ~~`[Flatten("Id")]`, and ×2~~ | **CLOSED by A8** — and its evidence was false; see the entry | — | 0 |
 | D11 | ~~`[FlattenGraph("Root","Flat")]`, and ×2~~ | **CLOSED by A9a** as `DWARF092` — all 8 cells `Refused`; its evidence held as filed | — | 0 |
 | D12 | `[Reinterpret("Id")]`, and ×2 | Create, Update (blocking), Projection (loud) | SpanMap, AsyncStream | 4 |
-| D13 | `[ReverseMap]` | CreateMap (blocking) | Update, Projection, SpanMap, AsyncStream | 4 |
+| D13 | ~~`[ReverseMap]`~~ | **CLOSED by A9a** as `DWARF092` — all 4 cells `Refused`; its mechanism was misstated, see the entry | — | 0 |
 | D14 | `[MapCollectionKey("Id","Name")]`, and ×2 | UpdateInto (blocking) | Create, Projection, SpanMap, AsyncStream | 8 |
 | D15 | `[GenerateWrapperMap(typeof(Dst))]` on the mapper class, and ×2 | CoLocatedHost (DWARF067) | all five mapper endpoints | 10 |
 | D16 | `[AfterMap]` on the mapping method | UpdateInto (Honoured), Create/Projection/Async (blocking) | **SpanMap** | 1 |
@@ -430,9 +430,9 @@ one store per failure mode is how the six allowlists this architecture is replac
 > No `DeclaredDivergences` entry was added or wanted: this was never a silence, and it is now a claimed
 > endpoint behaving correctly.
 
-## The findings — 11 live, 12 fixed
+## The findings — 10 live, 13 fixed
 
-Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The twelve marked **RESOLVED** keep their
+Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The thirteen marked **RESOLVED** keep their
 sections: the store entry is gone (a fixed gap left on the list is a fossil), but the write-up is what the
 next reader needs to know the gap existed and how it was closed. **Acts at** is the evidence the cell is
 a divergence rather than a shape: the same directive, at the same site, doing something observable somewhere
@@ -922,7 +922,42 @@ layout proof declines) it acts at three endpoints and the two silences stand.
 
 <a id="D13"></a>
 
-### D13 — `[ReverseMap]` acts only at CreateMap — 4 cells
+### D13 — `[ReverseMap]` acts only at CreateMap — 4 cells — RESOLVED
+
+> **RESOLVED 2026-08-17 (A9a) as `DWARF092`, the third directive on the same gate. All four cells close.**
+> The four silences were real and are measured; the entry's account of the MECHANISM was wrong, and the
+> correction matters because the message would otherwise have repeated it.
+>
+> **What `[ReverseMap]` actually does.** It does *not* "ask for the inverse mapping to be generated", and
+> nobody "discovers the absence at the call site of a method that was never generated". The caller declares
+> the inverse partial themselves; `[ReverseMap]` makes it inherit the forward method's simple renames with
+> their ends swapped, and a missing inverse is `DWARF052` — an Error, raised loudly, at the create map.
+> Measured, both directions:
+>
+> ```
+> forward create map + inverse create map, WITH [ReverseMap]  ->  clean; Back emits `A = d.B`
+> forward create map + inverse create map, WITHOUT it         ->  DWARF001 (Error): Src.A has no source back
+> [ReverseMap] on Update(Src,Dst) + inverse Back(Dst,Src)     ->  DWARF001 (Error): renames NOT inherited
+> ```
+>
+> The last line is the silence, exactly: an inverse update is declared, the caller wrote the directive, and
+> nothing inherits.
+>
+> **The message carries NO transfer claim**, even at the two element-wise endpoints where `[FlattenGraph]`
+> and `[MapDerivedType]` do. Their claim is true because they change what the create map EMITS and that
+> emission is what the loop calls; `[ReverseMap]` changes nothing about the method it sits on. Pinned by
+> `A_ReverseMap_outside_a_create_map_is_refused_and_never_claims_a_transfer` at all four, and by
+> `The_message_does_not_say_the_inverse_is_generated_because_it_is_not`.
+>
+> **Its `CreateMap` cell is NOT part of what closed, and cannot be.** It reads `NotCompilable (CS8795)`
+> because the endpoint templates declare exactly ONE mapping method, so no inverse can exist there and
+> `DWARF052` always fires. No fixture lifts that — a fixture supplies TYPES, not a second method — so it is a
+> template limitation adjacent to [G5](#G5), not a divergence, and `NotCompilableCellCeiling` therefore did
+> not move for this finding.
+>
+> Final reading, all four cells: `Refused (DWARF092 (Warning))`. Ceilings: findings **10 → 9**, declared
+> cells **38 → 34**; `NotCompilable` **98**, `UnhonouredButLoud` **14**, `Unaskable` **44**, `NoSuchSite`
+> **137**, `StructurallyExcused` **12** re-measured unchanged.
 
 *Method site → UpdateInto, Projection, SpanMap, AsyncStream.* A caller who wrote it on an update or a
 projection gets no inverse and no explanation, and discovers the absence at the call site of a method that was
