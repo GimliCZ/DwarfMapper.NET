@@ -363,9 +363,14 @@ var byDi = provider.GetRequiredService<CallStyles>().Map(order);
   so `order.ToOrderDto()` resolves only inside the assembly that declares the mapper. To call them from another project,
   set `[assembly: DwarfMapperOptions(PublicExtensions = true)]` — extensions then become `public` for pairs whose source
   **and** target types are both public (pairs involving a non-public type stay internal, for accessibility safety). Or
-  call the mapper **instance** / use **DI** (`AddDwarfMappers()`), which always work across assemblies. *(The `[MapTo]`
-  -registry extensions — `x.MapTo<Dto>()` — are a separate front door and are already `public` for public types, so they
-  work cross-assembly with no opt-in.)*
+  call the mapper **instance** / use **DI** (`AddDwarfMappers()`), which always work across assemblies.
+  >
+  > The `[MapTo]`-registry extensions — `x.MapTo<Dto>()` / `x.ToDto()` — are a separate front door but obey the
+  **same** option, so they are assembly-internal by default too. A library that ships `[MapTo]` types for another
+  project to consume **must** set `PublicExtensions = true`: unlike a `[DwarfMapper]` class there is no mapper
+  instance and no DI registration to fall back on, so the extension is the only way in. Without the opt-in the
+  call site sees `CS1061`. *(Before the option was honoured here, these were `public` whenever the types allowed
+  it — which contradicted the documented default. See `CHANGELOG.md`, Changed/BREAKING.)*
 - **`AddDwarfMappers()`** is generated only when your project references
   `Microsoft.Extensions.DependencyInjection.Abstractions`. It registers each mapper as a singleton (no reflection, no
   assembly scan) — AOT-safe like everything else.

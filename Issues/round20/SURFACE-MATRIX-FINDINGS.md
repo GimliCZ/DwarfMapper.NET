@@ -871,7 +871,9 @@ at Registry, which is no longer silent and is not part of the finding.
 > arrives at the assembly and the fixes are written on the *source member*. Reusing the id would have handed
 > the caller a message naming a construct their code does not contain.
 >
-> Three edges, each with its own test in `RegistryDiagnosticsGenTests`:
+> Three edges, each with its own test in `RegistryDiagnosticsGenTests` (the second of the three was **claimed
+> here before it was written** — the claim was caught at review and the test now exists, verified to fail
+> against a guard keyed on `Directives.Count == 0`):
 >
 > - **A destination the caller NAMED still maps.** `[MapProperty("Id")]` is a decision; a by-name match is a
 >   coincidence. Without this the guard could be "refuse everything" and still look right.

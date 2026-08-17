@@ -73,7 +73,7 @@ file static class DiagnosticTestAllowlist
 ///     </para>
 ///     <para>
 ///         Scope: DWARF0xx only, deliberately. The DWARFR (registry) family is announced in
-///         <c>CHANGELOG.md</c> as the range "DWARFR01–DWARFR09" (see the <c>### Added</c> entry for
+///         <c>CHANGELOG.md</c> as the range "DWARFR01–DWARFR10" (see the <c>### Added</c> entry for
 ///         ISSUE-047) — a per-id substring scan would fail on DWARFR02..08 despite the family being fully
 ///         announced. Do not "fix" that by adding DWARFR ids here or to Scan9; the range notation is the
 ///         intended announcement.

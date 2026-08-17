@@ -276,6 +276,49 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.Empty(GeneratorTestHarness.RunMapTo(s).Where(d => d.Severity == DiagnosticSeverity.Error));
     }
 
+    // The hole a "did the caller write an attribute?" test would have left open. [MapProperty("")] and
+    // [MapProperty(null)] both have arity one — so DWARFR04 does not refuse them — and both leave
+    // MemberDirective.Name empty, which sends the binding back to the member's OWN name. That is an IMPLICIT
+    // match wearing an attribute, and crediting the attribute's mere presence would let it walk straight
+    // through the trust boundary. Keyed on whether the caller NAMED the destination, so it does not.
+    //
+    // Written because a committed doc claimed this edge was tested when nothing under tests/ mentioned
+    // MapProperty(""). Verified to FAIL against the plausible wrong implementation (guarding on
+    // Directives.Count == 0), not merely to pass against the right one.
+    [Theory]
+    [InlineData("\"\"")]
+    [InlineData("null")]
+    public void A_MapProperty_that_names_nothing_still_reports_DWARFR10(string argument)
+    {
+        var s = $$"""
+                  using DwarfMapper;
+                  [assembly: DwarfMapperDefaults(AutoMatchMembers = false)]
+                  namespace Demo;
+                  #pragma warning disable CS8625
+                  [MapTo(typeof(Dto))] public class Src { [MapProperty({{argument}})] public int Id { get; set; } }
+                  public class Dto { public int Id { get; set; } }
+                  """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR10");
+    }
+
+    // The same two shapes must NOT become errors where no boundary was asked for: the fallback to the
+    // member's own name is long-standing behaviour, and the guard above must not leak into an ordinary
+    // assembly.
+    [Theory]
+    [InlineData("\"\"")]
+    [InlineData("null")]
+    public void A_MapProperty_that_names_nothing_is_silent_without_the_boundary(string argument)
+    {
+        var s = $$"""
+                  using DwarfMapper;
+                  namespace Demo;
+                  #pragma warning disable CS8625
+                  [MapTo(typeof(Dto))] public class Src { [MapProperty({{argument}})] public int Id { get; set; } }
+                  public class Dto { public int Id { get; set; } }
+                  """;
+        Assert.Empty(GeneratorTestHarness.RunMapTo(s).Where(d => d.Severity == DiagnosticSeverity.Error));
+    }
+
     // No assembly default, no boundary: the ordinary by-name wire must stay silent, or every [MapTo] in every
     // assembly would now be an error.
     [Fact]

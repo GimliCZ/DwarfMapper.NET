@@ -162,7 +162,7 @@ so a version with no section here ships with no notes.
   A destination reached by a name the caller wrote (`[MapProperty("Dest")]`) still maps; one reached only
   because the names line up is refused, and does **not** also draw `DWARFR02`. Found by the surface matrix
   (`D19`). (round 20)
-- **`DWARFR01`–`DWARFR09` are release-tracked.** The registry (`[MapTo]`) diagnostics suppressed
+- **`DWARFR01`–`DWARFR10` are release-tracked.** The registry (`[MapTo]`) diagnostics suppressed
   `RS2000`/`RS2001` and appeared in no `AnalyzerReleases` file, despite shipping in the same package and
   surfacing in the same IDE error list as the `DWARF0xx` rules. They now have rows, the suppressions are
   gone, and `AssemblyScanTests` enforces the descriptor ↔ release-notes sync for the `DWARFR` family the same
