@@ -189,7 +189,7 @@ public sealed class SurfaceParityTests
     }
 
     /// <summary>The ceiling on cells the C# compiler rejects outright. Shrink-only, like the others.</summary>
-    private const int NotCompilableCellCeiling = 107;
+    private const int NotCompilableCellCeiling = 99;
 
     /// <summary>The ceiling on cells that pass BOTH claim branches. Shrink-only, like the others.</summary>
     private const int UnhonouredButLoudCellCeiling = 14;
@@ -383,7 +383,7 @@ public sealed class SurfaceParityTests
     ///         its own <c>[DwarfSurfaceSite]</c> had always claimed it did.
     ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 18;
+    private const int DivergenceFindingCeiling = 15;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -408,7 +408,7 @@ public sealed class SurfaceParityTests
     ///         a Warning and the host declares no partial method there would be a <c>CS8795</c> for.
     ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 93;
+    private const int DivergentCellCeiling = 84;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

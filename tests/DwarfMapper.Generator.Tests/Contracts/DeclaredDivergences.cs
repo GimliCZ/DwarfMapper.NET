@@ -86,7 +86,7 @@ internal static class DeclaredDivergences
     private const string Findings = "Issues/round20/SURFACE-MATRIX-FINDINGS.md";
 
     /// <summary>
-    ///     The findings, keyed by the id their write-up carries. 18 findings over 93 cells, every one
+    ///     The findings, keyed by the id their write-up carries. 15 findings over 84 cells, every one
     ///     measured by <c>SurfaceParityTests</c> rather than reasoned about.
     ///     <para>
     ///         The maintainer's ruling that produced this list: record the divergences now, fix them
@@ -148,34 +148,23 @@ internal static class DeclaredDivergences
             ],
             OptionName: "NullCollections"),
 
-        ["D1"] = new(
-            "A caller who writes [MapIgnore(\"Id\")] on the mapping method has excluded that member from THAT "
-            + "mapper. The same text on the same method is honoured at CreateMap, UpdateInto and Projection "
-            + "and changes nothing at the two element-wise endpoints, so one mapper drops the member on three "
-            + "of its overloads and copies it on the other two — the caller cannot have meant that, and "
-            + "nothing tells them. Measured: byte-identical output and no diagnostic at SpanMap and "
-            + "AsyncStream, from both the method and the class site.",
-            Findings + "#D1",
-            [
-                new DivergentCell("MapIgnore", 0, "ctor(1)", AttributeTargets.Method,
-                    SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream),
-                new DivergentCell("MapIgnore", 0, "ctor(1)", AttributeTargets.Class,
-                    SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)
-            ]),
-
-        ["D2"] = new(
-            "[MapProperty(\"Id\", \"Name\")] on a mapping method is REFUSED with DWARF038 at CreateMap and "
-            + "UpdateInto — the generator has an opinion about this directive and states it. At SpanMap and "
-            + "AsyncStream the identical text on the identical method raises nothing and changes nothing: the "
-            + "diagnostic that protects three overloads is simply absent from the other two, so a caller who "
-            + "fixed their create map still ships the same mistake on the span path.",
-            Findings + "#D2",
-            [
-                new DivergentCell("MapProperty", 0, "ctor(2)", AttributeTargets.Method,
-                    SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream),
-                new DivergentCell("MapProperty", 0, "×2", AttributeTargets.Method,
-                    SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)
-            ]),
+        // D1 and D2 lived here and are FIXED, not deleted for convenience. They were one shape — an UNSCOPED
+        // member directive ([MapIgnore("X")], [MapProperty("X", "Y")]) written on a mapping method or its
+        // class, which the element-wise endpoints drop because they resolve no members themselves: they map
+        // the element pair through a mapper synthesized per (source, target) and shared by every route to it,
+        // so only a directive that NAMES the pair can configure it. Closed by generalizing the DWARF077
+        // explicit-only check into one gate both endpoints call, which now reports DWARF090 naming the
+        // pair-scoped replacement text — [MapIgnore<TTarget>], [MapProperty<TSource, TTarget>] — forms
+        // measured Honoured at both endpoints. Eight cells went Silent → Refused, which is where two of the
+        // findings and eight of the cells below went. Propagation was considered and rejected for the reason
+        // DWARF077 already gives: one method's unscoped directive would silently re-configure a nested
+        // mapping another method owns.
+        //
+        // D16 was here too and is FIXED, by a DIFFERENT change: it was never propagation. CollectHooks
+        // accepted the partial MAPPING METHOD as a hook whenever its signature fitted, and the emitted
+        // update-into body therefore ended in `Update(s, d);` — unconditional recursion the matrix scored as
+        // Honoured. A partial method with no implementing part has no body at all, so it is now refused as
+        // DWARF091 before its signature is considered. See Issues/round20/SURFACE-MATRIX-FINDINGS.md.
 
         // D3, D4, D5 and D21 lived here and are FIXED, not deleted for convenience: all four were one shape —
         // a caller reaching for the wrong overload of a directive and the build saying nothing. D4's mirror at
@@ -325,16 +314,6 @@ internal static class DeclaredDivergences
             [
                 new DivergentCell("GenerateWrapperMap", 0, "ctor(1)", AttributeTargets.Class, MapperEndpoints),
                 new DivergentCell("GenerateWrapperMap", 0, "×2", AttributeTargets.Class, MapperEndpoints)
-            ]),
-
-        ["D16"] = new(
-            "[AfterMap] on the mapping method is honoured at UpdateInto and blocks the build at CreateMap, "
-            + "Projection and AsyncStream — four endpoints where the caller learns something. At SpanMap "
-            + "alone it compiles and the hook is never called, so a post-mapping fixup a caller relies on "
-            + "runs for every element of an async stream and for none of a span.",
-            Findings + "#D16",
-            [
-                new DivergentCell("AfterMap", 0, "ctor(0)", AttributeTargets.Method, SurfaceEndpoints.SpanMap)
             ]),
 
         ["D17"] = new(

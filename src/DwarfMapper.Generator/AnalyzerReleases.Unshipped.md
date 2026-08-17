@@ -95,6 +95,8 @@ DWARF086 | DwarfMapper | Error | Manifest attribute is emitted by the generator
 DWARF087 | DwarfMapper | Error | Duplicate [FlattenGraph] destination collection
 DWARF088 | DwarfMapper | Warning | Member-placement directive written on a mapper
 DWARF089 | DwarfMapper | Warning | Directive on a co-located host member cannot be applied
+DWARF090 | DwarfMapper | Warning | Member directive is not applied element-wise
+DWARF091 | DwarfMapper | Warning | Mapping hook on a partial method with no body
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

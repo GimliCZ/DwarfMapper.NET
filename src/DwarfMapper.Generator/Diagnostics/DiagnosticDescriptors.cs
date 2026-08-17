@@ -1038,4 +1038,99 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf089");
+
+    /// <summary>
+    ///     A member directive written on a mapping method (or its class) that the ELEMENT-WISE endpoints —
+    ///     the span map and the async-stream map — cannot apply.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The generalization of <see cref="ExplicitOnlyNotElementWise" />, and the same root cause: a
+    ///         span or async-stream method resolves no members of its own. It maps the ELEMENT pair through an
+    ///         auto-synthesized mapper, and a directive written without a pair scope belongs to the DECLARING
+    ///         method rather than to that pair, so it never reaches it. <c>DWARF077</c> closed the case for the
+    ///         explicit-only trust boundary alone; the surface matrix then measured the same silence for
+    ///         <c>[MapIgnore("X")]</c> and <c>[MapProperty("X", "Y")]</c> (findings D1 and D2), where one mapper
+    ///         dropped a member on three of its overloads and copied it on the other two, saying nothing.
+    ///     </para>
+    ///     <para>
+    ///         Refused rather than propagated, and the reason is the one <c>DWARF077</c> already states: the
+    ///         synthesized element mapper is keyed by <c>(source, target)</c> and shared by every route that
+    ///         reaches that pair. Pushing one method's unscoped directive into it would silently re-configure
+    ///         a nested mapping some other method owns — a worse defect than the silence, and invisible from
+    ///         the declaration that caused it.
+    ///     </para>
+    ///     <para>
+    ///         The remedy is a form that already works here, which is what makes this a refusal a caller can
+    ///         act on rather than a capability withdrawal: the PAIR-SCOPED twins
+    ///         <c>[MapIgnore&lt;TTarget&gt;("X")]</c> and <c>[MapProperty&lt;TSource, TTarget&gt;("X", "Y")]</c>
+    ///         are matched against every synthesized pair, including this element pair, and are measured
+    ///         Honoured at both element-wise endpoints. The message names the exact replacement text.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF088</c> and <c>DWARF089</c> are: a blocking error
+    ///         suppresses the whole class's emission, so every partial mapping method on it loses its
+    ///         implementing part and the consumer meets a wall of <c>CS8795</c> with this refusal buried under
+    ///         it. The directive is dropped for this endpoint and the rest of the mapper is emitted; escalate
+    ///         with <c>dotnet_diagnostic.DWARF090.severity = error</c> where the stricter reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because the replacement text differs per directive and per element pair.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DirectiveNotAppliedElementWise = new(
+        "DWARF090",
+        "Member directive is not applied element-wise",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf090");
+
+    /// <summary>
+    ///     <c>[BeforeMap]</c> or <c>[AfterMap]</c> on a partial method that has no implementing part — a
+    ///     hook whose body does not exist.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>CollectHooks</c> scanned every method on the mapper class and accepted anything whose
+    ///         signature fitted, which includes the partial MAPPING METHOD declarations themselves: the
+    ///         generator writes those bodies, so the caller has no code there for a hook to run. The
+    ///         signature filter let some through and not others purely by shape, and the three outcomes were
+    ///         all wrong in different ways.
+    ///     </para>
+    ///     <para>
+    ///         Measured on the surface matrix (finding D16). On <c>Dst Map(Src)</c> the method is not void, so
+    ///         <c>DWARF018</c> fired and the build failed with a signature complaint about a method whose
+    ///         signature was never the problem. On <c>void MapSpan(ReadOnlySpan&lt;S&gt;, Span&lt;D&gt;)</c> it
+    ///         fitted the two-parameter after-hook shape exactly, was registered, and was never called — the
+    ///         silent cell the matrix reported. And on <c>void Update(S, D)</c> it fitted too and WAS called:
+    ///         the emitted body ended in <c>Update(s, d);</c>, unconditional infinite recursion that the matrix
+    ///         scored as the directive being honoured.
+    ///     </para>
+    ///     <para>
+    ///         The rule is not specific to mapping methods and does not need to be. A partial method with no
+    ///         implementing part is erased by the C# compiler along with every call to it, so as a hook it can
+    ///         only ever be a no-op — or, where the generator supplies the missing part, a call back into the
+    ///         method being generated. Neither is what <c>[AfterMap]</c> means, at any endpoint, which is why
+    ///         this replaces the <c>DWARF018</c> signature complaint rather than sitting after it.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF088</c> is one: an error would strand every partial
+    ///         mapping method on the class behind <c>CS8795</c>. The hook is dropped — which is what the
+    ///         caller already had at three of the five endpoints, minus the recursion at the fourth — and the
+    ///         mapper is emitted; escalate with <c>dotnet_diagnostic.DWARF091.severity = error</c> where the
+    ///         stricter reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because it names both the attribute and the method, and <c>DiagnosticInfo</c> carries one
+    ///         message argument.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor HookOnMethodWithNoBody = new(
+        "DWARF091",
+        "Mapping hook on a partial method with no body",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf091");
 }

@@ -305,12 +305,9 @@ internal static partial class MapperExtractor
             {
                 var spanComp = ctx.SemanticModel.Compilation;
                 var spanAutoNest = ReadMethodAutoNest(method, classAutoNest);
-                if (explicitOnly)
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.ExplicitOnlyNotElementWise, methodLocation, method.Name));
+                if (ReportElementWiseDirectiveGaps(method, classSymbol, spanSrcElem, spanDstElem, explicitOnly,
+                        methodLocation, diagnostics))
                     continue;
-                }
 
                 if (!TryResolveConversion(spanComp, spanSrcElem, spanDstElem, null, allMethods, mapperMethods,
                         enumPolicy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
@@ -528,12 +525,9 @@ internal static partial class MapperExtractor
             {
                 var asComp = ctx.SemanticModel.Compilation;
                 var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
-                if (explicitOnly)
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.ExplicitOnlyNotElementWise, methodLocation, method.Name));
+                if (ReportElementWiseDirectiveGaps(method, classSymbol, asSrcElem, asDstElem, explicitOnly,
+                        methodLocation, diagnostics))
                     continue;
-                }
 
                 if (!TryResolveConversion(asComp, asSrcElem, asDstElem, null, allMethods, mapperMethods,
                         enumPolicy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
@@ -2673,6 +2667,77 @@ internal static partial class MapperExtractor
             .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
             .Where(s => s is not null)
             .Select(s => s!);
+    }
+
+    /// <summary>
+    ///     The one gate both ELEMENT-WISE endpoints pass through: everything declared on a span or
+    ///     async-stream method — or on its class — that cannot reach the auto-synthesized ELEMENT mapper.
+    ///     <para>
+    ///         Hoisted rather than duplicated. The <c>DWARF077</c> explicit-only check was written twice, once
+    ///         in each branch, and the surface matrix then found ten more directives with the same silence at
+    ///         the same two endpoints: a second copy of the reasoning is how the next one gets added to one
+    ///         branch and forgotten in the other. Whatever else turns out to be dropped element-wise belongs
+    ///         here, next to the two cases measured so far, not in a third place.
+    ///     </para>
+    ///     <para>
+    ///         The readers are the SAME ones resolution uses — <see cref="ReadIgnores" /> and
+    ///         <see cref="ReadExplicitMaps" /> — so this reports exactly the applications that would have been
+    ///         honoured at a create map and nothing else. Re-parsing the attributes here would drift from what
+    ///         is actually dropped, and would re-open the malformed-argument hole those two readers close (a
+    ///         <c>[MapIgnore(null)]</c> yields no name and must reach neither the model nor a message).
+    ///         The overloads they skip are already <c>DWARF088</c>'s, so nothing is reported twice.
+    ///     </para>
+    /// </summary>
+    /// <param name="method">The span or async-stream mapping method.</param>
+    /// <param name="classSymbol">Its mapper class, whose class-scoped directives are dropped here too.</param>
+    /// <param name="srcElement">The element pair's source type, named in the remedy.</param>
+    /// <param name="tgtElement">The element pair's target type, named in the remedy.</param>
+    /// <param name="explicitOnly"><c>[DwarfMapper(AutoMatchMembers = false)]</c> is in force.</param>
+    /// <returns>
+    ///     <c>true</c> when the method must not be emitted at all. Only the explicit-only refusal returns it:
+    ///     a trust boundary that cannot be enforced must not be half-applied, whereas a dropped
+    ///     <c>[MapIgnore]</c> leaves a mapper that still works — and a blocking error there would strand every
+    ///     partial method on the class behind <c>CS8795</c>, hiding the very refusal it was raised to deliver.
+    /// </returns>
+    private static bool ReportElementWiseDirectiveGaps(
+        IMethodSymbol method, INamedTypeSymbol classSymbol, ITypeSymbol srcElement, ITypeSymbol tgtElement,
+        bool explicitOnly, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+    {
+        if (explicitOnly)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.ExplicitOnlyNotElementWise, location, method.Name));
+            return true;
+        }
+
+        var src = srcElement.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var tgt = tgtElement.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+
+        foreach (var (symbol, site) in new[] { ((ISymbol)method, "mapping method"), (classSymbol, "mapper class") })
+        {
+            foreach (var ignored in ReadIgnores(symbol))
+                Report($"[MapIgnore(\"{ignored}\")] on this {site}", $"[MapIgnore<{tgt}>(\"{ignored}\")]");
+
+            // Only the method site: the pair-scoped [MapProperty<S,T>] IS the class form, and the class's
+            // unscoped applications belong to whatever [GenerateMap] pair the class declares rather than to a
+            // method — reporting them here would name a pair the caller never wrote about.
+            if (!ReferenceEquals(symbol, method)) continue;
+            foreach (var (source, target, _) in ReadExplicitMaps(symbol))
+                Report($"[MapProperty(\"{source}\", \"{target}\")] on this {site}",
+                    $"[MapProperty<{src}, {tgt}>(\"{source}\", \"{target}\")]");
+        }
+
+        return false;
+
+        void Report(string written, string remedy) =>
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.DirectiveNotAppliedElementWise, location,
+                $"{written} does not reach '{method.Name}'. An element-wise map resolves no members itself: it "
+                + $"maps each '{src}' to a '{tgt}' through an auto-synthesized mapper, which is shared by every "
+                + "route to that pair and therefore takes its configuration only from directives that name the "
+                + $"pair. Write it PAIR-SCOPED on the mapper class — {remedy} — which does apply here. The "
+                + "unscoped form is honoured at the create-map, update-into and projection endpoints, which is "
+                + "why its silence here is worth saying out loud."));
     }
 
     /// <summary>

@@ -1024,6 +1024,32 @@ internal static partial class MapperExtractor
                 .Any(a => a.AttributeClass?.ToDisplayString() == KnownNames.AfterMapFqn);
             if (!isBefore && !isAfter) continue;
             var loc = LocationInfo.From(m.Locations.FirstOrDefault() ?? Location.None);
+
+            // A partial declaration whose implementing part is absent has no body: C# erases it and every call
+            // to it, and where THIS generator supplies the missing part the call is into the method being
+            // generated. Either way there is nothing for a hook to run, so it is refused (DWARF091) before the
+            // signature is looked at — the shape is wrong regardless of what the signature happens to be, and
+            // checking void-ness first produced three different wrong answers for one mistake: DWARF018 on the
+            // create map, silence on the span map, and `Update(s, d);` emitted inside `Update` on the update
+            // map. See the descriptor's remarks, and surface-matrix finding D16.
+            if (m.IsPartialDefinition && m.PartialImplementationPart is null)
+            {
+                // Once per attribute written, not once per method: the two are separate mistakes with
+                // separate remedies, and a method can carry both.
+                if (isBefore) diagnostics.Add(NoBodyHook("BeforeMap", "void Hook(TSource)"));
+                if (isAfter)
+                    diagnostics.Add(NoBodyHook("AfterMap", "void Hook(TTarget) or void Hook(TSource, TTarget)"));
+                continue;
+
+                DiagnosticInfo NoBodyHook(string attribute, string shape) => new(
+                    DiagnosticDescriptors.HookOnMethodWithNoBody, loc,
+                    $"[{attribute}] is written on '{m.Name}', a partial method with no implementing part, so "
+                    + "it has no body to run — C# erases such a method and every call to it, and where "
+                    + "DwarfMapper supplies the missing part the call would re-enter the method being "
+                    + $"generated. The hook is not registered. Move [{attribute}] to an ordinary method on the "
+                    + $"mapper with the hook shape ({shape}), or remove it.");
+            }
+
             if (!m.ReturnsVoid)
             {
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.InvalidHook, loc, m.Name));
