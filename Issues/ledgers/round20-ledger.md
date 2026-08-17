@@ -231,3 +231,297 @@ TWO FINDINGS TO CARRY (detail in Issues/ledgers/A7-wip-notes.md, committed):
      rather than failing to measure it. Worth its own look at how many other Honoured cells assert only that
      output CHANGED, not that it is correct.
   2. The brief's D2 premise was wrong: DWARF038 is ImplicitConversionApplied, not a refusal.
+A7: complete (069987f..c8ba8bb) then review APPROVED WITH ONE IMPORTANT -> fix round 1/5 dispatched.
+  TWO root causes confirmed, not the one I briefed. D1+D2: the DWARF077 check had been WRITTEN TWICE; now one
+  gate (ReportElementWiseDirectiveGaps, one impl at MapperExtractor.cs:2702, two call sites) reporting the new
+  DWARF090. D16: separate - CollectHooks accepted the partial mapping method itself as a hook, so UpdateInto
+  emitted `Update(s, d);` INSIDE Update = SHIPPED INFINITE RECURSION. New DWARF091.
+  Hook exclusion verified PRECISE: keys on m.IsPartialDefinition && m.PartialImplementationPart is null, i.e.
+  on PARTIAL-NESS not signature - which is why `void Hook(TSource,TTarget)` (the documented two-arg shape, and
+  the same shape as `void Update(Src,Dst)`) cannot over-fire.
+  NotCompilable 107->99 RECONCILES: both new ids are Warning, and DWARF091 fires BEFORE the signature check so
+  it displaces DWARF018 (an Error) which used to suppress emission -> CS8795. 3 AfterMap + 5 BeforeMap = 8 cells
+  leave NotCompilable for Refused. Direction explained, not assumed.
+  Ceilings 18/93 -> 15/84, NotCompilable 107 -> 99. None raised. 7,493 tests, matrix 865/865, build 0/0.
+  diagnostics-index REGENERATED AND VERIFIED BY THE TEST (85->87), not hand-rendered - C2 made that possible.
+A7 IMPORTANT (fix round 1): MapperExtractor.cs:2718 reports class-level unscoped [MapIgnore] with NO check that
+  the named member exists on the element pair. classIgnores is class-wide, so a mapper with a create map over
+  one pair PLUS a span map over an unrelated pair gets DWARF090 telling it to write [MapIgnore<Bar>("Id")] for
+  a pair it never wrote about, on a type that may lack the member, as a warning this repo escalates to error.
+  THE CODE MAKES THIS EXACT OBJECTION ABOUT ITSELF at :2721-2723, as the reason class-site [MapProperty] is
+  excluded from the gate - reasoned through for one attribute, not carried to the other.
+PATTERN NOW THREE TASKS RUNNING: the defect is "a guard exists on a sibling path and the new code did not
+  inherit it" - A2 (a descriptor checking something else entirely), A4 ([MapProperty(null)] crash), A7 (this).
+  This generator has enough near-duplicate paths that correctness does not propagate between them, which is
+  also why A4's hoist and A7's gate consolidation were the right instincts.
+A7 minors -> B15 batch: (g) "measured Honoured" overstated for [MapProperty<S,T>] in 3 places - the real
+  measurement is "applied, DWARF038 rides along" and the classifier reads Refused; (h) SurfaceParityTests.cs:215
+  xmldoc still says "UNCHANGED at 107" beside the now-99 constant; (i) no test for a legitimate two-arg hook on
+  an UPDATE mapper (all existing ones sit on create-map mappers) - folded into the fix round since it guards the
+  over-fire risk; (j) Issues/ledgers/A7-notes.md is byte-identical to the report.
+A7 fix round 1/5: commits c8ba8bb..70be306. Class-site DWARF090 now requires the named member to exist as a WRITABLE member of that endpoint's element target (via MemberFacts.Writable, the set resolution already consults it; OrdinalIgnoreCase so a case-differing member still reports). METHOD site stays unfiltered BY DESIGN with a test pinning the asymmetry. Pre-fix failure captured literally. THREE tests not one, so 'never report the class site' cannot pass as a fix. Two-arg hook on an UPDATE mapper now pinned - passes first time, so DWARF091 demonstrably cannot over-fire on the signature collision. No ceiling moved, all seven re-measured.
+  IMPLEMENTER'S OWN OBSERVATION, worth keeping: the over-fire needs two UNRELATED pairs on one class, which the case-space never builds - so a unit test, not the matrix, was the right instrument. Another blind spot of the matrix found by product work rather than by the matrix.
+A7 fix round 2/5: commits 70be306..e69df8b. The comparer is now MapperExtractor.IgnoreNameComparer, a single declaration read by ALL SEVEN ignore-set sites (four classIgnores constructions, both ResolveMembers/ResolveProjectionMembers restatements, and the new gate). Implementer's words: 'It was ordinal in four places by four separate coincidences; that was the drift surface.' That is the correct fix shape - not 'use Ordinal' but 'make it impossible for them to disagree'.
+  Pre-fix failure captured. The test also asserts Id = s.Id is STILL EMITTED at the create map, which is the load-bearing half: it establishes the directive is inert everywhere, so the comparer choice is pinned against something rather than nothing.
+  B20 filed (a [MapIgnore] naming nothing is silently inert at EVERY endpoint - same shape as B15) and B21 (CaseInsensitive=true vs the ordinal ignore set - measure, do not assume).
+  No ceiling moved, all seven re-measured. THIRD matrix blind spot this round: the probe case-space writes [MapIgnore("Id")] with the fixture's exact casing, so no cell exercises a case mismatch. A short unit test saw what 865 cells could not.
+A7: fix round 2/5 (1 addressed, 0 open; commits 70be306..e69df8b). Reviewer confirmed ONE declaration (MapperExtractor.cs:2677) with SEVEN readers (:365, :580, :954, :1160, Members.cs:148, Projection.cs:158, gate :2787); no site supplies its own comparer. Hoist verified BEHAVIOUR-PRESERVING - four sites were default-comparer, two explicitly Ordinal, and only the gate flipped, which was the bug. ResolveProjectionMembers confirmed the same concern, not swept in.
+A7: complete (069987f..e69df8b, review clean after 2 fix rounds). Closed D1, D2, D16. Five new diagnostics now exist in round 20 (DWARF087-091).
+A7 minor -> B15 batch: (k) ElementWiseDirectiveTests.cs:75-93 - the new test was spliced between an existing <summary> and its [Fact], so two summaries attach to the new test and Method_level_MapIgnore_on_the_span_method_is_reported_even_when_it_names_nothing lost its doc entirely. Doc-only.
+A5: dispatched (BASE e69df8b). Closes D17, D18, D19 - MapToGenerator ignores assembly-level config. D19 is a TRUST BOUNDARY.
+A5: implemented (aa45757). New Pipeline/AssemblyConfiguration - ONE lookup called by all three front doors
+(DwarfGenerator had an inline SECOND copy of the PublicExtensions read); MapperExtractor.ReadAutoMatchMembers
+made internal rather than copied. D19 = new DWARFR10 (Error). Ceilings 15->13 findings, 84->82 cells.
+Matrix 865/865; classified all 854 cells before/after, EXACTLY 2 rows differ, both Registry/Assembly.
+7505/7505 whole solution. This is the FIFTH instance of the pattern and the third structural (hoist) remedy.
+
+Ruling: KEEP D18's breaking change - the registry's generated extensions now default to assembly-INTERNAL.
+Reason: PublicExtensions' own XML doc has always read "Defaults to false - all generated extensions are
+assembly-internal", so the registry was contradicting its documented contract; the package has NEVER shipped
+(AnalyzerReleases.Shipped.md is empty) so no consumer depends on the old behaviour; and defaulting generated
+API to internal is the safer direction for a project with a CRA-defensive stance - accessibility wider than
+documented is a defect, not a convenience. Cost if wrong: a library shipping [MapTo] types for another
+assembly must add [assembly: DwarfMapperOptions(PublicExtensions = true)]; discovered at COMPILE time, one
+line, and already announced in CHANGELOG under Changed/BREAKING.
+Ruling: D17 is STRUCTURAL, not a divergence - reclassify it to StructurallyInapplicable and ALLOW the
+StructurallyExcused ceiling to go 12 -> 13. Reason: measured, the [MapTo] front door emits an extension class
+and nothing else - no DwarfProvidesMap, no Register call - so RegisterCollectionShapes has nothing there to
+withhold. That is precisely "there is nothing here to configure", which is what StructurallyInapplicable is
+for. My no-ratchet-raised rule exists to stop ceilings ABSORBING unfixed defects; this is the opposite - a cell
+moving from "we owe a fix" to a measured structural fact, while DivergentCell falls further. Condition: the
+row's reason must be the MEASUREMENT, never the pun. Cost if wrong: one cell excused that deserved a fix;
+recoverable by deleting the row, which turns the build red.
+Ruling: file "should [MapTo] types participate in ambient registration at all?" as a NEW task, not part of A5.
+Reason: D17's justification was false in a way that exposes a real design question - if [MapTo] emits no
+ambient registration, the option is structurally inapplicable AND the absence may itself be a gap. Building it
+is feature work, out of round-20 scope. Cost if wrong: a genuine capability gap sits in the backlog rather
+than being fixed now.
+NOTE: the false D17 justification ("the one endpoint whose entire output IS registry rows" - a pun on
+"registry") was carried in MY round-20 plan text as well as the entry. Corrected by measurement before any
+code was written, which is the right order.
+A5 fix round 1/5: commits aa45757..7fe1b80. The new [MapProperty("")]/(null) test was validated against the WRONG implementation a careless author would write (explicitOnly && m.Directives.Count == 0): both theory cases FAIL and the other 26 tests PASS - proving nothing else covered that edge. 'The claim had been resting on nothing.'
+  README.md:366-368 fixed; swept every .md/.cs, only one doc asserted the old accessibility contract. Both other false report claims FIXED rather than disclosed (DWARFR range now R01-R10 in both places that state it; the api-reference spacing artifact fixed in the AUTHORED comment and verified by reading the regenerated file this time).
+  B22 filed: NO DWARFR## message or remedy is pinned ANYWHERE - the whole registry family is excluded from all four DWARF0xx wording gates by written convention. This is REG-05's hole, closed for the main family in round 19, still open for its sibling. The [MapIgnore]->DWARFR02 remedy cascade folded in as instance (a).
+  B23 filed - EIGHTH self-measuring mechanism, and a new shape: ApiReferenceRenderer loads with LoadOptions.None, dropping whitespace-only text nodes, and NO TEST CAN SEE IT because the docs test compares the file against the renderer's OWN OUTPUT. A test that compares output to the thing that produced it cannot catch a bug in the producer.
+A5: fix round 1/5 (2 addressed, 0 open; commits aa45757..7fe1b80). Sweep verified REAL by the reviewer's own grep - every remaining accessibility claim across CHANGELOG, docs/diagnostics.md, api-reference, options.md, README, Gallery README states the new internal-by-default contract. Nothing missed.
+  Scan9's DWARFR exclusion verified STRUCTURAL, not range-text: GetAllDescriptors() reflects only typeof(DiagnosticDescriptors); the DWARFR ids live in a separate class. So the exclusion is correct regardless of the prose - which is why fixing the stale R09 wording was safe.
+  B23 mechanism CONFIRMED from code: ApiReferenceRenderer.cs:189 calls XDocument.Load with no LoadOptions (defaults to None, drops whitespace-only nodes) and GeneratedDocsAreCurrentTests.cs:104-107 compares the committed file against the renderer's OWN output - a renderer bug is self-consistent and invisible. Eighth self-measuring mechanism, and a new shape: not an empty corpus or a text-satisfiable needle, but a test whose oracle IS the thing under test.
+A5: complete (e69df8b..7fe1b80, review clean after 1 fix round). Closed D18, D19. D17 reclassified pending the sanctioned ceiling raise.
+A6: dispatched (BASE 7fe1b80). Closes D6, D7 - the [MapNullSkip] inverses. This is the case the last four tasks each cited as the failure mode they were avoiding.
+
+=== E3/E1 (isolated worktree, branch worktree-agent-a9f1113954c15097b, cut from 20e032c then FF'd to 7fe1b80) ===
+E3 DID ITS JOB AND SAVED THE TASK. Filtering to MY list of 7 classes would have lost 18 KILLED MUTANTS
+(66.95% -> 51.69%). The DERIVED list is 23 classes / 127 killer tests - 16 classes I never named, incl.
+FacadeUpdateIntoTests, AmbientRegistryTests and the whole preserve/graph family. With the derived 23: ZERO
+kills lost. This is exactly why the brief said derive the list from the data rather than trusting mine.
+TWO FINDINGS THAT FALSIFY EARLIER WORK I APPROVED:
+  1. `test-projects` is INERT - Stryker enumerates every solution test project regardless. So Task 9's
+     deliberate Generator.Tests exclusion NEVER TOOK EFFECT, and the config comment's "measured cost is ZERO"
+     is FALSE: those classes hold 37 kills, 8 of them EXCLUSIVE. I approved both claims at Task 9 review.
+  2. `test-case-filter` DOES exist in Stryker 4.16 - absent from --help, verified in Stryker.CLI.dll.
+MEASURED: 5,592 -> 288 tests; 44:02 -> 02:50 (15.5x); same 111 mutants; 66.95% -> 61.02%.
+The agent STOPPED and reverted rather than commit a lowered break, per my rule. Correct behaviour.
+Ruling: ACCEPT break: 61. Reason: NO KILL WAS LOST - all 7 losses are Timeout -> Survived, and the 66.95%
+baseline was INFLATED. Four of those mutants delete ThrowIfNull calls or turn a hash `* 397` into `/ 397` and
+provably CANNOT hang; one (maxDepth < 1 -> <= 1) is a provably EQUIVALENT mutant no test can ever detect, yet
+was credited as detected. Bail-on-by-default biases the Timeout bucket toward survivors. 61.02% is the honest
+score on the same mutant set. My no-lowering rule exists to stop a ratchet ABSORBING a regression; it does not
+require freezing a number that was measured wrong - same reasoning as the D17 reclassification. Condition: the
+config comment must state the inflation mechanism and the date so nobody "restores" 66 later.
+Cost if wrong: the leg admits ~6 points of real regression it would previously have caught. Bounded, and the
+holes it exposes are being filed as tasks rather than left implicit.
+Ruling: proceed to C1. 02:50 qualifies as CI-able, which was the actual prize - the leg currently runs in NO
+CI job, so the score is free to regress silently either way.
+A6: PARTIAL (6 of 9 cells; commits e51de6b, f3c4659). THREE paths, not the two I briefed: (A) ReadMapNullSkip
+at the update/create ResolveMembers calls saw only the METHOD form; (B) ResolvePairNullSkip at the [GenerateMap]
+pair loop and the auto-synthesized nested/element loop (which serves SpanMap/AsyncStream/CoLocatedHost) saw only
+the PAIR form and had no method; (C) the projection call site passed bare skipNullSrc and saw NEITHER. Unified
+into one ResolveNullSkip(pairNullSkips, method?, src, tgt, classDefault) called by all four front doors.
+NEITHER FORM WAS WRONG - the interesting answer. Both declare AppliesTo = All, and the generated
+option-support-matrix already recorded SkipNullSourceMembers as honoured at four endpoints with DWARF028 at the
+fifth. The DECLARATION was right; the implementation had three partial readers. Sixth instance of the pattern.
+Contradictory values now most-specific-wins (method > pair > mapper > assembly), pinned in BOTH directions.
+Separately found and NOT fixed: the same pair named twice with OPPOSITE values is legal (AllowMultiple) and
+first-wins; refusing it needs a new diagnostic.
+Ceilings: DivergentCell 82 -> 76. Findings 13 UNCHANGED - D6/D7 survive NARROWED, which is the honest state.
+Ruling: A6's projection deferral is CORRECT and I am accepting the partial close. The implementer MADE the
+one-line projection change, MEASURED it, and reverted: DWARF028 is an Error, so emission is suppressed and all
+three cells read NotCompilable (CS8795), which would have raised NotCompilableCellCeiling 99 -> 102 - a
+forbidden raise AND a closure by relocation into an unjudged population. Both rules fired as intended and the
+measurement is recorded at the call site. Cost if wrong: three cells stay silent one task longer.
+Ruling: file a new task A12 - "land the one-liners that are blocked only on A10's reclassification". Reason:
+A6 discovered that projection null-skip is one line whose ONLY blocker is CS8795 classification, and the
+class-level option and its assembly twin are ALREADY in that population for the same reason. A8 will inherit
+the same dependency. Moving A10 earlier is worse: its value is reclassifying the whole population ONCE, so
+running it mid-stream means two passes over the same ceilings. Sequence stays A8 -> A9 -> A10 -> A12.
+Cost if wrong: a small tail task after A10 instead of a cleaner single pass.
+A6 fix round 1/5: commits f3c4659..94bcda1. Corrected tail now carries the REASON, not just the fact: "silent
+at projection (recorded as D6 - an object initializer constructs the destination, so 'keep its current value'
+has nothing to keep)". Better than the sentence I proposed.
+  The (false) remedy test was confirmed BY MUTATION: forcing `var arg = "true"` FAILS the new test and PASSES
+  the pre-existing bare-form test - the hole demonstrated rather than asserted. Restoring the false projection
+  claim also fails it, so the tail is pinned in both directions.
+  B24 filed, and its row records that the surface matrix STRUCTURALLY CANNOT reach the case: the x2 axis renders
+  two IDENTICAL applications on purpose (bool samples to `true` at every variant), so none of the 865 cells
+  poses the question. FOURTH matrix blind spot this round, and the same family as the other three - the matrix
+  covers one element across many endpoints and is blind to VARIATION WITHIN a declaration (wrong case, wrong
+  arity, two unrelated pairs, contradicting duplicates).
+  Ceilings: all seven re-measured, none moved. SurfaceParityTests.cs has no diff.
+CARRY TO A8 - a possible reclassification, not a fix: A6's own explanation for projection silence is that an
+object initializer CONSTRUCTS the destination, so "keep its current value" has nothing to keep. If that holds,
+D6/D7's projection cells may be STRUCTURALLY INAPPLICABLE rather than divergent - the same shape as the D17
+ruling. Counter-evidence to weigh: DWARF028 exists to refuse null-skip at projection, which implies the
+generator considers it meaningful enough to reject rather than ignore. A8 owns projection; it should settle
+which, and a correct reclassification MAY raise StructurallyExcused, as D17's did.
+A6: fix round 1/5 (3 addressed, 0 open; commits f3c4659..94bcda1). All three clauses of the corrected tail VERIFIED TRUE against source; pinned both ways (Assert.Contains 'silent at projection' + Assert.DoesNotContain 'refused at projection').
+  The x2-identical claim verified real at SurfaceCatalog.cs:729 -  IGNORES the variant parameter entirely, so both applications of a bool ctor param render true and the axis can never pose a contradicting-value question. That is the mechanism behind the fourth blind spot, in one line.
+A6: complete (7fe1b80..94bcda1, review clean after 1 fix round). PARTIAL BY DESIGN - D6/D7 survive narrowed to their projection cells only. Closed 6 of 9.
+A8: dispatched (BASE 94bcda1). Closes D9, D10 - projection does not honour member directives. Carries the open question A6 raised about whether projection null-skip is structural.
+A6: fix round 1/5 (3 addressed, 0 open; commits f3c4659..94bcda1). All three clauses of the corrected tail
+VERIFIED TRUE against source; pinned both ways (Assert.Contains "silent at projection" + Assert.DoesNotContain
+"refused at projection").
+  The x2-identical claim verified real at SurfaceCatalog.cs:729 - the bool arm returns "true" and IGNORES the
+  variant parameter entirely, so both applications of a bool ctor param render true and the axis can never pose
+  a contradicting-value question. That is the mechanism behind the fourth blind spot, in one line.
+A6: complete (7fe1b80..94bcda1, review clean after 1 fix round). PARTIAL BY DESIGN - D6/D7 survive narrowed to
+their projection cells only. Closed 6 of 9.
+A8: dispatched (BASE 94bcda1). Closes D9, D10 - projection does not honour member directives. Carries the open
+question A6 raised about whether projection null-skip is structural rather than divergent.
+A8: done (0a938bc, ea385ab). D10 closed, D9 narrowed. Ceilings findings 13 -> 12, declared cells 76 -> 62.
+LEAD FINDING - D10's OWN EVIDENCE WAS FALSE. Against nested-pair (whose Dst still declares the NESTED member)
+[Flatten("Child")] emitted BYTE-IDENTICAL output at all five endpoints; the two "Refused" readings were an
+incidental DWARF044 nullable-hop warning about a hop nobody takes. The finding claimed a divergence between
+endpoints that were all doing the same nothing. THIRD recorded divergence whose filed evidence was wrong
+(D2's DWARF038 premise, D17's registry-rows pun, now D10) - all three from the first matrix run, all three
+where the FIXTURE was inadequate to pose the question.
+Per directive: [Flatten]@Projection FIXED (ResolveFlattenInfos is now one walk both resolvers call - seventh
+structural unification); [Flatten] and [MapValue] @ Span/Async REFUSED via DWARF090, and BOTH REMEDIES WERE
+MEASURED Honoured BEFORE being prescribed (the D7 trap, avoided deliberately); [MapValue]@Projection built,
+measured, REVERTED - three malformed axes hit DWARF042/041 (Errors) -> NotCompilable 99 -> 102, so it waits on
+A10/A12 exactly as A6's did.
+The object-initializer argument reaches NEITHER D9 nor D10 - settled with evidence, not generalised. A threaded
+directive measuring Honoured at Projection is by construction not structurally inapplicable. StructurallyExcused
+stays 12; the permitted raise was deliberately NOT taken.
+DISCLOSED AND NEEDS REVIEW SCRUTINY: Flatten's CreateMap/UpdateInto cells also change verdict because the
+FIXTURE changed (new flattenable-nested-member), not the generator. Also a non-ceiling baseline raised
+deliberately: SurfaceProbeTests fixtures-without-a-slot 17 -> 18, which its own message prescribes on adding a
+fixture. Filed B25 ([MapValue<T>] probe args still nonsense) and B26 (DWARF044 fires when no leaf lands).
+A8 fix round 1/5: commits ea385ab..4945b2e. TryFormatConstant's inline Array-or-Type-or-Error check was MOVED
+into a shared IsRenderableConstant(TypedConstant) that BOTH readers call - hoisted, not copied, so there is no
+second copy to diverge. That is the eighth structural unification of the round and the correct answer to the
+seventh instance of the guard-did-not-propagate pattern.
+  typeof(X) now renders the BARE form [MapValue("Name")] - target named, value omitted, never the word null.
+  Both new cases confirmed failing against pre-fix code with literal errors captured: the array case as
+  CS8785 ... InvalidOperationException: TypedConstant is an array, the typeof case as an Assert.Contains
+  failure showing the emitted [MapValue("Name", null)].
+  AsyncStream now pins both prescribed remedies - passed first run, so "the evidence was missing, not the
+  behaviour". Per-cell residual stated explicitly as "a symmetric swap is the only unverified possibility".
+  No ceiling moved, all seven re-measured.
+A8: fix round 1/5 (3 addressed, 0 open; commits ea385ab..4945b2e). IsRenderableConstant verified the SOLE
+TypedConstantKind test in the file; all three kinds present; both readers call it; FormatWrittenConstant's one
+caller handles the null return at both the written text and the remedy. Hoist verified BEHAVIOUR-PRESERVING on
+the create-map path it came from - the new predicate is the literal De Morgan negation of the prior inline check.
+A8: complete (94bcda1..4945b2e, review clean after 1 fix round). D10 closed, D9 narrowed. Findings 13 -> 12,
+declared cells 76 -> 62.
+Ruling: split A9 into A9a and A9b rather than one six-directive task. Reason: the plan mandates one commit per
+directive, and six in one dispatch is both a long single run and an unreviewable surface; grouping by SHAPE
+keeps each dispatch's reasoning coherent. A9a takes the three that act at CreateMap only and are silent at four
+(D8 [MapDerivedType], D11 [FlattenGraph], D13 [ReverseMap]); A9b takes the three mixed ones (D12 [Reinterpret]
+silent at the two element-wise endpoints only, D14 [MapCollectionKey] acting at UpdateInto only, D15
+[GenerateWrapperMap] refused at CoLocatedHost and silent at all five). Cost if wrong: one extra review cycle.
+A9a: dispatched (BASE 4945b2e).
+A9a: complete (25621c5 D11, a3dc01e D8, ca2eddd D13, 352e424 TASKS, b292990 test follow-up). All three REFUSED
+via ONE new gate ReportCreateMapOnlyDirectives called from the four non-create-map branches and reading through
+the create-map branch's OWN readers - ninth structural unification. New id DWARF092 (Warning). 28 cells
+Silent -> Refused (8 + 16 + 4).
+FILED EVIDENCE FALSE IN TWO OF THREE:
+  D8 PARTLY FALSE - "acts at CreateMap in both forms" was wrong; the OPEN form acted NOWHERE, because the flat
+  pair declares no hierarchy so the sampled args were typeof(Dst), typeof(Dst) -> DWARF035 -> NotCompilable.
+  New polymorphic-hierarchy fixture; that cell is now Honoured.
+  D13 MECHANISM MISSTATED - [ReverseMap] does not GENERATE an inverse; the caller declares it and the directive
+  makes it inherit inverted renames, with a missing one being DWARF052. Corrected, and the new message
+  deliberately does not repeat the wrong model.
+  D11 held EXACTLY as filed - the one that did, and the one I flagged as most likely to be false.
+RUNNING TALLY: FIVE round-19 divergences have now had their evidence falsified by the task sent to fix them -
+D2 (wrong diagnostic named), D17 (a pun on "registry"), D10 (measuring its own fixture), D8 (partly), D13
+(mechanism). Every one was found by MEASURING before fixing. The common cause in four of five is a fixture too
+thin to pose the question the entry claimed to answer.
+Ceilings, each re-measured in its own commit: findings 12 -> 9; declared cells 62 -> 34; NotCompilable 99 -> 98
+(DOWN - a fixture that could not pose its question had been counting a cell there). Others unchanged, none
+raised. Non-ceiling baseline fixtures-without-a-member-slot 18 -> 19, deliberate.
+A9a fix round 1/5: commit c854bb6. The corrected descriptor remark now SPLITS the two reasons instead of
+fusing them, and states the wrong model explicitly in order to mark it wrong: "task A9a's own finding entry
+(D13) asserted otherwise and was measurably wrong, so the wrong model is restated here only to say it is
+wrong." Better than silent replacement - a future reader who half-remembers the old story finds it addressed.
+  Fixture comment reattached; ReinterpretableArrayMember sits under its own [Reinterpret] rationale again,
+  which matters immediately because A9b's first directive is [Reinterpret].
+  Minor 2 MEASURED rather than re-reasoned: I was right that IErrorTypeSymbol implements INamedTypeSymbol, the
+  pattern matches, and the arm IS reported - safe, no crash, CS0246 regardless. The wrong reason was replaced
+  with a test rather than a better sentence.
+  Ceilings none moved, re-measured after the descriptor edit. At HEAD: build 0/0 with samples, matrix 865/865,
+  Generator.Tests 6548, conformance 75/75, literal output in the report appendix.
+A9a: fix round 1/5 (3 addressed, 0 open; commits b292990..c854bb6). The corrected descriptor's SURROUNDING
+claims were verified too, not just the removal: the [ReverseMap] match really is by signature (param[0] ==
+targetType, return == sourceType, MapperExtractor.cs:1029-1038), a missing inverse really is DWARF052
+(DiagnosticDescriptors.cs:383-388, Error), and the update-into "no construction step" reason is fair for both
+[FlattenGraph] and [MapDerivedType]. Restating a wrong model to mark it wrong is only good practice if the
+surrounding claims hold - they do.
+  Diff confined to <remarks> prose: id, severity and the "{0}" format string all unchanged, so no cell Detail
+  could shift. SurfaceParityTests.cs absent from the diff. Suite output confirmed from HEAD (6547 -> 6548, the
+  one new test in that commit).
+A9a: complete (4945b2e..c854bb6, review clean after 1 fix round). D8, D11, D13 all closed as refusals.
+  Findings 12 -> 9, declared cells 62 -> 34, NotCompilable 99 -> 98.
+A9b: dispatched (BASE c854bb6). D12 [Reinterpret], D14 [MapCollectionKey], D15 [GenerateWrapperMap] - three
+different shapes, one commit each. D15 is a genuine fork (already refused at CoLocatedHost via DWARF067, silent
+at all five mapper endpoints) and the dispatch asks for the answer argued from what the directive MEANS.
+A9b: complete (695a50d D14, 6edb923 D12, eaece0d D15, aa8262c self-caught doc fix). All three REFUSED.
+Findings 9 -> 6, declared cells 34 -> 12, NotCompilable 98 -> 96. Non-ceiling baseline
+DirectCompileErrorCallBaseline 52 -> 53, deliberate.
+TENTH structural unification, and the right kind: DWARF092's gate was GENERALIZED to
+ReportDirectivesNotReadHere, called from all FIVE branches with each arm naming its own home endpoint (create
+map for the original trio, update-into for [MapCollectionKey]), and the id retitled "Directive is not read at
+this mapping endpoint". A second gate was the obvious move; generalizing the first was the better one.
+ALL THREE ENTRIES' EVIDENCE WAS FALSE - tally now EIGHT of the divergences examined:
+  D14 "acts at UpdateInto" - the fixture had List<Item>/List<ItemDto> but the v1 upsert needs ONE element
+  type, so that cell was DWARF074 behind CS8795. Fixture fixed.
+  D12 "acts at Projection" - the projection branch never reads it at all; that cell is UnhonouredButLoud and
+  was left where it is rather than being claimed as closed.
+  D15 mechanism - DWARF067 is an opinion about the wrapper TYPE, not about placement; the silence was an early
+  return on an empty pair list, not a refusal that failed to travel.
+D15 fork resolved as REFUSE, argued from the attribute's contract rather than implementation cost: it is an
+EXPANSION OF THE [GenerateMap] PAIR LIST, a partial mapping method is a different mechanism, and four of the
+five endpoints have no W<A> -> W<B> create-map shape to synthesize at all - so emitting would have been feature
+work at one endpoint and still left four needing this refusal.
+B27 filed: [GenerateMap] beside a same-pair partial is a bare CS0111 with no DWARF diagnostic.
+A9b: complete (c854bb6..aa8262c, review Approved). Gate generalization verified: ONE impl at
+MapperExtractor.cs:3074, exactly FIVE call sites, homes correct, and the original three reproduce their old
+message text BYTE-FOR-BYTE at the four non-create endpoints so existing EXPECT-MESSAGE pins are untouched.
+Retitle sync complete and GeneratedDocsAreCurrentTests renders d.Title, so a descriptor-only retitle WOULD have
+failed it. D15 refuse independently endorsed by the reviewer, with the counterpoint disclosed rather than
+buried ([GenerateMap] already emits undeclared methods, so emitting is not unprecedented - filed as B27).
+A9b minors -> B15 batch: (l) CHANGELOG.md:47 says "both of its cells close" for D12, which has FOUR; same
+defect class the aa8262c commit was cut to fix. (m) SURFACE-MATRIX-FINDINGS D14 banner cross-references a
+paragraph that was deleted (claim survives quoted verbatim; the pointer dangles). (n) the DWARF092 NegativeCases
+case still names its class CreateMapOnlyDirectiveMapper - the stale-name rot the file rename was justified by.
+Ruling: A10 does CLASSIFICATION ONLY. The DWARF088 Warning -> Error escalation I ruled earlier "as part of A10"
+moves to A12 instead. Reason: escalating a severity while A10 is reclassifying the whole CS8795 population
+would confound the measurement - two causes moving the same cells in one commit, and this round has shown
+repeatedly that predicted ceiling movement is unreliable. Cost if wrong: one extra small commit in A12.
+A10: dispatched (BASE aa8262c). Ceilings entering: findings 6, declared cells 12, NotCompilable 96,
+StructurallyExcused 12, UnhonouredButLoud 14, Unaskable 44, NoSuchSite 137.
+
+=== END OF DAY 2026-08-17 — A10 asked to pause durably mid-task ===
+STATE: Layer 0 complete (C2, B2, B1+B9). Layer 1 complete (A4, A7, A5, A6, A8, A9a, A9b). A10 was IN FLIGHT
+and told to commit whatever it has, honestly labelled. A11 and A12 not started.
+Divergences: 23 findings / 162 cells at round-20 start -> 6 / 12 now. Six new diagnostics DWARF087-093.
+Ten structural unifications. Two generator crashes introduced by this round's own fixes, both caught at review.
+RESUME ORDER: finish/redo A10 (classification only - the DWARF088 escalation was RULED into A12) -> A11
+(struct + constructor template slots, 21 cells) -> A12 (DWARF088 Warning->Error, plus the one-liners A6 and A8
+each measured, reverted and parked at their call sites) -> merge the mutation branch -> B15 documentation
+batch -> the rest of B/C -> final whole-branch review -> F1 merge (needs the maintainer).
+OPEN FOR THE MAINTAINER, unchanged: D-e (~80 diagnostics predate CHANGELOG.md and have never been announced;
+Scan9 guards only NEW ids, so nothing catches this before the first tag) and F1 (the merge itself).
+THE FINDING TO CARRY: eight of the round-19 divergences examined so far had FALSE filed evidence - D2, D17,
+D10, D8, D13, D12, D14, D15. Four or more trace to a fixture too thin to pose the question the entry claimed
+to answer. Round 19 did not find 23 defects; it found 23 cells worth investigating, and a large fraction
+dissolve or change shape once the fixture actually bites. The instrument was sound; its inputs were not.
