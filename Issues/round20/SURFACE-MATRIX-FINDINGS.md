@@ -162,8 +162,8 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D6 | `[MapNullSkip(true)]` on a method | Create, Update (Honoured) | **Projection, SpanMap, AsyncStream** | 3 |
 | D7 | `[MapNullSkip<Src,Dst>(true)]` on the class | SpanMap, AsyncStream, CoLocatedHost (Honoured) | **Create, Update, Projection** | 6 |
 | D8 | `[MapDerivedType]`, both the open and the generic form | CreateMap | Update, Projection, SpanMap, AsyncStream | 16 |
-| D9 | `[MapValue("Id", …)]`, all four cases | Create, Update (blocking) | Projection, SpanMap, AsyncStream | 12 |
-| D10 | `[Flatten("Id")]`, and ×2 | Create, Update (blocking) | Projection, SpanMap, AsyncStream | 6 |
+| D9 | `[MapValue("Name", …)]`, all four cases | Create, Update — `ctor(2)` Honoured, the other three `CS8795` | **Projection** (SpanMap/AsyncStream closed as `DWARF090`) | 4 |
+| D10 | ~~`[Flatten("Id")]`, and ×2~~ | **CLOSED by A8** — and its evidence was false; see the entry | — | 0 |
 | D11 | `[FlattenGraph("Id","Name")]`, and ×2 | CreateMap (blocking) | Update, Projection, SpanMap, AsyncStream | 8 |
 | D12 | `[Reinterpret("Id")]`, and ×2 | Create, Update (blocking), Projection (loud) | SpanMap, AsyncStream | 4 |
 | D13 | `[ReverseMap]` | CreateMap (blocking) | Update, Projection, SpanMap, AsyncStream | 4 |
@@ -719,26 +719,77 @@ it; on the other four the derived instance is mapped as its base and the extra m
 
 <a id="D9"></a>
 
-### D9 — `[MapValue]` does not reach projection or the element-wise endpoints — 12 cells
+### D9 — `[MapValue]` does not reach projection — 4 cells (was 12) — **NARROWED by A8**
 
-*Method site, `ctor(1)` / `ctor(2)` / `Use` / ×2 → Projection, SpanMap, AsyncStream.* Acts at CreateMap and
-UpdateInto (Honoured).
+*Method site, `ctor(1)` / `ctor(2)` / `Use` / ×2 → Projection.*
 
-**Evidence re-derived.** The first measurement filed this as "Create, Update (blocking)". That reading was a
-refusal of nonsense: the sampled argument assigned a string constant to an `int`. With an argument naming a
-real member the directive is genuinely honoured at Create/Update, so the three silences are a divergence
-rather than an artefact of a broken case.
+**Two corrections to the record, both measured.** The entry claimed the directive was "honoured at CreateMap
+and UpdateInto" on all four axes. Only `ctor(2)` acts there; the other three are `NotCompilable (CS8795)` at
+both, because `[MapValue("Name")]` supplies neither a constant nor `Use`, `[MapValue(Use = "probe")]` names no
+provider, and two directives target one member — `DWARF042` / `DWARF041`, which are Errors, and a blocking
+error suppresses emission.
+
+**SpanMap and AsyncStream are closed** — refused as `DWARF090`, whose remedy `[MapValue<Dst>("Name", "x")]`
+was measured `Honoured` at both endpoints before the message named it. Eight cells.
+
+**Projection did not close, and the reason is bookkeeping, not design.** The threading was built and
+measured, then reverted:
+
+```
+MapValue`0 | ctor(2)      | Method | Projection => Refused (DWARF064 (Info))
+MapValue`0 | ctor(1)      | Method | Projection => NotCompilable (CS8795)
+MapValue`0 | Use="probe"  | Method | Projection => NotCompilable (CS8795)
+MapValue`0 | ×2           | Method | Projection => NotCompilable (CS8795)
+102 cells are rejected by the C# compiler and therefore judged by nothing
+```
+
+One cell closes and three move into the population the parity theory judges by nothing —
+`NotCompilableCellCeiling` 99 → 102, forbidden. Same R4 ordering defect A6 measured for `[MapNullSkip]`. The
+cell worth naming is `ctor(2)`: a constant silently not applied is the dangerous one, and it stays open only
+because it shares a code path with three that cannot land yet.
+
+**Not structurally inapplicable.** The measurement proves a threaded `[MapValue]` produces the right
+expression; and a constant assignment reads nothing from the destination, so the object-initializer reasoning
+recorded for `[MapNullSkip]` ("keep its current value" has nothing to keep) does not reach it at all.
 
 <a id="D10"></a>
 
-### D10 — `[Flatten]` does not reach projection or the element-wise endpoints — 6 cells
+### D10 — `[Flatten]` does not reach projection or the element-wise endpoints — **CLOSED by A8**
 
-*Method site, `ctor(1)` and ×2 → Projection, SpanMap, AsyncStream.* Acts at CreateMap and UpdateInto
-(Honoured). The flattened destination members are left at their defaults at the other three.
+**The finding's own evidence was false, and that is the first thing to record.** The entry said
+`[Flatten("Child")]` against a fixture with a real nested member is "honoured at CreateMap and UpdateInto".
+It is not. Against `nested-pair` — whose `Dst` still declares the **nested** member — the flatten resolved
+its root, found leaf `X`, matched it to no destination member, and emitted **byte-identical output at all
+five endpoints**. The two cells that read `Refused` read so because of `DWARF044`, a nullable-hop *warning*
+about a hop nobody took. The finding asserted a divergence between endpoints that were all doing the same
+nothing. The re-measurement that produced the old note changed which nonsense was being asked, not whether
+nonsense was being asked.
 
-**Evidence re-derived** for the same reason as D9: the original argument named a scalar member, so
-"Create, Update (blocking)" was a refusal, not an honouring. `[Flatten("Child")]` against a nested fixture is
-honoured.
+A flatten needs a destination carrying the **leaf**. The new fixture `flattenable-nested-member` supplies one
+(`struct Inner { int X }`, `Src { Id, Child }`, `Dst { Id, X }`), with a `DWARF001`-by-design baseline like
+the three existing fixtures whose whole point is that the element under test clears the error, and a **struct**
+root so no incidental `DWARF044` short-circuits the classifier into `Refused` before it compares output.
+
+**The fix, in two halves.** `ResolveFlattenInfos` is now one walk both resolvers call, so projection honours
+the flatten (`__s.Child.X`) and refuses an invalid root with the same `DWARF016`; and the element-wise
+endpoints refuse it as `DWARF090` naming the dotted `[MapProperty<Src, Dst>("Child.<leaf>", "<leaf>")]`
+remedy, measured `Honoured` there first. `[Flatten]` has no pair-scoped twin, so prescribing one would have
+been a fix nobody could apply.
+
+Final reading, all six cells:
+
+```
+ctor(1) @CreateMap    Honoured   (output differs)
+ctor(1) @UpdateInto   Honoured   (output differs)
+ctor(1) @Projection   Honoured   (output differs)
+ctor(1) @SpanMap      Refused    (DWARF090 (Warning))
+ctor(1) @AsyncStream  Refused    (DWARF090 (Warning))
+×2      @CreateMap    Refused    (DWARF017)
+×2      @UpdateInto   Refused    (DWARF017)
+×2      @Projection   Refused    (DWARF017)
+×2      @SpanMap      Refused    (DWARF090 (Warning))
+×2      @AsyncStream  Refused    (DWARF090 (Warning))
+```
 
 <a id="D11"></a>
 

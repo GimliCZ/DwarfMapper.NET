@@ -136,6 +136,15 @@ internal static partial class MapperExtractor
     ///     reference handling, and the "no translatable conversion found" fallback).
     ///     (DWARF019/NotProjectable was retired in favour of DWARF028's reason-carrying messages.)
     /// </summary>
+    /// <param name="flattenRoots">
+    ///     The <c>[Flatten("Root")]</c> directives on the projection method. Threaded here because this
+    ///     resolver is a SECOND translator, not a caller of the first: it used to receive no flatten at all,
+    ///     so <c>[Flatten]</c> resolved through <c>.Map</c> and was discarded without a word through
+    ///     <c>.Project</c> — the same mapper filling the flattened members on one overload and leaving them
+    ///     unmapped on the other (recorded as <c>D10</c>, now closed). A pulled-up leaf is
+    ///     <c>__s.Root.Leaf</c>, which is the canonical navigation access every query provider translates, so
+    ///     the honest answer here is to honour it rather than to refuse it.
+    /// </param>
     private static List<ProjectionMemberMap> ResolveProjectionMembers(
         ITypeSymbol sourceType, INamedTypeSymbol targetType, HashSet<string> ignores,
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
@@ -145,7 +154,7 @@ internal static partial class MapperExtractor
             mapPropertyExtras = null,
         bool skipNullSourceMembers = false, bool allowNonPublic = false,
         bool explicitOnly = false, bool ignoreObsolete = false, bool autoNest = true,
-        HashSet<string>? consumedSources = null)
+        HashSet<string>? consumedSources = null, IReadOnlyList<string>? flattenRoots = null)
     {
         // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
         // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
@@ -189,6 +198,15 @@ internal static partial class MapperExtractor
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal;
         var sources = BuildProjectionSourceLookup(sourceType, comparer, compilation, location, diagnostics);
+
+        // [Flatten] roots, through the SAME walk the runtime resolver uses — one refusal of an invalid root
+        // rather than two that can disagree. PUBLIC ONLY (ProjectionPublicOnly) because a leaf the provider
+        // cannot read is not a leaf this endpoint can pull up, and warnNullableHop: false because DWARF044
+        // describes a null dereference in emitted C#, which a translated path does not perform (the dotted
+        // [MapProperty] source below already makes that call, in the same words).
+        var flattenInfos = ResolveFlattenInfos(flattenRoots ?? Array.Empty<string>(), sourceType, comparer,
+            compilation, ProjectionPublicOnly, warnNullableHop: false, location, diagnostics);
+
         // C4: pass comparer to nested resolvers so CaseInsensitive propagates into nested objects.
         var writableByName = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
         foreach (var m in WritableMembers(targetType, compilation, ProjectionPublicOnly))
@@ -392,6 +410,39 @@ internal static partial class MapperExtractor
                         "the matching source member is non-public and AllowNonPublic is not honoured by "
                         + "projection (an expression tree is built from the public surface); map this member "
                         + "at runtime, or make the source member public");
+                    continue;
+                }
+
+                // A [Flatten]ed leaf, in exactly the position ResolveMembers consults one: AFTER a direct
+                // source member of the same name and BEFORE the unmapped-member report. The precedence is
+                // not a choice made here — a flatten that outranked a direct member would make .Project
+                // disagree with .Map about which source wins, which is the class of defect this whole
+                // resolver's comments are about.
+                var flatMatches = new List<(string Root, string Leaf, ITypeSymbol LeafType)>();
+                foreach (var fi in flattenInfos)
+                foreach (var leaf in fi.Leaves)
+                    if (comparer.Equals(leaf.Name, target.Name))
+                        flatMatches.Add((fi.Root, leaf.Name, leaf.Type));
+
+                if (flatMatches.Count > 1)
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousFlatten, location,
+                        target.Name));
+                    continue;
+                }
+
+                if (flatMatches.Count == 1)
+                {
+                    var fm = flatMatches[0];
+                    // The root counts as READ, matching the dotted-[MapProperty] rule above: a flattened
+                    // member is the root's data arriving under another name, so source-coverage must not
+                    // then report the root as consumed by nothing.
+                    consumedSources?.Add(fm.Root);
+                    var flatExpr = ResolveProjectionExpr(
+                        fm.LeafType, target.Type,
+                        paramExpr + "." + Identifiers.EscapePath(fm.Root + "." + fm.Leaf), 0, compilation,
+                        location, diagnostics, target.Name, enumPolicy, comparer, autoNest);
+                    if (flatExpr is not null) result.Add(new ProjectionMemberMap(target.Name, flatExpr));
                     continue;
                 }
 

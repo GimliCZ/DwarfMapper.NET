@@ -181,44 +181,10 @@ internal static partial class MapperExtractor
         // Phase 5: which additional parameters were consumed by a destination (the rest → DWARF047).
         var consumedExtraParams = new HashSet<string>(comparer);
 
-        var comparerForLeaves = comparer; // same comparer used for member matching
-        var flattenInfos = new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)>();
-        foreach (var root in flattenRoots)
-        {
-            var match = ReadableMembers(sourceType, compilation, allowNonPublic)
-                .Where(m => comparerForLeaves.Equals(m.Name, root))
-                .Select(m => ((string Name, ITypeSymbol Type)?)m)
-                .FirstOrDefault();
-            if (match is null)
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
-                continue;
-            }
-
-            var rootType = match.Value.Type;
-            // Scalars (string, primitives, enums) are not flattenable roots — flattening their
-            // BCL members (e.g. string.Length) is never intended and must not happen silently.
-            if (rootType.SpecialType != SpecialType.None || rootType.TypeKind == TypeKind.Enum)
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
-                continue;
-            }
-
-            var leaves = ReadableMembers(rootType, compilation, allowNonPublic).ToList();
-            if (leaves.Count == 0)
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
-                continue;
-            }
-
-            // A [Flatten] over a nullable-reference root emits unguarded `src.Root.Leaf` accesses that NRE
-            // at runtime if the root is null. The dotted [MapProperty] path warns DWARF044 for the same
-            // hazard; the [Flatten] path must be consistent (loud, never silent).
-            if (SourceMayBeNullRef(rootType))
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
-                    $"[Flatten] source '{root}' is a nullable reference; a null value throws at runtime when its flattened members are read"));
-            flattenInfos.Add((match.Value.Name, leaves));
-        }
+        // Shared with the projection resolver — see ResolveFlattenInfos for why the two must not each keep
+        // their own copy of this walk.
+        var flattenInfos = ResolveFlattenInfos(flattenRoots, sourceType, comparer, compilation, allowNonPublic,
+            warnNullableHop: true, location, diagnostics);
 
         // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
         // Methods dedicated to one member by [MapProperty(Use = …)] / [MapValue(Use = …)]. They are

@@ -177,6 +177,31 @@ internal static class SurfaceFixtures
         public sealed class Dst { public int Id { get; set; } public System.Collections.Generic.List<NodeDto> Flat { get; set; } = new(); }
         """;
 
+    // A complex source member whose LEAF is what the destination declares. [Flatten] pulls a nested member's
+    // members UP, so a destination that still declares the nested member has nothing for it to pull up: against
+    // the nested-pair fixture (Dst.Child of type InnerDto) the directive resolved the root, found leaf X,
+    // matched it to no destination member, and emitted BYTE-IDENTICAL output at all five endpoints. That
+    // reading was filed for four rounds as "honoured at CreateMap and UpdateInto" — it was DWARF044, a
+    // nullable-hop WARNING about a hop nobody took, and the cell read Refused because a diagnostic appeared,
+    // not because the directive did anything. Correcting it is what closed D10.
+    //
+    // Baseline is DWARF001 BY DESIGN, the same shape as the case-mismatched-member / snake-case-member /
+    // internal-member fixtures: Dst.X has no direct source and the flatten is precisely what supplies it, so
+    // the element under test is expected to clear the error and the cell reads Honoured. It cannot be avoided
+    // — giving Src its own X makes the direct member win (measured: byte-identical output, because a flatten
+    // leaf is consulted only where no direct source matches), which is a fixture that cannot pose the question.
+    //
+    // The root is a STRUCT deliberately. A reference-typed root earns DWARF044 in the nullable-oblivious test
+    // compilation, and a warning added by the case under test short-circuits SurfaceProbe.Classify into Refused
+    // before it ever compares output — so the honest Honoured reading would have been masked by an incidental
+    // hop warning, which is the very confusion this fixture replaces.
+    [SurfaceProbe("flattenable-nested-member")]
+    private static readonly string FlattenableNestedMember = """
+        public struct Inner { public int X { get; set; } }
+        public sealed class Src { public int Id { get; set; } public Inner Child { get; set; } }
+        public sealed class Dst { public int Id { get; set; } public int X { get; set; } }
+        """;
+
     // Two UNMANAGED arrays of the same width and different element types. A forced blit is an array→array
     // directive, and the automatic layout proof declines this pair precisely because the element types differ
     // — which is the case [Reinterpret] exists to force. Against the narrowing-conversion fixture it was

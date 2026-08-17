@@ -15,6 +15,21 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A projection did not read `[Flatten]`, and neither element-wise endpoint read `[Flatten]` or
+  `[MapValue]`.** Projection is emitted by a **separate translator** from the runtime map, and it had no copy
+  of the flatten walk at all: `[Flatten("Child")]` pulled `Child`'s members up through `.Map` and left the
+  same destination members at their defaults through `.Project`, saying nothing. It now resolves through
+  `ResolveFlattenInfos`, the one walk both resolvers call — so a root that names nothing, or names a scalar,
+  is refused by the same `DWARF016` at both endpoints, and a pulled-up leaf becomes `__s.Child.X`, the
+  navigation access a query provider translates. (A nullable root still warns `DWARF044` on the runtime path
+  and deliberately does not in a projection, where the provider yields null rather than dereferencing —
+  matching the dotted `[MapProperty]` source path, which already made that call.) At the **span** and
+  **async-stream** endpoints both directives are now refused as `DWARF090` with a remedy that was measured
+  working before it was prescribed: `[MapValue<Dst>("Name", "api-v2")]` for the constant, and
+  `[MapProperty<Src, Dst>("Child.<leaf>", "<leaf>")]` for the flatten, which has no pair-scoped twin of its
+  own. Found by the surface matrix as `D9` and `D10`; `D10` closes outright and `D9` narrows to projection,
+  where its remaining refusal is a blocking `DWARF042`/`DWARF041` whose `CS8795` cascade would move the cells
+  into the "judged by nothing" population rather than out of it. (round 20, D9 and D10)
 - **`[MapNullSkip]` had three readers, and each one saw a different part of the option.** The two documented
   scopes of `SkipNullSourceMembers` — `[MapNullSkip]` on a mapping method and `[MapNullSkip<S, T>]` on the
   mapper class — reached almost exactly complementary halves of the surface. The method endpoints read the

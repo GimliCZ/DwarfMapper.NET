@@ -190,7 +190,13 @@ public sealed class SurfaceProbeTests
             .OrderBy(k => k, StringComparer.Ordinal)
             .ToList();
 
-        const int baseline = 17;
+        // 17 → 18 with `flattenable-nested-member`, raised deliberately as this assertion's own message
+        // instructs. It is not a coverage regression: [Flatten] is AttributeTargets.Method by AttributeUsage,
+        // so no Property- or Field-site case demands that fixture and none reads NoSuchSite for want of a slot
+        // there. Giving it a marker anyway would have kept the number at 17 while declaring a slot nothing
+        // splices into — a count that no longer describes anything, which is the opposite of what this
+        // assertion is for.
+        const int baseline = 18;
         Assert.True(missing.Count == baseline,
             $"{missing.Count} of {SurfaceFixtures.All.Count} fixtures carry neither "
             + $"{nameof(EndpointSources.PropertySlotMarker)} nor {nameof(EndpointSources.FieldSlotMarker)}: "

@@ -1295,6 +1295,21 @@ public partial class M
 }
 ```
 
+Two more directives join it for the same reason — `[MapValue]`, whose constant reached two overloads of a
+mapper and not the other three, and `[Flatten]`, whose pulled-up members were left at their defaults
+element-wise. Findings `D9` and `D10`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapValue("Name", "api-v2")]                   // DWARF090 — the constant never reaches the element pair
+    [Flatten("Child")]                             // DWARF090 — the leaves are never pulled up
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+}
+```
+
 **Fix:** write the directive in its **pair-scoped** form on the mapper class. Those forms *are* matched against
 every synthesized pair, this element pair included, and are measured **applying** at both endpoints:
 
@@ -1303,6 +1318,8 @@ every synthesized pair, this element pair included, and are measured **applying*
 | `[MapIgnore("Id")]` on the method or the class | `[MapIgnore<Dst>("Id")]` on the class | `Honoured` |
 | `[MapProperty("Id", "Name")]` on the method | `[MapProperty<Src, Dst>("Id", "Name")]` on the class | `Refused` — the rename **is** applied, and the added diagnostic is `DWARF038` about the `int → string` conversion that results. The classifier tests for a new diagnostic before it compares output, so an applied-and-warned cell reads the same as a refused one (see [B19](../Issues/round20/TASKS.md)) |
 | `[MapNullSkip(false)]` on the method | `[MapNullSkip<Src, Dst>(false)]` on the class | `Honoured`. The value is repeated in the message rather than the bare form quoted back, because copying out a remedy without it would invert the semantics you asked for. `[DwarfMapper(SkipNullSourceMembers = …)]` reaches the element pair too, if the policy is meant to be the whole mapper's |
+| `[MapValue("Name", "api-v2")]` on the method | `[MapValue<Dst>("Name", "api-v2")]` on the class | `Honoured` — the constant is assigned in the element map. The written form is echoed rather than normalized, so a `Use =` you wrote comes back as a `Use =` |
+| `[Flatten("Child")]` on the method | `[MapProperty<Src, Dst>("Child.<leaf>", "<leaf>")]` on the class, one per pulled-up leaf | `Honoured`. There is **no** `[Flatten<Src, Dst>]`; the dotted source path on the pair-scoped `[MapProperty]` is the form that reaches an element pair, and it names each leaf explicitly rather than pulling up whatever the root happens to carry |
 
 > **Why refused rather than propagated.** For the reason [`DWARF077`](#dwarf077) already states: the
 > synthesized element mapper is keyed by `(source, target)` and shared. Pushing one method's unscoped directive

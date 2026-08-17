@@ -397,8 +397,16 @@ public sealed class SurfaceParityTests
     ///         already used. <c>D17</c> shared the root cause and did NOT close — the option withholds ambient
     ///         registry rows and that front door emits none — so it stays here with its reason corrected.
     ///     </para>
+    ///     <para>
+    ///         13 → <b>12</b> when <c>D10</c> closed. That one is worth reading as a correction and not as a
+    ///         fix: the finding's own note claimed <c>[Flatten]</c> was "honoured at CreateMap and UpdateInto"
+    ///         against a fixture with a real nested member, and it was not — against <c>nested-pair</c> the
+    ///         directive emitted BYTE-IDENTICAL output at all five endpoints, and the two cells that read
+    ///         <c>Refused</c> read so because of an incidental <c>DWARF044</c> nullable-hop warning. A finding
+    ///         can be wrong about the endpoint it holds up as working, and this one was.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 13;
+    private const int DivergenceFindingCeiling = 12;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -441,8 +449,21 @@ public sealed class SurfaceParityTests
     ///         them into <see cref="NotCompilableCellCeiling" />'s population (measured: 99 → 102) instead of
     ///         out of this one. <see cref="DivergenceFindingCeiling" /> therefore did NOT move.
     ///     </para>
+    ///     <para>
+    ///         76 → <b>62</b> when <c>D9</c> and <c>D10</c> were worked. Fourteen cells, and — like the entry
+    ///         above — not one verdict. <c>D10</c> closes ENTIRELY, six cells: <b>3 Honoured</b> (a
+    ///         <c>[Flatten]</c> is now resolved by the projection translator too, through the single
+    ///         <c>ResolveFlattenInfos</c> walk both resolvers call) and <b>3 Refused</b> (<c>DWARF017</c> for
+    ///         the doubled directive, <c>DWARF090</c> element-wise). <c>D9</c> is NARROWED, eight cells:
+    ///         <c>[MapValue]</c> at <c>SpanMap</c> and <c>AsyncStream</c> is now <c>DWARF090</c>, whose
+    ///         pair-scoped remedy was measured <c>Honoured</c> at both before the message named it. Its four
+    ///         <c>Projection</c> cells did not close, for the reason <c>D6</c>/<c>D7</c> did not: the
+    ///         threading was built and measured, one cell closes and three land on <c>DWARF042</c>/
+    ///         <c>DWARF041</c>, which are Errors, so <see cref="NotCompilableCellCeiling" />'s population
+    ///         measured 99 → 102 — the same R4 ordering defect, and forbidden.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 76;
+    private const int DivergentCellCeiling = 62;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

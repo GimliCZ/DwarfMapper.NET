@@ -670,7 +670,35 @@ internal static partial class MapperExtractor
                     // member unconditionally is not the same mapping (a non-null source row must still be
                     // assigned). See the DWARF028 site in MapperExtractor.Projection.cs.
                     skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
-                    projConsumedSources);
+                    projConsumedSources,
+                    // [Flatten] IS threaded, and [MapValue] deliberately is not — the two are not one
+                    // decision, and the difference is a ratchet rather than a semantic.
+                    //
+                    // A flattened leaf is `__s.Root.Leaf`, the navigation access every query provider
+                    // translates, so honouring it is both possible and correct (D10, closed).
+                    //
+                    // A [MapValue] constant is equally translatable, and the object-initializer argument
+                    // recorded for [MapNullSkip] one call away does NOT reach it: a constant assignment
+                    // reads nothing from the destination, so there is no "current value" it needs. The
+                    // threading was therefore built and MEASURED rather than reasoned about, and then
+                    // reverted, exactly as A6 did. Literal readings, from the run with it in place:
+                    //
+                    //   MapValue`0 | ctor(2)      | Method | Projection => Refused (DWARF064 (Info))
+                    //   MapValue`0 | ctor(1)      | Method | Projection => NotCompilable (CS8795)
+                    //   MapValue`0 | Use="probe"  | Method | Projection => NotCompilable (CS8795)
+                    //   MapValue`0 | ×2           | Method | Projection => NotCompilable (CS8795)
+                    //   102 cells are rejected by the C# compiler and therefore judged by nothing
+                    //
+                    // One cell closes and three move into the population the parity theory judges by
+                    // nothing: NotCompilableCellCeiling 99 → 102. DWARF042 (neither constant nor Use) and
+                    // DWARF041 (Use= naming no provider) are ERRORS, a blocking error suppresses the
+                    // class's emission, and the partial projection method is then unimplemented. That is
+                    // the recorded R4 ordering defect, not anything about [MapValue] — the same three
+                    // renderings already read NotCompilable at CreateMap and UpdateInto for the same
+                    // reason. Raising that ceiling is forbidden and closing a cell by relocating it is
+                    // worse than leaving it recorded, so D9 stays, narrowed to its four Projection cells.
+                    // Once R4 is fixed this is one argument, not a design question.
+                    flattenRoots: ReadFlattenRoots(method));
 
                 // Source-side completeness for projection. The resolver already knows which source members it
                 // read, so this needed tracking rather than new analysis — it was simply never asked.
@@ -2863,6 +2891,44 @@ internal static partial class MapperExtractor
                 + "policy is meant to be the whole mapper's.");
         }
 
+        // The METHOD-scoped [MapValue]. Read through ReadMapValues — the reader resolution itself uses — so an
+        // application whose target is absent or not a string is dropped by one rule rather than two, and never
+        // reaches a message with the word "null" in it. Reported for EVERY application, malformed included: a
+        // [MapValue] naming no writable member is refused as DWARF042 at the create map and refused as nothing
+        // at all here, so "it does not reach the element pair" is the true statement in both cases.
+        //
+        // The written form is echoed faithfully — constant, Use=, or neither — for the reason the [MapNullSkip]
+        // arm above records: a remedy that quietly changes what the caller asked for is worse advice than none.
+        // The pair-scoped remedy was MEASURED before it was prescribed: [MapValue<Dst>("Name", "x")] on the
+        // mapper class reads Honoured at SpanMap and at AsyncStream, output differing by the assigned constant.
+        foreach (var mv in ReadMapValues(method))
+        {
+            var written = mv.Use is not null
+                ? $"[MapValue(\"{mv.Target}\", Use = \"{mv.Use}\")]"
+                : mv.IsConstant
+                    ? $"[MapValue(\"{mv.Target}\", {FormatWrittenConstant(mv.Value)})]"
+                    : $"[MapValue(\"{mv.Target}\")]";
+            var remedy = "[MapValue<" + tgt + ">" + written.Substring("[MapValue".Length);
+            // The tail says "reaches", not "is honoured": a well-formed [MapValue] is assigned at those two
+            // endpoints, a malformed one is refused there, and both are cases of the directive ARRIVING. What
+            // it must not claim is projection, where the unscoped form is silent (recorded as D9) — the exact
+            // false-endpoint claim this repository has already shipped once and reverted.
+            Report(written + " on this mapping method", remedy,
+                "The unscoped form reaches the create-map and update-into endpoints — the constant is assigned "
+                + "there, and a malformed one is refused there — and is silent at projection, which is "
+                + "recorded as D9.");
+        }
+
+        // The METHOD-scoped [Flatten]. No pair-scoped twin exists, so the remedy is the dotted source path on
+        // [MapProperty<Src, Dst>], one per pulled-up leaf — measured Honoured at SpanMap and AsyncStream
+        // before being prescribed, because a remedy nobody ran is how a diagnostic sends a caller in a circle.
+        // Read through ReadFlattenRoots, which already drops an absent or non-string argument.
+        foreach (var root in ReadFlattenRoots(method))
+            Report($"[Flatten(\"{root}\")] on this mapping method",
+                $"[MapProperty<{src}, {tgt}>(\"{root}.<leaf>\", \"<leaf>\")], one per pulled-up leaf",
+                "The directive is honoured at the create-map, update-into and projection endpoints, which is "
+                + "why its silence here is worth saying out loud.");
+
         return false;
 
         void Report(string written, string remedy, string elsewhere) =>
@@ -2874,6 +2940,23 @@ internal static partial class MapperExtractor
                 + $"pair. Write it PAIR-SCOPED on the mapper class — {remedy} — which does apply here. "
                 + elsewhere));
     }
+
+    /// <summary>
+    ///     A <c>[MapValue]</c> constant as it should appear back in a diagnostic's quoted source — quoted for a
+    ///     string, bare for a number, <c>null</c> for a value <see cref="SymbolDisplay.FormatPrimitive" /> does
+    ///     not recognise.
+    ///     <para>
+    ///         Separate from <c>RenderConstantLiteral</c> on purpose: that one renders a literal to be COMPILED
+    ///         into the generated mapper and therefore needs the destination type to cast against. This one
+    ///         renders text a human reads and copies back into their own source, where no destination type is
+    ///         in hand and a cast would be noise.
+    ///     </para>
+    /// </summary>
+    private static string FormatWrittenConstant(TypedConstant value) =>
+        value.Value is null
+            ? "null"
+            : SymbolDisplay.FormatPrimitive(value.Value, quoteStrings: true, useHexadecimalNumbers: false)
+              ?? "null";
 
     /// <summary>
     ///     The tail of <c>DWARF090</c>'s message for the two member directives: where the unscoped form DOES

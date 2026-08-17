@@ -244,33 +244,30 @@ internal static class DeclaredDivergences
             ]),
 
         ["D9"] = new(
-            "[MapValue(\"Name\", …)] assigns a constant to a destination member. Honoured at CreateMap and "
-            + "UpdateInto, silent at Projection, SpanMap and AsyncStream: the same mapper produces the "
-            + "constant on two overloads and the auto-matched source value — or the type default — on three. "
-            + "Re-measured for this record: the reading originally filed for D9 was a REFUSAL of a nonsense "
-            + "argument (a string constant assigned to an int), which decided nothing; with an argument that "
-            + "names a real member of the fixture the directive is genuinely honoured at Create/Update, and "
-            + "the silence at the other three is a genuine divergence.",
+            "[MapValue(\"Name\", …)] assigns a constant to a destination member, and Projection does not read "
+            + "the directive at all. NARROWED to Projection: the SpanMap and AsyncStream cells this finding "
+            + "also covered are now Refused as DWARF090, whose remedy — the pair-scoped [MapValue<TTarget>] — "
+            + "was measured Honoured at both of those endpoints before the message prescribed it. What "
+            + "remains is Projection, and it remains for a BOOKKEEPING reason that is worth stating rather "
+            + "than dressing up. Threading [MapValue] into ResolveProjectionMembers was built and measured, "
+            + "not argued: the ctor(2) cell — a constant silently not applied, the genuinely dangerous one — "
+            + "does close (Refused, DWARF064), and the three malformed applications earn DWARF042/DWARF041, "
+            + "which are Errors, so a blocking error suppresses emission and their cells read CS8795. "
+            + "Measured NotCompilableCellCeiling 99 -> 102. That is the recorded R4 ordering defect and not "
+            + "anything about this directive: the identical three renderings ALREADY read NotCompilable at "
+            + "CreateMap and UpdateInto, which also corrects this entry's earlier claim that all four axes "
+            + "are honoured there — only ctor(2) is (Refused, DWARF064 Info, output differing by the "
+            + "assigned constant). NOT structurally inapplicable: the measurement proves a threaded "
+            + "[MapValue] produces the right expression, and a constant assignment reads nothing from the "
+            + "destination, so the object-initializer reasoning recorded for [MapNullSkip] does not reach "
+            + "it. The one argument that closes this is waiting on R4.",
             Findings + "#D9",
             [
-                new DivergentCell("MapValue", 0, "ctor(1)", AttributeTargets.Method, ProjectionAndElementWise),
-                new DivergentCell("MapValue", 0, "ctor(2)", AttributeTargets.Method, ProjectionAndElementWise),
+                new DivergentCell("MapValue", 0, "ctor(1)", AttributeTargets.Method, SurfaceEndpoints.Projection),
+                new DivergentCell("MapValue", 0, "ctor(2)", AttributeTargets.Method, SurfaceEndpoints.Projection),
                 new DivergentCell("MapValue", 0, "Use=\"probe\"", AttributeTargets.Method,
-                    ProjectionAndElementWise),
-                new DivergentCell("MapValue", 0, "×2", AttributeTargets.Method, ProjectionAndElementWise)
-            ]),
-
-        ["D10"] = new(
-            "[Flatten(\"Child\")] pulls a nested member's members up into the destination. Honoured at "
-            + "CreateMap and UpdateInto, silent at Projection, SpanMap and AsyncStream, where the flattened "
-            + "destination members are simply left at their defaults. Re-measured for this record: the "
-            + "originally filed evidence named a SCALAR member, so \"acts at Create/Update (blocking)\" was a "
-            + "refusal of nonsense; against a fixture with a real nested member the directive is honoured "
-            + "there and the three silences stand.",
-            Findings + "#D10",
-            [
-                new DivergentCell("Flatten", 0, "ctor(1)", AttributeTargets.Method, ProjectionAndElementWise),
-                new DivergentCell("Flatten", 0, "×2", AttributeTargets.Method, ProjectionAndElementWise)
+                    SurfaceEndpoints.Projection),
+                new DivergentCell("MapValue", 0, "×2", AttributeTargets.Method, SurfaceEndpoints.Projection)
             ]),
 
         ["D11"] = new(
@@ -375,6 +372,25 @@ internal static class DeclaredDivergences
         // D19 refuses the by-name wire as the new DWARFR10; D18 made the registry's extension class internal
         // unless the assembly opts in, which is what the option's own documentation always said it was.
         //
+        // D10 was here — [Flatten] silent at Projection, SpanMap and AsyncStream. Closed, and the record it
+        // leaves behind is a correction rather than a fix report: the finding's own re-measurement note
+        // claimed the directive was "honoured at CreateMap and UpdateInto" against a fixture with a real
+        // nested member. It was not. Against `nested-pair` the flatten resolved its root, found leaf X, and
+        // matched it to no destination member — that fixture's Dst still declares the NESTED member, so
+        // there was nothing for a leaf to be pulled up into — and emitted BYTE-IDENTICAL output at all five
+        // endpoints. The two cells that read Refused there read so because of DWARF044, a nullable-hop
+        // WARNING about a hop nobody took. The finding asserted a divergence between endpoints that were
+        // doing the same nothing.
+        //
+        // The fixture demand is now "flattenable-nested-member" (a struct root and a destination carrying
+        // the LEAF), against which the directive genuinely acts, and the closure is a fix in two halves:
+        // ResolveFlattenInfos is one walk both resolvers call, so Projection honours the flatten
+        // (`__s.Child.X`, which a query provider translates) instead of discarding it; and the element-wise
+        // endpoints refuse it as DWARF090, naming the dotted [MapProperty<Src, Dst>] remedy that was
+        // measured Honoured there first. Final reading: Honoured / Honoured / Honoured / Refused / Refused
+        // for ctor(1), and Refused (DWARF017, ambiguous flatten) / DWARF090 for ×2. No cell silent, none
+        // moved into a population judged by nothing.
+        //
         // D20 was here — the co-located host read no member-level directive, twenty cells across the
         // Property and Field sites. Closed by teaching MapperExtractor's co-located path to read those
         // forms off the host's own members, through the one MemberDirectives parser the [MapTo] registry
@@ -390,10 +406,6 @@ internal static class DeclaredDivergences
     private const SurfaceEndpoints ElementWiseAndMore =
         SurfaceEndpoints.UpdateInto | SurfaceEndpoints.Projection | SurfaceEndpoints.SpanMap
         | SurfaceEndpoints.AsyncStream;
-
-    /// <summary>Projection plus the two element-wise endpoints — a directive that acts on create and update.</summary>
-    private const SurfaceEndpoints ProjectionAndElementWise =
-        SurfaceEndpoints.Projection | SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream;
 
     /// <summary>
     ///     The finding covering one cell, or <c>null</c>. Every component of the key must match: an entry

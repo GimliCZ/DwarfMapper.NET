@@ -11,6 +11,82 @@ namespace DwarfMapper.Generator.Pipeline;
 internal static partial class MapperExtractor
 {
     /// <summary>
+    ///     Resolves every <c>[Flatten("Root")]</c> directive to the root member and the leaves it pulls up,
+    ///     reporting <c>DWARF016</c> for a root that names nothing, names a scalar, or has no readable members.
+    ///     <para>
+    ///         Shared by the runtime resolver (<c>ResolveMembers</c>) and the projection resolver
+    ///         (<c>ResolveProjectionMembers</c>). It was inline in the first of those and the second had no copy
+    ///         at all, which is exactly the divergence recorded as <c>D10</c>: the directive resolved at
+    ///         create-map and update-into and was discarded without a word at projection. One walk rather than
+    ///         two, so a root the runtime path refuses cannot be silently accepted by the other.
+    ///     </para>
+    /// </summary>
+    /// <param name="flattenRoots">
+    ///     The root names, already read through <see cref="ReadFlattenRoots" /> — which drops an absent or
+    ///     non-string argument, so a malformed directive reaches neither the model nor a message.
+    /// </param>
+    /// <param name="sourceType">The mapping's source type, whose members the roots name.</param>
+    /// <param name="comparer">The mapper's member-name comparer, so <c>CaseInsensitive</c> reaches roots too.</param>
+    /// <param name="allowNonPublic">
+    ///     Whether non-public members are readable. Deliberately a parameter: the projection resolver passes
+    ///     <c>ProjectionPublicOnly</c> because an expression tree cannot read a non-public member, and inheriting
+    ///     the mapper's value here would resolve a leaf the provider cannot translate.
+    /// </param>
+    /// <param name="warnNullableHop">
+    ///     Whether a nullable-reference root earns <c>DWARF044</c>. True for the runtime path, where the emitted
+    ///     <c>src.Root.Leaf</c> throws on a null root; FALSE for projection, where the provider translates the
+    ///     path to a join that yields null — the same choice the dotted <c>[MapProperty]</c> source path already
+    ///     makes at that endpoint, and stating it as a parameter keeps the two from drifting apart.
+    /// </param>
+    /// <param name="location">Where to report.</param>
+    /// <param name="diagnostics">The collector.</param>
+    private static List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)> ResolveFlattenInfos(
+        IReadOnlyList<string> flattenRoots, ITypeSymbol sourceType, StringComparer comparer,
+        Compilation compilation, bool allowNonPublic, bool warnNullableHop, LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        var flattenInfos = new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)>();
+        foreach (var root in flattenRoots)
+        {
+            var match = ReadableMembers(sourceType, compilation, allowNonPublic)
+                .Where(m => comparer.Equals(m.Name, root))
+                .Select(m => ((string Name, ITypeSymbol Type)?)m)
+                .FirstOrDefault();
+            if (match is null)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
+                continue;
+            }
+
+            var rootType = match.Value.Type;
+            // Scalars (string, primitives, enums) are not flattenable roots — flattening their
+            // BCL members (e.g. string.Length) is never intended and must not happen silently.
+            if (rootType.SpecialType != SpecialType.None || rootType.TypeKind == TypeKind.Enum)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
+                continue;
+            }
+
+            var leaves = ReadableMembers(rootType, compilation, allowNonPublic).ToList();
+            if (leaves.Count == 0)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
+                continue;
+            }
+
+            // A [Flatten] over a nullable-reference root emits unguarded `src.Root.Leaf` accesses that NRE
+            // at runtime if the root is null. The dotted [MapProperty] path warns DWARF044 for the same
+            // hazard; the [Flatten] path must be consistent (loud, never silent).
+            if (warnNullableHop && SourceMayBeNullRef(rootType))
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
+                    $"[Flatten] source '{root}' is a nullable reference; a null value throws at runtime when its flattened members are read"));
+            flattenInfos.Add((match.Value.Name, leaves));
+        }
+
+        return flattenInfos;
+    }
+
+    /// <summary>
     ///     The extractor's name for <see cref="MemberFacts.TryResolvePath" />. The walk itself is shared because
     ///     <c>ConstructorSelector</c> has to answer the same question when it scores which parameters have a
     ///     source, and a second copy is how the two came to disagree (R18-31).
