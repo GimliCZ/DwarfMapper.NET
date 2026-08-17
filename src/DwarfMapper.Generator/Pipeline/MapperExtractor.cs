@@ -306,7 +306,7 @@ internal static partial class MapperExtractor
                 var spanComp = ctx.SemanticModel.Compilation;
                 var spanAutoNest = ReadMethodAutoNest(method, classAutoNest);
                 if (ReportElementWiseDirectiveGaps(method, classSymbol, spanSrcElem, spanDstElem, explicitOnly,
-                        methodLocation, diagnostics))
+                        spanComp, allowNonPublic, methodLocation, diagnostics))
                     continue;
 
                 if (!TryResolveConversion(spanComp, spanSrcElem, spanDstElem, null, allMethods, mapperMethods,
@@ -526,7 +526,7 @@ internal static partial class MapperExtractor
                 var asComp = ctx.SemanticModel.Compilation;
                 var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
                 if (ReportElementWiseDirectiveGaps(method, classSymbol, asSrcElem, asDstElem, explicitOnly,
-                        methodLocation, diagnostics))
+                        asComp, allowNonPublic, methodLocation, diagnostics))
                     continue;
 
                 if (!TryResolveConversion(asComp, asSrcElem, asDstElem, null, allMethods, mapperMethods,
@@ -2687,11 +2687,23 @@ internal static partial class MapperExtractor
     ///         <c>[MapIgnore(null)]</c> yields no name and must reach neither the model nor a message).
     ///         The overloads they skip are already <c>DWARF088</c>'s, so nothing is reported twice.
     ///     </para>
+    ///     <para>
+    ///         A CLASS-scoped directive is additionally required to NAME A MEMBER of the element pair's target.
+    ///         Class-wide directives are meant to be tolerated where they match nothing — a mapper declaring a
+    ///         create map over one pair and a span map over an unrelated one carries an ignore that is about the
+    ///         first pair only — so without that filter the gate reported a pair the caller never wrote about
+    ///         and prescribed a remedy naming a member the type does not have. The method site is deliberately
+    ///         NOT filtered: a directive written on the span method is about that method and nothing else, so a
+    ///         name matching no member there is a mistake worth stating rather than another pair's business.
+    ///     </para>
     /// </summary>
     /// <param name="method">The span or async-stream mapping method.</param>
     /// <param name="classSymbol">Its mapper class, whose class-scoped directives are dropped here too.</param>
     /// <param name="srcElement">The element pair's source type, named in the remedy.</param>
-    /// <param name="tgtElement">The element pair's target type, named in the remedy.</param>
+    /// <param name="tgtElement">
+    ///     The element pair's target type. Named in the remedy, and — for the CLASS site — the type whose
+    ///     writable members decide whether there is anything here to report at all.
+    /// </param>
     /// <param name="explicitOnly"><c>[DwarfMapper(AutoMatchMembers = false)]</c> is in force.</param>
     /// <returns>
     ///     <c>true</c> when the method must not be emitted at all. Only the explicit-only refusal returns it:
@@ -2701,7 +2713,8 @@ internal static partial class MapperExtractor
     /// </returns>
     private static bool ReportElementWiseDirectiveGaps(
         IMethodSymbol method, INamedTypeSymbol classSymbol, ITypeSymbol srcElement, ITypeSymbol tgtElement,
-        bool explicitOnly, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+        bool explicitOnly, Compilation compilation, bool allowNonPublic, LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
     {
         if (explicitOnly)
         {
@@ -2713,15 +2726,42 @@ internal static partial class MapperExtractor
         var src = srcElement.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
         var tgt = tgtElement.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
 
+        // The destination members the element pair actually has. [MapIgnore] names a DESTINATION member, so
+        // this is the same set resolution consults when deciding what an ignore excludes. Built lazily
+        // because the overwhelmingly common case is a class with no unscoped [MapIgnore] at all.
+        HashSet<string>? elementTargetMembers = null;
+
         foreach (var (symbol, site) in new[] { ((ISymbol)method, "mapping method"), (classSymbol, "mapper class") })
         {
+            var isClassSite = !ReferenceEquals(symbol, method);
             foreach (var ignored in ReadIgnores(symbol))
+            {
+                // A class-level [MapIgnore] is class-WIDE, and being tolerated where it matches nothing is how
+                // it is meant to work: a mapper declaring a create map over (Src, Dst) and a span map over an
+                // unrelated (Foo, Bar) legitimately carries an ignore that is about Dst alone. Reported
+                // unfiltered, this named a pair the caller never wrote about and prescribed
+                // [MapIgnore<Bar>("Id")] for a type with no Id — as a warning this repository escalates to an
+                // error. That is the objection the [MapProperty] exclusion below already makes; it belongs to
+                // both attributes, and applying it to one was the defect.
+                //
+                // Case-INSENSITIVE on purpose, and it is the conservative direction: a member differing only in
+                // case is one the caller plausibly meant, so it is still reported. The filter exists to drop
+                // reports about a pair the directive has nothing to do with, never to lose a real one.
+                if (isClassSite)
+                {
+                    elementTargetMembers ??= new HashSet<string>(
+                        MemberFacts.Writable(tgtElement, compilation, allowNonPublic).Select(m => m.Name),
+                        StringComparer.OrdinalIgnoreCase);
+                    if (!elementTargetMembers.Contains(ignored)) continue;
+                }
+
                 Report($"[MapIgnore(\"{ignored}\")] on this {site}", $"[MapIgnore<{tgt}>(\"{ignored}\")]");
+            }
 
             // Only the method site: the pair-scoped [MapProperty<S,T>] IS the class form, and the class's
             // unscoped applications belong to whatever [GenerateMap] pair the class declares rather than to a
             // method — reporting them here would name a pair the caller never wrote about.
-            if (!ReferenceEquals(symbol, method)) continue;
+            if (isClassSite) continue;
             foreach (var (source, target, _) in ReadExplicitMaps(symbol))
                 Report($"[MapProperty(\"{source}\", \"{target}\")] on this {site}",
                     $"[MapProperty<{src}, {tgt}>(\"{source}\", \"{target}\")]");

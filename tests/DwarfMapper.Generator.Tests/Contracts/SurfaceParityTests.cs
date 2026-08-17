@@ -212,10 +212,18 @@ public sealed class SurfaceParityTests
     ///         printout separated it from the CS8795 crowd it was hiding in. It is now refused as
     ///         <c>DWARF087</c>, and this cell has joined the CS8795 population (96 → 97) rather than leaving
     ///         it: a refused mapper emits nothing, so its partial method is unimplemented exactly like every
-    ///         other DWARF error's. The count is therefore UNCHANGED at 107 — the fix moved a cell between
+    ///         other DWARF error's. The count was therefore UNCHANGED by that fix — it moved a cell between
     ///         causes instead of removing one, which is the right end state (the cell is now indistinguishable
     ///         from an ordinary refusal) and is also why no ceiling moved for it. It becomes <c>Refused</c>
     ///         when R4 does.
+    ///     </para>
+    ///     <para>
+    ///         The ceiling stood at 107 while the paragraph above was written and is now <b>99</b>:
+    ///         <c>DWARF091</c> retired eight cells from this population outright rather than moving them within
+    ///         it. <c>[BeforeMap]</c> and <c>[AfterMap]</c> on a partial mapping method used to trip
+    ///         <c>DWARF018</c>, a blocking error, so five <c>BeforeMap</c> cells and three <c>AfterMap</c> cells
+    ///         sat here behind <c>CS8795</c>; refused as a Warning instead, they read <c>Refused</c> — which is
+    ///         what R4 will eventually do for the rest of this population.
     ///     </para>
     ///     <para>
     ///         An uncounted pass is a silent absence of coverage whatever its cause, which is the thing this

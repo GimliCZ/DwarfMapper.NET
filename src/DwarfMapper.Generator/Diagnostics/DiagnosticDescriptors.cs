@@ -1064,8 +1064,13 @@ public static class DiagnosticDescriptors
     ///         The remedy is a form that already works here, which is what makes this a refusal a caller can
     ///         act on rather than a capability withdrawal: the PAIR-SCOPED twins
     ///         <c>[MapIgnore&lt;TTarget&gt;("X")]</c> and <c>[MapProperty&lt;TSource, TTarget&gt;("X", "Y")]</c>
-    ///         are matched against every synthesized pair, including this element pair, and are measured
-    ///         Honoured at both element-wise endpoints. The message names the exact replacement text.
+    ///         are matched against every synthesized pair, including this element pair. Measured on the surface
+    ///         matrix, and stated exactly because the two readings differ: <c>[MapIgnore&lt;TTarget&gt;]</c> reads
+    ///         <c>Honoured</c> at both element-wise endpoints, while <c>[MapProperty&lt;TSource, TTarget&gt;]</c>
+    ///         reads <c>Refused</c> there — the bind happens and a <c>DWARF038</c> about the resulting
+    ///         <c>int → string</c> conversion rides along, and the classifier tests for an added diagnostic
+    ///         before it compares output. The conversion warning IS the evidence the rename was applied, but it
+    ///         is not the same observation as <c>Honoured</c>. The message names the exact replacement text.
     ///     </para>
     ///     <para>
     ///         A <b>Warning</b>, for the reason <c>DWARF088</c> and <c>DWARF089</c> are: a blocking error

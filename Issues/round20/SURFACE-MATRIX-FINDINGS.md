@@ -31,7 +31,9 @@
 > distinct root causes**, established by measurement rather than assumed from the shared symptom. `D1` and `D2`
 > are one shape and are closed by generalizing the twice-written `DWARF077` check into a single element-wise
 > gate reporting the new **`DWARF090`**: eight cells Silent → Refused, with the remedy the message names
-> (`[MapIgnore<TTarget>]`, `[MapProperty<TSource, TTarget>]`) measured Honoured at those very endpoints.
+> (`[MapIgnore<TTarget>]`, `[MapProperty<TSource, TTarget>]`) measured applying at those very endpoints —
+> `Honoured` for the ignore, and for the rename `Refused` by the `DWARF038` conversion warning that only fires
+> *because* the bind happened.
 > `D16` is **not** propagation and needed its own fix, the new **`DWARF091`** — and chasing it down turned up
 > the worst defect of the round: `[AfterMap]` on `void Update(Src, Dst)` was emitting `Update(s, d);` **inside
 > `Update`**, shipped infinite recursion, which **the matrix had scored `Honoured`**. That grading failure is

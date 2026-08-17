@@ -1281,12 +1281,12 @@ Before this check existed, one mapper excluded a member on three of its overload
 two, saying nothing — surface-matrix findings `D1` and `D2`.
 
 **Fix:** write the directive in its **pair-scoped** form on the mapper class. Those forms *are* matched against
-every synthesized pair, this element pair included, and are measured `Honoured` at both endpoints:
+every synthesized pair, this element pair included, and are measured **applying** at both endpoints:
 
-| You wrote | Write instead |
-|---|---|
-| `[MapIgnore("Id")]` on the method or the class | `[MapIgnore<Dst>("Id")]` on the class |
-| `[MapProperty("Id", "Name")]` on the method | `[MapProperty<Src, Dst>("Id", "Name")]` on the class |
+| You wrote | Write instead | What the matrix measures for the replacement |
+|---|---|---|
+| `[MapIgnore("Id")]` on the method or the class | `[MapIgnore<Dst>("Id")]` on the class | `Honoured` |
+| `[MapProperty("Id", "Name")]` on the method | `[MapProperty<Src, Dst>("Id", "Name")]` on the class | `Refused` — the rename **is** applied, and the added diagnostic is `DWARF038` about the `int → string` conversion that results. The classifier tests for a new diagnostic before it compares output, so an applied-and-warned cell reads the same as a refused one (see [B19](../Issues/round20/TASKS.md)) |
 
 > **Why refused rather than propagated.** For the reason [`DWARF077`](#dwarf077) already states: the
 > synthesized element mapper is keyed by `(source, target)` and shared. Pushing one method's unscoped directive
