@@ -65,8 +65,13 @@ preserve/graph family (`CollectionGraphNodeRuntimeTests`, `GoldenSharedListTests
 Full list: `DwarfMapExceptions.cs` L80/L82/L83/L102; `DwarfMapperRegistry.cs` L56/L87/L140/L258(×2);
 `DwarfRefContext.cs` L78/L111/L130(×3)/L168; `IDwarfMapper.cs` L60/L73(×2).
 
-**Conclusion: the filter must be the 23 derived classes, not the 7.** With all 23 in the filter, **zero**
+**Conclusion at the time: a filter would have to name the 23 derived classes, not the 7** — with all 23, zero
 killed mutants lose all their killers.
+
+> **Superseded — read on before acting on this.** No filter shipped. The maintainer declined test-set exclusion
+> outright, and the corrected data later showed this derivation was itself incomplete: there are **26** killer
+> classes, not 23, because 11 mutants in the source report had an empty `killedBy`. See *E1 — the filtering
+> mechanism: found, measured, and DECLINED*.
 
 ### Timeouts — the second loss channel, which `killedBy` alone cannot see
 
