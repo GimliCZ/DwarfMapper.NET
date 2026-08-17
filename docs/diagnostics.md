@@ -1545,7 +1545,7 @@ public partial class N
 ```
 
 **Fix:** declare the payload pair as `[GenerateMap<A, B>]` on the class — that is the list this attribute
-expands, and against it `Envelope<Src> Map(Envelope<Dst>)` is emitted. One sharp edge, measured rather than
+expands, and against it `Envelope<Dst> Map(Envelope<Src> src)` is emitted. One sharp edge, measured rather than
 assumed: `[GenerateMap<A, B>]` emits its **own** `B Map(A)`, so adding it to a class that already declares a
 `partial B Map(A)` over the same pair is `CS0111`. There, declare the pair with `[GenerateMap]` *instead of*
 the partial method — which is why the two classes above are separate.
