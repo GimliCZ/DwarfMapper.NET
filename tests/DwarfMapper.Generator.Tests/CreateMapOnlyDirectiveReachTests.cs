@@ -298,6 +298,30 @@ public class CreateMapOnlyDirectiveReachTests
     }
 
     [Fact]
+    public void The_dispatch_remedy_is_pinned_at_AsyncStream_and_not_only_at_SpanMap()
+    {
+        // The message prescribes the same remedy at BOTH element-wise endpoints, and the test above measures
+        // one of them. D6/D7 are the standing proof that one endpoint does not carry to its twin, and A8's
+        // review dinged exactly this omission for its own two remedies. Pinned rather than assumed.
+        var generated = GeneratorAssert.EmitsCompilableCode(Hierarchy + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapDerivedType(typeof(SrcDerived), typeof(DstDerived))]
+                public partial Dst Map(Src s);
+
+                public partial DstDerived MapDerived(SrcDerived s);
+
+                public partial IAsyncEnumerable<Dst> MapStream(IAsyncEnumerable<Src> s);
+            }
+            """);
+
+        Assert.Contains("yield return Map(", generated, StringComparison.Ordinal);
+        Assert.Contains("global::Demo.SrcDerived __s => MapDerived(__s)", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_dispatch_arm_naming_a_type_that_is_not_assignable_is_still_reported_and_never_crashes()
     {
         // At a create map this is DWARF035, an Error; here it was refused as nothing at all. Reported per
