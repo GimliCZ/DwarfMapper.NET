@@ -1281,6 +1281,20 @@ public partial class M
 Before this check existed, one mapper excluded a member on three of its overloads and copied it on the other
 two, saying nothing — surface-matrix findings `D1` and `D2`.
 
+The same rule reaches a third directive, `[MapNullSkip]`, for the same reason and with the same remedy. The
+null-skip policy of an element pair comes from the synthesized mapper, so a `[MapNullSkip]` on the span or
+stream method decided nothing at all — finding `D6`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapNullSkip]                                  // DWARF090 — the element pair never sees it
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+}
+```
+
 **Fix:** write the directive in its **pair-scoped** form on the mapper class. Those forms *are* matched against
 every synthesized pair, this element pair included, and are measured **applying** at both endpoints:
 
@@ -1288,6 +1302,7 @@ every synthesized pair, this element pair included, and are measured **applying*
 |---|---|---|
 | `[MapIgnore("Id")]` on the method or the class | `[MapIgnore<Dst>("Id")]` on the class | `Honoured` |
 | `[MapProperty("Id", "Name")]` on the method | `[MapProperty<Src, Dst>("Id", "Name")]` on the class | `Refused` — the rename **is** applied, and the added diagnostic is `DWARF038` about the `int → string` conversion that results. The classifier tests for a new diagnostic before it compares output, so an applied-and-warned cell reads the same as a refused one (see [B19](../Issues/round20/TASKS.md)) |
+| `[MapNullSkip(false)]` on the method | `[MapNullSkip<Src, Dst>(false)]` on the class | `Honoured`. The value is repeated in the message rather than the bare form quoted back, because copying out a remedy without it would invert the semantics you asked for. `[DwarfMapper(SkipNullSourceMembers = …)]` reaches the element pair too, if the policy is meant to be the whole mapper's |
 
 > **Why refused rather than propagated.** For the reason [`DWARF077`](#dwarf077) already states: the
 > synthesized element mapper is keyed by `(source, target)` and shared. Pushing one method's unscoped directive

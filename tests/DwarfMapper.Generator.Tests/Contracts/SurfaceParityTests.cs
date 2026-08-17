@@ -429,8 +429,20 @@ public sealed class SurfaceParityTests
     ///         <c>Assembly</c> site, which is the boundary the flip had to respect: the registry now emits an
     ///         <c>internal</c> extension class by default, and every other cell is byte-identical.
     ///     </para>
+    ///     <para>
+    ///         82 → <b>76</b> when <c>[MapNullSkip]</c>'s three readers became one
+    ///         (<c>MapperExtractor.ResolveNullSkip</c>). <c>D6</c> and <c>D7</c> were narrowed rather than
+    ///         deleted, which is the case this file's own failure message describes: six of their nine cells
+    ///         closed with two verdicts — <b>4 Honoured</b> (the pair-scoped form at <c>CreateMap</c> and
+    ///         <c>UpdateInto</c>, which it had never reached) and <b>2 Refused (DWARF090)</b> (the method form
+    ///         element-wise, where a shared synthesized mapper structurally cannot see it) — and the three
+    ///         <c>Projection</c> cells did not. They did not because the honest refusal there is the blocking
+    ///         <c>DWARF028</c> the class-level option already gets, whose <c>CS8795</c> cascade would have moved
+    ///         them into <see cref="NotCompilableCellCeiling" />'s population (measured: 99 → 102) instead of
+    ///         out of this one. <see cref="DivergenceFindingCeiling" /> therefore did NOT move.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 82;
+    private const int DivergentCellCeiling = 76;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

@@ -615,21 +615,98 @@ the absence here a gap rather than a shape.
 
 <a id="D6"></a>
 
-### D6 — `[MapNullSkip(true)]` on a method — 3 cells
+### D6 — `[MapNullSkip(true)]` on a method — 3 cells → **1 cell, NARROWED**
 
-*Method site → Projection, SpanMap, AsyncStream.* Acts at CreateMap and UpdateInto (Honoured). Null-skipping
-decides whether a null source member overwrites the destination, so the caller gets one behaviour on two
-overloads and its opposite on three. Its pair-scoped twin proves the endpoints are reachable — see D7.
+> **PARTIALLY RESOLVED 2026-08-17, together with D7 — one root cause, three readers.** See
+> [the joint resolution](#D6D7) immediately below D7. Two of this finding's three cells close as
+> `Refused (DWARF090)`; the **Projection** cell stands, and stands for a reason that is a decision rather than
+> plumbing.
+
+*Method site → Projection.* Acts at CreateMap and UpdateInto (Honoured), refused element-wise (DWARF090).
+Null-skipping decides whether a null source member overwrites the destination, and projection answers that
+question differently from `.Map` on the same mapper without saying so.
 
 <a id="D7"></a>
 
-### D7 — `[MapNullSkip<Src, Dst>(true)]` on the class is D6 inverted — 6 cells
+### D7 — `[MapNullSkip<Src, Dst>(true)]` on the class is D6 inverted — 6 cells → **2 cells, NARROWED**
 
-*Class site, `ctor(1)` and ×2 → CreateMap, UpdateInto, Projection.* Acts at SpanMap, AsyncStream and
-CoLocatedHost. Exactly the complement of D6: between the two forms a caller can reach every endpoint, and with
-either alone reaches roughly half, silently. **"Pair-scoped attributes do not reach method-declared pairs" is
-not the explanation** — `MapProperty<S,T>`, `MapValue<T>`, `MapIgnore<T>` and `MapConstructor<S,T>` all act at
-the method endpoints in the same run.
+*Class site, `ctor(1)` and ×2 → Projection.* Now acts at CreateMap, UpdateInto, SpanMap, AsyncStream and
+CoLocatedHost. **"Pair-scoped attributes do not reach method-declared pairs" was never the explanation** —
+`MapProperty<S,T>`, `MapValue<T>`, `MapIgnore<T>` and `MapConstructor<S,T>` all act at the method endpoints in
+the same run — and the four cells resting on that claim are removed rather than re-argued.
+
+<a id="D6D7"></a>
+
+#### D6 + D7 — the joint resolution: three readers of one option
+
+**Neither *form* was wrong.** Both `MapNullSkipAttribute` and `MapNullSkipAttribute<TSource, TTarget>` declare
+`[DwarfSurface(…)]` with the default `AppliesTo = SurfaceEndpoints.All`, and `SurfaceEndpoints.All`'s own
+documentation makes that a live claim in both directions rather than an omission ("over-claiming fails and
+under-claiming fails too, so there is no value that passes vacuously"). Their XML docs describe one option
+written at two scopes. So the intended endpoint set is the union — every endpoint that has a declaration site
+for the form — and the declaration was telling the truth. The **implementation** had three partial readers of
+one option:
+
+| Reader | Where | What it saw |
+|---|---|---|
+| `ReadMapNullSkip(method) ?? classDefault` | `MapperExtractor.cs` update-into and create-map `ResolveMembers` calls | the method form and the class policy — **never** the pair-scoped form |
+| `ResolvePairNullSkip(pairNullSkips, …)` | the `[GenerateMap]` pair loop and the auto-synthesized nested/element pair loop | the pair-scoped form and the class policy — and had no method to read |
+| bare `skipNullSrc` | the projection endpoint's `ResolveProjectionMembers` call | **neither** scoped form |
+
+That is why the two findings were the exact complement of each other, and why between them a caller reached
+every endpoint while either alone reached about half — silently.
+
+**Closed by making them one.** `ResolvePairNullSkip` is gone, folded into a single
+`MapperExtractor.ResolveNullSkip(pairNullSkips, method, source, target, classDefault)` that every mapping-shape
+front door now calls. Precedence is **most-specific-wins**: the method form, then the pair-scoped form, then the
+mapper's `SkipNullSourceMembers`, then the assembly default. Contradictory values across the two forms became
+reachable the moment both fed one resolution and nothing defined them before; this is the answer both
+attributes' own documentation already implied, since the method form exists to *"carve one method out of a class
+that enables it"* and carving out only works if it outranks what it is carving out of. Pinned in both
+directions by `MapNullSkipScopeTests.A_method_form_outranks_a_contradicting_pair_form_in_both_directions`.
+
+**The element-wise cells are a refusal, not propagation** — the D1/D2 precedent, for the reason `DWARF077`
+records: the mapper synthesized for an element pair is shared by every route to that pair, so pushing one
+method's directive into it would silently re-configure a mapping another method owns. `DWARF090` now covers
+`[MapNullSkip]` alongside `[MapIgnore]` and `[MapProperty]`, and names `[MapNullSkip<Src, Dst>(…)]` as the
+remedy — **with the value repeated**, because a bare remedy quoted back at a written `[MapNullSkip(false)]`
+would invert the semantics the caller asked for. The remedy is measured `Honoured` at both endpoints, and
+`DWARF090`'s "where it does act" sentence is now a parameter rather than a baked-in claim: the stock wording
+says the unscoped form is honoured at projection, which is true of the two member directives and **false** of
+this one.
+
+| Case | Before | After |
+|---|---|---|
+| `[MapNullSkip<Src, Dst>(true)]` on the class @ CreateMap | **Silent** | **Honoured** |
+| `[MapNullSkip<Src, Dst>(true)]` on the class @ UpdateInto | **Silent** | **Honoured** |
+| ×2, same two endpoints | **Silent** | **Honoured** |
+| `[MapNullSkip(true)]` on a method @ SpanMap | **Silent** | **Refused (DWARF090, Warning)** |
+| `[MapNullSkip(true)]` on a method @ AsyncStream | **Silent** | **Refused (DWARF090, Warning)** |
+| Both forms @ Projection (3 cells) | **Silent** | **Silent — still recorded** |
+
+**Six cells close. `DivergentCellCeiling` 82 → 76**; `DivergenceFindingCeiling` stays at **13**, because both
+findings survive with their Projection cell. Re-measured across every other population in the same run and all
+five are byte-for-byte unchanged: `NotCompilable` 99, `UnhonouredButLoud` 14, `Unaskable` 44, `NoSuchSite` 137,
+`StructurallyExcused` 12. Surface matrix 865/865 before and after.
+
+**Why Projection did not close, measured rather than assumed.** It looks like it should fall out for free, and
+the one-line change was made and then reverted. `ResolveProjectionMembers` *already* refuses an untranslatable
+null-skip per affected member with `DWARF028` — the identical treatment
+`[DwarfMapper(SkipNullSourceMembers = true)]` and its assembly twin already get at this endpoint (see the
+generated option support matrix). Threading the resolved value in therefore produces the **right generator
+behaviour** and makes the option uniform across all four of its scopes. But `DWARF028` is an **Error**, a
+blocking error suppresses the class's emission, and the partial projection method is then unimplemented: all
+three cells measured `NotCompilable (CS8795)`, not `Refused`. That is the instrument gap **G4/R4** recorded
+earlier in this file, and it raises `NotCompilableCellCeiling` **99 → 102** — a ratchet raise, and a closure by relocating a cell into
+the population the parity theory judges by nothing. Recorded instead.
+
+What Projection waits on is a decision, not threading. *"Do not overwrite the destination's current value"* has
+no referent inside an object initializer that **constructs** the destination: there is no prior value to keep.
+Omitting the member unconditionally is not the same mapping either — a non-null source row must still be
+assigned. The three candidate resolutions are (a) fix R4 so a blocking refusal reads `Refused`, then thread the
+value; (b) give this one reason a non-blocking id, accepting that a projection then drops a member with only a
+warning; (c) declare the option structurally inapplicable at Projection and say so in the docs. All three are
+maintainer calls, and (a) retires most of an 99-cell population rather than three cells.
 
 <a id="D8"></a>
 

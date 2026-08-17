@@ -86,7 +86,7 @@ internal static class DeclaredDivergences
     private const string Findings = "Issues/round20/SURFACE-MATRIX-FINDINGS.md";
 
     /// <summary>
-    ///     The findings, keyed by the id their write-up carries. 15 findings over 84 cells, every one
+    ///     The findings, keyed by the id their write-up carries. 13 findings over 76 cells, every one
     ///     measured by <c>SurfaceParityTests</c> rather than reasoned about.
     ///     <para>
     ///         The maintainer's ruling that produced this list: record the divergences now, fix them
@@ -172,32 +172,59 @@ internal static class DeclaredDivergences
         // three report DWARF088. Forty-nine cells went Silent → Refused, which is why the two ceilings below
         // dropped by exactly that many. See Issues/round20/SURFACE-MATRIX-FINDINGS.md for the resolutions.
 
+        // D6 and D7 were the exact complement of each other and both are NARROWED, not deleted: six of their
+        // nine cells closed and three did not. One root cause for the six — THREE readers of one option, each
+        // seeing a different part of it. The method endpoints read `ReadMapNullSkip(method) ?? classDefault`
+        // and never consulted the pair-scoped form; the [GenerateMap] and auto-synthesized pairs consulted the
+        // pair-scoped form and had no method to read; projection was handed the bare class value and saw
+        // neither. Closed by folding all three into one MapperExtractor.ResolveNullSkip, most-specific-wins
+        // (method, then pair, then the mapper/assembly policy), which every front door now calls — so
+        // [MapNullSkip<Src, Dst>] is measured Honoured at CreateMap and UpdateInto (4 cells), and the method
+        // form, which an element pair's shared mapper structurally cannot see, is refused element-wise as
+        // DWARF090 with the pair-scoped remedy the message names (2 cells). Neither form was "wrong": both
+        // declare AppliesTo = All and their XML docs describe one option at two scopes. The implementation had
+        // three partial readers of it.
+        //
+        // What is left below is Projection, in both forms, and it is NOT a plumbing gap. Threading the
+        // resolved value into ResolveProjectionMembers is one line and it was tried: the resolver already
+        // refuses an untranslatable null-skip per affected member with DWARF028 — exactly what the class-level
+        // option gets there — but DWARF028 is an ERROR, a blocking error suppresses emission, and all three
+        // cells then read NotCompilable (CS8795, the R4 ordering defect) rather than Refused. That RAISES
+        // NotCompilableCellCeiling 99 → 102 and closes a cell by relocating it into the population the parity
+        // theory judges by nothing. Recorded here instead, because what it waits on is a decision: "do not
+        // overwrite the destination's current value" has no referent in an object initializer that CONSTRUCTS
+        // the destination, and omitting the member unconditionally is a different mapping.
+
         ["D6"] = new(
-            "[MapNullSkip(true)] on a mapping method is honoured at CreateMap and UpdateInto and silent at "
-            + "Projection, SpanMap and AsyncStream. The option decides whether a null source member "
-            + "overwrites the destination; a caller who has asked for null-skipping on a mapper gets it on "
-            + "two overloads and the opposite behaviour on three, from one declaration. Its own pair-scoped "
-            + "twin proves the endpoints are reachable — see D7, which is this finding inverted.",
+            "[MapNullSkip(true)] on a mapping method is honoured at CreateMap and UpdateInto, refused "
+            + "element-wise as DWARF090, and SILENT at Projection. The option decides whether a null source "
+            + "member overwrites the destination, and projection answers that question differently from .Map "
+            + "on the same mapper without saying so. Re-measured after the reader unification: the SpanMap and "
+            + "AsyncStream cells this finding also covered are now Refused and have been removed from it; the "
+            + "Projection cell is what remains, and it remains because the honest refusal there is a blocking "
+            + "DWARF028 whose CS8795 cascade would move the cell into the NotCompilable population rather than "
+            + "out of it. Its class-scoped twin has the identical silence — see D7.",
             Findings + "#D6",
             [
                 new DivergentCell("MapNullSkip", 0, "ctor(1)", AttributeTargets.Method,
-                    SurfaceEndpoints.Projection | SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)
+                    SurfaceEndpoints.Projection)
             ]),
 
         ["D7"] = new(
-            "[MapNullSkip<Src, Dst>(true)] on the mapper class is honoured at SpanMap, AsyncStream and "
-            + "CoLocatedHost and silent at CreateMap, UpdateInto and Projection — the exact complement of D6. "
-            + "The two forms are documented as the same option written at two scopes, so between them a "
-            + "caller can reach every endpoint and with either one alone reaches roughly half, silently. "
-            + "\"Pair-scoped attributes do not reach method-declared pairs\" is not the explanation: "
-            + "MapProperty<S,T>, MapValue<T>, MapIgnore<T> and MapConstructor<S,T> all act at the method "
-            + "endpoints in the same run.",
+            "[MapNullSkip<Src, Dst>(true)] on the mapper class is honoured at CreateMap, UpdateInto, SpanMap, "
+            + "AsyncStream and CoLocatedHost, and SILENT at Projection. This finding was the exact complement "
+            + "of D6 across six endpoints and is now the same single cell as D6, from the other scope: the two "
+            + "forms are documented as one option written at two scopes and they now resolve through one "
+            + "reader, so the only endpoint either fails to reach is the one whose translator cannot express "
+            + "the option at all. \"Pair-scoped attributes do not reach method-declared pairs\" was never the "
+            + "explanation — MapProperty<S,T>, MapValue<T>, MapIgnore<T> and MapConstructor<S,T> all act at "
+            + "the method endpoints in the same run — and the four cells that claim proved wrong are removed "
+            + "from this entry rather than re-argued.",
             Findings + "#D7",
             [
                 new DivergentCell("MapNullSkip", 2, "ctor(1)", AttributeTargets.Class,
-                    SurfaceEndpoints.CreateMap | SurfaceEndpoints.UpdateInto | SurfaceEndpoints.Projection),
-                new DivergentCell("MapNullSkip", 2, "×2", AttributeTargets.Class,
-                    SurfaceEndpoints.CreateMap | SurfaceEndpoints.UpdateInto | SurfaceEndpoints.Projection)
+                    SurfaceEndpoints.Projection),
+                new DivergentCell("MapNullSkip", 2, "×2", AttributeTargets.Class, SurfaceEndpoints.Projection)
             ]),
 
         ["D8"] = new(

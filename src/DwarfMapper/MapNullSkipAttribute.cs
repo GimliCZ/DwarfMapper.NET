@@ -26,6 +26,23 @@ namespace DwarfMapper;
 ///         Reach for this when a mapper genuinely has both kinds of map, and use
 ///         <c>[MapNullSkip(false)]</c> to carve one method out of a class that enables it.
 ///     </para>
+///     <para>
+///         <b>Precedence.</b> The setting is resolved most-specific-wins: this attribute, then the pair-scoped
+///         <see cref="MapNullSkipAttribute{TSource,TTarget}" />, then
+///         <see cref="DwarfMapperAttribute.SkipNullSourceMembers" /> on the mapper, then the assembly default.
+///         So a method carrying <c>[MapNullSkip(false)]</c> replaces rather than patches even when a
+///         <c>[MapNullSkip&lt;TSource, TTarget&gt;]</c> on the same class names that method's pair — carving a
+///         method out is the whole reason this form exists, which only works if it outranks what it is carving
+///         out of.
+///     </para>
+///     <para>
+///         <b>It does not reach the element-wise endpoints.</b> A span map or an async-stream map resolves no
+///         members of its own: it maps each element through a mapper synthesized per <c>(source, target)</c>
+///         and shared by every route to that pair, so only a directive that NAMES the pair can configure it.
+///         Written on such a method this is reported as <c>DWARF090</c>, which names
+///         <c>[MapNullSkip&lt;TSource, TTarget&gt;]</c> as the form that does apply there — a refusal rather
+///         than the silence it used to be.
+///     </para>
 ///     <example>
 ///         <code>
 /// [DwarfMapper]
@@ -72,6 +89,21 @@ public sealed class MapNullSkipAttribute : Attribute
 ///     <c>[MapValue&lt;T&gt;]</c> family, for mappers that declare their pairs as attributes rather than as
 ///     partial methods. See <see cref="MapNullSkipAttribute" /> for what the option does and why it needs a
 ///     scope narrower than the class.
+///     <para>
+///         This form is the one that reaches EVERY mapping shape. A pair named here configures the pair
+///         wherever it is mapped from — a <c>[GenerateMap]</c> pair, a partial <c>Map</c>/<c>Update</c> method
+///         over the same two types, the element pair of a span or async-stream map, and a nested member pair
+///         reached from any of them — because the mapper synthesized for a pair is shared by every route to it
+///         and a directive that names the pair is the only kind it can take configuration from. Where the
+///         method-scoped <see cref="MapNullSkipAttribute" /> cannot reach, <c>DWARF090</c> names this attribute
+///         as the replacement.
+///     </para>
+///     <para>
+///         It is outranked by <see cref="MapNullSkipAttribute" /> on a method, and outranks
+///         <see cref="DwarfMapperAttribute.SkipNullSourceMembers" /> — see that type for the full precedence
+///         chain. Declaring the same pair twice with opposite values is legal (this attribute is
+///         <c>AllowMultiple</c>) and the first declaration wins; do not rely on it.
+///     </para>
 ///     <example>
 ///         <code>
 /// [DwarfMapper]

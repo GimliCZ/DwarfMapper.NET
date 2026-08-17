@@ -284,13 +284,44 @@ internal static partial class MapperExtractor
     }
 
     /// <summary>
-    ///     The effective null-skip setting for one pair: its own <c>[MapNullSkip&lt;S,T&gt;]</c> if declared,
-    ///     otherwise the mapper/assembly policy value.
+    ///     The effective null-skip setting for one mapping, from the ONE place every endpoint asks.
+    ///     <para>
+    ///         Three readers of this option used to exist and each saw a different part of it. The method
+    ///         endpoints read <c>ReadMapNullSkip(method) ?? classDefault</c> and never consulted the
+    ///         pair-scoped form; the <c>[GenerateMap]</c> and auto-synthesized pairs consulted the pair-scoped
+    ///         form and had no method to read; and the projection resolver was handed the bare class value, so
+    ///         it saw neither. The two attribute forms are documented as one option written at two scopes, and
+    ///         between them a caller reached every endpoint while either alone reached about half — silently.
+    ///         Folding all three into this function is why there is no longer a scope that reaches "most" of
+    ///         the endpoints.
+    ///     </para>
+    ///     <para>
+    ///         <b>Precedence is most-specific-wins:</b> the method-scoped <c>[MapNullSkip]</c>, then the
+    ///         pair-scoped <c>[MapNullSkip&lt;S,T&gt;]</c>, then the mapper/assembly policy in
+    ///         <paramref name="classDefault" />. Contradictory forms on one class became reachable the moment
+    ///         both fed one resolution, and this is the answer both attributes' own documentation already
+    ///         implies: the method form exists to "carve one method out of a class that enables it", which only
+    ///         works if it outranks what it is carving out of.
+    ///     </para>
     /// </summary>
-    private static bool ResolvePairNullSkip(
+    /// <param name="pairNullSkips">Every <c>[MapNullSkip&lt;S,T&gt;]</c> on the mapper class.</param>
+    /// <param name="method">
+    ///     The partial mapping method this mapping is declared by, or <see langword="null" /> for a pair the
+    ///     class declared — a <c>[GenerateMap]</c> pair or an auto-synthesized nested/element pair, neither of
+    ///     which has a method whose annotations could speak for it.
+    /// </param>
+    /// <param name="source">The mapping's source type, for matching the pair-scoped form.</param>
+    /// <param name="target">The mapping's target type, for matching the pair-scoped form.</param>
+    /// <param name="classDefault">The mapper/assembly <c>SkipNullSourceMembers</c> policy.</param>
+    private static bool ResolveNullSkip(
         IReadOnlyList<(ITypeSymbol Source, ITypeSymbol Target, bool Enabled)> pairNullSkips,
-        ITypeSymbol source, ITypeSymbol target, bool classDefault)
+        ISymbol? method, ITypeSymbol source, ITypeSymbol target, bool classDefault)
     {
+        if (method is not null && ReadMapNullSkip(method) is { } methodScoped) return methodScoped;
+
+        // First match wins when the same pair is named twice with opposite values — declaration order. Legal
+        // (the generic form is AllowMultiple) and pre-existing; not refused here because a refusal is a new
+        // diagnostic, which is a decision with a five-file sync attached to it.
         foreach (var (s, t, enabled) in pairNullSkips)
             if (SymbolEqualityComparer.Default.Equals(s, source)
                 && SymbolEqualityComparer.Default.Equals(t, target))

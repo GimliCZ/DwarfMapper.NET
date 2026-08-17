@@ -180,6 +180,11 @@ internal static partial class MapperExtractor
         // was configured PER MAP, so a profile mixing patch-merge maps with ordinary ones cannot translate
         // to one class-level boolean — it had to be split across two mapper classes, and that split then
         // synthesized the same nested pair twice with opposite null semantics. See MapNullSkipAttribute.
+        //
+        // Read ONCE here and handed to ResolveNullSkip at every endpoint, which is the whole fix for D6/D7:
+        // this list used to be consulted only by the [GenerateMap] and synthesized-pair paths, so the two
+        // documented scopes of one option each reached about half the endpoints and said nothing at the other
+        // half. ResolveNullSkip is the single reader; do not add a second one.
         var pairNullSkips = ReadPairNullSkips(classSymbol);
         var allowNonPublic = ReadAllowNonPublic(opts);
         var nullCollections = ReadNullCollections(opts);
@@ -387,7 +392,7 @@ internal static partial class MapperExtractor
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
                     // Update-into is where patch-merge actually lives, so a method-level [MapNullSkip]
                     // matters most here.
-                    skipNullSourceMembers: ReadMapNullSkip(method) ?? skipNullSrc,
+                    skipNullSourceMembers: ResolveNullSkip(pairNullSkips, method, updSrc, updTgt, skipNullSrc),
                     allowNonPublic: allowNonPublic,
                     explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                     stringFormats: ReadStringFormats(method),
@@ -642,6 +647,28 @@ internal static partial class MapperExtractor
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumPolicy,
                     referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method),
+                    // The CLASS value, deliberately, and this is the one place that does NOT call
+                    // ResolveNullSkip — which makes projection the third partial reader of this option and is
+                    // recorded as such rather than tidied away. Do not "fix" it without reading the next
+                    // paragraph; it was tried and measured.
+                    //
+                    // Passing ResolveNullSkip here is a one-line change and it produces the RIGHT generator
+                    // behaviour: the resolver below already refuses an untranslatable null-skip per affected
+                    // member with DWARF028, which is exactly what [DwarfMapper(SkipNullSourceMembers = true)]
+                    // and its assembly-level twin already get at this endpoint. Measured, all three
+                    // MapNullSkip cells at Projection then read NotCompilable (CS8795) rather than Refused:
+                    // DWARF028 is an ERROR, a blocking error suppresses the class's emission, and the partial
+                    // projection method is then unimplemented. That is the R4 ordering defect, and it moves
+                    // three cells INTO the population SurfaceParityTests counts as "judged by nothing"
+                    // (NotCompilableCellCeiling, 99 → 102) — a ratchet raise, and a closure by relocation
+                    // rather than by verdict.
+                    //
+                    // So the divergence stays recorded (DeclaredDivergences D6/D7, narrowed to their
+                    // Projection cells) instead of being converted into a worse bookkeeping category. What it
+                    // waits on is a decision, not plumbing: "keep the destination's current value" has no
+                    // meaning inside an object initializer that constructs the destination, and omitting the
+                    // member unconditionally is not the same mapping (a non-null source row must still be
+                    // assigned). See the DWARF028 site in MapperExtractor.Projection.cs.
                     skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
                     projConsumedSources);
 
@@ -1058,7 +1085,9 @@ internal static partial class MapperExtractor
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
-                nameConvention, mapPropExtras, ReadMapNullSkip(method) ?? skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete,
+                nameConvention, mapPropExtras,
+                ResolveNullSkip(pairNullSkips, method, sourceType, targetType, skipNullSrc),
+                allowNonPublic, explicitOnly, ignoreObsolete,
                 stringFormats, mapperReservedConverters,
                 // NOT gated on objInitOnly: a parameterless constructor can still carry
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
@@ -1322,7 +1351,9 @@ internal static partial class MapperExtractor
                 // StringFormat rides on the SAME [MapProperty] the rename does, so a path that reads the
                 // directive and does not thread this drops the format in silence — D20 in miniature.
                 stringFormats: genFormats,
-                skipNullSourceMembers: ResolvePairNullSkip(pairNullSkips, genSrc, genTgt, skipNullSrc),
+                // No method: a [GenerateMap] pair is declared by the class, so there is no method-scoped
+                // annotation that could speak for it.
+                skipNullSourceMembers: ResolveNullSkip(pairNullSkips, null, genSrc, genTgt, skipNullSrc),
                 allowNonPublic: allowNonPublic,
                 explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                 mapperReservedConverters: mapperReservedConverters,
@@ -1519,7 +1550,7 @@ internal static partial class MapperExtractor
                 // otherwise the enclosing class's policy. Without the pair-scoped lookup the enclosing
                 // class's value is the ONLY input, which is how one logical nested pair reached from two
                 // classes ended up with opposite null semantics.
-                skipNullSourceMembers: ResolvePairNullSkip(pairNullSkips, nestedSrc, nestedTgt, skipNullSrc),
+                skipNullSourceMembers: ResolveNullSkip(pairNullSkips, null, nestedSrc, nestedTgt, skipNullSrc),
                 allowNonPublic: allowNonPublic,
                 ignoreObsolete: ignoreObsolete,
                 // A synthesized nested mapper must not adopt a dedicated converter either — the author
@@ -2789,7 +2820,8 @@ internal static partial class MapperExtractor
                     if (!elementTargetMembers.Contains(ignored)) continue;
                 }
 
-                Report($"[MapIgnore(\"{ignored}\")] on this {site}", $"[MapIgnore<{tgt}>(\"{ignored}\")]");
+                Report($"[MapIgnore(\"{ignored}\")] on this {site}", $"[MapIgnore<{tgt}>(\"{ignored}\")]",
+                    MemberDirectiveElsewhere);
             }
 
             // Only the method site: the pair-scoped [MapProperty<S,T>] IS the class form, and the class's
@@ -2798,21 +2830,59 @@ internal static partial class MapperExtractor
             if (isClassSite) continue;
             foreach (var (source, target, _) in ReadExplicitMaps(symbol))
                 Report($"[MapProperty(\"{source}\", \"{target}\")] on this {site}",
-                    $"[MapProperty<{src}, {tgt}>(\"{source}\", \"{target}\")]");
+                    $"[MapProperty<{src}, {tgt}>(\"{source}\", \"{target}\")]",
+                    MemberDirectiveElsewhere);
+        }
+
+        // The METHOD-scoped [MapNullSkip], for the same reason and with the same remedy — the element pair takes
+        // its null-skip policy from ResolveNullSkip, which has no method to consult for a pair reached
+        // element-wise. Read through the same reader resolution uses, so the malformed-argument fallback is one
+        // rule rather than two, and reported whatever the value is: a discarded [MapNullSkip(false)] on a class
+        // that enables skipping is exactly as silent as a discarded `true`.
+        //
+        // The VALUE is rendered explicitly on both halves even when the caller wrote the bare form. A remedy of
+        // [MapNullSkip<Src, Dst>] copied out in answer to a written [MapNullSkip(false)] would invert the
+        // semantics the caller asked for, which is a worse outcome than quoting them a form they did not type.
+        //
+        // Only the method site: the arity-0 form is AttributeTargets.Method by AttributeUsage, and the class's
+        // own [DwarfMapper(SkipNullSourceMembers = …)] does reach the element pair (as classDefault), so there
+        // is nothing dropped at the class site to report.
+        if (ReadMapNullSkip(method) is { } nullSkip)
+        {
+            var arg = nullSkip ? "true" : "false";
+            Report($"[MapNullSkip({arg})] on this mapping method", $"[MapNullSkip<{src}, {tgt}>({arg})]",
+                "The method form is honoured at the create-map and update-into endpoints and refused at "
+                + "projection (DWARF028, which an object initializer cannot express), so these two endpoints "
+                + "are the only ones where it decided nothing at all. "
+                + "[DwarfMapper(SkipNullSourceMembers = " + arg + ")] reaches the element pair too, if the "
+                + "policy is meant to be the whole mapper's.");
         }
 
         return false;
 
-        void Report(string written, string remedy) =>
+        void Report(string written, string remedy, string elsewhere) =>
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.DirectiveNotAppliedElementWise, location,
                 $"{written} does not reach '{method.Name}'. An element-wise map resolves no members itself: it "
                 + $"maps each '{src}' to a '{tgt}' through an auto-synthesized mapper, which is shared by every "
                 + "route to that pair and therefore takes its configuration only from directives that name the "
-                + $"pair. Write it PAIR-SCOPED on the mapper class — {remedy} — which does apply here. The "
-                + "unscoped form is honoured at the create-map, update-into and projection endpoints, which is "
-                + "why its silence here is worth saying out loud."));
+                + $"pair. Write it PAIR-SCOPED on the mapper class — {remedy} — which does apply here. "
+                + elsewhere));
     }
+
+    /// <summary>
+    ///     The tail of <c>DWARF090</c>'s message for the two member directives: where the unscoped form DOES
+    ///     act, which is what makes its silence element-wise worth saying out loud.
+    ///     <para>
+    ///         Parametrized rather than baked into the message because it is a per-directive claim and this
+    ///         repository verifies claims in both directions. <c>[MapNullSkip]</c>'s method form is REFUSED at
+    ///         projection rather than honoured there, so the sentence below would have been false for it — and a
+    ///         diagnostic that misstates where a directive works sends the reader to the wrong endpoint.
+    ///     </para>
+    /// </summary>
+    private const string MemberDirectiveElsewhere =
+        "The unscoped form is honoured at the create-map, update-into and projection endpoints, which is why "
+        + "its silence here is worth saying out loud.";
 
     /// <summary>
     ///     Reports <c>DWARF088</c> for every MEMBER-placement <c>[MapProperty]</c> / <c>[MapIgnore]</c> found

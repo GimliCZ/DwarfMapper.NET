@@ -15,6 +15,23 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[MapNullSkip]` had three readers, and each one saw a different part of the option.** The two documented
+  scopes of `SkipNullSourceMembers` — `[MapNullSkip]` on a mapping method and `[MapNullSkip<S, T>]` on the
+  mapper class — reached almost exactly complementary halves of the surface. The method endpoints read the
+  method form and never consulted the pair-scoped one, so `[MapNullSkip<Src, Dst>]` was **discarded at the
+  create-map and update-into overloads of the pair it named** — the endpoint patch-merge exists for. The
+  `[GenerateMap]` and auto-synthesized pairs consulted the pair-scoped form and had no method to read. And the
+  projection resolver was handed the bare class value, so it saw neither. Between them a caller reached every
+  endpoint; with either one alone, about half, silently. All the mapping-shape readers are now one
+  (`ResolveNullSkip`), resolved **most-specific-wins**: the method form, then the pair-scoped form, then the
+  mapper's `SkipNullSourceMembers`, then the assembly default — which is what both attributes' documentation
+  already implied, since carving one method out of a class only works if the carve-out outranks the class.
+  Where the method form structurally *cannot* reach — a span or async-stream map takes its configuration only
+  from directives that name the pair — it is now refused as `DWARF090` with the pair-scoped remedy, instead of
+  being dropped. Found by the surface matrix as `D6` and `D7`, one finding inverted; six of their nine cells
+  close, four `Honoured` and two `Refused`. **Projection is unchanged and still recorded:** the refusal there
+  is the blocking `DWARF028` the class-level option already gets, and its `CS8795` cascade would move those
+  cells into the "judged by nothing" population rather than out of it. (round 20, D6 and D7)
 - **`[AfterMap]` on an update-into mapping method generated infinite recursion.** Hook collection accepted
   the partial mapping method itself as a hook whenever its signature happened to fit, and
   `void Update(Src, Dst)` fits the two-parameter after-hook shape exactly — so the generated body of `Update`
