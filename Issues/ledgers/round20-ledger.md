@@ -525,3 +525,17 @@ THE FINDING TO CARRY: eight of the round-19 divergences examined so far had FALS
 D10, D8, D13, D12, D14, D15. Four or more trace to a fixture too thin to pose the question the entry claimed
 to answer. Round 19 did not find 23 defects; it found 23 cells worth investigating, and a large fraction
 dissolve or change shape once the fixture actually bites. The instrument was sound; its inputs were not.
+A10: PAUSED DURABLY at eb4f64f. Test project builds 0/0; solution build NOT run. Working tree clean, temp dump
+never committed.
+  MATRIX IS RED ON EXACTLY ONE ASSERTION: NotCompilableCellCeiling is still 96 while the population now
+  measures 10, so AssertRatchet's LOWER bound fails. That is the floor-forces-it-down guard working as
+  designed - the ceiling cannot silently keep slack after a population shrinks.
+  Measured 86 cells NotCompilable -> Refused, ZERO other transitions, 96 = 86 + 10 exact.
+  FINDING CONTRARY TO MY BRIEF: zero new divergences, and none is POSSIBLE. All 96 cells were already CLAIMED,
+  and the reclassification rule's codomain is {Refused, NotCompilable} - it can never yield Silent. So A10
+  surfaces no defects by construction; its entire value is that 86 cells stop being exempt from the
+  instrument. I briefed it to expect a fresh crop of findings; that expectation was wrong, and the reasoning
+  against it is sound. Verify the codomain claim at review.
+  RESUME = ONE EDIT: lower NotCompilableCellCeiling 96 -> 10 at SurfaceParityTests.cs:202, then the two pin
+  tests (CS8795-with-blocking-DWARF must read Refused; a real placement rejection must stay NotCompilable) and
+  the R4 doc rewrite. All named in Issues/ledgers/A10-wip-notes.md, committed.
