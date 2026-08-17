@@ -15,6 +15,15 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[AfterMap]` on an update-into mapping method generated infinite recursion.** Hook collection accepted
+  the partial mapping method itself as a hook whenever its signature happened to fit, and
+  `void Update(Src, Dst)` fits the two-parameter after-hook shape exactly — so the generated body of `Update`
+  ended in a call to `Update(s, d)`, which never terminates. It compiled, and nothing in the build said so.
+  The same shape registered `void MapSpan(ReadOnlySpan<S>, Span<D>)` as a hook that was then never invoked,
+  and made `DWARF018` complain about the signature of `Dst Map(Src)` when the signature was never the
+  problem. A partial method with no implementing part has no body at all, so all three are now refused as
+  `DWARF091`. Found by the surface matrix — which had scored the recursion as the directive being *honoured*,
+  because a cell turns green when the output **changes**, not when it is **right** (`D16`). (round 20)
 - **A co-located `[GenerateMap<S, T>]` host read no member-level `[MapProperty]` / `[MapIgnore]` at all.**
   At that endpoint the mapping is declared **by** the annotated type, so a member of the host is part of the
   declaration and carries the member form — `[MapProperty("Full")]` on a `Name` member means *`Name` comes
@@ -78,6 +87,33 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF090` — a member directive that the element-wise endpoints cannot apply.** The generalization of
+  `DWARF077`, and the same root cause: a span map or an async-stream map resolves no members of its own. It
+  maps the *element* pair through a mapper synthesized per `(source, target)` and shared by every route that
+  reaches that pair, so only a directive that **names the pair** can configure it. An unscoped
+  `[MapIgnore("Id")]` or `[MapProperty("Id", "Name")]` written on the mapping method — or, for `[MapIgnore]`,
+  on the mapper class — belongs to the declaration rather than to the pair, and was dropped in silence: one
+  mapper excluded a member on its create, update and projection overloads and copied it on the other two.
+  Propagating it instead was rejected for the reason `DWARF077` already records — one method's unscoped
+  directive would silently re-configure a nested mapping another method owns — so the message names the
+  **pair-scoped** replacement, which is measured working at both endpoints:
+  `[MapIgnore<TTarget>("Id")]`, `[MapProperty<TSource, TTarget>("Id", "Name")]`. A **Warning**, for the reason
+  `DWARF088` is one: a blocking error suppresses the whole class's emission, so every partial mapping method
+  on it loses its implementing part and the refusal reaches the consumer as a wall of `CS8795`. Escalate with
+  `dotnet_diagnostic.DWARF090.severity = error` where the stricter reading is wanted. (round 20, D1 and D2)
+- **`DWARF091` — `[BeforeMap]` / `[AfterMap]` on a partial method with no body.** Hook collection scanned
+  every method on the mapper class and accepted anything whose signature fitted, which includes the partial
+  **mapping method declarations themselves** — methods whose bodies this generator writes, so the caller has
+  no code there for a hook to run. The signature filter then produced three different wrong answers for one
+  mistake: `DWARF018` complained about the signature of `Dst Map(Src)`, which was never the problem;
+  `void MapSpan(ReadOnlySpan<S>, Span<D>)` fitted the two-parameter after-hook shape exactly, was registered,
+  and was never called; and `void Update(S, D)` fitted **and was called**, so the emitted body ended in
+  `Update(s, d);` — unconditional infinite recursion. The rule is not specific to mapping methods and does not
+  need to be: C# erases a partial method with no implementing part along with every call to it, so as a hook
+  it can only ever be a no-op, or — where the generator supplies the missing part — a call back into the
+  method being generated. Refused now before the signature is looked at, so one diagnostic covers all five
+  endpoints. A **Warning**, for the reason `DWARF088` is one; the hook is dropped and the mapper is emitted.
+  Escalate with `dotnet_diagnostic.DWARF091.severity = error`. (round 20, D16)
 - **`DWARF089` — a directive on a co-located `[GenerateMap]` host member that cannot be applied.** The exact
   inverse of `DWARF088`: that one refuses the *member* form where there is no member, this one refuses the
   *method* form on a member — `[MapProperty(source, target)]` and `[MapIgnore(destination)]` both name a

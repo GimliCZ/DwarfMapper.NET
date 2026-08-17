@@ -1255,6 +1255,93 @@ The named arguments ride on that same one-argument constructor, so `Use`, `When`
 
 ---
 
+## dwarf090
+**Member directive is not applied element-wise** · Warning
+
+The generalization of [`DWARF077`](#dwarf077), and the same root cause. A **span map** and an **async-stream
+map** resolve no members of their own: they map the *element* pair through a mapper the generator synthesizes
+per `(source, target)`, and that mapper is shared by every route which reaches that pair. So it takes its
+configuration only from directives that **name the pair**. A directive written without a pair scope belongs to
+the declaration it sits on, and never arrives:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+[MapIgnore("Id")]                                  // reaches Map and Update, not MapSpan — DWARF090
+public partial class M
+{
+    public partial Dst Map(Src s);                 // Id excluded here
+
+    [MapProperty("Id", "Name")]                    // DWARF090 — dropped element-wise
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+}
+```
+
+Before this check existed, one mapper excluded a member on three of its overloads and copied it on the other
+two, saying nothing — surface-matrix findings `D1` and `D2`.
+
+**Fix:** write the directive in its **pair-scoped** form on the mapper class. Those forms *are* matched against
+every synthesized pair, this element pair included, and are measured `Honoured` at both endpoints:
+
+| You wrote | Write instead |
+|---|---|
+| `[MapIgnore("Id")]` on the method or the class | `[MapIgnore<Dst>("Id")]` on the class |
+| `[MapProperty("Id", "Name")]` on the method | `[MapProperty<Src, Dst>("Id", "Name")]` on the class |
+
+> **Why refused rather than propagated.** For the reason [`DWARF077`](#dwarf077) already states: the
+> synthesized element mapper is keyed by `(source, target)` and shared. Pushing one method's unscoped directive
+> into it would silently re-configure a nested mapping some **other** method owns — a worse defect than the
+> silence, and invisible from the declaration that caused it. The pair-scoped forms exist precisely so the
+> caller can say which pair they mean.
+
+> **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
+> it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see
+> [`DWARF078`](#dwarf078)) — the same reasoning as [`DWARF088`](#dwarf088). The directive is dropped for this
+> endpoint and the rest of the mapper is emitted. Escalate with
+> `dotnet_diagnostic.DWARF090.severity = error` where the stricter reading is wanted.
+
+---
+
+## dwarf091
+**Mapping hook on a partial method with no body** · Warning
+
+`[BeforeMap]` and `[AfterMap]` mark a method **you** wrote to run around the mapping. Written on a **partial
+mapping method** they mark a method whose body the generator writes, so there is no code of yours there to run:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [AfterMap]                                          // DWARF091 — no body to run
+    public partial void Update(Src s, Dst d);
+}
+```
+
+C# **erases** a partial method with no implementing part, along with every call to it — so as a hook it can
+only ever be a no-op. And where DwarfMapper supplies the missing part, the call is into the method being
+generated. Neither is what `[AfterMap]` means, at any endpoint, which is why this is refused before the
+signature is considered at all.
+
+Until it was, the signature filter alone decided, and gave three different answers to one mistake:
+
+| Written on | What used to happen |
+|---|---|
+| `Dst Map(Src s)` | [`DWARF018`](#dwarf018) complained the hook was not `void` — a signature complaint about a signature that was never the problem |
+| `void MapSpan(ReadOnlySpan<Src>, Span<Dst>)` | fitted the two-parameter after-hook shape exactly, was registered, and was **never called** |
+| `void Update(Src, Dst)` | fitted **and was called**: the generated body of `Update` ended in `Update(s, d);` — unconditional **infinite recursion**, which compiled |
+
+**Fix:** move the attribute to an ordinary method on the mapper — one with a body — whose parameters are the
+mapped types: `void Hook(TSource)` for `[BeforeMap]`, `void Hook(TTarget)` or `void Hook(TSource, TTarget)` for
+`[AfterMap]`. Or remove it, if the mapping method was the fixup you meant.
+
+> **Why a Warning.** An error would strand every partial mapping method on the class behind `CS8795`, the same
+> reasoning as [`DWARF088`](#dwarf088). The hook is not registered — which is what you already had at three of
+> the five endpoints, minus the recursion at the fourth — and the mapper is emitted. Escalate with
+> `dotnet_diagnostic.DWARF091.severity = error` where the stricter reading is wanted.
+
+---
+
 ## Runtime exceptions
 
 The diagnostics above are **compile-time**. A generated mapper is **strict at runtime for conversions**: rather

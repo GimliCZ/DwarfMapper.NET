@@ -6,7 +6,7 @@
 > since been superseded.** The case-space was enriched (task 5b), three instrument defects and one broken
 > fixture baseline were fixed, and the matrix was re-measured. The current state, and the write-up every entry
 > in `DeclaredDivergences.Reasons` links to, is **[the ratified findings](#ratified)** at the end of this
-> document: **18 findings over 93 cells, plus 12 cells excused as structural — 105 red cells, all accounted
+> document: **15 findings over 84 cells, plus 12 cells excused as structural — 96 red cells, all accounted
 > for, matrix green.** Read the first measurement for how the buckets were arrived at; read the amendment for
 > what is true now. The single most severe item found in the whole exercise is **[N4](#N4)** and it is not a
 > silent divergence at all — **fixed on 2026-08-16 as `DWARF087`**; see the resolution note in that section,
@@ -26,6 +26,19 @@
 > a pre-existing `DWARF038`; **6** refusals of a named argument the binding now reaches; **8** `DWARF089`),
 > so this is the first finding on this branch that did **not** resolve to a single verdict. See
 > [D20](#D20).
+>
+> **2026-08-17, fourth fix — 18 / 93 to 15 / 84.** Three findings, and — unlike every round before it — **two
+> distinct root causes**, established by measurement rather than assumed from the shared symptom. `D1` and `D2`
+> are one shape and are closed by generalizing the twice-written `DWARF077` check into a single element-wise
+> gate reporting the new **`DWARF090`**: eight cells Silent → Refused, with the remedy the message names
+> (`[MapIgnore<TTarget>]`, `[MapProperty<TSource, TTarget>]`) measured Honoured at those very endpoints.
+> `D16` is **not** propagation and needed its own fix, the new **`DWARF091`** — and chasing it down turned up
+> the worst defect of the round: `[AfterMap]` on `void Update(Src, Dst)` was emitting `Update(s, d);` **inside
+> `Update`**, shipped infinite recursion, which **the matrix had scored `Honoured`**. That grading failure is
+> filed as [B19](TASKS.md); a green cell means the output changed, not that it is right. `D2`'s filed evidence
+> was also wrong — `DWARF038` is `ImplicitConversionApplied`, not a refusal of `[MapProperty]` — and the
+> correction is in its section. `NotCompilableCellCeiling` fell 107 → 99 as eight hook cells left the `CS8795`
+> population for `Refused`. See [D1](#D1), [D2](#D2), [D16](#D16).
 
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case
@@ -402,9 +415,9 @@ one store per failure mode is how the six allowlists this architecture is replac
 > No `DeclaredDivergences` entry was added or wanted: this was never a silence, and it is now a claimed
 > endpoint behaving correctly.
 
-## The findings — 18 live, 5 fixed
+## The findings — 15 live, 8 fixed
 
-Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The five marked **RESOLVED** keep their
+Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The eight marked **RESOLVED** keep their
 sections: the store entry is gone (a fixed gap left on the list is a fossil), but the write-up is what the
 next reader needs to know the gap existed and how it was closed. **Acts at** is the evidence the cell is
 a divergence rather than a shape: the same directive, at the same site, doing something observable somewhere
@@ -431,18 +444,75 @@ carried unchanged.
 
 <a id="D1"></a>
 
-### D1 — `[MapIgnore("Id")]` does not reach the element-wise endpoints — 4 cells
+### D1 — `[MapIgnore("Id")]` does not reach the element-wise endpoints — 4 cells — RESOLVED
+
+> **RESOLVED 2026-08-17 as `DWARF090`, together with D2 — they were one shape.** Both are an **unscoped**
+> member directive written on a mapping method or its class, at the two endpoints that resolve no members of
+> their own: a span map and an async-stream map map the *element* pair through a mapper synthesized per
+> `(source, target)` and **shared by every route that reaches that pair**, so it can only take configuration
+> from directives that **name** the pair. An unscoped one belongs to the declaration it sits on and never
+> arrives.
+>
+> **Closed by extending the existing mechanism, not by adding a second one.** The `DWARF077` explicit-only
+> check was written **twice**, once in each element-wise branch — the shape in which the next directive gets
+> added to one branch and forgotten in the other. It is now one gate, `ReportElementWiseDirectiveGaps`, that
+> both branches call; `DWARF077` remains its blocking first clause and the two directives here are rows
+> beneath it. The gate reads through `ReadIgnores` / `ReadExplicitMaps` — the same readers resolution uses —
+> so it reports exactly what is dropped and nothing else, and inherits their malformed-argument hardening.
+>
+> **Refusal rather than propagation**, for the reason `DWARF077` already records: pushing one method's
+> unscoped directive into a shared pair would silently re-configure a nested mapping **another** method owns.
+> That is a worse defect than the silence and invisible from the declaration that caused it.
+>
+> What makes this a closure rather than a capability withdrawal is that the remedy the message names is
+> **measured working at these very endpoints**. The pair-scoped twins are matched against every synthesized
+> pair:
+>
+> | Case at SpanMap / AsyncStream | Before | After |
+> |---|---|---|
+> | `[MapIgnore<Dst>("Id")]` on the class | `Honoured` | `Honoured` (unchanged — this is the remedy) |
+> | `[MapProperty<Src, Dst>("Id", "Name")]` on the class | applied | applied (unchanged) |
+> | `[MapIgnore("Id")]`, method **and** class site | **Silent** | **Refused** |
+> | `[MapProperty("Id", "Name")]` on a method, and ×2 | **Silent** | **Refused** |
+>
+> **Eight cells, Silent → Refused** (D1's four and D2's four). A **Warning**, and the severity is
+> load-bearing rather than stylistic: a blocking error suppresses the class's emission, so the cell would land
+> in the `NotCompilable` population behind `CS8795` — whose ceiling is shrink-only, so an Error would have
+> *raised* a ratchet while appearing to close a finding. Case file:
+> `DWARF090_DirectiveNotAppliedElementWise.cs`.
 
 *Method and Class sites → SpanMap, AsyncStream.* Acts at CreateMap, UpdateInto, Projection (Honoured). One
 mapper therefore drops the member on three of its overloads and copies it on two, from one declaration.
 
 <a id="D2"></a>
 
-### D2 — `[MapProperty("Id", "Name")]` on a method: the refusal does not reach SpanMap/AsyncStream — 4 cells
+### D2 — `[MapProperty("Id", "Name")]` on a method does not reach SpanMap/AsyncStream — 4 cells — RESOLVED
+
+> **RESOLVED 2026-08-17 as `DWARF090`. See [D1](#D1) for the resolution — it is one fix for both.**
+>
+> **This finding's own evidence was wrong, and the correction matters more than the fix.** The sentence below
+> says the directive is "refused with DWARF038" at CreateMap and UpdateInto, and that the finding is therefore
+> *a missing diagnostic*. It is not. **`DWARF038` is `ImplicitConversionApplied`** — it has nothing to do with
+> `[MapProperty]`'s placement. Measured message at CreateMap:
+>
+> > `DWARF038: Member 'Name': implicit parse/format (string↔T) conversion int → string? is applied …`
+>
+> The probe fixture's `Id` is an `int` and its `Name` is a `string?`, so binding one to the other *is* an
+> implicit parse. The directive was **honoured** at CreateMap and UpdateInto all along; the warning is an
+> artifact of the fixture's types. The cell *read* `Refused` only because `SurfaceProbe.Classify` tests for an
+> added diagnostic **before** it compares output, so an honoured-and-warned cell is indistinguishable from a
+> refused one.
+>
+> Two lessons, both cheap to state and both already paid for: **"Acts at" is not the same claim as "Refused
+> at"**, and a finding whose evidence is a diagnostic id should name what that id *means*. Had this been read
+> at filing time, D2 would have been written as D1 with a second attribute — which is what it turned out to
+> be, and why one change closed both.
 
 *Method site, `ctor(2)` and the ×2 case → SpanMap, AsyncStream.* Acts at CreateMap and UpdateInto, where it is
 **refused with DWARF038**. The generator has an opinion about this directive and states it at three endpoints;
 at the other two the identical text raises nothing and changes nothing.
+*(The two sentences above are the original filing and the second is **false** — see the correction in the
+resolution note. Kept, not edited, because the record of a misread is worth more than a tidy page.)*
 
 <a id="D3"></a>
 
@@ -653,11 +723,54 @@ Whichever of the two answers is right, silence is not it.
 
 <a id="D16"></a>
 
-### D16 — `[AfterMap]` at SpanMap — 1 cell
+### D16 — `[AfterMap]` at SpanMap — 1 cell — RESOLVED
+
+> **RESOLVED 2026-08-17 as `DWARF091`, and it was NOT the same fix as [D1](#D1)/[D2](#D2).** It was never
+> directive propagation into the synthesized element mapper. `CollectHooks` scanned every method on the mapper
+> class and accepted anything whose signature fitted, which includes the **partial mapping method declarations
+> themselves** — methods whose bodies this generator writes, so the caller has no code there for a hook to run.
+> The signature filter then decided the outcome by shape alone, and gave three different wrong answers to one
+> mistake:
+>
+> | `[AfterMap]` written on | What happened |
+> |---|---|
+> | `Dst Map(Src s)` | `DWARF018` complained the hook was not `void` — a signature complaint about a signature that was never the problem |
+> | `void MapSpan(ReadOnlySpan<Src>, Span<Dst>)` | fitted the two-parameter after-hook shape exactly, was registered, **never called** — the silent cell this finding filed |
+> | `void Update(Src, Dst)` | fitted **and was called** |
+>
+> **The third row is the real finding, and this section did not contain it.** Measured generated body:
+>
+> ```csharp
+> public partial void Update(global::Demo.Src s, global::Demo.Dst d)
+> {
+>     …
+>     d.Tag = s.Tag;
+>     Update(s, d);          // ← unconditional infinite recursion
+> }
+> ```
+>
+> It compiled, and nothing in the build said so. **The matrix scored that cell `Honoured`.** That is the first
+> confidently *wrong positive* in this whole exercise, and it is filed as its own backlog item — see
+> [B19](TASKS.md) — because the mechanism is general: `Honoured` asserts that the output **changed**, never that
+> it is **right**.
+>
+> **The fix needs no special case for mapping methods.** C# erases a partial method with no implementing part
+> along with every call to it, so as a hook it can only ever be a no-op; and where the generator supplies the
+> missing part, the call re-enters the method being generated. Neither is what `[AfterMap]` means, at any
+> endpoint — so the refusal sits **before** the signature check, and one diagnostic now covers all five
+> endpoints instead of `DWARF018`'s signature complaint at three of them.
+>
+> **Cells moved:** SpanMap `Silent → Refused` (this finding's one cell). Two consequences beyond it, both
+> deliberate and both re-measured: `[AfterMap]` at UpdateInto goes `Honoured → Refused` — correct, since the
+> "honour" was the recursion above — and **eight cells go `NotCompilable` → `Refused`** (three `AfterMap`, five
+> `BeforeMap`, previously stranded behind `CS8795` by `DWARF018`'s blocking error), which is why
+> `NotCompilableCellCeiling` fell 107 → 99. A **Warning**, for the reason `DWARF090` is one. Case file:
+> `DWARF091_HookOnMethodWithNoBody.cs`.
 
 *Method site → SpanMap.* Honoured at UpdateInto; blocks the build at CreateMap, Projection and AsyncStream.
 SpanMap alone compiles and never calls the hook, so a post-mapping fixup runs for every element of an async
 stream and for none of a span.
+*(The "honoured at UpdateInto" above is the original filing. It was recursion — see the resolution note.)*
 
 <a id="D17"></a>
 
