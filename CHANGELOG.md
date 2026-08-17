@@ -15,6 +15,20 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[MapDerivedType]` was read on a create map and discarded on the mapper's other four overloads, in both
+  of its forms.** A dispatch arm decides which destination **type** to construct from the source's runtime
+  type, and only the create-map branch resolved one. Written on an update-into, a projection, a span map or an
+  async-stream map, a derived instance was mapped as its **base** and every member the derived DTO declares
+  beyond the base one was dropped — with no diagnostic. Nor was anything validated there: the create map
+  refuses a type that is not assignable, a duplicate source type, or a pair that is not mappable
+  (`DWARF035`), and elsewhere the same nonsense passed without a word. All four endpoints now refuse it as
+  **`DWARF092`**, quoting the directive back in the form it was written — generic stays generic, `typeof`
+  stays `typeof` — and naming the create map. At the two element-wise endpoints that create map is what the
+  emitted loop calls, so the dispatch really does reach them through it. Found by the surface matrix as `D8`;
+  all sixteen of its cells close. **The finding's own evidence was partly wrong**, and the correction is worth
+  reading: it claimed the directive "acts at CreateMap in BOTH forms", and the open form acted nowhere — the
+  probe's flat DTO pair declares no hierarchy, so the sampled arguments named a type not assignable to the
+  method's source parameter and the create map was simply refusing nonsense. (round 20, D8)
 - **`[FlattenGraph]` was read on a create map and discarded on the mapper's other four overloads.** A graph
   flatten replaces the source of a destination collection with a breadth-first walk of a source navigation.
   Only the create-map branch resolved one, so `[FlattenGraph("Root", "Flat")]` on an update-into, a

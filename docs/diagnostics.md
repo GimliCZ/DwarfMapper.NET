@@ -1398,6 +1398,25 @@ public partial class M
 One mapper, one declaration, two answers: `.Map` returned a flattened graph and `.Update` copied the source
 collection straight across, silently — surface-matrix finding `D11`.
 
+`[MapDerivedType]` joins it, in **both** of its forms, for the same reason: a dispatch arm decides which
+destination **type** to construct from the source's runtime type, and only the create map constructs one.
+Written elsewhere, a derived instance was mapped as its base and every member the derived DTO declares beyond
+the base one was dropped — finding `D8`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapDerivedType<Dog, DogDto>]                  // DWARF092 — a Dog is mapped as an Animal here,
+    public partial void Update(Animal a, AnimalDto d);  //           and DogDto.Breed is dropped
+}
+```
+
+The create map also **validates** these arms — [`DWARF035`](#dwarf035) for a type that is not assignable, a
+duplicate source type, or a pair that is not mappable. Nothing validated them at the other four endpoints
+either, which is the second half of the asymmetry below.
+
 **Fix:** declare the directive on a create map over the same pair. At the two **element-wise** endpoints that
 is more than advice: a span or async-stream map resolves its element pair through a **declared** mapping
 method for that pair where one exists, so the create map carrying the directive is what the emitted loop
@@ -1407,14 +1426,21 @@ calls, and the directive reaches the element-wise endpoint through it. Measured,
 |---|---|---|
 | `[FlattenGraph("Root", "Flat")]` on `void MapSpan(ReadOnlySpan<Tree>, Span<TreeDto>)` | the same on a `partial TreeDto Map(Tree t)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` — the walk runs per element |
 | `[FlattenGraph("Root", "Flat")]` on `void Update(Tree, TreeDto)` or on a projection | the same on a `partial TreeDto Map(Tree t)` | `Honoured` **at the create map**. Nothing carries it to the update or the projection; those resolve their own members and never call a sibling create map |
+| `[MapDerivedType<Dog, DogDto>]` on `void MapSpan(ReadOnlySpan<Animal>, Span<AnimalDto>)` | the same on a `partial AnimalDto Map(Animal a)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` and that create map is the runtime-type switch, so the dispatch runs per element |
+
+The directive is quoted back in the **form you wrote it** — `[MapDerivedType<Dog, DogDto>]` stays generic and
+`[MapDerivedType(typeof(Dog), typeof(DogDto))]` stays open — rather than normalized into whichever one the
+reader happens to build, so the remedy is text you can paste.
 
 Reported per **application**, malformed ones included. A `[FlattenGraph]` naming members that do not exist is
-refused as [`DWARF034`](#dwarf034) at a create map and was refused as nothing at all here — that asymmetry is
-half of what made the silence worth a diagnostic, since at the create map even nonsense is validated.
+refused as [`DWARF034`](#dwarf034) at a create map, and a `[MapDerivedType]` naming an unassignable type as
+[`DWARF035`](#dwarf035); both were refused as nothing at all here — that asymmetry is half of what made the
+silence worth a diagnostic, since at the create map even nonsense is validated.
 
 > **Why refused rather than honoured.** These directives redirect how the destination is **built**, and an
-> update-into writes into an instance the caller already constructed. There is no construction step at the
-> other four endpoints for a graph walk to replace.
+> update-into writes into an instance the caller already constructed — one whose type the caller chose, which
+> is precisely what a dispatch arm would be overriding. There is no construction step at the other four
+> endpoints for a graph walk to replace or for a dispatch arm to redirect.
 
 > **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
 > it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see

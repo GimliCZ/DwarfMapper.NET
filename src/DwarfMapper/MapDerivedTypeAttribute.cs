@@ -10,7 +10,16 @@ namespace DwarfMapper;
 ///     is never shadowed by a base-type arm. Unregistered runtime types throw
 ///     <see cref="global::System.ArgumentException" /> (loud, never silent).
 /// </summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+// A dispatch arm needs a base/derived HIERARCHY to dispatch over; the flat DTO pair has none, so both forms
+// were measured against a compilation where nothing could be more derived than anything else.
+//
+// The generic form's own limitation is worth stating here rather than only in the fixture: SurfaceCatalog
+// renders arity 2 as <Src, Dst> for every element, and the endpoint templates fix the signature to
+// `Dst Map(Src s)`, so this element's cells register the BASE as an arm of itself. That is a legal and
+// degenerate arm, and it measures exactly what this element's cells claim — the directive is read at the
+// create map and at no other endpoint — without measuring polymorphic dispatch. The open form below, which
+// can name its types, does measure it.
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "polymorphic-hierarchy")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapDerivedTypeAttribute<TSource, TTarget> : Attribute
     where TSource : class
@@ -19,7 +28,12 @@ public sealed class MapDerivedTypeAttribute<TSource, TTarget> : Attribute
 }
 
 /// <summary>Non-generic form of <see cref="MapDerivedTypeAttribute{TSource,TTarget}" />.</summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "polymorphic-hierarchy")]
+// The sampled arity-2 argument list is `typeof(Dst), typeof(Dst)` — the same type twice, and neither of them
+// assignable to the method's source parameter. Against the flat pair that is DWARF035 (Error), so the cell
+// read NotCompilable (CS8795) and the finding that claimed this form "acts at CreateMap" was measuring a
+// refusal of nonsense. Naming the fixture's derived types asks the question the directive exists for.
+[DwarfSurfaceProbe(constructorArity: 2, Arguments = "typeof(SrcDerived), typeof(DstDerived)")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapDerivedTypeAttribute : Attribute
 {

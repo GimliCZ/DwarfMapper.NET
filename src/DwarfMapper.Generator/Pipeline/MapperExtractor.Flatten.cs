@@ -480,7 +480,7 @@ internal static partial class MapperExtractor
             bool isPreserve,
             bool allowNonPublic,
             HashSet<string> consumedTargets,
-            IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt)>? rawDerivedPairs = null)
+            IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>? rawDerivedPairs = null)
     {
         var directives = new List<FlattenGraphDirective>();
         var injected = new List<MemberMap>();
@@ -650,7 +650,7 @@ internal static partial class MapperExtractor
             // Detect hetero mode: abstract/interface node base OR [MapDerivedType] pairs present.
             var nodeIsAbstractOrInterface =
                 nodeType.TypeKind == TypeKind.Interface || nodeType.IsAbstract;
-            var effectiveDerivedPairs = rawDerivedPairs ?? Array.Empty<(INamedTypeSymbol, INamedTypeSymbol)>();
+            var effectiveDerivedPairs = rawDerivedPairs ?? Array.Empty<(INamedTypeSymbol, INamedTypeSymbol, bool)>();
             var isHetero = nodeIsAbstractOrInterface || effectiveDerivedPairs.Count > 0;
 
             if (isHetero)
@@ -672,7 +672,7 @@ internal static partial class MapperExtractor
                 var seenSrcFqns = new HashSet<string>(StringComparer.Ordinal);
                 var anyArmError = false;
 
-                foreach (var (derivedSrc, derivedTgt) in effectiveDerivedPairs)
+                foreach (var (derivedSrc, derivedTgt, _) in effectiveDerivedPairs)
                 {
                     var srcFqn = derivedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     var tgtFqnArm = derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);

@@ -189,7 +189,7 @@ public sealed class SurfaceParityTests
     }
 
     /// <summary>The ceiling on cells the C# compiler rejects outright. Shrink-only, like the others.</summary>
-    private const int NotCompilableCellCeiling = 99;
+    private const int NotCompilableCellCeiling = 98;
 
     /// <summary>The ceiling on cells that pass BOTH claim branches. Shrink-only, like the others.</summary>
     private const int UnhonouredButLoudCellCeiling = 14;
@@ -224,6 +224,14 @@ public sealed class SurfaceParityTests
     ///         <c>DWARF018</c>, a blocking error, so five <c>BeforeMap</c> cells and three <c>AfterMap</c> cells
     ///         sat here behind <c>CS8795</c>; refused as a Warning instead, they read <c>Refused</c> — which is
     ///         what R4 will eventually do for the rest of this population.
+    ///     </para>
+    ///     <para>
+    ///         99 → <b>98</b> when <c>D8</c> was worked, and not by a generator change: the cell that left is
+    ///         <c>[MapDerivedType(typeof(…), typeof(…))]</c> at <c>CreateMap</c>, which sat here because the
+    ///         flat DTO pair declares no hierarchy and the sampled arguments therefore named a type not
+    ///         assignable to the method's source parameter — <c>DWARF035</c>, an Error, hence <c>CS8795</c>.
+    ///         Against the <c>polymorphic-hierarchy</c> fixture the same case is <c>Honoured</c>. A fixture
+    ///         that could not pose the question was counting a cell in this population for four rounds.
     ///     </para>
     ///     <para>
     ///         An uncounted pass is a silent absence of coverage whatever its cause, which is the thing this
@@ -411,8 +419,16 @@ public sealed class SurfaceParityTests
     ///         (<c>MapperExtractor.ReportCreateMapOnlyDirectives</c>, one function, four call sites) refuses
     ///         it at all four. Re-measured in the same commit, not predicted.
     ///     </para>
+    ///     <para>
+    ///         11 → <b>10</b> when <c>D8</c> closed, on the same gate. Like <c>D10</c>, worth reading as a
+    ///         correction as well as a fix: the entry claimed <c>[MapDerivedType]</c> "acts at CreateMap … in
+    ///         BOTH the open and the generic form", and the OPEN form did not act anywhere — the flat DTO pair
+    ///         declares no hierarchy, so the sampled arguments named a type not assignable to the method's
+    ///         source parameter and the cell read <c>NotCompilable</c>. A finding can be wrong about the
+    ///         endpoint it holds up as working, and that is now twice.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 11;
+    private const int DivergenceFindingCeiling = 10;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -477,8 +493,16 @@ public sealed class SurfaceParityTests
     ///         <c>D9</c> could not be closed the same way. That ceiling was re-measured at <b>99</b>,
     ///         unchanged.
     ///     </para>
+    ///     <para>
+    ///         54 → <b>38</b> when <c>D8</c> closed: sixteen cells, one verdict — <b>16 Refused
+    ///         (DWARF092)</b>, both <c>[MapDerivedType]</c> forms at all four non-create-map endpoints.
+    ///         <see cref="NotCompilableCellCeiling" /> moved too, and DOWN: the new
+    ///         <c>polymorphic-hierarchy</c> fixture gives the open form a hierarchy to dispatch over, so its
+    ///         <c>ctor(2)</c> cell at <c>CreateMap</c> is <c>Honoured</c> rather than <c>DWARF035</c> behind
+    ///         <c>CS8795</c>, measured <b>99 → 98</b>.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 54;
+    private const int DivergentCellCeiling = 38;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

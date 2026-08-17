@@ -229,19 +229,25 @@ internal static class DeclaredDivergences
                 new DivergentCell("MapNullSkip", 2, "×2", AttributeTargets.Class, SurfaceEndpoints.Projection)
             ]),
 
-        ["D8"] = new(
-            "[MapDerivedType] declares how a polymorphic source is dispatched. It acts at CreateMap and is "
-            + "silent at UpdateInto, Projection, SpanMap and AsyncStream, in BOTH the open and the generic "
-            + "form. A caller who has declared the derived-type mapping has declared it for the mapper, not "
-            + "for one overload of it; on the other four the derived instance is mapped as its base and the "
-            + "extra members are dropped without a word.",
-            Findings + "#D8",
-            [
-                new DivergentCell("MapDerivedType", 0, "ctor(2)", AttributeTargets.Method, ElementWiseAndMore),
-                new DivergentCell("MapDerivedType", 0, "×2", AttributeTargets.Method, ElementWiseAndMore),
-                new DivergentCell("MapDerivedType", 2, "ctor(0)", AttributeTargets.Method, ElementWiseAndMore),
-                new DivergentCell("MapDerivedType", 2, "×2", AttributeTargets.Method, ElementWiseAndMore)
-            ]),
+        // D8 closed 2026-08-17 (task A9a), and its evidence was PARTLY FALSE — the second entry in two tasks
+        // to be measured wrong, after D10. It claimed the directive "acts at CreateMap … in BOTH the open and
+        // the generic form". Measured before anything was changed: the OPEN form's two axes read
+        // NotCompilable (CS8795) at CreateMap, because the flat DTO pair declares no hierarchy and the sampled
+        // arguments were `typeof(Dst), typeof(Dst)` — a type not assignable to the method's source parameter,
+        // hence DWARF035, an Error. The open form was not acting anywhere; it was being refused as nonsense.
+        // The new `polymorphic-hierarchy` fixture poses the question, and against it the open form IS Honoured
+        // at CreateMap (measured: NotCompilable -> Honoured, one cell out of NotCompilableCellCeiling's
+        // population, 99 -> 98).
+        //
+        // All SIXTEEN cells now read Refused (DWARF092, a Warning): the gate A9a hoisted for D11 gained a
+        // [MapDerivedType] arm, reading through ReadDerivedTypeAttributes — the create-map branch's own reader
+        // — which now also carries WHICH of the two forms was written, so the message quotes back the syntax
+        // the caller typed.
+        //
+        // One limitation is recorded rather than papered over: SurfaceCatalog.Render spells arity 2 as
+        // <Src, Dst> for every element, so the GENERIC form's cells register the base as an arm of itself.
+        // That measures "read at CreateMap, at no other endpoint", which is what its four cells claimed; it
+        // does not measure polymorphic dispatch. Stated at the fixture and at the attribute.
 
         ["D9"] = new(
             "[MapValue(\"Name\", …)] assigns a constant to a destination member, and Projection does not read "

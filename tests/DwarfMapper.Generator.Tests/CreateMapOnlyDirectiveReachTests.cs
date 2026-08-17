@@ -210,6 +210,114 @@ public class CreateMapOnlyDirectiveReachTests
         Assert.Equal(2, reported.Count);
     }
 
+    // ── [MapDerivedType], both of its forms ──────────────────────────────────
+
+    /// <summary>
+    ///     A real base/derived hierarchy on both sides, which is the only shape a dispatch arm has anything
+    ///     to say about. The derived types carry an extra member each, so the arm is observable.
+    /// </summary>
+    private const string Hierarchy = """
+        using System;
+        using System.Linq;
+        using System.Collections.Generic;
+        using DwarfMapper;
+        namespace Demo;
+        public class Src { public int Id { get; set; } }
+        public sealed class SrcDerived : Src { public string Extra { get; set; } }
+        public class Dst { public int Id { get; set; } }
+        public sealed class DstDerived : Dst { public string Extra { get; set; } }
+        """;
+
+    [Theory]
+    [InlineData("[MapDerivedType(typeof(SrcDerived), typeof(DstDerived))]",
+        "[MapDerivedType(typeof(SrcDerived), typeof(DstDerived))]")]
+    [InlineData("[MapDerivedType<SrcDerived, DstDerived>]", "[MapDerivedType<SrcDerived, DstDerived>]")]
+    public void A_dispatch_arm_outside_a_create_map_is_refused_and_quoted_in_the_form_it_was_written(
+        string written, string expectedInMessage)
+    {
+        // The two forms mean the same thing to resolution, and the reader carries which one was TYPED for
+        // exactly this: a caller handed back a syntax they did not write has to translate the remedy before
+        // they can apply it.
+        var message = GeneratorAssert.Reports(Hierarchy + $$"""
+
+            [DwarfMapper]
+            public partial class M
+            {
+                {{written}}
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains(expectedInMessage, message, StringComparison.Ordinal);
+
+        // What is actually lost, named: the members the derived DTO declares beyond the base one.
+        Assert.Contains("dropped", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_open_form_is_refused_at_all_four_endpoints_that_are_not_a_create_map()
+    {
+        foreach (var signature in new[]
+                 {
+                     "public partial void Update(Src s, Dst d);",
+                     "public partial IQueryable<Dst> Project(IQueryable<Src> q);",
+                     "public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);",
+                     "public partial IAsyncEnumerable<Dst> MapStream(IAsyncEnumerable<Src> s);"
+                 })
+            GeneratorAssert.Reports(Hierarchy + $$"""
+
+                [DwarfMapper]
+                public partial class M
+                {
+                    [MapDerivedType(typeof(SrcDerived), typeof(DstDerived))]
+                    {{signature}}
+                }
+                """, "DWARF092");
+    }
+
+    [Fact]
+    public void The_prescribed_remedy_really_does_carry_the_dispatch_to_an_element_wise_endpoint()
+    {
+        var generated = GeneratorAssert.EmitsCompilableCode(Hierarchy + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapDerivedType(typeof(SrcDerived), typeof(DstDerived))]
+                public partial Dst Map(Src s);
+
+                public partial DstDerived MapDerived(SrcDerived s);
+
+                public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+            }
+            """);
+
+        // The span loop calls the DECLARED create map, and that create map is the runtime-type switch.
+        Assert.Contains("d[__i] = Map(s[__i]);", generated, StringComparison.Ordinal);
+        Assert.Contains("global::Demo.SrcDerived __s => MapDerived(__s)", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_dispatch_arm_naming_a_type_that_is_not_assignable_is_still_reported_and_never_crashes()
+    {
+        // At a create map this is DWARF035, an Error; here it was refused as nothing at all. Reported per
+        // application, malformed included, because "it does not reach this endpoint" is true either way —
+        // and the arm reads through ReadDerivedTypeAttributes, whose `is INamedTypeSymbol` patterns are what
+        // keep a half-typed application from reaching a message or a crash.
+        var message = GeneratorAssert.Reports(Hierarchy + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapDerivedType(typeof(string), typeof(DstDerived))]
+                public partial void Update(Src s, Dst d);
+            }
+            """, "DWARF092")[0].GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains("[MapDerivedType(typeof(string), typeof(DstDerived))]", message,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public void The_refusal_is_a_warning_so_the_rest_of_the_mapper_is_still_emitted()
     {

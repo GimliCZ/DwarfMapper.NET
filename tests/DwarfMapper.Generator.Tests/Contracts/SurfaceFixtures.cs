@@ -206,6 +206,36 @@ internal static class SurfaceFixtures
     // directive, and the automatic layout proof declines this pair precisely because the element types differ
     // — which is the case [Reinterpret] exists to force. Against the narrowing-conversion fixture it was
     // pointed at a scalar, so the directive could not apply and the cell measured nothing.
+    // A real base/derived HIERARCHY on both sides, which is the only shape [MapDerivedType] has anything to
+    // say about: it registers a dispatch arm from a DERIVED source type to a DERIVED destination type on a
+    // method whose parameter is the base. Against the flat pair the sampled arguments were
+    // `typeof(Dst), typeof(Dst)` — a type not assignable to the method's source parameter — so the directive
+    // could only ever be DWARF035, and the open form's CreateMap cell read NotCompilable (CS8795): the entry
+    // that claimed the directive "acts at CreateMap in BOTH forms" was measurably wrong about the open one.
+    // Same shape as D10's false evidence, one finding along.
+    //
+    // The derived types carry an EXTRA member each, so the arm is observable: without it a derived arm maps
+    // exactly the base members and the dispatch is a switch that changes nothing anybody can see.
+    //
+    // Baseline compiles (Src{Id} -> Dst{Id}, no diagnostics at any of the five endpoints, measured), so a
+    // directive that does nothing reads Silent rather than UnhonouredButLoud — the trap D11 had to be
+    // rescued from.
+    //
+    // LIMITATION, stated rather than hidden: the GENERIC form's cells are still `[MapDerivedType<Src, Dst>]`,
+    // because SurfaceCatalog.Render spells arity 2 as `<Src, Dst>` for every element and the endpoint
+    // templates fix the method signature to `Dst Map(Src s)`. Against this fixture that is the base
+    // registered as an arm of itself — a legal, resolvable, and degenerate arm. It measures "the generic form
+    // is read at CreateMap and at no other endpoint", which is what its cells claim; it does NOT measure
+    // polymorphic dispatch. Widening Render to per-element type arguments is a change to the instrument, not
+    // to this finding.
+    [SurfaceProbe("polymorphic-hierarchy")]
+    private static readonly string PolymorphicHierarchy = """
+        public class Src { public int Id { get; set; } }
+        public sealed class SrcDerived : Src { public string? Extra { get; set; } }
+        public class Dst { public int Id { get; set; } }
+        public sealed class DstDerived : Dst { public string? Extra { get; set; } }
+        """;
+
     [SurfaceProbe("reinterpretable-array-member")]
     private static readonly string ReinterpretableArrayMember = """
         public sealed class Src { public int Id { get; set; } public int[] Data { get; set; } = System.Array.Empty<int>(); }

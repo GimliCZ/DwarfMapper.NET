@@ -313,7 +313,7 @@ internal static partial class MapperExtractor
                 var spanAutoNest = ReadMethodAutoNest(method, classAutoNest);
                 // Before the element-wise gate and before resolution, so a create-map-only directive is
                 // reported whatever else this method turns out to be wrong about.
-                ReportCreateMapOnlyDirectives(method, spanSrcElem, spanDstElem, "span-map",
+                ReportCreateMapOnlyDirectives(method, spanComp, spanSrcElem, spanDstElem, "span-map",
                     adoptsACreateMap: true, methodLocation, diagnostics);
                 if (ReportElementWiseDirectiveGaps(method, classSymbol, spanSrcElem, spanDstElem, explicitOnly,
                         spanComp, allowNonPublic, methodLocation, diagnostics))
@@ -374,7 +374,7 @@ internal static partial class MapperExtractor
                 var comp = ctx.SemanticModel.Compilation;
                 // Before resolution, so a create-map-only directive is reported whatever else this method
                 // turns out to be wrong about. An update-into does NOT reach a sibling create map.
-                ReportCreateMapOnlyDirectives(method, updSrc, updTgt, "update-into",
+                ReportCreateMapOnlyDirectives(method, comp, updSrc, updTgt, "update-into",
                     adoptsACreateMap: false, methodLocation, diagnostics);
                 var updIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var ig in ReadIgnores(method)) updIgnores.Add(ig);
@@ -539,7 +539,7 @@ internal static partial class MapperExtractor
             {
                 var asComp = ctx.SemanticModel.Compilation;
                 var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
-                ReportCreateMapOnlyDirectives(method, asSrcElem, asDstElem, "async-stream",
+                ReportCreateMapOnlyDirectives(method, asComp, asSrcElem, asDstElem, "async-stream",
                     adoptsACreateMap: true, methodLocation, diagnostics);
                 if (ReportElementWiseDirectiveGaps(method, classSymbol, asSrcElem, asDstElem, explicitOnly,
                         asComp, allowNonPublic, methodLocation, diagnostics))
@@ -596,8 +596,8 @@ internal static partial class MapperExtractor
                 // Before the DWARF028 early exit below, which adds the method with empty projection members
                 // and continues: a directive dropped here is dropped whether or not reference handling also
                 // refuses the endpoint.
-                ReportCreateMapOnlyDirectives(method, projSource, projTargetNamed, "projection",
-                    adoptsACreateMap: false, methodLocation, diagnostics);
+                ReportCreateMapOnlyDirectives(method, ctx.SemanticModel.Compilation, projSource,
+                    projTargetNamed, "projection", adoptsACreateMap: false, methodLocation, diagnostics);
 
                 var projIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var i in ReadIgnores(method)) projIgnores.Add(i);
@@ -780,7 +780,7 @@ internal static partial class MapperExtractor
                     new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>();
                 var seenSrcTypes = new HashSet<string>(StringComparer.Ordinal);
 
-                foreach (var (derivedSrc, derivedTgt) in rawDerivedPairs)
+                foreach (var (derivedSrc, derivedTgt, _) in rawDerivedPairs)
                 {
                     var srcFqn = derivedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     var tgtFqn = derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -2990,6 +2990,7 @@ internal static partial class MapperExtractor
     ///     </para>
     /// </summary>
     /// <param name="method">The update-into, projection, span or async-stream mapping method.</param>
+    /// <param name="compilation">Handed to <see cref="ReadDerivedTypeAttributes" />, which takes one.</param>
     /// <param name="srcType">The pair's source type — the element type at the two element-wise endpoints.</param>
     /// <param name="tgtType">The pair's target type — the element type at the two element-wise endpoints.</param>
     /// <param name="endpointName">The endpoint as a caller would say it: "update-into", "projection", …</param>
@@ -3003,8 +3004,8 @@ internal static partial class MapperExtractor
     ///     A8's revert is the standing proof that a prescribed remedy nobody ran is worse than none.
     /// </param>
     private static void ReportCreateMapOnlyDirectives(
-        IMethodSymbol method, ITypeSymbol srcType, ITypeSymbol tgtType, string endpointName,
-        bool adoptsACreateMap, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+        IMethodSymbol method, Compilation compilation, ITypeSymbol srcType, ITypeSymbol tgtType,
+        string endpointName, bool adoptsACreateMap, LocationInfo? location, List<DiagnosticInfo> diagnostics)
     {
         var src = srcType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
         var tgt = tgtType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
@@ -3018,6 +3019,27 @@ internal static partial class MapperExtractor
                 + $"directive is discarded and '{collection}' is filled by ordinary direct mapping instead, "
                 + "so the same declaration produces a walked graph on one overload of this mapper and a "
                 + "shallow copy on this one.");
+
+        // [MapDerivedType], in BOTH of its forms, through the reader the create-map branch reads with — which
+        // is also where the WRITTEN form comes from, so the message quotes the syntax the caller typed rather
+        // than normalizing one into the other. `compilation` is the reader's own parameter; it is passed
+        // rather than a second reader written, because a second reader of these attributes is precisely the
+        // shape that has shipped two generator crashes on this branch.
+        foreach (var (derivedSrc, derivedTgt, writtenGeneric) in ReadDerivedTypeAttributes(method, compilation))
+        {
+            var dSrc = derivedSrc.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+            var dTgt = derivedTgt.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+            Report(
+                writtenGeneric
+                    ? $"[MapDerivedType<{dSrc}, {dTgt}>]"
+                    : $"[MapDerivedType(typeof({dSrc}), typeof({dTgt}))]",
+                $"A dispatch arm decides which destination TYPE to construct — a '{dSrc}' becomes a "
+                + $"'{dTgt}' rather than a '{tgt}' — from the source's RUNTIME type, and only the create map "
+                + $"constructs one. Here the directive is discarded and a '{dSrc}' is mapped as a '{src}', so "
+                + $"every member '{dTgt}' declares beyond '{tgt}' is dropped. The create map also VALIDATES "
+                + "these arms (DWARF035 for a type that is not assignable, a duplicate source type, or a pair "
+                + "that is not mappable); nothing validated them here either.");
+        }
 
         void Report(string written, string what) =>
             diagnostics.Add(new DiagnosticInfo(

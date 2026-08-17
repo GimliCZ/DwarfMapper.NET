@@ -12,15 +12,24 @@
 //       remedy is the same declaration on a create map over the same pair — and at the two ELEMENT-WISE
 //       endpoints that is not merely advice: a span or stream map adopts a declared mapping method for its
 //       element pair, so the create map carrying the directive is what its loop calls.
+//       [MapDerivedType] is here for the same reason and in BOTH of its forms: a dispatch arm decides which
+//       destination TYPE to construct from the source's runtime type, so away from the create map a derived
+//       instance was mapped as its base and every member the derived DTO declares beyond the base one was
+//       dropped, silently (finding D8). The two applications below are written in the two different syntaxes
+//       on purpose — the message quotes back the form the caller typed, not a normalized one.
 // EXPECT: DWARF092
 // EXPECT-MESSAGE DWARF092: [FlattenGraph("Root", "Flat")] on 'UpdateTree' is not read at the update-into endpoint
 // EXPECT-MESSAGE DWARF092: [FlattenGraph("Root", "Flat")] on 'MapTrees' is not read at the span-map endpoint
 // EXPECT-MESSAGE DWARF092: filled by ordinary direct mapping instead
 // EXPECT-MESSAGE DWARF092: Declare it on a create map over the same pair
 // EXPECT-MESSAGE DWARF092: so that create map is what this method's loop calls
+// EXPECT-MESSAGE DWARF092: [MapDerivedType<PolyDerived, PolyDerivedDto>] on 'UpdatePoly'
+// EXPECT-MESSAGE DWARF092: [MapDerivedType(typeof(PolyDerived), typeof(PolyDerivedDto))] on 'ProjectPoly'
+// EXPECT-MESSAGE DWARF092: from the source's RUNTIME type, and only the create map constructs one
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using DwarfMapper;
 
 namespace Demo;
@@ -53,6 +62,26 @@ public sealed class TreeRootDto
     public List<GraphNodeDto> Flat { get; set; } = new();
 }
 
+public class PolyBase
+{
+    public int Id { get; set; }
+}
+
+public sealed class PolyDerived : PolyBase
+{
+    public string? Extra { get; set; }
+}
+
+public class PolyBaseDto
+{
+    public int Id { get; set; }
+}
+
+public sealed class PolyDerivedDto : PolyBaseDto
+{
+    public string? Extra { get; set; }
+}
+
 [DwarfMapper]
 public partial class CreateMapOnlyDirectiveMapper
 {
@@ -61,4 +90,10 @@ public partial class CreateMapOnlyDirectiveMapper
 
     [FlattenGraph("Root", "Flat")]
     public partial void MapTrees(ReadOnlySpan<TreeRoot> src, Span<TreeRootDto> dst);
+
+    [MapDerivedType<PolyDerived, PolyDerivedDto>]
+    public partial void UpdatePoly(PolyBase src, PolyBaseDto dst);
+
+    [MapDerivedType(typeof(PolyDerived), typeof(PolyDerivedDto))]
+    public partial IQueryable<PolyBaseDto> ProjectPoly(IQueryable<PolyBase> q);
 }

@@ -196,7 +196,11 @@ public sealed class SurfaceProbeTests
         // there. Giving it a marker anyway would have kept the number at 17 while declaring a slot nothing
         // splices into — a count that no longer describes anything, which is the opposite of what this
         // assertion is for.
-        const int baseline = 18;
+        //
+        // 18 → 19 with `polymorphic-hierarchy`, raised deliberately for exactly the same reason:
+        // [MapDerivedType] is AttributeTargets.Method in both of its forms, so no Property- or Field-site case
+        // demands that fixture either.
+        const int baseline = 19;
         Assert.True(missing.Count == baseline,
             $"{missing.Count} of {SurfaceFixtures.All.Count} fixtures carry neither "
             + $"{nameof(EndpointSources.PropertySlotMarker)} nor {nameof(EndpointSources.FieldSlotMarker)}: "

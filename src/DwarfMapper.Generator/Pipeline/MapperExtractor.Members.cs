@@ -927,11 +927,19 @@ internal static partial class MapperExtractor
     ///     Reads [MapDerivedType&lt;TSource,TTarget&gt;] (generic) and
     ///     [MapDerivedType(typeof(TSource),typeof(TTarget))] (non-generic) annotations from a method.
     ///     Returns raw pairs of (srcType, tgtType) INamedTypeSymbol — not yet validated.
+    ///     <para>
+    ///         <c>WrittenGeneric</c> records WHICH of the two forms the caller typed. Resolution has no use
+    ///         for it — the two forms mean the same thing — but <c>DWARF092</c> quotes the directive back at
+    ///         the caller, and quoting a form they did not write is the defect A8's <c>[MapValue]</c> arm
+    ///         records. Carried on the one reader rather than recovered by a second pass over the attributes,
+    ///         because a second reader of these same attributes is how this branch has shipped two generator
+    ///         crashes.
+    ///     </para>
     /// </summary>
-    private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt)> ReadDerivedTypeAttributes(
-        IMethodSymbol method, Compilation compilation)
+    private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>
+        ReadDerivedTypeAttributes(IMethodSymbol method, Compilation compilation)
     {
-        var result = new List<(INamedTypeSymbol, INamedTypeSymbol)>();
+        var result = new List<(INamedTypeSymbol, INamedTypeSymbol, bool)>();
         foreach (var attr in method.GetAttributes())
         {
             var cls = attr.AttributeClass;
@@ -945,7 +953,7 @@ internal static partial class MapperExtractor
                 && cls.TypeArguments[0] is INamedTypeSymbol gSrc
                 && cls.TypeArguments[1] is INamedTypeSymbol gTgt)
             {
-                result.Add((gSrc, gTgt));
+                result.Add((gSrc, gTgt, true));
                 continue;
             }
 
@@ -955,7 +963,7 @@ internal static partial class MapperExtractor
                 && attr.ConstructorArguments.Length == 2
                 && attr.ConstructorArguments[0].Value is INamedTypeSymbol nSrc
                 && attr.ConstructorArguments[1].Value is INamedTypeSymbol nTgt)
-                result.Add((nSrc, nTgt));
+                result.Add((nSrc, nTgt, false));
         }
 
         return result;

@@ -161,7 +161,7 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D5 | `[MapIgnore]` / `[MapIgnore]×2` (no-target form) on a method or class | — the no-target form is the registry form; the class model has no arity check at all | all five, + CoLocatedHost | 22 |
 | D6 | `[MapNullSkip(true)]` on a method | Create, Update (Honoured) | **Projection, SpanMap, AsyncStream** | 3 |
 | D7 | `[MapNullSkip<Src,Dst>(true)]` on the class | SpanMap, AsyncStream, CoLocatedHost (Honoured) | **Create, Update, Projection** | 6 |
-| D8 | `[MapDerivedType]`, both the open and the generic form | CreateMap | Update, Projection, SpanMap, AsyncStream | 16 |
+| D8 | ~~`[MapDerivedType]`, both forms~~ | **CLOSED by A9a** as `DWARF092` — all 16 cells `Refused`; its evidence was partly false, see the entry | — | 0 |
 | D9 | `[MapValue("Name", …)]`, all four cases | Create, Update — `ctor(2)` Honoured, the other three `CS8795` | **Projection** (SpanMap/AsyncStream closed as `DWARF090`) | 4 |
 | D10 | ~~`[Flatten("Id")]`, and ×2~~ | **CLOSED by A8** — and its evidence was false; see the entry | — | 0 |
 | D11 | ~~`[FlattenGraph("Root","Flat")]`, and ×2~~ | **CLOSED by A9a** as `DWARF092` — all 8 cells `Refused`; its evidence held as filed | — | 0 |
@@ -430,9 +430,9 @@ one store per failure mode is how the six allowlists this architecture is replac
 > No `DeclaredDivergences` entry was added or wanted: this was never a silence, and it is now a claimed
 > endpoint behaving correctly.
 
-## The findings — 12 live, 11 fixed
+## The findings — 11 live, 12 fixed
 
-Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The eleven marked **RESOLVED** keep their
+Each has an anchor, because `DeclaredDivergences.Reasons` links to it. The twelve marked **RESOLVED** keep their
 sections: the store entry is gone (a fixed gap left on the list is a fossil), but the write-up is what the
 next reader needs to know the gap existed and how it was closed. **Acts at** is the evidence the cell is
 a divergence rather than a shape: the same directive, at the same site, doing something observable somewhere
@@ -711,7 +711,54 @@ maintainer calls, and (a) retires most of an 99-cell population rather than thre
 
 <a id="D8"></a>
 
-### D8 — `[MapDerivedType]`, both forms, act only at CreateMap — 16 cells
+### D8 — `[MapDerivedType]`, both forms, act only at CreateMap — 16 cells — RESOLVED
+
+> **RESOLVED 2026-08-17 (A9a) as `DWARF092`, on the gate D11 introduced. All sixteen cells close — and the
+> finding's own evidence was PARTLY FALSE.** That is the second entry in two tasks to be measured wrong,
+> after [D10](#D10), and it is the part worth reading first.
+>
+> The entry said the directive "acts at CreateMap … in BOTH the open and the generic form". Literal reading
+> against the flat DTO pair, before any edit:
+>
+> ```
+> MapDerivedType`0 | ctor(2) | rendered [MapDerivedType(typeof(Dst), typeof(Dst))]
+>     CreateMap   => NotCompilable (CS8795)      <- NOT "acts at CreateMap"
+> MapDerivedType`0 | ×2      | CreateMap => NotCompilable (CS8795)
+> MapDerivedType`2 | ctor(0) | rendered [MapDerivedType<Src, Dst>]
+>     CreateMap   => Honoured (output differs)   <- the base registered as an arm of ITSELF
+> ```
+>
+> **The open form was acting nowhere.** The flat pair declares no hierarchy, so the sampled arity-2 arguments
+> were `typeof(Dst), typeof(Dst)` — a type not assignable to the method's source parameter — which is
+> `DWARF035`, an Error, hence `CS8795`. The create map was refusing nonsense, not dispatching. Exactly D10's
+> shape: a fixture that cannot pose the question answering it anyway.
+>
+> **The fixture that poses it:** `polymorphic-hierarchy` — `Src` / `SrcDerived : Src`, `Dst` /
+> `DstDerived : Dst`, the derived pair carrying an extra member each so the arm is observable, and a baseline
+> that compiles clean at all five endpoints so a directive doing nothing reads `Silent` and not
+> `UnhonouredButLoud`. Against it the open form's `ctor(2)` cell at CreateMap is **`Honoured`**, which moved
+> one cell OUT of the `NotCompilable` population: `NotCompilableCellCeiling` measured **99 → 98**.
+>
+> **A limitation is recorded rather than papered over.** `SurfaceCatalog.Render` spells arity 2 as
+> `<Src, Dst>` for every element, and the endpoint templates fix the signature to `Dst Map(Src s)`, so the
+> GENERIC form's cells register the base as an arm of itself — legal, resolvable, degenerate. That measures
+> what its four cells claim ("read at CreateMap, at no other endpoint") and does **not** measure polymorphic
+> dispatch. Widening `Render` to per-element type arguments is a change to the instrument, not to this
+> finding; it is stated at the fixture, at the attribute and here rather than left for a reader to discover.
+>
+> **The fix** is the `DWARF092` gate gaining a `[MapDerivedType]` arm, reading through
+> `ReadDerivedTypeAttributes` — the create-map branch's own reader, which now also carries WHICH of the two
+> forms was written, so the message quotes back the syntax the caller typed instead of normalizing one into
+> the other. The remedy at the two element-wise endpoints was measured, not asserted: with a
+> `[MapDerivedType]` create map declared beside a span map the emitted loop is `d[__i] = Map(s[__i]);` and
+> that create map is the runtime-type switch.
+>
+> Final reading, all sixteen cells: `Refused (DWARF092 (Warning))`. Ceilings: findings **11 → 10**, declared
+> cells **54 → 38**, `NotCompilable` **99 → 98**; `UnhonouredButLoud` **14**, `Unaskable` **44**,
+> `NoSuchSite` **137**, `StructurallyExcused` **12** re-measured unchanged. One non-ceiling baseline raised
+> deliberately: `SurfaceProbeTests`' fixtures-without-a-member-slot count **18 → 19**, as that assertion's own
+> message instructs — `[MapDerivedType]` is `AttributeTargets.Method` in both forms, so no Property- or
+> Field-site case demands the new fixture.
 
 *Method site, open form `ctor(2)`/×2 and generic form `ctor(0)`/×2 → UpdateInto, Projection, SpanMap,
 AsyncStream.* Acts at CreateMap. A derived-type declaration is made for the mapper, not for one overload of
