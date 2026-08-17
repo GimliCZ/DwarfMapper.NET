@@ -102,25 +102,59 @@ Two consequences worth recording:
    is 8 kills, not zero — and it is not the `DwarfMapValidationException` constructors the comment predicted,
    but `DwarfRefContext` cycle/equality logic reached by the two fuzzers.
 
-`test-projects` is therefore kept and **widened to the three projects that actually contain killers**, as
-belt-and-braces documentation of intent rather than as an enforcement mechanism.
+**The `test-projects` key is therefore deleted outright**, not corrected. A populated list tells the next reader
+that an exclusion is in force when none is; removing it makes the config honest about what it actually does. The
+three projects that contain killers are recorded here and in the config comment (NOTE 3) instead — as
+documentation, which is all such a list could ever have been.
 
 ---
 
-## E1 — the filtering mechanism
+## E1 — the filtering mechanism: found, measured, and DECLINED
 
-**Used: `test-case-filter`.** It is a genuine Stryker 4.16 `stryker-config` key, though it is **not in
-`dotnet stryker --help`**. Verified against the installed tool rather than from recall:
+> **Outcome first, because it reverses what the rest of this section was written to support.** The filter works
+> and it is fast — 44:02 → 02:50, measured twice. **It is not shipped.** The maintainer ruled that the leg
+> retains **no exclusion from the test set**, and that ruling is right for a reason this very report supplies:
+> see *Why the filter was declined* below. What is shipped instead is a **timeout fix on the full suite**. The
+> measurements are kept because they are the evidence that the old score was wrong.
+
+**The mechanism exists: `test-case-filter`.** It is a genuine Stryker 4.16 `stryker-config` key, though it is
+**not in `dotnet stryker --help`** — worth recording, because its absence from the help output is exactly why
+it was thought not to exist. Verified against the installed tool rather than from recall:
 `Stryker.CLI.dll` contains the literal `test-case-filter` in its config-key table, adjacent to
 `test-projects`; `Stryker.Configuration.dll` and `Stryker.Abstractions.dll` expose
 `TestCaseFilter`/`TestCaseFilterInput`; and `Stryker.TestRunner.VsTest.dll` — the default runner — consumes
 `TestCaseFilter` alongside `FullyQualifiedName`. So it is a VSTest TestCaseFilter expression, the same syntax
 as `dotnet test --filter`.
 
-The filter is an OR-chain of `FullyQualifiedName~<Class>` over the 23 derived classes. `~` is a
-contains-match, so it can only ever *over*-include, never under-include — which is the score-safe direction.
+The filter tried was an OR-chain of `FullyQualifiedName~<Class>` over the 23 derived classes. `~` is a
+contains-match, so it can only ever *over*-include, never under-include — which is the score-safe direction
+**for a fixed test suite**, and that qualifier turns out to be the whole problem.
 
-**Why the other mechanism was not viable.** Narrowing `test-projects` cannot express this filter:
+### Why the filter was declined
+
+**A filter is a list, and lists drift** — silently, and in the one direction nothing catches. When a test becomes
+the sole killer of a mutant, an exclusive filter drops that kill, **the score goes UP**, and coverage goes down,
+with nothing in the repository noticing, because a rising score is exactly what a ratchet is built to welcome.
+That is the failure shape this branch exists to delete, and a coverage-measuring tool is the worst possible place
+to install a fresh instance of it.
+
+**And here the list could not even be derived correctly — that part is measured, not feared.** The 23 classes
+came from every `killedBy` set in the 2026-08-16 report. But **11 mutants in that report had an empty
+`killedBy`**, because they were recorded as timeouts (see below) — so any class whose only kills landed on those
+11 was **invisible to the derivation**. Fixing the timeout proved it: the corrected run credits **26** killer
+classes, and three of them — `DeepRecursionGuardRuntimeTests`, `DepthSafetyRuntimeTests`,
+`NoneModeCollectionDepthRuntimeTests`, 5 kills between them on the `DwarfRefContext` depth clamp — **are not in
+the 23**. They were in the suite all along; the data used to build the list had simply not recorded what they
+killed.
+
+In this instance the filter would still have lost **zero** kills, because those mutants have redundant killers —
+so this is not a near-miss story. It is a **method** story: a derivation blind to 3 of 26 killers is not a sound
+basis for excluding tests, and the blindness came from the very defect the filter was being used to work around.
+
+The 15.5× was real, but it bought wall-clock with a silent-loss mechanism. **The honest lever was never the test
+count — it was the clock.**
+
+**Why the other mechanism was not viable either.** Narrowing `test-projects` cannot express such a filter:
 
 - It does not restrict anything in this setup (see the defect above), so it is not a mechanism at all here.
 - Even if it did, the killers span **three** projects, and the largest of them — Generator.Tests, 4,601 of the
@@ -137,7 +171,10 @@ so the filter narrowed the test set without de-covering a single mutant.
 
 ---
 
-## E1 — measured, 2026-08-17
+## The scoped experiment, 2026-08-17 — not shipped, but it is what diagnosed the real defect
+
+This run is the diagnostic, not the deliverable. Its value is that shrinking the test set made **seven mutants
+change status**, which is what exposed the old score as wrong.
 
 | | Baseline 2026-08-16 | Scoped 2026-08-17 |
 |---|---:|---:|
@@ -157,9 +194,11 @@ Nothing about *what is mutated* changed — same 111 mutants, same 7 NoCoverage,
 
 **The score fell, so the work stopped here and `break` was not lowered unilaterally** — a dropped score is
 exactly the signal this branch's no-lowering rule exists to catch, and the config was reverted pending a ruling.
-The evidence below then showed the drop to be **baseline inflation, not a lost kill**, and the maintainer ruled
-to accept 61 as the honest floor. `break: 61` is committed on that ruling, with the reasoning recorded in the
-config comment so the number is not "restored" to 66 by someone who sees only that it went down.
+The evidence below then showed the drop to be **baseline inflation, not a lost kill**.
+
+What the maintainer then ruled — and it is a better call than treating this as a `break` question — is that the
+**inflation itself** is the defect and must be fixed at its cause: **raise the timeout, keep the whole suite.**
+Scoping was rejected outright (*Why the filter was declined*, above). See *The fix that shipped* below.
 
 ### But the drop is not a lost kill — the baseline was inflated
 
@@ -250,7 +289,82 @@ under similar conditions, so the 15.5× *ratio* is the trustworthy part.
 
 ---
 
-## The concrete holes behind the honest 61.02 %
+## The fix that shipped — `additional-timeout`, on the full suite
+
+**Diagnosis.** Stryker computes `total timeout = initialTestTime + additional-timeout` (stated in its own
+configuration docs). Measured on this branch, the initial full-suite run is **193 s** (5,650 tests,
+18:39:28 → 18:42:41, serial because the assembly sets
+`CollectionBehavior(DisableTestParallelization = true)`). The default `additional-timeout` is small — a value in
+seconds, not minutes; Stryker does not log the computed ceiling at info level, so the exact default is not
+sourced here and no number is claimed for it.
+
+The ratio is what matters, and it does not depend on that number. For the two hot files a mutant's covering set
+*is* essentially the whole suite, so each of those sessions runs a **~193 s workload under a ceiling only
+seconds above it**. Any load spike — a concurrent build, another agent's test run — pushes it over, and Stryker
+records **Timeout, which it counts as detected.**
+
+The empirical proof that the cushion was too small needs no default value at all: **11 mutants timed out, and
+four of them provably cannot hang** (deleted `ThrowIfNull` calls; `* 397` → `/ 397`) while a fifth is a provably
+equivalent mutant. A ceiling that fires on code with no loop in it is a ceiling set too close to the workload.
+That is the whole mechanism behind the inflated 66.95 %: not a hang, not a diagnosis, just a stopwatch losing a
+race it was never given room to win.
+
+**The fix is `"additional-timeout": 120000`** — a 120 s cushion on a 193 s suite, about **62 % headroom** instead
+of 2.5 %. It targets the actual defect (the ceiling was too close to the workload) and costs nothing in
+coverage, because it changes no test and no mutant. Only a mutant that genuinely hangs pays the extra wait.
+
+**Why this is the right lever and scoping was not.** Shrinking the test set also removed the timeouts — by
+removing the workload — but it did so by *not running tests*, buying accuracy and wall-clock with the
+silent-loss mechanism described above. Raising the ceiling removes the artefact while keeping every test. One
+fixes the measurement; the other changes what is measured and hopes the list stays right.
+
+### Measured: the full suite with the raised timeout
+
+| | Baseline 2026-08-16 | Scoped (rejected) | **Full suite + timeout fix** |
+|---|---:|---:|---:|
+| Tests run | 5,592 | 288 | **5,650** |
+| Wall-clock | 44:02 | 02:50 | **12:25** |
+| Mutants tested | 111 | 111 | **111** |
+| Killed | 68 | 72 | **71** |
+| Timeout | 11 | 0 | **1** |
+| Survived | 32 | 39 | **39** |
+| NoCoverage | 7 | 7 | **7** |
+| Detected / scoreable | 79 / 118 | 72 / 118 | **72 / 118** |
+| **Score** | 66.95 % | 61.02 % | **61.02 %** |
+| Exit code at `break: 61` | — | 0 | **0** |
+
+**`break` is 61**, the floor of the measured 61.02 %.
+
+**This table is the evidence the ruling asked for.** The full suite and the scoped run reach the **identical
+61.02 %** — and reach it via the identical 7 `Timeout → Survived` re-classifications, with **0 mutants gaining
+detection**. So the filter was never buying accuracy; it was only buying wall-clock, and the honest score is a
+property of the mutants rather than of how many tests are run. The old 66.95 % is the outlier, and the reason is
+the ceiling, not the suite.
+
+**Two corrections to earlier framing, both now measured:**
+
+1. **The 44 minutes was mostly contention, not test count.** The same full suite finishes in **12:25** — and that
+   too was on a busy machine. R21-1's covering-set explosion is real, but it is a ~12-minute problem, not a
+   ~44-minute one; the rest of the original figure was other builds competing for the same 12 cores. The
+   44-minute number should not be quoted as the cost of this configuration.
+2. **A 12-minute leg is comfortably automatable**, which is what makes the "run it in CI" outcome reachable
+   without excluding a single test.
+
+**The one remaining Timeout is a false alarm, and it does not touch the score.** It is
+`DwarfMapExceptions.cs` L107, a string mutation to `""` with just 4 covering tests — it cannot hang. That mutant
+is **Killed** in the 2026-08-16 baseline and in both scoped runs, so it is genuinely detected; here its 4-test
+session simply ran long on a loaded box. Timeout and Killed both count as detected, so 61.02 % is unaffected
+either way. It is, however, a live reminder that load can still manufacture a timeout even at a 62 % cushion.
+
+**A caveat for whoever tunes this next: the headroom is proportional, and the cushion is not.** On a slower
+machine `initialTestTime` grows while the +120 s stays fixed, so the *percentage* of headroom shrinks. If a
+future run — especially on a CI runner with fewer cores — shows Timeouts reappearing on mutants that cannot
+hang (the `ThrowIfNull` deletions, the `* 397` → `/ 397`), the correct response is to **raise
+`additional-timeout` again, never to filter the suite.**
+
+---
+
+## The concrete holes behind the honest score
 
 **Not fixed here — this is the list to file tasks from.** All 46 undetected mutants (39 Survived + 7
 NoCoverage), grouped into **13 holes** by member and missing case. Lines are `src/DwarfMapper/`. "Newly honest"
@@ -307,59 +421,69 @@ not a scoping artefact. Either something should call it or it is dead code — t
 
 ## C1 — landed
 
-The maintainer ruled on the `break` question — **accept 61 as the honest floor** — on the grounds recorded
-above: no kill was lost, and the old number counted non-detections as detections. The no-lowering rule exists to
-stop a ratchet absorbing a *regression*, not to freeze a number that was measured wrong. So C1 proceeded.
-
 **Added: the `runtime-mutation` job in `.github/workflows/ci.yml`**, placed immediately after `surface-matrix`
-(the other filtered-test-quality leg) and before `aot-trim-gate`. The workflow's structure is unchanged — it is
-one more independent job following the same checkout / setup-dotnet shape as its siblings. It:
+and before `aot-trim-gate`. The workflow is not restructured — it is one more independent job in the same
+checkout / setup-dotnet shape as its siblings. It:
 
-- pins the tool (`dotnet tool install --global dotnet-stryker --version 4.16.0`), matching the `sbom` job's
-  pinned `CycloneDX`. The pin matters more here than for most tools: because `test-projects` is inert
-  (NOTE 3), a future Stryker that *started* honouring it would change which tests run — and therefore the
-  score — with no config edit to point at;
-- runs only the runtime config. The generator and doc-tooling legs remain housekeeping-only: neither has been
-  scoped and both are still far too slow for every push;
-- carries `timeout-minutes: 30`, so a hung run cannot burn the default 6-hour budget. Generous on purpose — the
-  measured 3 min is on 12 cores and a hosted runner has far fewer;
-- **re-implements the vacuity guard inline**, mirroring `Assert-MutantsWereTested`, because CI is precisely
-  where that hazard was unguarded;
-- uploads the report with `if: always()`, so a score drop can be diagnosed from the run that failed.
+- **runs nightly (`cron: '17 3 * * *'`) plus `workflow_dispatch`, never on push or pull_request**, guarded by
+  `if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'`. A 12-minute leg on a
+  12-core box will be appreciably slower on a hosted runner, and the ruling is explicit that slow-and-honest
+  beats fast-and-quietly-narrowed. The job comment says so, so nobody "fixes" the runtime with a filter;
+- carries **`timeout-minutes: 120`** — roughly 10× the measured 12:25, sized for a runner with ~4 cores
+  (Stryker's default concurrency is cores/2, so 2 instead of 6) rather than for this machine;
+- pins the tool (`dotnet tool install --global dotnet-stryker --version 4.16.0`), like `sbom`'s `CycloneDX`.
+  Both Stryker's test discovery and its timeout arithmetic feed the score directly, so an unpinned upgrade could
+  move the number with no repo change to point at;
+- runs only the runtime config — the generator and doc-tooling legs stay housekeeping-only;
+- **re-implements the vacuity guard inline**, mirroring `Assert-MutantsWereTested`, because CI is exactly where
+  that hazard was unguarded;
+- uploads the report with `if: always()`, so a score change can be diagnosed from the run that reported it.
 
-**One CI risk checked rather than assumed:** `dotnet-stryker` 4.16 targets `net8.0` while the job installs only
-SDK 10.0.101. Its `Stryker.CLI.runtimeconfig.json` sets `rollForwardOnNoCandidateFx: 2` (Major), so it runs on
-the .NET 10 runtime with no .NET 8 present — confirmed locally on a machine carrying only runtimes 7, 9 and 10.
-No extra `dotnet-version` entry is needed.
+**Two operational facts worth knowing rather than discovering:**
 
-## Confirming run — the committed config, measured
+1. **`schedule` fires only on the repository's default branch.** The nightly leg stays dormant until this reaches
+   master; on a feature branch it can only be started by hand via `workflow_dispatch`. "It is in CI" and "it has
+   run" are different claims until the merge.
+2. **`dotnet-stryker` 4.16 targets `net8.0`** while the job installs only SDK 10.0.101. Its
+   `Stryker.CLI.runtimeconfig.json` sets `rollForwardOnNoCandidateFx: 2` (Major), so it runs on the .NET 10
+   runtime with no .NET 8 present — confirmed locally on a machine carrying only runtimes 7, 9 and 10. No extra
+   `dotnet-version` entry is needed.
 
-The committed config (filter + `break: 61`) was re-run to prove the gate passes rather than inferring it from
-the earlier `break: 66` run:
+## `Assert-MutantsWereTested` — verified, not modified
 
-| | |
-|---|---|
-| Wall-clock | **03:07** (18:30:45 → 18:33:52) |
-| Score | **61.02 %** — Killed 72, Survived 39, Timeout 0, NoCoverage 7 |
-| Exit code | **0** (passes `break: 61`) |
+Checked by executing the guard's **actual logic** from `scripts/housekeeping.ps1` against the full-suite report —
+the `Get-ChildItem`/`LastWriteTime` selection followed by the
+`"status"\s*:\s*"(Killed|Survived|Timeout|NoCoverage)"` regex count. It selected
+`StrykerOutput/2026-08-17.18-38-48/reports/mutation-report.json` and returned **118**, passing its `> 0` demand.
+The CI job's `grep` form of the same count returns **118** on the same file, so the two implementations agree.
 
-Two independent runs of the scoped config produced **the identical score**, so 61.02 % is reproducible and not a
-one-off. The 03:07 vs 02:50 spread between them is machine load, not configuration.
-
-`Assert-MutantsWereTested` was then verified by executing its **actual logic** from `scripts/housekeeping.ps1`
-against this run's report — the `Get-ChildItem`/`LastWriteTime` selection followed by the
-`"status"\s*:\s*"(Killed|Survived|Timeout|NoCoverage)"` regex count — which picked
-`StrykerOutput/2026-08-17.18-30-46/reports/mutation-report.json` and returned **118**, passing its `> 0` demand.
-The CI job's `grep` form of the same count returns 118 on the same file, so the two implementations agree.
+The guard needed no edit. It keys off the scoreable denominator, which none of this work changes, and it would
+still fire on a vacuous run: a vacuous run drops every mutant to `Ignored` ("Removed by mutate filter") and none
+of the four scoreable statuses would appear.
 
 ## What is committed
 
-- `stryker-config.runtime.json` — `test-case-filter` (23 derived killer classes), `test-projects` widened to
-  the three projects that contain killers, `break: 61`, and a comment rewritten to record the new measurement,
-  why 66 was inflated and must not be "restored", that `test-projects` is inert (NOTE 3), and that the former
-  "measured cost is ZERO" claim for excluding `Generator.Tests` is false (NOTE 4 — 37 kills, 8 exclusive).
-- `.github/workflows/ci.yml` — the `runtime-mutation` job.
-- `Issues/ledgers/E3-E1-report.md` — this report.
-- **Not changed:** `scripts/housekeeping.ps1`. Its guard needed no edit; it was verified, not modified.
+- **`stryker-config.runtime.json`** — `"additional-timeout": 120000`; **no `test-case-filter`** and **no
+  `test-projects` key at all**; `break: 61`. The comment now records the new measurement, why 66 was inflated by
+  load-induced timeouts and must not be "restored", why a test filter is refused (NOTE on derivation blindness),
+  that a `test-projects` key would be inert (NOTE 3), that the old "measured cost is ZERO" claim for excluding
+  `Generator.Tests` is false (NOTE 4 — 37 kills, 8 exclusive), and that the 44-minute figure is
+  contention-confounded (NOTE 5).
+- **`.github/workflows/ci.yml`** — the nightly `runtime-mutation` job, plus the `schedule` and
+  `workflow_dispatch` triggers it needs.
+- **`Issues/ledgers/E3-E1-report.md`** — this report.
+- **Not changed:** `scripts/housekeeping.ps1`. Verified, not modified.
 
-`dotnet build DwarfMapper.NET.sln -c Release` is 0 warnings / 0 errors at this base, samples included.
+Only `.json`, `.yml` and `.md` files changed, so the last full build remains valid:
+`dotnet build DwarfMapper.NET.sln -c Release` is **0 warnings / 0 errors** at this base, samples included.
+
+## Superseded history on this branch
+
+Two earlier decisions are left in the history deliberately, because both were measured and the reasoning is
+worth keeping:
+
+- `96e5911` shipped the `test-case-filter` and `break: 61` under the first ruling. It is **superseded** by this
+  work: the filter is gone, `break: 61` survives on a different and better basis (a full-suite measurement
+  rather than a scoped one).
+- `8274cd9` / `5cde3b8` recorded E3 and the stop-and-report when the score first fell. That stop was correct
+  procedure, and the evidence it produced is what identified the timeout defect.

@@ -5,6 +5,18 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
+  # Both added for the `runtime-mutation` job, which is full-suite mutation testing and far too slow to gate a
+  # push — see its own comment. It is the ONLY job guarded to these two events; every other job keeps running
+  # exactly when it did before. The side effect is that the nightly cron also re-runs the push/PR jobs, which
+  # is harmless (they are the same jobs on the same commit) and gives a daily green/red signal on master.
+  #
+  # NOTE: GitHub runs `schedule` ONLY on the repository's DEFAULT BRANCH. The nightly mutation leg therefore
+  # stays dormant until this lands on master — on a feature branch it can only be started by hand via
+  # workflow_dispatch. That is not a misconfiguration, but it does mean "it is in CI" and "it has actually
+  # run" are different claims until the merge happens.
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -145,34 +157,48 @@ jobs:
   # ── Mutation testing for the SHIPPED RUNTIME assembly ─────────────────────────────────────────────────
   # This leg previously ran in NO job at all — it existed only as a config someone had to remember to invoke
   # via `housekeeping.ps1 -Mutation`. A score nobody measures is free to regress silently in either
-  # direction, which makes it decoration rather than a gate; that gap, not the score, is what this job
-  # closes. It is affordable now only because the leg was scoped from 5,592 tests to the 288 that actually
-  # kill something (see stryker-config.runtime.json's comment and Issues/ledgers/E3-E1-report.md): 44 min
-  # before, 2 min 50 s after, on the same 111 mutants.
+  # direction, which makes it decoration rather than a gate; closing that gap is the point of this job.
   #
-  # Only the runtime config is run here. The generator and doc-tooling legs are still housekeeping-only —
-  # they have not been scoped and remain far too slow for every push.
+  # SCHEDULED, NOT PER-PUSH, AND DELIBERATELY NOT FILTERED. The leg runs the WHOLE test suite against every
+  # mutant, which costs tens of minutes — too slow to gate a push, so it runs nightly plus on demand.
+  # Do NOT "fix" the runtime by narrowing the test set. Stryker does support a `test-case-filter`, and
+  # scoping this leg to the 23 classes that currently kill something does cut it to ~3 minutes — that was
+  # measured. It was REJECTED on purpose: a filter is a hand-maintained LIST, and lists drift. The first
+  # time someone adds a test that becomes the sole killer of a mutant, the filter silently drops that kill,
+  # the SCORE GOES UP, and coverage goes down with nothing in the repo noticing. A coverage tool is the
+  # worst possible place to install that failure mode. The real defect behind the old slowness was
+  # load-induced timeouts being credited as detections, and that is fixed in the config by
+  # `additional-timeout`, not by running fewer tests. See Issues/ledgers/E3-E1-report.md.
+  #
+  # Only the runtime config runs here. The generator and doc-tooling legs remain housekeeping-only.
   runtime-mutation:
     runs-on: ubuntu-latest
-    # A mutation run that hangs would otherwise burn the full 6-hour job budget. 2:50 measured on 12 cores;
-    # a GitHub runner has far fewer, so this is deliberately generous rather than tight.
-    timeout-minutes: 30
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Sized from the local measurement rather than guessed: the full leg is 12 min 25 s on 12 cores (and that
+    # on a busy machine). Stryker's default concurrency is cores/2, so a ~4-core hosted runner drops from 6
+    # parallel mutant sessions to ~2 and each pass is slower too. ~10x the measured figure covers that with
+    # room to spare, and this job should fail on a real score regression — never because the box was slower
+    # than the day the number was recorded.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
-      # Pinned, like CycloneDX in the sbom job. An unpinned Stryker would contradict the SDK-drift assertion
-      # in build-test, and it matters more here than for most tools: 'test-projects' is inert in this setup
-      # (Stryker enumerates every test project in the solution), so a future version that starts honouring it
-      # would silently change which tests run — and therefore the score — with no config edit to point at.
+      # Pinned, like CycloneDX in the sbom job, and for the same reason the SDK is pinned in build-test: the
+      # score is only comparable across runs if the thing computing it does not move. Stryker's test
+      # DISCOVERY and its TIMEOUT arithmetic both feed the score directly, and both are version behaviour —
+      # an unpinned upgrade could move the number with no repo change to point at.
       # The tool targets net8.0, but its runtimeconfig sets rollForwardOnNoCandidateFx=2 (Major), so it runs
       # on the pinned 10.0.101 runtime with no .NET 8 installed. Verified locally on a machine carrying only
       # runtimes 7/9/10.
       - run: dotnet tool install --global dotnet-stryker --version 4.16.0
-      # Exits non-zero when the score falls below thresholds.break (61). See the config comment for why 61 is
-      # the honest floor and why the earlier 66 must not be "restored" — it counted timeouts on mutants that
-      # cannot hang, and one provably equivalent mutant, as detections.
+      # Exits non-zero when the score falls below thresholds.break. See the config comment for why the earlier
+      # 66 was INFLATED and must not be "restored": it counted load-induced timeouts on mutants that cannot
+      # hang — plus one provably equivalent mutant — as detections. If this job reports Timeouts on those
+      # mutants, the runner is slower than the timeout cushion assumes: raise `additional-timeout` in the
+      # config. Do NOT add a test filter to make it fit.
       - run: dotnet stryker --config-file stryker-config.runtime.json
       # The exit code is necessary but NOT sufficient: Stryker exits 0 when its `mutate` globs match nothing.
       # Every mutant comes back "Removed by mutate filter", no score is calculated, and a leg that tested
