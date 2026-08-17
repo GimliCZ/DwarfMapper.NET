@@ -165,7 +165,7 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D9 | `[MapValue("Name", …)]`, all four cases | Create, Update — `ctor(2)` Honoured, the other three `CS8795` | **Projection** (SpanMap/AsyncStream closed as `DWARF090`) | 4 |
 | D10 | ~~`[Flatten("Id")]`, and ×2~~ | **CLOSED by A8** — and its evidence was false; see the entry | — | 0 |
 | D11 | ~~`[FlattenGraph("Root","Flat")]`, and ×2~~ | **CLOSED by A9a** as `DWARF092` — all 8 cells `Refused`; its evidence held as filed | — | 0 |
-| D12 | `[Reinterpret("Id")]`, and ×2 | Create, Update (blocking), Projection (loud) | SpanMap, AsyncStream | 4 |
+| D12 | ~~`[Reinterpret("Data")]`, and ×2~~ | **CLOSED by A9b** as `DWARF090` — all 4 cells `Refused`; its "acts at Projection" was false, see the entry | — | 0 |
 | D13 | ~~`[ReverseMap]`~~ | **CLOSED by A9a** as `DWARF092` — all 4 cells `Refused`; its mechanism was misstated, see the entry | — | 0 |
 | D14 | ~~`[MapCollectionKey("Items","Id")]`, and ×2~~ | **CLOSED by A9b** as `DWARF092` — all 8 cells `Refused`; its evidence was false, see the entry | — | 0 |
 | D15 | `[GenerateWrapperMap(typeof(Dst))]` on the mapper class, and ×2 | CoLocatedHost (DWARF067) | all five mapper endpoints | 10 |
@@ -910,7 +910,39 @@ finding's cells on purpose.
 
 <a id="D12"></a>
 
-### D12 — `[Reinterpret]` does not reach the element-wise endpoints — 4 cells
+### D12 — `[Reinterpret]` does not reach the element-wise endpoints — 4 cells — RESOLVED
+
+> **RESOLVED 2026-08-17 as `DWARF090` (task A9b).** All four cells read `Refused`. `[Reinterpret]` is a member
+> directive an element-wise map cannot apply, which is that gate's shape exactly — `[MapIgnore]`,
+> `[MapProperty]`, `[MapNullSkip]`, `[MapValue]` and `[Flatten]` were already on it — so it is one more arm
+> of `ReportElementWiseDirectiveGaps`, read through `ReadReinterpretMembers`, the reader both the create-map
+> and the update-into branches resolve with.
+>
+> **It is the first arm with NO pair-scoped twin**, so its message ends differently from the other five: the
+> remedy is a **declared create map** rather than a re-scoped attribute, and that was measured before it was
+> prescribed. With `[Reinterpret("Data")]` on a `partial Dst Map(Src s)` beside the span method the emitted
+> loop is `d[__i] = Map(s[__i]);` and `Data` is assigned through `__DwarfBlit_…` (`MemoryMarshal.Cast`);
+> without it the same member goes through a per-element `__DwarfMap_Num_int__uint` helper. Same reading at the
+> async stream (`yield return Map(…)`). Both directions are pinned.
+>
+> **One claim in this entry was FALSE: "Acts at CreateMap, UpdateInto and Projection".** It does not act at
+> projection. Only two branches call `ReadReinterpretMembers`, and neither is the projection one. Literal
+> reading, before anything was changed:
+>
+> ```
+> Reinterpret | ctor(1) | Method | Projection => UnhonouredButLoud
+> ```
+>
+> With and without the directive the run is byte-identical and carries the same `DWARF028` — *"narrowing
+> numeric conversion is not SQL-translatable"* — which the `int[]` → `uint[]` pair earns on its own. That
+> reading is not a divergent cell of this finding and it is **left where it is**, in
+> `UnhonouredButLoudCellCeiling`'s population (re-measured **14**, unchanged): prescribing a diagnostic for a
+> cell nobody measured as a divergence is how a message comes to claim an endpoint it has not been run
+> against. The shipped message therefore names the create map and the update-into and stops there.
+>
+> Ceilings re-measured in the same commit: findings **8 → 7**, declared cells **26 → 22**. `NotCompilable`
+> **96**, `UnhonouredButLoud` **14**, `Unaskable` **44**, `NoSuchSite` **137**, `StructurallyExcused` **12**
+> unchanged.
 
 *Method site, `ctor(1)` and ×2 → SpanMap, AsyncStream.* Acts at CreateMap, UpdateInto and Projection. These
 are the two endpoints whose entire purpose is bulk element throughput, and therefore the two where a caller

@@ -1069,6 +1069,18 @@ public static class DiagnosticDescriptors
     ///         the declaration that caused it.
     ///     </para>
     ///     <para>
+    ///         <c>[Reinterpret]</c> is the one arm with NO pair-scoped twin (finding <c>D12</c>: honoured at
+    ///         the create map and the update-into, silent at both element-wise endpoints — the two whose whole
+    ///         purpose is bulk element throughput, and therefore the two where a caller reaching for a forced
+    ///         blit most expects it to apply). Its remedy is a DECLARED create map instead of a re-scoped
+    ///         attribute, and that is not a weaker answer: an element-wise map resolves its element pair
+    ///         through a declared mapping method where the class has one rather than synthesizing a fresh one,
+    ///         so the loop becomes <c>d[__i] = Map(s[__i]);</c> and the blit runs per element through it.
+    ///         MEASURED at both element-wise endpoints — the member is assigned through
+    ///         <c>__DwarfBlit_…</c> (<c>MemoryMarshal.Cast</c>) rather than a per-element numeric conversion
+    ///         helper — before the message said it.
+    ///     </para>
+    ///     <para>
     ///         The remedy is a form that already works here, which is what makes this a refusal a caller can
     ///         act on rather than a capability withdrawal: the PAIR-SCOPED twins
     ///         <c>[MapIgnore&lt;TTarget&gt;("X")]</c> and <c>[MapProperty&lt;TSource, TTarget&gt;("X", "Y")]</c>

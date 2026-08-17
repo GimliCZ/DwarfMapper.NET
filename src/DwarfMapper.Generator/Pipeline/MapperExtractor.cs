@@ -2957,16 +2957,48 @@ internal static partial class MapperExtractor
                 "The directive is honoured at the create-map, update-into and projection endpoints, which is "
                 + "why its silence here is worth saying out loud.");
 
+        // The METHOD-scoped [Reinterpret], through ReadReinterpretMembers — the reader both the create-map and
+        // the update-into branches resolve with, so an application whose single argument is not a string yields
+        // no directive and reaches neither the model nor a message.
+        //
+        // This one takes ReportWithFix rather than Report, and the reason is worth stating rather than
+        // inferring: [Reinterpret] has NO pair-scoped twin, so "write it pair-scoped on the mapper class" —
+        // the sentence every other arm here ends with — would name a form that does not exist. The remedy is a
+        // DECLARED create map, MEASURED before it was prescribed: with [Reinterpret("Data")] on a
+        // `partial Dst Map(Src s)` beside the span method, the emitted loop is `d[__i] = Map(s[__i]);` and the
+        // member is assigned through __DwarfBlit_… (MemoryMarshal.Cast), where without it the same member goes
+        // through a per-element numeric conversion helper. Same reading at the async stream
+        // (`yield return Map(…)`). A remedy nobody ran is how a diagnostic sends a caller in a circle.
+        //
+        // The tail names the create map and the update-into and stops there. PROJECTION is deliberately absent:
+        // it is not read there either — a blit reinterprets one array's memory as another, and only two
+        // branches call this reader — and a message that claims an endpoint honours a directive it discards is
+        // the exact defect this gate exists to remove.
+        foreach (var member in ReadReinterpretMembers(method))
+            ReportWithFix($"[Reinterpret(\"{member}\")] on this mapping method",
+                "[Reinterpret] has no pair-scoped form, so the remedy is a DECLARED create map rather than a "
+                + $"re-scoped attribute: put [Reinterpret(\"{member}\")] on a `partial {tgt} <Name>({src} s)` "
+                + "on this mapper class. An element-wise map resolves its element pair through a declared "
+                + "mapping method where one exists rather than synthesizing one, so that create map is what "
+                + "this method's loop calls and the forced blit runs per element through it.",
+                "The directive is honoured at the create-map and update-into endpoints, which is why its "
+                + "silence here is worth saying out loud — and the create map also VALIDATES it (DWARF022 for "
+                + "a member that is not an unmanaged array on both sides, or names no writable destination "
+                + "member at all); nothing validated it here either.");
+
         return false;
 
         void Report(string written, string remedy, string elsewhere) =>
+            ReportWithFix(written,
+                $"Write it PAIR-SCOPED on the mapper class — {remedy} — which does apply here.", elsewhere);
+
+        void ReportWithFix(string written, string fix, string elsewhere) =>
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.DirectiveNotAppliedElementWise, location,
                 $"{written} does not reach '{method.Name}'. An element-wise map resolves no members itself: it "
                 + $"maps each '{src}' to a '{tgt}' through an auto-synthesized mapper, which is shared by every "
                 + "route to that pair and therefore takes its configuration only from directives that name the "
-                + $"pair. Write it PAIR-SCOPED on the mapper class — {remedy} — which does apply here. "
-                + elsewhere));
+                + $"pair. {fix} " + elsewhere));
     }
 
     /// <summary>

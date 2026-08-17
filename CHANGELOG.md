@@ -15,6 +15,21 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[Reinterpret]` was dropped by the two endpoints whose whole purpose is bulk element throughput.** A
+  forced blit reinterprets one array's memory as another in a single block copy, and it is exactly what a
+  caller reaches for when moving elements in bulk — yet `[Reinterpret("Data")]` on a span map or an
+  async-stream map was read by nobody and reported by nobody, and the member was copied element by element
+  through an ordinary conversion helper instead. Honoured on the same mapper's create map and update-into,
+  silent on the next two. Both endpoints now refuse it as **`DWARF090`**, the element-wise gate it belongs to.
+  It is the one arm of that gate with **no pair-scoped twin**, so its remedy is a *declared* create map rather
+  than a re-scoped attribute — measured before it was printed: with the directive on a
+  `partial Dst Map(Src s)` beside the span method, the emitted loop is `d[__i] = Map(s[__i]);` and `Data` is
+  assigned through `MemoryMarshal.Cast`, because an element-wise map resolves its element pair through a
+  declared mapping method where the class has one rather than synthesizing a fresh one. Found by the surface
+  matrix as `D12`; both of its cells close. **The finding's evidence was wrong about one endpoint**:
+  it claimed the directive acts at *projection* as well, and it does not — the projection branch never reads
+  it, and the reading that looked like an effect was a `DWARF028` the pair earns with or without it. (round
+  20, D12)
 - **`[MapCollectionKey]` was read on an update-into and discarded on the mapper's other four overloads.** A
   key-based upsert **merges** the source elements into the `List<T>` the destination already holds — matching
   on the named key, replacing what matches and appending what does not, so untouched elements survive. Only

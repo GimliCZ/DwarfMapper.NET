@@ -454,8 +454,17 @@ public sealed class SurfaceParityTests
     ///         against <c>List&lt;ItemDto&gt;</c>, the v1 upsert requires the same element type, and the
     ///         <c>UpdateInto</c> cell was <c>DWARF074</c> behind <c>CS8795</c>. Re-measured in the same commit.
     ///     </para>
+    ///     <para>
+    ///         8 → <b>7</b> when <c>D12</c> closed. <c>[Reinterpret]</c> is a member directive an element-wise
+    ///         map cannot apply, which is <c>DWARF090</c>'s shape exactly, and it is the first arm of that gate
+    ///         with NO pair-scoped twin — so its remedy is a DECLARED create map, measured before it was
+    ///         prescribed. The entry was also wrong about one endpoint, which is the fourth time on this
+    ///         branch: it claimed the directive acts at <c>Projection</c>, and only the create-map and
+    ///         update-into branches read it. That cell is <c>UnhonouredButLoud</c> and stays there —
+    ///         <see cref="UnhonouredButLoudCellCeiling" /> re-measured at 14, unchanged.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 8;
+    private const int DivergenceFindingCeiling = 7;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -545,8 +554,15 @@ public sealed class SurfaceParityTests
     ///         ONE element type on both sides the upsert is emitted, so both <c>UpdateInto</c> cells read
     ///         <c>Honoured</c> rather than <c>CS8795</c> behind a <c>DWARF074</c> — measured <b>98 → 96</b>.
     ///     </para>
+    ///     <para>
+    ///         26 → <b>22</b> when <c>D12</c> closed: four cells, one verdict — <b>4 Refused (DWARF090)</b>,
+    ///         <c>[Reinterpret]</c> at <c>SpanMap</c> and <c>AsyncStream</c> for both of its axes. No other
+    ///         population moved: <see cref="NotCompilableCellCeiling" /> stayed at 96 and
+    ///         <see cref="UnhonouredButLoudCellCeiling" /> at 14, the latter because the <c>Projection</c>
+    ///         cell the entry wrongly held up as working is left exactly where it was.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 26;
+    private const int DivergentCellCeiling = 22;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

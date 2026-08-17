@@ -1310,6 +1310,20 @@ public partial class M
 }
 ```
 
+`[Reinterpret]` joins them, and it is the one with **no pair-scoped twin**. A forced blit is exactly the thing
+a caller reaches for when they are moving elements in bulk, so the two endpoints that dropped it are the two
+where it was most expected to apply — finding `D12`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [Reinterpret("Data")]                          // DWARF090 — the element pair copies Data element by element
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+}
+```
+
 **Fix:** write the directive in its **pair-scoped** form on the mapper class. Those forms *are* matched against
 every synthesized pair, this element pair included, and are measured **applying** at both endpoints:
 
@@ -1320,12 +1334,14 @@ every synthesized pair, this element pair included, and are measured **applying*
 | `[MapNullSkip(false)]` on the method | `[MapNullSkip<Src, Dst>(false)]` on the class | `Honoured`. The value is repeated in the message rather than the bare form quoted back, because copying out a remedy without it would invert the semantics you asked for. `[DwarfMapper(SkipNullSourceMembers = …)]` reaches the element pair too, if the policy is meant to be the whole mapper's |
 | `[MapValue("Name", "api-v2")]` on the method | `[MapValue<Dst>("Name", "api-v2")]` on the class | `Honoured` — the constant is assigned in the element map. The written form is echoed rather than normalized, so a `Use =` you wrote comes back as a `Use =` |
 | `[Flatten("Child")]` on the method | `[MapProperty<Src, Dst>("Child.<leaf>", "<leaf>")]` on the class, one per pulled-up leaf | `Honoured`. There is **no** `[Flatten<Src, Dst>]`; the dotted source path on the pair-scoped `[MapProperty]` is the form that reaches an element pair, and it names each leaf explicitly rather than pulling up whatever the root happens to carry |
+| `[Reinterpret("Data")]` on the method | the same attribute on a **declared** `partial Dst Map(Src s)` beside it | the emitted loop becomes `d[__i] = Map(s[__i]);` and `Data` is assigned through `__DwarfBlit_…` (`MemoryMarshal.Cast`) instead of a per-element numeric conversion helper. There is no `[Reinterpret<Src, Dst>]` at all: an element-wise map resolves its pair through a **declared** mapping method where the class has one rather than synthesizing a fresh one, so declaring the create map *is* the pair scope here |
 
 > **Why refused rather than propagated.** For the reason [`DWARF077`](#dwarf077) already states: the
 > synthesized element mapper is keyed by `(source, target)` and shared. Pushing one method's unscoped directive
 > into it would silently re-configure a nested mapping some **other** method owns — a worse defect than the
 > silence, and invisible from the declaration that caused it. The pair-scoped forms exist precisely so the
-> caller can say which pair they mean.
+> caller can say which pair they mean — and where there is no pair-scoped form, as for `[Reinterpret]`, a
+> declared mapping method for the pair says the same thing.
 
 > **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
 > it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see

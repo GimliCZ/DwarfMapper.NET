@@ -288,20 +288,30 @@ internal static class DeclaredDivergences
         // about the ×2 CreateMap cell being N4 rather than a silence is also still true: that cell reads
         // NotCompilable (CS8795 behind DWARF087) and is untouched by this commit.
 
-        ["D12"] = new(
-            "[Reinterpret(\"Data\")] forces a blit the automatic layout proof declines to make on its own. It "
-            + "acts at CreateMap, UpdateInto and Projection and is silent at SpanMap and AsyncStream — the "
-            + "two endpoints whose whole purpose is bulk element throughput, and therefore the two where a "
-            + "caller reaching for a forced blit most expects it to apply. Re-measured for this record: the "
-            + "originally filed evidence pointed the directive at a scalar; against an unmanaged array pair "
-            + "it acts at three endpoints and the two silences stand.",
-            Findings + "#D12",
-            [
-                new DivergentCell("Reinterpret", 0, "ctor(1)", AttributeTargets.Method,
-                    SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream),
-                new DivergentCell("Reinterpret", 0, "×2", AttributeTargets.Method,
-                    SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)
-            ]),
+        // D12 closed 2026-08-17 (task A9b). [Reinterpret("Data")] forces a blit the automatic layout proof
+        // declines to make on its own, and both element-wise cells now read Refused (DWARF090) — the gate for
+        // exactly this shape, a member directive a span or async-stream map cannot apply, with [MapIgnore],
+        // [MapProperty], [MapNullSkip], [MapValue] and [Flatten] already on it. Read through
+        // ReadReinterpretMembers, the reader both the create-map and the update-into branches resolve with.
+        //
+        // It is the FIRST arm of that gate with no pair-scoped twin, so its message ends differently: the
+        // remedy is a DECLARED create map rather than a re-scoped attribute, measured before it was
+        // prescribed — `d[__i] = Map(s[__i]);` and `Data = __DwarfBlit_…(s.Data)` (MemoryMarshal.Cast), where
+        // the same fixture without it goes through a per-element numeric conversion helper. Same reading at
+        // the async stream (`yield return Map(…)`).
+        //
+        // ONE CLAIM IN THE ENTRY WAS FALSE: "acts at CreateMap, UpdateInto and Projection". It does not act at
+        // Projection. Only two branches call ReadReinterpretMembers, and neither is the projection one.
+        // Measured, before anything was changed, against reinterpretable-array-member:
+        //
+        //   Reinterpret | ctor(1) | Method | Projection => UnhonouredButLoud
+        //
+        // — with and without the directive the run is byte-identical and carries the same DWARF028 ("narrowing
+        // numeric conversion is not SQL-translatable"), which the int[] -> uint[] pair earns on its own. The
+        // Projection cell was never one of this finding's, and it is left where it is: it is in
+        // UnhonouredButLoudCellCeiling's population (re-measured 14, unchanged), and a diagnostic prescribed
+        // for a cell nobody measured as a divergence is how a message comes to claim an endpoint it has not
+        // been run against. The message therefore names the create map and the update-into and stops there.
 
         // D13 closed 2026-08-17 (task A9a), the third directive on the same DWARF092 gate. All four cells
         // read Refused. Its evidence held on the substance — the four silences are real, measured — and was
