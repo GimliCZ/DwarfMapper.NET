@@ -477,6 +477,28 @@ of the four scoreable statuses would appear.
 Only `.json`, `.yml` and `.md` files changed, so the last full build remains valid:
 `dotnet build DwarfMapper.NET.sln -c Release` is **0 warnings / 0 errors** at this base, samples included.
 
+## A side effect to know about: running this leg locally pollutes a generated doc
+
+Noticed while committing this work, and worth recording because it is silent and easy to commit by accident.
+Stryker instruments the assembly under test by injecting a `MutantControl` class in a randomly-named namespace.
+The full-suite run executes the doc-generation tests, which reflect over the *instrumented* assembly — so
+`docs/generated/api-reference.md` came back with a spurious section appended:
+
+```
+## `StrykerCjVUiCkRKRTFuH4`
+### class `MutantControl`
+_No public settable surface._
+```
+
+It was reverted, not committed. Two consequences:
+
+- **Locally:** after `housekeeping.ps1 -Mutation`, check `git status` for generated-doc churn and discard it.
+  The namespace is randomised per run, so it never collides and never conflicts — it just quietly accumulates.
+- **In CI:** harmless. The nightly job runs on a throwaway checkout and commits nothing.
+
+It is not worth a guard on its own, but if generated docs ever gain a ratchet that runs in the same session as
+the mutation leg, the two will fight, and this is the reason.
+
 ## Superseded history on this branch
 
 Two earlier decisions are left in the history deliberately, because both were measured and the reasoning is
