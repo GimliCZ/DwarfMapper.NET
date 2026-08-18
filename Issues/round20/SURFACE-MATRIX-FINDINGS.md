@@ -290,8 +290,9 @@ under test, the answer stays `NoSuchSite` with a per-site cause, never a fall-th
 | `Honoured` / `Refused` / `Silent` | 148 / 175 / 248 | 148 / 175 / 248 |
 
 Not one verdict moved, so **no ratchet moved and none was raised**. That is the finding, not an absence of
-one: the 70 cells were reading the right answer for the wrong reason. The seven `Registry` Field cells refuse
-with the same `DWARFR02`/`R03`/`R04` ids now that the directive sits on `Src.Tag` — `MemberFacts.Readable`
+one: the 70 cells were reading the right answer for the wrong reason. The ten `Registry` Field cells (7
+`MapProperty` + 3 `MapIgnore`) refuse with the same `DWARFR02`/`R03`/`R04` ids now that the directive sits on
+`Src.Tag` — `MemberFacts.Readable`
 enumerates fields alongside properties, so `MapToGenerator` genuinely sees them. The ten `CoLocatedHost` Field
 cells are still `Silent`, because `MapperExtractor` reads these attributes off the class or method symbol
 only. **`D20`'s entry therefore remains accurate** — and for the first time its Field rows rest on a Field
@@ -1054,7 +1055,7 @@ never generated.
 > exactly the applications the upsert path would have acted on.
 >
 > **Its evidence was FALSE, and in the same way `D10`'s and `D8`'s were — the fixture, not the generator.**
-> The re-derivation below said "against the `keyed-collection-elements` fixture it acts at UpdateInto". It did
+> The finding claimed "against the `keyed-collection-elements` fixture it acts at UpdateInto". It did
 > not. That fixture declared `List<Item>` on the source and `List<ItemDto>` on the destination, and the v1
 > upsert **requires the same element type** — `MapperExtractor.Flatten.cs` refuses a differing one as
 > `DWARF074`, an Error — so at the one endpoint this directive exists for the cell read

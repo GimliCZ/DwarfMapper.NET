@@ -110,7 +110,7 @@ so a version with no section here ships with no notes.
   `partial Dst Map(Src s)` beside the span method, the emitted loop is `d[__i] = Map(s[__i]);` and `Data` is
   assigned through `MemoryMarshal.Cast`, because an element-wise map resolves its element pair through a
   declared mapping method where the class has one rather than synthesizing a fresh one. Found by the surface
-  matrix as `D12`; both of its cells close. **The finding's evidence was wrong about one endpoint**:
+  matrix as `D12`; all four of its cells close (2 renderings × 2 endpoints). **The finding's evidence was wrong about one endpoint**:
   it claimed the directive acts at *projection* as well, and it does not — the projection branch never reads
   it, and the reading that looked like an effect was a `DWARF028` the pair earns with or without it. (round
   20, D12)

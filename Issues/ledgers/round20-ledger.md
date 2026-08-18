@@ -538,7 +538,7 @@ never committed.
   against it is sound. Verify the codomain claim at review.
   RESUME = ONE EDIT: lower NotCompilableCellCeiling 96 -> 10 at SurfaceParityTests.cs:202, then the two pin
   tests (CS8795-with-blocking-DWARF must read Refused; a real placement rejection must stay NotCompilable) and
-  the R4 doc rewrite. All named in Issues/ledgers/A10-wip-notes.md, committed.
+  the R4 doc rewrite. All named in Issues/ledgers/A10-notes.md, committed.
 A10: complete (eb4f64f wip, a96b42d final). NotCompilableCellCeiling 96 -> 10; all seven re-measured in the
 same commit, none raised. Whole solution builds 0/0 with all four sample projects linked.
   EIGHTH RATCHET REFUSED BY DESIGN, NOT BY EXEMPTION: the first pin test called RunAndGetCompilationErrors
