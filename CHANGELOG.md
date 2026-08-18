@@ -15,6 +15,21 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[MapTo]` on a `struct` generated code that did not compile.** The attribute's own `AttributeUsage` admits
+  `AttributeTargets.Struct` and the registry's target check admits `TypeKind.Struct`, so a value-type source is
+  a placement the product advertises — but `MapToGenerator` wrote `if (source is null) throw …` into every
+  extension method it emitted, without ever asking whether the source could *be* null. Against a non-nullable
+  value type that pattern is **`CS0037`**, so the generated file was rejected by the compiler at all seven
+  endpoints and the caller's only clue was an error inside a file they never wrote. No diagnostic is added: the
+  placement is legal and now works. The guard is gated on the new `TypeFacts.CanBeNull`, which answers "can a
+  value of this type be null" rather than the narrower "is this a reference type" — a `Nullable<T>` source is a
+  value type that *can* be null and keeps its guard, and `where T : struct` loses it. The registry's
+  synthesized nested-helper path, which already had that discrimination inline as `IsReferenceType`, now reads
+  the same predicate, so the two cannot drift apart again. Nothing in `samples/` or `tests/` had ever put
+  `[MapTo]` on a value type, which is why this shipped; conformance feature **F49** and
+  `RegistryMapToValueTypeSourceRuntimeTests` now exercise the shape and assert the mapped *values*, not merely
+  that it builds. Found by the surface matrix as `A11-F1`; its fourteen cells leave the `NotCompilable`
+  population and read `Honoured` at every endpoint. (round 20, A11-F1)
 - **`[GenerateWrapperMap]` on a mapper class that declares no `[GenerateMap]` pair did nothing and said
   nothing.** The attribute is an *expansion* of the `[GenerateMap<A, B>]` pair list — it appends the closed
   wrapper instantiation `W<A> -> W<B>` per declared pair — and the expansion routine returned early on an

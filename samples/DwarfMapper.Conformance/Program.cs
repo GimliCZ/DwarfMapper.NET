@@ -307,5 +307,25 @@ R.Check("F48 collection shape withheld",
     R.Throws<DwarfMapMissingException>(() => DwarfMapperRegistry.Map(
         new List<F48S> { new() { Id = 1 } }, typeof(ICollection<F48D>))));
 
+// F49 [MapTo] on a STRUCT. F18 shows the same front door on a class; this is the other half of what the
+// attribute's own AttributeUsage permits, and until this feature existed nothing in samples/ or tests/ ever
+// put [MapTo] on a value type — which is why the generator shipped a null guard it could not compile there
+// (CS0037) and no build noticed. Both shapes of the emitted API are called, and the values are asserted:
+// "it compiles" and "it maps" are different claims.
+var f49 = new F49S { Id = 3, Name = "runestone" };
+R.Check("F49 [MapTo] on a struct (named extension)", f49.ToF49D() is { Id: 3, Name: "runestone" });
+R.Check("F49 [MapTo] on a struct (generic dispatch)", f49.MapTo<F49D>() is { Id: 3, Name: "runestone" });
+R.Check("F49 struct source is copied, not aliased", F49Copies());
+
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;
+
+// A struct source is taken BY VALUE, so a destination already produced cannot see a later mutation. The one
+// behaviour F18's class source could never have shown.
+static bool F49Copies()
+{
+    var s = new F49S { Id = 1, Name = "before" };
+    var d = s.ToF49D();
+    s.Name = "after";
+    return d.Name == "before";
+}

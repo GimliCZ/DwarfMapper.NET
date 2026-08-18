@@ -206,31 +206,33 @@ public sealed class SurfaceParityTests
     ///         were, and what the 10 that remain are.
     ///     </para>
     ///     <para>
-    ///         <b>The constant is 10 and the population measures 24. That is HELD, not stale.</b> A11 gave
-    ///         the <c>Struct</c> site a slot and measured <c>[MapTo]</c> there for the first time: all
-    ///         fourteen of its cells are <c>CS0037</c>, because <c>MapToGenerator</c> emits
-    ///         <c>if (source is null) throw …</c> into every generated extension method without asking
-    ///         whether the source is a value type, so <c>[MapTo]</c> on a <c>struct</c> — legal per its own
-    ///         <c>AttributeUsage</c>, claiming all seven endpoints — produces source that does not compile.
-    ///         Finding <b>A11-F1</b>; reported, deliberately not fixed in the commit that re-measured the
-    ///         instrument.
+    ///         <b>The constant was held at 10 while the population measured 24, and that hold is what closed
+    ///         a product defect.</b> A11 gave the <c>Struct</c> site a slot and measured <c>[MapTo]</c> there
+    ///         for the first time: all fourteen of its cells were <c>CS0037</c>, because
+    ///         <c>MapToGenerator</c> emitted <c>if (source is null) throw …</c> into every generated
+    ///         extension method without asking whether the source could BE null, so <c>[MapTo]</c> on a
+    ///         <c>struct</c> — legal per its own <c>AttributeUsage</c>, claiming all seven endpoints —
+    ///         produced source that did not compile. Finding <b>A11-F1</b>, fixed in <b>A13</b>:
+    ///         <c>TypeFacts.CanBeNull</c> now gates the guard, and the same predicate answers for the
+    ///         synthesized-helper path that already had the discrimination the extension methods lacked.
     ///     </para>
     ///     <para>
-    ///         Raising the constant to 24 would close a live product defect by moving it into the one
+    ///         Raising the constant to 24 would have closed a live product defect by moving it into the one
     ///         population this matrix explicitly does not judge — the exact move the shrink-only rule exists
-    ///         to forbid, and the first time it has fired against a defect rather than against slack. So
-    ///         <see cref="The_cells_the_compiler_rejects_are_counted" /> FAILS, on purpose, until the
-    ///         generator emits no null-guard for a value-type source. Fixing that returns the count to 10
-    ///         and the assertion to green with no edit here.
+    ///         to forbid, and the first time it fired against a defect rather than against slack. So
+    ///         <see cref="The_cells_the_compiler_rejects_are_counted" /> failed on purpose instead, and the
+    ///         generator changed. Measured after the fix: 24 → <b>10</b>, all fourteen cells reading
+    ///         <see cref="SurfaceEffect.Honoured" /> at every one of the seven endpoints, and this constant
+    ///         needed no edit — which is what a ratchet pointed at a defect is supposed to look like.
     ///     </para>
     ///     <para>
-    ///         The label is wrong for those fourteen too, and knowingly so. <c>NotCompilable</c> means "the
-    ///         declaration told the truth and there is nothing here to judge"; here the compiler is
-    ///         rejecting the GENERATOR'S OUTPUT, not the case's placement. R4 separated "the compiler
-    ///         rejected the placement" from "the generator refused loudly"; this is a third thing — "the
-    ///         generator emitted broken code" — and it wants a verdict of its own, with its own counted
-    ///         population. That is instrument work for a task of its own, not something to smuggle into a
-    ///         doc comment.
+    ///         The label was wrong for those fourteen while they were here, and knowingly so.
+    ///         <c>NotCompilable</c> means "the declaration told the truth and there is nothing here to
+    ///         judge"; there the compiler was rejecting the GENERATOR'S OUTPUT, not the case's placement. R4
+    ///         separated "the compiler rejected the placement" from "the generator refused loudly"; that was
+    ///         a third thing — "the generator emitted broken code" — and it still wants a verdict of its own
+    ///         with its own counted population, because the next such defect will land here mislabelled too.
+    ///         That is instrument work for a task of its own, not something to smuggle into a doc comment.
     ///     </para>
     /// </summary>
     private const int NotCompilableCellCeiling = 10;
@@ -282,13 +284,14 @@ public sealed class SurfaceParityTests
     ///         telling the truth.
     ///     </para>
     ///     <para>
-    ///         A THIRD shape is in the printed list and is not one of those: fourteen <c>CS0037</c> cells,
-    ///         <c>[MapTo]</c> at the <c>Struct</c> site at all seven endpoints, measured for the first time
-    ///         by A11 and rejected because the GENERATOR'S output does not compile — not because the
-    ///         declaration was wrong. That is finding <b>A11-F1</b>, the population measures <b>24</b>, and
-    ///         <see cref="NotCompilableCellCeiling" /> is deliberately left at 10 so this assertion stays
-    ///         red rather than absorbing a live defect. The reasoning is on that constant; read it before
-    ///         changing this number.
+    ///         A THIRD shape was in the printed list for one round and was not one of those: fourteen
+    ///         <c>CS0037</c> cells, <c>[MapTo]</c> at the <c>Struct</c> site at all seven endpoints, measured
+    ///         for the first time by A11 and rejected because the GENERATOR'S output did not compile — not
+    ///         because the declaration was wrong. Finding <b>A11-F1</b>. The population measured <b>24</b>
+    ///         against a constant deliberately left at 10, so this assertion stayed red rather than absorbing
+    ///         a live defect; A13 fixed the generator and all fourteen left, reading <c>Honoured</c> at every
+    ///         endpoint. The reasoning is on <see cref="NotCompilableCellCeiling" />; read it before changing
+    ///         this number.
     ///     </para>
     ///     <para>
     ///         (The entries above record the same count arriving from the other direction, and none was a

@@ -279,6 +279,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
                        && IsAccessiblePublic(source) && targets.All(IsAccessiblePublic);
         return new Model(
             source.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            // Carried as a bool rather than re-derived in Emit, which sees only the cache-safe model and no
+            // symbols at all. [MapTo] is legal on a struct, and a struct source cannot be null — see
+            // TypeFacts.CanBeNull for why "can be null" is not the same question as "is a reference type".
+            TypeFacts.CanBeNull(source),
             ns,
             "__DwarfRegistry_" + source.Name,
             isPublic,
@@ -364,7 +368,12 @@ public sealed class MapToGenerator : IIncrementalGenerator
             {
                 using (w.Block("public static TTarget MapTo<TTarget>(this " + model.SourceFqn + " source)"))
                 {
-                    w.Line("if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
+                    // Only a source that CAN be null gets the guard. Emitted unconditionally, it made every
+                    // [MapTo] on a struct produce CS0037 — `is null` against a non-nullable value type is not
+                    // a check the compiler will even parse. See Model.SourceCanBeNull.
+                    if (model.SourceCanBeNull)
+                        w.Line(
+                            "if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
                     foreach (var t in model.Targets)
                         w.Line("if (typeof(TTarget) == typeof(" + t.TargetFqn + ")) return (TTarget)(object)"
                                + t.MethodName + "(source);");
@@ -378,8 +387,12 @@ public sealed class MapToGenerator : IIncrementalGenerator
                     using (w.Block("public static " + t.TargetFqn + " " + t.MethodName + "(this "
                                     + model.SourceFqn + " source)"))
                     {
-                        w.Line(
-                            "if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
+                        // Same rule as the generic dispatcher above, and the reason it is one flag on the
+                        // model rather than a test repeated here: the two sites disagreeing is exactly how
+                        // this path came to differ from the nested-helper one.
+                        if (model.SourceCanBeNull)
+                            w.Line(
+                                "if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
                         w.Line("return new " + t.TargetFqn);
                         w.Line("{");
                         using (w.Indent())
@@ -411,6 +424,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
     internal sealed record Model(
         string SourceFqn,
+        bool SourceCanBeNull,
         string? Namespace,
         string ExtClassName,
         bool Public,
@@ -521,8 +535,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
 
             var fqTgt = Fq(tgt);
             var fqSrc = Fq(src);
-            // Reference-type source: null-propagate; value-type source: can't be null.
-            var header = src.IsReferenceType
+            // A source that can be null null-propagates; one that cannot has no null to propagate — and
+            // `s is null` against it would not compile. The SAME predicate the extension methods use, which
+            // is the point: this path had the discrimination and the other did not.
+            var header = TypeFacts.CanBeNull(src)
                 ? $"private static {fqTgt} {name}({fqSrc} s) => s is null ? default! : new {fqTgt}"
                 : $"private static {fqTgt} {name}({fqSrc} s) => new {fqTgt}";
 

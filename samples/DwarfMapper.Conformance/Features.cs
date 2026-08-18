@@ -1415,3 +1415,25 @@ public class F48D
 public partial class F48M
 {
 }
+
+// ── F49 [MapTo] on a STRUCT (the value-type half of the registry front door) ─
+// F18 is the same front door on a class. This one exists because nothing else in the repository put [MapTo]
+// on a value type: the attribute's own AttributeUsage admits AttributeTargets.Struct, but the generator wrote
+// `if (source is null) throw …` into every extension method it emitted, and that pattern against a
+// non-nullable value type is CS0037 — a legal placement whose generated file did not compile, at any
+// endpoint. The blind spot was in the corpus, not in the code review, so the remedy is a shape a reader can
+// run rather than only a generator test.
+[MapTo(typeof(F49D))]
+public struct F49S
+{
+    public int Id { get; set; }
+
+    public string Name { get; set; }
+}
+
+public class F49D
+{
+    public int Id { get; set; }
+
+    public string Name { get; set; } = "";
+}
