@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper;
 
@@ -29,7 +29,12 @@ namespace DwarfMapper;
 ///         and refuses to generate the mapping method.
 ///     </para>
 /// </remarks>
-[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "internal-member")]
+// The flat pair is the shape that poses this element's question, and it now carries a
+// ConstructorSlotMarker ahead of a second constructor to do it. The key used to be "internal-member",
+// whose destination declares no constructor at all and whose BASELINE is DWARF001 — against it every
+// Constructor-site cell could only ever have read UnhonouredButLoud, i.e. the fixture, not the generator,
+// would have decided all seven. Measurement metadata, read only by the test projects; see DwarfSurfaceAttribute.
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Constructor, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperConstructorAttribute : Attribute
 {

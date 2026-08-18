@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper.Generator.Tests.Contracts;
 
@@ -72,8 +72,69 @@ public static class EndpointSources
     ///     Field cell needs — disagreeing there is precisely how a Field cell came to be answered with the
     ///     property slot.
     /// </summary>
+    /// <summary>
+    ///     The STRUCT twin of <see cref="PropertySlotMarker" />, sitting immediately ahead of a real
+    ///     <c>struct</c> declaration that is a complete mapping source for the endpoint's <c>Dst</c>.
+    ///     <para>
+    ///         <c>[MapTo]</c> is legal on <c>Class</c> and on <c>Struct</c>, and its fourteen Struct-site
+    ///         cells were unmeasured because no template declared a struct at all — counted honestly under
+    ///         <c>no-fixture-declares-one</c>, but counted-and-unmeasured is still unmeasured (gap G5).
+    ///     </para>
+    ///     <para>
+    ///         The struct is a SEPARATE type rather than <c>Src</c> made a value type: turning the pair's
+    ///         source into a struct would change what every other cell in the matrix is measured against, so
+    ///         the shape that answers one site's question would have silently rewritten a thousand other
+    ///         answers. It carries the same three members as <c>Src</c> so <c>[MapTo(typeof(Dst))]</c> is a
+    ///         COMPLETE mapping — a struct source missing a destination member would be <c>DWARF001</c>, and
+    ///         a cell that can only ever be a refusal cannot show the element doing nothing.
+    ///     </para>
+    /// </summary>
+    public const string StructSlotMarker = "/*__STRUCT_SLOT__*/";
+
+    /// <summary>
+    ///     The CONSTRUCTOR twin, sitting immediately ahead of a non-parameterless constructor of the
+    ///     destination type — the only site <c>[DwarfMapperConstructor]</c> is legal on, and the other half
+    ///     of gap G5's twenty-one unmeasured cells.
+    ///     <para>
+    ///         Whatever carries it must declare a parameterless constructor TOO. That is the whole question:
+    ///         the default selection policy prefers the parameterless constructor and maps by object
+    ///         initializer, so the annotated overload being chosen instead is a visible change in the emitted
+    ///         text. A destination with only one constructor would be selected anyway and the directive could
+    ///         not be told from doing nothing; a destination with two same-arity constructors would make the
+    ///         BASELINE a <c>DWARF025</c> error, and a fixture that cannot compile without the element under
+    ///         test can never show that element doing nothing.
+    ///     </para>
+    /// </summary>
+    public const string ConstructorSlotMarker = "/*__CONSTRUCTOR_SLOT__*/";
+
+    /// <summary>
+    ///     Every site that is answered by SPLICING at a slot, with the marker it splices at and the cause
+    ///     label it reports when no slot is present. The ONE list — <see cref="SiteAbsenceReason" />,
+    ///     <see cref="BuildAt" /> and <see cref="SpliceAtSlot" /> all read it, so they cannot disagree about
+    ///     which slot a site needs. Disagreeing there is precisely how a Field cell came to be answered with
+    ///     the property slot, and reaching the Struct and Constructor sites down a second path would have
+    ///     been the same defect a third time. Adding a site is one entry here plus a marker in the templates.
+    /// </summary>
+    private static readonly Dictionary<AttributeTargets, (string Marker, string Cause)> Slots =
+        new Dictionary<AttributeTargets, (string Marker, string Cause)>
+        {
+            [AttributeTargets.Property] = (PropertySlotMarker, "no-property-slot"),
+            [AttributeTargets.Field] = (FieldSlotMarker, "no-field-slot"),
+            [AttributeTargets.Struct] = (StructSlotMarker, "no-struct-slot"),
+            [AttributeTargets.Constructor] = (ConstructorSlotMarker, "no-constructor-slot")
+        };
+
+    /// <summary>
+    ///     The slot a site splices at, or a throw for a site that splices at none. A closed lookup rather
+    ///     than a two-way conditional: the old <c>site == Field ? … : PropertySlotMarker</c> form answered
+    ///     "the property slot" for every site it had never heard of, which is the fall-through defect one
+    ///     level up from the one it was written to prevent.
+    /// </summary>
     public static string SlotMarkerFor(AttributeTargets site) =>
-        site == AttributeTargets.Field ? FieldSlotMarker : PropertySlotMarker;
+        Slots.TryGetValue(site, out var slot)
+            ? slot.Marker
+            : throw new ArgumentOutOfRangeException(nameof(site), site,
+                "This site is not answered by splicing at a slot; it has no marker.");
 
     /// <summary>
     ///     The DTO pair every endpoint maps between. Deliberately trivial — the matrix varies the ATTRIBUTE
@@ -84,10 +145,26 @@ public static class EndpointSources
     ///         alone would be <c>DWARF001</c> in every baseline, and a fixture that cannot compile without the
     ///         element under test can never show that element doing nothing.
     ///     </para>
+    ///     <para>
+    ///         <c>Dst</c>'s two constructors exist for the Constructor site, which has exactly one legal
+    ///         occupant (<c>[DwarfMapperConstructor]</c>) and nowhere to sit without them. The parameterless
+    ///         one is what the default selection policy already picks, so every other cell in the matrix is
+    ///         measured against the object-initializer mapping it was measured against before — verified by
+    ///         re-measuring all seven ceilings. See <see cref="ConstructorSlotMarker" /> for why the annotated
+    ///         overload has to be the OTHER one.
+    ///     </para>
+    ///     <para>
+    ///         <c>SrcValue</c> is a STRUCT, and exists for the same reason one level along: a Struct-site
+    ///         cell has to land on one. It is a third type rather than <c>Src</c> turned into a value type,
+    ///         because the pair is what every other cell in the matrix is measured against — see
+    ///         <see cref="StructSlotMarker" />. It is unannotated and unreferenced, so it contributes
+    ///         nothing to any baseline until a case is spliced onto it.
+    ///     </para>
     /// </summary>
     private const string Types = $$"""
         public sealed class Src { public int Id { get; set; } {{PropertySlotMarker}}public string? Name { get; set; } {{FieldSlotMarker}}public string? Tag; }
-        public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } public string? Tag; }
+        public sealed class Dst { public Dst() { } {{ConstructorSlotMarker}}public Dst(int id, string? name, string? tag) { Id = id; Name = name; Tag = tag; } public int Id { get; set; } public string? Name { get; set; } public string? Tag; }
+        {{StructSlotMarker}}public struct SrcValue { public int Id { get; set; } public string? Name { get; set; } public string? Tag; }
         """;
 
     /// <summary>
@@ -116,8 +193,8 @@ public static class EndpointSources
             && !(string.IsNullOrEmpty(memberAttribute) && string.IsNullOrEmpty(extraMembers)))
             throw new ArgumentException(
                 $"{endpoint} declares no mapping method, so it can carry neither a method-level attribute nor "
-                + "extra members. Use BuildAt with the Property or Field site, which splices at the "
-                + $"{nameof(PropertySlotMarker)} / {nameof(FieldSlotMarker)} slot.", nameof(endpoint));
+                + "extra members. Use BuildAt with one of the slot sites (Property, Field, Struct, "
+                + "Constructor), which splices at that site's marker.", nameof(endpoint));
 
         var onMethod = string.IsNullOrEmpty(memberAttribute) ? "" : "    " + memberAttribute + "\n";
         var extras = string.IsNullOrEmpty(extraMembers) ? "" : "\n" + extraMembers + "\n";
@@ -208,13 +285,25 @@ public static class EndpointSources
 
             // The registry has no mapper class: intent lives on the SOURCE type, and a member-level attribute
             // goes on the member rather than a method. This asymmetry is exactly why it needs its own row.
-            // Both member slots are declared inline, because this template ignores `types` entirely — the
-            // mapping is declared BY the annotated type, so the pair cannot be substituted.
+            // ALL FOUR slots are declared inline, because this template ignores `types` entirely — the
+            // mapping is declared BY the annotated type, so the pair cannot be substituted, and a slot the
+            // fixture carries would never arrive here. Dst's two constructors are the shape the constructor
+            // slot needs (see ConstructorSlotMarker); the parameterless one is declared first and still wins
+            // the default selection policy, so every OTHER registry cell measures what it measured before.
             Endpoint.Registry => $$"""
                 using System.Linq;
                 using DwarfMapper;
                 namespace Demo;
-                public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } public string? Tag; }
+                public sealed class Dst
+                {
+                    public Dst() { }
+                    {{ConstructorSlotMarker}}public Dst(int id, string? name, string? tag) { Id = id; Name = name; Tag = tag; }
+                    public int Id { get; set; }
+                    public string? Name { get; set; }
+                    public string? Tag;
+                }
+
+                {{StructSlotMarker}}public struct SrcValue { public int Id { get; set; } public string? Name { get; set; } public string? Tag; }
 
                 [MapTo(typeof(Dst))]
                 public sealed class Src
@@ -226,16 +315,20 @@ public static class EndpointSources
                 """,
 
             // A member-form attribute has no mapping METHOD to land on here (there is none), so — like the
-            // registry above — it goes on a member of the generated type, through the same two slots.
+            // registry above — it goes on a member of the generated type, through the same four slots.
             Endpoint.CoLocatedHost => $$"""
                 using System.Linq;
                 using DwarfMapper;
                 namespace Demo;
                 public sealed class Src { public int Id { get; set; } public string? Name { get; set; } public string? Tag; }
 
+                {{StructSlotMarker}}public struct SrcValue { public int Id { get; set; } public string? Name { get; set; } public string? Tag; }
+
                 [GenerateMap<Src, Dst>]
                 {{(string.IsNullOrEmpty(classAttribute) ? "" : classAttribute + "\n")}}public sealed class Dst
                 {
+                    public Dst() { }
+                    {{ConstructorSlotMarker}}public Dst(int id, string? name, string? tag) { Id = id; Name = name; Tag = tag; }
                     public int Id { get; set; }
                     {{PropertySlotMarker}}public string? Name { get; set; }
                     {{FieldSlotMarker}}public string? Tag;
@@ -268,44 +361,54 @@ public static class EndpointSources
     ///         The single source of truth for every <c>NoSuchSite</c> verdict — <see cref="BuildAt" /> consults
     ///         it first and never invents a null of its own, so the reason cannot drift from the behaviour it
     ///         describes. It exists because "137 cells have no declaration site" is not a reviewable statement:
-    ///         four quite different things were producing that verdict, and two of them are limitations of
-    ///         these templates rather than absences in the library. Reported per cause by
+    ///         several quite different things were producing that verdict, and the slot-shaped ones are
+    ///         limitations of these templates rather than absences in the library. Reported per cause by
     ///         <c>SurfaceParityTests.The_cells_with_no_declaration_site_are_counted_by_cause</c>.
     ///     </para>
+    ///     <para>
+    ///         Every slot site is answered by ONE question — does the source this endpoint would build, with
+    ///         the fixture in play, carry that site's marker? Asked of the BUILT source rather than of the
+    ///         fixture text, which is what retires the separate <c>Registry</c>/<c>CoLocatedHost</c> arm that
+    ///         used to answer "the site exists" for those two templates by hand: they declare their own DTO
+    ///         pair and their own slots, so the built source already says so. Two arms that had to agree
+    ///         became one that cannot disagree.
+    ///     </para>
     /// </summary>
-    /// <param name="types">The fixture in play; its member slot decides the Property/Field case.</param>
-    public static string? SiteAbsenceReason(Endpoint endpoint, AttributeTargets site, string? types = null) =>
-        site switch
+    /// <param name="types">The fixture in play; the slot it carries decides every slot site.</param>
+    public static string? SiteAbsenceReason(Endpoint endpoint, AttributeTargets site, string? types = null)
+    {
+        if (Slots.TryGetValue(site, out var slot))
+            return Build(endpoint, types: types).Contains(slot.Marker, StringComparison.Ordinal)
+                ? null
+                : $"{slot.Cause}: neither the fixture in play nor the endpoint template carries a "
+                  + slot.Marker;
+
+        return site switch
         {
             AttributeTargets.Class when endpoint is Endpoint.Registry
                 => "registry-has-no-mapper-class: intent lives on the source type",
             AttributeTargets.Method when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost
                 => "no-mapping-method: neither endpoint declares one to annotate",
 
-            // Registry and CoLocatedHost declare their own DTO pair, carrying BOTH slots, so the member sites
-            // exist there regardless of the fixture — and consulting the fixture would be wrong, because
-            // those templates never read it.
-            AttributeTargets.Property or AttributeTargets.Field
-                when endpoint is Endpoint.Registry or Endpoint.CoLocatedHost => null,
-
-            // Per SITE, not per member kind. One arm used to answer for both and discard the site, so a Field
-            // cell was measured against the PROPERTY slot: byte-identical to its Property twin at all seven
-            // endpoints, for the two elements legal on both. Asking SlotMarkerFor keeps "which slot does this
-            // site need" a single fact (gap G6).
-            AttributeTargets.Property or AttributeTargets.Field
-                => (string.IsNullOrEmpty(types) ? Types : types)
-                   .Contains(SlotMarkerFor(site), StringComparison.Ordinal)
-                    ? null
-                    : "no-member-slot: the fixture in play carries no "
-                      + (site == AttributeTargets.Field ? nameof(FieldSlotMarker) : nameof(PropertySlotMarker)),
-
-            AttributeTargets.Struct or AttributeTargets.Constructor
-                => "no-fixture-declares-one: a TEMPLATE limitation, not a structural absence — a struct "
-                   + "fixture and a constructor-bearing fixture could exist and do not",
-
             AttributeTargets.Class or AttributeTargets.Method or AttributeTargets.Assembly => null,
             _ => $"unmodelled-site: the endpoint templates model no {site} site at all"
         };
+    }
+
+    /// <summary>
+    ///     Whether this endpoint's template EMBEDS a caller-supplied fixture, or declares its own DTO pair and
+    ///     ignores it.
+    ///     <para>
+    ///         A structural fact about the template, which is what <c>SurfaceProbe</c> needs in order to say
+    ///         "the fixture never reached this endpoint". It used to ask whether the built source still
+    ///         contained the fixture text verbatim — true only while no case spliced anything INTO that text.
+    ///         The moment a slot site splices at a marker inside a fixture, the verbatim text is gone and a
+    ///         perfectly-delivered fixture reads as never delivered, turning honest silence into
+    ///         <c>Unasked</c>. The question was never about the string.
+    ///     </para>
+    /// </summary>
+    public static bool DeliversFixture(Endpoint endpoint) =>
+        endpoint is not (Endpoint.Registry or Endpoint.CoLocatedHost);
 
     /// <summary>
     ///     Places <paramref name="rendered" /> at the declaration site <paramref name="site" /> for this
@@ -321,21 +424,23 @@ public static class EndpointSources
 
         if (SiteAbsenceReason(endpoint, site, types) is not null) return null;
 
+        // Every slot site down ONE arm, and the arm does not discard the site: Slots decides WHICH marker, so
+        // a Property cell lands on a property, a Field cell on a field, a Struct cell on a struct and a
+        // Constructor cell on a constructor. Routing a member site to the mapping method would silently
+        // measure METHOD-placement semantics under a member label — a real, different code path in the
+        // generator (confirmed: MapperExtractor never reads MapIgnore/MapProperty off a Src/Dst member for
+        // the class-model endpoints; only MapToGenerator's registry path does) — and routing Field to the
+        // property slot measured the property path under a field label, which is the same defect one level
+        // down (gap G6). Adding the Struct and Constructor sites beside them rather than through a parallel
+        // path is what keeps that from happening a third time (gap G5).
+        if (Slots.ContainsKey(site)) return SpliceAtSlot(endpoint, site, rendered, types, options);
+
         return site switch
         {
             AttributeTargets.Class
                 => Build(endpoint, classAttribute: rendered, types: types, options: options ?? ""),
             AttributeTargets.Method
                 => Build(endpoint, memberAttribute: rendered, types: types, options: options ?? ""),
-            // One arm for both member sites, but it no longer discards the site: SlotMarkerFor decides WHICH
-            // slot, so a Property cell lands on a property and a Field cell lands on a field. Routing either
-            // to the mapping method would silently measure METHOD-placement semantics under a member label —
-            // a real, different code path in the generator (confirmed: MapperExtractor never reads
-            // MapIgnore/MapProperty off a Src/Dst member for the class-model endpoints; only MapToGenerator's
-            // registry path does) — and routing Field to the property slot measured the property path under a
-            // field label, which is the same defect one level down (gap G6).
-            AttributeTargets.Property or AttributeTargets.Field
-                => SpliceAtSlot(endpoint, site, rendered, types, options),
             AttributeTargets.Assembly
                 => InsertAssemblyAttribute(Build(endpoint, types: types, options: options ?? ""), rendered),
             _ => throw new InvalidOperationException(
@@ -380,8 +485,9 @@ public static class EndpointSources
     }
 
     /// <summary>
-    ///     Splices <paramref name="rendered" /> immediately ahead of the real DTO member that
-    ///     <paramref name="site" />'s slot marks — a property for <c>Property</c>, a field for <c>Field</c>.
+    ///     Splices <paramref name="rendered" /> immediately ahead of the real declaration that
+    ///     <paramref name="site" />'s slot marks — a property for <c>Property</c>, a field for <c>Field</c>, a
+    ///     struct for <c>Struct</c>, a non-parameterless constructor for <c>Constructor</c>.
     ///     <para>
     ///         The splice happens on the BUILT source rather than on the fixture text, so the two endpoints
     ///         that declare their own DTO pair (<see cref="Endpoint.Registry" />,
@@ -397,7 +503,7 @@ public static class EndpointSources
         var marker = SlotMarkerFor(site);
         var idx = source.IndexOf(marker, StringComparison.Ordinal);
 
-        // Unreachable: SiteAbsenceReason reports "no-member-slot" for exactly this fixture and site, and
+        // Unreachable: SiteAbsenceReason reports the missing slot for exactly this fixture and site, and
         // BuildAt returns before getting here. Restated at the point of use rather than trusted, because the
         // alternative to throwing is splicing the attribute at the OTHER site's slot — which is how
         // (Method, Property/Field) and then (Property, Field) each measured identical source under two
@@ -405,7 +511,7 @@ public static class EndpointSources
         if (idx < 0)
             throw new InvalidOperationException(
                 $"SpliceAtSlot reached a {endpoint} source with no {marker} for the {site} site; "
-                + "SiteAbsenceReason should have reported no-member-slot and BuildAt should have returned "
+                + "SiteAbsenceReason should have reported the missing slot and BuildAt should have returned "
                 + "null.");
 
         return source[..idx] + rendered + " " + source[(idx + marker.Length)..];

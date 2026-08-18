@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Concurrent;
 using Microsoft.CodeAnalysis;
@@ -202,7 +202,14 @@ internal static class SurfaceProbe
         // Silence only means something if the question was asked. Checked LAST, on the silent path alone:
         // MapNullSkip<Src,Dst> is Honoured at CoLocatedHost against that endpoint's own flat pair despite its
         // fixture never being delivered, and a rule that fired before classification would erase that reading.
-        if (types is not null && !source.Contains(types, StringComparison.Ordinal))
+        //
+        // "Did the fixture arrive" is a STRUCTURAL fact about the endpoint's template, not a string search.
+        // This used to test whether the built source still contained the fixture text verbatim, which held
+        // only while nothing was ever spliced INTO that text; the moment a slot site splices at a marker
+        // inside a fixture, a perfectly-delivered fixture reads as never delivered and honest silence is
+        // absorbed into Unasked. Equivalent today (measured: every ceiling unmoved by this change alone),
+        // and no longer a trap for the next slot site.
+        if (types is not null && !EndpointSources.DeliversFixture(endpoint))
             return (SurfaceEffect.Unasked,
                 $"the '{c.ProbeKey}' fixture never reached this endpoint's source; the {endpoint} template "
                 + "declares its own DTO pair");

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper;
 
@@ -318,7 +318,7 @@ public sealed class SurfaceParityTests
     }
 
     /// <summary>The ceiling on cells with no declaration site. Shrink-only, like the others.</summary>
-    private const int NoSuchSiteCellCeiling = 137;
+    private const int NoSuchSiteCellCeiling = 116;
 
     /// <summary>
     ///     The cells with no declaration site, counted AND broken down by cause.
@@ -326,17 +326,24 @@ public sealed class SurfaceParityTests
     ///         This is the largest population that passes without deciding anything, and it was the last one
     ///         outside every ratchet — about a sixth of the matrix, described in an earlier report as already
     ///         pinned when only its member-slot half was, and only at FIXTURE granularity. "137 cells have no
-    ///         declaration site" is not a reviewable statement; the breakdown is the point, because the four
-    ///         causes are not the same kind of thing:
+    ///         declaration site" is not a reviewable statement; the breakdown is the point, because the
+    ///         causes were not the same kind of thing.
     ///     </para>
     ///     <para>
-    ///         <c>registry-has-no-mapper-class</c> and <c>no-mapping-method</c> are STRUCTURAL — the registry
-    ///         front door genuinely has no mapper class and neither it nor the co-located host declares a
-    ///         mapping method, so there is nothing an improved template could annotate.
-    ///         <c>no-fixture-declares-one</c> (struct and constructor sites) and <c>no-member-slot</c> are
-    ///         TEMPLATE LIMITATIONS wearing the same verdict: those sites could be measured, and are not.
-    ///         Both are reported as findings rather than treated as shapes; the count keeps them from
-    ///         drifting upward meanwhile.
+    ///         137 → 116, and the breakdown is now the whole story: every remaining cell is one of the two
+    ///         STRUCTURAL causes. <c>registry-has-no-mapper-class</c> (48) and <c>no-mapping-method</c> (68)
+    ///         cannot move — the registry front door genuinely has no mapper class, and neither it nor the
+    ///         co-located host declares a mapping method, so there is nothing an improved template could
+    ///         annotate.
+    ///     </para>
+    ///     <para>
+    ///         The 21 that left were <c>no-fixture-declares-one</c>: <c>[MapTo]</c>'s fourteen Struct-site
+    ///         cells and <c>[DwarfMapperConstructor]</c>'s seven Constructor-site cells, a TEMPLATE
+    ///         limitation wearing the same verdict as a structural absence. Both sites now splice at a
+    ///         marker through the same one mechanism the Property and Field sites use, and all 21 are
+    ///         measured — which is what surfaced the <c>[MapTo]</c>-on-a-struct emission defect and the
+    ///         three silent <c>[DwarfMapperConstructor]</c> cells. That is the point of counting a
+    ///         population nobody judges: it is where defects go to not be noticed.
     ///     </para>
     /// </summary>
     [Fact]
@@ -350,11 +357,11 @@ public sealed class SurfaceParityTests
 
         Assert.True(siteless.Count <= NoSuchSiteCellCeiling,
             $"{siteless.Count} cells have no declaration site and are therefore judged by nothing, above the "
-            + $"stated ceiling of {NoSuchSiteCellCeiling}:\n{byCause}\n\nThis number may only shrink. Two of "
-            + "the causes are TEMPLATE limitations rather than structural absences — a struct fixture and a "
-            + "constructor-bearing fixture could exist, and a fixture could carry a member slot marker. Close "
-            + "one of those; the two structural causes (registry-has-no-mapper-class, no-mapping-method) "
-            + "cannot move, because there is nothing at those endpoints for a template to annotate.");
+            + $"stated ceiling of {NoSuchSiteCellCeiling}:\n{byCause}\n\nThis number may only shrink. Both "
+            + "remaining causes (registry-has-no-mapper-class, no-mapping-method) are STRUCTURAL and cannot "
+            + "move, because there is nothing at those endpoints for a template to annotate — so a cell "
+            + "arriving here under any OTHER cause is a slot that went missing. Give the endpoint template "
+            + "or the fixture in play the marker that site splices at, rather than accepting the absence.");
 
         Assert.True(siteless.Count >= NoSuchSiteCellCeiling - 10,
             $"Only {siteless.Count} cells have no declaration site, well under the ceiling of "

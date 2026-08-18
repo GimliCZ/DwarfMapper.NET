@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using Microsoft.CodeAnalysis;
 
@@ -115,62 +115,83 @@ public sealed class SurfaceProbeTests
     }
 
     /// <summary>
-    ///     Regression guard for the Property/Field routing bug, and the twin of
+    ///     Regression guard for the site-routing bug in EVERY direction it can take, and the twin of
     ///     <see cref="Method_and_Property_sites_are_not_measured_as_the_same_source" /> one level down. A
     ///     single <c>BuildAt</c> arm handled <c>AttributeTargets.Property or AttributeTargets.Field</c> and
     ///     DISCARDED the site, so for the two elements legal on both — <c>MapProperty</c> and
     ///     <c>MapIgnore</c> — every Field cell produced byte-identical source to its Property cell at all
     ///     seven endpoints. The matrix read as fully measured while a field-only divergence was invisible.
     ///     <para>
+    ///         Stated over EVERY pair of sites an element is legal on, rather than over (Property, Field)
+    ///         alone. The defect is not about members: it is "two sites, one splice point", and it recurs
+    ///         wherever a site is added. <c>[MapTo]</c> is legal on <c>Class</c> and <c>Struct</c>, and the
+    ///         Struct site was reached by giving the DTO pair a struct of its own — had it instead fallen
+    ///         through to the class attribute, fourteen cells would have measured the class path under a
+    ///         struct label and this guard is the only thing that would have said so.
+    ///     </para>
+    ///     <para>
     ///         Neither of the guards next door can see this: the placement is legal, so it is not
     ///         <see cref="SurfaceEffect.NotCompilable" />, and the rendered attribute text IS present, so the
-    ///         containment guard passes. Only comparing the two sites' sources exposes it — which is also why
+    ///         containment guard passes. Only comparing the sites' sources exposes it — which is also why
     ///         "both sites honestly decline" is accepted here: a cell that does not exist is not a cell
     ///         measured under the wrong label.
     ///     </para>
     ///     <para>
-    ///         The element set is DERIVED from <c>AttributeUsage.ValidOn</c> rather than listed, so a third
-    ///         element becoming legal on both sites acquires this guard with no edit here.
+    ///         The element set and the site set are both DERIVED from <c>AttributeUsage.ValidOn</c> rather
+    ///         than listed, so a further element or site acquires this guard with no edit here.
     ///     </para>
     /// </summary>
     [Fact]
-    public void Property_and_Field_sites_are_not_measured_as_the_same_source()
+    public void No_two_declaration_sites_of_an_element_are_measured_as_the_same_source()
     {
-        var legalOnBoth = SurfaceCatalog.Elements
-            .Where(e => (e.ValidOn & AttributeTargets.Property) == AttributeTargets.Property
-                        && (e.ValidOn & AttributeTargets.Field) == AttributeTargets.Field)
+        var multiSite = SurfaceCatalog.Elements
+            .Select(e => (Element: e, Sites: SurfaceCatalog.SitesOf(e)))
+            .Where(x => x.Sites.Count > 1)
             .ToList();
 
-        // Non-vacuity: an empty element set, or a set whose cases stopped producing comparable pairs, would
-        // pass this test without comparing anything at all.
-        Assert.NotEmpty(legalOnBoth);
+        // Non-vacuity, per PAIR rather than in the aggregate: an element set that stopped producing one of
+        // the two pairs this guard was written for would still pass an "is it empty" check while measuring
+        // nothing about the site that regressed.
+        Assert.Contains(multiSite, x => x.Sites.Contains(AttributeTargets.Property)
+                                        && x.Sites.Contains(AttributeTargets.Field));
+        Assert.Contains(multiSite, x => x.Sites.Contains(AttributeTargets.Class)
+                                        && x.Sites.Contains(AttributeTargets.Struct));
 
         var offenders = new List<string>();
         var compared = 0;
-        foreach (var element in legalOnBoth)
-        foreach (var c in SurfaceCatalog.CasesFor(element).Where(x => x.Site == AttributeTargets.Property))
+
+        foreach (var (element, sites) in multiSite)
+        foreach (var c in SurfaceCatalog.CasesFor(element).Where(x => x.Site == sites[0]))
         foreach (var endpoint in EndpointSources.All)
         {
             var types = SurfaceFixtures.Get(c.ProbeKey);
-            var atProperty = EndpointSources.BuildAt(
-                endpoint, AttributeTargets.Property, c.Rendered, types, c.MapperOptions);
-            var atField = EndpointSources.BuildAt(
-                endpoint, AttributeTargets.Field, c.Rendered, types, c.MapperOptions);
 
-            if (atProperty is null && atField is null) continue; // Both decline: no cell claimed either way.
-            compared++;
-            if (string.Equals(atProperty, atField, StringComparison.Ordinal))
-                offenders.Add($"{element.UsageName}({c.Axis}) @ {endpoint}");
+            // The rendered text does not vary by site, so one site's cases stand in for every site's: the
+            // question is where the SAME attribute lands, which is exactly what the routing bug got wrong.
+            var built = sites
+                .Select(site => (Site: site,
+                    Source: EndpointSources.BuildAt(endpoint, site, c.Rendered, types, c.MapperOptions)))
+                .Where(x => x.Source is not null)
+                .ToList();
+
+            for (var i = 0; i < built.Count; i++)
+            for (var j = i + 1; j < built.Count; j++)
+            {
+                compared++;
+                if (string.Equals(built[i].Source, built[j].Source, StringComparison.Ordinal))
+                    offenders.Add($"{element.UsageName}({c.Axis}) @ {endpoint}: {built[i].Site} and "
+                                  + $"{built[j].Site} are the same source");
+            }
         }
 
-        Assert.True(compared > 0, "No (Property, Field) pair was compared at all — the case space or the "
-                                  + "site enumeration collapsed and this guard is measuring nothing.");
+        Assert.True(compared > 0, "No pair of sites was compared at all — the case space or the site "
+                                  + "enumeration collapsed and this guard is measuring nothing.");
         Assert.True(offenders.Count == 0,
-            "Property-site and Field-site sources are byte-identical for: " + string.Join(", ", offenders)
-            + ". A Field cell answered with the property slot measures the property code path under a field "
-            + $"label. Give the endpoint's DTO pair a {nameof(EndpointSources.FieldSlotMarker)} ahead of a "
-            + "real field, or return null (NoSuchSite) for the Field site — never fall through to the other "
-            + "site's slot.");
+            "Two declaration sites produce byte-identical source for: " + string.Join(", ", offenders)
+            + ". A cell answered with another site's splice point measures that site's code path under this "
+            + "one's label. Give the endpoint's source a marker of its own ahead of a real declaration of "
+            + "that kind, or return null (NoSuchSite) for the site — never fall through to another site's "
+            + "slot.");
     }
 
     /// <summary>
