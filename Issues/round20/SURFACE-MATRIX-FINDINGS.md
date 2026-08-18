@@ -6,7 +6,7 @@
 > since been superseded.** The case-space was enriched (task 5b), three instrument defects and one broken
 > fixture baseline were fixed, and the matrix was re-measured. The current state, and the write-up every entry
 > in `DeclaredDivergences.Reasons` links to, is **[the ratified findings](#ratified)** at the end of this
-> document: **13 findings over 82 cells, plus 12 cells excused as structural — 94 red cells, all accounted
+> document: **2 findings over 4 cells, plus 13 cells excused as structural — 17 red cells, all accounted
 > for, matrix green.** Read the first measurement for how the buckets were arrived at; read the amendment for
 > what is true now. The single most severe item found in the whole exercise is **[N4](#N4)** and it is not a
 > silent divergence at all — **fixed on 2026-08-16 as `DWARF087`**; see the resolution note in that section,
@@ -54,6 +54,54 @@
 > there to withhold. It stays recorded, with the measurement in place of the false justification and the three
 > ways out set down for the maintainer. Re-measured across all 854 cells before and after: **exactly two rows
 > differ**, both at `Registry` on the `Assembly` site. See [D17](#D17), [D18](#D18), [D19](#D19).
+>
+> **2026-08-17, sixth fix (A6) — 13 / 82 to 13 / 76.** `[MapNullSkip]`'s two forms are exact inverses and
+> **neither was wrong**: the implementation had three partial readers of one option. Folded into
+> `MapperExtractor.ResolveNullSkip`, most-specific-wins (method → pair → mapper → assembly), which every front
+> door calls. Four cells Silent → Honoured, two Silent → Refused under `DWARF090`. **Projection did not close
+> and was not deferred by choice** — the one-line threading produces the right behaviour, but its `CS8795`
+> cascade raised `NotCompilableCellCeiling` 99 → 102, which is closure by relocation and forbidden. `D6`/`D7`
+> narrowed to their Projection cells, parked on **A10**. See [D6](#D6), [D7](#D7).
+>
+> **2026-08-17, seventh fix (A8) — 13 / 76 to 12 / 62.** Two directives, two different answers, and one finding
+> whose own evidence was false. **`D10` closes outright**, and the record it leaves is a correction: `[Flatten]`
+> was filed as honoured at CreateMap and UpdateInto and it was not — the fixture's destination still declared
+> the NESTED member, so the walk emitted byte-identical output at all five endpoints and the two `Refused`
+> readings were an incidental `DWARF044`. A new fixture poses the question; `ResolveFlattenInfos` is now one
+> walk both resolvers call. **`D9` narrowed** to its four Projection cells, parked on A10 for the same
+> relocation reason as `D6`/`D7`. Filed **B25**, **B26**. See [D9](#D9), [D10](#D10).
+>
+> **2026-08-17, eighth fix (A9a) — 12 / 62 to 9 / 34.** `D8`, `D11`, `D13`: one shape — a directive that acts
+> at CreateMap and is silent at the other four — one gate (`ReportCreateMapOnlyDirectives`), the new
+> **`DWARF092`**, 28 cells Silent → Refused. **Two of the three entries had wrong evidence.** See [D8](#D8),
+> [D11](#D11), [D13](#D13).
+>
+> **2026-08-17, ninth fix (A9b) — 9 / 34 to 6 / 12.** `D12`, `D14`, `D15`, **and all three entries had wrong
+> evidence.** `DWARF092`'s gate generalized to `ReportDirectivesNotReadHere` with each arm naming its own home
+> endpoint; `D12` joined `DWARF090`; `D15` refused as the new **`DWARF093`**. `NotCompilable` 98 → 96. Filed
+> **B27**. See [D12](#D12), [D14](#D14), [D15](#D15).
+>
+> **2026-08-17, the instrument (A10, A11) — no finding closed, and that is the point.** **A10** made the probe
+> ask whether the generator *said something* before asking whether the compiler accepted the placement, so a
+> `CS8795` carrying a blocking DWARF diagnostic reads `Refused`: `NotCompilableCellCeiling` **96 → 14**,
+> ninety-six cells judged for the first time. **A11** gave the endpoint templates a struct and constructor
+> slot: `NoSuchSiteCellCeiling` **137 → 116**, all 21 G5 cells measurable, and the measurement went red on four
+> assertions **by design**. It also surfaced a product defect the instrument had been hiding — `[MapTo]` on a
+> `struct` had never compiled — fixed by **A13**.
+>
+> **2026-08-18, tenth fix (A12) — 6 / 12 to 2 / 4.** The parked work, once A10 removed what forbade it.
+> `[MapNullSkip]`@Projection landed and **`D6`/`D7` were DELETED**; `[MapValue]`@Projection was rebuilt rather
+> than restored and **`D9` was DELETED**; `DWARF088` went Warning → **Error**; **`D17` was reclassified
+> `StructurallyInapplicable`** on A5's own measurement, raising `StructurallyExcusedCellCeiling` 12 → **13** —
+> the one sanctioned ceiling raise of the round. And a new verdict, **`EmittedInvalidCode`**, for *the
+> generator emitted code that does not compile*. It **measured 10, not the expected zero**, and that was
+> surfaced rather than absorbed: 8 are **B27**, 2 newly filed as **B33**. `NotCompilable` 10 → **0**.
+>
+> **2026-08-18, eleventh fix (A14) — the matrix went GREEN.** The three `[DwarfMapperConstructor]` divergences
+> A11's measurement exposed, answered three different ways from what the directive MEANS: Projection **fixed**
+> (four defects, not the one traced), Registry **refused** as the new `DWARFR11`, UpdateInto **structural** —
+> the reason being the signature shape, not what the generator reads — with both halves pinned, including the
+> one that cuts against it. Filed **B29**–**B32**.
 
 `SurfaceParityTests` runs the executed cross-product: every `[DwarfSurface]`-declared element of category
 `ConsumerDirective` or `EmissionShape`, at every declaration site its `AttributeUsage` permits, in every case
@@ -1418,13 +1466,14 @@ breaches two shrink-only ceilings — the member-site cells at CoLocatedHost go 
 carries no mapper class to hold the options, and the Create/Update baselines stop compiling and land in
 `UnhonouredButLoud`, which is the verdict-swallowing trap D11 had to be rescued from.
 
-## The 12 cells excused as structural, and why they are not in the store
+## The 13 cells excused as structural, and why they are not in the store
 
 | Option | Written at | Endpoints | Cells |
 | --- | --- | --- | ---: |
 | `GenerateExtensions` | `[DwarfMapper]` class | UpdateInto, Projection, SpanMap, AsyncStream | 4 |
 | `RegisterCollectionShapes` | `[DwarfMapper]` class | the same four | 4 |
 | `RegisterCollectionShapes` | `[assembly: DwarfMapperDefaults]` | the same four | 4 |
+| `RegisterCollectionShapes` | `[DwarfMapper]` class | **Registry** — this is **D17**, reclassified by A12 | 1 |
 
 Each has a per-endpoint reason already written and already consumed by the option matrix — "an update has no
 `source.ToTarget()` form to suppress", "`Span<T>` is a ref struct and cannot be boxed through the registry's
@@ -1441,15 +1490,23 @@ assembly-level twin resolves through the same rows.
 reason. A `Reasons` row fails the moment its cell starts working; a structural row cannot, because "there is
 nothing here to configure" and "it is configured correctly" are both non-failures. If UpdateInto ever grew a
 convenience extension the cell would flip Silent → Honoured and the entry would sit there unnoticed.
-`The_cells_excused_as_structural_are_counted` holds the population at 12, shrink-only, printing every cell.
+`The_cells_excused_as_structural_are_counted` holds the population at 13, shrink-only, printing every cell.
+
+The thirteenth is **D17**, moved here by A12 item 4 — **the one sanctioned ceiling raise of round 20**, made
+on A5's own measurement rather than on an argument: the `[MapTo]` front door emits an extension class and no
+ambient registry rows at all, so `RegisterCollectionShapes` has nothing there to withhold. That is exactly
+what `StructurallyInapplicable` is for. It is also the row most likely to become false — if that front door
+ever grows ambient registration, the reclassification must be undone. **Whether it should grow one is an open
+design question, filed as `D-f` in [TASKS.md](TASKS.md)**; it was exposed when D17's original justification
+was falsified and, until the final review, had never been written down anywhere.
 
 ## What is NOT here, and where it is instead
 
 | | Cells | Counted by |
 | --- | ---: | --- |
 | ~~**N4** — generated code that does not compile~~ **FIXED** (`DWARF087`) | 0 | `The_cells_whose_generated_code_does_not_compile_are_counted` (prints the ids reported against the generator's own output) — the `CS1912` line is gone. That verdict did not exist when N4 was found; it does now (A12), and it inherited 10 cells nobody had read as this shape |
-| **G4/R4** — `NotCompilable` swallowing `Refused` (CS8795) | 97 | the same fact; the ordering defect is still open. **96 → 97**: N4's cell joined this population rather than leaving `NotCompilable`, because a refused mapper emits nothing and its partial method is unimplemented. Total still 107, so no ceiling moved |
-| **G5** — `[MapTo]`@`Struct`, `[DwarfMapperConstructor]`@`Constructor`, no fixture declares either | 21 | `The_cells_with_no_declaration_site_are_counted_by_cause` |
+| ~~**G4/R4** — `NotCompilable` swallowing `Refused` (CS8795)~~ **CLOSED** | 0 | **A10** reordered the probe: a `CS8795` accompanied by a blocking DWARF diagnostic now reads `Refused`, and ninety-six cells were judged for the first time. `NotCompilableCellCeiling` fell 96 → 14, then to **0** once **A12** gave the residue its own verdict — every one of those leftovers was the generator emitting invalid code, not the compiler rejecting a placement |
+| ~~**G5** — `[MapTo]`@`Struct`, `[DwarfMapperConstructor]`@`Constructor`, no fixture declares either~~ **CLOSED** | 0 | **A11** added the struct and constructor slots to the endpoint templates; all 21 cells are measurable and `NoSuchSiteCellCeiling` fell 137 → **116**, a population now wholly structural. The measurement paid for itself immediately: `[MapTo]` on a `struct` had never compiled at all |
 | ~~**G6** — the `Field` site measured against the `Property` slot~~ **CLOSED** | 0 (was 70) | `Property_and_Field_sites_are_not_measured_as_the_same_source`. No verdict changed and no ratchet moved: the 70 cells were reading the right answer for the wrong reason |
 | Cells the instrument poses no question about | 44 | `The_cells_that_pose_no_question_are_declared_and_counted` |
 | Cells passing both claim branches | 14 | `The_cells_that_pass_both_claim_branches_are_counted` |
@@ -1463,5 +1520,5 @@ would ratify a bug the generator never committed.
 ```bash
 dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj \
   -c Release --filter "Category=SurfaceMatrix"
-# 865 passed, 0 failed  (854 cells + 11 facts)
+# 866 passed, 0 failed  (854 cells + 12 facts)
 ```
