@@ -13,6 +13,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 /// </summary>
 public sealed class SurfaceDeclarationTests
 {
+    /// <summary>
+    ///     The element count the executed cross-product is pinned to. See
+    ///     <see cref="The_executed_cross_product_covers_exactly_the_elements_it_is_pinned_to" /> for why this
+    ///     is a pin and not a bound.
+    /// </summary>
+    private const int CrossProductElementCount = 29;
+
     /// <summary>Every public attribute type shipped by the runtime package.</summary>
     public static IReadOnlyList<Type> PublicAttributeTypes { get; } =
         typeof(DwarfMapperAttribute).Assembly.GetExportedTypes()
@@ -82,6 +89,46 @@ public sealed class SurfaceDeclarationTests
     {
         var total = Contracts.SurfaceCatalog.Elements.Sum(e => Contracts.SurfaceCatalog.CasesFor(e).Count);
         Assert.InRange(total, 60, 4000);
+    }
+
+    /// <summary>The number of elements the executed cross-product actually covers, pinned exactly.</summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>CrossProductElements</c> filters the catalogue to <c>ConsumerDirective</c> and
+    ///         <c>EmissionShape</c>, and it is that filtered list — not <c>Elements</c> — that the surface
+    ///         matrix enumerates. Nothing counted its size, so re-categorising one attribute deleted its
+    ///         whole seven-endpoints-by-cases block from the executed matrix, replaced it with whatever
+    ///         weaker check its new category attracts, and moved no number anywhere. That is the accounting
+    ///         gap B32 records, one level up: a population can leave the matrix silently.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="The_catalog_produces_a_case_count_in_the_expected_order_of_magnitude" /> does NOT
+    ///         cover this. It sums cases over <c>Elements</c>, the unfiltered set, so an element that moves
+    ///         between categories keeps contributing to its total and the range is two orders of magnitude
+    ///         wide besides.
+    ///     </para>
+    ///     <para>
+    ///         Pinned rather than bounded: a change here means an element moved into or out of the executed
+    ///         cross-product, which is a deliberate act — adding a directive, retiring one, or re-reading
+    ///         what an attribute IS. Restate the number in the same commit that makes the move, and say
+    ///         which element moved and why.
+    ///     </para>
+    /// </remarks>
+    [Fact]
+    public void The_executed_cross_product_covers_exactly_the_elements_it_is_pinned_to()
+    {
+        var covered = Contracts.SurfaceCatalog.CrossProductElements
+            .Select(e => e.UsageName)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(covered.Count == CrossProductElementCount,
+            $"The executed cross-product covers {covered.Count} elements, not the pinned "
+            + $"{CrossProductElementCount}:\n  " + string.Join("\n  ", covered)
+            + "\n\nAn element moved into or out of the executed matrix. Only ConsumerDirective and "
+            + "EmissionShape elements are measured cell by cell across all seven endpoints; every other "
+            + "category is judged by something weaker. Confirm the move was intended, name it in the commit "
+            + "message, and restate this number there.");
     }
 
     /// <summary>
