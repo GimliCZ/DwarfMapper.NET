@@ -747,6 +747,122 @@ Final ceilings: findings 2, declared cells 4, NotCompilable 0, EmittedInvalidCod
 StructurallyExcused 13, UnhonouredButLoud 14, Unaskable 44. From 23 findings / 162 cells at round-20 start.
 The two remaining findings - MaxDepth@Span/Async and NullCollections@Projection - are both maintainer-
 acknowledged design decisions with their reasoning recorded; neither is a silent defect.
-Seven new diagnostics DWARF086-093 + DWARFR10, DWARFR11. Eleven structural unifications. Three product
+Seven new diagnostics DWARF087-093 + DWARFR10, DWARFR11 (DWARF086 is ROUND 19's, from its Task 8 - the
+range 086-093 is eight ids; corrected 2026-08-18 at the final fix wave, here and in TASKS.md). Eleven structural unifications. Three product
 defects no test or sample reached: [AfterMap] shipping infinite recursion, duplicate [FlattenGraph] emitting
 CS1912, [MapTo] on a struct never compiling. Nine round-19 entries with false filed evidence.
+B15: complete (1be82b3, eddb0c0, 1cd99a9, d26fda8). 20 items: 16 fixed, 2 already-fixed, 1 partial-by-design
+(DWARFR04 message composed; helpLinkUri withheld because the gap is class-wide across the DWARFR family, not
+R04-specific - the honest scope), 1 SKIPPED FOR A GOOD REASON: item (a-A2) - restoring the old
+targetCount > 0 guard would NOT stop the reported DWARFR04/DWARFR01 co-fire (an invalid-but-present target
+already makes targetCount > 0 true), so the filed remedy was wrong; it would only change an unrelated
+zero-target edge case. Left untouched and FLAGGED rather than "fixed" - a fix that does not fix the stated
+defect is worse than none. That is the tenth time this round a filed remedy did not survive contact with the
+code, and the right response every time was measure-then-decline.
+  Item (o) landed as a real guard: the DWARF078 exclusion now lives INSIDE IsGeneratorRefusal with a pinning
+  test, so a refactor cannot silently reorder it. Matrix 866/866, ceilings none moved.
+B15: complete (15a93ab..d26fda8, review Approved, no defects). Skip verified CORRECT from data flow:
+targetCount is computed from the raw [MapTo] argument list BEFORE IsMappableTarget filters invalid ones, so
+an invalid-but-present target already makes it > 0 - the filed remedy could never have addressed the symptom.
+DWARF078 hoist verified behaviour-preserving including the detail string.
+
+=== EVERY ROUND-20 TASK IS COMPLETE AND REVIEWED. Dispatching the final whole-branch review. ===
+Branch: 02d1a49 (master fork point) .. d26fda8. Includes the merged mutation stream.
+
+=== FINAL WHOLE-BRANCH REVIEW, split three ways (src / tests / docs+records+release) ===
+src/ VERDICT: CLEAN, ONE MUST-FIX.
+  1. Unification regressions: NONE - all eleven hoists verified behaviour-preserving AS A SET, each shared point
+     checked against every caller. IgnoreNameComparer is Ordinal and all seven prior sites were byte-equivalent.
+     TryValidateMapValueTarget's only caller-visible split (sourceHasMatchingMember) resolves to the same
+     answer at both endpoints because projection's sources dictionary already uses FlexibleNameComparer.
+     ChooseProjectionConstructor's four null returns are all behind DWARF025/026 Errors, so cannot become silent.
+  2. Malformed-input sweep: NONE. MemberDirectives.Read stores NullSubstitute as a raw TypedConstant (never
+     .Value) so the array crash cannot recur through that path; every `!` on an attribute argument is fenced.
+  3. Diagnostic family: gradient DEFENSIBLE (Error where the payload evaporates or output cannot compile -
+     086/087/088/R10; Warning where the directive is dropped and Error would bury the refusal under CS8795 -
+     089-093/R11). DWARFR10=Error matches its class-model mirror DWARF072=Error. No false-mechanism messages
+     (DWARF092's claims verified against call sites). No new co-fires. Format gate covers R10/R11.
+     Observation: DWARF090 and DWARF092 both mean "not read here" and split by DIRECTIVE not outcome, so
+     [Flatten]+[FlattenGraph] on one span method yield two ids. Defensible (different remedies); worth knowing.
+  4. Trim/AOT/reflection: CLEAN. BUT ResetForTests was NOT DELETED - ruling D-b said delete; it was EXTENDED
+     instead. Zero callers repo-wide. And D-d KEPT the [InternalsVisibleTo] explicitly on the premise "once
+     D-b lands, what it exposes is inert metadata". D-b did not land, so the IVT currently exposes an unused
+     mutable-static reset hook. TWO RULINGS, ONE UNIMPLEMENTED, THE OTHER'S JUSTIFICATION DEPENDS ON IT.
+  5. Public surface vs CHANGELOG: COMPLETE, including the unlisted-but-observable projection ctor change.
+  MUST-FIX: delete ResetForTests per D-b (~8 lines), or record a superseding ruling.
+tests/ VERDICT: CLEAN WITH ONE MUST-FIX.
+  1. Ninth vacuous mechanism: NONE FOUND after checking BuildAt fall-through, every corpus path, the ProbeKey
+     bijection, all five deleted [Fact]s (each subsumed by something strictly stronger), and slot markers.
+  2. Classifier order: SOUND. All seven verdicts traced. A12-before-A10 safe because the emitted test is a
+     LOCATION predicate and the refusal test a USER-SOURCE one; they cannot both be true of one id-occurrence
+     set. Memoisation key COMPLETE - types is a pure function of probeKey and Build never reads c.Site.
+  3. RATCHETS - THE MUST-FIX. AssertRatchet's lower bound is a UNIFORM `>= ceiling - 10`, so the shrink side
+     is STRUCTURALLY DEAD for the four ceilings at or below 10: NotCompilable=0, DivergenceFinding=2,
+     DivergentCell=4, EmittedInvalidCode=10. Its own doc-comment claims it fails "on unexplained shrink"; for
+     these it cannot. ACUTE: EmittedInvalidCodeCellCeiling=10 is the population the file says "must not exist",
+     membership named only in prose - fix B27's 8 cells and EIGHT BRAND-NEW BROKEN-EMISSION DEFECTS LAND GREEN.
+     And DivergenceFindingCeiling=2: after ONE legitimate deletion, the dead band absorbs a replacement
+     silently. The fix pattern is already in-house (== 19, == 15 elsewhere).
+     UNCOUNTED POPULATION: SurfaceCatalog.CrossProductElements filters the executed matrix to
+     ConsumerDirective|EmissionShape and NOTHING counts its size. Re-categorising an attribute deletes its
+     whole 7xcases block from the matrix and replaces it with a substring scan, and no number moves. B32-shaped.
+  4. Divergence store: GENUINELY fails-when-fixed (re-runs Classify live). StructurallyInapplicable: GAP - no
+     analogue of Every_Unmeasured_declaration_excuses_at_least_one_cell; a row that stops excusing anything is
+     invisible from both directions; and lookup is by option NAME with no element, so a [DwarfMapper] row also
+     silently excuses [DwarfMapperDefaults]'s same-named option.
+  5. Fixtures: all five sampled POSE their question. But flattenable-nested-member, case-mismatched-member,
+     snake-case-member, internal-member have DWARF001 baselines BY DESIGN - which INVERTS A8's rule rather
+     than breaking it (the element is expected to CLEAR the error). Consequence: those cells CANNOT FAIL - a
+     regression to "does nothing" reads UnhonouredButLoud, which passes both claim branches, caught only by
+     that population's growth ceiling (14). B5 is comment-only; a blanket gate is impossible as built.
+  THE ONE LINE: "866/866 honestly judges what it judges, but roughly 200 rows pass by being EXCUSED rather
+  than by being RIGHT, and below a 10-cell magnitude the ratchets over those exemptions cannot see churn at
+  all - that band, not the generator, is where the next defect will sit."
+docs/records/release VERDICT: MERGE AFTER RECORD FIXES, no code changes needed.
+  1. Present-tense sweep found real drift: docs/diagnostics.md:11 and :69 stop at DWARF088/DWARFR10 (actual
+     093/R11); SURFACE-MATRIX-FINDINGS.md STATUS banner still says "13 findings over 82 cells" and its fix-log
+     stops at A5; its structural table lacks D17, G4/R4 says "97 still open", G5 says "21", reproduce says 865;
+     ci.yml:141-143 still says "23 findings, 162 cells"; docs/options.md:65 never updated for the D18 breaking
+     change (README and api-reference were); testing-conformance-REPORT.md has three stale lines beyond C4's
+     scope; and TASKS.md + my own ledger tail say "Seven new diagnostics (DWARF086-093)" - that range is EIGHT
+     ids and DWARF086 predates round 20. Calibration items (088 Error, ten Field cells, D12 four, ReverseMap)
+     all correct. CHANGELOG and README clean.
+  2. TASKS.md IS THE STALEST DOCUMENT ON THE BRANCH. NOW section still says A14 in flight and matrix red;
+     ceilings line wrong in five of seven numbers AND mislabels EmittedInvalidCode's 10 as NotCompilable;
+     ratchet table titled "the ten" while an eleventh exists with no row; A6 PARTIAL/A8 narrowed/A10/A11/C1/E1/E3
+     all stale; NO A12/A13/A14 ROWS EXIST though B28-B33 cite them. B15 commits corrected every other record
+     and skipped the single source of truth. THREE items live outside the store: the "should [MapTo] types
+     participate in ambient registration?" ruling was never filed; B15's skipped a-A2 exists only in a
+     git-ignored report; and B15 IS TWO DIFFERENT TASKS - TASKS.md's B15 is A4's product defect (still TODO)
+     while the executed B15 was the doc batch whose worklist exists only in git-ignored B15-items.md.
+  3. Release readiness: CHANGELOG COMPLETE. But D-e IS NOT VISIBLE TO A RELEASE MANAGER - the CHANGELOG's own
+     release-cutting comment, docs/RELEASING.md and release.yml say nothing about the 76 unannounced
+     diagnostics; it exists solely in TASKS.md and the ledger.
+  4. CI/tooling: ALL PASS. Nit: both sibling Stryker configs still carry test-projects, which the runtime
+     config documents as INERT - a reader will believe those legs are scoped.
+  5. Rulings: NONE implemented differently from ruled. ONE INCONSISTENCY: D-d is DONE with justification
+     "D-b resolves it", but D-b is TODO and ResetForTests exists. Same finding as the src reviewer, from the
+     other side.
+Ruling: ONE fix wave, one agent, all three reviewers' must-fixes plus the should-fixes that are one line.
+  Code (3): delete ResetForTests (D-b, resolves D-d's premise); AssertRatchet exact-equality floors for the
+  four ceilings <= 10 (EmittedInvalidCode first); pin CrossProductElements.Count. Records: everything above.
+  D-e: add a pointer in the CHANGELOG's release-cutting comment AND docs/RELEASING.md so the path a release
+  manager actually walks names it. NOT filed as a fix - it is the maintainer's - but made visible on that path.
+  Cost if wrong: one large fix commit instead of several; reviewable because each item is small.
+
+=== MAINTAINER INSTRUCTION 2026-08-18: shut the PC down when finished. F1 will be done tomorrow. ===
+Sequence: fix wave completes -> scoped re-review -> commit any residual -> refresh committed ledgers ->
+write the F1 handoff (rulings list) into Issues/round20/TASKS.md so it survives the shutdown -> confirm tree
+clean and nothing running -> shutdown /s.
+Rule: DO NOT shut down while any agent holds uncommitted work in the worktree. A clean tree is the precondition.
+
+=== FINAL FIX WAVE (one agent, one wave: the three reviewers' must-fixes plus the one-line should-fixes) ===
+D-b IS NOW IMPLEMENTED. ResetForTests deleted at 1be3579 - zero callers, and the three comments in
+IntegrationTests that explained they could not use it now state the fact instead of the accessibility.
+D-d'S PREMISE THEREFORE HOLDS. D-d kept the [InternalsVisibleTo] explicitly on the grounds that "once D-b
+lands, what it exposes is inert metadata". Verified at HEAD rather than assumed: the four [DwarfSurface*]
+meta-attributes are `internal sealed` in src/DwarfMapper/DwarfSurfaceAttribute.cs and SurfaceCatalog.Build()
+reflects them from the test assembly, so the IVT is LOAD-BEARING for the whole surface matrix; and it now
+exposes nothing else that mutates state. The two rulings are consistent for the first time since D-d was
+recorded DONE. CHANGELOG carries no ResetForTests entry - task 0 removed the consumer-facing one and nothing
+reintroduced it.
