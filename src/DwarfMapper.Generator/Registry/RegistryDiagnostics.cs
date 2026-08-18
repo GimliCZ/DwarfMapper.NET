@@ -98,7 +98,7 @@ internal static class RegistryDiagnostics
         "DWARFR11",
         "[DwarfMapperConstructor] is not read by the [MapTo] registry",
         "[DwarfMapperConstructor] on {0} is not read here: the [MapTo] registry front door constructs every "
-        + "target with an object initializer (new {0} { ... }) and selects no constructor, so the annotated "
+        + "target with an object initializer (new {0} {{ ... }}) and selects no constructor, so the annotated "
         + "one is never called and the members are assigned after construction instead. Map the pair with the "
         + "[DwarfMapper] class model — a 'partial {0} Map(...)' on a [DwarfMapper] class — which selects it. "
         + "Remove the attribute if the object-initializer mapping is what you want.",

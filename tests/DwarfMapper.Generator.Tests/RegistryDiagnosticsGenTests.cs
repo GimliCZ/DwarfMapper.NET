@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using System.Reflection;
 using DwarfMapper.Generator.Registry;
 using Microsoft.CodeAnalysis;
@@ -478,6 +479,83 @@ public sealed class RegistryDiagnosticsGenTests
         var generated = GeneratorAssert.CompilesClean(s);
         Assert.Contains("new global::Demo.Dto(", generated, StringComparison.Ordinal);
         Assert.Contains("id: s.Id", generated, StringComparison.Ordinal);
+    }
+
+    // The MESSAGE, not just the id — and this one is the reason the gate two facts below exists. DWARFR11
+    // shipped with a literal `{ ... }` in its MessageFormat, which is an unescaped format-specifier brace:
+    // string.Format throws FormatException, Roslyn catches it and hands back the UNFORMATTED string, and the
+    // caller reads "on {0}" three times instead of their own type's name. Every one of DWARFR11's other
+    // tests asserted d.Id alone and all four passed. A diagnostic's entire value is its text.
+    [Fact]
+    public void The_DWARFR11_message_renders_the_target_type_name()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto
+                         {
+                             public Dto() { }
+                             [DwarfMapperConstructor] public Dto(int id) { Id = id; }
+                             public int Id { get; set; }
+                         }
+                         """;
+        var d = Assert.Single(GeneratorTestHarness.RunMapTo(s), x => x.Id == "DWARFR11");
+        var message = d.GetMessage(CultureInfo.InvariantCulture);
+
+        Assert.Contains("Demo.Dto", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("{0}", message, StringComparison.Ordinal);
+        // The escaped braces must still render as the object-initializer syntax the sentence is about.
+        Assert.Contains("new Demo.Dto { ... }", message, StringComparison.Ordinal);
+    }
+
+    // ── the wording gate the DWARFR family did not have ─────────────────────────
+    // B22's thesis, made executable for the one failure mode that needs no per-id prose: every DWARF0xx id
+    // is pinned by an EXPECT-MESSAGE assertion somewhere, and the DWARFR family is excluded from all four of
+    // those gates by written convention — so DWARFR11, the first new registry id of the round, shipped a
+    // MessageFormat that cannot be formatted at all and nothing noticed. This does not pin any id's WORDING
+    // (that is B22's larger, per-id job). It pins that every message in the family is a message: that
+    // string.Format can render it, and that rendering consumes its placeholders. A literal brace in message
+    // text is the only way to fail it, and it is exactly the mistake that was made.
+    [Fact]
+    public void Every_registry_message_format_actually_formats()
+    {
+        var descriptors = typeof(RegistryDiagnostics)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.FieldType == typeof(DiagnosticDescriptor))
+            .Select(f => (f.Name, Descriptor: (DiagnosticDescriptor)f.GetValue(null)!))
+            .ToList();
+
+        Assert.True(descriptors.Count >= 6,
+            $"Only {descriptors.Count} DWARFR descriptors reflected — the gate would be vacuous.");
+
+        // Four arguments, so a format using any index 0..3 renders; string.Format ignores the surplus. An
+        // unescaped literal brace throws FormatException here, which is precisely what Roslyn swallows.
+        object[] args = ["ARG-ZERO", "ARG-ONE", "ARG-TWO", "ARG-THREE"];
+        var broken = new List<string>();
+        foreach (var (name, descriptor) in descriptors)
+        {
+            var format = descriptor.MessageFormat.ToString(CultureInfo.InvariantCulture);
+            string rendered;
+            try
+            {
+                rendered = string.Format(CultureInfo.InvariantCulture, format, args);
+            }
+            catch (FormatException ex)
+            {
+                broken.Add($"{descriptor.Id} ({name}): MessageFormat does not format — {ex.Message}. A "
+                           + "literal '{' or '}' in message text must be doubled ('{{' / '}}'); Roslyn "
+                           + "catches this and shows the caller the raw format string.");
+                continue;
+            }
+
+            if (!rendered.Contains("ARG-ZERO", StringComparison.Ordinal))
+                broken.Add($"{descriptor.Id} ({name}): renders no argument at all, so nothing in the message "
+                           + "identifies WHICH declaration it is about.");
+        }
+
+        Assert.True(broken.Count == 0,
+            "Registry diagnostic message(s) that do not render:\n" + string.Join("\n", broken));
     }
 
     // ── the standing completeness gate ──────────────────────────────────────────

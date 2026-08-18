@@ -793,7 +793,44 @@ public class ConstructorMappingTests
                            """;
         var generated = GeneratorAssert.CompilesClean(src);
         Assert.Contains("new global::Demo.D(__s.X, __s.Y)", generated, StringComparison.Ordinal);
-        // And the create map over the same pair still constructs it too — the two agree, which is the point.
-        Assert.Contains("new global::Demo.D(", generated, StringComparison.Ordinal);
+        // And the create map over the same pair still constructs it too — the two agreeing IS the point, so
+        // this has to name text only the create map can produce. It emits NAMED arguments off its own
+        // parameter (`x: s.X`); the projection emits positional ones off the lambda parameter (`__s.X`),
+        // because expression trees reject named args (CS0853). A bare `new global::Demo.D(` would have been
+        // satisfied by the projection line above it and asserted nothing.
+        Assert.Contains("x: s.X", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The user-visible diagnostic-id flip the projection fix carried, pinned rather than left to the
+    ///     CHANGELOG alone. A constructor parameter with no source used to draw <c>DWARF001</c> at this
+    ///     endpoint — a complaint about the MEMBER the parameter feeds, raised by the completeness gate
+    ///     because the constructor path was never entered — and now draws <c>DWARF024</c>, the constructor
+    ///     diagnostic the create map has always raised for the same declaration. Both directions asserted:
+    ///     the id a caller now suppresses or documents is the one this says it is, and the id they used to
+    ///     get is gone.
+    /// </summary>
+    [Fact]
+    public void An_unbindable_ctor_parameter_is_DWARF024_at_the_projection_endpoint()
+    {
+        const string src = """
+                           using System.Linq;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } }
+                           public class D
+                           {
+                               public D() { }
+                               [DwarfMapperConstructor]
+                               public D(int x, string nope) { X = x; Nope = nope; }
+                               public int X { get; set; }
+                               public string Nope { get; set; } = "";
+                           }
+                           [DwarfMapper]
+                           public partial class M { public partial IQueryable<D> Project(IQueryable<S> q); }
+                           """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF024");
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF001");
     }
 }
