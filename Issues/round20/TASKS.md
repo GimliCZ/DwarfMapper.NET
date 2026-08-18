@@ -24,32 +24,36 @@ Everything below this line is a backlog. This section is what is *actually happe
 without asking.
 
 **Branch:** `feat/surface-coverage-architecture`, worktree `C:/Users/Jouda/RiderProjects/DwarfMapper-surface`.
-Nothing pushed. Surface matrix green at 865/865; whole solution builds 0 warnings / 0 errors.
+Nothing pushed. Whole solution builds 0 warnings / 0 errors with samples.
+
+**The matrix is RED on exactly three assertions, deliberately** — `[DwarfMapperConstructor]` on a Constructor
+at Projection, UpdateInto and Registry. Those are **A14**, the only open product work. Nothing else is red.
 
 | | |
 |---|---|
-| **In flight** | **A9b review** — D14, D12 and D15 implemented (three commits), under task review. |
-| **Next** | **A10 last among the refusal tasks**, then A11. (A5–A8, A9a and A9b are done; A6 is `PARTIAL` and A8 narrowed `D9` — both wait on A10.) |
-| **Blocked on a human** | **D-e only.** ~80 diagnostics predate the CHANGELOG and have never been announced; `Scan9` guards only *new* ids. Harmless until the first tag, then not. |
-| **Round 19** | Complete — 10 tasks + 5a/5b/5c, final whole-branch review returned *merge after must-fixes*, and those must-fixes were **A0**. Merge itself is **F1** below and needs your say-so. |
+| **In flight** | **A14** — the three `[DwarfMapperConstructor]` divergences. |
+| **Next** | **A12** (`DWARF088` Warning→Error, the two one-liners A6 and A8 measured-and-parked, and a new verdict for *"the generator emitted code that does not compile"*), then merge the mutation branch, **B15**, the rest of B/C, and the final whole-branch review. |
+| **Blocked on a human** | **D-e** (~80 diagnostics predate `CHANGELOG.md`, never announced; `Scan9` guards only *new* ids) and **F1** (the merge). |
 
-**Live counts, read from the code rather than from a report** (I had been repeating 23 / 162 from Task 5c's
-report; the source says otherwise — see the ledger's controller-error entry):
-**6 divergence findings · 12 declared cells · 289 unjudged-but-counted cells across four ratchets** (A9b lowered `NotCompilable` 98 → 96).
+**Live ceilings, read from the code:** findings **6** · declared cells **12** · `NotCompilable` **10** ·
+`NoSuchSite` **116** · `StructurallyExcused` **12** · `UnhonouredButLoud` **14** · `Unaskable` **44**.
+From **23 findings / 162 cells** when round 20 began.
 
-**Layer 0 is complete** (C2, B2, B1, B9 — the instrument repairs). Measurements from here are trustworthy in
-a way they demonstrably were not before: B2 alone found **70** cells that had been reading the right answer
-for the wrong reason, and the B1/B9 sweep found a **seventh** vacuous mechanism nobody had flagged.
+**Layers 0 and 1 are complete.** Seven new diagnostics (`DWARF086`–`DWARF093`), eleven structural
+unifications, and three product defects found that no test or sample reached: a shipped stack overflow
+(`[AfterMap]` recursing into `Update`), duplicate `[FlattenGraph]` emitting uncompilable code, and `[MapTo]`
+on a `struct` never having compiled at all.
 
-### Why A10 runs late — the one ordering fact worth knowing
+### Two facts worth knowing before reading anything else here
 
-Every DWARF **Error** suppresses emission, so a newly-refused cell reports `CS8795` and stays
-`NotCompilable` rather than becoming `Refused`. Task A1 proved this empirically: its fix moved a cell from
-one `NotCompilable` sub-population to another and **no ceiling moved at all.** A10 reclassifies that whole
-population once, so running it before the refusal tasks means measuring the same ceilings twice.
+**Eight round-19 entries had false filed evidence**, each falsified by the task sent to fix it — D2, D8, D10,
+D12, D13, D14, D15, D17. Four or more trace to *a fixture too thin to pose the question the entry claimed to
+answer*. Round 19 found 23 cells worth investigating, not 23 defects.
 
-Standing ruling from the same finding: **no task may lower a ceiling it did not re-measure in the same
-commit.** Predicted movement has proven unreliable.
+**Nine defects this round were "a guard exists on a sibling path and the new code did not inherit it."** Two
+shipped generator crashes. The last one (A13) found the notion **three times inline in one file**, and its own
+new `TypeFacts.cs` doc comment had warned, in that same commit, that *a predicate correct only for the inputs
+that reach it today* is the next version of the defect.
 
 ---
 
