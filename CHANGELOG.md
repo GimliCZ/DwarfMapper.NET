@@ -54,7 +54,14 @@ so a version with no section here ships with no notes.
   constructor-projection path emitted `new LeafDto(x, y) { X = …, Y = … }` — assigning both members twice —
   because its leftover filter matched parameter to member under the configured comparer alone while the
   top-level one also matched case-insensitively. That filter is now one predicate with two call sites. No new
-  diagnostic id. Found by the surface matrix as `A11-F2`; its projection cell closes. (round 20, A14)
+  diagnostic id. **One knock-on, measured both ways rather than predicted, and a Map/Project divergence
+  closing rather than a new one opening:** a `struct` destination with an explicit non-parameterless
+  constructor used to project as `new Dst { X = …, Y = … }`, because the local decision saw the struct's
+  *implicit* parameterless constructor and preferred member-init. `ConstructorSelector` deliberately skips
+  that constructor for a struct that declares an explicit one — it is a zero-init no-op — so the projection
+  now calls the explicit constructor, which is what `.Map` over the same pair has always done. No test in
+  the repository covered that shape, so the suite passing meant *uncovered*, not unchanged; it is pinned
+  now. Found by the surface matrix as `A11-F2`; its projection cell closes. (round 20, A14)
 
 - **`[MapTo]` on a `struct` generated code that did not compile.** The attribute's own `AttributeUsage` admits
   `AttributeTargets.Struct` and the registry's target check admits `TypeKind.Struct`, so a value-type source is a

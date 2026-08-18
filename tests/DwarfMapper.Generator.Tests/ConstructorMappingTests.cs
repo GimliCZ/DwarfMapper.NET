@@ -758,4 +758,42 @@ public class ConstructorMappingTests
         Assert.DoesNotContain("new global::Demo.D(", generated, StringComparison.Ordinal);
         Assert.Contains("d.X = s.X", generated, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    ///     A knock-on of routing the projection through <c>ConstructorSelector</c>, pinned because it was
+    ///     measured rather than predicted and because the full suite passing meant this shape was UNCOVERED,
+    ///     not unchanged. A <c>struct</c> destination with an explicit non-parameterless constructor used to
+    ///     project as <c>new Dst { X = …, Y = … }</c>: the local decision saw the struct's IMPLICIT
+    ///     parameterless constructor and preferred member-init. The selector deliberately skips that
+    ///     constructor for a struct that declares an explicit one — it is a zero-init no-op — so the
+    ///     projection now calls the explicit constructor, which is what <c>.Map</c> over the same pair has
+    ///     always done. Measured both ways at the commit that changed it: a Map/Project divergence closing,
+    ///     not a new one opening.
+    /// </summary>
+    [Fact]
+    public void A_struct_target_with_an_explicit_ctor_projects_through_that_ctor()
+    {
+        const string src = """
+                           using System.Linq;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public struct D
+                           {
+                               public D(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; }
+                           }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial D Map(S s);
+                               public partial IQueryable<D> Project(IQueryable<S> q);
+                           }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.Contains("new global::Demo.D(__s.X, __s.Y)", generated, StringComparison.Ordinal);
+        // And the create map over the same pair still constructs it too — the two agree, which is the point.
+        Assert.Contains("new global::Demo.D(", generated, StringComparison.Ordinal);
+    }
 }
