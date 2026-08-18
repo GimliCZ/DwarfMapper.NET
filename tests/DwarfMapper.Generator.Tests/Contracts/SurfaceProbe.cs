@@ -346,8 +346,17 @@ internal static class SurfaceProbe
     ///         "At least one occurrence", not "every occurrence": one broken emission usually also lights up
     ///         the caller's own source (the ambiguity cascade a duplicate generated method produces is
     ///         reported at both), and requiring purity there would let the generator's defect hide behind its
-    ///         own consequences. The opposite direction is safe because the ids are already filtered to the
-    ///         ones the CASE introduced — a baseline that was broken anyway contributes nothing here.
+    ///         own consequences.
+    ///     </para>
+    ///     <para>
+    ///         The match is by ID, not by diagnostic identity, and that is weaker than it looks in exactly one
+    ///         contrived shape: a baseline whose GENERATED code already carries some id, plus a case that
+    ///         introduces the same id in the CALLER's source, would be attributed to the generator. It needs a
+    ///         baseline that is already broken in generated code — which no fixture in this matrix has, since
+    ///         a baseline that does not compile is caught by the <see cref="SurfaceEffect.UnhonouredButLoud" />
+    ///         count long before it gets here — so it is stated rather than guarded. Guarding it means
+    ///         subtracting per-occurrence with locations rather than per-id, which is a bigger change than the
+    ///         hazard warrants today.
     ///     </para>
     ///     <para>
     ///         The location test itself is <see cref="GeneratorTestHarness.IsInGeneratedCode" />, which

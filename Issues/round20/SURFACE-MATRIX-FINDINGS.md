@@ -608,10 +608,19 @@ fire. A caller who used the wrong overload gets a binding that does nothing and 
 > cells: the co-located host is extracted by the same `MapperExtractor.Extract`, so the class-site check
 > reaches it for free.
 >
-> A **Warning**, unlike its registry mirror `DWARFR04`. Measured, not stylistic: every blocking DwarfMapper
-> error suppresses the whole class's emission, so an Error here would have moved these cells into the
-> `CS8795` / `NotCompilable` population — the G4/R4 ordering defect — instead of out of the divergence store.
-> The refusal would have been correct and invisible.
+> A **Warning when this closed, and an `Error` at HEAD** — the severity was a staging post, and the note that
+> stood here said so without saying which state was current. Measured, not stylistic: while the G4/R4
+> ordering defect stood, every blocking DwarfMapper error suppressed the whole class's emission and
+> `SurfaceProbe` read the resulting `CS8795` as `NotCompilable`, so an Error here would have moved these
+> cells into the population nothing judges instead of out of the divergence store — correct and invisible.
+>
+> **Both halves are settled.** R4 was fixed (A10), so a `CS8795` behind a blocking DWARF error reads
+> `Refused`; and with the ratchet argument dead, `DWARF088` was escalated to an **Error** (A12) to match its
+> registry mirror `DWARFR04`, on the product grounds the cascade argument never supplied — `DWARF011` and
+> `DWARF087` pay the identical cascade and are Errors, and what this id refuses is silent data loss.
+> Re-measured across the escalation, all 47 of its cells still read `Refused`. This finding's own five class-
+> site cells at the mapper endpoints read `Refused (DWARF088 (behind CS8795))`, and its `CoLocatedHost` cell
+> reads `Refused (DWARF088)` plainly — that endpoint declares no partial mapping method to strand.
 
 *Method site → all five mapper endpoints; Class site → those five plus CoLocatedHost; single and ×2 forms.*
 The no-target form is the REGISTRY form: the annotated member is the thing ignored. On a method or a class it
@@ -1382,9 +1391,12 @@ of the member-level forms.
 > Silent → Refused with the generated text unchanged. The rejected `AutoMatchMembers = false` route was not
 > retried and did not need to be.
 >
-> The measured verdict is `Refused (DWARF088 (Warning))` rather than `Refused (DWARF088)` because the id is a
-> Warning — see D5's note for why an Error would have hidden the refusal under `CS8795` instead of closing the
-> cells.
+> The measured verdict **was** `Refused (DWARF088 (Warning))` rather than `Refused (DWARF088)`, because the
+> id was a Warning at the time — see D5's note for why an Error would *then* have hidden the refusal under
+> `CS8795` instead of closing the cells. Both halves of that are history: R4 was fixed (A10) and the id was
+> escalated to an **Error** (A12). Re-measured at HEAD, all five of this finding's cells read
+> `Refused (DWARF088 (behind CS8795))` — still refused, still closed; only the rendering changed, and it
+> changed because the probe now names the compiler error it re-read.
 
 *Method site, `ctor(1)` → all five mapper endpoints.*
 
