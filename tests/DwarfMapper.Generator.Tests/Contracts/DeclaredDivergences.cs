@@ -77,8 +77,10 @@ internal sealed record Divergence(
 ///         bug the generator never committed. A cell whose endpoint has no such declaration site is counted by
 ///         <c>The_cells_with_no_declaration_site_are_counted_by_cause</c>. And generated code that does not
 ///         COMPILE is not a silent divergence at all — it is a louder defect wearing the wrong label, counted
-///         by <c>The_cells_the_compiler_rejects_are_counted</c>, which prints the CS ids for exactly that
-///         reason.
+///         by <c>The_cells_whose_generated_code_does_not_compile_are_counted</c>, which prints the CS ids for
+///         exactly that reason. (That count used to be
+///         <c>The_cells_the_compiler_rejects_are_counted</c>, which conflated it with the compiler rejecting
+///         the CALLER's source; the two are now separate verdicts and separate ceilings.)
 ///     </para>
 /// </summary>
 internal static class DeclaredDivergences

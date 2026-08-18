@@ -61,7 +61,14 @@ public sealed class SurfaceParityTests
 
         // No cell to judge: the endpoint has no such site, or AttributeUsage forbids it and the compiler
         // agrees. Both are the declaration telling the truth.
-        if (effect is SurfaceEffect.NoSuchSite or SurfaceEffect.NotCompilable) return;
+        //
+        // EmittedInvalidCode is the third, and it is here for the opposite reason: the declaration is fine
+        // and the GENERATOR broke the build, so the element's own behaviour is unobservable. Excused on both
+        // branches like the other two, and counted separately by
+        // The_cells_whose_generated_code_does_not_compile_are_counted — a cell judged by nothing must be
+        // judged by nothing under a label that says which of the three it is.
+        if (effect is SurfaceEffect.NoSuchSite or SurfaceEffect.NotCompilable
+            or SurfaceEffect.EmittedInvalidCode) return;
 
         // No question asked, so no answer to judge. Excused HERE rather than failed, because a cell the
         // instrument could not pose is not a divergence and recording it as one would ratify a bug the
@@ -230,12 +237,97 @@ public sealed class SurfaceParityTests
     ///         <c>NotCompilable</c> means "the declaration told the truth and there is nothing here to
     ///         judge"; there the compiler was rejecting the GENERATOR'S OUTPUT, not the case's placement. R4
     ///         separated "the compiler rejected the placement" from "the generator refused loudly"; that was
-    ///         a third thing — "the generator emitted broken code" — and it still wants a verdict of its own
-    ///         with its own counted population, because the next such defect will land here mislabelled too.
-    ///         That is instrument work for a task of its own, not something to smuggle into a doc comment.
+    ///         a third thing — "the generator emitted broken code" — and it wanted a verdict of its own with
+    ///         its own counted population, because the next such defect would land here mislabelled too.
+    ///     </para>
+    ///     <para>
+    ///         <b>It has one now</b> — <see cref="SurfaceEffect.EmittedInvalidCode" />, keyed on WHERE the
+    ///         compiler error was reported rather than on which id it carries. Landing it EMPTIED this
+    ///         population: <b>10 → 0</b>. All ten residuals turned out to be errors reported against
+    ///         <c>.g.cs</c> files, so the two shapes described above are not "the declaration telling the
+    ///         truth" at all. See
+    ///         <see cref="The_cells_whose_generated_code_does_not_compile_are_counted" /> for what they are
+    ///         and what each needs.
+    ///     </para>
+    ///     <para>
+    ///         Zero is not slack. The population this constant names — the compiler rejecting the CALLER's
+    ///         own source — is empty by construction today: the case space is derived from
+    ///         <c>AttributeUsage.ValidOn</c>, and <c>EndpointSources.BuildAt</c> returns null where a site
+    ///         does not exist, so an illegal placement is never built in the first place. A cell arriving
+    ///         here is therefore a genuinely new shape and should have to be looked at.
     ///     </para>
     /// </summary>
-    private const int NotCompilableCellCeiling = 10;
+    private const int NotCompilableCellCeiling = 0;
+
+    /// <summary>
+    ///     The ceiling on cells where the GENERATOR emitted C# that does not compile. Shrink-only, and the
+    ///     one population in this file that should end at zero and stay there.
+    ///     <para>
+    ///         Measured at <b>10</b> when the verdict was created, which was not the expected reading. Both
+    ///         historical instances (<c>N4</c>'s <c>CS1912</c>, <c>A11-F1</c>'s <c>CS0037</c>) were already
+    ///         fixed, so the population was expected to be EMPTY and the verdict's whole value was to be that
+    ///         the next such defect fails on arrival. Instead the ten cells that had been sitting in
+    ///         <see cref="NotCompilableCellCeiling" />'s population under the label "the declaration is
+    ///         telling the truth" moved here, because every one of their compiler errors is reported against
+    ///         a <c>.g.cs</c> file.
+    ///     </para>
+    ///     <para>
+    ///         <b>Eight are the shape already filed as B27</b>: <c>[GenerateMap&lt;Src, Dst&gt;]</c> on a
+    ///         class that also declares a <c>partial Dst Map(Src)</c> over the same pair — and the ×2 case,
+    ///         which is that collision twice. The generator emits its own <c>Map</c> beside the one it is
+    ///         implementing and the consumer gets <c>CS0111</c> plus a <c>CS0121</c> cascade, with no
+    ///         DwarfMapper diagnostic about a collision the generator created. B27 says exactly that, and
+    ///         names <c>DWARF060</c> and <c>DWARF057</c> as the ids either side of the gap.
+    ///     </para>
+    ///     <para>
+    ///         <b>Two are <c>[DwarfMapper(ReferenceHandling = Preserve)]</c> at <c>SpanMap</c> and
+    ///         <c>AsyncStream</c></b> — <c>CS7036</c> in the emitted mapper, because <c>Preserve</c> adds a
+    ///         reference-tracker parameter that the element-wise emission does not pass. The note this
+    ///         replaces called that "the hand-written partial declaration fits no generated overload", which
+    ///         would have been <c>CS8795</c> in the caller's file; the error is in the GENERATED file, so it
+    ///         is the emission that is wrong, not the template.
+    ///     </para>
+    ///     <para>
+    ///         Neither shape is A12's to fix — one is a new diagnostic id with the five-file sync, the other
+    ///         an emission defect at two endpoints — so the ceiling records what is measurably there rather
+    ///         than pretending otherwise. What it buys immediately is that an eleventh cannot appear quietly.
+    ///     </para>
+    /// </summary>
+    private const int EmittedInvalidCodeCellCeiling = 10;
+
+    /// <summary>
+    ///     The cells where the generator emitted code the C# compiler rejects, counted, with the ids that
+    ///     were reported against its own output.
+    ///     <para>
+    ///         This is the population that must not exist. A refusal tells the caller what to change; invalid
+    ///         C# in a file they never wrote tells them nothing and cannot be worked around. It is judged by
+    ///         nothing for the same reason <see cref="SurfaceEffect.NotCompilable" /> is — the element's own
+    ///         behaviour is unobservable once the build is broken — which is exactly why it has to be counted
+    ///         rather than merely returned from.
+    ///     </para>
+    ///     <para>
+    ///         The verdict is keyed on WHERE the error was reported, not on which id it carries, and that is
+    ///         load-bearing: an id allowlist would have to be extended by whoever hit the new id, who is by
+    ///         definition the person who has not noticed yet. <c>N4</c> was <c>CS1912</c> and <c>A11-F1</c>
+    ///         was <c>CS0037</c>; neither was foreseeable from the other.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void The_cells_whose_generated_code_does_not_compile_are_counted()
+    {
+        var broken = AllCells()
+            .Where(x => x.Effect is SurfaceEffect.EmittedInvalidCode)
+            .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint} — {x.Detail}")
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        AssertRatchet(broken, EmittedInvalidCodeCellCeiling,
+            "cells carry a compiler error against code the GENERATOR emitted",
+            "There is one way to close one of these and it is not a bookkeeping move: make the generator "
+            + "emit valid C#, or refuse the shape with a diagnostic before it emits anything. A cell here is "
+            + "strictly worse than a refusal — the consumer gets a broken build in a file they never wrote, "
+            + "and no statement of what to change.");
+    }
 
     /// <summary>The ceiling on cells that pass BOTH claim branches. Shrink-only, like the others.</summary>
     private const int UnhonouredButLoudCellCeiling = 14;

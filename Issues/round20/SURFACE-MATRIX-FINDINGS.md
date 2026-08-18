@@ -377,10 +377,16 @@ duplicate directive, resolved both to the same destination member, and produced 
 every finding below and strictly worse: a caller who writes it cannot build at all, and the diagnostic they
 get names generated code they did not write.
 
-It is not unpinned. `SurfaceParityTests.The_cells_the_compiler_rejects_are_counted` holds the `NotCompilable`
-population at 107 and **prints the CS id of every cell**, precisely so this one stays separable from the 96
-`CS8795` cells that are the G4/R4 mislabel and the 8 `CS0111` / 2 `CS7036` cells that are honest placement
-errors. The fix is a duplicate check in the `[FlattenGraph]` resolver, refusing with a DWARF diagnostic that
+It is not unpinned. `SurfaceParityTests.The_cells_the_compiler_rejects_are_counted` held the `NotCompilable`
+population at 107 and **printed the CS id of every cell**, precisely so this one stayed separable from the 96
+`CS8795` cells that are the G4/R4 mislabel and the 8 `CS0111` / 2 `CS7036` cells that were then read as honest
+placement errors.
+
+> **Two corrections, both from later measurement.** R4 was fixed (A10), so the 96 `CS8795` cells read
+> `Refused`. And the 8 `CS0111` / 2 `CS7036` cells were **not** placement errors: A12 measured their
+> locations and every one is reported against a `.g.cs` file, so they are this same shape — the generator
+> emitting invalid C# — and they now read `EmittedInvalidCode`, counted by
+> `The_cells_whose_generated_code_does_not_compile_are_counted`. `NotCompilable` is empty. The fix is a duplicate check in the `[FlattenGraph]` resolver, refusing with a DWARF diagnostic that
 names the repeated destination — after which the cell becomes `Refused`, the `NotCompilable` ceiling drops to
 106, and nothing here needs to change.
 
@@ -1428,7 +1434,7 @@ convenience extension the cell would flip Silent → Honoured and the entry woul
 
 | | Cells | Counted by |
 | --- | ---: | --- |
-| ~~**N4** — generated code that does not compile~~ **FIXED** (`DWARF087`) | 0 | `The_cells_the_compiler_rejects_are_counted` (prints CS ids) — the `CS1912` line is gone |
+| ~~**N4** — generated code that does not compile~~ **FIXED** (`DWARF087`) | 0 | `The_cells_whose_generated_code_does_not_compile_are_counted` (prints the ids reported against the generator's own output) — the `CS1912` line is gone. That verdict did not exist when N4 was found; it does now (A12), and it inherited 10 cells nobody had read as this shape |
 | **G4/R4** — `NotCompilable` swallowing `Refused` (CS8795) | 97 | the same fact; the ordering defect is still open. **96 → 97**: N4's cell joined this population rather than leaving `NotCompilable`, because a refused mapper emits nothing and its partial method is unimplemented. Total still 107, so no ceiling moved |
 | **G5** — `[MapTo]`@`Struct`, `[DwarfMapperConstructor]`@`Constructor`, no fixture declares either | 21 | `The_cells_with_no_declaration_site_are_counted_by_cause` |
 | ~~**G6** — the `Field` site measured against the `Property` slot~~ **CLOSED** | 0 (was 70) | `Property_and_Field_sites_are_not_measured_as_the_same_source`. No verdict changed and no ratchet moved: the 70 cells were reading the right answer for the wrong reason |

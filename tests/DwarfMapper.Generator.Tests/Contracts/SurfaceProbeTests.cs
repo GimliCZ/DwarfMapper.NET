@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
 
 namespace DwarfMapper.Generator.Tests.Contracts;
 
@@ -351,32 +353,114 @@ public sealed class SurfaceProbeTests
         new DiagnosticDescriptor(id, id, id, "Dwarf", severity, isEnabledByDefault: true), Location.None);
 
     /// <summary>
-    ///     THE DISCRIMINATION, direction two: a real placement rejection stays
-    ///     <see cref="SurfaceEffect.NotCompilable" />, which is the honest verdict for "the C# compiler
-    ///     rejected this, and the declaration was telling the truth".
+    ///     THE DISCRIMINATION, direction two: a compiler error against the GENERATOR'S OWN OUTPUT reads
+    ///     <see cref="SurfaceEffect.EmittedInvalidCode" />, not <see cref="SurfaceEffect.NotCompilable" />
+    ///     and not <see cref="SurfaceEffect.Refused" />.
     ///     <para>
-    ///         Two <c>[GenerateMap&lt;Src, Dst&gt;]</c> attributes ask for the same generated method twice —
-    ///         <c>CS0111</c>, and the <c>CS0121</c> ambiguity that follows it. Neither is an absent-emission
-    ///         id, so the rule declines to re-read them as a refusal however much the generator also says.
+    ///         Two <c>[GenerateMap&lt;Src, Dst&gt;]</c> attributes over a class that also declares
+    ///         <c>partial Dst Map(Src)</c> make the generator emit that method again — <c>CS0111</c> in
+    ///         <c>Demo.M.g.cs</c>, plus the <c>CS0121</c> ambiguity that follows. The site is perfectly legal
+    ///         per <c>AttributeUsage</c>, so this is exactly the case a rule keyed on "is the site legal"
+    ///         would get wrong, and it is also the case that shows why the verdict cannot be keyed on the CS
+    ///         id: <c>CS0111</c> against the caller's own duplicate member would be a placement rejection.
+    ///         Where the error was reported is the whole discrimination.
     ///     </para>
     ///     <para>
-    ///         Deliberately NOT the illegal-site shape that
-    ///         <see cref="A_class_only_attribute_on_a_method_is_NotCompilable" /> pins: this site is
-    ///         perfectly legal per <c>AttributeUsage</c> and the compiler rejects the source anyway, which
-    ///         is the case a rule keyed on "is the site legal" would get wrong. Both tests are kept because
-    ///         they fail on different mistakes.
+    ///         This test read <c>NotCompilable</c> until the verdict existed, and its own doc comment called
+    ///         that "the honest verdict for the C# compiler rejected this, and the declaration was telling
+    ///         the truth". The declaration was telling the truth; the GENERATOR was not. The collision is
+    ///         filed as <b>B27</b>.
     ///     </para>
     /// </summary>
     [Fact]
-    public void A_duplicate_declaration_stays_NotCompilable_though_the_site_is_legal()
+    public void A_compiler_error_against_generated_code_is_EmittedInvalidCode()
     {
         var c = Case("GenerateMap", "×2", AttributeTargets.Class);
 
         var (effect, detail) = SurfaceProbe.Classify(c, Endpoint.CreateMap);
 
-        Assert.Equal(SurfaceEffect.NotCompilable, effect);
+        Assert.Equal(SurfaceEffect.EmittedInvalidCode, effect);
         Assert.Contains("CS0111", detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("CS8795", detail, StringComparison.Ordinal);
+        Assert.Contains("in generated code", detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The other direction end-to-end, and the reason it is not the duplicate-declaration case: a
+    ///     <c>CS8795</c> behind a blocking DWARF error is reported against the CALLER'S partial declaration,
+    ///     so it must keep reading <see cref="SurfaceEffect.Refused" /> now that a location test runs ahead
+    ///     of A10's rule. Measured across the whole matrix when the verdict landed: 137 of 137 such
+    ///     <c>CS8795</c> occurrences are in user source, none in a <c>.g.cs</c> file — but a measurement is
+    ///     not a guard, and an emission change that started reporting it elsewhere would silently move 361
+    ///     refusals into the population nothing judges.
+    /// </summary>
+    [Fact]
+    public void A_refusal_behind_CS8795_is_not_read_as_emitted_invalid_code()
+    {
+        var c = Case("AutoNest", "ctor(1)", AttributeTargets.Method);
+
+        var (effect, detail) = SurfaceProbe.Classify(c, Endpoint.CreateMap);
+
+        Assert.Equal(SurfaceEffect.Refused, effect);
+        Assert.DoesNotContain("in generated code", detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The location rule on the pure predicate, both directions. Kept testable independently of any cell
+    ///     because the population it guards is one nobody wants to have: both historical instances are
+    ///     fixed, so on a healthy day this rule must still be provably right with nothing to point at.
+    /// </summary>
+    [Fact]
+    public void EmittedCodeErrorIds_flags_an_error_reported_against_a_generated_file()
+    {
+        var errors = new List<Diagnostic> { Cs("CS1912", "Demo.M.g.cs") };
+
+        Assert.Equal(["CS1912"], SurfaceProbe.EmittedCodeErrorIds(errors, ["CS1912"]));
+    }
+
+    /// <summary>The negative control: the same id reported against the caller's own file is not this.</summary>
+    [Fact]
+    public void EmittedCodeErrorIds_ignores_an_error_reported_against_the_callers_own_source()
+    {
+        var errors = new List<Diagnostic> { Cs("CS8795", "Test.cs") };
+
+        Assert.Empty(SurfaceProbe.EmittedCodeErrorIds(errors, ["CS8795"]));
+    }
+
+    /// <summary>
+    ///     An id the case did NOT introduce is not flagged even when it sits in generated code: a baseline
+    ///     that was already broken is not this case's doing, and the whole probe is built on measuring only
+    ///     what changed.
+    /// </summary>
+    [Fact]
+    public void EmittedCodeErrorIds_ignores_a_generated_code_error_the_case_did_not_introduce()
+    {
+        var errors = new List<Diagnostic> { Cs("CS0246", "Demo.M.g.cs") };
+
+        Assert.Empty(SurfaceProbe.EmittedCodeErrorIds(errors, ["CS8795"]));
+    }
+
+    /// <summary>
+    ///     ONE occurrence in generated code is enough, even when the same id also lands in the caller's own
+    ///     file. A broken emission usually lights up both — the ambiguity cascade a duplicate generated
+    ///     method produces is reported at every call site — and requiring purity would let the generator's
+    ///     defect hide behind its own consequences.
+    /// </summary>
+    [Fact]
+    public void EmittedCodeErrorIds_flags_an_id_that_lands_in_both_files()
+    {
+        var errors = new List<Diagnostic> { Cs("CS0121", "Test.cs"), Cs("CS0121", "Demo.M.g.cs") };
+
+        Assert.Equal(["CS0121"], SurfaceProbe.EmittedCodeErrorIds(errors, ["CS0121"]));
+    }
+
+    /// <summary>A CS diagnostic at a location in a named file, for the pure-predicate tests above.</summary>
+    private static Diagnostic Cs(string id, string filePath)
+    {
+        var tree = CSharpSyntaxTree.ParseText("class X { }", path: filePath);
+        return Diagnostic.Create(
+            new DiagnosticDescriptor(id, id, id, "Compiler", DiagnosticSeverity.Error,
+                isEnabledByDefault: true),
+            Location.Create(tree, new TextSpan(0, 1)));
     }
 
     /// <summary>

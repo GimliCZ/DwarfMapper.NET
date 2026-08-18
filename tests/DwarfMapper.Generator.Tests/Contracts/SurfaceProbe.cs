@@ -44,6 +44,29 @@ internal enum SurfaceEffect
     /// </summary>
     NotCompilable,
 
+    /// <summary>
+    ///     The placement was legal and the GENERATOR emitted C# that does not compile — a compiler error
+    ///     reported against a <c>.g.cs</c> file the consumer never wrote and cannot fix.
+    ///     <para>
+    ///         The exact inverse of <see cref="NotCompilable" />, which is why it needed a verdict of its own
+    ///         rather than a note. There the declaration is at fault and the matrix has nothing to judge;
+    ///         here the declaration is fine and the generator is at fault, which is worse than any refusal —
+    ///         a refusal at least tells the caller what to change. Two real defects landed under the wrong
+    ///         label before this existed: <b>N4</b> (two <c>[FlattenGraph]</c> directives filling one
+    ///         destination collection emitted a duplicate member initialization, <c>CS1912</c>, now refused
+    ///         as <c>DWARF087</c>) and <b>A11-F1</b> (<c>[MapTo]</c> on a struct emitted
+    ///         <c>if (source is null) throw …</c> against a type that cannot be null, <c>CS0037</c>, fixed in
+    ///         A13). Both were found by reading a <c>NotCompilable</c> list that said there was nothing to
+    ///         see.
+    ///     </para>
+    ///     <para>
+    ///         Judged by nothing, like <see cref="NotCompilable" /> — the element's own behaviour is
+    ///         unobservable once the build is broken — and counted for exactly that reason, against its own
+    ///         shrink-only ceiling.
+    ///     </para>
+    /// </summary>
+    EmittedInvalidCode,
+
     /// <summary>The endpoint has no such declaration site, so there is no cell here to judge.</summary>
     NoSuchSite,
 
@@ -119,8 +142,12 @@ internal static class SurfaceProbe
         //
         // Collected here but NOT decided on here: the verdict needs the generator's own diagnostics, which are
         // read below. See "THE DISCRIMINATION".
-        var withCompilerErrorCounts = GeneratorTestHarness.RunAndGetCompilationErrors(source)
+        // The diagnostic OBJECTS are kept, not just the counts, because the id alone cannot answer the
+        // question below: the same CS id means opposite things depending on which file it is reported in.
+        var withCompilerErrors = GeneratorTestHarness.RunAndGetCompilationErrors(source)
             .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("CS", StringComparison.Ordinal))
+            .ToList();
+        var withCompilerErrorCounts = withCompilerErrors
             .GroupBy(d => d.Id, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         var newCompilerErrorIds = NewOccurrences(withCompilerErrorCounts, baseCompilerErrorCounts);
@@ -169,6 +196,18 @@ internal static class SurfaceProbe
         // produce a red cell — it produces a matrix that is confidently wrong.
         if (newCompilerErrorIds.Count > 0)
         {
+            // THE THIRD THING, asked FIRST, because it is the only one of the three that can be decided
+            // without looking at anything else: WHERE was the error reported? A compiler error inside a
+            // .g.cs file is not the compiler rejecting the caller's placement and it is not the generator
+            // refusing — it is the generator handing the consumer code that does not compile, in a file
+            // they never wrote. Both of the discriminations below are about a CS error in the USER's source,
+            // so neither is disturbed by asking this first; measured, every CS8795 the refusal rule reads is
+            // reported against the user's own partial declaration (137 of 137 across the whole matrix).
+            var emitted = EmittedCodeErrorIds(withCompilerErrors, newCompilerErrorIds);
+            if (emitted.Count > 0)
+                return (SurfaceEffect.EmittedInvalidCode,
+                    string.Join(",", emitted) + " in generated code");
+
             if (!IsGeneratorRefusal(newCompilerErrorIds, addedDiagnostics))
                 return (SurfaceEffect.NotCompilable, string.Join(",", newCompilerErrorIds));
 
@@ -287,6 +326,49 @@ internal static class SurfaceProbe
         return addedDiagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)
                && newCompilerErrorIds.Count > 0
                && newCompilerErrorIds.All(id => AbsentEmissionErrorIds.Contains(id, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    ///     Of the CS ids this case introduced, those with at least one occurrence reported against code the
+    ///     GENERATOR wrote — in ordinal id order, empty if none. Non-empty means
+    ///     <see cref="SurfaceEffect.EmittedInvalidCode" />.
+    ///     <para>
+    ///         A pure function over the diagnostics, separated from <see cref="Classify" /> for the reason
+    ///         <see cref="IsGeneratorRefusal" /> and <see cref="NewOccurrences" /> are: the population it
+    ///         guards is one nobody wants to have, so it must stay testable when that population is empty.
+    ///         Both historical instances (<c>CS1912</c> from a duplicate <c>[FlattenGraph]</c> destination,
+    ///         <c>CS0037</c> from <c>[MapTo]</c> on a struct) are fixed, and the next one will arrive in some
+    ///         id nobody has thought of — so the rule is deliberately about the LOCATION and not about a list
+    ///         of ids. An allowlist of "ids that mean the generator broke" would have had to be extended by
+    ///         whoever hit the new one, which is precisely the person who has not noticed yet.
+    ///     </para>
+    ///     <para>
+    ///         "At least one occurrence", not "every occurrence": one broken emission usually also lights up
+    ///         the caller's own source (the ambiguity cascade a duplicate generated method produces is
+    ///         reported at both), and requiring purity there would let the generator's defect hide behind its
+    ///         own consequences. The opposite direction is safe because the ids are already filtered to the
+    ///         ones the CASE introduced — a baseline that was broken anyway contributes nothing here.
+    ///     </para>
+    ///     <para>
+    ///         The location test itself is <see cref="GeneratorTestHarness.IsInGeneratedCode" />, which
+    ///         existed for <c>GeneratedCodeWarnings</c> before this verdict did. It is CALLED, not copied:
+    ///         two statements of "what counts as generated" is how the warning gate and this verdict would
+    ///         come to disagree.
+    ///     </para>
+    /// </summary>
+    internal static IReadOnlyList<string> EmittedCodeErrorIds(
+        IReadOnlyList<Diagnostic> compilerErrors, IReadOnlyList<string> newCompilerErrorIds)
+    {
+        ArgumentNullException.ThrowIfNull(compilerErrors);
+        ArgumentNullException.ThrowIfNull(newCompilerErrorIds);
+
+        return compilerErrors
+            .Where(GeneratorTestHarness.IsInGeneratedCode)
+            .Select(d => d.Id)
+            .Where(id => newCompilerErrorIds.Contains(id, StringComparer.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>

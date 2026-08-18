@@ -194,8 +194,33 @@ internal static class GeneratorTestHarness
         return outputCompilation.GetDiagnostics()
             .Where(d => d.Severity >= DiagnosticSeverity.Warning)
             .Where(d => d.Id.StartsWith("CS", StringComparison.Ordinal))
-            .Where(d => d.Location.SourceTree?.FilePath.EndsWith(".g.cs", StringComparison.Ordinal) == true)
+            .Where(IsInGeneratedCode)
             .ToImmutableArray();
+    }
+
+    /// <summary>
+    ///     Whether a compiler diagnostic is reported against code THIS GENERATOR WROTE, rather than against
+    ///     the caller's own source.
+    ///     <para>
+    ///         The distinction is the difference between two opposite defects, so it is stated once and
+    ///         shared rather than re-spelled per caller. A diagnostic in the user's source says the caller
+    ///         wrote something the compiler rejects; a diagnostic in a <c>.g.cs</c> file says the generator
+    ///         handed the consumer code that does not compile, in a file they never wrote and cannot fix.
+    ///         <see cref="GeneratedCodeWarnings" /> has used this test since it was written;
+    ///         <c>SurfaceProbe.Classify</c> is the second caller, and a second copy of the test is exactly
+    ///         how the two would come to disagree about what "generated" means.
+    ///     </para>
+    ///     <para>
+    ///         Keyed on the <c>.g.cs</c> suffix because that is what every hint name this package emits ends
+    ///         in, and the hand-written trees the harness builds carry no path at all. A location with no
+    ///         source tree (a compilation-level diagnostic) is NOT generated code: it belongs to no file, and
+    ///         attributing it to the generator would be a guess.
+    ///     </para>
+    /// </summary>
+    public static bool IsInGeneratedCode(Diagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
+        return diagnostic.Location.SourceTree?.FilePath.EndsWith(".g.cs", StringComparison.Ordinal) == true;
     }
 
     /// <summary>
