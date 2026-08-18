@@ -539,3 +539,214 @@ never committed.
   RESUME = ONE EDIT: lower NotCompilableCellCeiling 96 -> 10 at SurfaceParityTests.cs:202, then the two pin
   tests (CS8795-with-blocking-DWARF must read Refused; a real placement rejection must stay NotCompilable) and
   the R4 doc rewrite. All named in Issues/ledgers/A10-wip-notes.md, committed.
+A10: complete (eb4f64f wip, a96b42d final). NotCompilableCellCeiling 96 -> 10; all seven re-measured in the
+same commit, none raised. Whole solution builds 0/0 with all four sample projects linked.
+  EIGHTH RATCHET REFUSED BY DESIGN, NOT BY EXEMPTION: the first pin test called RunAndGetCompilationErrors
+  directly and would have pushed DirectCompileErrorCallBaseline 53 -> 54. Instead Classify now names the
+  compiler error in its own detail string ("DWARF005 (behind CS8795)", on exactly the 86 rows), so the test
+  asserts the same fact from the probe's output. Baseline stays 53 and the printout got better. That is the
+  right instinct: a ratchet that resists a raise should be answered by improving the design, not by raising it.
+  THE 86 SATISFY THEIR CLAIMS - MEASURED, not inferred: the parity theory's body was replayed over every cell
+  and all 86 read PASS-claimed-branch.
+  FIRST COMPLETE CENSUS OF THE MATRIX: 535 pass-claimed / 104 pass-unclaimed / 147 skipped-unjudged /
+  44 skipped-no-question / 24 would-fail-claimed. Sums to 854 cells. The 24 are exactly the 12 declared
+  divergences plus the 12 structurally-excused option cells - i.e. every would-fail cell is accounted for by a
+  record, none is a surprise.
+  ZERO-DIVERGENCES CLAIM, stated falsifiably: the branch returns in both arms so its codomain is
+  {Refused, NotCompilable}; Silent - which a divergence requires - is unreachable from it; and all 96 cells
+  were already CLAIMED, so the under-reach direction is empty by construction. My briefed expectation of a
+  fresh crop was WRONG. A10 surfaces no defects; its value is that 86 cells stop being exempt from the
+  instrument. Ninth time this round that measurement beat an expectation I wrote into a brief.
+A10: complete (aa8262c..a96b42d, review Approved). Rule verified EXACTLY right: IsGeneratorRefusal requires an
+added Error whose ids are non-empty AND ALL in {CS8795}; a Warning cannot satisfy it (pinned by truth table);
+DWARF078 is filtered BEFORE the list reaches the predicate, not smuggled back; and no CS error can
+self-justify because RunAll returns generator diagnostics only.
+  ZERO-DIVERGENCES ARGUMENT HOLDS, all three conjuncts, and conjunct 3 is OVER-DETERMINED by the census
+  identity: 535 pass-claimed = 160 Honoured + 361 Refused + 14 UnhonouredButLoud exactly, so every judged
+  acting cell is claimed. My briefed expectation was wrong and the argument survived an attempt to falsify it.
+  Census reconciles completely: 535+104+147+44+24 = 854 cells; 147 = 137 NoSuchSite + 10 NotCompilable;
+  854 cells + 11 facts = 865, matching the leg exactly. The 24 would-fail cells are pinned by TWO separately
+  ratcheted populations (StructurallyExcused 12, DivergentCell 12), and an unaccounted one would Assert.Fail.
+  Ratchet avoidance judged LEGITIMATE: baseline still 53, no new harness call, detail feeds only the NoSuchSite
+  grouping and print strings, AssertRatchet compares counts. Reviewer noted the NotCompilable detail widened
+  too (first-id -> joined), also neutral, so "exactly the 86 rows" undersells the footprint.
+A10 minors -> B15 batch: (o) SurfaceProbe.cs:133 - the "DWARF078 precedes the predicate" invariant is UNTESTED;
+a refactor could migrate the filter below the predicate and nothing goes red. Move the exclusion inside
+IsGeneratorRefusal plus one truth-table row. (p) the ledger references A10-wip-notes.md; the committed file is
+A10-notes.md.
+A11: dispatched (BASE a96b42d). Entering ceilings: findings 6, declared cells 12, NotCompilable 10,
+NoSuchSite 137, StructurallyExcused 12, UnhonouredButLoud 14, Unaskable 44.
+A11: implemented (f16fb0a), MATRIX DELIBERATELY RED on 4 SurfaceParityTests assertions. All 21 G5 cells became
+measurable; the no-fixture-declares-one cause is GONE from the breakdown entirely. NoSuchSite 137 -> 116, now
+wholly structural (68 no-mapping-method + 48 registry-has-no-mapper-class, unchanged to the cell).
+  A11-F1 - A REAL PRODUCT DEFECT, REPORTED NOT FIXED, covering 14 of the 21 cells: MapToGenerator.Emit
+  (367/382) writes `if (source is null) throw ...` into EVERY generated extension method regardless of whether
+  the source is a VALUE TYPE. So [MapTo] on a struct - legal per its own AttributeUsage, claiming all seven
+  endpoints - emits CS0037 and does not compile at ANY endpoint. No sample or test in the repo applies [MapTo]
+  to a struct, which is why nothing ever noticed. This is A11's whole payoff: making the cells measurable
+  exposed that a documented, legal placement has never worked.
+  3 new divergences, all [DwarfMapperConstructor] on a Constructor: Silent at UpdateInto, Projection and
+  Registry; Honoured at CreateMap, SpanMap, AsyncStream, CoLocatedHost. Collected, not ratified - no AppliesTo
+  narrowed, no entry added.
+  NotCompilable MEASURES 24 against a constant HELD AT 10. The implementer refused to raise it because that
+  would bury a live product defect in the matrix's unjudged population. That is precisely what the
+  no-raise rule exists for, and it is the first time it has fired against a defect rather than against slack.
+  One src/ edit disclosed: DwarfMapperConstructorAttribute's [DwarfSurface] ProbeKey removed - the old fixture
+  ("internal-member") has no constructor on its destination and a DWARF001 baseline, so all seven cells could
+  only ever read UnhonouredButLoud, which would have pushed that ceiling 14 -> 21. Measurement metadata on an
+  internal attribute; no generator source touched.
+A11: fix round 1/5 (3 addressed, 0 open; commits f16fb0a..e2f3b51). Reviewer confirmed a COLD READER of
+SurfaceParityTests.cs now learns all four facts: population 24, constant HELD not stale, why (shrink-only rule
+vs a live defect), and that the NotCompilable label is knowingly wrong for those 14 cells. Diff verified
+docs/comments/BOM only - no constant, assertion or predicate changed.
+A11: complete (a96b42d..e2f3b51, review clean after 1 fix round). All 21 G5 cells measurable; NoSuchSite
+137 -> 116 and now wholly structural. Matrix RED on four assertions BY DESIGN.
+Ruling: A11-F1 becomes its own task A13 rather than folding into A12. Reason: it is a generator fix and must
+not land in the commit that re-measured the instrument - the same separation A6 and A8 observed when they
+built, measured and reverted their projection one-liners. Cost if wrong: one extra task boundary.
+Ruling: the three [DwarfMapperConstructor] divergences (Silent at Projection, UpdateInto, Registry; Honoured
+at the other four) become task A14, not part of A13. Reason: A13 is a bounded generator fix with a measurable
+end state; bundling three divergences whose right answer may be fix, refuse OR structural would make one
+commit unreviewable. The reviewer already traced two of the three to source - Registry because Emit hardcodes
+`return new T { ... }` and ConstructorSelector has no caller under Registry/, Projection because
+usesCtorProjection is false when a parameterless ctor and writable members both exist - so A14 starts with
+evidence rather than a filed claim. Cost if wrong: the matrix stays red on three assertions one task longer.
+Ruling: add a THIRD VERDICT to A12's scope - "the generator emitted code that does not compile". Reason: N4
+(CS1912, duplicate [FlattenGraph]) and A11-F1 (CS0037, [MapTo] on a struct) are both that shape, and both
+currently land in NotCompilable, which MEANS "the compiler rejected the placement, so AttributeUsage was
+telling the truth". That is exactly backwards for an output defect: the placement was legal and the GENERATOR
+produced invalid code. The reviewer named this gap independently. Cost if wrong: instrument work with a new
+counted population, deferrable if it proves larger than it looks.
+A13: dispatched (BASE e2f3b51).
+A13: done (7591f25). A11-F1 FIXED - all 14 [MapTo]-on-a-struct cells now read Honoured at all seven endpoints.
+NotCompilable measured 10 against constant 10, already correct and NOT edited; all seven ceilings equal their
+constants. Conformance sample F49 added (75 -> 78 assertions) so the shape a reader can run now exercises it.
+  Predicate is NEW - TypeFacts.CanBeNull(t) => !t.IsValueType || t is Nullable<T> - but the notion already
+  existed INLINE as src.IsReferenceType in MapToGenerator.SynthNested, FIFTY LINES BELOW THE DEFECT. Eighth
+  instance of the guard-did-not-propagate pattern, and the first where the sibling guard was in the same file.
+  Three registry call sites now read the one predicate.
+  DELIBERATELY NOT UNIFIED, and this is the right restraint: the two equivalent idioms on the mapper path
+  (Members.cs:732, Projection.cs:474) drive SkipIfSourceNull/DWARF028 and answer DIFFERENTLY for an
+  unconstrained T. Over-unification would have been a defect of its own; the round's hoist habit was applied
+  with judgement rather than reflexively.
+  New finding, reported not fixed: a GENERIC struct source (Box<T>) loses CS0037 but keeps CS0246, because T
+  is not in scope in the generated class - and this is PRE-EXISTING AND IDENTICAL FOR GENERIC CLASSES. Needs
+  filing as a B-item; it is a [MapTo] limitation nothing currently records.
+  Matrix now red on THREE assertions, all A14's [DwarfMapperConstructor] divergences.
+A13 fix round 1/5: commit ff06458. FOURTH emission site fixed (TryCollection's collection helper), the line
+OMITTED entirely for a value-type source rather than wrapped. New test uses a CLASS source and fails pre-fix
+with the literal CS0037 on reverting the gate. Corrected count: FOUR emission sites in MapToGenerator
+(Emit x2, SynthNested, TryCollection) via THREE CanBeNull invocations - the Emit pair shares one through
+Model.SourceCanBeNull. The notion existed THREE times inline in that one file, not twice; report table and
+CHANGELOG both corrected.
+  THE LESSON, sharper than the fix: TypeFacts.cs's own doc comment - written in the SAME COMMIT - warns that
+  "a predicate correct only for the inputs that reach it today" is the next version of this defect, and that
+  is exactly what happened. Ninth instance of guard-did-not-propagate, and the first where the failure was not
+  "no sibling was found" but "THE SEARCH FOR SIBLINGS STOPPED AT THE FIRST TWO". The remedy for that is a
+  sweep, not a fold.
+  New finding reported not fixed: ImmutableArray<T> STILL fails here for a SEPARATE pre-existing cause -
+  CountKind.Count is chosen for any ICollection<T>/IReadOnlyCollection<T> implementer without checking that
+  Count is a public INSTANCE member, so s.Count gives CS1061, or CS1503 via a LINQ method group where implicit
+  usings are on. Needs filing as a B-item; confirm at re-review.
+  Red: exactly the three [DwarfMapperConstructor] assertions. Ceilings none moved, all seven equal constants.
+A14: implemented (4850b8b Projection FIXED, d394df4 Registry REFUSED via DWARFR11, de94475 UpdateInto
+STRUCTURAL, a66457c struct-target pin). Three endpoints, three different answers, each argued from what the
+directive MEANS. THE SURFACE MATRIX IS GREEN.
+  Projection was WORSE THAN TRACED - four defects: the Select call's return value DISCARDED; a second
+  independent copy of the widest-arity pick for nested targets; an annotated PARAMETERLESS ctor projected as
+  the WIDEST one; the nested path assigning its own arguments TWICE via a case-sensitivity bug. All four
+  necessary to close the cell. ConstructorSelector decision now made ONCE, two call sites, no third copy.
+  UpdateInto structural call ENDORSED by the reviewer (would have ruled the same): the reason is the SIGNATURE
+  SHAPE (caller-supplied destination), not what the generator reads; refusal is genuinely wrong because the
+  attribute is type-scoped and would fire on a correct create+update pairing. Both halves pinned - including
+  the one that cuts against it (a NESTED destination IS constructed at update-into and the annotated ctor IS
+  called there). Implementer settled it without consulting me despite the brief asking; DISCLOSED it, and
+  reversal is one attribute + two tests. Correct behaviour on both counts.
+  MY BRIEF WAS WRONG about the sanctioned ceiling raise: StructurallyExcusedCellCeiling counts OPTION-BAG cells
+  only (its lookup parses a Name=value axis, returns null for ctor(0)). So a directive's structural narrowing
+  enters NO counted population. Reviewer confirmed: [DwarfSurfaceSite] narrowings are validated for FORM by
+  ValidateSiteClaims but COUNTED BY NOTHING - the set of dropped endpoints can grow unratcheted forever. Filed
+  as B32. This is a real accounting gap and belongs in the final review.
+A14 fix round 1/5 (commit 1f0f3f7): CRITICAL - DWARFR11's message format string had an unescaped { ... };
+string.Format threw, Roslyn caught it, and the diagnostic rendered with literal {0} three times. NO TEST
+CAUGHT IT because all four asserted only d.Id. THIS IS B22'S THESIS COMING TRUE ON ITS FIRST OPPORTUNITY - no
+DWARFR## message or remedy wording is pinned anywhere. Fixed by escaping, plus TWO gates both proven
+non-vacuous by reverting the escape: a per-id message assertion, and a FAMILY-WIDE
+Every_registry_message_format_actually_formats - B22's thesis made executable for the one failure mode
+needing no per-id prose. Filed B29 (projection widest-arity fallback unfiltered), B30 (SynthNested has no
+DWARFR09 equivalent -> CS1729), B31 (unusable annotated ctor silently ignored), B32 (site narrowings uncounted).
+A14: fix round 1/5 (2 addressed + 2 minors, 0 open; commits a66457c..1f0f3f7). Family gate verified REAL: it
+reflects every public static DiagnosticDescriptor on RegistryDiagnostics (count-guarded >= 6 so a future
+DWARFR12 is auto-covered), calls string.Format with sample args, and fails on FormatException OR on a render
+that swallows the arg - a genuine format attempt, not a brace scan. Reviewer's own grep found no other stray
+braces in the family. B29-B32 verified filed with mechanisms; B32 states both WHAT is uncounted and WHY.
+A14: complete (8f9226f..1f0f3f7, review clean after 1 fix round). THE SURFACE MATRIX IS GREEN AND EVERY
+PRODUCT DIVERGENCE IN ROUND 20 IS SETTLED. Six declared divergences remain BY DESIGN: NullCollections@Projection
+(a ruled design decision, documented), MaxDepth@Span/Async (a tighter bound ignored, default 64 still applies),
+D6/D7's projection cells and D9's projection cell (all three parked on A10 - now landed - and owed to A12), and
+D17 (reclassified structural pending the sanctioned StructurallyExcused raise, also A12).
+Ruling: A12's scope is now FIVE items, all instrument-or-follow-through, no new product investigation:
+  (1) DWARF088 Warning -> Error (ruled twice; the cascade-avoidance reason is dead now that A10 landed);
+  (2) the [MapNullSkip]@Projection one-liner A6 measured and reverted;
+  (3) the [MapValue]@Projection threading A8 measured and reverted;
+  (4) D17's reclassification to StructurallyInapplicable with the ONE sanctioned StructurallyExcused raise 12->13;
+  (5) a new probe verdict for "the generator emitted code that does not compile" - N4 (CS1912) and A11-F1
+      (CS0037) both landed in NotCompilable, which MEANS the placement was illegal, when the placement was legal
+      and the GENERATOR was wrong.
+  Reason for bundling: (2)-(4) were each explicitly parked ON A10 and A10 has landed; (1) is a one-line
+  severity flip whose only prior blocker was the same cascade; (5) is instrument work of the same kind. Each
+  gets its OWN commit so the review surface stays per-item. Cost if wrong: one large review instead of five
+  small ones.
+A12: dispatched (BASE 1f0f3f7).
+A12: complete (2645010 item1, a7b1799 item2, ed75f67 item3, f38fbd1 item4, 874d83d item5). Matrix GREEN after
+each commit, 866/866 at HEAD. 7654 pass / 0 fail across 8 projects. Build 0/0 with samples.
+  Item 1: DWARF088 -> Error. NO population moved (all 47 cells stay Refused, 45 as "behind CS8795"). The real
+  work was the SWEEP - DWARF088-as-Warning was load-bearing prose in SIX other places (five sibling diagnostic
+  citations, docs, CHANGELOG, two test doc comments), each of which would have shipped false.
+  Item 2: [MapNullSkip]@Projection - 3 cells Silent -> Refused. D6, D7 DELETED. And DWARF090's "silent at
+  projection" tail was FALSE AGAIN (it had been corrected once in A6) and is flipped with a both-direction pin.
+  Item 3: [MapValue]@Projection - NOT a one-liner as A8's note suggested; rebuilt. All 4 cells close. Create-map
+  guard HOISTED (TryValidateMapValueTarget, one statement, two callers) plus a sibling IgnoreObsoleteMembers
+  gap swept - the guard-propagation lesson applied proactively. D9 DELETED.
+  Item 4: D17 -> StructurallyInapplicable on the A5 measurement. StructurallyExcused 12 -> 13, THE ONE
+  SANCTIONED RAISE, measurement in the commit. Exactly one cell moved, no verdict changed.
+  Item 5: NEW VERDICT SurfaceEffect.EmittedInvalidCode, keyed on WHERE the error was reported (hoisted
+  GeneratorTestHarness.IsInGeneratedCode), asked BEFORE A10's rule - safe by measurement, 137/137 CS8795 are in
+  user source. Seven pins, two mutations.
+  SURFACED NOT ABSORBED: the new verdict measured TEN, not the expected zero. Every remaining NotCompilable
+  residual was the GENERATOR emitting invalid code into a .g.cs file: 8 are pre-filed B27 (duplicate Map
+  emitted), 2 newly filed as B33 (Preserve @ SpanMap/AsyncStream, CS7036 in emitted code - the old note's
+  "template fits no overload" was WRONG). Ratcheted at the measured 10. NotCompilable 10 -> 0, still reachable
+  and pinned. Item 4 also required widening Every_exemption_names_a_real_option_and_endpoint, which asserted
+  the option matrix's endpoint domain over a store that now has two consumers.
+FINAL CEILINGS: findings 2, declared cells 4, NotCompilable 0, EmittedInvalidCode 10, NoSuchSite 116,
+StructurallyExcused 13, UnhonouredButLoud 14, Unaskable 44. From 23 findings / 162 cells at round-20 start.
+The two remaining findings are NullCollections@Projection (a ruled design decision) and MaxDepth@Span/Async
+(a tighter bound ignored; default 64 still applies) - both maintainer-acknowledged, neither a silent defect.
+MUTATION STREAM MERGED (d2d54cf, --no-ff, zero conflicts, three files). VERIFIED BEFORE MERGING that the
+maintainer's "retain no exclusion" ruling held in the committed config: no test-case-filter, no test-projects
+(both gone), additional-timeout 120000, break 61, comment states MEASURED, calls test-projects inert, and says
+66 must not be restored. CI leg is nightly cron + workflow_dispatch, dormant until it lands on master.
+  THE FULL-SUITE RUN MEASURED 12m25s ON A QUIET MACHINE, not 44 minutes. The original 44 was taken under
+  concurrent builds; contention was a LARGE confound, as I had noted in RESEARCH.md and then let harden into
+  a fact. That confound, not test count, was most of the gap between the scoped 2:50 and the full-suite figure.
+  A phantom `M` appeared on one NegativeCases file after the merge - bytes IDENTICAL to HEAD by cmp, no BOM,
+  a stale-stat artefact under an eol=lf attribute. Cleared with checkout, not committed. Noting it because a
+  bare `git add -A` here would have committed a no-op and made a reviewer chase it.
+A12: fix round 1/5 (1 addressed, 0 open; commit a2f7d9d). Both false present-tense lines FIXED NOT DELETED -
+each now records what was true then, what changed it, and what is true now, with verdicts RE-MEASURED.
+  Grep widened REPO-WIDE over *.md + *.cs for DWARF088 within three lines of "Warning": NO THIRD INSTANCE.
+  Ledger mentions (11) deliberately left - every one is a dated ruling in a chronological log, none a
+  present-tense claim about HEAD. That is the correct distinction: a decision log records what was decided
+  WHEN; a findings doc asserts what IS. Only the second kind must track HEAD.
+  Minor taken: EmittedCodeErrorIds's doc no longer claims more than an id-keyed match guarantees.
+A12: complete (1f0f3f7..a2f7d9d, review clean after 1 fix round).
+
+=== THE A-TRACK IS CLOSED. Every round-20 generator task (A0-A14) is complete and reviewed. ===
+Final ceilings: findings 2, declared cells 4, NotCompilable 0, EmittedInvalidCode 10, NoSuchSite 116,
+StructurallyExcused 13, UnhonouredButLoud 14, Unaskable 44. From 23 findings / 162 cells at round-20 start.
+The two remaining findings - MaxDepth@Span/Async and NullCollections@Projection - are both maintainer-
+acknowledged design decisions with their reasoning recorded; neither is a silent defect.
+Seven new diagnostics DWARF086-093 + DWARFR10, DWARFR11. Eleven structural unifications. Three product
+defects no test or sample reached: [AfterMap] shipping infinite recursion, duplicate [FlattenGraph] emitting
+CS1912, [MapTo] on a struct never compiling. Nine round-19 entries with false filed evidence.
