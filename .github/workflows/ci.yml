@@ -5,6 +5,18 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
+  # Both added for the `runtime-mutation` job, which is full-suite mutation testing and far too slow to gate a
+  # push — see its own comment. It is the ONLY job guarded to these two events; every other job keeps running
+  # exactly when it did before. The side effect is that the nightly cron also re-runs the push/PR jobs, which
+  # is harmless (they are the same jobs on the same commit) and gives a daily green/red signal on master.
+  #
+  # NOTE: GitHub runs `schedule` ONLY on the repository's DEFAULT BRANCH. The nightly mutation leg therefore
+  # stays dormant until this lands on master — on a feature branch it can only be started by hand via
+  # workflow_dispatch. That is not a misconfiguration, but it does mean "it is in CI" and "it has actually
+  # run" are different claims until the merge happens.
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -141,6 +153,82 @@ jobs:
         with:
           dotnet-version: '10.0.101'
       - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix"
+
+  # ── Mutation testing for the SHIPPED RUNTIME assembly ─────────────────────────────────────────────────
+  # This leg previously ran in NO job at all — it existed only as a config someone had to remember to invoke
+  # via `housekeeping.ps1 -Mutation`. A score nobody measures is free to regress silently in either
+  # direction, which makes it decoration rather than a gate; closing that gap is the point of this job.
+  #
+  # SCHEDULED, NOT PER-PUSH, AND DELIBERATELY NOT FILTERED. The leg runs the WHOLE test suite against every
+  # mutant, which costs tens of minutes — too slow to gate a push, so it runs nightly plus on demand.
+  # Do NOT "fix" the runtime by narrowing the test set. Stryker does support a `test-case-filter`, and
+  # scoping this leg to the 23 classes that currently kill something does cut it to ~3 minutes — that was
+  # measured. It was REJECTED on purpose: a filter is a hand-maintained LIST, and lists drift. The first
+  # time someone adds a test that becomes the sole killer of a mutant, the filter silently drops that kill,
+  # the SCORE GOES UP, and coverage goes down with nothing in the repo noticing. A coverage tool is the
+  # worst possible place to install that failure mode. The real defect behind the old slowness was
+  # load-induced timeouts being credited as detections, and that is fixed in the config by
+  # `additional-timeout`, not by running fewer tests. See Issues/ledgers/E3-E1-report.md.
+  #
+  # Only the runtime config runs here. The generator and doc-tooling legs remain housekeeping-only.
+  runtime-mutation:
+    runs-on: ubuntu-latest
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Sized from the local measurement rather than guessed: the full leg is 12 min 25 s on 12 cores (and that
+    # on a busy machine). Stryker's default concurrency is cores/2, so a ~4-core hosted runner drops from 6
+    # parallel mutant sessions to ~2 and each pass is slower too. ~10x the measured figure covers that with
+    # room to spare, and this job should fail on a real score regression — never because the box was slower
+    # than the day the number was recorded.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      # Pinned, like CycloneDX in the sbom job, and for the same reason the SDK is pinned in build-test: the
+      # score is only comparable across runs if the thing computing it does not move. Stryker's test
+      # DISCOVERY and its TIMEOUT arithmetic both feed the score directly, and both are version behaviour —
+      # an unpinned upgrade could move the number with no repo change to point at.
+      # The tool targets net8.0, but its runtimeconfig sets rollForwardOnNoCandidateFx=2 (Major), so it runs
+      # on the pinned 10.0.101 runtime with no .NET 8 installed. Verified locally on a machine carrying only
+      # runtimes 7/9/10.
+      - run: dotnet tool install --global dotnet-stryker --version 4.16.0
+      # Exits non-zero when the score falls below thresholds.break. See the config comment for why the earlier
+      # 66 was INFLATED and must not be "restored": it counted load-induced timeouts on mutants that cannot
+      # hang — plus one provably equivalent mutant — as detections. If this job reports Timeouts on those
+      # mutants, the runner is slower than the timeout cushion assumes: raise `additional-timeout` in the
+      # config. Do NOT add a test filter to make it fit.
+      - run: dotnet stryker --config-file stryker-config.runtime.json
+      # The exit code is necessary but NOT sufficient: Stryker exits 0 when its `mutate` globs match nothing.
+      # Every mutant comes back "Removed by mutate filter", no score is calculated, and a leg that tested
+      # NOTHING passes. That is not hypothetical — it is what this very config did on 2026-08-16, because the
+      # globs must be PROJECT-relative ('**/Name.cs'), not repo-root-relative. This mirrors
+      # Assert-MutantsWereTested in scripts/housekeeping.ps1; the two must stay in step.
+      - name: Assert the run was not vacuous
+        run: |
+          set -euo pipefail
+          report=$(find StrykerOutput -name mutation-report.json -print | sort | tail -n 1)
+          if [ -z "$report" ]; then
+            echo "::error::runtime mutation: no mutation-report.json was written — the leg produced no report at all"
+            exit 1
+          fi
+          # Counted over the raw text rather than parsed: the report embeds every mutated file's full source,
+          # so it runs to megabytes and parsing buys nothing this check needs.
+          scoreable=$(grep -o '"status"[[:space:]]*:[[:space:]]*"\(Killed\|Survived\|Timeout\|NoCoverage\)"' "$report" | wc -l)
+          echo "runtime: $scoreable scoreable mutants"
+          if [ "$scoreable" -eq 0 ]; then
+            echo "::error::runtime mutation: 0 scoreable mutants — the run was VACUOUS and Stryker still exited 0." \
+                 "Check that the config's 'mutate' globs are PROJECT-relative ('**/Name.cs')."
+            exit 1
+          fi
+      # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
+      # only thing that distinguishes a real regression from a re-classification.
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-report-runtime
+          path: StrykerOutput/**/reports/mutation-report.*
 
   aot-trim-gate:
     strategy:
