@@ -191,15 +191,22 @@ public sealed class SurfaceParityTests
     /// <summary>
     ///     The ceiling on cells the C# compiler rejects outright. Shrink-only, like the others.
     ///     <para>
-    ///         99 → 98 when <c>D8</c> closed and 98 → <b>96</b> when <c>D14</c> did, both for the same reason
+    ///         99 → 98 when <c>D8</c> closed and 98 → 96 when <c>D14</c> did, both for the same reason
     ///         and neither because of a generator change: a fixture that could not pose its question had been
     ///         counting cells here. <c>keyed-collection-elements</c> declared a DIFFERENT element type on each
     ///         side, which the v1 key-based upsert refuses as <c>DWARF074</c> — an Error, hence <c>CS8795</c>
     ///         — so the one endpoint <c>[MapCollectionKey]</c> exists for was in this population rather than
     ///         reading <c>Honoured</c>.
     ///     </para>
+    ///     <para>
+    ///         96 → <b>10</b> when R4 was fixed — the largest single movement any of these ratchets has seen,
+    ///         and not a generator change either: <see cref="SurfaceProbe.Classify" /> stopped calling a
+    ///         refusal a placement rejection. See the remarks on
+    ///         <see cref="The_cells_the_compiler_rejects_are_counted" /> for what the 86 cells that left
+    ///         were, and what the 10 that remain are.
+    ///     </para>
     /// </summary>
-    private const int NotCompilableCellCeiling = 96;
+    private const int NotCompilableCellCeiling = 10;
 
     /// <summary>The ceiling on cells that pass BOTH claim branches. Shrink-only, like the others.</summary>
     private const int UnhonouredButLoudCellCeiling = 14;
@@ -207,46 +214,56 @@ public sealed class SurfaceParityTests
     /// <summary>
     ///     The cells the C# compiler rejects, counted rather than merely returned from.
     ///     <para>
-    ///         <see cref="SurfaceEffect.NotCompilable" /> passes without deciding anything, and most of the
-    ///         time that is honest — <c>AttributeUsage</c> forbids the site and the compiler agrees, which is
-    ///         the declaration telling the truth. But something else wears the same label: a blocking
-    ///         generator error leaves the partial mapping method unimplemented (<c>CS8795</c>), which is the
-    ///         known ordering defect G4/R4.
+    ///         <see cref="SurfaceEffect.NotCompilable" /> passes without deciding anything, so every cell
+    ///         here is a cell the matrix does not judge. What remains is the honest version of that:
+    ///         <c>AttributeUsage</c> forbids the site, or the case duplicates a declaration, or its sampled
+    ///         arguments fit no constructor — the compiler rejects the caller's own source and there is
+    ///         genuinely nothing for the generator to be judged on.
     ///     </para>
     ///     <para>
-    ///         A third thing used to wear it, and this is why the ids are printed rather than only counted.
-    ///         Two <c>[FlattenGraph]</c> directives filling one destination collection made the generator
-    ///         emit a duplicate member initialization — <c>CS1912</c>, located in <c>Demo.M.g.cs</c> — which
-    ///         is a categorically worse failure than any of the above: not a refusal the consumer can act on
-    ///         but invalid C# handed to them in a file they never wrote. It was legible here only because the
-    ///         printout separated it from the CS8795 crowd it was hiding in. It is now refused as
-    ///         <c>DWARF087</c>, and this cell has joined the CS8795 population (96 → 97) rather than leaving
-    ///         it: a refused mapper emits nothing, so its partial method is unimplemented exactly like every
-    ///         other DWARF error's. The count was therefore UNCHANGED by that fix — it moved a cell between
-    ///         causes instead of removing one, which is the right end state (the cell is now indistinguishable
-    ///         from an ordinary refusal) and is also why no ceiling moved for it. It becomes <c>Refused</c>
-    ///         when R4 does.
+    ///         <b>R4 is fixed, and this population is what it cost.</b> Something else used to wear this
+    ///         label: a blocking generator error suppresses emission, which leaves the endpoint's partial
+    ///         mapping method unimplemented — <c>CS8795</c> — and <see cref="SurfaceProbe.Classify" />
+    ///         returned on the first new CS error before it ever read the generator's own diagnostics. So a
+    ///         cell where the generator refused loudly and correctly was recorded as "the compiler rejected
+    ///         the placement" and then SKIPPED by the bidirectional claim check. <b>86 cells</b> carried
+    ///         that verdict; the ceiling fell 96 → <b>10</b> when they stopped. They read
+    ///         <see cref="SurfaceEffect.Refused" /> now and are judged against their claim like every
+    ///         other cell.
     ///     </para>
     ///     <para>
-    ///         The ceiling stood at 107 while the paragraph above was written and is now <b>99</b>:
-    ///         <c>DWARF091</c> retired eight cells from this population outright rather than moving them within
-    ///         it. <c>[BeforeMap]</c> and <c>[AfterMap]</c> on a partial mapping method used to trip
-    ///         <c>DWARF018</c>, a blocking error, so five <c>BeforeMap</c> cells and three <c>AfterMap</c> cells
-    ///         sat here behind <c>CS8795</c>; refused as a Warning instead, they read <c>Refused</c> — which is
-    ///         what R4 will eventually do for the rest of this population.
+    ///         Two earlier notes in this history are settled by that, and both are worth keeping because
+    ///         they were written as predictions and can now be checked. Two <c>[FlattenGraph]</c> directives
+    ///         filling one destination collection made the generator emit a duplicate member initialization
+    ///         — <c>CS1912</c> in <c>Demo.M.g.cs</c>, invalid C# handed to a consumer in a file they never
+    ///         wrote, which is categorically worse than any refusal. Refused as <c>DWARF087</c> it joined
+    ///         the <c>CS8795</c> crowd instead of leaving this population, and the note said "it becomes
+    ///         <c>Refused</c> when R4 does". It did. Likewise <c>DWARF091</c> retired eight
+    ///         <c>[BeforeMap]</c>/<c>[AfterMap]</c> cells by demoting <c>DWARF018</c> to a Warning, and that
+    ///         note said this was "what R4 will eventually do for the rest of this population". It was: the
+    ///         other 86 got there without any severity being changed, because the defect was never in the
+    ///         severities — it was in the ORDER the probe asked its two questions.
     ///     </para>
     ///     <para>
-    ///         99 → <b>98</b> when <c>D8</c> was worked, and not by a generator change: the cell that left is
-    ///         <c>[MapDerivedType(typeof(…), typeof(…))]</c> at <c>CreateMap</c>, which sat here because the
-    ///         flat DTO pair declares no hierarchy and the sampled arguments therefore named a type not
-    ///         assignable to the method's source parameter — <c>DWARF035</c>, an Error, hence <c>CS8795</c>.
-    ///         Against the <c>polymorphic-hierarchy</c> fixture the same case is <c>Honoured</c>. A fixture
-    ///         that could not pose the question was counting a cell in this population for four rounds.
+    ///         The <b>10</b> that remain are two shapes, and the ids are printed with the count so they stay
+    ///         distinguishable. <c>[DwarfMapper(ReferenceHandling = Preserve)]</c> at <c>SpanMap</c> and
+    ///         <c>AsyncStream</c> is <c>CS7036</c>: <c>Preserve</c> adds a reference-tracker parameter to
+    ///         the generated signature, so the hand-written partial declaration in the endpoint template
+    ///         fits no generated overload. The other eight are duplicate <c>[GenerateMap&lt;Src, Dst&gt;]</c>
+    ///         declarations asking for the same method twice — <c>CS0111</c>, plus the <c>CS0121</c>
+    ///         ambiguity that follows it. Both are the declaration telling the truth.
+    ///     </para>
+    ///     <para>
+    ///         (The entries above record the same count arriving from the other direction, and none was a
+    ///         generator change either: 107 → 99 via <c>DWARF091</c>, then 99 → 98 with <c>D8</c> —
+    ///         <c>[MapDerivedType]</c> against a flat pair that declares no hierarchy, so the sampled
+    ///         arguments named a type not assignable to the method's source parameter, <c>DWARF035</c>
+    ///         behind <c>CS8795</c> — and 98 → 96 with <c>D14</c>. A fixture that could not pose its
+    ///         question had been counting cells here for four rounds.)
     ///     </para>
     ///     <para>
     ///         An uncounted pass is a silent absence of coverage whatever its cause, which is the thing this
-    ///         architecture exists to delete. The ids are printed with the count so the populations stay
-    ///         distinguishable while R4 is outstanding.
+    ///         architecture exists to delete. That is why this count exists and why it may only shrink.
     ///     </para>
     /// </summary>
     [Fact]
@@ -260,9 +277,11 @@ public sealed class SurfaceParityTests
 
         AssertRatchet(rejected, NotCompilableCellCeiling,
             "cells are rejected by the C# compiler and therefore judged by nothing",
-            "Close one by making the placement legal, or — where the id is CS8795 or a CS error in GENERATED "
-            + "code — by fixing the ordering defect R4 names, so a refusal reads as Refused rather than as a "
-            + "placement rule.");
+            "Close one by making the placement legal — give the case an argument list that fits, or a "
+            + "fixture whose shape the endpoint template can actually declare. A CS8795 here is NOT one of "
+            + "those: since R4 was fixed, a CS8795 accompanied by a new blocking DWARF diagnostic already "
+            + "reads Refused, so a CS8795 reaching this list means the generator declined to emit while "
+            + "saying NOTHING — a generator defect to report, not a placement rule to accept.");
     }
 
     /// <summary>

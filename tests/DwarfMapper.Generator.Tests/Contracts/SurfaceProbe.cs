@@ -169,13 +169,18 @@ internal static class SurfaceProbe
         // produce a red cell — it produces a matrix that is confidently wrong.
         if (newCompilerErrorIds.Count > 0)
         {
-            var generatorRefused = addedDiagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)
-                                   && newCompilerErrorIds.All(
-                                       id => AbsentEmissionErrorIds.Contains(id, StringComparer.Ordinal));
-            if (!generatorRefused)
+            if (!IsGeneratorRefusal(newCompilerErrorIds, addedDiagnostics))
                 return (SurfaceEffect.NotCompilable, string.Join(",", newCompilerErrorIds));
 
-            return (SurfaceEffect.Refused, string.Join(",", added));
+            // The compiler error is REPORTED, not swallowed. A refusal that reached this verdict through
+            // the discrimination is materially different from one the generator raised against source that
+            // compiles either way — the caller gets a broken build as well as a diagnostic — and a reader
+            // of the Refused population can now tell the two apart. It also makes the end-to-end pin test
+            // in SurfaceProbeTests non-vacuous without a second compile: asserting the detail names CS8795
+            // proves the cell actually travelled this branch, rather than arriving at Refused down the
+            // ordinary added-diagnostics path below.
+            return (SurfaceEffect.Refused,
+                string.Join(",", added) + " (behind " + string.Join(",", newCompilerErrorIds) + ")");
         }
 
         if (added.Count > 0) return (SurfaceEffect.Refused, string.Join(",", added));
@@ -243,6 +248,38 @@ internal static class SurfaceProbe
             return (d.Select(x => x.Id + ":" + x.Severity).Distinct(StringComparer.Ordinal).ToArray(),
                 (IReadOnlyDictionary<string, int>)compilerErrorCounts, g);
         });
+    }
+
+    /// <summary>
+    ///     Whether a case whose compilation gained CS errors is the GENERATOR refusing rather than the C#
+    ///     compiler rejecting the caller's source. Both halves of the causal story must hold:
+    ///     <paramref name="newCompilerErrorIds" /> must be entirely absent-emission ids, and
+    ///     <paramref name="addedDiagnostics" /> must contain at least one Error.
+    ///     <para>
+    ///         A pure predicate, separated from <see cref="Classify" /> for the same reason
+    ///         <see cref="NewOccurrences" /> is: two of its four input combinations cannot be constructed
+    ///         by any cell the matrix currently contains, so they are only testable directly. No real cell
+    ///         produces CS8795 without a blocking DWARF diagnostic (measured: all 86 that moved carried
+    ///         one), and none mixes CS8795 with a genuine placement error. Both remain reachable in
+    ///         principle — a second partial mapping method in an endpoint template would do it — and an
+    ///         untested branch guarding 86 cells is precisely the kind of confidently-wrong instrument this
+    ///         file exists to prevent.
+    ///     </para>
+    ///     <para>
+    ///         <paramref name="addedDiagnostics" /> must already have DWARF078 filtered out. The caller
+    ///         does it, so the cascade signpost that accompanies every blocking error can never be the sole
+    ///         evidence that one occurred.
+    ///     </para>
+    /// </summary>
+    internal static bool IsGeneratorRefusal(IReadOnlyList<string> newCompilerErrorIds,
+        IReadOnlyList<Diagnostic> addedDiagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(newCompilerErrorIds);
+        ArgumentNullException.ThrowIfNull(addedDiagnostics);
+
+        return addedDiagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)
+               && newCompilerErrorIds.Count > 0
+               && newCompilerErrorIds.All(id => AbsentEmissionErrorIds.Contains(id, StringComparer.Ordinal));
     }
 
     /// <summary>

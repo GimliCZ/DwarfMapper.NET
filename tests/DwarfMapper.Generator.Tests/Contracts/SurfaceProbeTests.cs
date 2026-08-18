@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using Microsoft.CodeAnalysis;
+
 namespace DwarfMapper.Generator.Tests.Contracts;
 
 public sealed class SurfaceProbeTests
@@ -248,6 +250,127 @@ public sealed class SurfaceProbeTests
         var result = SurfaceProbe.NewOccurrences(withCounts, baselineCounts);
 
         Assert.Empty(result);
+    }
+
+    /// <summary>
+    ///     THE DISCRIMINATION, direction one: a cell whose final compilation really does carry
+    ///     <c>CS8795</c>, and which must nonetheless read <see cref="SurfaceEffect.Refused" /> because the
+    ///     generator said why.
+    ///     <para>
+    ///         <c>[AutoNest(false)]</c> on the mapping method turns off nested-map synthesis, so the flat
+    ///         pair's nested member has no mapper and the generator refuses with <c>DWARF005</c> — an Error,
+    ///         which suppresses emission, which leaves the endpoint's partial method unimplemented. Before
+    ///         R4 was fixed this cell read <see cref="SurfaceEffect.NotCompilable" /> and was skipped by
+    ///         the bidirectional claim check along with 85 others.
+    ///     </para>
+    ///     <para>
+    ///         The <c>CS8795</c> is asserted TOO, out of the detail string, and that half is what keeps the
+    ///         test honest: <see cref="SurfaceProbe.Classify" /> names the compiler error it re-read, so a
+    ///         detail carrying <c>CS8795</c> proves the cell actually travelled the discrimination branch.
+    ///         Without it the test is vacuous in the direction that matters — if this cell ever stopped
+    ///         producing a compiler error it would reach the ordinary added-diagnostics path, still read
+    ///         <c>Refused</c>, and go on passing while the branch it exists to pin was never entered.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void A_CS8795_with_a_blocking_DWARF_diagnostic_is_Refused_not_NotCompilable()
+    {
+        var c = Case("AutoNest", "ctor(1)", AttributeTargets.Method);
+
+        var (effect, detail) = SurfaceProbe.Classify(c, Endpoint.CreateMap);
+
+        Assert.Equal(SurfaceEffect.Refused, effect);
+        Assert.Contains("DWARF005", detail, StringComparison.Ordinal);
+        Assert.Contains("CS8795", detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The rule's truth table, on the pure predicate, because two of its four rows cannot be built out
+    ///     of any cell the matrix currently contains — see the remarks on
+    ///     <see cref="SurfaceProbe.IsGeneratorRefusal" />. The two end-to-end tests above pin the wiring;
+    ///     these pin the decision.
+    /// </summary>
+    [Theory]
+    // An absent-emission id with a blocking DWARF beside it: the generator refused.
+    [InlineData(true, new[] { "CS8795" }, new[] { "DWARF005" }, new[] { true })]
+    // The same id with the generator saying nothing that blocks — emission vanished silently, which is a
+    // defect to report, not a refusal to accept.
+    [InlineData(false, new[] { "CS8795" }, new[] { "DWARF044" }, new[] { false })]
+    // A real placement error alongside the absent-emission one: the placement defect must not be hidden.
+    [InlineData(false, new[] { "CS0111", "CS8795" }, new[] { "DWARF005" }, new[] { true })]
+    // A placement error on its own, however loudly the generator also complains.
+    [InlineData(false, new[] { "CS7036" }, new[] { "DWARF005" }, new[] { true })]
+    public void IsGeneratorRefusal_holds_only_when_both_halves_of_the_causal_story_do(
+        bool expected, string[] newCompilerErrorIds, string[] dwarfIds, bool[] blocking)
+    {
+        ArgumentNullException.ThrowIfNull(dwarfIds);
+        ArgumentNullException.ThrowIfNull(blocking);
+        var added = dwarfIds
+            .Select((id, i) => Dwarf(id,
+                blocking[i] ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning))
+            .ToList();
+
+        Assert.Equal(expected, SurfaceProbe.IsGeneratorRefusal(newCompilerErrorIds, added));
+    }
+
+    /// <summary>
+    ///     No new CS error at all is not a refusal-by-suppression however loud the generator was — that
+    ///     cell reaches <see cref="SurfaceEffect.Refused" /> down the ordinary path, and the guard exists
+    ///     so the predicate cannot be read as "is this refused" by a later caller.
+    /// </summary>
+    [Fact]
+    public void IsGeneratorRefusal_is_false_when_the_case_introduced_no_compiler_error()
+    {
+        var added = new List<Diagnostic> { Dwarf("DWARF005", DiagnosticSeverity.Error) };
+
+        Assert.False(SurfaceProbe.IsGeneratorRefusal([], added));
+    }
+
+    private static Diagnostic Dwarf(string id, DiagnosticSeverity severity) => Diagnostic.Create(
+        new DiagnosticDescriptor(id, id, id, "Dwarf", severity, isEnabledByDefault: true), Location.None);
+
+    /// <summary>
+    ///     THE DISCRIMINATION, direction two: a real placement rejection stays
+    ///     <see cref="SurfaceEffect.NotCompilable" />, which is the honest verdict for "the C# compiler
+    ///     rejected this, and the declaration was telling the truth".
+    ///     <para>
+    ///         Two <c>[GenerateMap&lt;Src, Dst&gt;]</c> attributes ask for the same generated method twice —
+    ///         <c>CS0111</c>, and the <c>CS0121</c> ambiguity that follows it. Neither is an absent-emission
+    ///         id, so the rule declines to re-read them as a refusal however much the generator also says.
+    ///     </para>
+    ///     <para>
+    ///         Deliberately NOT the illegal-site shape that
+    ///         <see cref="A_class_only_attribute_on_a_method_is_NotCompilable" /> pins: this site is
+    ///         perfectly legal per <c>AttributeUsage</c> and the compiler rejects the source anyway, which
+    ///         is the case a rule keyed on "is the site legal" would get wrong. Both tests are kept because
+    ///         they fail on different mistakes.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void A_duplicate_declaration_stays_NotCompilable_though_the_site_is_legal()
+    {
+        var c = Case("GenerateMap", "×2", AttributeTargets.Class);
+
+        var (effect, detail) = SurfaceProbe.Classify(c, Endpoint.CreateMap);
+
+        Assert.Equal(SurfaceEffect.NotCompilable, effect);
+        Assert.Contains("CS0111", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("CS8795", detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     Resolves one case out of the real case space rather than hand-constructing it, so a case that is
+    ///     renamed, re-axed or dropped fails these tests loudly instead of leaving them measuring a shape
+    ///     the matrix no longer contains. <c>Single</c> for the same reason
+    ///     <c>SurfaceParityTests.Resolve</c> uses it: two matches would silently hand back whichever came
+    ///     first.
+    /// </summary>
+    private static SurfaceCase Case(string usageName, string axis, AttributeTargets site)
+    {
+        var element = SurfaceCatalog.CrossProductElements.Single(
+            e => string.Equals(e.UsageName, usageName, StringComparison.Ordinal));
+        return SurfaceCatalog.CasesFor(element).Single(
+            x => string.Equals(x.Axis, axis, StringComparison.Ordinal) && x.Site == site);
     }
 
     /// <summary>
