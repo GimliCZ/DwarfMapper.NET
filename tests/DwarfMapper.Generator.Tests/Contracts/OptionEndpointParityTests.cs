@@ -126,11 +126,24 @@ public class OptionEndpointParityTests
     public void Every_exemption_names_a_real_option_and_endpoint()
     {
         // A stale exemption silently re-permits the divergence it was written to excuse.
+        //
+        // The endpoint is held to EndpointSources.All rather than to ComparableEndpoints, and the difference
+        // is a fact about the store's consumers. This file compares CLASS-level options, so its own domain is
+        // the four endpoints that take a [DwarfMapper]-annotated class; the SURFACE matrix consults the same
+        // store through SurfaceParityTests.StructurallyInapplicableOption at all SEVEN, and the cell it needs
+        // to excuse at the registry front door is an ASSEMBLY attribute, which needs no mapper class to reach
+        // that endpoint. Asserting this file's domain over a shared store forbade a legitimate exemption the
+        // other consumer required (RegisterCollectionShapes @ Registry, task A12).
+        //
+        // Nothing is lost by widening it: this assertion never detected staleness. A structural exemption is
+        // not self-retiring — that is stated at StructurallyInapplicable itself — and its containment is
+        // SurfaceParityTests.The_cells_excused_as_structural_are_counted, a shrink-only count of the cells
+        // each row actually excuses.
         var known = OptionCatalog.Options.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var ((opt, ep), why) in DeclaredDivergences.StructurallyInapplicable)
         {
             Assert.True(known.Contains(opt), $"Exemption names unknown option '{opt}'.");
-            Assert.Contains(ep, ComparableEndpoints);
+            Assert.Contains(ep, EndpointSources.All);
             Assert.False(string.IsNullOrWhiteSpace(why), $"Exemption for {opt}/{ep} states no reason.");
         }
     }

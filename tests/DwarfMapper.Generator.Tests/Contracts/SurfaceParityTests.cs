@@ -427,8 +427,28 @@ public sealed class SurfaceParityTests
             .TryGetValue((axis[..eq], endpoint), out var why) ? why : null;
     }
 
-    /// <summary>The ceiling on cells excused as structural for one option of a bag. Shrink-only.</summary>
-    private const int StructurallyExcusedCellCeiling = 12;
+    /// <summary>
+    ///     The ceiling on cells excused as structural for one option of a bag. Shrink-only.
+    ///     <para>
+    ///         12 → <b>13</b>, and it is the only ratchet raised anywhere on this branch. It bought the
+    ///         reclassification of <c>D17</c>: <c>[assembly: DwarfMapperDefaults(RegisterCollectionShapes =
+    ///         false)]</c> at the <c>[MapTo]</c> registry front door. The reason is a MEASUREMENT, not a
+    ///         reading of the word "registry" — A5 dumped that front door's whole output with and without each
+    ///         assembly option and found an extension class and nothing else: no
+    ///         <c>[assembly: DwarfProvidesMap]</c> and no <c>DwarfMapperRegistry.Register</c> call. The option
+    ///         governs <c>AggregateEmitter.EmitAmbientRegistration</c>, which runs over
+    ///         <c>MapperClassModel</c>s only, so <c>[MapTo]</c> maps are not in the ambient registry at all
+    ///         and there are no rows here to withhold. Exactly ONE cell moved: the class-level twin at that
+    ///         endpoint is <see cref="SurfaceEffect.NoSuchSite" /> (the registry has no mapper class to
+    ///         annotate), so only the assembly-level cell was ever excusable.
+    ///     </para>
+    ///     <para>
+    ///         The raise is the price of saying "there is nothing here to configure" out loud, which is what
+    ///         this count exists to charge for. A5 declined to pay it and left the finding standing; the
+    ///         judgement was made here instead, in a commit that carries the measurement.
+    ///     </para>
+    /// </summary>
+    private const int StructurallyExcusedCellCeiling = 13;
 
     /// <summary>
     ///     Every cell excused because ONE OPTION of an option bag has no surface at that endpoint, counted.
@@ -560,8 +580,14 @@ public sealed class SurfaceParityTests
     ///         expression tree, the treatment <c>[MapProperty(Use=)]</c> already gets — and a constant simply
     ///         becomes a literal in the <c>SELECT</c>.
     ///     </para>
+    ///     <para>
+    ///         3 → <b>2</b> when <c>D17</c> was reclassified rather than fixed — the one entry on this branch
+    ///         that left by being judged structural rather than by starting to work, and the only ratchet
+    ///         raise anywhere on it. See <see cref="StructurallyExcusedCellCeiling" /> for the measurement
+    ///         that earned it.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 3;
+    private const int DivergenceFindingCeiling = 2;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -693,8 +719,15 @@ public sealed class SurfaceParityTests
     ///         <see cref="SurfaceEffect.Silent" /> fell 145 → 141 and <see cref="SurfaceEffect.Refused" />
     ///         rose 365 → 369, which is the four cells and nothing else.
     ///     </para>
+    ///     <para>
+    ///         5 → <b>4</b> with <c>D17</c>. The cell did not change VERDICT — it is
+    ///         <see cref="SurfaceEffect.Silent" /> before and after — it changed which store excuses it, from
+    ///         a recorded defect to a structural claim, and <see cref="StructurallyExcusedCellCeiling" /> rose
+    ///         by exactly the one cell this fell by. That is the trade stated as a pair of numbers rather than
+    ///         as a paragraph.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 5;
+    private const int DivergentCellCeiling = 4;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

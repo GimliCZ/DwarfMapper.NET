@@ -170,7 +170,7 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D14 | ~~`[MapCollectionKey("Items","Id")]`, and ×2~~ | **CLOSED by A9b** as `DWARF092` — all 8 cells `Refused`; its evidence was false, see the entry | — | 0 |
 | D15 | ~~`[GenerateWrapperMap(typeof(Dst))]` on the mapper class, and ×2~~ | **CLOSED by A9b** as the new `DWARF093` — all 10 cells `Refused`; its stated mechanism was wrong, see the entry | — | 0 |
 | D16 | `[AfterMap]` on the mapping method | UpdateInto (Honoured), Create/Projection/Async (blocking) | **SpanMap** | 1 |
-| D17 | `[DwarfMapper(GenerateExtensions=false)]` and `(RegisterCollectionShapes=false)`; same two on `[DwarfMapperDefaults]` | CreateMap, CoLocatedHost (Honoured) | Update, Projection, SpanMap, AsyncStream, **Registry** | 13 |
+| D17 | `[DwarfMapper(GenerateExtensions=false)]` and `(RegisterCollectionShapes=false)`; same two on `[DwarfMapperDefaults]` | CreateMap, CoLocatedHost (Honoured) | ~~Registry~~ (the other four were always structural) | 0 — RECLASSIFIED |
 | D18 | `[DwarfMapperDefaults(SkipNullSourceMembers=true)]` and `[DwarfMapperOptions(PublicExtensions=true)]` | Honoured at four and two endpoints respectively | **Registry** | 2 |
 
 Notes on the two most consequential:
@@ -1165,7 +1165,7 @@ stream and for none of a span.
 
 <a id="D17"></a>
 
-### D17 — `RegisterCollectionShapes = false` is dropped by the registry front door — 1 cell — STANDS, reason corrected
+### D17 — `RegisterCollectionShapes = false` is dropped by the registry front door — 1 cell — **RECLASSIFIED AS STRUCTURAL (A12)**
 
 > **RE-MEASURED 2026-08-17 (A5). Not closed, and the stated reason below is wrong.** A5 closed D18 and D19 —
 > which shared D17's root cause exactly, `MapToGenerator` reading no assembly-level configuration — and this
@@ -1185,9 +1185,31 @@ stream and for none of a span.
 > | **(b) Refuse it** — a diagnostic at every `[MapTo]` type in an assembly that set the option | Noise. The assembly attribute is a house style set for the assembly's `[DwarfMapper]` classes; complaining about it at an unrelated type is the A7 mistake (a diagnostic about something the caller never mentioned). |
 > | **(c) Reclassify structural** — a `StructurallyInapplicable` row saying there are no registry rows here | Honest as a statement, but it **raises `StructurallyExcusedCellCeiling` 12 → 13**, and no ratchet may be raised in this round without a deliberate decision. |
 >
-> A5 took none of the three. The row stays in `DeclaredDivergences.Reasons`, with the false justification
-> replaced by the measurement, so nothing is closed by narrowing a claim or by moving a cell somewhere
-> unjudged.
+> A5 took none of the three. The row stayed in `DeclaredDivergences.Reasons`, with the false justification
+> replaced by the measurement.
+>
+> **A12 took (c), and the reason on the row is the measurement rather than the pun.** "There is nothing here
+> to configure" is exactly what `StructurallyInapplicable` is for, and this is the same *shape* of option as
+> `GenerateExtensions` beside it — one that adds or withholds ROWS, at an endpoint that produces none. The
+> cell moves from a recorded defect to a structural claim: `StructurallyExcusedCellCeiling` **12 → 13**, the
+> only ratchet raised anywhere on this branch, `DivergenceFindingCeiling` 3 → **2** and `DivergentCellCeiling`
+> 5 → **4**. **Exactly one cell moved** — the class-level twin at that endpoint is `NoSuchSite` (the registry
+> has no mapper class to annotate), so only the assembly-level cell was ever excusable — and no cell changed
+> VERDICT: it is `Silent` before and after, which is what makes this a reclassification and not a fix.
+> Measured in the same commit: every `Classify` population unchanged (`Silent` 141, `Refused` 369,
+> `NotCompilable` 10, `Honoured` 179, `NoSuchSite` 116, `Unasked` 25, `UnhonouredButLoud` 14).
+>
+> **One guard had to be widened to allow it, and that is reported rather than absorbed.**
+> `OptionEndpointParityTests.Every_exemption_names_a_real_option_and_endpoint` asserted every exemption's
+> endpoint was one of `ComparableEndpoints` — the four that take a `[DwarfMapper]`-annotated class. That is
+> the OPTION matrix's own domain; the SURFACE matrix consults the same store at all seven endpoints, and the
+> cell being excused is an **assembly** attribute, which needs no mapper class to reach the registry. The
+> assertion is now against `EndpointSources.All`. Nothing was lost: that assertion never detected staleness —
+> a structural exemption is not self-retiring, as the store's own documentation says, and its containment is
+> the shrink-only count.
+>
+> (a) remains the arguably-right end state. If `[MapTo]` maps are ever given ambient registration, the
+> `StructurallyInapplicable` row starts describing something false and must be deleted.
 
 *`[assembly: DwarfMapperDefaults]` → Registry.*
 
@@ -1198,8 +1220,10 @@ AsyncStream is not a divergence at all — none of those four produces a registe
 cells are excused as structural (see below). The `GenerateExtensions` half of the original D17 is the same
 story.
 
-What remains is the sharp cell and the only one the original entry got right: the `[MapTo]` registry front
-door, whose entire output **is** registry rows, ignores the assembly-level instruction to withhold them.
+What remained was one cell — and the sentence the original entry got *wrong*: the `[MapTo]` registry front
+door does not emit registry rows at all. That measurement is now the reason on the `StructurallyInapplicable`
+row, and it is the whole basis of the reclassification; the pun it replaced is recorded here only so nobody
+restores it.
 
 <a id="D18"></a>
 

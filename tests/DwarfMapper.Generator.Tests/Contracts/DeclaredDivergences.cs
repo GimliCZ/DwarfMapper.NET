@@ -356,27 +356,20 @@ internal static class DeclaredDivergences
         // combination is CS0111. The message says so rather than sending a create-map caller into a
         // duplicate-member error. (That CS0111 arriving with no DWARF diagnostic of its own is filed as B27.)
 
-        ["D17"] = new(
-            "[assembly: DwarfMapperDefaults(RegisterCollectionShapes = false)] withholds the collection-shape "
-            + "rows from the AMBIENT REGISTRY. Measured silent at Registry — and the ORIGINAL reason given for "
-            + "the cell was wrong: the entry said the [MapTo] front door 'is the endpoint whose entire output "
-            + "is registry rows', which is a pun on the word registry. Re-measured for A5: that front door "
-            + "emits an extension class and NOTHING ELSE — no [assembly: DwarfProvidesMap], no "
-            + "DwarfMapperRegistry.Register call, and therefore no collection shapes for this option to "
-            + "withhold. So the cell does not close by plumbing, as D18 and D19 did: honouring it means giving "
-            + "[MapTo] maps ambient registration first, which is a feature with manifest, DWARF061 and "
-            + "DWARF063 consequences, and refusing it means complaining at every [MapTo] type in an assembly "
-            + "whose house style was set for its [DwarfMapper] classes. It stays recorded rather than "
-            + "reclassified: turning it into a StructurallyInapplicable row would RAISE that ceiling, and "
-            + "'there is nothing here to configure' is a maintainer's call, not a way past this measurement. "
-            + "(The same option's silence at UpdateInto, Projection, SpanMap and AsyncStream is NOT part of "
-            + "this finding and is not a divergence: none of those four produces a registerable delegate at "
-            + "all, which is recorded as a shape in StructurallyInapplicable.)",
-            Findings + "#D17",
-            [
-                new DivergentCell("DwarfMapperDefaults", 0, "RegisterCollectionShapes=false",
-                    AttributeTargets.Assembly, SurfaceEndpoints.Registry)
-            ])
+        // D17 was here, and it did not close by plumbing — it closed by a JUDGEMENT the entry itself said
+        // was outstanding, on evidence the entry itself carried. A5 re-measured the [MapTo] front door's whole
+        // output with and without each assembly option and found an extension class and NOTHING ELSE: no
+        // [assembly: DwarfProvidesMap], no DwarfMapperRegistry.Register call. RegisterCollectionShapes governs
+        // AggregateEmitter.EmitAmbientRegistration, which runs over MapperClassModels only, so [MapTo] maps
+        // are not in the ambient registry at all and there is nothing at this endpoint for the option to
+        // withhold. "There is nothing here to configure" is what StructurallyInapplicable is for, and that is
+        // where the cell went — with the MEASUREMENT as its reason, never the original pun on the word
+        // "registry" that the entry was already correcting.
+        //
+        // The cost is stated rather than hidden: StructurallyExcusedCellCeiling 12 -> 13, the one raise on
+        // this branch, taken deliberately because that ceiling exists to make exactly this kind of excuse a
+        // countable act. Giving [MapTo] maps ambient registration remains a possible future feature; if it is
+        // ever built, the StructurallyInapplicable row starts describing something false and must go.
 
         // D18 and D19 were here — [assembly: DwarfMapperOptions(PublicExtensions = true)] overridden by the
         // registry's own accessibility choice, and [assembly: DwarfMapperDefaults(AutoMatchMembers = false)]
@@ -519,6 +512,31 @@ internal static class DeclaredDivergences
                 "Span<T> is a ref struct and cannot be boxed through the registry's Func<object, object>",
             [("RegisterCollectionShapes", Endpoint.AsyncStream)] =
                 "an async-stream map is already a sequence map; wrapping it in another collection shape is not "
-                + "a shape any call site asks for"
+                + "a shape any call site asks for",
+
+            // The [MapTo] registry front door, and this row is a MEASUREMENT rather than a reading of the
+            // word "registry". The finding it replaces (D17) said the front door "is the endpoint whose
+            // entire output IS registry rows — so it is the one endpoint where the option is most clearly
+            // about something that exists there". A5 dumped that output, with and without each of the three
+            // assembly options, and it is an extension class and NOTHING ELSE: no [assembly: DwarfProvidesMap],
+            // no DwarfMapperRegistry.Register call, and therefore no collection-shape rows for this option to
+            // withhold. RegisterCollectionShapes governs AggregateEmitter.EmitAmbientRegistration, which runs
+            // over MapperClassModels — [DwarfMapper] classes and co-located hosts — and [MapTo] maps are not
+            // in the ambient registry at all.
+            //
+            // A5 declined to make this call and left D17 standing, because reclassifying raises the ceiling
+            // below and "there is nothing here to configure" is a maintainer's judgement rather than a way
+            // past a measurement. The judgement is made here: this is the same shape as GenerateExtensions
+            // above — an option that adds or withholds ROWS, at an endpoint that produces none — and the
+            // ceiling raise is the price of saying so out loud.
+            //
+            // What it is NOT is a claim that [MapTo] maps should be absent from the ambient registry. Giving
+            // them one is a feature with manifest, DWARF061 and DWARF063 consequences, and it is filed rather
+            // than smuggled in here. If it is ever built, this row starts describing something false and must
+            // be deleted — which is exactly why the count below exists.
+            [("RegisterCollectionShapes", Endpoint.Registry)] =
+                "the [MapTo] front door emits an extension class and nothing else — no [assembly: "
+                + "DwarfProvidesMap] and no DwarfMapperRegistry.Register call — so there are no ambient "
+                + "registration rows here for this option to add or withhold (measured, A5)"
         };
 }
