@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper;
 
@@ -205,6 +205,33 @@ public sealed class SurfaceParityTests
     ///         <see cref="The_cells_the_compiler_rejects_are_counted" /> for what the 86 cells that left
     ///         were, and what the 10 that remain are.
     ///     </para>
+    ///     <para>
+    ///         <b>The constant is 10 and the population measures 24. That is HELD, not stale.</b> A11 gave
+    ///         the <c>Struct</c> site a slot and measured <c>[MapTo]</c> there for the first time: all
+    ///         fourteen of its cells are <c>CS0037</c>, because <c>MapToGenerator</c> emits
+    ///         <c>if (source is null) throw …</c> into every generated extension method without asking
+    ///         whether the source is a value type, so <c>[MapTo]</c> on a <c>struct</c> — legal per its own
+    ///         <c>AttributeUsage</c>, claiming all seven endpoints — produces source that does not compile.
+    ///         Finding <b>A11-F1</b>; reported, deliberately not fixed in the commit that re-measured the
+    ///         instrument.
+    ///     </para>
+    ///     <para>
+    ///         Raising the constant to 24 would close a live product defect by moving it into the one
+    ///         population this matrix explicitly does not judge — the exact move the shrink-only rule exists
+    ///         to forbid, and the first time it has fired against a defect rather than against slack. So
+    ///         <see cref="The_cells_the_compiler_rejects_are_counted" /> FAILS, on purpose, until the
+    ///         generator emits no null-guard for a value-type source. Fixing that returns the count to 10
+    ///         and the assertion to green with no edit here.
+    ///     </para>
+    ///     <para>
+    ///         The label is wrong for those fourteen too, and knowingly so. <c>NotCompilable</c> means "the
+    ///         declaration told the truth and there is nothing here to judge"; here the compiler is
+    ///         rejecting the GENERATOR'S OUTPUT, not the case's placement. R4 separated "the compiler
+    ///         rejected the placement" from "the generator refused loudly"; this is a third thing — "the
+    ///         generator emitted broken code" — and it wants a verdict of its own, with its own counted
+    ///         population. That is instrument work for a task of its own, not something to smuggle into a
+    ///         doc comment.
+    ///     </para>
     /// </summary>
     private const int NotCompilableCellCeiling = 10;
 
@@ -245,13 +272,23 @@ public sealed class SurfaceParityTests
     ///         severities — it was in the ORDER the probe asked its two questions.
     ///     </para>
     ///     <para>
-    ///         The <b>10</b> that remain are two shapes, and the ids are printed with the count so they stay
-    ///         distinguishable. <c>[DwarfMapper(ReferenceHandling = Preserve)]</c> at <c>SpanMap</c> and
-    ///         <c>AsyncStream</c> is <c>CS7036</c>: <c>Preserve</c> adds a reference-tracker parameter to
-    ///         the generated signature, so the hand-written partial declaration in the endpoint template
-    ///         fits no generated overload. The other eight are duplicate <c>[GenerateMap&lt;Src, Dst&gt;]</c>
-    ///         declarations asking for the same method twice — <c>CS0111</c>, plus the <c>CS0121</c>
-    ///         ambiguity that follows it. Both are the declaration telling the truth.
+    ///         The <b>10</b> the ceiling is set at are two shapes, and the ids are printed with the count so
+    ///         they stay distinguishable. <c>[DwarfMapper(ReferenceHandling = Preserve)]</c> at
+    ///         <c>SpanMap</c> and <c>AsyncStream</c> is <c>CS7036</c>: <c>Preserve</c> adds a
+    ///         reference-tracker parameter to the generated signature, so the hand-written partial
+    ///         declaration in the endpoint template fits no generated overload. The other eight are
+    ///         duplicate <c>[GenerateMap&lt;Src, Dst&gt;]</c> declarations asking for the same method twice
+    ///         — <c>CS0111</c>, plus the <c>CS0121</c> ambiguity that follows it. Both are the declaration
+    ///         telling the truth.
+    ///     </para>
+    ///     <para>
+    ///         A THIRD shape is in the printed list and is not one of those: fourteen <c>CS0037</c> cells,
+    ///         <c>[MapTo]</c> at the <c>Struct</c> site at all seven endpoints, measured for the first time
+    ///         by A11 and rejected because the GENERATOR'S output does not compile — not because the
+    ///         declaration was wrong. That is finding <b>A11-F1</b>, the population measures <b>24</b>, and
+    ///         <see cref="NotCompilableCellCeiling" /> is deliberately left at 10 so this assertion stays
+    ///         red rather than absorbing a live defect. The reasoning is on that constant; read it before
+    ///         changing this number.
     ///     </para>
     ///     <para>
     ///         (The entries above record the same count arriving from the other direction, and none was a

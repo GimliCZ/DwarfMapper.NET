@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-only
 
 namespace DwarfMapper.Generator.Tests.Contracts;
 
@@ -66,12 +66,6 @@ public static class EndpointSources
     /// </summary>
     public const string FieldSlotMarker = "/*__FIELD_SLOT__*/";
 
-    /// <summary>
-    ///     The slot a member site splices at. The ONE place that maps a site to its marker, so
-    ///     <see cref="SiteAbsenceReason" /> and <see cref="BuildAt" /> cannot disagree about which slot a
-    ///     Field cell needs — disagreeing there is precisely how a Field cell came to be answered with the
-    ///     property slot.
-    /// </summary>
     /// <summary>
     ///     The STRUCT twin of <see cref="PropertySlotMarker" />, sitting immediately ahead of a real
     ///     <c>struct</c> declaration that is a complete mapping source for the endpoint's <c>Dst</c>.
