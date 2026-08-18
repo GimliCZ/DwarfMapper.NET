@@ -46,7 +46,7 @@ Confirmed locally on 2026-06-21 (master @ 57d92fc):
 | AOT/trim gate + coverage gate (CI) | `aot-trim-gate` matrix, generator coverage gate | ✅ strong |
 | **Incremental-generator cacheability** (`WithTrackingName` → assert `Cached`/`Unchanged` across driver runs) | **0 references** | 🔴 **GAP** |
 | **Lowest-supported-Roslyn matrix** | single pin `Microsoft.CodeAnalysis.CSharp 4.14.0` | 🟠 **GAP** |
-| **Mutation testing** (Stryker.NET) | none (home-grown coverage/"test-the-tests" instead) | 🟠 **GAP** |
+| **Mutation testing** (Stryker.NET) | adopted — nightly CI leg on the runtime assembly, `break: 61`, unfiltered | 🟢 **closed** |
 | **Property-based w/ shrinking** (FsCheck/CsCheck) | hand-rolled seeded `Fuzzer` (no shrinking → no minimal counterexample) | 🟠 **GAP** |
 
 ## Load-bearing sources (from the harvest)

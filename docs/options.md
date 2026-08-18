@@ -62,7 +62,7 @@ enum, and `DwarfMappingDepthException`.
 <!-- table: assembly-options -->
 | Option | Type | Default | What it does |
 |---|---|---|---|
-| `PublicExtensions` | `bool` | `false` | Emit the generated convenience extensions (`DwarfMapper.Extensions`) as **`public`** (cross-assembly) for pairs whose source and target types are both public — pairs involving a non-public type stay assembly-internal for safety. The opt-in for the layered "mappers in a library, consumed elsewhere" layout. |
+| `PublicExtensions` | `bool` | `false` | Emit generated convenience extensions as **`public`** (cross-assembly) for pairs whose source and target types are both public — pairs involving a non-public type stay assembly-internal for safety. **Governs BOTH extension emitters:** the aggregate facade in `DwarfMapper.Extensions` *and* the `[MapTo]` registry's per-source `__DwarfRegistry_<Source>` class. A library that ships `[MapTo]` types for another assembly to consume **must** set this, because `source.MapTo<TTarget>()` is the only way to invoke a registry map — there is no mapper instance to fall back on. The opt-in for the layered "mappers in a library, consumed elsewhere" layout. |
 <!-- endtable -->
 
 ## Per-member / per-method attributes

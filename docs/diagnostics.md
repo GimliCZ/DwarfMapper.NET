@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF088`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF093`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -66,7 +66,7 @@ mostly have a better in-place answer already — `[MapIgnore]`, `[MapValue]`, `[
 
 `DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
 
-The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR10` family — see
+The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR11` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
 
 ### Adopting incrementally (the strictness valve)
