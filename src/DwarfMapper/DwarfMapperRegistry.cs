@@ -260,21 +260,6 @@ public static class DwarfMapperRegistry
         map(source, destination);
     }
 
-    /// <summary>Test-only: clears the registry — BOTH key spaces. Not for production use.</summary>
-    /// <remarks>
-    ///     The update table was omitted here for as long as it has existed, so a "reset" registry still held
-    ///     every update map ever registered. That is the shared-static leak the registry tests otherwise work
-    ///     hard to avoid, by minting distinct key types per test rather than resetting.
-    /// </remarks>
-    internal static void ResetForTests()
-    {
-        Maps.Clear();
-        Ambiguous.Clear();
-        InterfaceMaps.Clear();
-        UpdateMaps.Clear();
-        UpdateAmbiguous.Clear();
-    }
-
     private readonly struct Key : IEquatable<Key>
     {
         public readonly Type Source;

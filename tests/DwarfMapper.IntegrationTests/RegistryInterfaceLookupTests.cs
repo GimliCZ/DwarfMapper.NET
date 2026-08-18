@@ -2,9 +2,9 @@
 
 namespace DwarfMapper.IntegrationTests;
 
-// One distinct source/destination pair per test, at namespace scope: the registry is process-wide and
-// ResetForTests is internal to the runtime assembly, so isolation comes from distinct keys. Namespace scope
-// rather than nested because this project treats CA1034 as an error.
+// One distinct source/destination pair per test, at namespace scope: the registry is process-wide and has
+// no reset hook, so isolation comes from distinct keys. Namespace scope rather than nested because this
+// project treats CA1034 as an error.
 public sealed class IfSrcA { public int X { get; set; } }
 public sealed class IfDstA { public int X { get; set; } }
 
@@ -44,8 +44,8 @@ public sealed class IfDstG { public int X { get; set; } }
 ///         <c>Issues/Rount18/</c>.
 ///     </para>
 ///     <para>
-///         Every test uses its own source/destination types. The registry is process-wide and
-///         <c>ResetForTests</c> is internal, so isolation comes from distinct keys — the same convention
+///         Every test uses its own source/destination types. The registry is process-wide and offers no
+///         reset hook, so isolation comes from distinct keys — the same convention
 ///         <c>AmbientRegistryTests</c> follows.
 ///     </para>
 /// </remarks>

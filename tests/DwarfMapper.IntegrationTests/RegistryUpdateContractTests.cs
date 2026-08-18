@@ -20,7 +20,7 @@ namespace DwarfMapper.IntegrationTests;
 ///         Pinned to the <c>registry-torture</c> collection: <see cref="DwarfMapperRegistry" /> is a process-wide
 ///         static that lives for the whole run, so these must not race the torture tests through it. Isolation
 ///         within the collection comes from key types unique to each test, the same convention the torture
-///         suite uses — <c>ResetForTests</c> is internal to the runtime assembly and unreachable from here.
+///         suite uses — the runtime assembly exposes no reset hook, deliberately.
 ///     </para>
 /// </summary>
 [Collection("registry-torture")]
