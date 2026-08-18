@@ -241,3 +241,92 @@ but roughly 200 rows pass by being EXCUSED rather than by being RIGHT.* The fix 
 smallest ratchets over those exemptions so churn below ten cells can no longer hide, and pinned the executed
 cross-product's element count so a population cannot leave the matrix silently. **B3, B5, B6, B7 and B32 are
 the remaining members of that family**, and they are the honest cut line now.
+
+---
+
+## F1 — the merge handoff, written for the person who reads this cold tomorrow
+
+**Everything below is in the repo so it survives a shutdown. Nothing is pushed. Nothing here needs me.**
+
+### What you are deciding
+
+**Merge `feat/surface-coverage-architecture` into `master`.** 113 commits, +19,786 / −894 across 143 files.
+`master` has moved 4 commits since the fork point (`02d1a49`) — check those before merging; it is not a
+fast-forward. The final whole-branch review (three parallel lenses: `src/`, `tests/`, docs/records/release)
+returned **mergeable after one fix wave**, and that wave has landed and been re-reviewed.
+
+| Verified at HEAD | |
+|---|---|
+| Surface matrix | **866/866 green** |
+| Full solution tests | **7,657 passed / 0 failed**, 8 projects |
+| Build | 0 warnings / 0 errors, samples included |
+| Ceilings (11) | findings **2** · cells **4** · `NotCompilable` **0** · `EmittedInvalidCode` **10** · `NoSuchSite` 116 · `StructurallyExcused` 13 · `UnhonouredButLoud` 14 · `Unaskable` 44 · `PredatesTheChangelog` 76 · `DirectCompileErrorCallBaseline` 53 · `MapMethodModelBoolFlagBaseline` 15 |
+
+### What ships to a consumer if you merge
+
+- **Nine new diagnostics** (`DWARF087`–`DWARF093`, `DWARFR10`, `DWARFR11`); several are Errors that will
+  break builds which currently compile. All in `CHANGELOG.md`.
+- **One severity escalation:** `DWARF088` Warning → Error. Announced.
+- **One BREAKING change:** `[MapTo]`'s generated extensions default to assembly-**internal**. Migration is
+  `[assembly: DwarfMapperOptions(PublicExtensions = true)]`. Announced under BREAKING. Ruled in on your behalf
+  because the option's own XML doc always documented that default and the registry contradicted it.
+- **One new public member:** `DwarfMapperRegistry.IsUpdateAmbiguous`. Under `### Added`.
+- **One public-behaviour fix:** `RegisterUpdate` no longer marks duplicates into the *create* table's
+  ambiguity set (so `IsAmbiguous` stops returning `true` for pairs with no create map). Under `### Fixed`.
+- **Three shipped defects fixed that no test or sample had reached:** `[AfterMap]` on `void Update(S,D)`
+  emitting **infinite recursion**; duplicate `[FlattenGraph]` emitting `CS1912`; `[MapTo]` on a `struct`
+  never compiling (`CS0037`, four inline null-guard sites in one file).
+
+### The one thing that still needs you and is NOT in the merge
+
+**D-e.** ~80 diagnostics predate `CHANGELOG.md` and have never been announced. `PredatesTheChangelog` holds
+the 76 that remain; `Scan9` guards only *new* ids, so **nothing catches this before the first tag.** The fix
+wave put a pointer on the release path (the CHANGELOG's release-cutting comment and `docs/RELEASING.md`), but
+the entries themselves are release-notes writing, and yours.
+
+### Rulings made on your behalf — 28, each reversible, each with what it costs if wrong
+
+Full text with reasoning is in `Issues/ledgers/round20-ledger.md` (search `Ruling:`). The ones you should
+actually look at, because they changed shipped behaviour or a claim:
+
+1. **D18 breaking change kept** (registry extensions internal by default). Cost if wrong: one attribute per
+   consuming library, found at compile time.
+2. **`break: 61` accepted** for the runtime mutation leg over the previous 66. The 66 was inflated by
+   load-induced timeouts on mutants that provably cannot hang, plus one equivalent mutant. Cost if wrong:
+   ~6 points of real regression admitted; the config comment says 66 must not be restored.
+3. **No test exclusion in the mutation leg** — your instruction, overriding my earlier filter. Full suite
+   runs in 12m25s on a quiet machine, not 44 min; the original figure was contention. Nightly cron.
+4. **D17 reclassified structural** with the one sanctioned `StructurallyExcused` raise 12→13. Its filed
+   reason had been a pun on "registry"; the row now carries the A5 measurement.
+5. **D-a `NullCollections`@Projection**: keep behaviour, keep the ratchet entry, document it. Options (a)/(b)
+   remain open to you — (b) was tried and reverted after breaking seven tests.
+6. **D-b delete `ResetForTests`** — ruled early, **implemented only in the final fix wave** after two reviewers
+   found it undone. D-d (keep `internal`+IVT) rests on it; both now hold.
+7. **`DWARF088` escalation moved to A12**, not A10, so a severity flip never shared a commit with a
+   population reclassification.
+8. **A6/A8/A11/A13 partials accepted** where the honest state was red — each measured, reverted, parked, and
+   later landed. An honest red was chosen over a wrong green four separate times.
+
+The remaining 20 are ordering, batching, scoping and process rulings; none changed shipped behaviour.
+
+### What round 20 established that you should not lose
+
+- **Nine round-19 findings had false filed evidence.** Four or more traced to a fixture too thin to pose the
+  question. Round 19 found 23 cells worth investigating, not 23 defects; the instrument was sound, its
+  inputs were not.
+- **Nine defects in this round were "a guard exists on a sibling path and the new code did not inherit it."**
+  Two shipped generator crashes; both caught at review. The eleven structural unifications are the answer,
+  and the `src/` reviewer verified them behaviour-preserving *as a set*.
+- **Eight vacuous mechanisms found**, none remaining after the `tests/` reviewer's hunt for a ninth.
+- **The `tests/` reviewer's one line, verbatim:** *866/866 honestly judges what it judges, but roughly 200 rows
+  pass by being excused rather than by being right, and below a 10-cell magnitude the ratchets over those
+  exemptions cannot see churn at all — that band, not the generator, is where the next defect will sit.*
+  The fix wave closed the 10-cell band with exact pins; the ~200 excused rows are the honest remaining limit.
+
+### After merge
+
+- Delete the worktree at `C:/Users/Jouda/RiderProjects/DwarfMapper-surface` and the agent worktree under
+  `.claude/worktrees/`. The ledgers are committed under `Issues/ledgers/`; nothing else in `.superpowers/sdd/`
+  is needed.
+- The nightly mutation leg only runs on the default branch — it activates the moment this lands on `master`.
+- Round 21 research (`Issues/round21/RESEARCH.md`) is measured and closed except E4, which is optional.
