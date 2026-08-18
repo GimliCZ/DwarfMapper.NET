@@ -538,7 +538,7 @@ never committed.
   against it is sound. Verify the codomain claim at review.
   RESUME = ONE EDIT: lower NotCompilableCellCeiling 96 -> 10 at SurfaceParityTests.cs:202, then the two pin
   tests (CS8795-with-blocking-DWARF must read Refused; a real placement rejection must stay NotCompilable) and
-  the R4 doc rewrite. All named in Issues/ledgers/A10-notes.md, committed.
+  the R4 doc rewrite. All named in Issues/ledgers/A10-wip-notes.md, committed.
 A10: complete (eb4f64f wip, a96b42d final). NotCompilableCellCeiling 96 -> 10; all seven re-measured in the
 same commit, none raised. Whole solution builds 0/0 with all four sample projects linked.
   EIGHTH RATCHET REFUSED BY DESIGN, NOT BY EXEMPTION: the first pin test called RunAndGetCompilationErrors
@@ -866,3 +866,22 @@ reflects them from the test assembly, so the IVT is LOAD-BEARING for the whole s
 exposes nothing else that mutates state. The two rulings are consistent for the first time since D-d was
 recorded DONE. CHANGELOG carries no ResetForTests entry - task 0 removed the consumer-facing one and nothing
 reintroduced it.
+
+=== FIX-WAVE RE-REVIEW: MERGEABLE. All nine groups ADDRESSED. ===
+C1 ResetForTests gone, IVT verified load-bearing (SurfaceCatalog.Build reflects the four internal sealed
+meta-attributes). C2 all four small ceilings now AssertExactPin (<= AND >=), a `ceiling > 10` guard on the
+banded helper, doc corrected. C3 CrossProductElements pinned == 29, corroborated statically (28
+ConsumerDirective + 1 EmissionShape). R1-R6 all verified at HEAD. No constant changed, no ratchet raised.
+ONE RESIDUAL, closed by the controller directly (two lines did not warrant a dispatch): the Roslyn-floor sweep
+had stopped short. The re-review found TWO surviving "4.14.0" lines; my grep found THREE (REPORT.md:84,
+RESEARCH.md:48 AND :65). Fixed all three to the real floor (5.0.0 per Directory.Packages.props) at d1451f5,
+verified by grep that none remain under docs/ outside dated specs. The reviewer's own sweep terminated one
+short - the round's recurring pattern, in miniature, on the last commit.
+
+=== BRANCH STATE AT SHUTDOWN, 2026-08-18 ===
+HEAD d1451f5 on feat/surface-coverage-architecture. 115 commits over 02d1a49. Nothing pushed. Tree clean.
+Matrix 866/866. 7,657 tests / 0 failed. Build 0/0 with samples. Eleven ceilings all at their measured values.
+FINAL WHOLE-BRANCH VERDICT: MERGEABLE.
+WHAT REMAINS IS THE MAINTAINER'S: F1 (the merge - master has moved 4 commits, not a fast-forward) and D-e
+(76 unannounced diagnostics, now pointed to from the release path). The F1 handoff is committed in
+Issues/round20/TASKS.md.
