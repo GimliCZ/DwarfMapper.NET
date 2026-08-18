@@ -62,6 +62,14 @@ vulnerability/compliance tooling (e.g. `cyclonedx`, Dependency-Track, `grype`).
 
 ## Maintainer: cutting a release
 
+> **Before the FIRST tag: 76 diagnostics have never been announced.** `CHANGELOG.md` mandates an entry for
+> every new diagnostic id, and the release workflow publishes its section verbatim as the GitHub Release
+> body — but seventy-six ids predate the file and are exempt by a frozen baseline, `PredatesTheChangelog` in
+> `tests/DwarfMapper.Generator.Tests/SelfValidation/AssemblyScanTests.cs`. **The `Scan9` gate guards only new
+> ids and will not fail for any of them**, so nothing in the pipeline stops a first release from shipping
+> with most of its build-breaking diagnostics missing from the notes. That baseline is the worklist. Tracked
+> as `D-e` in [`Issues/round20/TASKS.md`](../Issues/round20/TASKS.md); it is a maintainer decision.
+
 No secrets or keys to configure — the keyless signature uses the workflow's OIDC token, which
 GitHub mints automatically (the workflow already requests `id-token: write` + `attestations: write`).
 

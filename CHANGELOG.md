@@ -420,4 +420,13 @@ so a version with no section here ships with no notes.
 When cutting a release, replace the `## [Unreleased]` heading with `## [X.Y.Z] - YYYY-MM-DD` and open a
 fresh Unreleased section above it. The release workflow matches on the bare version (`X.Y.Z`, including any
 pre-release suffix), so the heading must contain the tag's version without the leading `v`.
+
+BEFORE THE FIRST TAG, READ THIS. Seventy-six diagnostic ids predate this file and have NEVER been announced
+in it. They are listed in `PredatesTheChangelog` in
+tests/DwarfMapper.Generator.Tests/SelfValidation/AssemblyScanTests.cs, and that list is the worklist. The
+`Scan9` gate guards only NEW ids: it will not fail for any of the seventy-six, so nothing in this repository
+will stop a first release from shipping with three quarters of its build-breaking diagnostics undocumented in
+the release notes. The release workflow publishes this file's section verbatim as the GitHub Release body,
+which is exactly where a consumer looks for them. This is tracked as `D-e` in Issues/round20/TASKS.md and is
+a maintainer decision, not a task anyone else can close.
 -->
