@@ -129,6 +129,82 @@ public class RegistryValueTypeSourceTests
         GeneratorAssert.EmitsCompilableCode(source);
     }
 
+    /// <summary>
+    ///     The THIRD inline instance of the same notion, sixty lines above the two the first fix unified, and
+    ///     the worst of them: the synthesized COLLECTION helper wrote <c>if (s is null) return …</c>
+    ///     unconditionally, and it is reachable from an ordinary CLASS source.
+    ///     <para>
+    ///         <c>CollectionConverter.TryGetEnumerableElement</c> admits any type implementing
+    ///         <c>IEnumerable&lt;T&gt;</c>, value types included, and <c>Resolve</c> reaches <c>TryCollection</c>
+    ///         before the nested-object branch. So a plain class with an <c>ImmutableArray&lt;T&gt;</c> member
+    ///         mapped to a <c>List&lt;U&gt;</c> destination emitted <c>s is null</c> against a non-nullable
+    ///         value type — the same <c>CS0037</c>, with no <c>struct</c> anywhere in the caller's declaration.
+    ///         Nothing reached it: the one struct-<c>IEnumerable</c> fixture in the corpus sits on the
+    ///         <c>[DwarfMapper]</c> path, which refuses that shape as <c>DWARF027</c>, and the registry has no
+    ///         such exclusion. The corpus hole again, one level along from the one A11 found.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void A_value_type_collection_member_on_a_class_source_is_mapped_without_a_null_test()
+    {
+        // A user-declared value-type enumerable rather than ImmutableArray<T>, which trips a SEPARATE and
+        // pre-existing registry defect on the very next emitted line (the pre-sizing argument binds `s.Count`
+        // on a type whose ICollection<T>.Count is an explicit implementation). Reported, not fixed here: a
+        // fixture that fails for two reasons cannot show which one this task closed.
+        const string source = """
+                              using System.Collections;
+                              using System.Collections.Generic;
+                              using DwarfMapper;
+                              namespace Demo;
+                              [MapTo(typeof(Dto))]
+                              public class Src { public Leaves Items { get; set; } }
+                              public struct Leaf { public int Value { get; set; } }
+                              public readonly struct Leaves : IEnumerable<Leaf>
+                              {
+                                  private readonly Leaf[] _items;
+                                  public Leaves(Leaf[] items) { _items = items; }
+                                  public IEnumerator<Leaf> GetEnumerator() =>
+                                      ((IEnumerable<Leaf>)(_items ?? new Leaf[0])).GetEnumerator();
+                                  IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+                              }
+                              public class LeafDto { public int Value { get; set; } }
+                              public class Dto { public List<LeafDto> Items { get; set; } }
+                              """;
+
+        var (_, generated) = GeneratorTestHarness.RunMapToWithSource(source);
+
+        // Compilability first: the CS0037 IS the defect, the missing text is only its mechanism.
+        GeneratorAssert.EmitsCompilableCode(source);
+        Assert.Contains("__DwarfMapColl_", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("s is null", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     And the other direction for that same helper: a REFERENCE-type collection source keeps the guard,
+    ///     because a null <c>List&lt;T&gt;</c> member must map to an empty destination rather than throwing
+    ///     inside a <c>foreach</c>.
+    /// </summary>
+    [Fact]
+    public void A_reference_type_collection_member_keeps_its_null_test()
+    {
+        const string source = """
+                              using DwarfMapper;
+                              using System.Collections.Generic;
+                              namespace Demo;
+                              [MapTo(typeof(Dto))]
+                              public class Src { public List<Leaf> Items { get; set; } }
+                              public class Leaf { public int Value { get; set; } }
+                              public class LeafDto { public int Value { get; set; } }
+                              public class Dto { public List<LeafDto> Items { get; set; } }
+                              """;
+
+        var (_, generated) = GeneratorTestHarness.RunMapToWithSource(source);
+
+        Assert.Contains("__DwarfMapColl_", generated, StringComparison.Ordinal);
+        Assert.Contains("if (s is null) return", generated, StringComparison.Ordinal);
+        GeneratorAssert.EmitsCompilableCode(source);
+    }
+
     private static string Pick(string which)
     {
         return which switch

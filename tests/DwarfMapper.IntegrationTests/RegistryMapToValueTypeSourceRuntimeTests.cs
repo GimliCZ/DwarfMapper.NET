@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections;
 using DwarfMapper;
 
 namespace RegistryValueSource;
@@ -77,6 +78,47 @@ public struct Gem
     public Facet Cut { get; set; }
 }
 
+// A value-type COLLECTION member on an ordinary CLASS source. This is the shape that reaches the registry's
+// synthesized collection helper, which wrote its `if (s is null) return …` unconditionally — and a struct
+// enumerable makes that line CS0037 with no struct anywhere in the caller's own mapping declaration.
+// TryGetEnumerableElement admits any IEnumerable<T>, value types included, and Resolve reaches the collection
+// branch before the nested-object one, so nothing about this needs a value-type SOURCE. Nothing in the corpus
+// had the shape.
+//
+// A user-declared struct enumerable rather than ImmutableArray<T>: that one implements ICollection<T>
+// EXPLICITLY, and the helper's pre-sizing argument (`s.Count`) does not bind against it — a separate,
+// pre-existing registry defect, reported rather than fixed here, and a fixture that fails for two reasons
+// could not show which one this task closed.
+public readonly struct FacetRun : IEnumerable<Facet>
+{
+    private readonly Facet[]? _items;
+
+    public FacetRun(params Facet[] items)
+    {
+        _items = items;
+    }
+
+    public IEnumerator<Facet> GetEnumerator() =>
+        ((IEnumerable<Facet>)(_items ?? Array.Empty<Facet>())).GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
+public class VaultDto
+{
+    public int Id { get; set; }
+
+    public List<FacetDto> Cuts { get; set; } = new();
+}
+
+[MapTo(typeof(VaultDto))]
+public class Vault
+{
+    public int Id { get; set; }
+
+    public FacetRun Cuts { get; set; }
+}
+
 public class RegistryMapToValueTypeSourceRuntimeTests
 {
     [Fact]
@@ -127,6 +169,34 @@ public class RegistryMapToValueTypeSourceRuntimeTests
 
         Assert.Equal(7, tally.MapTo<RuneStampDto>().Id);
         Assert.Equal("Thurisaz", tally.ToRuneStampDto().Name);
+    }
+
+    [Fact]
+    public void A_value_type_collection_member_maps_on_a_class_source()
+    {
+        var vault = new Vault
+        {
+            Id = 2,
+            Cuts = new FacetRun(new Facet { Depth = 41 }, new Facet { Depth = 57 }),
+        };
+
+        var dto = vault.ToVaultDto();
+
+        Assert.Equal(2, dto.Id);
+        Assert.Equal(new[] { 41, 57 }, dto.Cuts.Select(c => c.Depth));
+    }
+
+    [Fact]
+    public void An_empty_value_type_collection_maps_to_an_empty_destination()
+    {
+        // The case the deleted null guard used to stand in for. A default struct enumerable is not null — it
+        // is a value wrapping a null array — so the honest question is whether the empty case still yields an
+        // empty destination rather than throwing inside the foreach. `default` here is the worst version of
+        // it: the backing array IS null, and the guard that used to exist could never have caught that.
+        var dto = new Vault { Id = 5, Cuts = default }.ToVaultDto();
+
+        Assert.Equal(5, dto.Id);
+        Assert.Empty(dto.Cuts);
     }
 
     [Fact]

@@ -597,7 +597,14 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 var bodyWriter = new CodeWriter(1);
                 using (bodyWriter.Block($"private static {fqTgt} {name}({fqSrc} s)"))
                 {
-                    bodyWriter.Line($"if (s is null) return {emptyExpr};");
+                    // The THIRD site of the same question in this file, and the one reachable from a plain
+                    // CLASS source: TryGetEnumerableElement admits any IEnumerable<T>, value types included,
+                    // so an ImmutableArray<T> member reaches here and `s is null` against it is CS0037 —
+                    // exactly the defect the extension methods had, with no struct in the caller's
+                    // declaration at all. Omitted rather than wrapped, matching the other three sites: a
+                    // value-type collection has no null case to return an empty destination for.
+                    if (TypeFacts.CanBeNull(srcType))
+                        bodyWriter.Line($"if (s is null) return {emptyExpr};");
                     // ISSUE-020: the element count was available from TryGetEnumerableElement and thrown away, so
                     // this buffer grew by repeated reallocation even when the source's size was known up front.
                     // The class engine pre-sizes from that very helper; the registry simply never used the value

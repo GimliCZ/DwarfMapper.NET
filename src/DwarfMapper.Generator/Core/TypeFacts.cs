@@ -8,13 +8,21 @@ namespace DwarfMapper.Generator.Core;
 ///     Type-level facts an emitter needs BEFORE it writes a null test into generated code.
 ///     <para>
 ///         One named predicate rather than an inline test per call site, because the inline form is how the
-///         registry front door shipped broken output: <c>MapToGenerator</c>'s nested-helper path asked
-///         <c>src.IsReferenceType</c> before null-propagating, and its extension-method path asked nothing at
-///         all — it wrote <c>if (source is null) throw …</c> into every method it emitted. A <c>struct</c>
-///         source is legal per <c>[MapTo]</c>'s own <c>AttributeUsage</c>, so that produced a generated file
-///         the C# compiler rejects (CS0037) for a placement the attribute itself permits. A guard that lives
-///         on one path and not on its sibling is the shape of that defect; a shared predicate is the shape of
-///         the fix.
+///         registry front door shipped broken output. <c>MapToGenerator</c> asked this question in three
+///         different ways in one file: the nested-object helper asked <c>src.IsReferenceType</c> before
+///         null-propagating; the extension-method path asked nothing at all and wrote
+///         <c>if (source is null) throw …</c> into every method it emitted; and the collection helper asked
+///         nothing either and wrote <c>if (s is null) return …</c> into every one it synthesized. A
+///         <c>struct</c> source is legal per <c>[MapTo]</c>'s own <c>AttributeUsage</c>, so the second
+///         produced a generated file the C# compiler rejects (CS0037) for a placement the attribute itself
+///         permits — and the third needed no value-type source at all, because
+///         <c>CollectionConverter.TryGetEnumerableElement</c> admits any <c>IEnumerable&lt;T&gt;</c>
+///         including a struct one, so an ordinary CLASS with a value-type collection member reached it.
+///     </para>
+///     <para>
+///         A guard that lives on one path and not on its siblings is the shape of that defect, and it does
+///         not stop at two: the collection site was sixty lines from the other two and was missed by the fix
+///         that unified them. All four emission sites read this predicate now.
 ///     </para>
 /// </summary>
 internal static class TypeFacts
