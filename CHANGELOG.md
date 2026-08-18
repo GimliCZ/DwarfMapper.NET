@@ -15,6 +15,29 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[DwarfMapperConstructor]` was accepted and ignored at the projection endpoint.** The directive names the
+  constructor DwarfMapper must use when it builds the destination, and a projection builds one — but the
+  projection resolver decided that on its own, by a local widest-arity `FirstOrDefault` over the target's
+  public constructors, and its one call to `ConstructorSelector` *discarded the return value*. So on a target
+  with a parameterless constructor and writable members the annotated overload was never reached: the same
+  mapper called `new Dst(id, name)` through `.Map` and `new Dst { Id = …, Name = … }` through `.Project`, with
+  no diagnostic either way. The decision is now made **once**, by `ConstructorSelector` — the same policy the
+  create map, span map, async stream and co-located host already run — and the *nested* projection path,
+  which carried a second copy of the widest-arity pick under a comment instructing the reader to keep the two
+  in step, is the second call site of that one function rather than a third copy. Three consequences were
+  measured, not predicted: `[DwarfMapperConstructor]` on a nested projection target is honoured too;
+  **`DWARF025`** (two annotated constructors) now reaches the projection endpoint, where the malformed
+  declaration the create map refuses used to be accepted in silence, because the check sat on a branch a
+  target with a parameterless constructor never enters; and an unbindable constructor parameter is now
+  `DWARF024` here as it is at the create map, rather than a `DWARF001` about the member the parameter feeds.
+  Two defects the fix uncovered are fixed with it: annotating the **parameterless** constructor projected as
+  the *widest* one (selection reports that pick with `useObjectInitializerOnly = false`, and reading the flag
+  rather than the chosen constructor's arity sent it down the constructor branch), and the nested
+  constructor-projection path emitted `new LeafDto(x, y) { X = …, Y = … }` — assigning both members twice —
+  because its leftover filter matched parameter to member under the configured comparer alone while the
+  top-level one also matched case-insensitively. That filter is now one predicate with two call sites. No new
+  diagnostic id. Found by the surface matrix as `A11-F2`; its projection cell closes. (round 20, A14)
+
 - **`[MapTo]` on a `struct` generated code that did not compile.** The attribute's own `AttributeUsage` admits
   `AttributeTargets.Struct` and the registry's target check admits `TypeKind.Struct`, so a value-type source is a
   placement the product advertises — but `MapToGenerator` wrote `if (source is null) throw …` into every extension

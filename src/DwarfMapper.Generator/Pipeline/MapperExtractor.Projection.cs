@@ -212,14 +212,6 @@ internal static partial class MapperExtractor
         foreach (var m in WritableMembers(targetType, compilation, ProjectionPublicOnly))
             writableByName[m.Name] = m.Type;
 
-        // For IQueryable projection, member-init syntax is only SQL-translatable when the target
-        // type has a public parameterless constructor (EF Core materialises via default ctor then
-        // sets members). Positional records and other ctor-only types must use constructor projection.
-        var hasParameterlessCtor = targetType.InstanceConstructors.Any(c =>
-            c.DeclaredAccessibility == Accessibility.Public
-            && !c.IsStatic
-            && c.Parameters.Length == 0);
-
         var writableMembers = WritableMembers(targetType, compilation, ProjectionPublicOnly)
             .OrderBy(m => m.Name, StringComparer.Ordinal)
             .ToList();
@@ -228,14 +220,12 @@ internal static partial class MapperExtractor
         // because a [MapProperty] may target one of its parameters. R18-32: the parameters used to bind by
         // NAME only, so an explicit map aimed at one was ignored — and then DWARF024 recommended
         // `[MapProperty(src, "<paramName>")]`, which is what the author had just written.
-        var usesCtorProjection = writableMembers.Count == 0 || !hasParameterlessCtor;
-        var projectionCtor = usesCtorProjection
-            ? targetType.InstanceConstructors
-                .Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic &&
-                            c.Parameters.Length > 0)
-                .OrderByDescending(c => c.Parameters.Length)
-                .FirstOrDefault()
-            : null;
+        var (ctorDecided, usesCtorProjection, projectionCtor) = ChooseProjectionConstructor(
+            targetType, sourceType, writableMembers.Count, compilation, location, diagnostics, explicitMaps);
+        // Selection reported a BLOCKING DWARF025/DWARF026 and has no constructor to offer. Resolving members
+        // on top of that would append a second, contradictory complaint to a build that already fails; the
+        // create-map path does the same thing (`if (ctor is null) continue;`).
+        if (!ctorDecided) return new List<ProjectionMemberMap>();
 
         // Parameter name → type, for resolving an explicit map whose target is a parameter rather than a
         // member. Ordinal, matching ResolveConstructorArguments' explicit-map index. Empty when the target
@@ -360,9 +350,11 @@ internal static partial class MapperExtractor
 
         if (usesCtorProjection)
         {
-            // Try constructor projection: select the ctor with the most params matching source.
-            ConstructorSelector.Select(compilation, targetType, diagnostics, location, out var ctorOnly);
-
+            // ConstructorSelector ran ONCE, at the decision above, and its answer IS `projectionCtor`. It
+            // used to be called a second time here with its return value DISCARDED, beside a local
+            // widest-wins pick — so [DwarfMapperConstructor] was consulted, answered, and thrown away, and
+            // the only thing the call still did was raise DWARF025/DWARF026 for a shape the emitter then
+            // ignored. Two decisions that had to agree became one that cannot disagree.
             if (projectionCtor is null)
                 return result;
 
@@ -383,14 +375,8 @@ internal static partial class MapperExtractor
             foreach (var p in projectionCtor.Parameters)
                 handled.Add(p.Name);
 
-            // A record's positional parameter also surfaces as an init PROPERTY, so the property has to be
-            // recognised as already-fed or `Start` gets assigned beside `start` the argument. Matched under
-            // the configured comparer OR case-insensitively, which is precisely the pair of rules the
-            // parameter itself binds under — the class model does the same thing with a case-insensitive
-            // `consumedParams`, and the two sets have to agree or one of them assigns twice.
             foreach (var m in writableMembers)
-                if (projectionCtor.Parameters.Any(p =>
-                        comparer.Equals(p.Name, m.Name) || StringComparer.OrdinalIgnoreCase.Equals(p.Name, m.Name)))
+                if (ConstructorFeedsMember(projectionCtor, m.Name, comparer))
                     handled.Add(m.Name);
         }
 
@@ -794,6 +780,110 @@ internal static partial class MapperExtractor
     }
 
     /// <summary>
+    ///     Whether <paramref name="ctor" /> already feeds the target member <paramref name="memberName" />,
+    ///     so the projection must not assign it a second time beside the constructor call.
+    ///     <para>
+    ///         A record's positional parameter also surfaces as an init PROPERTY, so the property has to be
+    ///         recognised as already-fed or <c>Start</c> gets assigned beside <c>start</c> the argument.
+    ///         Matched under the configured comparer OR case-insensitively, which is precisely the pair of
+    ///         rules the parameter itself binds under — the class model does the same thing with a
+    ///         case-insensitive <c>consumedParams</c>, and the two sets have to agree or one of them assigns
+    ///         twice.
+    ///     </para>
+    ///     <para>
+    ///         One predicate rather than two, because there were two and they disagreed: the NESTED site
+    ///         matched under the configured comparer alone, so an ordinal-comparer mapping onto
+    ///         <c>new LeafDto(x, y)</c> emitted <c>{ X = …, Y = … }</c> after it and assigned both members
+    ///         twice. That went unseen only while the nested constructor path was unreachable for a target
+    ///         with writable members; honouring <c>[DwarfMapperConstructor]</c> there reaches it.
+    ///     </para>
+    /// </summary>
+    private static bool ConstructorFeedsMember(IMethodSymbol ctor, string memberName, StringComparer comparer)
+    {
+        return ctor.Parameters.Any(p => comparer.Equals(p.Name, memberName)
+                                        || StringComparer.OrdinalIgnoreCase.Equals(p.Name, memberName));
+    }
+
+    /// <summary>
+    ///     How a projected target is BUILT: by member initializer, or by a constructor call — and if so
+    ///     which constructor. The ONE answer, for the top-level projection and for every nested one.
+    ///     <para>
+    ///         It runs <see cref="ConstructorSelector" />, the same policy the create map, the span map, the
+    ///         async stream and the co-located host all run, which is what makes
+    ///         <c>[DwarfMapperConstructor]</c> mean the same thing at this endpoint as at those. Before this
+    ///         existed the projection had TWO hand-written constructor picks — one at the top level, one for
+    ///         nested objects, each a widest-arity <c>FirstOrDefault</c> — and neither asked the selector,
+    ///         so the directive was accepted, ignored and unreported at both. The top-level site did call
+    ///         <c>Select</c>, and DISCARDED its return value, which is the same defect wearing the answer.
+    ///     </para>
+    ///     <para>
+    ///         Member-init is preferred exactly where it is expressible: the target must have members to set
+    ///         (<paramref name="writableMemberCount" />) AND a public parameterless constructor for EF Core
+    ///         to materialise through. Positional records and other constructor-only types have neither, and
+    ///         must project through a constructor whatever the selector's default preference is — which is
+    ///         why a parameterless answer from the selector is not the end of the question here. That
+    ///         fallback is the widest public constructor, i.e. exactly what this endpoint did before, kept so
+    ///         that a target the selector answers "parameterless" for still projects the way it always has.
+    ///     </para>
+    ///     <para>
+    ///         Public-only (<see cref="ProjectionPublicOnly" />), matching this file's member enumeration: a
+    ///         constructor the query provider cannot call is not one this endpoint can project through.
+    ///     </para>
+    /// </summary>
+    /// <param name="writableMemberCount">
+    ///     How many members of the target member-init could set. Zero means member-init cannot express the
+    ///     mapping at all, however the target is constructed.
+    /// </param>
+    /// <param name="explicitMaps">
+    ///     The <c>[MapProperty]</c> renames, so selection scores a constructor parameter fed only by a rename
+    ///     as satisfiable — <c>null</c> for a nested target, which takes none.
+    /// </param>
+    /// <returns>
+    ///     <c>Ok</c> is <see langword="false" /> when selection reported a blocking <c>DWARF025</c> /
+    ///     <c>DWARF026</c> and has no constructor to offer; the caller must stop rather than resolve members
+    ///     on top of it. <c>Ctor</c> is <see langword="null" /> when <c>UsesCtorProjection</c> is
+    ///     <see langword="false" />, and may also be null WITH it, for a constructor-only target that has no
+    ///     usable constructor — the caller reports that in its own words.
+    /// </returns>
+    private static (bool Ok, bool UsesCtorProjection, IMethodSymbol? Ctor) ChooseProjectionConstructor(
+        INamedTypeSymbol targetType, ITypeSymbol sourceType, int writableMemberCount,
+        Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
+        IReadOnlyList<(string Source, string Target, string? Use)>? explicitMaps)
+    {
+        var hasParameterlessCtor = targetType.InstanceConstructors.Any(c =>
+            c.DeclaredAccessibility == Accessibility.Public
+            && !c.IsStatic
+            && c.Parameters.Length == 0);
+        var memberInitIsExpressible = writableMemberCount > 0 && hasParameterlessCtor;
+
+        var selected = ConstructorSelector.Select(compilation, targetType, diagnostics, location,
+            out _, ProjectionPublicOnly, sourceType, explicitMaps);
+        if (selected is null) return (false, false, null);
+
+        // The selector's answer is a parameterless constructor and this target can be built by one, so
+        // member-init it is. Asked of the constructor's ARITY rather than of the selector's
+        // useObjectInitializerOnly flag, which is false for an ANNOTATED parameterless constructor: reading
+        // the flag there sent the projection down the constructor path and it then fell through to the
+        // widest overload, so [DwarfMapperConstructor] on `Dst()` projected as `new Dst(id, name)` while the
+        // create map over the same pair mapped by initializer. The annotation cannot name one constructor
+        // and get another.
+        if (selected.Parameters.Length == 0 && memberInitIsExpressible) return (true, false, null);
+
+        // The selector named a constructor — because the target has no parameterless one, or because
+        // [DwarfMapperConstructor] overrode the preference. Either way it is the answer.
+        if (selected.Parameters.Length > 0) return (true, true, selected);
+
+        // The selector's answer is a parameterless constructor, and member-init cannot carry this target.
+        // Its answer is therefore not one this endpoint can use, so fall back to the widest public
+        // constructor — what this endpoint chose here before, unchanged.
+        return (true, true, targetType.InstanceConstructors
+            .Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic &&
+                        c.Parameters.Length > 0)
+            .OrderByDescending(c => c.Parameters.Length)
+            .FirstOrDefault());
+    }
+
+    /// <summary>
     ///     Whether a projection source expression needs a null-navigation guard. A reference type needs one
     ///     only when it is nullable-annotated (<c>T?</c>) or nullable-oblivious (compiled with
     ///     <c>#nullable disable</c>). A NON-nullable-annotated reference is guaranteed non-null, so guarding it
@@ -828,22 +918,24 @@ internal static partial class MapperExtractor
         // C4: use the configured comparer for member lookup so CaseInsensitive applies here.
         var srcReadable = BuildProjectionSourceLookup(srcType, comparer, compilation, location, diagnostics);
 
-        // Build member-init or ctor expression for the nested object.
-        // Mirror the decision logic in ResolveProjectionMembers:
-        //   • If the target has NO public parameterless constructor (positional record / ctor-only),
-        //     use constructor projection new T(arg0, arg1) — EF/expression-trees disallow named args.
-        //   • Otherwise use member-init new T { P1 = ..., P2 = ... }.
-        // The original check "writableTargetMembers.Count == 0" only catches types with no
-        // settable/init properties at all; it misses positional records whose init properties
-        // exist but whose constructor has no parameterless overload (CS7036 at compile time).
+        // Build member-init or ctor expression for the nested object, through the SAME decision the
+        // top-level projection makes. This used to be a hand-written mirror of it — a second
+        // `hasParameterlessCtor` test beside a second widest-wins pick, with a comment instructing the
+        // reader to keep the two in step — and it did not mirror the one thing that mattered: neither copy
+        // asked ConstructorSelector, so [DwarfMapperConstructor] on a NESTED projection target was as silent
+        // as on the top-level one. One function, two call sites; a third nesting level inherits it.
         var writableTargetMembers = WritableMembers(tgtType, compilation, ProjectionPublicOnly)
             .OrderBy(m => m.Name, StringComparer.Ordinal)
             .ToList();
 
-        var hasParameterlessCtor = tgtType.InstanceConstructors.Any(c =>
-            c.DeclaredAccessibility == Accessibility.Public
-            && !c.IsStatic
-            && c.Parameters.Length == 0);
+        // A nested target takes no explicit maps: [MapProperty] names members of the OUTER pair, and the
+        // nested resolver binds by name alone (see MemberParts below). Passing none is the honest input,
+        // not a shortcut — a satisfiability score computed against the outer method's renames would be
+        // scoring this constructor against maps that can never reach it.
+        var (ctorDecided, usesNestedCtorProjection, bestCtor) = ChooseProjectionConstructor(
+            tgtType, srcType, writableTargetMembers.Count, compilation, location, diagnostics,
+            explicitMaps: null);
+        if (!ctorDecided) return null;
 
         // Member-init parts for a set of target members — `P1 = expr1`, one per member. Shared by both
         // branches below, because the constructor branch has to assign whatever the constructor did not take
@@ -884,15 +976,10 @@ internal static partial class MapperExtractor
 
         string innerBodyExpr;
 
-        if (writableTargetMembers.Count == 0 || !hasParameterlessCtor)
+        if (usesNestedCtorProjection)
         {
-            // Try ctor projection: use the public ctor with the most parameters.
-            // Expression trees require POSITIONAL args (CS0853: named args not allowed).
-            var bestCtor = tgtType.InstanceConstructors
-                .Where(c => c.DeclaredAccessibility == Accessibility.Public && !c.IsStatic && c.Parameters.Length > 0)
-                .OrderByDescending(c => c.Parameters.Length)
-                .FirstOrDefault();
-
+            // Expression trees require POSITIONAL args (CS0853: named args not allowed), which
+            // ResolveProjectionCtorExpr emits; which constructor to call was decided above.
             if (bestCtor is null)
             {
                 EmitDWARF028(diagnostics, location, targetMemberName,
@@ -915,7 +1002,7 @@ internal static partial class MapperExtractor
             // exactly as at the top level — `new InnerDto(__s.Inner.Start)` with InnerDto.Extra never
             // assigned, while .Map assigned it. It becomes an object initializer on the constructor call.
             var leftover = MemberParts(writableTargetMembers
-                .Where(m => !bestCtor.Parameters.Any(p => comparer.Equals(p.Name, m.Name))));
+                .Where(m => !ConstructorFeedsMember(bestCtor, m.Name, comparer)));
             if (leftover is null) return null;
 
             innerBodyExpr = leftover.Count == 0
