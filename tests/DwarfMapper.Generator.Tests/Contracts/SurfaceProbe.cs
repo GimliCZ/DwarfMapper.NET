@@ -158,8 +158,9 @@ internal static class SurfaceProbe
             .Where(d => !baseDwarfKeys.Contains(d.Id + ":" + d.Severity, StringComparer.Ordinal))
             // DWARF078 is the cascade signpost that accompanies ANY blocking error; including it appends a
             // meaningless suffix to every refused cell and tells the reader nothing about the element. Filtered
-            // FIRST, before the blocking-error test below reads this list, so the signpost can never be the
-            // sole evidence that the generator refused: it accompanies a refusal, it is never the refusal.
+            // FIRST, before the blocking-error test below reads this list, so the signpost never pollutes a
+            // rendered detail string. IsGeneratorRefusal ALSO excludes it internally (belt and braces), so this
+            // filter's own removal or reordering cannot turn the signpost into the sole evidence of a refusal.
             .Where(d => !string.Equals(d.Id, "DWARF078", StringComparison.Ordinal))
             .ToList();
 
@@ -312,9 +313,12 @@ internal static class SurfaceProbe
     ///         file exists to prevent.
     ///     </para>
     ///     <para>
-    ///         <paramref name="addedDiagnostics" /> must already have DWARF078 filtered out. The caller
-    ///         does it, so the cascade signpost that accompanies every blocking error can never be the sole
-    ///         evidence that one occurred.
+    ///         <c>DWARF078</c> is excluded from <paramref name="addedDiagnostics" /> INSIDE this method, not
+    ///         just by the caller. <see cref="Classify" /> also filters it before calling here, but that is
+    ///         belt and braces rather than the only guard: the cascade signpost that accompanies every
+    ///         blocking error must never be the sole evidence that one occurred, and a caller-side-only
+    ///         filter is an invariant a later refactor could move past this call without anything going red.
+    ///         Filtering here too means the predicate holds that invariant itself.
     ///     </para>
     /// </summary>
     internal static bool IsGeneratorRefusal(IReadOnlyList<string> newCompilerErrorIds,
@@ -323,7 +327,8 @@ internal static class SurfaceProbe
         ArgumentNullException.ThrowIfNull(newCompilerErrorIds);
         ArgumentNullException.ThrowIfNull(addedDiagnostics);
 
-        return addedDiagnostics.Any(d => d.Severity == DiagnosticSeverity.Error)
+        return addedDiagnostics.Any(d => d.Severity == DiagnosticSeverity.Error
+                                          && !string.Equals(d.Id, "DWARF078", StringComparison.Ordinal))
                && newCompilerErrorIds.Count > 0
                && newCompilerErrorIds.All(id => AbsentEmissionErrorIds.Contains(id, StringComparer.Ordinal));
     }

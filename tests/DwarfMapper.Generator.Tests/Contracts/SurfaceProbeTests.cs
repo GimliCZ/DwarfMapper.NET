@@ -349,6 +349,22 @@ public sealed class SurfaceProbeTests
         Assert.False(SurfaceProbe.IsGeneratorRefusal([], added));
     }
 
+    /// <summary>
+    ///     Belt and braces: <see cref="SurfaceProbe.Classify" /> already filters <c>DWARF078</c> out of
+    ///     <c>addedDiagnostics</c> before this predicate ever sees it, but that ordering is an invariant
+    ///     enforced only by call-site discipline — nothing here would go red if a refactor moved the filter
+    ///     past this call. Called DIRECTLY with an unfiltered list, an escalated <c>DWARF078</c> (a caller can
+    ///     raise any DWARF id's severity via <c>dotnet_diagnostic</c>) must not be read as generator refusal on
+    ///     its own: it is the cascade signpost, never the refusal.
+    /// </summary>
+    [Fact]
+    public void IsGeneratorRefusal_ignores_an_escalated_DWARF078_even_when_unfiltered_by_the_caller()
+    {
+        var added = new List<Diagnostic> { Dwarf("DWARF078", DiagnosticSeverity.Error) };
+
+        Assert.False(SurfaceProbe.IsGeneratorRefusal(["CS8795"], added));
+    }
+
     private static Diagnostic Dwarf(string id, DiagnosticSeverity severity) => Diagnostic.Create(
         new DiagnosticDescriptor(id, id, id, "Dwarf", severity, isEnabledByDefault: true), Location.None);
 
