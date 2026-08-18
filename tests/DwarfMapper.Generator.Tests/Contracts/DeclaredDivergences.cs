@@ -174,60 +174,30 @@ internal static class DeclaredDivergences
         // three report DWARF088. Forty-nine cells went Silent → Refused, which is why the two ceilings below
         // dropped by exactly that many. See Issues/round20/SURFACE-MATRIX-FINDINGS.md for the resolutions.
 
-        // D6 and D7 were the exact complement of each other and both are NARROWED, not deleted: six of their
-        // nine cells closed and three did not. One root cause for the six — THREE readers of one option, each
-        // seeing a different part of it. The method endpoints read `ReadMapNullSkip(method) ?? classDefault`
-        // and never consulted the pair-scoped form; the [GenerateMap] and auto-synthesized pairs consulted the
-        // pair-scoped form and had no method to read; projection was handed the bare class value and saw
-        // neither. Closed by folding all three into one MapperExtractor.ResolveNullSkip, most-specific-wins
-        // (method, then pair, then the mapper/assembly policy), which every front door now calls — so
-        // [MapNullSkip<Src, Dst>] is measured Honoured at CreateMap and UpdateInto (4 cells), and the method
-        // form, which an element pair's shared mapper structurally cannot see, is refused element-wise as
-        // DWARF090 with the pair-scoped remedy the message names (2 cells). Neither form was "wrong": both
-        // declare AppliesTo = All and their XML docs describe one option at two scopes. The implementation had
-        // three partial readers of it.
+        // D6 and D7 were the exact complement of each other and both are now CLOSED. One root cause: THREE
+        // readers of one option, each seeing a different part of it. The method endpoints read
+        // `ReadMapNullSkip(method) ?? classDefault` and never consulted the pair-scoped form; the [GenerateMap]
+        // and auto-synthesized pairs consulted the pair-scoped form and had no method to read; projection was
+        // handed the bare class value and saw neither. Folded into one MapperExtractor.ResolveNullSkip,
+        // most-specific-wins (method, then pair, then the mapper/assembly policy), which every front door now
+        // calls — including, as of this commit, the projection one, the fourth and last call site.
         //
-        // What is left below is Projection, in both forms, and it is NOT a plumbing gap. Threading the
-        // resolved value into ResolveProjectionMembers is one line and it was tried: the resolver already
-        // refuses an untranslatable null-skip per affected member with DWARF028 — exactly what the class-level
-        // option gets there — but DWARF028 is an ERROR, a blocking error suppresses emission, and all three
-        // cells then read NotCompilable (CS8795, the R4 ordering defect) rather than Refused. That RAISES
-        // NotCompilableCellCeiling 99 → 102 and closes a cell by relocating it into the population the parity
-        // theory judges by nothing. Recorded here instead, because what it waits on is a decision: "do not
-        // overwrite the destination's current value" has no referent in an object initializer that CONSTRUCTS
-        // the destination, and omitting the member unconditionally is a different mapping.
-
-        ["D6"] = new(
-            "[MapNullSkip(true)] on a mapping method is honoured at CreateMap and UpdateInto, refused "
-            + "element-wise as DWARF090, and SILENT at Projection. The option decides whether a null source "
-            + "member overwrites the destination, and projection answers that question differently from .Map "
-            + "on the same mapper without saying so. Re-measured after the reader unification: the SpanMap and "
-            + "AsyncStream cells this finding also covered are now Refused and have been removed from it; the "
-            + "Projection cell is what remains, and it remains because the honest refusal there is a blocking "
-            + "DWARF028 whose CS8795 cascade would move the cell into the NotCompilable population rather than "
-            + "out of it. Its class-scoped twin has the identical silence — see D7.",
-            Findings + "#D6",
-            [
-                new DivergentCell("MapNullSkip", 0, "ctor(1)", AttributeTargets.Method,
-                    SurfaceEndpoints.Projection)
-            ]),
-
-        ["D7"] = new(
-            "[MapNullSkip<Src, Dst>(true)] on the mapper class is honoured at CreateMap, UpdateInto, SpanMap, "
-            + "AsyncStream and CoLocatedHost, and SILENT at Projection. This finding was the exact complement "
-            + "of D6 across six endpoints and is now the same single cell as D6, from the other scope: the two "
-            + "forms are documented as one option written at two scopes and they now resolve through one "
-            + "reader, so the only endpoint either fails to reach is the one whose translator cannot express "
-            + "the option at all. \"Pair-scoped attributes do not reach method-declared pairs\" was never the "
-            + "explanation — MapProperty<S,T>, MapValue<T>, MapIgnore<T> and MapConstructor<S,T> all act at "
-            + "the method endpoints in the same run — and the four cells that claim proved wrong are removed "
-            + "from this entry rather than re-argued.",
-            Findings + "#D7",
-            [
-                new DivergentCell("MapNullSkip", 2, "ctor(1)", AttributeTargets.Class,
-                    SurfaceEndpoints.Projection),
-                new DivergentCell("MapNullSkip", 2, "×2", AttributeTargets.Class, SurfaceEndpoints.Projection)
-            ]),
+        // Final readings, all measured: [MapNullSkip<Src, Dst>] Honoured at CreateMap, UpdateInto, SpanMap,
+        // AsyncStream and CoLocatedHost; the method form Honoured at CreateMap and UpdateInto and refused
+        // element-wise as DWARF090 (an element pair's mapper is shared by every route to it, so only a
+        // pair-scoped directive can configure it), with the pair-scoped remedy the message names; and BOTH
+        // forms refused at Projection as DWARF028 (behind CS8795) — the refusal the class-level
+        // SkipNullSourceMembers has always got there, which the two scoped forms simply never reached.
+        //
+        // The Projection line was built and reverted once, at A6, and the reason it was reverted was an
+        // instrument defect rather than a fact about the option: DWARF028 is an Error, a blocking error
+        // suppresses emission, the partial projection method is left unimplemented, and SurfaceProbe read the
+        // resulting CS8795 as "the compiler rejected the placement" — so landing it read as three cells moving
+        // INTO the population the parity theory judges by nothing (NotCompilableCellCeiling 99 -> 102). R4 is
+        // fixed; the same three cells now read Refused and NotCompilable did not move at all (10, unchanged).
+        //
+        // Neither form was ever "wrong": both declare AppliesTo = All and their XML docs describe one option
+        // written at two scopes. The implementation had three partial readers of it, and now has one.
 
         // D8 closed 2026-08-17 (task A9a), and its evidence was PARTLY FALSE — the second entry in two tasks
         // to be measured wrong, after D10. It claimed the directive "acts at CreateMap … in BOTH the open and

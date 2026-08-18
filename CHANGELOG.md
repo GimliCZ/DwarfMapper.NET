@@ -201,10 +201,13 @@ so a version with no section here ships with no notes.
   already implied, since carving one method out of a class only works if the carve-out outranks the class.
   Where the method form structurally *cannot* reach — a span or async-stream map takes its configuration only
   from directives that name the pair — it is now refused as `DWARF090` with the pair-scoped remedy, instead of
-  being dropped. Found by the surface matrix as `D6` and `D7`, one finding inverted; six of their nine cells
-  close, four `Honoured` and two `Refused`. **Projection is unchanged and still recorded:** the refusal there
-  is the blocking `DWARF028` the class-level option already gets, and its `CS8795` cascade would move those
-  cells into the "judged by nothing" population rather than out of it. (round 20, D6 and D7)
+  being dropped. **Projection is the fourth and last reader**, and it is now the same one: an untranslatable
+  null-skip is refused there as `DWARF028`, per affected member — the refusal `[DwarfMapper(SkipNullSourceMembers
+  = true)]` and its assembly-level twin have always got at that endpoint, and which the two narrower scopes of
+  the same option simply never reached. All four scopes of one option now get the same answer everywhere.
+  Found by the surface matrix as `D6` and `D7`, one finding inverted; all nine of their cells close — four
+  `Honoured`, two `Refused` element-wise, three `Refused` at projection — and both entries are deleted.
+  (round 20, D6 and D7)
 - **`[AfterMap]` on an update-into mapping method generated infinite recursion.** Hook collection accepted
   the partial mapping method itself as a hook whenever its signature happened to fit, and
   `void Update(Src, Dst)` fits the two-parameter after-hook shape exactly — so the generated body of `Update`

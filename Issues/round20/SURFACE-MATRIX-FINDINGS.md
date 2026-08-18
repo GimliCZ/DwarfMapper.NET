@@ -159,8 +159,8 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D3 | `[MapProperty("Id", Use=/When=/NullSubstitute=/StringFormat=)]` on a method | the class-scoped `MapProperty<S,T>` form raises DWARF014 / DWARF049 / DWARF050 for the identical named arguments | **all five mapper endpoints** | 20 |
 | D4 | `[MapProperty("Id","Name")]` on a DTO **member** at `Registry` | `RegistryDiagnostics.MapPropertyArity` exists for exactly this misuse | **Registry** (and CoLocatedHost) | 4 |
 | D5 | `[MapIgnore]` / `[MapIgnore]×2` (no-target form) on a method or class | — the no-target form is the registry form; the class model has no arity check at all | all five, + CoLocatedHost | 22 |
-| D6 | `[MapNullSkip(true)]` on a method | Create, Update (Honoured) | **Projection, SpanMap, AsyncStream** | 3 |
-| D7 | `[MapNullSkip<Src,Dst>(true)]` on the class | SpanMap, AsyncStream, CoLocatedHost (Honoured) | **Create, Update, Projection** | 6 |
+| D6 | `[MapNullSkip(true)]` on a method | Create, Update (Honoured) | ~~Projection, SpanMap, AsyncStream~~ | 0 — RESOLVED |
+| D7 | `[MapNullSkip<Src,Dst>(true)]` on the class | SpanMap, AsyncStream, CoLocatedHost (Honoured) | ~~Create, Update, Projection~~ | 0 — RESOLVED |
 | D8 | ~~`[MapDerivedType]`, both forms~~ | **CLOSED by A9a** as `DWARF092` — all 16 cells `Refused`; its evidence was partly false, see the entry | — | 0 |
 | D9 | `[MapValue("Name", …)]`, all four cases | Create, Update — `ctor(2)` Honoured, the other three `CS8795` | **Projection** (SpanMap/AsyncStream closed as `DWARF090`) | 4 |
 | D10 | ~~`[Flatten("Id")]`, and ×2~~ | **CLOSED by A8** — and its evidence was false; see the entry | — | 0 |
@@ -615,12 +615,13 @@ the absence here a gap rather than a shape.
 
 <a id="D6"></a>
 
-### D6 — `[MapNullSkip(true)]` on a method — 3 cells → **1 cell, NARROWED**
+### D6 — `[MapNullSkip(true)]` on a method — 3 cells — RESOLVED
 
-> **PARTIALLY RESOLVED 2026-08-17, together with D7 — one root cause, three readers.** See
-> [the joint resolution](#D6D7) immediately below D7. Two of this finding's three cells close as
-> `Refused (DWARF090)`; the **Projection** cell stands, and stands for a reason that is a decision rather than
-> plumbing.
+> **RESOLVED, together with D7 — one root cause, three readers.** See
+> [the joint resolution](#D6D7) immediately below D7. Two cells closed on 2026-08-17 as
+> `Refused (DWARF090)`; the **Projection** cell closed on 2026-08-18 (A12) as `Refused (DWARF028)`, once R4 no
+> longer read the `CS8795` cascade as a placement rejection. Both entries are deleted from
+> `DeclaredDivergences`.
 
 *Method site → Projection.* Acts at CreateMap and UpdateInto (Honoured), refused element-wise (DWARF090).
 Null-skipping decides whether a null source member overwrites the destination, and projection answers that
@@ -628,7 +629,7 @@ question differently from `.Map` on the same mapper without saying so.
 
 <a id="D7"></a>
 
-### D7 — `[MapNullSkip<Src, Dst>(true)]` on the class is D6 inverted — 6 cells → **2 cells, NARROWED**
+### D7 — `[MapNullSkip<Src, Dst>(true)]` on the class is D6 inverted — 6 cells — RESOLVED
 
 *Class site, `ctor(1)` and ×2 → Projection.* Now acts at CreateMap, UpdateInto, SpanMap, AsyncStream and
 CoLocatedHost. **"Pair-scoped attributes do not reach method-declared pairs" was never the explanation** —
@@ -682,32 +683,39 @@ this one.
 | ×2, same two endpoints | **Silent** | **Honoured** |
 | `[MapNullSkip(true)]` on a method @ SpanMap | **Silent** | **Refused (DWARF090, Warning)** |
 | `[MapNullSkip(true)]` on a method @ AsyncStream | **Silent** | **Refused (DWARF090, Warning)** |
-| Both forms @ Projection (3 cells) | **Silent** | **Silent — still recorded** |
+| Both forms @ Projection (3 cells) | **Silent** | **Refused (DWARF028, behind CS8795)** — closed at A12 |
 
-**Six cells close. `DivergentCellCeiling` 82 → 76**; `DivergenceFindingCeiling` stays at **13**, because both
-findings survive with their Projection cell. Re-measured across every other population in the same run and all
+**Six cells closed in the first pass. `DivergentCellCeiling` 82 → 76**; `DivergenceFindingCeiling` stayed at
+**13** then, because both findings survived with their Projection cell. Re-measured across every other population in the same run and all
 five COUNTS are unchanged: `NotCompilable` 99, `UnhonouredButLoud` 14, `Unaskable` 44, `NoSuchSite` 137,
 `StructurallyExcused` 12. Counts, not per-cell lists — the printed lists were not diffed, so a flat count does
 not by itself exclude two cells swapping populations. Surface matrix 865/865 before and after.
 
-**Why Projection did not close, measured rather than assumed.** It looks like it should fall out for free, and
-the one-line change was made and then reverted. `ResolveProjectionMembers` *already* refuses an untranslatable
-null-skip per affected member with `DWARF028` — the identical treatment
+**Why Projection did not close in the first pass, and how it closed in the second.** It looked like it should
+fall out for free, and the one-line change was made and then reverted. `ResolveProjectionMembers` *already*
+refuses an untranslatable null-skip per affected member with `DWARF028` — the identical treatment
 `[DwarfMapper(SkipNullSourceMembers = true)]` and its assembly twin already get at this endpoint (see the
 generated option support matrix). Threading the resolved value in therefore produces the **right generator
 behaviour** and makes the option uniform across all four of its scopes. But `DWARF028` is an **Error**, a
 blocking error suppresses the class's emission, and the partial projection method is then unimplemented: all
-three cells measured `NotCompilable (CS8795)`, not `Refused`. That is the instrument gap **G4/R4** recorded
-earlier in this file, and it raises `NotCompilableCellCeiling` **99 → 102** — a ratchet raise, and a closure by relocating a cell into
-the population the parity theory judges by nothing. Recorded instead.
+three cells measured `NotCompilable (CS8795)`, not `Refused`. That was the instrument gap **G4/R4** recorded
+earlier in this file, and taking it would have raised `NotCompilableCellCeiling` **99 → 102** — a ratchet
+raise, and a closure by relocating a cell into the population the parity theory judges by nothing.
 
-What Projection waits on is a decision, not threading. *"Do not overwrite the destination's current value"* has
-no referent inside an object initializer that **constructs** the destination: there is no prior value to keep.
-Omitting the member unconditionally is not the same mapping either — a non-null source row must still be
-assigned. The three candidate resolutions are (a) fix R4 so a blocking refusal reads `Refused`, then thread the
-value; (b) give this one reason a non-blocking id, accepting that a projection then drops a member with only a
-warning; (c) declare the option structurally inapplicable at Projection and say so in the docs. All three are
-maintainer calls, and (a) retires most of an 99-cell population rather than three cells.
+**R4 was then fixed (A10), and the same one line landed at A12.** `SurfaceProbe.Classify` re-reads a `CS8795`
+accompanied by a new blocking DWARF error as the refusal it is, so the three cells now read
+`Refused (DWARF028 (behind CS8795))`. Re-measured across the whole matrix in that commit: `NotCompilable`
+**10, unchanged**; `Silent` 148 → 145 and `Refused` 362 → 365, which is the three cells and nothing else;
+`NoSuchSite` 116, `UnhonouredButLoud` 14, `Unaskable` 44, `StructurallyExcused` 12, all unchanged.
+`DivergenceFindingCeiling` 6 → **4**, `DivergentCellCeiling` 12 → **9**.
+
+The decision the earlier pass was waiting on was answered by the measurement rather than by argument. *"Do not
+overwrite the destination's current value"* genuinely has no referent inside an object initializer that
+**constructs** the destination — but that is a reason to **refuse**, not a reason to say nothing, and the
+class-level scope of the same option had been refusing it there all along. Of the three candidates recorded
+here — (a) fix R4 then thread the value, (b) give the reason a non-blocking id, (c) declare the option
+structurally inapplicable at Projection — **(a) is what happened**, and it retired 86 cells from the
+`NotCompilable` population on the way rather than three.
 
 <a id="D8"></a>
 

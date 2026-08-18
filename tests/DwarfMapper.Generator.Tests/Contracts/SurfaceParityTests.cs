@@ -539,8 +539,20 @@ public sealed class SurfaceParityTests
     ///         expansion of the <c>[GenerateMap]</c> list, and four of the five endpoints have no
     ///         <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> create-map shape to synthesize at all.
     ///     </para>
+    ///     <para>
+    ///         6 → <b>4</b> when <c>D6</c> and <c>D7</c> closed together, which is how they were found: two
+    ///         entries over one option written at two scopes, with three partial readers of it between them.
+    ///         The last reader was the projection call site, which had been handed the bare class value.
+    ///         Threading it was one line, and it was built, measured and REVERTED at A6 — not because the
+    ///         generator behaviour was wrong but because <c>DWARF028</c> is an Error and, before R4, the
+    ///         <c>CS8795</c> that follows a suppressed emission read as
+    ///         <see cref="SurfaceEffect.NotCompilable" />: the fix measured as three cells moving INTO the
+    ///         population this matrix judges by nothing. R4 is fixed, so the same three cells now read
+    ///         <c>Refused (DWARF028 (behind CS8795))</c> and
+    ///         <see cref="NotCompilableCellCeiling" /> did not move at all.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 6;
+    private const int DivergenceFindingCeiling = 4;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -650,8 +662,19 @@ public sealed class SurfaceParityTests
     ///         in <see cref="NotCompilableCellCeiling" />'s population: <c>DWARF067</c> is an Error.
     ///         Re-measured, and it stayed at <b>96</b>.
     ///     </para>
+    ///     <para>
+    ///         12 → <b>9</b> when <c>D6</c> and <c>D7</c> closed: three cells, one verdict — <b>3 Refused
+    ///         (DWARF028 behind CS8795)</b>, <c>[MapNullSkip]</c>'s method form and its pair-scoped form's two
+    ///         axes, all at <c>Projection</c>. The refusal is not new and was not written for this: the
+    ///         projection resolver has always reported <c>DWARF028</c> for an untranslatable null-skip, which
+    ///         is what the class-level <c>SkipNullSourceMembers</c> and its assembly twin already got there.
+    ///         The two scoped forms simply never reached it. <see cref="NotCompilableCellCeiling" /> was
+    ///         re-measured across the change and stayed at <b>10</b>; the three cells left
+    ///         <see cref="SurfaceEffect.Silent" /> (148 → 145) for <see cref="SurfaceEffect.Refused" />
+    ///         (362 → 365) and nothing else moved.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 12;
+    private const int DivergentCellCeiling = 9;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

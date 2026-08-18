@@ -663,29 +663,23 @@ internal static partial class MapperExtractor
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumPolicy,
                     referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method),
-                    // The CLASS value, deliberately, and this is the one place that does NOT call
-                    // ResolveNullSkip — which makes projection the third partial reader of this option and is
-                    // recorded as such rather than tidied away. Do not "fix" it without reading the next
-                    // paragraph; it was tried and measured.
+                    // The FOURTH call site of the one reader, and the last: projection used to pass the bare
+                    // class value, which made it the third partial reader of an option written at four scopes
+                    // (D6/D7). It now sees the method form and the pair-scoped form like every other endpoint.
                     //
-                    // Passing ResolveNullSkip here is a one-line change and it produces the RIGHT generator
-                    // behaviour: the resolver below already refuses an untranslatable null-skip per affected
-                    // member with DWARF028, which is exactly what [DwarfMapper(SkipNullSourceMembers = true)]
-                    // and its assembly-level twin already get at this endpoint. Measured, all three
-                    // MapNullSkip cells at Projection then read NotCompilable (CS8795) rather than Refused:
-                    // DWARF028 is an ERROR, a blocking error suppresses the class's emission, and the partial
-                    // projection method is then unimplemented. That is the R4 ordering defect, and it moves
-                    // three cells INTO the population SurfaceParityTests counts as "judged by nothing"
-                    // (NotCompilableCellCeiling, 99 → 102) — a ratchet raise, and a closure by relocation
-                    // rather than by verdict.
+                    // The refusal below is not new and was not written for this: ResolveProjectionMembers
+                    // already refuses an untranslatable null-skip per affected member with DWARF028, which is
+                    // what [DwarfMapper(SkipNullSourceMembers = true)] and its assembly-level twin have always
+                    // got here. Threading the scoped forms simply lets them reach it.
                     //
-                    // So the divergence stays recorded (DeclaredDivergences D6/D7, narrowed to their
-                    // Projection cells) instead of being converted into a worse bookkeeping category. What it
-                    // waits on is a decision, not plumbing: "keep the destination's current value" has no
-                    // meaning inside an object initializer that constructs the destination, and omitting the
-                    // member unconditionally is not the same mapping (a non-null source row must still be
-                    // assigned). See the DWARF028 site in MapperExtractor.Projection.cs.
-                    skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
+                    // This one line was built and reverted once (A6): DWARF028 is an Error, a blocking error
+                    // suppresses the class's emission, the partial projection method is left unimplemented,
+                    // and SurfaceProbe read the resulting CS8795 as "the compiler rejected the placement" —
+                    // so landing it would have raised NotCompilableCellCeiling rather than closing anything.
+                    // That was the R4 ordering defect in the instrument, not a fact about this option, and it
+                    // is fixed: a CS8795 behind a blocking DWARF error now reads Refused.
+                    ResolveNullSkip(pairNullSkips, method, projSource, projTargetNamed, skipNullSrc),
+                    allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
                     projConsumedSources,
                     // [Flatten] IS threaded, and [MapValue] deliberately is not — the two are not one
                     // decision, and the difference is a ratchet rather than a semantic.
@@ -2902,15 +2896,17 @@ internal static partial class MapperExtractor
         if (ReadMapNullSkip(method) is { } nullSkip)
         {
             var arg = nullSkip ? "true" : "false";
-            // The tail states only what was MEASURED. An earlier draft claimed the method form is "refused at
-            // projection (DWARF028)" — it is not: the projection resolver is deliberately not fed the scoped
-            // forms (see the call site), so the method form is SILENT there, which is what DeclaredDivergences
-            // D6 records. A diagnostic that tells a caller an endpoint is handled when it is silent is the
-            // defect this whole matrix exists to find, shipped inside the fix for it.
+            // The tail states only what was MEASURED, and it has been wrong in both directions once already.
+            // An early draft claimed the method form was "refused at projection" while the projection resolver
+            // was deliberately not fed the scoped forms, so it was SILENT there; that was corrected to
+            // "silent", and the correction went stale the moment the scoped forms were threaded. It is now
+            // refused there — the resolver reports DWARF028 per affected member, because an object initializer
+            // constructs the destination and "keep its current value" has no current value to keep. Pinned in
+            // both directions in MapNullSkipScopeTests; do not edit this sentence without re-measuring.
             Report($"[MapNullSkip({arg})] on this mapping method", $"[MapNullSkip<{src}, {tgt}>({arg})]",
-                "The method form is honoured at the create-map and update-into endpoints, and silent at "
-                + "projection (recorded as D6 — an object initializer constructs the destination, so \"keep "
-                + "its current value\" has nothing to keep). "
+                "The method form is honoured at the create-map and update-into endpoints, and refused at "
+                + "projection (DWARF028 — an object initializer constructs the destination, so \"keep its "
+                + "current value\" has nothing to keep). "
                 + "[DwarfMapper(SkipNullSourceMembers = " + arg + ")] reaches the element pair too, if the "
                 + "policy is meant to be the whole mapper's.");
         }

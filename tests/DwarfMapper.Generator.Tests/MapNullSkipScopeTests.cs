@@ -276,11 +276,13 @@ public class MapNullSkipScopeTests
         Assert.Contains("[MapNullSkip<Dto, Entity>(false)]", message, StringComparison.Ordinal);
         Assert.DoesNotContain("(true)", message, StringComparison.Ordinal);
 
-        // And the tail must not claim an endpoint the method form does not reach. It said "refused at
-        // projection (DWARF028)" and shipped that way for one commit; projection is SILENT for this form, which
-        // is what D6 records. Pinned so the sentence cannot drift back.
-        Assert.Contains("silent at projection", message, StringComparison.Ordinal);
-        Assert.DoesNotContain("refused at projection", message, StringComparison.Ordinal);
+        // And the tail must state the endpoint the method form actually reaches. This sentence has been wrong
+        // in BOTH directions already: it shipped as "refused at projection" while the projection resolver was
+        // not fed the scoped forms and the endpoint was silent, was corrected to "silent at projection", and
+        // that correction went stale the moment the threading landed (D6/D7 closed). Projection now refuses,
+        // as DWARF028, and the pin runs both ways so neither drift can come back unnoticed.
+        Assert.Contains("refused at projection (DWARF028", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("silent at projection", message, StringComparison.Ordinal);
     }
 
     [Fact]

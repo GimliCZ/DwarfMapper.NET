@@ -114,13 +114,15 @@ public static class EndpointContractMatrix
         new("MapNullSkip", Endpoint.UpdateInto, CellStatus.Honoured),
         new("MapNullSkip", Endpoint.SpanMap, CellStatus.Honoured),
         new("MapNullSkip", Endpoint.AsyncStream, CellStatus.Honoured),
-        new("MapNullSkip", Endpoint.Projection, CellStatus.NotApplicable,
-            Reason: "\"a null source member must not overwrite the destination's current value\" has no "
-                    + "referent in a projection: the object initializer CONSTRUCTS the destination, so there "
-                    + "is no prior value to keep, and omitting the member unconditionally is a different "
-                    + "mapping (a non-null source row must still be assigned). The class-level "
-                    + "SkipNullSourceMembers says so with DWARF028; that the two scoped forms say nothing is "
-                    + "recorded as D6/D7 in DeclaredDivergences rather than excused here"),
+        // Refused, not NotApplicable, and the difference is the whole of D6/D7's closure. "A null source
+        // member must not overwrite the destination's current value" genuinely has no referent in a
+        // projection — the object initializer CONSTRUCTS the destination, so there is no prior value to keep,
+        // and omitting the member unconditionally is a different mapping (a non-null source row must still be
+        // assigned). But structural meaninglessness is not a licence to say nothing: the class-level
+        // SkipNullSourceMembers has always said DWARF028 here, and the two scoped forms simply never reached
+        // the resolver that reports it. They do now, through the same ResolveNullSkip every other endpoint
+        // calls, so all four scopes of one option get the same answer at this endpoint.
+        new("MapNullSkip", Endpoint.Projection, CellStatus.Refused, "DWARF028"),
         new("MapNullSkip", Endpoint.Registry, CellStatus.NotApplicable, Reason: NoMemberConfigOnRegistry),
 
         // ── [MapIgnore] / [MapIgnoreSource] — completeness control, meaningful wherever completeness runs ─
