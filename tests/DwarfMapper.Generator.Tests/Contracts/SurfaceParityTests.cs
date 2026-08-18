@@ -321,7 +321,7 @@ public sealed class SurfaceParityTests
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToList();
 
-        AssertRatchet(broken, EmittedInvalidCodeCellCeiling,
+        AssertExactPin(broken, EmittedInvalidCodeCellCeiling,
             "cells carry a compiler error against code the GENERATOR emitted",
             "There is one way to close one of these and it is not a bookkeeping move: make the generator "
             + "emit valid C#, or refuse the shape with a diagnostic before it emits anything. A cell here is "
@@ -407,7 +407,7 @@ public sealed class SurfaceParityTests
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToList();
 
-        AssertRatchet(rejected, NotCompilableCellCeiling,
+        AssertExactPin(rejected, NotCompilableCellCeiling,
             "cells are rejected by the C# compiler and therefore judged by nothing",
             "Close one by making the placement legal — give the case an argument list that fits, or a "
             + "fixture whose shape the endpoint template can actually declare. A CS8795 here is NOT one of "
@@ -846,7 +846,7 @@ public sealed class SurfaceParityTests
             + "Only if neither is possible now does a row belong here — and then someone raises this number "
             + "deliberately, in a commit that says why.";
 
-        AssertRatchet(findings, DivergenceFindingCeiling, "divergences are recorded as unfixed",
+        AssertExactPin(findings, DivergenceFindingCeiling, "divergences are recorded as unfixed",
             maintainerDecision);
 
         var cells = DeclaredDivergences.AllDeclaredCells()
@@ -855,7 +855,7 @@ public sealed class SurfaceParityTests
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToList();
 
-        AssertRatchet(cells, DivergentCellCeiling, "cells are covered by a recorded divergence",
+        AssertExactPin(cells, DivergentCellCeiling, "cells are covered by a recorded divergence",
             maintainerDecision);
     }
 
@@ -987,12 +987,25 @@ public sealed class SurfaceParityTests
     }
 
     /// <summary>
-    ///     Asserts a counted population against a stated ceiling in BOTH directions: it may not grow, and it
-    ///     may not sit well under the ceiling either, because an unratcheted ceiling lets the hole reopen
-    ///     silently after someone else's improvement paid for the slack.
+    ///     Asserts a LARGE counted population against a stated ceiling in both directions: it may not grow,
+    ///     and it may not sink more than ten below the ceiling either, because an unratcheted ceiling lets
+    ///     the hole reopen silently after someone else's improvement paid for the slack.
+    ///     <para>
+    ///         <b>The shrink side is a ten-wide tolerance band, not an exact pin</b>, and it is only honest
+    ///         for a population large enough that ten is a small fraction of it. At or below ten the band
+    ///         swallows the population whole: every count from zero to the ceiling passes, so a legitimate
+    ///         deletion silently funds an illegitimate addition and no number moves. Populations that small
+    ///         use <see cref="AssertExactPin" /> instead — which is why this method REFUSES a ceiling of ten
+    ///         or less rather than trusting each caller to remember.
+    ///     </para>
     /// </summary>
     private static void AssertRatchet(List<string> cells, int ceiling, string what, string howToClose)
     {
+        Assert.True(ceiling > 10,
+            $"AssertRatchet was called with a ceiling of {ceiling}. Its shrink side is a ten-wide tolerance "
+            + "band and cannot see churn in a population that small — every count from zero upward would "
+            + $"pass, while its doc comment promises otherwise. Use {nameof(AssertExactPin)}.");
+
         Assert.True(cells.Count <= ceiling,
             $"{cells.Count} {what}, above the stated ceiling of {ceiling}:\n"
             + string.Join("\n", cells) + "\n\nThis number may only shrink. " + howToClose);
@@ -1000,6 +1013,29 @@ public sealed class SurfaceParityTests
         Assert.True(cells.Count >= ceiling - 10,
             $"Only {cells.Count} {what}, well under the ceiling of {ceiling}. Lower the ceiling to lock the "
             + "improvement in.");
+    }
+
+    /// <summary>
+    ///     Asserts a SMALL counted population at exactly its stated size, in both directions.
+    ///     <para>
+    ///         The in-house pattern for a population small enough that every member is individually
+    ///         accounted for — <c>== 19</c> on the member-slot fixtures, <c>== 15</c> on the bool-flag
+    ///         baseline. Exactness is the whole point: under a tolerance band, closing one member buys
+    ///         silent room for a brand-new one of the same shape, and the count that was meant to be the
+    ///         guard reports nothing. Every move in either direction is a deliberate act, restated here.
+    ///     </para>
+    /// </summary>
+    private static void AssertExactPin(List<string> cells, int pinned, string what, string howToClose)
+    {
+        Assert.True(cells.Count <= pinned,
+            $"{cells.Count} {what}, above the pinned count of {pinned}:\n"
+            + string.Join("\n", cells) + "\n\nThis number may only shrink, and it is pinned EXACTLY: the "
+            + "room a closed cell frees is not available to a new one. " + howToClose);
+
+        Assert.True(cells.Count >= pinned,
+            $"Only {cells.Count} {what}, under the pinned count of {pinned}. If a cell was genuinely closed, "
+            + "lower the pin in the same commit to lock the improvement in — this population is pinned "
+            + "exactly, so an improvement does not silently fund a replacement.");
     }
 
     /// <summary>
