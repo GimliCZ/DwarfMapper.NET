@@ -81,7 +81,7 @@ rather than deleted, so the numbering of the adopt-list still resolves:
 | Adversarial / DoS / over-posting | System.Text.Json threat model | depth guard + adversarial suites | ✅ no |
 | Diagnostics conformance + release tracking | Roslyn AnalyzerReleases + DiagnosticResult | AssemblyScan + tracked releases | ✅ no |
 | **Incremental cacheability** | **Mapperly `IncrementalGeneratorTest.cs`** | **0 references** | 🔴 **yes** |
-| **Min-supported-Roslyn coverage** | Mapperly multi-Roslyn folders | single pin 4.14.0 | 🟠 yes |
+| **Min-supported-Roslyn coverage** | Mapperly multi-Roslyn folders | single floor 5.0.0, plus a `roslyn-forward-compat` CI leg | 🟠 yes |
 | **Mutation testing** | Stryker.NET | nightly CI leg, `break: 61`, unfiltered | 🟢 adopted |
 | **PBT with shrinking** | CsCheck (integrated shrink) | seeded Fuzzer, no shrink | 🟠 yes |
 | Declarative line/col diagnostic asserts | Microsoft.CodeAnalysis.Testing | ID-only assertions | 🟡 optional |
