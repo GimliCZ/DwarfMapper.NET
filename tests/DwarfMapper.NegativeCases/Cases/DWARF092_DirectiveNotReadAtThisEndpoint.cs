@@ -139,7 +139,7 @@ public sealed class RenamedDst
 }
 
 [DwarfMapper]
-public partial class CreateMapOnlyDirectiveMapper
+public partial class DirectiveNotReadAtThisEndpointMapper
 {
     [FlattenGraph("Root", "Flat")]
     public partial void UpdateTree(TreeRoot src, TreeRootDto dst);

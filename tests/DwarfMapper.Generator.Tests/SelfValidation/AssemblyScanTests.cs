@@ -583,6 +583,10 @@ public sealed class AssemblyScanTests
     {
         // The known-bad input is not hypothetical: it is a verbatim slice of the enum body that made Scan6a
         // vacuous for its entire life. If this ever returns true again, Scan6a has stopped measuring.
+        //
+        // Stated limit (same as Scan9's control): this pins the PREDICATE, not Scan6a's [Fact] wiring to
+        // it — deleting the call to IsQualifiedEnumReference from Scan6a would still leave this green.
+        // Pinning the wiring too needs a mutation run.
         const string declarationBody = """
                                        internal enum TargetKind
                                        {
@@ -727,6 +731,10 @@ public sealed class AssemblyScanTests
         // Floors are set to the values measured on 2026-08-17 (was `>= 40` for both, against actuals of 60
         // and 84 — slack from birth, so a two-thirds collapse in either corpus passed unnoticed). They may
         // only ever be TIGHTENED to a re-measured value, never raised past one.
+        //
+        // Stated limit (same as Scan9's control): the three StatesAFix assertions below pin the PREDICATE,
+        // not Scan8's [Fact] wiring to it — deleting the call to StatesAFix from Scan8 would still leave
+        // this green. Pinning the wiring too needs a mutation run.
         var errorIds = GetAllDescriptors()
             .Where(d => d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error)
             .Select(d => d.Descriptor.Id)

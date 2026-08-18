@@ -104,6 +104,21 @@ public sealed class TestTheTestsScanTests
     private static readonly Lazy<string> AllTestSourceText = new(() =>
         string.Concat(TestSources().Select(File.ReadAllText)));
 
+    /// <summary>
+    ///     The test-source blob with this file removed, for scans whose needles could otherwise be satisfied
+    ///     by this file's own text (a qualified enum value written into a comment, for instance) rather than
+    ///     by genuine coverage elsewhere — the same convention <c>AssemblyScanTests.TestSourceTextExcluding</c>
+    ///     applies for the identical reason.
+    /// </summary>
+    private static readonly Lazy<string> TestSourceTextExcludingThisFile = new(() =>
+        string.Concat(
+            TestSources()
+                .Where(f => Path.GetFileName(f) != ThisFile)
+                .Select(File.ReadAllText)));
+
+    /// <summary>This file's own name — excluded from any corpus it would otherwise pollute.</summary>
+    private const string ThisFile = "TestTheTestsScanTests.cs";
+
     private static readonly Lazy<string> FimSourceText = new(() => File.ReadAllText(FimFile));
 
     private static string RepoRoot { get; } = FindRepoRoot();
@@ -319,7 +334,7 @@ public sealed class TestTheTestsScanTests
     public void T3a_Every_public_enum_value_appears_in_matrix_or_tests()
     {
         var fimText = FimSourceText.Value;
-        var testText = AllTestSourceText.Value;
+        var testText = TestSourceTextExcludingThisFile.Value;
         var combinedText = fimText + testText;
 
         var publicEnums = DwarfMapperAssembly

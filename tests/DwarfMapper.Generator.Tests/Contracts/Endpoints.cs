@@ -171,8 +171,10 @@ public static class EndpointSources
 
     /// <summary>
     ///     Emits a full compilation unit for <paramref name="endpoint" />, placing
-    ///     <paramref name="memberAttribute" /> on the mapping method (or, for the registry, on the source
-    ///     type) and <paramref name="classAttribute" /> on the mapper class.
+    ///     <paramref name="memberAttribute" /> on the mapping method and <paramref name="classAttribute" /> on
+    ///     the mapper class. <see cref="Endpoint.Registry" /> and <see cref="Endpoint.CoLocatedHost" /> declare
+    ///     no mapping method, so a non-empty <paramref name="memberAttribute" /> (or <c>extraMembers</c>) is
+    ///     refused here — use <see cref="BuildAt" /> with a slot site instead.
     /// </summary>
     public static string Build(Endpoint endpoint, string memberAttribute = "", string classAttribute = "",
         string extraMembers = "", string options = "", string? types = null)
@@ -188,7 +190,8 @@ public static class EndpointSources
             throw new ArgumentException(
                 $"{endpoint} declares no mapping method, so it can carry neither a method-level attribute nor "
                 + "extra members. Use BuildAt with one of the slot sites (Property, Field, Struct, "
-                + "Constructor), which splices at that site's marker.", nameof(endpoint));
+                + "Constructor), which splices at that site's marker.",
+                string.IsNullOrEmpty(memberAttribute) ? nameof(extraMembers) : nameof(memberAttribute));
 
         var onMethod = string.IsNullOrEmpty(memberAttribute) ? "" : "    " + memberAttribute + "\n";
         var extras = string.IsNullOrEmpty(extraMembers) ? "" : "\n" + extraMembers + "\n";

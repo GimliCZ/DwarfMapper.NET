@@ -73,12 +73,6 @@ public class ElementWiseDirectiveTests
     }
 
     /// <summary>
-    ///     The METHOD site is not filtered the same way, deliberately. A directive written on the span method
-    ///     itself is about that method and nothing else, so a name that matches no member of the element pair
-    ///     is a mistake worth reporting rather than an unrelated pair's business — and the caller gets the
-    ///     same message either way, which is the point.
-    /// </summary>
-    /// <summary>
     ///     A CASE-MISMATCHED class-level ignore must not be reported either — because there is no gap to
     ///     report. The ignore set real resolution matches against is <c>StringComparer.Ordinal</c>, so
     ///     <c>[MapIgnore("id")]</c> against a property <c>Id</c> is inert at the create map as well;
@@ -117,6 +111,12 @@ public class ElementWiseDirectiveTests
         GeneratorAssert.DoesNotReport(s, "DWARF090");
     }
 
+    /// <summary>
+    ///     The METHOD site is not filtered the same way, deliberately. A directive written on the span method
+    ///     itself is about that method and nothing else, so a name that matches no member of the element pair
+    ///     is a mistake worth reporting rather than an unrelated pair's business — and the caller gets the
+    ///     same message either way, which is the point.
+    /// </summary>
     [Fact]
     public void Method_level_MapIgnore_on_the_span_method_is_reported_even_when_it_names_nothing()
     {
