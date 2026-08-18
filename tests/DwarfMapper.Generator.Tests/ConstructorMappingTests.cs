@@ -693,4 +693,69 @@ public class ConstructorMappingTests
         Assert.DoesNotContain("new global::Demo.D(", generated, StringComparison.Ordinal);
         Assert.Contains("X = __s.X", generated, StringComparison.Ordinal);
     }
+
+    // ── A14: what the UpdateInto narrowing actually claims ────────────────────
+
+    /// <summary>
+    ///     [DwarfMapperConstructor]'s <c>[DwarfSurfaceSite]</c> drops the UpdateInto endpoint because an
+    ///     update-into writes into a destination the CALLER built, so for the pair it declares there is no
+    ///     construction for the directive to direct. That narrowing is scoped to the endpoint's OWN
+    ///     destination, and this pins the other half of it so nobody reads it as "inert at an update-into":
+    ///     a nested destination member IS constructed there — the update-into replaces it wholesale
+    ///     (DWARF065) — and the annotated constructor of that nested type is the one called. The measurement
+    ///     the claim's stated reason rests on, kept executable rather than left as prose.
+    /// </summary>
+    [Fact]
+    public void Annotated_ctor_is_honoured_for_a_nested_update_into_target()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Leaf { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public class LeafDto
+                           {
+                               public LeafDto() { }
+                               [DwarfMapperConstructor]
+                               public LeafDto(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; } = "";
+                           }
+                           public class S { public Leaf Child { get; set; } = new(); }
+                           public class D { public LeafDto Child { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M { public partial void Update(S s, D d); }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.Contains("new global::Demo.LeafDto(", generated, StringComparison.Ordinal);
+        Assert.Contains("x: s.X", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The narrowing's own premise: the update-into does NOT construct the destination it maps into, so
+    ///     the annotated constructor of the pair's own target is never called there. Asserted directly so the
+    ///     claim cannot quietly become false — if this endpoint ever grows a construction step, this fails
+    ///     and the site claim has to be revisited rather than left standing as documented behaviour.
+    /// </summary>
+    [Fact]
+    public void An_update_into_does_not_construct_its_own_destination()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public class D
+                           {
+                               public D() { }
+                               [DwarfMapperConstructor]
+                               public D(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; } = "";
+                           }
+                           [DwarfMapper]
+                           public partial class M { public partial void Update(S s, D d); }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.DoesNotContain("new global::Demo.D(", generated, StringComparison.Ordinal);
+        Assert.Contains("d.X = s.X", generated, StringComparison.Ordinal);
+    }
 }
