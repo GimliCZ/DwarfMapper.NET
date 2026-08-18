@@ -138,13 +138,15 @@ jobs:
   # measured statement that a caller wrote something the generator accepted, changed nothing for, and said
   # nothing about. The default leg excludes it with Category!=SurfaceMatrix.
   #
-  # BLOCKING. It was non-blocking while the first full run was red by design; the 174 red cells are now
-  # either a recorded finding in DeclaredDivergences.Reasons (23 findings, 162 cells, each re-measured every
-  # run and each failing the build the moment it starts working) or one of twelve cells where a single option
-  # of an option bag has no surface at that endpoint. A leg that cannot fail is decoration, and the value of
-  # this one is entirely in the failure: a red cell here means a caller wrote something the generator
-  # accepted, changed nothing for, and said nothing about. Runtime ~25s: the baseline compile is memoized per
-  # (endpoint, fixture, options), so the cross-product costs one compile per cell rather than two.
+  # BLOCKING. It was non-blocking while the first full run was red by design; the matrix is now GREEN, and
+  # the 174 red cells it started with are down to 17 — 4 covered by a recorded finding in
+  # DeclaredDivergences.Reasons (2 findings, each re-measured every run and each failing the build the moment
+  # it starts working) and 13 where a single option of an option bag has no surface at that endpoint. Both
+  # remaining findings are maintainer-acknowledged design decisions, not silent defects. A leg that cannot
+  # fail is decoration, and the value of this one is entirely in the failure: a red cell here means a caller
+  # wrote something the generator accepted, changed nothing for, and said nothing about. Runtime ~25s: the
+  # baseline compile is memoized per (endpoint, fixture, options), so the cross-product costs one compile per
+  # cell rather than two.
   surface-matrix:
     runs-on: ubuntu-latest
     steps:
@@ -332,7 +334,8 @@ jobs:
       - name: Build the generator against the floor, on a newer compiler
         run: dotnet build DwarfMapper.NET.sln -c Release
       # Same exclusion as build-test: this leg asks "does the generator still LOAD in a newer compiler", and
-      # the surface matrix's expected red would drown that answer.
+      # the matrix has its own dedicated job above. (Until 2026-08-18 the stated reason was that the matrix's
+      # expected red would drown the answer; it is green now, so the reason is duplication, not noise.)
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix"
 
   codeql:
