@@ -162,7 +162,7 @@ cause as the DWARF077 explicit-only finding, now visible across nine more attrib
 | D6 | `[MapNullSkip(true)]` on a method | Create, Update (Honoured) | ~~Projection, SpanMap, AsyncStream~~ | 0 — RESOLVED |
 | D7 | `[MapNullSkip<Src,Dst>(true)]` on the class | SpanMap, AsyncStream, CoLocatedHost (Honoured) | ~~Create, Update, Projection~~ | 0 — RESOLVED |
 | D8 | ~~`[MapDerivedType]`, both forms~~ | **CLOSED by A9a** as `DWARF092` — all 16 cells `Refused`; its evidence was partly false, see the entry | — | 0 |
-| D9 | `[MapValue("Name", …)]`, all four cases | Create, Update — `ctor(2)` Honoured, the other three `CS8795` | **Projection** (SpanMap/AsyncStream closed as `DWARF090`) | 4 |
+| D9 | `[MapValue("Name", …)]`, all four cases | Create, Update — `ctor(2)` Honoured, the other three `CS8795` | ~~Projection~~ | 0 — RESOLVED |
 | D10 | ~~`[Flatten("Id")]`, and ×2~~ | **CLOSED by A8** — and its evidence was false; see the entry | — | 0 |
 | D11 | ~~`[FlattenGraph("Root","Flat")]`, and ×2~~ | **CLOSED by A9a** as `DWARF092` — all 8 cells `Refused`; its evidence held as filed | — | 0 |
 | D12 | ~~`[Reinterpret("Data")]`, and ×2~~ | **CLOSED by A9b** as `DWARF090` — all 4 cells `Refused`; its "acts at Projection" was false, see the entry | — | 0 |
@@ -774,7 +774,7 @@ it; on the other four the derived instance is mapped as its base and the extra m
 
 <a id="D9"></a>
 
-### D9 — `[MapValue]` does not reach projection — 4 cells (was 12) — **NARROWED by A8**
+### D9 — `[MapValue]` does not reach projection — 12 cells — **RESOLVED** (8 by A8, 4 by A12)
 
 *Method site, `ctor(1)` / `ctor(2)` / `Use` / ×2 → Projection.*
 
@@ -787,8 +787,8 @@ error suppresses emission.
 **SpanMap and AsyncStream are closed** — refused as `DWARF090`, whose remedy `[MapValue<Dst>("Name", "x")]`
 was measured `Honoured` at both endpoints before the message named it. Eight cells.
 
-**Projection did not close, and the reason is bookkeeping, not design.** The threading was built and
-measured, then reverted:
+**Projection did not close in the first pass, and the reason was bookkeeping, not design.** The threading was
+built and measured at A8, then reverted:
 
 ```
 MapValue`0 | ctor(2)      | Method | Projection => Refused (DWARF064 (Info))
@@ -798,14 +798,37 @@ MapValue`0 | ×2           | Method | Projection => NotCompilable (CS8795)
 102 cells are rejected by the C# compiler and therefore judged by nothing
 ```
 
-One cell closes and three move into the population the parity theory judges by nothing —
-`NotCompilableCellCeiling` 99 → 102, forbidden. Same R4 ordering defect A6 measured for `[MapNullSkip]`. The
-cell worth naming is `ctor(2)`: a constant silently not applied is the dangerous one, and it stays open only
-because it shares a code path with three that cannot land yet.
+One cell closed and three moved into the population the parity theory judges by nothing —
+`NotCompilableCellCeiling` 99 → 102, forbidden. Same R4 ordering defect A6 measured for `[MapNullSkip]`.
 
-**Not structurally inapplicable.** The measurement proves a threaded `[MapValue]` produces the right
-expression; and a constant assignment reads nothing from the destination, so the object-initializer reasoning
-recorded for `[MapNullSkip]` ("keep its current value" has nothing to keep) does not reach it at all.
+**Closed at A12, after R4.** The same threading, and now all four cells read `Refused`:
+
+```
+MapValue`0 | ctor(2)      | Method | Projection => Refused (DWARF064 (Info))
+MapValue`0 | ctor(1)      | Method | Projection => Refused (DWARF042,DWARF064 (Info) (behind CS8795))
+MapValue`0 | Use="probe"  | Method | Projection => Refused (DWARF028,DWARF064 (Info) (behind CS8795))
+MapValue`0 | ×2           | Method | Projection => Refused (DWARF042,DWARF064 (Info) (behind CS8795))
+```
+
+Whole-matrix re-measurement in the same commit: `NotCompilable` **10, unchanged**; `Silent` 145 → 141 and
+`Refused` 365 → 369, which is the four cells and nothing else; `Honoured` 179, `NoSuchSite` 116, `Unasked` 25,
+`UnhonouredButLoud` 14, `PosesNoQuestion` 44, `StructurallyExcused` 12 all unchanged.
+`DivergenceFindingCeiling` 4 → **3**, `DivergentCellCeiling` 9 → **5**.
+
+**`Use =` is the one part refused rather than emitted**, as `DWARF028`: a query provider translates an
+expression tree into a query and cannot call back into managed code to ask what the value should be — which is
+already why `[MapProperty(Use =)]` is refused at this endpoint, so the caller gets one story rather than two.
+
+**The validation was hoisted, not copied.** `TryValidateMapValueTarget` is one statement of the create map's
+sequence — collision, `[MapIgnore]` conflict, constructor parameter, dotted path, unwritable target, and the
+`DWARF064` shadow report — and both resolvers call it. The two endpoints differ in what they can *see* (the
+public-only writable set, the projection source lookup, the chosen projection constructor), so those are
+parameters. A second copy bolted onto the projection path would have closed the finding and left the shape
+that caused it, which is this round's recurring defect.
+
+**Not structurally inapplicable**, as the entry always said. A constant assignment reads nothing from the
+destination, so the object-initializer reasoning recorded for `[MapNullSkip]` ("keep its current value" has
+nothing to keep) never reached it.
 
 <a id="D10"></a>
 

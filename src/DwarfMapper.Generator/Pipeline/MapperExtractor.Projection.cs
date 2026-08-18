@@ -154,7 +154,9 @@ internal static partial class MapperExtractor
             mapPropertyExtras = null,
         bool skipNullSourceMembers = false, bool allowNonPublic = false,
         bool explicitOnly = false, bool ignoreObsolete = false, bool autoNest = true,
-        HashSet<string>? consumedSources = null, IReadOnlyList<string>? flattenRoots = null)
+        HashSet<string>? consumedSources = null, IReadOnlyList<string>? flattenRoots = null,
+        IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
+            mapValues = null)
     {
         // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
         // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
@@ -164,6 +166,12 @@ internal static partial class MapperExtractor
         {
             var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
             foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
+            // A [MapValue]'d target is explicitly targeted too, exactly as ResolveMembers reads it: opting a
+            // retired member back in deliberately must keep working at both endpoints, and reading only
+            // [MapProperty] here would have made "at both endpoints" false the moment [MapValue] arrived.
+            if (mapValues is not null)
+                foreach (var mv in mapValues)
+                    explicitTargets.Add(mv.Target);
             ignores = new HashSet<string>(ignores, IgnoreNameComparer);
             foreach (var name in ObsoleteMemberNames(targetType))
                 if (!explicitTargets.Contains(name))
@@ -344,6 +352,56 @@ internal static partial class MapperExtractor
                 ctorArgExprs[tgtName] = inlineExpr;
             else
                 result.Add(new ProjectionMemberMap(tgtName, inlineExpr));
+        }
+
+        // ── [MapValue] ───────────────────────────────────────────────────────
+        // After the explicit maps and before AUTO matching, which is where ResolveMembers reads it, and the
+        // position is part of the contract rather than a convenience: a [MapValue]'d target counts as mapped
+        // and suppresses DWARF001 at both endpoints, and a [MapValue] that outranked a [MapProperty] at one
+        // endpoint and not the other would make .Project disagree with .Map about which directive wins.
+        //
+        // The validation is the create map's own, hoisted rather than copied — see TryValidateMapValueTarget.
+        // What differs here is only what this endpoint can SEE: the public-only writable set, the projection
+        // source lookup, and the constructor the projection actually calls.
+        foreach (var mv in mapValues ?? Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
+                     string? Use, string? ConstLiteral)>())
+        {
+            if (!TryValidateMapValueTarget(mv.Target, handled, ignores, ctorParamTypes.ContainsKey,
+                    writableByName, sources.ContainsKey, location, diagnostics, out var mvTgtType))
+                continue;
+
+            if (mv.IsConstant)
+            {
+                var literal = mv.ConstLiteral;
+                if (literal is null
+                    && !TryFormatConstant(mv.Value, mvTgtType, compilation, out literal, out var why))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, location,
+                        why));
+                    continue;
+                }
+
+                // A constant is the one thing every query provider translates without help: it becomes a
+                // literal in the SELECT. Nothing is read from the destination, so the object-initializer
+                // argument that makes SkipNullSourceMembers untranslatable here does not reach it.
+                result.Add(new ProjectionMemberMap(mv.Target, literal));
+            }
+            else if (mv.Use is not null)
+            {
+                // Refused, not dropped, and for the reason every other Use= at this endpoint is refused: a
+                // provider translates an expression tree into a query and cannot call back into managed code
+                // to ask what the value should be. Same wording shape as the [MapProperty(Use=)] refusal
+                // twenty lines up, so a caller who hits both is not told two different stories.
+                EmitDWARF028(diagnostics, location, mv.Target,
+                    "[MapValue(Use = ...)] is not translatable in projection (a query provider cannot call a "
+                    + "method inside an expression tree); assign a constant instead, or map this member at "
+                    + "runtime");
+            }
+            else
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                    $"[MapValue] for '{mv.Target}' provides neither a constant value nor Use="));
+            }
         }
 
         // ── Constructor projection ───────────────────────────────────────────

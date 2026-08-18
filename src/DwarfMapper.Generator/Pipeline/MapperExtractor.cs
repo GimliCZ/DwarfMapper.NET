@@ -681,34 +681,19 @@ internal static partial class MapperExtractor
                     ResolveNullSkip(pairNullSkips, method, projSource, projTargetNamed, skipNullSrc),
                     allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
                     projConsumedSources,
-                    // [Flatten] IS threaded, and [MapValue] deliberately is not — the two are not one
-                    // decision, and the difference is a ratchet rather than a semantic.
+                    // Both [Flatten] and [MapValue] are threaded now, and they arrive from opposite
+                    // directions worth keeping distinct. A flattened leaf is `__s.Root.Leaf`, the navigation
+                    // access every query provider translates (D10). A [MapValue] constant becomes a literal
+                    // in the SELECT, and the object-initializer argument that makes SkipNullSourceMembers
+                    // untranslatable one parameter up does NOT reach it: a constant assignment reads nothing
+                    // from the destination, so there is no "current value" it could need. Its Use= form is
+                    // the one part a provider cannot take, and that is refused rather than dropped.
                     //
-                    // A flattened leaf is `__s.Root.Leaf`, the navigation access every query provider
-                    // translates, so honouring it is both possible and correct (D10, closed).
-                    //
-                    // A [MapValue] constant is equally translatable, and the object-initializer argument
-                    // recorded for [MapNullSkip] one call away does NOT reach it: a constant assignment
-                    // reads nothing from the destination, so there is no "current value" it needs. The
-                    // threading was therefore built and MEASURED rather than reasoned about, and then
-                    // reverted, exactly as A6 did. Literal readings, from the run with it in place:
-                    //
-                    //   MapValue`0 | ctor(2)      | Method | Projection => Refused (DWARF064 (Info))
-                    //   MapValue`0 | ctor(1)      | Method | Projection => NotCompilable (CS8795)
-                    //   MapValue`0 | Use="probe"  | Method | Projection => NotCompilable (CS8795)
-                    //   MapValue`0 | ×2           | Method | Projection => NotCompilable (CS8795)
-                    //   102 cells are rejected by the C# compiler and therefore judged by nothing
-                    //
-                    // One cell closes and three move into the population the parity theory judges by
-                    // nothing: NotCompilableCellCeiling 99 → 102. DWARF042 (neither constant nor Use) and
-                    // DWARF041 (Use= naming no provider) are ERRORS, a blocking error suppresses the
-                    // class's emission, and the partial projection method is then unimplemented. That is
-                    // the recorded R4 ordering defect, not anything about [MapValue] — the same three
-                    // renderings already read NotCompilable at CreateMap and UpdateInto for the same
-                    // reason. Raising that ceiling is forbidden and closing a cell by relocating it is
-                    // worse than leaving it recorded, so D9 stays, narrowed to its four Projection cells.
-                    // Once R4 is fixed this is one argument, not a design question.
-                    flattenRoots: ReadFlattenRoots(method));
+                    // [MapValue] was built, measured and reverted once (A8) for the reason [MapNullSkip] was:
+                    // DWARF042 and DWARF041 are Errors, a blocking error suppresses emission, and before R4
+                    // the resulting CS8795 read as NotCompilable — so three of the four cells closed by
+                    // moving into the population the parity theory judges by nothing. R4 is fixed.
+                    flattenRoots: ReadFlattenRoots(method), mapValues: ReadMapValues(method));
 
                 // Source-side completeness for projection. The resolver already knows which source members it
                 // read, so this needed tracking rather than new analysis — it was simply never asked.
@@ -2933,14 +2918,16 @@ internal static partial class MapperExtractor
                     ? $"[MapValue(\"{mv.Target}\", {constant})]"
                     : $"[MapValue(\"{mv.Target}\")]";
             var remedy = "[MapValue<" + tgt + ">" + written.Substring("[MapValue".Length);
-            // The tail says "reaches", not "is honoured": a well-formed [MapValue] is assigned at those two
-            // endpoints, a malformed one is refused there, and both are cases of the directive ARRIVING. What
-            // it must not claim is projection, where the unscoped form is silent (recorded as D9) — the exact
-            // false-endpoint claim this repository has already shipped once and reverted.
+            // The tail says "reaches", not "is honoured": a well-formed [MapValue] is assigned at those
+            // endpoints, a malformed one is refused there, and both are cases of the directive ARRIVING.
+            // Projection is now one of them (D9 closed) — a constant becomes a literal in the SELECT, and the
+            // Use= form alone is refused there as DWARF028. The sentence is pinned in both directions,
+            // because it has been wrong in both: it claimed projection while the resolver never saw the
+            // directive, and then claimed silence after the threading landed.
             Report(written + " on this mapping method", remedy,
-                "The unscoped form reaches the create-map and update-into endpoints — the constant is assigned "
-                + "there, and a malformed one is refused there — and is silent at projection, which is "
-                + "recorded as D9.");
+                "The unscoped form reaches the create-map, update-into and projection endpoints — the "
+                + "constant is assigned there, and a malformed one is refused there (at projection a "
+                + "Use= value provider is refused too, as DWARF028: a query provider cannot call a method).");
         }
 
         // The METHOD-scoped [Flatten]. No pair-scoped twin exists, so the remedy is the dotted source path on

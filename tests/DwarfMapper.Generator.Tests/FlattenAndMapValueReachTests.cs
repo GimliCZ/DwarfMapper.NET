@@ -241,11 +241,13 @@ public class FlattenAndMapValueReachTests
             Assert.Contains(written + " on this mapping method", diagnostic, StringComparison.Ordinal);
             Assert.Contains(expected, diagnostic, StringComparison.Ordinal);
 
-            // Projection is SILENT for this directive (D9), not refused. The one thing this tail must never
-            // do is tell a reader an endpoint is handled when it is not — that exact sentence shipped once
-            // for [MapNullSkip] and was reverted.
-            Assert.Contains("silent at projection", diagnostic, StringComparison.Ordinal);
-            Assert.DoesNotContain("refused at projection", diagnostic, StringComparison.Ordinal);
+            // Projection now REACHES this directive (D9 closed): a constant becomes a literal in the SELECT,
+            // and only the Use= form is refused there. The one thing this tail must never do is misstate an
+            // endpoint, which it has done in both directions on this branch — so the pin runs both ways, and
+            // the stale "silent at projection" sentence is asserted absent rather than merely not asserted.
+            Assert.Contains("create-map, update-into and projection endpoints", diagnostic,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("silent at projection", diagnostic, StringComparison.Ordinal);
         }
     }
 
@@ -346,6 +348,112 @@ public class FlattenAndMapValueReachTests
                 public partial Dst Map(Src s);
             }
             """, "DWARF040");
+    }
+
+    // ── [MapValue] at the projection endpoint (D9) ──────────────────────────
+
+    [Fact]
+    public void A_MapValue_constant_is_assigned_by_the_projection_as_well_as_by_the_create_map()
+    {
+        // The whole of D9: the same mapper assigned the constant through .Map and did not through .Project,
+        // with nothing in the build saying so. BOTH halves are asserted, and the create-map half is not
+        // ceremony — a "fix" that moved the resolution rather than sharing it would pass an assertion that
+        // only read the projection.
+        var generated = GeneratorAssert.EmitsCompilableCode(Flat + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapValue("Name", "probe")]
+                public partial Dst Map(Src s);
+
+                [MapValue("Name", "probe")]
+                public partial IQueryable<Dst> Project(IQueryable<Src> q);
+            }
+            """);
+
+        Assert.Contains("Name = \"probe\"", generated, StringComparison.Ordinal);
+        Assert.Contains("__s", generated, StringComparison.Ordinal);
+        // The projected member must carry the CONSTANT, not the source member it shadows.
+        Assert.DoesNotContain("Name = __s.Name", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_MapValue_value_provider_is_refused_at_the_projection_and_honoured_at_the_create_map()
+    {
+        // Use= is the one part of the directive a query provider cannot take: it would have to call back into
+        // managed code from inside an expression tree. Refused as DWARF028, which is what [MapProperty(Use=)]
+        // already gets at this endpoint — one story for the caller, not two.
+        var reported = GeneratorAssert.Reports(Flat + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapValue("Name", Use = nameof(Probe))]
+                public partial IQueryable<Dst> Project(IQueryable<Src> q);
+
+                private static string Probe() => "probe";
+            }
+            """, "DWARF028");
+
+        Assert.Contains(reported,
+            d => d.GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+                .Contains("[MapValue(Use = ...)]", StringComparison.Ordinal));
+
+        // And the create map, which CAN call it, still does. The refusal above must be the endpoint's answer,
+        // not the directive being broken for everyone.
+        var generated = GeneratorAssert.EmitsCompilableCode(Flat + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapValue("Name", Use = nameof(Probe))]
+                public partial Dst Map(Src s);
+
+                private static string Probe() => "probe";
+            }
+            """);
+        Assert.Contains("Name = Probe()", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_malformed_MapValue_is_refused_at_the_projection_by_the_create_maps_own_guard()
+    {
+        // DWARF042 ("neither a constant value nor Use=") and DWARF040 (the constant does not fit) are the
+        // create map's guards, and the projection reaches them through TryValidateMapValueTarget rather than
+        // through a copy. Both endpoints asserted in one source so a guard that stopped being shared shows up
+        // as a missing id rather than as a passing test somewhere else.
+        GeneratorAssert.Reports(Flat + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapValue("Name")]
+                public partial IQueryable<Dst> Project(IQueryable<Src> q);
+            }
+            """, "DWARF042");
+
+        GeneratorAssert.Reports(Flat + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapValue("Id", "not-an-int")]
+                public partial IQueryable<Dst> Project(IQueryable<Src> q);
+            }
+            """, "DWARF040");
+
+        // The shadow report is the create map's too, and it is a REPORT rather than a refusal — the constant
+        // is still assigned. Both facts, because the hoisted validation returns true on this path.
+        GeneratorAssert.Reports(Flat + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapValue("Name", "probe")]
+                public partial IQueryable<Dst> Project(IQueryable<Src> q);
+            }
+            """, "DWARF064");
     }
 
     [Fact]

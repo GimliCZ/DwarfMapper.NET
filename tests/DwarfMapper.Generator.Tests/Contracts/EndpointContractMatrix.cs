@@ -87,11 +87,16 @@ public static class EndpointContractMatrix
         new("MapProperty", Endpoint.Projection, CellStatus.Honoured),
         new("MapProperty", Endpoint.Registry, CellStatus.Honoured),
 
-        // ── [MapValue] — a source-less constant. Verified: works on .Map, DWARF001 on .Project ────────────
+        // ── [MapValue] — a source-less constant, honoured wherever a destination member is written ────────
+        // Projection was `Refused, DWARF001, "projection does not receive mapValues"` — which described the
+        // DEFECT (finding D9) rather than a contract: the resolver never saw the directive, so the target
+        // went unmapped and the completeness gate complained about the member the caller had just assigned.
+        // The projection resolver reads mapValues now, in the position the create map reads them. A constant
+        // becomes a literal in the SELECT; only the Use= value provider is refused, as DWARF028, because a
+        // query provider cannot call back into managed code from inside an expression tree.
         new("MapValue", Endpoint.CreateMap, CellStatus.Honoured),
         new("MapValue", Endpoint.UpdateInto, CellStatus.Honoured),
-        new("MapValue", Endpoint.Projection, CellStatus.Refused, "DWARF001",
-            "no source member exists, and projection does not receive mapValues"),
+        new("MapValue", Endpoint.Projection, CellStatus.Honoured),
 
         // ── [MapNullSkip] — the pair/method scope of SkipNullSourceMembers ───────────────────────────────
         // ONE option at two scopes, and the rows below are per usage NAME, so they collapse the two forms:

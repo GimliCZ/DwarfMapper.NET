@@ -551,8 +551,17 @@ public sealed class SurfaceParityTests
     ///         <c>Refused (DWARF028 (behind CS8795))</c> and
     ///         <see cref="NotCompilableCellCeiling" /> did not move at all.
     ///     </para>
+    ///     <para>
+    ///         4 → <b>3</b> when <c>D9</c> closed, the third and last entry parked on the same instrument
+    ///         defect. <c>[MapValue]</c> was threaded into the projection resolver in the position
+    ///         <c>ResolveMembers</c> reads it, through the create map's OWN validation sequence rather than a
+    ///         copy of it (<c>TryValidateMapValueTarget</c>). <c>Use=</c> is refused there as
+    ///         <c>DWARF028</c> — a query provider cannot call back into managed code from inside an
+    ///         expression tree, the treatment <c>[MapProperty(Use=)]</c> already gets — and a constant simply
+    ///         becomes a literal in the <c>SELECT</c>.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 4;
+    private const int DivergenceFindingCeiling = 3;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -673,8 +682,19 @@ public sealed class SurfaceParityTests
     ///         <see cref="SurfaceEffect.Silent" /> (148 → 145) for <see cref="SurfaceEffect.Refused" />
     ///         (362 → 365) and nothing else moved.
     ///     </para>
+    ///     <para>
+    ///         9 → <b>5</b> when <c>D9</c> closed: four cells, all <c>Refused</c>, and not all alike —
+    ///         <c>ctor(2)</c> reads <c>DWARF064 (Info)</c> with the constant genuinely assigned, while
+    ///         <c>ctor(1)</c>, <c>×2</c> and <c>Use="probe"</c> read <c>DWARF042</c>, <c>DWARF042</c> and
+    ///         <c>DWARF028</c> respectively, each behind <c>CS8795</c>. That mix is the reading A8 measured
+    ///         and reverted, and it is why this closed only after R4: three of the four were, before it,
+    ///         cells LEAVING this population for the one nothing judges.
+    ///         <see cref="NotCompilableCellCeiling" /> was re-measured and stayed at <b>10</b>;
+    ///         <see cref="SurfaceEffect.Silent" /> fell 145 → 141 and <see cref="SurfaceEffect.Refused" />
+    ///         rose 365 → 369, which is the four cells and nothing else.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 9;
+    private const int DivergentCellCeiling = 5;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

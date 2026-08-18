@@ -219,32 +219,33 @@ internal static class DeclaredDivergences
         // That measures "read at CreateMap, at no other endpoint", which is what its four cells claimed; it
         // does not measure polymorphic dispatch. Stated at the fixture and at the attribute.
 
-        ["D9"] = new(
-            "[MapValue(\"Name\", …)] assigns a constant to a destination member, and Projection does not read "
-            + "the directive at all. NARROWED to Projection: the SpanMap and AsyncStream cells this finding "
-            + "also covered are now Refused as DWARF090, whose remedy — the pair-scoped [MapValue<TTarget>] — "
-            + "was measured Honoured at both of those endpoints before the message prescribed it. What "
-            + "remains is Projection, and it remains for a BOOKKEEPING reason that is worth stating rather "
-            + "than dressing up. Threading [MapValue] into ResolveProjectionMembers was built and measured, "
-            + "not argued: the ctor(2) cell — a constant silently not applied, the genuinely dangerous one — "
-            + "does close (Refused, DWARF064), and the three malformed applications earn DWARF042/DWARF041, "
-            + "which are Errors, so a blocking error suppresses emission and their cells read CS8795. "
-            + "Measured NotCompilableCellCeiling 99 -> 102. That is the recorded R4 ordering defect and not "
-            + "anything about this directive: the identical three renderings ALREADY read NotCompilable at "
-            + "CreateMap and UpdateInto, which also corrects this entry's earlier claim that all four axes "
-            + "are honoured there — only ctor(2) is (Refused, DWARF064 Info, output differing by the "
-            + "assigned constant). NOT structurally inapplicable: the measurement proves a threaded "
-            + "[MapValue] produces the right expression, and a constant assignment reads nothing from the "
-            + "destination, so the object-initializer reasoning recorded for [MapNullSkip] does not reach "
-            + "it. The one argument that closes this is waiting on R4.",
-            Findings + "#D9",
-            [
-                new DivergentCell("MapValue", 0, "ctor(1)", AttributeTargets.Method, SurfaceEndpoints.Projection),
-                new DivergentCell("MapValue", 0, "ctor(2)", AttributeTargets.Method, SurfaceEndpoints.Projection),
-                new DivergentCell("MapValue", 0, "Use=\"probe\"", AttributeTargets.Method,
-                    SurfaceEndpoints.Projection),
-                new DivergentCell("MapValue", 0, "×2", AttributeTargets.Method, SurfaceEndpoints.Projection)
-            ]),
+        // D9 closed 2026-08-18 (task A12). [MapValue("Name", …)] assigns a constant to a destination member
+        // and the projection resolver did not read the directive at all. The SpanMap and AsyncStream cells
+        // closed first, as DWARF090 with the pair-scoped [MapValue<TTarget>] remedy measured Honoured at both
+        // before the message prescribed it; the four Projection cells closed here.
+        //
+        // The threading was built and MEASURED at A8 and then reverted, for a bookkeeping reason rather than
+        // a design one: DWARF042 (neither constant nor Use=) and DWARF041 (Use= naming no provider) are
+        // Errors, a blocking error suppresses emission, and before R4 the resulting CS8795 read as
+        // NotCompilable — so one cell closed and three moved into the population the parity theory judges by
+        // nothing (99 -> 102). R4 is fixed. Final readings, all four Refused:
+        //
+        //   ctor(2)     => DWARF064 (Info)                      — the constant IS assigned, shadow reported
+        //   ctor(1)     => DWARF042, DWARF064 (behind CS8795)
+        //   Use="probe" => DWARF028, DWARF064 (behind CS8795)
+        //   ×2          => DWARF042, DWARF064 (behind CS8795)
+        //
+        // Use= is the one part a query provider cannot take — it would have to call back into managed code
+        // from inside an expression tree — so it is refused as DWARF028 rather than emitted, which is the
+        // treatment [MapProperty(Use=)] already gets at this endpoint. Everything else about the directive is
+        // translatable: a constant becomes a literal in the SELECT, and it reads nothing from the destination,
+        // so the object-initializer argument that makes SkipNullSourceMembers untranslatable here (D6/D7)
+        // never reached it. NOT structurally inapplicable, and the entry always said so.
+        //
+        // The validation is the create map's own, HOISTED rather than copied: TryValidateMapValueTarget is
+        // one statement of the sequence (collision, ignore, constructor parameter, dotted path, unwritable
+        // target, and the DWARF064 shadow report) that both resolvers call. A second copy bolted onto the
+        // projection path would have closed the finding and left the shape.
 
         // D11 closed 2026-08-17 (task A9a). [FlattenGraph("Root", "Flat")] was honoured at CreateMap and
         // silent at the other four, where the destination collection was filled by ordinary direct mapping

@@ -185,9 +185,11 @@ so a version with no section here ships with no notes.
   **async-stream** endpoints both directives are now refused as `DWARF090` with a remedy that was measured
   working before it was prescribed: `[MapValue<Dst>("Name", "api-v2")]` for the constant, and
   `[MapProperty<Src, Dst>("Child.<leaf>", "<leaf>")]` for the flatten, which has no pair-scoped twin of its
-  own. Found by the surface matrix as `D9` and `D10`; `D10` closes outright and `D9` narrows to projection,
-  where its remaining refusal is a blocking `DWARF042`/`DWARF041` whose `CS8795` cascade would move the cells
-  into the "judged by nothing" population rather than out of it. (round 20, D9 and D10)
+  own. **Projection reads `[MapValue]` too**, in the position the create map reads it and through the create
+  map's own validation rather than a copy of it: a constant becomes a literal in the `SELECT`, and only the
+  `Use =` value provider is refused there, as `DWARF028`, because a query provider cannot call back into
+  managed code from inside an expression tree — the treatment `[MapProperty(Use =)]` already gets at that
+  endpoint. Found by the surface matrix as `D9` and `D10`; both close outright. (round 20, D9 and D10)
 - **`[MapNullSkip]` had three readers, and each one saw a different part of the option.** The two documented
   scopes of `SkipNullSourceMembers` — `[MapNullSkip]` on a mapping method and `[MapNullSkip<S, T>]` on the
   mapper class — reached almost exactly complementary halves of the surface. The method endpoints read the
