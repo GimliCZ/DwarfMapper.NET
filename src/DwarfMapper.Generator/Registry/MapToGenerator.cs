@@ -108,19 +108,26 @@ public sealed class MapToGenerator : IIncrementalGenerator
             // ask for, or (where the fallback happened to satisfy the destination) exactly the mapping they
             // would have had with no attribute at all — and in neither case a word from the build.
             //
-            // Same descriptor, deliberately: DWARFR04 already says "the value count does not match the
-            // targets", which is precisely this statement made about one attribute's values rather than
-            // about how many attributes were stacked. Checked BEFORE the stacked-count rule so a member that
-            // gets both wrong reports the arity that is actually the mistake, and reported once either way.
+            // Same descriptor, deliberately: DWARFR04's TITLE already says "the value count does not match
+            // the targets", which is precisely this statement made about one attribute's values rather than
+            // about how many attributes were stacked. (The MessageFormat itself is a report-time pass-through
+            // now — each branch below composes its own remedy — but the one descriptor covers both mistakes.)
+            // Checked BEFORE the stacked-count rule so a member that gets both wrong reports the arity that is
+            // actually the mistake, and reported once either way.
             if (HasNonMemberFormMapProperty(directives))
             {
-                diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArity, location, $"'{srcSym.Name}'"));
+                diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArity, location,
+                    $"[MapProperty] on '{srcSym.Name}' uses the [DwarfMapper] class model's two-argument "
+                    + "method form; the registry's member form takes only the single destination name this "
+                    + "member supplies — drop the first argument."));
                 hasError = true;
                 directives = new List<MemberDirective>();
             }
             else if (directives.Count > 1 && targetCount > 0 && directives.Count != targetCount)
             {
-                diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArity, location, $"'{srcSym.Name}'"));
+                diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapPropertyArity, location,
+                    $"[MapProperty] on '{srcSym.Name}' must have either one value (all targets) or exactly "
+                    + "one value per [MapTo] target, in order."));
                 hasError = true;
                 directives = new List<MemberDirective>();
             }

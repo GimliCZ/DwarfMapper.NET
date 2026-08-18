@@ -105,6 +105,31 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR04");
     }
 
+    // Positive control for the two DWARFR04 facts above: the LEGAL one-argument member form — a single
+    // [MapProperty("Rename")], one value, one [MapTo] target — was previously guarded only by a Gallery
+    // sample compiling and by the surface matrix, neither of which fails loudly if HasNonMemberFormMapProperty
+    // or the stacked-count check above it is ever widened to catch this shape too. Pins both: no DWARFR04, and
+    // the rename is actually applied rather than silently falling back to the member's own name.
+    [Fact]
+    public void MapProperty_legal_one_argument_member_form_is_honoured_without_DWARFR04()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))]
+                         public class Src
+                         {
+                             [MapProperty("Renamed")]
+                             public int A { get; set; }
+                         }
+                         public class Dto { public int Renamed { get; set; } }
+                         """;
+        var (diags, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+
+        Assert.DoesNotContain(diags, d => d.Id == "DWARFR04");
+        Assert.Contains("Renamed =", generated, StringComparison.Ordinal);
+    }
+
     // DWARFR05 — mapped members whose types have no built-in conversion (object member -> int).
     [Fact]
     public void No_conversion_reports_DWARFR05()

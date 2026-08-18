@@ -34,10 +34,13 @@ internal static class RegistryDiagnostics
         "Destination member {0} is claimed by more than one source member — give them distinct positional [MapProperty] names",
         Category, DiagnosticSeverity.Error, true);
 
+    // Message composed at report time (MessageFormat is the pass-through "{0}"), because the two arities this
+    // covers need different remedies: a stacked-attribute count mismatch says "match the target count", a
+    // class-model two-argument [MapProperty] on a registry member says "drop the first argument" instead.
     public static readonly DiagnosticDescriptor MapPropertyArity = new(
         "DWARFR04",
         "[MapProperty] value count does not match the targets",
-        "[MapProperty] on {0} must have either one value (all targets) or exactly one value per [MapTo] target, in order",
+        "{0}",
         Category, DiagnosticSeverity.Error, true);
 
     public static readonly DiagnosticDescriptor NoConversion = new(
