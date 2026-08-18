@@ -397,6 +397,89 @@ public sealed class RegistryDiagnosticsGenTests
             GeneratorTestHarness.RunAll(s).GeneratedSource, StringComparison.Ordinal);
     }
 
+    // ── DWARFR11 — the constructor directive this front door has never read ──────
+    // [DwarfMapperConstructor] names the constructor DwarfMapper must build a target with. The registry
+    // builds every target with `new T { … }` and calls ConstructorSelector nowhere, so the directive was
+    // accepted, ignored and unreported at all of this generator's construction sites. Surface matrix A11-F2.
+
+    [Fact]
+    public void An_annotated_constructor_on_a_MapTo_target_reports_DWARFR11()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto
+                         {
+                             public Dto() { }
+                             [DwarfMapperConstructor] public Dto(int id) { Id = id; }
+                             public int Id { get; set; }
+                         }
+                         """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR11");
+    }
+
+    // The NESTED construction site. Reporting only at the target would have left the identical silence one
+    // level down — the shape this branch has had to unpick repeatedly — so the nested-object helper carries
+    // the same call. The outer target here is deliberately unannotated, so a passing assertion can only come
+    // from the nested site.
+    [Fact]
+    public void An_annotated_constructor_on_a_NESTED_registry_target_reports_DWARFR11()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Leaf { public int X { get; set; } }
+                         public class LeafDto
+                         {
+                             public LeafDto() { }
+                             [DwarfMapperConstructor] public LeafDto(int x) { X = x; }
+                             public int X { get; set; }
+                         }
+                         [MapTo(typeof(Dto))] public class Src { public Leaf Child { get; set; } = new(); }
+                         public class Dto { public LeafDto Child { get; set; } = new(); }
+                         """;
+        Assert.Contains(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR11");
+    }
+
+    // Non-vacuity in the other direction: an ordinary registry pair, whose targets carry no annotation
+    // anywhere, must stay quiet. Without this the guard could be "always report" and still pass both facts
+    // above.
+    [Fact]
+    public void An_unannotated_registry_pair_is_not_flagged_by_DWARFR11()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))] public class Src { public int Id { get; set; } }
+                         public class Dto { public Dto() { } public Dto(int id) { Id = id; } public int Id { get; set; } }
+                         """;
+        Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR11");
+    }
+
+    // The remedy the message prescribes, MEASURED rather than asserted: the same annotation on the same
+    // target type, mapped through the [DwarfMapper] class model, selects the annotated constructor. A
+    // refusal is only honest if the place it points at actually honours the directive.
+    [Fact]
+    public void The_DWARFR11_remedy_the_class_model_honours_the_annotated_constructor()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int Id { get; set; } }
+                         public class Dto
+                         {
+                             public Dto() { }
+                             [DwarfMapperConstructor] public Dto(int id) { Id = id; }
+                             public int Id { get; set; }
+                         }
+                         [DwarfMapper] public partial class M { public partial Dto Map(Src s); }
+                         """;
+        var generated = GeneratorAssert.CompilesClean(s);
+        Assert.Contains("new global::Demo.Dto(", generated, StringComparison.Ordinal);
+        Assert.Contains("id: s.Id", generated, StringComparison.Ordinal);
+    }
+
     // ── the standing completeness gate ──────────────────────────────────────────
     // Mirrors AssemblyScanTests Scan3 (every id tested) + Scan7 (every id documented), but over the registry's
     // OWN descriptor class, which those scans deliberately skip. It does NOT assert AnalyzerReleases sync — the

@@ -15,6 +15,24 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[DwarfMapperConstructor]` was accepted and ignored by the `[MapTo]` registry.** The directive names the
+  constructor DwarfMapper must build a target with; the registry front door selects no constructor *at all*
+  — there is no `ConstructorSelector` call anywhere under `Registry/` — and builds every type it constructs
+  with `new T { … }`, so the annotation changed nothing and nobody said so. It is now refused as the new
+  **`DWARFR11`**, a Warning: the object-initializer mapping the caller gets is correct and complete, so the
+  mapper still ships; what is wrong is that the construction the caller asked for is not the one the emitted
+  code performs. **Refused rather than honoured, argued from the front door's own design**: `DWARFR09`
+  already refuses a constructor-only target with *"use the `[DwarfMapper]` class model (which supports
+  constructor mapping)"*, and object-initializer-only construction is what that message describes, not an
+  oversight — teaching the registry constructor binding, parameter satisfaction and a per-parameter
+  completeness gate is a feature, not the fix for this silence. The prescribed remedy is **measured**, not
+  asserted: the same annotation on the same target type, mapped through a `[DwarfMapper]` class model map
+  over that pair, selects the annotated constructor (`RegistryDiagnosticsGenTests`). It fires at **both** of
+  this generator's construction sites — the `[MapTo]` target and the nested-object helper, which is also the
+  path a collection's element type reaches — from one function, because reporting only at the target would
+  have left the identical silence one level down. The predicate is `ConstructorSelector`'s own, hoisted:
+  "carries `[DwarfMapperConstructor]`" was written inline twice inside that selector and would have become a
+  third copy here. Found by the surface matrix as `A11-F2`; its registry cell closes. (round 20, A14)
 - **`[DwarfMapperConstructor]` was accepted and ignored at the projection endpoint.** The directive names the
   constructor DwarfMapper must use when it builds the destination, and a projection builds one — but the
   projection resolver decided that on its own, by a local widest-arity `FirstOrDefault` over the target's
@@ -327,7 +345,8 @@ so a version with no section here ships with no notes.
   A destination reached by a name the caller wrote (`[MapProperty("Dest")]`) still maps; one reached only
   because the names line up is refused, and does **not** also draw `DWARFR02`. Found by the surface matrix
   (`D19`). (round 20)
-- **`DWARFR01`–`DWARFR10` are release-tracked.** The registry (`[MapTo]`) diagnostics suppressed
+- **`DWARFR01`–`DWARFR10` are release-tracked** (and `DWARFR11`, added later in this same Unreleased
+  section, with them). The registry (`[MapTo]`) diagnostics suppressed
   `RS2000`/`RS2001` and appeared in no `AnalyzerReleases` file, despite shipping in the same package and
   surfacing in the same IDE error list as the `DWARF0xx` rules. They now have rows, the suppressions are
   gone, and `AssemblyScanTests` enforces the descriptor ↔ release-notes sync for the `DWARFR` family the same

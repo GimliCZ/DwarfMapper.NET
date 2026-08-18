@@ -87,6 +87,23 @@ internal static class RegistryDiagnostics
         + "member (e.g. IsAdmin) from silently over-posting onto a protected one.",
         Category, DiagnosticSeverity.Error, true);
 
+    // [DwarfMapperConstructor] names the constructor DwarfMapper must build a target with. This front door
+    // reads no such thing: EVERY type it constructs — the [MapTo] target itself and every nested object it
+    // synthesizes a helper for — is built with `new T { … }`, and no constructor is selected at all (there is
+    // no ConstructorSelector call anywhere under Registry/). Warning, not Error: the object-initializer
+    // mapping the caller gets is correct and complete, so the mapper still ships; what is wrong is that the
+    // caller's stated intent is silently not the one the emitted code follows, and the SAME annotation on the
+    // SAME type is honoured through a [DwarfMapper] class model map over that pair.
+    public static readonly DiagnosticDescriptor ConstructorDirectiveNotRead = new(
+        "DWARFR11",
+        "[DwarfMapperConstructor] is not read by the [MapTo] registry",
+        "[DwarfMapperConstructor] on {0} is not read here: the [MapTo] registry front door constructs every "
+        + "target with an object initializer (new {0} { ... }) and selects no constructor, so the annotated "
+        + "one is never called and the members are assigned after construction instead. Map the pair with the "
+        + "[DwarfMapper] class model — a 'partial {0} Map(...)' on a [DwarfMapper] class — which selects it. "
+        + "Remove the attribute if the object-initializer mapping is what you want.",
+        Category, DiagnosticSeverity.Warning, true);
+
     public static readonly DiagnosticDescriptor RecursiveNesting = new(
         "DWARFR06",
         "Recursive nested mapping is not supported by the registry",

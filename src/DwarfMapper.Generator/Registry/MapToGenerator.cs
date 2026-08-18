@@ -148,6 +148,8 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 continue;
             }
 
+            ReportUnreadConstructorDirective(target, diags, location);
+
             var targetFqn = target.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var writables = MemberFacts.Writable(target, RegistryCompilation, RegistryAllowNonPublic).ToList();
 
@@ -318,6 +320,32 @@ public sealed class MapToGenerator : IIncrementalGenerator
         return target.TypeKind == TypeKind.Struct
                || target.InstanceConstructors.Any(c =>
                    c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+    }
+
+    /// <summary>
+    ///     Says so when a type this front door is about to build with <c>new T { … }</c> carries
+    ///     <c>[DwarfMapperConstructor]</c> — a directive the registry has never read, because it selects no
+    ///     constructor anywhere (<c>DWARFR11</c>).
+    ///     <para>
+    ///         One function with a call site at EVERY type the registry constructs, which is two: the
+    ///         <c>[MapTo]</c> target itself, and the nested-object helper <c>SynthNested</c> synthesizes —
+    ///         which is also the path a collection ELEMENT reaches, so a <c>List&lt;LeafDto&gt;</c> member
+    ///         whose element type is annotated is covered by the same call. Reporting only at the target would
+    ///         have left the identical silence one level down, which is the shape this branch has had to
+    ///         unpick repeatedly.
+    ///     </para>
+    ///     <para>
+    ///         The predicate is <see cref="ConstructorSelector.HasAnnotatedConstructor" />, i.e. the very
+    ///         selector this front door does not call, so "an annotated constructor exists" cannot come to
+    ///         mean one thing here and another there.
+    ///     </para>
+    /// </summary>
+    private static void ReportUnreadConstructorDirective(
+        INamedTypeSymbol target, List<DiagnosticInfo> diags, LocationInfo? location)
+    {
+        if (ConstructorSelector.HasAnnotatedConstructor(target))
+            diags.Add(new DiagnosticInfo(RegistryDiagnostics.ConstructorDirectiveNotRead, location,
+                target.ToDisplayString()));
     }
 
     private static bool IsObjectType(INamedTypeSymbol t)
@@ -502,6 +530,10 @@ public sealed class MapToGenerator : IIncrementalGenerator
                     $"'{src.Name}' → '{tgt.Name}'"));
                 return null;
             }
+
+            // The second — and last — type this front door constructs. Same object initializer, same silence
+            // about [DwarfMapperConstructor] if nobody says so here too.
+            ReportUnreadConstructorDirective(tgt, _diags, _loc);
 
             var members = new List<(string Name, string Expr)>();
             var ok = true;
