@@ -93,7 +93,7 @@ DWARF084 | DwarfMapper | Error | [RestatesBase] cannot identify the base pair
 DWARF085 | DwarfMapper | Warning | Restated base configuration has drifted
 DWARF086 | DwarfMapper | Error | Manifest attribute is emitted by the generator
 DWARF087 | DwarfMapper | Error | Duplicate [FlattenGraph] destination collection
-DWARF088 | DwarfMapper | Warning | Member-placement directive written on a mapper
+DWARF088 | DwarfMapper | Error | Member-placement directive written on a mapper
 DWARF089 | DwarfMapper | Warning | Directive on a co-located host member cannot be applied
 DWARF090 | DwarfMapper | Warning | Member directive is not applied element-wise
 DWARF091 | DwarfMapper | Warning | Mapping hook on a partial method with no body

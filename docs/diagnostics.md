@@ -1174,7 +1174,7 @@ two directives that are not duplicates of each other at all. Both shapes are ref
 ---
 
 ## dwarf088
-**Member-placement directive written on a mapper** · Warning
+**Member-placement directive written on a mapper** · Error
 
 `[MapProperty]` and `[MapIgnore]` each cover **two placements** behind one name, and each placement has its
 own constructor. The member form belongs on a member of a type that declares its own mapping — a `[MapTo]`
@@ -1208,12 +1208,16 @@ binding. A caller named a conversion method and got auto-matching.
 > what the caller wanted. Discarding it evaporates a binding they wrote explicitly. Only saying so lets them
 > fix it.
 
-> **Why a Warning here and an `Error` for its registry mirror `DWARFR04`.** A blocking DwarfMapper error
-> suppresses the whole class's emission, so the partial mapping method loses its implementing part and the
-> refusal arrives buried under a wall of `CS8795` (see [`DWARF078`](#dwarf078)). A warning states it where you
-> can act on it and still hands you a mapper that builds. The registry emits free-standing extension methods
-> and has no partial declaration to strand, so it refuses outright. Escalate with
-> `dotnet_diagnostic.DWARF088.severity = error` where the stricter reading is wanted.
+> **An `Error`, matching its registry mirror `DWARFR04`.** It shipped as a Warning for one
+> round because a blocking DwarfMapper error suppresses the whole class's emission, so the partial mapping
+> method loses its implementing part and the refusal arrives alongside `CS8795` (see
+> [`DWARF078`](#dwarf078)). That cost is paid by **every** blocking DwarfMapper error — [`DWARF011`](#dwarf011)
+> and [`DWARF087`](#dwarf087) refuse the same duplicate-directive shape on the same class and are both Errors —
+> so it cannot decide the severity of this one. What this id refuses is silent data loss:
+> `[MapProperty("Name", Use = nameof(F))]` on a mapper discards the converter, the `When` predicate, the null
+> substitute and the format string along with the binding, and hands you auto-matching instead. Downgrade with
+> `dotnet_diagnostic.DWARF088.severity = warning` if you need the build to proceed while you fix the call
+> sites.
 
 ---
 
@@ -1251,7 +1255,9 @@ The named arguments ride on that same one-argument constructor, so `Use`, `When`
 
 > **Why a Warning.** A blocking error suppresses the whole host's emission, so the generated `<Host>Mapper`,
 > its convenience extension and its DI registration all vanish and every call site meets `CS1061` instead of
-> the refusal — the same reasoning as [`DWARF088`](#dwarf088). The offending directive is dropped and the rest
+> the refusal. (Not the reasoning of [`DWARF088`](#dwarf088), which is an `Error`: there the directive's whole
+> payload is discarded, here it is one directive dropped off an otherwise-emitted host.) The offending
+> directive is dropped and the rest
 > of the host's mapping is emitted as though it had not been written. Escalate with
 > `dotnet_diagnostic.DWARF089.severity = error` where the stricter reading is wanted.
 
@@ -1346,7 +1352,7 @@ every synthesized pair, this element pair included, and are measured **applying*
 
 > **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
 > it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see
-> [`DWARF078`](#dwarf078)) — the same reasoning as [`DWARF088`](#dwarf088). The directive is dropped for this
+> [`DWARF078`](#dwarf078)) — the same reasoning as [`DWARF089`](#dwarf089). The directive is dropped for this
 > endpoint and the rest of the mapper is emitted. Escalate with
 > `dotnet_diagnostic.DWARF090.severity = error` where the stricter reading is wanted.
 
@@ -1386,7 +1392,7 @@ mapped types: `void Hook(TSource)` for `[BeforeMap]`, `void Hook(TTarget)` or `v
 `[AfterMap]`. Or remove it, if the mapping method was the fixup you meant.
 
 > **Why a Warning.** An error would strand every partial mapping method on the class behind `CS8795`, the same
-> reasoning as [`DWARF088`](#dwarf088). The hook is not registered — which is what you already had at three of
+> reasoning as [`DWARF089`](#dwarf089) and [`DWARF090`](#dwarf090). The hook is not registered — which is what you already had at three of
 > the five endpoints, minus the recursion at the fourth — and the mapper is emitted. Escalate with
 > `dotnet_diagnostic.DWARF091.severity = error` where the stricter reading is wanted.
 
@@ -1514,7 +1520,8 @@ what made the silence worth a diagnostic, since at the home endpoint even nonsen
 
 > **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
 > it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see
-> [`DWARF078`](#dwarf078)) — the same reasoning as [`DWARF088`](#dwarf088). The directive is dropped for this
+> [`DWARF078`](#dwarf078)) — the same reasoning as [`DWARF089`](#dwarf089), [`DWARF090`](#dwarf090) and
+> [`DWARF091`](#dwarf091). The directive is dropped for this
 > endpoint and the rest of the mapper is emitted. Escalate with
 > `dotnet_diagnostic.DWARF092.severity = error` where the stricter reading is wanted.
 

@@ -172,15 +172,25 @@ public sealed class MemberFormDirectiveTests
     }
 
     /// <summary>
-    ///     A WARNING, not an error, and that is a measured decision rather than a preference. Every blocking
-    ///     DwarfMapper error suppresses the whole class's emission, so the partial mapping method loses its
-    ///     implementing part and the consumer sees <c>CS8795</c> — the refusal buried under the cascade the
-    ///     G4/R4 ordering defect produces. A warning states the refusal where the caller can act on it and
-    ///     still hands them a mapper that builds. The registry's mirror (<c>DWARFR04</c>) stays an Error
-    ///     because the registry has no partial method to cascade into.
+    ///     An ERROR, and the consequence is pinned with it: the class stops emitting, so the identity binding
+    ///     the caller would silently have received is not there.
+    ///     <para>
+    ///         This id shipped as a Warning for one round on a reason that was never a product reason — a
+    ///         blocking DwarfMapper error suppresses the whole class's emission, so the refusal arrives
+    ///         alongside <c>CS8795</c> from the unimplemented partial method, and while the R4 ordering defect
+    ///         stood the surface matrix read that cascade as "the compiler rejected the placement" rather than
+    ///         as a refusal. R4 is fixed. The cascade is paid by every blocking id on this class,
+    ///         <c>DWARF011</c> and <c>DWARF087</c> included, and both of those are Errors; a cost every id
+    ///         pays cannot decide the severity of one of them.
+    ///     </para>
+    ///     <para>
+    ///         Both halves are asserted because the escalation is exactly the difference between them: a test
+    ///         that only read the severity would pass on a generator that reported an Error and emitted the
+    ///         silent binding anyway.
+    ///     </para>
     /// </summary>
     [Fact]
-    public void The_refusal_is_a_warning_so_the_mapper_still_emits()
+    public void The_refusal_is_an_error_and_the_class_stops_emitting()
     {
         const string src = """
                            using DwarfMapper;
@@ -196,7 +206,7 @@ public sealed class MemberFormDirectiveTests
                            """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
         Assert.Contains(diagnostics,
-            d => d.Id == "DWARF088" && d.Severity == DiagnosticSeverity.Warning);
-        Assert.Contains("Name = s.Name", generated, StringComparison.Ordinal);
+            d => d.Id == "DWARF088" && d.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain("Name = s.Name", generated, StringComparison.Ordinal);
     }
 }

@@ -302,7 +302,8 @@ so a version with no section here ships with no notes.
   need to be: C# erases a partial method with no implementing part along with every call to it, so as a hook
   it can only ever be a no-op, or — where the generator supplies the missing part — a call back into the
   method being generated. Refused now before the signature is looked at, so one diagnostic covers all five
-  endpoints. A **Warning**, for the reason `DWARF088` is one; the hook is dropped and the mapper is emitted.
+  endpoints. A **Warning**, for the reason `DWARF089` and `DWARF090` are; the hook is dropped and the mapper
+  is emitted.
   Escalate with `dotnet_diagnostic.DWARF091.severity = error`. (round 20, D16)
 - **`DWARF089` — a directive on a co-located `[GenerateMap]` host member that cannot be applied.** The exact
   inverse of `DWARF088`: that one refuses the *member* form where there is no member, this one refuses the
@@ -310,21 +311,27 @@ so a version with no section here ships with no notes.
   destination the placement has already named. It also covers two shapes the placement alone cannot decide:
   stacked directives whose count does not match the `[GenerateMap]` pairs the host is the destination of
   (they bind positionally, one per pair, as they do to `[MapTo]` targets), and a member directive on a host
-  that is the destination of no pair it declares. A **Warning**, for the reason `DWARF088` is one: a blocking
+  that is the destination of no pair it declares. A **Warning** — unlike `DWARF088`, which is an Error — for
+  a reason of its own: a blocking
   error would suppress the host's emission, so the generated `<Host>Mapper`, its convenience extension and
   its DI registration would all vanish and every call site would meet `CS1061` instead of the refusal. The
   offending directive is dropped and the rest of the host's mapping is emitted; escalate with
   `dotnet_diagnostic.DWARF089.severity = error` where the stricter reading is wanted. (round 20, D20)
-- **`DWARF088` — the member-placement overload of `[MapProperty]` / `[MapIgnore]` written on a mapper.** A
-  **Warning**, and the remedy is in the message: supply the argument the method form takes
+- **`DWARF088` — the member-placement overload of `[MapProperty]` / `[MapIgnore]` written on a mapper.** An
+  **Error**, matching its registry mirror `DWARFR04`, which refuses the identical misuse at the other front
+  door. The remedy is in the message: supply the argument the method form takes
   (`[MapProperty("Name", "FullName")]`, `[MapIgnore("Extra")]`). Refusal is right whichever way the directive
   is read — honouring `[MapProperty("Name")]` at a method would bind `Name` to itself, a no-op nobody writes
-  on purpose, and discarding it evaporates a binding the caller stated explicitly. A Warning rather than an
-  Error deliberately: a blocking DwarfMapper error suppresses the whole class's emission, so the refusal would
-  reach the consumer as a wall of `CS8795` from the unimplemented partial methods; escalate with
-  `dotnet_diagnostic.DWARF088.severity = error` where the stricter reading is wanted. Its registry mirror
-  `DWARFR04` stays an Error, having no partial declaration to strand. See the entry under Fixed for what it
-  was replacing. (round 20)
+  on purpose, and discarding it evaporates a binding the caller stated explicitly. **It was drafted as a
+  Warning and escalated before release**, and the reason for the escalation is that the original reason was
+  never a product reason: a blocking DwarfMapper error suppresses the whole class's emission, so the refusal
+  arrives alongside `CS8795` from the unimplemented partial methods — a cost paid by *every* blocking id on
+  this class, `DWARF011` and `DWARF087` included, and both of those are Errors. What this id refuses is silent
+  data loss: `[MapProperty("Name", Use = nameof(F))]` is `ctor(1)` plus property initializers, so the
+  converter, the `When` predicate, the null substitute and the format string are discarded together with the
+  binding and the caller gets auto-matching. Downgrade with
+  `dotnet_diagnostic.DWARF088.severity = warning` if you need the build to proceed while you fix the call
+  sites. See the entry under Fixed for what it was replacing. (round 20, A2 + A12)
 - **`DWARF087` — two `[FlattenGraph]` directives may not fill one destination collection.** An **Error**, and
   the remedy is in the message: keep one directive per collection, or name a different collection member to
   flatten a second graph. It replaces a `CS1912` against generated source with a diagnostic against the

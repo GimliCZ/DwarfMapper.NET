@@ -987,13 +987,26 @@ public static class DiagnosticDescriptors
     ///         nothing.
     ///     </para>
     ///     <para>
-    ///         A <b>Warning</b>, where its registry mirror <c>DWARFR04</c> is an Error, and the asymmetry is
-    ///         measured rather than stylistic: every blocking DwarfMapper error suppresses the whole class's
-    ///         emission, so the partial mapping method loses its implementing part and the consumer meets
-    ///         <c>CS8795</c> — this refusal buried under the cascade the G4/R4 ordering defect produces. The
-    ///         registry emits free-standing extension methods and has no partial declaration to strand, so it
-    ///         can refuse outright. Escalate with
-    ///         <c>dotnet_diagnostic.DWARF088.severity = error</c> where the stricter reading is wanted.
+    ///         An <b>Error</b>, matching its registry mirror <c>DWARFR04</c>, which is an Error for the exact
+    ///         same misuse written at the other front door. It shipped as a Warning for one round and the
+    ///         reason given was never a product reason: an Error suppresses the whole class's emission, so the
+    ///         partial mapping method loses its implementing part and the consumer meets <c>CS8795</c> — and
+    ///         while the G4/R4 ordering defect stood, the surface matrix read that cascade as "the compiler
+    ///         rejected the placement" rather than as a refusal, so escalating would have moved ~25 measured
+    ///         cells into a population nothing judged. R4 is fixed: a <c>CS8795</c> behind a blocking DwarfMapper
+    ///         error is now read as the refusal it is, and the ratchet-avoidance argument died with it.
+    ///     </para>
+    ///     <para>
+    ///         What is left is the product argument, and it points the other way. The cascade is paid by EVERY
+    ///         blocking DwarfMapper error, including <c>DWARF011</c> (two <c>[MapProperty]</c> directives over
+    ///         one destination) and <c>DWARF087</c> (two <c>[FlattenGraph]</c> directives over one destination
+    ///         collection) — both Errors, both on this same class, both stranding the same partial method. A
+    ///         cost every id pays cannot decide the severity of one of them. And what this id refuses is
+    ///         SILENT DATA LOSS: the named arguments ride on the same one-argument constructor as the binding,
+    ///         so <c>[MapProperty("Name", Use = nameof(F))]</c> on a mapper discards the converter, the
+    ///         <c>When</c> predicate, the null substitute and the format string together with the binding, and
+    ///         the caller gets auto-matching. A suppressible Warning is the wrong instrument for a directive
+    ///         whose entire payload evaporates.
     ///     </para>
     ///     <para>
     ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
@@ -1006,7 +1019,7 @@ public static class DiagnosticDescriptors
         "DWARF088",
         "Member-placement directive written on a mapper",
         "{0}",
-        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf088");
 
     /// <remarks>
@@ -1026,7 +1039,9 @@ public static class DiagnosticDescriptors
     ///         until this check existed (surface-matrix finding D20).
     ///     </para>
     ///     <para>
-    ///         A <b>Warning</b>, for the reason <c>DWARF088</c> is one: a blocking error would suppress the
+    ///         A <b>Warning</b>, and the reason is this id's own rather than borrowed from
+    ///         <c>DWARF088</c> — which is an <b>Error</b>, because what it refuses is a directive whose whole
+    ///         payload evaporates. Here a blocking error would suppress the
     ///         whole host's emission, so the generated <c>&lt;Host&gt;Mapper</c>, its convenience extension
     ///         and its DI registration would all vanish and the refusal would reach the consumer as
     ///         <c>CS1061</c> at every call site instead. The offending directive is dropped and the rest of
@@ -1093,7 +1108,7 @@ public static class DiagnosticDescriptors
     ///         is not the same observation as <c>Honoured</c>. The message names the exact replacement text.
     ///     </para>
     ///     <para>
-    ///         A <b>Warning</b>, for the reason <c>DWARF088</c> and <c>DWARF089</c> are: a blocking error
+    ///         A <b>Warning</b>, for the reason <c>DWARF089</c> is: a blocking error
     ///         suppresses the whole class's emission, so every partial mapping method on it loses its
     ///         implementing part and the consumer meets a wall of <c>CS8795</c> with this refusal buried under
     ///         it. The directive is dropped for this endpoint and the rest of the mapper is emitted; escalate
@@ -1140,7 +1155,8 @@ public static class DiagnosticDescriptors
     ///         this replaces the <c>DWARF018</c> signature complaint rather than sitting after it.
     ///     </para>
     ///     <para>
-    ///         A <b>Warning</b>, for the reason <c>DWARF088</c> is one: an error would strand every partial
+    ///         A <b>Warning</b>, for the reason <c>DWARF089</c> and <c>DWARF090</c> are: an error would strand
+    ///         every partial
     ///         mapping method on the class behind <c>CS8795</c>. The hook is dropped — which is what the
     ///         caller already had at three of the five endpoints, minus the recursion at the fourth — and the
     ///         mapper is emitted; escalate with <c>dotnet_diagnostic.DWARF091.severity = error</c> where the
@@ -1231,7 +1247,7 @@ public static class DiagnosticDescriptors
     ///         is a declared CREATE map for the element pair, and a declared update-into is not one.
     ///     </para>
     ///     <para>
-    ///         A <b>Warning</b>, for the reason <c>DWARF088</c>, <c>DWARF090</c> and <c>DWARF091</c> are: a
+    ///         A <b>Warning</b>, for the reason <c>DWARF089</c>, <c>DWARF090</c> and <c>DWARF091</c> are: a
     ///         blocking error suppresses the whole class's emission, so every partial mapping method on it
     ///         loses its implementing part and the consumer meets a wall of <c>CS8795</c> with this refusal
     ///         buried under it. The directive is dropped for this endpoint and the rest of the mapper is
@@ -1293,7 +1309,7 @@ public static class DiagnosticDescriptors
     ///         message says so rather than sending a create-map caller into a duplicate-member error.
     ///     </para>
     ///     <para>
-    ///         A <b>Warning</b>, for the reason <c>DWARF088</c> and <c>DWARF092</c> are, and the message is
+    ///         A <b>Warning</b>, for the reason <c>DWARF090</c> and <c>DWARF092</c> are, and the message is
     ///         composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>) because it quotes
     ///         the wrapper the caller wrote.
     ///     </para>

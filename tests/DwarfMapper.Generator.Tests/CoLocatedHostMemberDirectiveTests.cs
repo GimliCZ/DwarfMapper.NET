@@ -319,7 +319,8 @@ public sealed class CoLocatedHostMemberDirectiveTests
     }
 
     /// <summary>
-    ///     A Warning, for the reason <c>DWARF088</c> is one: a blocking error suppresses the host's emission
+    ///     A Warning — unlike <c>DWARF088</c>, which is an Error — for a reason of this id's own: a blocking
+    ///     error suppresses the host's emission
     ///     entirely, so the generated <c>&lt;Host&gt;Mapper</c>, its convenience extension and its DI
     ///     registration all vanish and every call site meets <c>CS1061</c> instead of the refusal.
     /// </summary>

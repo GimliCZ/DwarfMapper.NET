@@ -547,10 +547,16 @@ public sealed class SurfaceParityTests
     ///     <para>
     ///         162 → 113, the forty-nine cells those four findings covered, every one re-measured as
     ///         <c>Refused</c> rather than reasoned about. They became <c>Refused</c> and not
-    ///         <c>NotCompilable</c> because <c>DWARF088</c> is a WARNING: an Error suppresses the class's
-    ///         emission and the refusal would have arrived as <c>CS8795</c> instead, which is the G4/R4
-    ///         ordering defect and would have moved these cells into
-    ///         <see cref="NotCompilableCellCeiling" />'s population rather than out of this one.
+    ///         <c>NotCompilable</c> because <c>DWARF088</c> was a WARNING at the time: an Error suppressed the
+    ///         class's emission and the refusal arrived as <c>CS8795</c> instead, which is the G4/R4 ordering
+    ///         defect and would have moved these cells into
+    ///         <see cref="NotCompilableCellCeiling" />'s population rather than out of this one. <b>That is
+    ///         history now, in both halves.</b> R4 is fixed, so a <c>CS8795</c> behind a blocking DWARF error
+    ///         reads <c>Refused</c>; and with the ratchet argument dead, <c>DWARF088</c> was escalated to an
+    ///         <b>Error</b> on the product grounds it should have been decided on in the first place. All 47
+    ///         of its cells were re-measured across the escalation and every one still reads <c>Refused</c> —
+    ///         45 as <c>DWARF088 (behind CS8795)</c> at the five mapper endpoints, 2 plainly at
+    ///         <c>CoLocatedHost</c>, which declares no partial mapping method to strand.
     ///     </para>
     ///     <para>
     ///         113 → 93 when <c>D20</c> was closed: the co-located host now reads the member-placement
