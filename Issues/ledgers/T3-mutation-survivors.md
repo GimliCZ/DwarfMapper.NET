@@ -442,3 +442,27 @@ The first drops measurement; the second and third were ruled out for the runtime
   directory, so its output self-ignores.
 - **Nothing in `src/` or `tests/` was touched.** Only the two configs and this ledger changed, so the fast
   tier is unaffected by construction.
+
+## Open action items for the maintainer — not fixed here
+
+1. **`scripts/housekeeping.ps1 -Mutation` is still destructive, and a config comment is not a guard.** The
+   script runs the DocTooling leg unconditionally, that leg empties tracked documentation (NOTE 3 of
+   `stryker-config.doctooling.json`), and the only defence today is a human remembering to run `git status`
+   afterwards. This task's grant covered the two configs and this ledger, so the script was not touched —
+   **the fix is a decision, not an oversight**. Two shapes are available and they are not equivalent:
+   restore the doc set after the leg (`git checkout --` the five files, which silently discards a *genuine*
+   regeneration a contributor was mid-way through), or make the doc-writing tests write somewhere else under
+   mutation (a `DWARF_DOC_OUTPUT` redirect, which changes what the leg proves for `DocSnippetInjector` and
+   `DocTableInjector` — precisely the two files whose write behaviour is under test). Pick one deliberately.
+2. **The margin to `break` is one mutant on the generator leg and ZERO on DocTooling.** 143/201 still passes
+   at 71; 235/284 does not pass at 83. That strictness is the house convention — `break` is the floored
+   measured score in all three configs — but it means a single `Killed → Survived` flip fails the doc leg.
+   Both configs now say so, and both say to check the **Timeout** bucket before assuming a regression: a
+   timeout counts as detected, so a re-classification moves the score with no test having changed. On this
+   leg that cuts the unusual way — its three timeouts are *genuine hangs*, so an environment that stops
+   hanging on them (a test-level timeout wrapper, a different scheduler) lowers the score honestly.
+3. **The generator leg's 85 static mutants deserve a research item of their own.** They are the whole cost of
+   the leg and the reason the deep-tier budget does not close. `static` here is a property of how Stryker's
+   coverage capture sees the generator being invoked, not of the tests — which means it may be recoverable
+   without touching a single assertion. That is the generator-side twin of R21-1, and it is worth measuring
+   before anyone proposes cutting what the leg mutates.
