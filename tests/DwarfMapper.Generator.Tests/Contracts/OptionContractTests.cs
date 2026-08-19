@@ -121,20 +121,31 @@ public class OptionContractTests
             "projection depth is bounded by what the provider can translate, not by this budget")
     ];
 
-    public static TheoryData<string> OptionNames()
+    /// <summary>
+    ///     Driven by the SCANNED catalogue, not by the declaration list: an option added to the attribute
+    ///     becomes a failing cell here immediately, instead of waiting for someone to notice the list.
+    ///     <para>
+    ///         Keyed on option AND value. The declared contract below is per option — projection either
+    ///         translates that concept or it does not — but the contract is CHECKED once per value, so a
+    ///         three-member enum whose third member projects differently from its second cannot hide behind
+    ///         a row written for the first. Keying on the name alone would also make the
+    ///         <c>Single</c> below throw the day any option domain grows past one value.
+    ///     </para>
+    /// </summary>
+    public static TheoryData<string, string> OptionValues()
     {
-        // Driven by the SCANNED catalogue, not by the declaration list: an option added to the attribute
-        // becomes a failing cell here immediately, instead of waiting for someone to notice the list.
-        var data = new TheoryData<string>();
-        foreach (var c in OptionCatalog.Options) data.Add(c.Name);
+        var data = new TheoryData<string, string>();
+        foreach (var c in OptionCatalog.Options) data.Add(c.Name, c.ValueLabel);
         return data;
     }
 
     [Theory]
-    [MemberData(nameof(OptionNames))]
-    public void Projection_honours_or_refuses_each_option_as_declared(string option)
+    [MemberData(nameof(OptionValues))]
+    public void Projection_honours_or_refuses_each_option_as_declared(string option, string value)
     {
-        var scanned = OptionCatalog.Options.Single(c => string.Equals(c.Name, option, StringComparison.Ordinal));
+        var scanned = OptionCatalog.Options.Single(
+            c => string.Equals(c.Name, option, StringComparison.Ordinal)
+                 && string.Equals(c.ValueLabel, value, StringComparison.Ordinal));
         var cell = ProjectionCells.SingleOrDefault(
             c => string.Equals(c.Option, option, StringComparison.Ordinal));
 
@@ -223,6 +234,77 @@ public class OptionContractTests
         var built = EndpointSources.Build(Endpoint.Projection, options: "CaseInsensitive = true");
         Assert.Contains("[DwarfMapper(CaseInsensitive = true)]", built, StringComparison.Ordinal);
         Assert.DoesNotContain("[DwarfMapper]\n[DwarfMapper", built, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Every_non_default_member_of_every_option_enum_is_probed_by_the_matrix()
+    {
+        // The catalogue used to build an enum's probe with FirstOrDefault(v => !v.Equals(def)): complete for a
+        // two-member enum, and silently dropping members two and three on anything larger. A partially-probed
+        // enum reads in the matrix exactly like a fully-covered one, so the omission would be invisible at the
+        // moment it was introduced — the first non-default member would be probed at every endpoint and the
+        // rest would ship with no cell at all.
+        //
+        // The DEFAULT member is deliberately not demanded. A probe that assigns the value the option already
+        // has is byte-identical to the baseline everywhere, so it can only read Silent whatever the generator
+        // does; [DwarfMapper]'s own zero-argument case carries an Unmeasured declaration for that same reason.
+        var missing = new List<string>();
+
+        foreach (var p in typeof(DwarfMapperAttribute)
+                     .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                     .Where(p => p.CanWrite && p.CanRead && p.GetIndexParameters().Length == 0))
+        {
+            var t = Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType;
+            if (!t.IsEnum) continue;
+
+            var def = p.GetValue(new DwarfMapperAttribute());
+            var probed = OptionCatalog.Options
+                .Where(o => string.Equals(o.Name, p.Name, StringComparison.Ordinal))
+                .Select(o => o.ValueLabel)
+                .ToList();
+
+            foreach (var member in Enum.GetNames(t))
+            {
+                if (string.Equals(member, def?.ToString(), StringComparison.Ordinal)) continue;
+                if (!probed.Contains($"{t.Name}.{member}", StringComparer.Ordinal))
+                    missing.Add($"{p.Name}.{member}");
+            }
+        }
+
+        Assert.True(missing.Count == 0,
+            "Enum option member(s) never probed by any matrix cell: " + string.Join(", ", missing)
+            + ". Every member is a distinct behaviour; probing one alternative and calling the option covered "
+            + "is how a member ships with no test at all.");
+    }
+
+    /// <summary>A three-member enum, which no shipped option has — see the test below for why that matters.</summary>
+    private enum ThreeWay
+    {
+        First,
+        Second,
+        Third
+    }
+
+    private sealed class ThreeWayHolder
+    {
+        public ThreeWay Mode { get; set; } = ThreeWay.First;
+    }
+
+    [Fact]
+    public void The_derived_value_domain_of_a_three_member_enum_holds_both_non_default_members()
+    {
+        // Non-vacuity proof for the test above, and the only place the full-domain rule is actually exercised.
+        // Every option enum shipped today has exactly two members, so FirstOrDefault happened to be COMPLETE
+        // and the completeness test passes against the defect it was written to catch. That makes the
+        // completeness test a guard against a future edit, not a demonstration of one — which is worth having
+        // and worth being honest about. This asserts the derivation itself on a domain large enough to tell
+        // "picks one alternative" apart from "enumerates the domain", so the rule is proven on data the
+        // library does not yet contain.
+        // The default is read off a fresh instance, exactly as OptionCatalog.Build() reads the attribute's.
+        var property = typeof(ThreeWayHolder).GetProperty(nameof(ThreeWayHolder.Mode))!;
+        var domain = OptionCatalog.ValueDomain(property, property.GetValue(new ThreeWayHolder()));
+
+        Assert.Equal<string>(["ThreeWay.Second", "ThreeWay.Third"], domain);
     }
 
     private static string Describe(IEnumerable<Diagnostic> diagnostics)

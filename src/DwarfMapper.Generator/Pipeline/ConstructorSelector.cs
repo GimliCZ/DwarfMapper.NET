@@ -78,10 +78,8 @@ internal static class ConstructorSelector
             // selecting it would emit CS1620/CS-invalid code. An unusable annotated ctor falls back to the
             // (safe) parameterless object-initializer path rather than producing broken output.
             var annotatedOverrides = target.InstanceConstructors
-                .Where(c =>
-                    IsUsableCandidate(c, target, compilation, allowNonPublicConstructors)
-                    && c.GetAttributes()
-                        .Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
+                .Where(c => IsUsableCandidate(c, target, compilation, allowNonPublicConstructors)
+                            && IsAnnotated(c))
                 .ToList();
 
             if (annotatedOverrides.Count == 0)
@@ -111,10 +109,7 @@ internal static class ConstructorSelector
                 candidates.Add(ctor);
 
         // ── Policy 1: [DwarfMapperConstructor] annotation ────────────────────
-        var annotated = candidates
-            .Where(c => c.GetAttributes()
-                .Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute))
-            .ToList();
+        var annotated = candidates.Where(IsAnnotated).ToList();
 
         if (annotated.Count > 1)
         {
@@ -163,6 +158,34 @@ internal static class ConstructorSelector
         }
 
         return withMax[0];
+    }
+
+    /// <summary>
+    ///     Whether this constructor carries <c>[DwarfMapperConstructor]</c>. The ONE statement of that
+    ///     question: it was written inline twice in this file — once on the parameterless-ctor override path
+    ///     and once on Policy 1 — and the registry front door needed to ask it a third time to say that it
+    ///     does NOT read the directive (<c>DWARFR11</c>). A notion spelled out at every site that needs it is
+    ///     how one of them ends up asking a slightly different question.
+    /// </summary>
+    private static bool IsAnnotated(IMethodSymbol ctor)
+    {
+        return ctor.GetAttributes()
+            .Any(a => a.AttributeClass?.ToDisplayString() == DwarfMapperConstructorAttribute);
+    }
+
+    /// <summary>
+    ///     Whether ANY constructor of <paramref name="target" /> carries <c>[DwarfMapperConstructor]</c> — the
+    ///     question a code path that does NOT run this selector has to ask before it can say so.
+    ///     <para>
+    ///         Deliberately unfiltered by <see cref="IsUsableCandidate" />: the claim such a caller makes is
+    ///         "this front door never reads the directive", which is true of an annotation on any constructor,
+    ///         and a usability filter here would make the refusal quietly conditional on a rule the refusing
+    ///         path does not apply.
+    ///     </para>
+    /// </summary>
+    public static bool HasAnnotatedConstructor(INamedTypeSymbol target)
+    {
+        return target.InstanceConstructors.Any(IsAnnotated);
     }
 
     /// <summary>

@@ -565,4 +565,272 @@ public class ConstructorMappingTests
         var (diagnostics, _) = GeneratorTestHarness.Run(src);
         Assert.Contains(diagnostics, d => d.Id == "DWARF025");
     }
+
+    // ── A14: [DwarfMapperConstructor] at the PROJECTION endpoint ──────────────
+
+    /// <summary>
+    ///     The projection endpoint constructs the destination, so the directive that says WHICH constructor
+    ///     to construct it with has to reach it. It did not: the endpoint decided by a local widest-arity
+    ///     pick, and its one call to <c>ConstructorSelector</c> discarded the answer — so an annotated
+    ///     constructor on a target with a parameterless one and writable members was accepted, ignored, and
+    ///     unreported (surface-matrix cell DwarfMapperConstructor @ Projection).
+    /// </summary>
+    [Fact]
+    public void Annotated_ctor_is_honoured_at_the_projection_endpoint()
+    {
+        const string src = """
+                           using System.Linq;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public class D
+                           {
+                               public D() { }
+                               [DwarfMapperConstructor]
+                               public D(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; } = "";
+                           }
+                           [DwarfMapper]
+                           public partial class M { public partial IQueryable<D> Project(IQueryable<S> q); }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.Contains("new global::Demo.D(__s.X, __s.Y)", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The same directive on a NESTED projection target. That path had its own copy of the widest-arity
+    ///     pick, under a comment telling the reader to keep it in step with the top-level one; the copy was
+    ///     silent for exactly the same reason, and fixing only the site named in the finding would have left
+    ///     it so. Also pins that the constructor's arguments are not ALSO assigned in a trailing object
+    ///     initializer: the nested leftover filter matched parameter to member under the configured comparer
+    ///     alone, which does not equate <c>x</c> with <c>X</c>.
+    /// </summary>
+    [Fact]
+    public void Annotated_ctor_is_honoured_for_a_nested_projection_target()
+    {
+        const string src = """
+                           using System.Linq;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Leaf { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public class LeafDto
+                           {
+                               public LeafDto() { }
+                               [DwarfMapperConstructor]
+                               public LeafDto(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; } = "";
+                           }
+                           public class S { public int Id { get; set; } public Leaf Child { get; set; } = new(); }
+                           public class D { public int Id { get; set; } public LeafDto Child { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M { public partial IQueryable<D> Project(IQueryable<S> q); }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.Contains("new global::Demo.LeafDto(__s.Child.X, __s.Child.Y)", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("LeafDto(__s.Child.X, __s.Child.Y) {", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     Two annotations on one target are DWARF025 at the projection endpoint too. Before the selector's
+    ///     answer was used here, that check ran only on the constructor-projection branch — which a target
+    ///     with a parameterless constructor and writable members never enters — so the malformed declaration
+    ///     the create map refuses was accepted in silence through <c>.Project</c>.
+    /// </summary>
+    [Fact]
+    public void Two_annotated_ctors_emit_DWARF025_at_the_projection_endpoint()
+    {
+        const string src = """
+                           using System.Linq;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public class D
+                           {
+                               public D() { }
+                               [DwarfMapperConstructor]
+                               public D(int x) { X = x; }
+                               [DwarfMapperConstructor]
+                               public D(string y) { Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; } = "";
+                           }
+                           [DwarfMapper]
+                           public partial class M { public partial IQueryable<D> Project(IQueryable<S> q); }
+                           """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF025");
+    }
+
+    /// <summary>
+    ///     Annotating the PARAMETERLESS constructor selects it, so the projection maps by object initializer
+    ///     — as the create map over the same pair does. The selector reports that pick with
+    ///     <c>useObjectInitializerOnly = false</c>, and reading that flag rather than the chosen
+    ///     constructor's arity sent the projection to the constructor branch, where it fell through to the
+    ///     WIDEST overload: the annotation named one constructor and got another.
+    /// </summary>
+    [Fact]
+    public void Annotated_parameterless_ctor_projects_by_object_initializer()
+    {
+        const string src = """
+                           using System.Linq;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public class D
+                           {
+                               [DwarfMapperConstructor]
+                               public D() { }
+                               public D(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; } = "";
+                           }
+                           [DwarfMapper]
+                           public partial class M { public partial IQueryable<D> Project(IQueryable<S> q); }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.DoesNotContain("new global::Demo.D(", generated, StringComparison.Ordinal);
+        Assert.Contains("X = __s.X", generated, StringComparison.Ordinal);
+    }
+
+    // ── A14: what the UpdateInto narrowing actually claims ────────────────────
+
+    /// <summary>
+    ///     [DwarfMapperConstructor]'s <c>[DwarfSurfaceSite]</c> drops the UpdateInto endpoint because an
+    ///     update-into writes into a destination the CALLER built, so for the pair it declares there is no
+    ///     construction for the directive to direct. That narrowing is scoped to the endpoint's OWN
+    ///     destination, and this pins the other half of it so nobody reads it as "inert at an update-into":
+    ///     a nested destination member IS constructed there — the update-into replaces it wholesale
+    ///     (DWARF065) — and the annotated constructor of that nested type is the one called. The measurement
+    ///     the claim's stated reason rests on, kept executable rather than left as prose.
+    /// </summary>
+    [Fact]
+    public void Annotated_ctor_is_honoured_for_a_nested_update_into_target()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class Leaf { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public class LeafDto
+                           {
+                               public LeafDto() { }
+                               [DwarfMapperConstructor]
+                               public LeafDto(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; } = "";
+                           }
+                           public class S { public Leaf Child { get; set; } = new(); }
+                           public class D { public LeafDto Child { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M { public partial void Update(S s, D d); }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.Contains("new global::Demo.LeafDto(", generated, StringComparison.Ordinal);
+        Assert.Contains("x: s.X", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The narrowing's own premise: the update-into does NOT construct the destination it maps into, so
+    ///     the annotated constructor of the pair's own target is never called there. Asserted directly so the
+    ///     claim cannot quietly become false — if this endpoint ever grows a construction step, this fails
+    ///     and the site claim has to be revisited rather than left standing as documented behaviour.
+    /// </summary>
+    [Fact]
+    public void An_update_into_does_not_construct_its_own_destination()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public class D
+                           {
+                               public D() { }
+                               [DwarfMapperConstructor]
+                               public D(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; } = "";
+                           }
+                           [DwarfMapper]
+                           public partial class M { public partial void Update(S s, D d); }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.DoesNotContain("new global::Demo.D(", generated, StringComparison.Ordinal);
+        Assert.Contains("d.X = s.X", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     A knock-on of routing the projection through <c>ConstructorSelector</c>, pinned because it was
+    ///     measured rather than predicted and because the full suite passing meant this shape was UNCOVERED,
+    ///     not unchanged. A <c>struct</c> destination with an explicit non-parameterless constructor used to
+    ///     project as <c>new Dst { X = …, Y = … }</c>: the local decision saw the struct's IMPLICIT
+    ///     parameterless constructor and preferred member-init. The selector deliberately skips that
+    ///     constructor for a struct that declares an explicit one — it is a zero-init no-op — so the
+    ///     projection now calls the explicit constructor, which is what <c>.Map</c> over the same pair has
+    ///     always done. Measured both ways at the commit that changed it: a Map/Project divergence closing,
+    ///     not a new one opening.
+    /// </summary>
+    [Fact]
+    public void A_struct_target_with_an_explicit_ctor_projects_through_that_ctor()
+    {
+        const string src = """
+                           using System.Linq;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } public string Y { get; set; } = ""; }
+                           public struct D
+                           {
+                               public D(int x, string y) { X = x; Y = y; }
+                               public int X { get; set; }
+                               public string Y { get; set; }
+                           }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               public partial D Map(S s);
+                               public partial IQueryable<D> Project(IQueryable<S> q);
+                           }
+                           """;
+        var generated = GeneratorAssert.CompilesClean(src);
+        Assert.Contains("new global::Demo.D(__s.X, __s.Y)", generated, StringComparison.Ordinal);
+        // And the create map over the same pair still constructs it too — the two agreeing IS the point, so
+        // this has to name text only the create map can produce. It emits NAMED arguments off its own
+        // parameter (`x: s.X`); the projection emits positional ones off the lambda parameter (`__s.X`),
+        // because expression trees reject named args (CS0853). A bare `new global::Demo.D(` would have been
+        // satisfied by the projection line above it and asserted nothing.
+        Assert.Contains("x: s.X", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The user-visible diagnostic-id flip the projection fix carried, pinned rather than left to the
+    ///     CHANGELOG alone. A constructor parameter with no source used to draw <c>DWARF001</c> at this
+    ///     endpoint — a complaint about the MEMBER the parameter feeds, raised by the completeness gate
+    ///     because the constructor path was never entered — and now draws <c>DWARF024</c>, the constructor
+    ///     diagnostic the create map has always raised for the same declaration. Both directions asserted:
+    ///     the id a caller now suppresses or documents is the one this says it is, and the id they used to
+    ///     get is gone.
+    /// </summary>
+    [Fact]
+    public void An_unbindable_ctor_parameter_is_DWARF024_at_the_projection_endpoint()
+    {
+        const string src = """
+                           using System.Linq;
+                           using DwarfMapper;
+                           namespace Demo;
+                           public class S { public int X { get; set; } }
+                           public class D
+                           {
+                               public D() { }
+                               [DwarfMapperConstructor]
+                               public D(int x, string nope) { X = x; Nope = nope; }
+                               public int X { get; set; }
+                               public string Nope { get; set; } = "";
+                           }
+                           [DwarfMapper]
+                           public partial class M { public partial IQueryable<D> Project(IQueryable<S> q); }
+                           """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+        Assert.Contains(diagnostics, d => d.Id == "DWARF024");
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF001");
+    }
 }

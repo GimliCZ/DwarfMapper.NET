@@ -8,7 +8,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 
 /// <summary>
 /// Completeness audit for the generator's INTERNAL behaviour enums. <c>CollectionConverter.TargetKind</c> is
-/// already gated (AssemblyScanTests.Scan6, TestTheTestsScanTests.T3b), but its siblings were not:
+/// already gated (AssemblyScanTests.Scan6a), but its siblings were not:
 /// <list type="bullet">
 ///   <item><description><c>CollectionConverter.CountKind</c> (None/Length/Count) — drives capacity pre-sizing;</description></item>
 ///   <item><description><c>DictionaryConverter.DictTargetKind</c> — the dictionary target taxonomy;</description></item>

@@ -82,13 +82,22 @@ internal static class GeneratorTestHarness
     ///         no observable effect at ANY endpoint, which is a property of the instrument rather than of the
     ///         generator — and it would have been published as fact.
     ///     </para>
+    ///     <para>
+    ///         ALL means both shipped generators. The package contains two — <see cref="DwarfGenerator" /> and
+    ///         the separate <see cref="DwarfMapper.Generator.Registry.MapToGenerator" /> — and a consumer's
+    ///         build runs both, so a harness that runs one is not measuring the product. Driving only
+    ///         <c>DwarfGenerator</c> made every <c>[MapTo]</c> source emit nothing at all, which the surface
+    ///         matrix then read as "the element is SILENT at the registry endpoint" for all 122 of that
+    ///         column's cells: the same instrument-not-generator confusion described above, one endpoint over.
+    ///     </para>
     /// </summary>
     public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) RunAll(string source,
         NullableContextOptions nullable = NullableContextOptions.Disable)
     {
         var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
 
-        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(),
+            new DwarfMapper.Generator.Registry.MapToGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
 
         var generated = string.Join("\n",
@@ -150,7 +159,10 @@ internal static class GeneratorTestHarness
     {
         var compilation = BuildCompilation("DwarfMapperCompileTestAsm", source, nullable);
 
-        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+        // Both shipped generators, for the same reason as RunAll: a consumer's build runs both, and the
+        // registry's emitted extension class is as much "generated code that must compile" as the mapper's.
+        var driver = CSharpGeneratorDriver.Create(new DwarfGenerator(),
+            new DwarfMapper.Generator.Registry.MapToGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
 
         return outputCompilation.GetDiagnostics()
@@ -182,8 +194,33 @@ internal static class GeneratorTestHarness
         return outputCompilation.GetDiagnostics()
             .Where(d => d.Severity >= DiagnosticSeverity.Warning)
             .Where(d => d.Id.StartsWith("CS", StringComparison.Ordinal))
-            .Where(d => d.Location.SourceTree?.FilePath.EndsWith(".g.cs", StringComparison.Ordinal) == true)
+            .Where(IsInGeneratedCode)
             .ToImmutableArray();
+    }
+
+    /// <summary>
+    ///     Whether a compiler diagnostic is reported against code THIS GENERATOR WROTE, rather than against
+    ///     the caller's own source.
+    ///     <para>
+    ///         The distinction is the difference between two opposite defects, so it is stated once and
+    ///         shared rather than re-spelled per caller. A diagnostic in the user's source says the caller
+    ///         wrote something the compiler rejects; a diagnostic in a <c>.g.cs</c> file says the generator
+    ///         handed the consumer code that does not compile, in a file they never wrote and cannot fix.
+    ///         <see cref="GeneratedCodeWarnings" /> has used this test since it was written;
+    ///         <c>SurfaceProbe.Classify</c> is the second caller, and a second copy of the test is exactly
+    ///         how the two would come to disagree about what "generated" means.
+    ///     </para>
+    ///     <para>
+    ///         Keyed on the <c>.g.cs</c> suffix because that is what every hint name this package emits ends
+    ///         in, and the hand-written trees the harness builds carry no path at all. A location with no
+    ///         source tree (a compilation-level diagnostic) is NOT generated code: it belongs to no file, and
+    ///         attributing it to the generator would be a guess.
+    ///     </para>
+    /// </summary>
+    public static bool IsInGeneratedCode(Diagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
+        return diagnostic.Location.SourceTree?.FilePath.EndsWith(".g.cs", StringComparison.Ordinal) == true;
     }
 
     /// <summary>

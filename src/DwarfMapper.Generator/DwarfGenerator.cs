@@ -46,11 +46,15 @@ public sealed class DwarfGenerator : IIncrementalGenerator
     internal const string RequiresManifestStepName = "DwarfMapperRequiresManifest";
     internal const string AmbientRegistrationStepName = "DwarfMapperAmbientRegistration";
 
+    /// <summary>Tracking name for the DWARF086 scan over hand-written manifest attributes.</summary>
+    internal const string HandWrittenManifestStepName = "DwarfMapperHandWrittenManifest";
+
     /// <summary>Every tracked step in this generator, for the cacheability battery.</summary>
     internal static readonly string[] AllStepNames =
     {
         ExtractStepName, CoLocatedExtractStepName,
         AggregateStepName, RequiresManifestStepName, AmbientRegistrationStepName,
+        HandWrittenManifestStepName,
     };
 
     /// <inheritdoc />
@@ -88,14 +92,9 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         {
             var di = compilation.GetTypeByMetadataName(
                 "Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null;
-            var publicExtensions = false;
-            foreach (var a in compilation.Assembly.GetAttributes())
-            {
-                if (a.AttributeClass?.ToDisplayString() != KnownNames.DwarfMapperOptionsFqn) continue;
-                foreach (var na in a.NamedArguments)
-                    if (na.Key == "PublicExtensions" && na.Value.Value is bool b)
-                        publicExtensions = b;
-            }
+            // Read through AssemblyConfiguration, not inline: the [MapTo] registry emits an extension class of
+            // its own and must reach the same answer, and two readers of one option drift.
+            var publicExtensions = AssemblyConfiguration.PublicExtensions(compilation);
 
             return (Di: di, PublicExtensions: publicExtensions, AsmNs: SanitizeNamespace(compilation.AssemblyName));
         });
@@ -106,6 +105,25 @@ public sealed class DwarfGenerator : IIncrementalGenerator
             static (spc, pair) => EmitAggregates(
                 spc, pair.Left.Left.AddRange(pair.Left.Right), pair.Right.Di, pair.Right.PublicExtensions,
                 pair.Right.AsmNs));
+
+        // DWARF086: the Provides/Requires manifests are the generator's OUTPUT, and the validation root reads
+        // them as a description of what each assembly actually registers or consumes. A hand-written entry
+        // describes a map nothing produced, and it is the one falsehood the root cannot detect — so it is
+        // refused here, in the compilation that wrote it. The generator's own emission carries a `.g.cs` path
+        // and is excluded; see AmbientValidator.HandWrittenManifests.
+        var handWrittenManifests = context.CompilationProvider
+            .Select(static (compilation, _) =>
+                EquatableArray.From(AmbientValidator.HandWrittenManifests(compilation)));
+
+        context.RegisterSourceOutput(handWrittenManifests.WithTrackingName(HandWrittenManifestStepName),
+            static (spc, entries) =>
+            {
+                foreach (var entry in entries)
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.HandWrittenManifestAttribute,
+                        entry.Location?.ToLocation() ?? Location.None,
+                        entry.AttributeName));
+            });
 
         // Ambient REQUIRES manifest: the cross-assembly maps this assembly consumes through IDwarfMapper —
         // auto-detected from Map<TDest>(src) call sites + declared via [UsesMap] — emitted as

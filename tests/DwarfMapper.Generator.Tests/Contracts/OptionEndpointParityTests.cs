@@ -54,22 +54,30 @@ public class OptionEndpointParityTests
     public static readonly Endpoint[] ComparableEndpoints =
         [Endpoint.UpdateInto, Endpoint.Projection, Endpoint.SpanMap, Endpoint.AsyncStream];
 
-    public static TheoryData<string, Endpoint> Cells()
+    /// <summary>
+    ///     One row per option VALUE per endpoint. The value label is part of the key, not decoration: an
+    ///     option whose domain holds several non-default values contributes several rows, xUnit collapses
+    ///     rows whose arguments compare equal, and two rows keyed on the option name alone would silently
+    ///     become one — reintroducing, at the theory level, the very under-probing the full-domain
+    ///     enumeration in <see cref="OptionCatalog.ValueDomain" /> exists to prevent.
+    /// </summary>
+    public static TheoryData<string, string, Endpoint> Cells()
     {
-        var data = new TheoryData<string, Endpoint>();
+        var data = new TheoryData<string, string, Endpoint>();
         foreach (var cell in OptionCatalog.Options)
         foreach (var endpoint in ComparableEndpoints)
-            data.Add(cell.Name, endpoint);
+            data.Add(cell.Name, cell.ValueLabel, endpoint);
         return data;
     }
 
     [Theory]
     [MemberData(nameof(Cells))]
     public void An_option_that_acts_at_CreateMap_does_not_go_silent_at_another_endpoint(
-        string option, Endpoint endpoint)
+        string option, string value, Endpoint endpoint)
     {
-        var cell = OptionCatalog.Options
-            .Single(c => string.Equals(c.Name, option, StringComparison.Ordinal));
+        var cell = OptionCatalog.Options.Single(
+            c => string.Equals(c.Name, option, StringComparison.Ordinal)
+                 && string.Equals(c.ValueLabel, value, StringComparison.Ordinal));
 
         var reference = OptionProbe.Classify(Endpoint.CreateMap, cell.NonDefault, cell.Types);
 
@@ -80,20 +88,16 @@ public class OptionEndpointParityTests
         var actual = OptionProbe.Classify(endpoint, cell.NonDefault, cell.Types);
         if (actual.Effect != OptionEffect.Silent) return;
 
-        if (OptionGaps.StructurallyInapplicable.TryGetValue((option, endpoint), out var why))
+        if (DeclaredDivergences.StructurallyInapplicable.TryGetValue((option, endpoint), out var why))
         {
             Assert.False(string.IsNullOrWhiteSpace(why));
             return;
         }
 
         // Known and recorded, but not yet fixed. Failing here would mean either hiding the gap or blocking
-        // every future change on fixing it; OptionGaps names it instead, and the ratchet there stops it
-        // spreading and forces removal once it is fixed.
-        if (OptionGaps.KnownSilent.TryGetValue(option, out var gap))
-        {
-            Assert.False(string.IsNullOrWhiteSpace(gap));
-            return;
-        }
+        // every future change on fixing it; DeclaredDivergences names it instead, and the ratchet there stops
+        // it spreading and forces removal once it is fixed.
+        if (DeclaredDivergences.CoversOption(option)) return;
 
         Assert.Fail(
             $"[DwarfMapper({cell.NonDefault})] is {reference.Effect} at CreateMap "
@@ -122,11 +126,24 @@ public class OptionEndpointParityTests
     public void Every_exemption_names_a_real_option_and_endpoint()
     {
         // A stale exemption silently re-permits the divergence it was written to excuse.
+        //
+        // The endpoint is held to EndpointSources.All rather than to ComparableEndpoints, and the difference
+        // is a fact about the store's consumers. This file compares CLASS-level options, so its own domain is
+        // the four endpoints that take a [DwarfMapper]-annotated class; the SURFACE matrix consults the same
+        // store through SurfaceParityTests.StructurallyInapplicableOption at all SEVEN, and the cell it needs
+        // to excuse at the registry front door is an ASSEMBLY attribute, which needs no mapper class to reach
+        // that endpoint. Asserting this file's domain over a shared store forbade a legitimate exemption the
+        // other consumer required (RegisterCollectionShapes @ Registry, task A12).
+        //
+        // Nothing is lost by widening it: this assertion never detected staleness. A structural exemption is
+        // not self-retiring — that is stated at StructurallyInapplicable itself — and its containment is
+        // SurfaceParityTests.The_cells_excused_as_structural_are_counted, a shrink-only count of the cells
+        // each row actually excuses.
         var known = OptionCatalog.Options.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
-        foreach (var ((opt, ep), why) in OptionGaps.StructurallyInapplicable)
+        foreach (var ((opt, ep), why) in DeclaredDivergences.StructurallyInapplicable)
         {
             Assert.True(known.Contains(opt), $"Exemption names unknown option '{opt}'.");
-            Assert.Contains(ep, ComparableEndpoints);
+            Assert.Contains(ep, EndpointSources.All);
             Assert.False(string.IsNullOrWhiteSpace(why), $"Exemption for {opt}/{ep} states no reason.");
         }
     }

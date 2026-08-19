@@ -121,14 +121,22 @@ internal static partial class MapperExtractor
         var classIgnores = ReadIgnores(classSymbol).ToList();
         var classIgnoreSources = ReadIgnoreSources(classSymbol).ToList();
 
+        // ReadIgnores above accepts the one-argument [MapIgnore("Member")] and drops everything else. What it
+        // drops is the no-argument MEMBER form, which named nothing here and left the caller believing they
+        // had excluded a member. Checked at the class symbol for the class site; the method loop below does
+        // the same for each mapping method.
+        ReportMemberFormDirectives(classSymbol, "mapper class",
+            LocationInfo.From(classSyntax.Identifier.GetLocation()), diagnostics);
+
         // Assembly-wide default options ([assembly: DwarfMapperDefaults(...)]) layer UNDER the mapper's own
         // options. Every option reader returns the first matching named argument across the attribute list, so
         // appending the assembly-defaults attribute AFTER the class's [DwarfMapper] attribute gives exactly the
         // precedence we want — mapper > assembly defaults > built-in default — with no reader changes. Options
         // not present on DwarfMapperDefaults (MaxDepth, ReferenceHandling, OnCycle, GenerateExtensions) simply
         // never match there and stay per-mapper.
-        var asmDefaults = ctx.SemanticModel.Compilation.Assembly.GetAttributes()
-            .FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == KnownNames.DwarfMapperDefaultsFqn);
+        // The LOOKUP is AssemblyConfiguration's, shared with the [MapTo] registry front door, which had no
+        // sight of assembly-level configuration at all until it called the same reader.
+        var asmDefaults = AssemblyConfiguration.Defaults(ctx.SemanticModel.Compilation);
         var opts = asmDefaults is null ? ctx.Attributes : ctx.Attributes.Add(asmDefaults);
 
         var requiredMapping = ReadRequiredMapping(opts); // 0 = Target (default), 1 = Both
@@ -172,6 +180,11 @@ internal static partial class MapperExtractor
         // was configured PER MAP, so a profile mixing patch-merge maps with ordinary ones cannot translate
         // to one class-level boolean — it had to be split across two mapper classes, and that split then
         // synthesized the same nested pair twice with opposite null semantics. See MapNullSkipAttribute.
+        //
+        // Read ONCE here and handed to ResolveNullSkip at every endpoint, which is the whole fix for D6/D7:
+        // this list used to be consulted only by the [GenerateMap] and synthesized-pair paths, so the two
+        // documented scopes of one option each reached about half the endpoints and said nothing at the other
+        // half. ResolveNullSkip is the single reader; do not add a second one.
         var pairNullSkips = ReadPairNullSkips(classSymbol);
         var allowNonPublic = ReadAllowNonPublic(opts);
         var nullCollections = ReadNullCollections(opts);
@@ -212,6 +225,14 @@ internal static partial class MapperExtractor
                 && ac.TypeArguments[1] is INamedTypeSymbol gt)
                 genPairs.Add((ac.TypeArguments[0], gt));
         }
+
+        // Member-level directives written on the CO-LOCATED HOST itself, read before the wrapper expansion
+        // appends synthetic pairs: a host member says something about the pairs the host DECLARED, and a
+        // wrapper instantiation W<S> -> W<T> has neither the host's members nor a position a stacked
+        // directive could bind to.
+        var hostDirectives = separateEmit
+            ? ReadCoLocatedHostDirectives(classSymbol, genPairs, diagnostics)
+            : EmptyHostDirectives;
 
         ExpandWrapperMaps(classSymbol, genComp, genPairs, diagnostics, genLoc);
 
@@ -272,6 +293,12 @@ internal static partial class MapperExtractor
 
             var methodLocation = LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None);
 
+            // Before any endpoint-specific handling, because the mistake is the same one at all of them: this
+            // loop is the single point every partial mapping method passes through, and a check placed inside
+            // one endpoint's branch would have refused the directive on a create map and gone on discarding it
+            // on the span and stream overloads of the very same mapper.
+            ReportMemberFormDirectives(method, "mapping method", methodLocation, diagnostics);
+
             // ── Zero-alloc span map: void Map(ReadOnlySpan<S>/Span<S> src, Span<D> dst) ──
             // Maps element-wise into a caller-provided destination buffer (no allocation). The
             // destination must be a writable Span<D>; a too-small destination throws (never silent
@@ -284,12 +311,13 @@ internal static partial class MapperExtractor
             {
                 var spanComp = ctx.SemanticModel.Compilation;
                 var spanAutoNest = ReadMethodAutoNest(method, classAutoNest);
-                if (explicitOnly)
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.ExplicitOnlyNotElementWise, methodLocation, method.Name));
+                // Before the element-wise gate and before resolution, so a directive read only at another
+                // endpoint is reported whatever else this method turns out to be wrong about.
+                ReportDirectivesNotReadHere(method, spanComp, spanSrcElem, spanDstElem,
+                    MapEndpointKind.SpanMap, methodLocation, diagnostics);
+                if (ReportElementWiseDirectiveGaps(method, classSymbol, spanSrcElem, spanDstElem, explicitOnly,
+                        spanComp, allowNonPublic, methodLocation, diagnostics))
                     continue;
-                }
 
                 if (!TryResolveConversion(spanComp, spanSrcElem, spanDstElem, null, allMethods, mapperMethods,
                         enumPolicy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
@@ -326,7 +354,7 @@ internal static partial class MapperExtractor
                     // relative to its siblings. Passing it changes no generated output that any test can see:
                     // the depth guard for an element pair comes from the synthesized mapper, not this model.
                     // Kept for consistency, NOT claimed as a fix — the gap it looks like it should close is
-                    // recorded in OptionGaps.KnownSilent, still open.
+                    // recorded in DeclaredDivergences.Reasons["MaxDepth"], still open.
                     MaxDepth: maxDepth));
                 continue;
             }
@@ -344,7 +372,11 @@ internal static partial class MapperExtractor
             {
                 var updSrc = method.Parameters[0].Type;
                 var comp = ctx.SemanticModel.Compilation;
-                var updIgnores = new HashSet<string>(classIgnores);
+                // Before resolution, so a directive read only at another endpoint is reported whatever else
+                // this method turns out to be wrong about. An update-into does NOT reach a sibling create map.
+                ReportDirectivesNotReadHere(method, comp, updSrc, updTgt, MapEndpointKind.UpdateInto,
+                    methodLocation, diagnostics);
+                var updIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var ig in ReadIgnores(method)) updIgnores.Add(ig);
                 var updExplicit = ReadExplicitMaps(method);
                 var updMapValues = ReadMapValues(method);
@@ -368,7 +400,7 @@ internal static partial class MapperExtractor
                     nameConvention: nameConvention, mapPropertyExtras: updMapPropExtras,
                     // Update-into is where patch-merge actually lives, so a method-level [MapNullSkip]
                     // matters most here.
-                    skipNullSourceMembers: ReadMapNullSkip(method) ?? skipNullSrc,
+                    skipNullSourceMembers: ResolveNullSkip(pairNullSkips, method, updSrc, updTgt, skipNullSrc),
                     allowNonPublic: allowNonPublic,
                     explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                     stringFormats: ReadStringFormats(method),
@@ -507,12 +539,11 @@ internal static partial class MapperExtractor
             {
                 var asComp = ctx.SemanticModel.Compilation;
                 var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
-                if (explicitOnly)
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.ExplicitOnlyNotElementWise, methodLocation, method.Name));
+                ReportDirectivesNotReadHere(method, asComp, asSrcElem, asDstElem,
+                    MapEndpointKind.AsyncStream, methodLocation, diagnostics);
+                if (ReportElementWiseDirectiveGaps(method, classSymbol, asSrcElem, asDstElem, explicitOnly,
+                        asComp, allowNonPublic, methodLocation, diagnostics))
                     continue;
-                }
 
                 if (!TryResolveConversion(asComp, asSrcElem, asDstElem, null, allMethods, mapperMethods,
                         enumPolicy, synthesized, nullStrategy, methodLocation, method.Name, diagnostics,
@@ -562,7 +593,13 @@ internal static partial class MapperExtractor
                 && IsQueryable(method.Parameters[0].Type, out var projSource)
                 && projTarget is INamedTypeSymbol projTargetNamed)
             {
-                var projIgnores = new HashSet<string>(classIgnores);
+                // Before the DWARF028 early exit below, which adds the method with empty projection members
+                // and continues: a directive dropped here is dropped whether or not reference handling also
+                // refuses the endpoint.
+                ReportDirectivesNotReadHere(method, ctx.SemanticModel.Compilation, projSource,
+                    projTargetNamed, MapEndpointKind.Projection, methodLocation, diagnostics);
+
+                var projIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var i in ReadIgnores(method)) projIgnores.Add(i);
 
                 // Plan 19D: DWARF028 — ReferenceHandling != None is incompatible with projection
@@ -626,8 +663,37 @@ internal static partial class MapperExtractor
                     projSource, projTargetNamed, projIgnores, ctx.SemanticModel.Compilation,
                     methodLocation, diagnostics, caseInsensitive, projExplicitMaps, enumPolicy,
                     referenceHandling, "__s", nameConvention, ReadMapPropertyExtras(method),
-                    skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
-                    projConsumedSources);
+                    // The FOURTH call site of the one reader, and the last: projection used to pass the bare
+                    // class value, which made it the third partial reader of an option written at four scopes
+                    // (D6/D7). It now sees the method form and the pair-scoped form like every other endpoint.
+                    //
+                    // The refusal below is not new and was not written for this: ResolveProjectionMembers
+                    // already refuses an untranslatable null-skip per affected member with DWARF028, which is
+                    // what [DwarfMapper(SkipNullSourceMembers = true)] and its assembly-level twin have always
+                    // got here. Threading the scoped forms simply lets them reach it.
+                    //
+                    // This one line was built and reverted once (A6): DWARF028 is an Error, a blocking error
+                    // suppresses the class's emission, the partial projection method is left unimplemented,
+                    // and SurfaceProbe read the resulting CS8795 as "the compiler rejected the placement" —
+                    // so landing it would have raised NotCompilableCellCeiling rather than closing anything.
+                    // That was the R4 ordering defect in the instrument, not a fact about this option, and it
+                    // is fixed: a CS8795 behind a blocking DWARF error now reads Refused.
+                    ResolveNullSkip(pairNullSkips, method, projSource, projTargetNamed, skipNullSrc),
+                    allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
+                    projConsumedSources,
+                    // Both [Flatten] and [MapValue] are threaded now, and they arrive from opposite
+                    // directions worth keeping distinct. A flattened leaf is `__s.Root.Leaf`, the navigation
+                    // access every query provider translates (D10). A [MapValue] constant becomes a literal
+                    // in the SELECT, and the object-initializer argument that makes SkipNullSourceMembers
+                    // untranslatable one parameter up does NOT reach it: a constant assignment reads nothing
+                    // from the destination, so there is no "current value" it could need. Its Use= form is
+                    // the one part a provider cannot take, and that is refused rather than dropped.
+                    //
+                    // [MapValue] was built, measured and reverted once (A8) for the reason [MapNullSkip] was:
+                    // DWARF042 and DWARF041 are Errors, a blocking error suppresses emission, and before R4
+                    // the resulting CS8795 read as NotCompilable — so three of the four cells closed by
+                    // moving into the population the parity theory judges by nothing. R4 is fixed.
+                    flattenRoots: ReadFlattenRoots(method), mapValues: ReadMapValues(method));
 
                 // Source-side completeness for projection. The resolver already knows which source members it
                 // read, so this needed tracking rather than new analysis — it was simply never asked.
@@ -662,6 +728,14 @@ internal static partial class MapperExtractor
 
             var sourceType = method.Parameters[0].Type;
 
+            // The FIFTH call site of the one gate, and the reason it is not named after the create map any
+            // more. Every branch above this one is some other endpoint, so this is the create map — and a
+            // directive whose home is the UPDATE-INTO ([MapCollectionKey], finding D14) is discarded HERE
+            // exactly as the create-map-only trio is discarded there. Before resolution, so the refusal does
+            // not depend on what else this method turns out to be wrong about.
+            ReportDirectivesNotReadHere(method, ctx.SemanticModel.Compilation, sourceType, targetType,
+                MapEndpointKind.CreateMap, methodLocation, diagnostics);
+
             // Phase 5: parameters after the source are extra named value sources, matched to destination
             // members by name (precedence: explicit > extra parameter > by-name). Pre-format their
             // signature fragments ("global::Type name") for emission.
@@ -693,7 +767,7 @@ internal static partial class MapperExtractor
                     new List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, string ConverterMethod, bool NeedsCtx)>();
                 var seenSrcTypes = new HashSet<string>(StringComparer.Ordinal);
 
-                foreach (var (derivedSrc, derivedTgt) in rawDerivedPairs)
+                foreach (var (derivedSrc, derivedTgt, _) in rawDerivedPairs)
                 {
                     var srcFqn = derivedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     var tgtFqn = derivedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -936,7 +1010,7 @@ internal static partial class MapperExtractor
                 methodLocation, out var objInitOnly, allowNonPublic, sourceType, explicitMaps);
             if (ctor is null) continue;
 
-            var ignores = new HashSet<string>(classIgnores);
+            var ignores = new HashSet<string>(classIgnores, IgnoreNameComparer);
             foreach (var i in ReadIgnores(method)) ignores.Add(i);
             // A forward [ReverseMap] method with no inverse declared → DWARF052.
             if (HasReverseMap(method))
@@ -1042,7 +1116,9 @@ internal static partial class MapperExtractor
                 consumedParams, requiredMustInitialize, methodAutoNest, nestedRegistry,
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 mapValues, valueProviders, extraParams,
-                nameConvention, mapPropExtras, ReadMapNullSkip(method) ?? skipNullSrc, allowNonPublic, explicitOnly, ignoreObsolete,
+                nameConvention, mapPropExtras,
+                ResolveNullSkip(pairNullSkips, method, sourceType, targetType, skipNullSrc),
+                allowNonPublic, explicitOnly, ignoreObsolete,
                 stringFormats, mapperReservedConverters,
                 // NOT gated on objInitOnly: a parameterless constructor can still carry
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
@@ -1133,12 +1209,30 @@ internal static partial class MapperExtractor
         // e.g. AutoMapper's CreateMap<A,B>() is a near-mechanical 1:1 replace with [GenerateMap<A,B>].
         // genPairs / genComp / genLoc are computed near the top of Extract, because element and member
         // resolution has to be able to SEE these pairs long before this loop emits them.
-        foreach (var (genSrc, genTgt) in genPairs)
+        // Indexed rather than a foreach because a co-located host's MEMBER directives bind to the pairs
+        // POSITIONALLY, exactly as a [MapTo] source member's do to its targets — so which pair this iteration
+        // is emitting is part of the config, not just a loop variable.
+        for (var genIndex = 0; genIndex < genPairs.Count; genIndex++)
         {
+            var (genSrc, genTgt) = genPairs[genIndex];
+
             // Pair-scoped [MapProperty<S,T>] / [MapIgnore<T>] config for this declared pair.
             var (genExplicit, genExtras) = MatchPairProps(pairProps, genSrc, genTgt);
-            var genIgnores = new HashSet<string>(classIgnores);
+            var genIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
             foreach (var im in MatchPairIgnores(pairIgnores, genTgt)) genIgnores.Add(im);
+
+            // Member-level [MapProperty("SourceMember")] / [MapIgnore] written on the co-located host itself.
+            // Layered ON TOP of the pair-scoped config rather than instead of it: the two are different
+            // placements of the same intent and a host may reasonably carry both. Empty for every other
+            // shape, so nothing below this line behaves differently for a [DwarfMapper] class.
+            Dictionary<string, string>? genFormats = null;
+            if (hostDirectives.TryGetValue(genIndex, out var hostConfig))
+            {
+                genExplicit.AddRange(hostConfig.Explicit);
+                genExtras.AddRange(hostConfig.Extras);
+                foreach (var hm in hostConfig.Ignores) genIgnores.Add(hm);
+                genFormats = hostConfig.StringFormats;
+            }
 
             // Top-level collection/dictionary [GenerateMap<Coll, Coll>]: route through the collection/dict
             // converter (as a declared partial method does, see "Fix 1" above) instead of object-mapping the
@@ -1285,7 +1379,12 @@ internal static partial class MapperExtractor
                 nullCollections == NullCollectionsBehavior.AsNull, isPreserveMode, isSetNullMode, implicitConversions,
                 MatchPairValues(pairValues, genTgt), valueProviders,
                 mapPropertyExtras: genExtras,
-                skipNullSourceMembers: ResolvePairNullSkip(pairNullSkips, genSrc, genTgt, skipNullSrc),
+                // StringFormat rides on the SAME [MapProperty] the rename does, so a path that reads the
+                // directive and does not thread this drops the format in silence — D20 in miniature.
+                stringFormats: genFormats,
+                // No method: a [GenerateMap] pair is declared by the class, so there is no method-scoped
+                // annotation that could speak for it.
+                skipNullSourceMembers: ResolveNullSkip(pairNullSkips, null, genSrc, genTgt, skipNullSrc),
                 allowNonPublic: allowNonPublic,
                 explicitOnly: explicitOnly, ignoreObsolete: ignoreObsolete,
                 mapperReservedConverters: mapperReservedConverters,
@@ -1482,7 +1581,7 @@ internal static partial class MapperExtractor
                 // otherwise the enclosing class's policy. Without the pair-scoped lookup the enclosing
                 // class's value is the ONLY input, which is how one logical nested pair reached from two
                 // classes ended up with opposite null semantics.
-                skipNullSourceMembers: ResolvePairNullSkip(pairNullSkips, nestedSrc, nestedTgt, skipNullSrc),
+                skipNullSourceMembers: ResolveNullSkip(pairNullSkips, null, nestedSrc, nestedTgt, skipNullSrc),
                 allowNonPublic: allowNonPublic,
                 ignoreObsolete: ignoreObsolete,
                 // A synthesized nested mapper must not adopt a dedicated converter either — the author
@@ -2611,6 +2710,35 @@ internal static partial class MapperExtractor
         return result;
     }
 
+    /// <summary>
+    ///     The comparer every <c>[MapIgnore]</c> destination-name set uses, declared once.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <b>Ordinal — an ignore name must match the member's casing exactly.</b> It was already ordinal
+    ///         at every site (the default comparer for <c>string</c> is, and <c>ResolveMembers</c> /
+    ///         <c>ResolveProjectionMembers</c> additionally restate it), but it was ordinal by four separate
+    ///         coincidences rather than by one decision. Naming it is what stops the next reader of the set from
+    ///         picking a different comparer and being right locally and wrong overall.
+    ///     </para>
+    ///     <para>
+    ///         Hoisted because a consumer got it wrong immediately. <c>DWARF090</c>'s member-existence filter
+    ///         was written with <c>OrdinalIgnoreCase</c>, reasoning that a case-differing member is one the
+    ///         caller plausibly meant and so is worth reporting. That is backwards: the ignore set is ordinal,
+    ///         so <c>[MapIgnore("id")]</c> against a property <c>Id</c> excludes nothing at the create map
+    ///         either — there is no element-wise GAP, and reporting one told the caller to switch to a
+    ///         pair-scoped form that would not work at all. A diagnostic that decides whether a directive was
+    ///         DROPPED has to ask the question with the same comparer the thing that drops it uses.
+    ///     </para>
+    ///     <para>
+    ///         That a name matching nothing is inert at every endpoint with no diagnostic at all is a separate
+    ///         gap, recorded as <c>B20</c>; whether <c>[DwarfMapper(CaseInsensitive = true)]</c> ought to make
+    ///         this comparer follow suit is <c>B21</c>. Neither is settled here — this member only ensures the
+    ///         answer is written in one place when it is.
+    ///     </para>
+    /// </remarks>
+    private static readonly StringComparer IgnoreNameComparer = StringComparer.Ordinal;
+
     private static IEnumerable<string> ReadIgnores(ISymbol symbol)
     {
         return symbol.GetAttributes()
@@ -2631,6 +2759,535 @@ internal static partial class MapperExtractor
             .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as string : null)
             .Where(s => s is not null)
             .Select(s => s!);
+    }
+
+    /// <summary>
+    ///     The one gate both ELEMENT-WISE endpoints pass through: everything declared on a span or
+    ///     async-stream method — or on its class — that cannot reach the auto-synthesized ELEMENT mapper.
+    ///     <para>
+    ///         Hoisted rather than duplicated. The <c>DWARF077</c> explicit-only check was written twice, once
+    ///         in each branch, and the surface matrix then found ten more directives with the same silence at
+    ///         the same two endpoints: a second copy of the reasoning is how the next one gets added to one
+    ///         branch and forgotten in the other. Whatever else turns out to be dropped element-wise belongs
+    ///         here, next to the two cases measured so far, not in a third place.
+    ///     </para>
+    ///     <para>
+    ///         The readers are the SAME ones resolution uses — <see cref="ReadIgnores" /> and
+    ///         <see cref="ReadExplicitMaps" /> — so this reports exactly the applications that would have been
+    ///         honoured at a create map and nothing else. Re-parsing the attributes here would drift from what
+    ///         is actually dropped, and would re-open the malformed-argument hole those two readers close (a
+    ///         <c>[MapIgnore(null)]</c> yields no name and must reach neither the model nor a message).
+    ///         The overloads they skip are already <c>DWARF088</c>'s, so nothing is reported twice.
+    ///     </para>
+    ///     <para>
+    ///         A CLASS-scoped directive is additionally required to NAME A MEMBER of the element pair's target.
+    ///         Class-wide directives are meant to be tolerated where they match nothing — a mapper declaring a
+    ///         create map over one pair and a span map over an unrelated one carries an ignore that is about the
+    ///         first pair only — so without that filter the gate reported a pair the caller never wrote about
+    ///         and prescribed a remedy naming a member the type does not have. The method site is deliberately
+    ///         NOT filtered: a directive written on the span method is about that method and nothing else, so a
+    ///         name matching no member there is a mistake worth stating rather than another pair's business.
+    ///     </para>
+    /// </summary>
+    /// <param name="method">The span or async-stream mapping method.</param>
+    /// <param name="classSymbol">Its mapper class, whose class-scoped directives are dropped here too.</param>
+    /// <param name="srcElement">The element pair's source type, named in the remedy.</param>
+    /// <param name="tgtElement">
+    ///     The element pair's target type. Named in the remedy, and — for the CLASS site — the type whose
+    ///     writable members decide whether there is anything here to report at all.
+    /// </param>
+    /// <param name="explicitOnly"><c>[DwarfMapper(AutoMatchMembers = false)]</c> is in force.</param>
+    /// <returns>
+    ///     <c>true</c> when the method must not be emitted at all. Only the explicit-only refusal returns it:
+    ///     a trust boundary that cannot be enforced must not be half-applied, whereas a dropped
+    ///     <c>[MapIgnore]</c> leaves a mapper that still works — and a blocking error there would strand every
+    ///     partial method on the class behind <c>CS8795</c>, hiding the very refusal it was raised to deliver.
+    /// </returns>
+    private static bool ReportElementWiseDirectiveGaps(
+        IMethodSymbol method, INamedTypeSymbol classSymbol, ITypeSymbol srcElement, ITypeSymbol tgtElement,
+        bool explicitOnly, Compilation compilation, bool allowNonPublic, LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        if (explicitOnly)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.ExplicitOnlyNotElementWise, location, method.Name));
+            return true;
+        }
+
+        var src = srcElement.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var tgt = tgtElement.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+
+        // The destination members the element pair actually has. [MapIgnore] names a DESTINATION member, so
+        // this is the same set resolution consults when deciding what an ignore excludes. Built lazily
+        // because the overwhelmingly common case is a class with no unscoped [MapIgnore] at all.
+        HashSet<string>? elementTargetMembers = null;
+
+        foreach (var (symbol, site) in new[] { ((ISymbol)method, "mapping method"), (classSymbol, "mapper class") })
+        {
+            var isClassSite = !ReferenceEquals(symbol, method);
+            foreach (var ignored in ReadIgnores(symbol))
+            {
+                // A class-level [MapIgnore] is class-WIDE, and being tolerated where it matches nothing is how
+                // it is meant to work: a mapper declaring a create map over (Src, Dst) and a span map over an
+                // unrelated (Foo, Bar) legitimately carries an ignore that is about Dst alone. Reported
+                // unfiltered, this named a pair the caller never wrote about and prescribed
+                // [MapIgnore<Bar>("Id")] for a type with no Id — as a warning this repository escalates to an
+                // error. That is the objection the [MapProperty] exclusion below already makes; it belongs to
+                // both attributes, and applying it to one was the defect.
+                //
+                // Matched with IgnoreNameComparer — the comparer the ignore set resolution consults is built
+                // with — rather than a comparer chosen here. This asks "would real resolution have honoured
+                // this name?", and only the set's own comparer can answer it. Written case-INSENSITIVE first,
+                // on the reasoning that a member differing only in case is one the caller plausibly meant:
+                // backwards, because the set is ordinal, so [MapIgnore("id")] against a property Id excludes
+                // nothing at the create map either. There is no element-wise gap to report, and reporting one
+                // prescribed a pair-scoped form that would not work at all.
+                if (isClassSite)
+                {
+                    elementTargetMembers ??= new HashSet<string>(
+                        MemberFacts.Writable(tgtElement, compilation, allowNonPublic).Select(m => m.Name),
+                        IgnoreNameComparer);
+                    if (!elementTargetMembers.Contains(ignored)) continue;
+                }
+
+                Report($"[MapIgnore(\"{ignored}\")] on this {site}", $"[MapIgnore<{tgt}>(\"{ignored}\")]",
+                    MemberDirectiveElsewhere);
+            }
+
+            // Only the method site: the pair-scoped [MapProperty<S,T>] IS the class form, and the class's
+            // unscoped applications belong to whatever [GenerateMap] pair the class declares rather than to a
+            // method — reporting them here would name a pair the caller never wrote about.
+            if (isClassSite) continue;
+            foreach (var (source, target, _) in ReadExplicitMaps(symbol))
+                Report($"[MapProperty(\"{source}\", \"{target}\")] on this {site}",
+                    $"[MapProperty<{src}, {tgt}>(\"{source}\", \"{target}\")]",
+                    MemberDirectiveElsewhere);
+        }
+
+        // The METHOD-scoped [MapNullSkip], for the same reason and with the same remedy — the element pair takes
+        // its null-skip policy from ResolveNullSkip, which has no method to consult for a pair reached
+        // element-wise. Read through the same reader resolution uses, so the malformed-argument fallback is one
+        // rule rather than two, and reported whatever the value is: a discarded [MapNullSkip(false)] on a class
+        // that enables skipping is exactly as silent as a discarded `true`.
+        //
+        // The VALUE is rendered explicitly on both halves even when the caller wrote the bare form. A remedy of
+        // [MapNullSkip<Src, Dst>] copied out in answer to a written [MapNullSkip(false)] would invert the
+        // semantics the caller asked for, which is a worse outcome than quoting them a form they did not type.
+        //
+        // Only the method site: the arity-0 form is AttributeTargets.Method by AttributeUsage, and the class's
+        // own [DwarfMapper(SkipNullSourceMembers = …)] does reach the element pair (as classDefault), so there
+        // is nothing dropped at the class site to report.
+        if (ReadMapNullSkip(method) is { } nullSkip)
+        {
+            var arg = nullSkip ? "true" : "false";
+            // The tail states only what was MEASURED, and it has been wrong in both directions once already.
+            // An early draft claimed the method form was "refused at projection" while the projection resolver
+            // was deliberately not fed the scoped forms, so it was SILENT there; that was corrected to
+            // "silent", and the correction went stale the moment the scoped forms were threaded. It is now
+            // refused there — the resolver reports DWARF028 per affected member, because an object initializer
+            // constructs the destination and "keep its current value" has no current value to keep. Pinned in
+            // both directions in MapNullSkipScopeTests; do not edit this sentence without re-measuring.
+            Report($"[MapNullSkip({arg})] on this mapping method", $"[MapNullSkip<{src}, {tgt}>({arg})]",
+                "The method form is honoured at the create-map and update-into endpoints, and refused at "
+                + "projection (DWARF028 — an object initializer constructs the destination, so \"keep its "
+                + "current value\" has nothing to keep). "
+                + "[DwarfMapper(SkipNullSourceMembers = " + arg + ")] reaches the element pair too, if the "
+                + "policy is meant to be the whole mapper's.");
+        }
+
+        // The METHOD-scoped [MapValue]. Read through ReadMapValues — the reader resolution itself uses — so an
+        // application whose target is absent or not a string is dropped by one rule rather than two, and never
+        // reaches a message with the word "null" in it. Reported for EVERY application, malformed included: a
+        // [MapValue] naming no writable member is refused as DWARF042 at the create map and refused as nothing
+        // at all here, so "it does not reach the element pair" is the true statement in both cases.
+        //
+        // The written form is echoed faithfully — constant, Use=, or neither — for the reason the [MapNullSkip]
+        // arm above records: a remedy that quietly changes what the caller asked for is worse advice than none.
+        // The pair-scoped remedy was MEASURED before it was prescribed: [MapValue<Dst>("Name", "x")] on the
+        // mapper class reads Honoured at SpanMap and at AsyncStream, output differing by the assigned constant.
+        foreach (var mv in ReadMapValues(method))
+        {
+            // A constant this library does not render (an array, a typeof, an error constant) falls back to
+            // the BARE form rather than to a quoted "null": the target is still named and the value is simply
+            // left out, which is honest, where printing a constant the caller did not write is not.
+            var constant = mv.IsConstant ? FormatWrittenConstant(mv.Value) : null;
+            var written = mv.Use is not null
+                ? $"[MapValue(\"{mv.Target}\", Use = \"{mv.Use}\")]"
+                : constant is not null
+                    ? $"[MapValue(\"{mv.Target}\", {constant})]"
+                    : $"[MapValue(\"{mv.Target}\")]";
+            var remedy = "[MapValue<" + tgt + ">" + written.Substring("[MapValue".Length);
+            // The tail says "reaches", not "is honoured": a well-formed [MapValue] is assigned at those
+            // endpoints, a malformed one is refused there, and both are cases of the directive ARRIVING.
+            // Projection is now one of them (D9 closed) — a constant becomes a literal in the SELECT, and the
+            // Use= form alone is refused there as DWARF028. The sentence is pinned in both directions,
+            // because it has been wrong in both: it claimed projection while the resolver never saw the
+            // directive, and then claimed silence after the threading landed.
+            Report(written + " on this mapping method", remedy,
+                "The unscoped form reaches the create-map, update-into and projection endpoints — the "
+                + "constant is assigned there, and a malformed one is refused there (at projection a "
+                + "Use= value provider is refused too, as DWARF028: a query provider cannot call a method).");
+        }
+
+        // The METHOD-scoped [Flatten]. No pair-scoped twin exists, so the remedy is the dotted source path on
+        // [MapProperty<Src, Dst>], one per pulled-up leaf — measured Honoured at SpanMap and AsyncStream
+        // before being prescribed, because a remedy nobody ran is how a diagnostic sends a caller in a circle.
+        // Read through ReadFlattenRoots, which already drops an absent or non-string argument.
+        foreach (var root in ReadFlattenRoots(method))
+            Report($"[Flatten(\"{root}\")] on this mapping method",
+                $"[MapProperty<{src}, {tgt}>(\"{root}.<leaf>\", \"<leaf>\")], one per pulled-up leaf",
+                "The directive is honoured at the create-map, update-into and projection endpoints, which is "
+                + "why its silence here is worth saying out loud.");
+
+        // The METHOD-scoped [Reinterpret], through ReadReinterpretMembers — the reader both the create-map and
+        // the update-into branches resolve with, so an application whose single argument is not a string yields
+        // no directive and reaches neither the model nor a message.
+        //
+        // This one takes ReportWithFix rather than Report, and the reason is worth stating rather than
+        // inferring: [Reinterpret] has NO pair-scoped twin, so "write it pair-scoped on the mapper class" —
+        // the sentence every other arm here ends with — would name a form that does not exist. The remedy is a
+        // DECLARED create map, MEASURED before it was prescribed: with [Reinterpret("Data")] on a
+        // `partial Dst Map(Src s)` beside the span method, the emitted loop is `d[__i] = Map(s[__i]);` and the
+        // member is assigned through __DwarfBlit_… (MemoryMarshal.Cast), where without it the same member goes
+        // through a per-element numeric conversion helper. Same reading at the async stream
+        // (`yield return Map(…)`). A remedy nobody ran is how a diagnostic sends a caller in a circle.
+        //
+        // The tail names the create map and the update-into and stops there. PROJECTION is deliberately absent:
+        // it is not read there either — a blit reinterprets one array's memory as another, and only two
+        // branches call this reader — and a message that claims an endpoint honours a directive it discards is
+        // the exact defect this gate exists to remove.
+        foreach (var member in ReadReinterpretMembers(method))
+            ReportWithFix($"[Reinterpret(\"{member}\")] on this mapping method",
+                "[Reinterpret] has no pair-scoped form, so the remedy is a DECLARED create map rather than a "
+                + $"re-scoped attribute: put [Reinterpret(\"{member}\")] on a `partial {tgt} <Name>({src} s)` "
+                + "on this mapper class. An element-wise map resolves its element pair through a declared "
+                + "mapping method where one exists rather than synthesizing one, so that create map is what "
+                + "this method's loop calls and the forced blit runs per element through it.",
+                "The directive is honoured at the create-map and update-into endpoints, which is why its "
+                + "silence here is worth saying out loud — and the create map also VALIDATES it (DWARF022 for "
+                + "a member that is not an unmanaged array on both sides, or names no writable destination "
+                + "member at all); nothing validated it here either.");
+
+        return false;
+
+        void Report(string written, string remedy, string elsewhere) =>
+            ReportWithFix(written,
+                $"Write it PAIR-SCOPED on the mapper class — {remedy} — which does apply here.", elsewhere);
+
+        void ReportWithFix(string written, string fix, string elsewhere) =>
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.DirectiveNotAppliedElementWise, location,
+                $"{written} does not reach '{method.Name}'. An element-wise map resolves no members itself: it "
+                + $"maps each '{src}' to a '{tgt}' through an auto-synthesized mapper, which is shared by every "
+                + "route to that pair and therefore takes its configuration only from directives that name the "
+                + $"pair. {fix} " + elsewhere));
+    }
+
+    /// <summary>
+    ///     Which of the five mapping endpoints a gate is speaking about.
+    ///     <para>
+    ///         Introduced so <see cref="ReportDirectivesNotReadHere" /> can be called from ALL FIVE branches
+    ///         and decide for itself what each one is: the endpoint's reader-facing name and whether it
+    ///         adopts a sibling create map were two separate parameters passed by hand at every call site,
+    ///         and both are functions of the endpoint alone. A per-call-site copy of a derivable fact is how
+    ///         a sixth endpoint gets one of the two wrong.
+    ///     </para>
+    /// </summary>
+    private enum MapEndpointKind
+    {
+        CreateMap,
+        UpdateInto,
+        Projection,
+        SpanMap,
+        AsyncStream
+    }
+
+    /// <summary>
+    ///     The one gate every mapping method passes through: a directive the generator reads at ONE endpoint
+    ///     only, written at one of the other four, where it is discarded without a word.
+    ///     <para>
+    ///         Hoisted from the start rather than written per endpoint, which is the shape this branch has
+    ///         had to unpick seven times. The silence is not element-wise — it also covers update-into,
+    ///         projection and the create map, so <see cref="ReportElementWiseDirectiveGaps" /> is the wrong
+    ///         home for it — and it is not one directive: the surface matrix recorded the identical finding
+    ///         for <c>[FlattenGraph]</c>, <c>[MapDerivedType]</c> and <c>[ReverseMap]</c> (D11, D8, D13),
+    ///         whose home is the CREATE MAP, and then again for <c>[MapCollectionKey]</c> (D14), whose home
+    ///         is the UPDATE-INTO. Five call sites of one function, so a sixth endpoint inherits the check
+    ///         instead of having to be taught it.
+    ///     </para>
+    ///     <para>
+    ///         Each arm names its own home endpoint and is skipped there. That is what makes this one gate
+    ///         rather than two mirror-image ones: "read at exactly one endpoint" is the shape, and which
+    ///         endpoint that is belongs to the directive, not to the gate.
+    ///     </para>
+    ///     <para>
+    ///         The readers are the SAME ones the honouring branch resolves with, so this reports exactly the
+    ///         applications that would have been read there and nothing else. Re-parsing the attributes here
+    ///         would drift from what is actually dropped and would re-open the malformed-argument hole those
+    ///         readers close — <c>[FlattenGraph(null, null)]</c> and <c>[MapCollectionKey(null, null)]</c>
+    ///         yield no directive and must reach neither the model nor a message.
+    ///     </para>
+    ///     <para>
+    ///         Reported per APPLICATION, malformed applications included, for the reason A8's
+    ///         <c>[MapValue]</c> arm gives: a <c>[FlattenGraph]</c> naming members that do not exist is
+    ///         refused as <c>DWARF034</c> at the create map and refused as nothing at all here, so "it does
+    ///         not reach this endpoint" is the true statement in both cases. That asymmetry is half of what
+    ///         makes the silence worth a diagnostic — at its home endpoint even nonsense is validated.
+    ///     </para>
+    /// </summary>
+    /// <param name="method">The create-map, update-into, projection, span or async-stream method.</param>
+    /// <param name="compilation">Handed to <see cref="ReadDerivedTypeAttributes" />, which takes one.</param>
+    /// <param name="srcType">The pair's source type — the element type at the two element-wise endpoints.</param>
+    /// <param name="tgtType">The pair's target type — the element type at the two element-wise endpoints.</param>
+    /// <param name="endpoint">
+    ///     Which endpoint this method is. The reader-facing endpoint name and the adoption claim are both
+    ///     DERIVED from it here rather than passed: a span or async-stream map resolves its element pair
+    ///     through <see cref="TryResolveConversion" />, which adopts a DECLARED mapping method for that pair
+    ///     before synthesizing one, so a create map carrying the directive is what the emitted loop calls
+    ///     (<c>d[__i] = Map(s[__i]);</c>) and the directive genuinely arrives. MEASURED at both of them
+    ///     before the message said it. Update-into, projection and the create map resolve their own members
+    ///     and never call a sibling, so there the message claims only that the home endpoint honours the
+    ///     directive — A8's revert is the standing proof that a prescribed remedy nobody ran is worse than
+    ///     none. The adoption is of a CREATE map specifically, so it is claimed only by arms whose home is
+    ///     the create map: nothing adopts a sibling update-into.
+    /// </param>
+    /// <param name="location">Where to report, or null.</param>
+    /// <param name="diagnostics">The list every arm appends to.</param>
+    private static void ReportDirectivesNotReadHere(
+        IMethodSymbol method, Compilation compilation, ITypeSymbol srcType, ITypeSymbol tgtType,
+        MapEndpointKind endpoint, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+    {
+        var src = srcType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var tgt = tgtType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var endpointName = endpoint switch
+        {
+            MapEndpointKind.CreateMap => "create-map",
+            MapEndpointKind.UpdateInto => "update-into",
+            MapEndpointKind.Projection => "projection",
+            MapEndpointKind.SpanMap => "span-map",
+            _ => "async-stream"
+        };
+        var adoptsACreateMap = endpoint is MapEndpointKind.SpanMap or MapEndpointKind.AsyncStream;
+
+        // ── Arms whose home is the CREATE MAP, skipped there ──────────────────────────────────────────────
+        if (endpoint != MapEndpointKind.CreateMap)
+        {
+            // [FlattenGraph], read through the reader the create-map branch reads with, which already drops an
+            // application whose two arguments are not both strings.
+            foreach (var (navigation, collection) in ReadFlattenGraphAttributes(method))
+                Report($"[FlattenGraph(\"{navigation}\", \"{collection}\")]",
+                    $"A graph flatten replaces the source of the destination collection '{collection}' with a "
+                    + $"breadth-first walk of '{navigation}', and only the create map resolves one. Here the "
+                    + $"directive is discarded and '{collection}' is filled by ordinary direct mapping instead, "
+                    + "so the same declaration produces a walked graph on one overload of this mapper and a "
+                    + "shallow copy on this one.",
+                    MapEndpointKind.CreateMap);
+
+            // [MapDerivedType], in BOTH of its forms, through the reader the create-map branch reads with —
+            // which is also where the WRITTEN form comes from, so the message quotes the syntax the caller
+            // typed rather than normalizing one into the other. `compilation` is the reader's own parameter;
+            // it is passed rather than a second reader written, because a second reader of these attributes is
+            // precisely the shape that has shipped two generator crashes on this branch.
+            foreach (var (derivedSrc, derivedTgt, writtenGeneric) in
+                     ReadDerivedTypeAttributes(method, compilation))
+            {
+                var dSrc = derivedSrc.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                var dTgt = derivedTgt.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                Report(
+                    writtenGeneric
+                        ? $"[MapDerivedType<{dSrc}, {dTgt}>]"
+                        : $"[MapDerivedType(typeof({dSrc}), typeof({dTgt}))]",
+                    $"A dispatch arm decides which destination TYPE to construct — a '{dSrc}' becomes a "
+                    + $"'{dTgt}' rather than a '{tgt}' — from the source's RUNTIME type, and only the create "
+                    + $"map constructs one. Here the directive is discarded and a '{dSrc}' is mapped as a "
+                    + $"'{src}', so every member '{dTgt}' declares beyond '{tgt}' is dropped. The create map "
+                    + "also VALIDATES these arms (DWARF035 for a type that is not assignable, a duplicate "
+                    + "source type, or a pair that is not mappable); nothing validated them here either.",
+                    MapEndpointKind.CreateMap);
+            }
+
+            // [ReverseMap], through HasReverseMap — the same predicate CollectReverseRenames and the DWARF052
+            // check both consult, so this reports exactly the methods a create map would have treated as
+            // forward ones. AllowMultiple is false on this attribute, so there is one application or none.
+            //
+            // carriedByTheAdoptedSibling is FALSE here even at the element-wise endpoints, and that is the
+            // point of the flag. The adoption sentence is true of a directive that changes what the create map
+            // EMITS, because that emission is what the loop calls. [ReverseMap] changes nothing about the
+            // method it sits on: it makes a SEPARATE, separately-declared inverse method inherit this one's
+            // renames, inverted. Appending the sentence would have told a caller their inverse reaches the
+            // span map, which is not a claim about anything.
+            if (HasReverseMap(method))
+                Report("[ReverseMap]",
+                    $"[ReverseMap] makes a separately-declared inverse method — '{src} <Name>({tgt} t)' — "
+                    + "inherit this one's simple renames with their ends swapped, and only the create map "
+                    + "looks for one. The match is by signature: a forward "
+                    + $"'{tgt} <Name>({src} s)' against an inverse "
+                    + $"'{src} <Name>({tgt} t)', both one-parameter create maps, which no other endpoint's "
+                    + "signature is. Here nothing looks for an inverse and nothing inherits a rename — and no "
+                    + "DWARF052 is raised either, because that check lives on the same create-map path.",
+                    MapEndpointKind.CreateMap, carriedByTheAdoptedSibling: false);
+        }
+
+        // ── Arms whose home is the UPDATE-INTO, skipped there ─────────────────────────────────────────────
+        //
+        // [MapCollectionKey], read through ReadCollectionKeys — the reader ApplyCollectionKeyUpserts itself
+        // reads with, so this reports exactly the applications the upsert path would have acted on and an
+        // application whose two arguments are not both strings reaches neither.
+        //
+        // carriedByTheAdoptedSibling is FALSE even at the element-wise endpoints, and for a sharper reason
+        // than [ReverseMap]'s: what a span or async-stream loop adopts is a declared CREATE map for the
+        // element pair, and a declared update-into is not one. There is no sibling here whose emission this
+        // method's loop calls, so claiming the directive arrives through one would be false.
+        if (endpoint != MapEndpointKind.UpdateInto)
+            foreach (var (collection, key) in ReadCollectionKeys(method))
+                Report($"[MapCollectionKey(\"{collection}\", \"{key}\")]",
+                    $"A key-based upsert MERGES the source elements into the '{collection}' list the "
+                    + "destination already holds — matching on '" + key + "', replacing what matches and "
+                    + "appending what does not, so untouched elements survive. That needs an existing "
+                    + $"destination to merge into, and the {endpointName} endpoint builds a fresh one. Here "
+                    + $"the directive is discarded and '{collection}' is built by whole-collection "
+                    + "replacement, which is what it would have been without it. The update-into also "
+                    + "VALIDATES this directive (DWARF074 for a member that is not mapped, is not a "
+                    + "List<T> on both sides, has differing element types, or names a key the element type "
+                    + "does not have); nothing validated it here either.",
+                    MapEndpointKind.UpdateInto);
+
+        void Report(string written, string what, MapEndpointKind home,
+            bool carriedByTheAdoptedSibling = true) =>
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.DirectiveNotReadAtThisEndpoint, location,
+                $"{written} on '{method.Name}' is not read at the {endpointName} endpoint. {what} "
+                + (home == MapEndpointKind.CreateMap
+                    ? $"Declare it on a create map over the same pair — {written} on a "
+                      + $"`partial {tgt} <Name>({src} s)` on this mapper class — which does honour it."
+                    : $"Declare it on an update-into over the same pair — {written} on a "
+                      + $"`partial void <Name>({src} s, {tgt} d)` on this mapper class — which does honour "
+                      + "it.")
+                + (adoptsACreateMap && carriedByTheAdoptedSibling && home == MapEndpointKind.CreateMap
+                    ? $" An element-wise map resolves its element pair through a declared '{src}' to '{tgt}' "
+                      + "mapping method where one exists, so that create map is what this method's loop "
+                      + "calls and the directive reaches this endpoint through it."
+                    : string.Empty)));
+    }
+
+    /// <summary>
+    ///     Whether a <c>[MapValue]</c> constant is one this library can spell at all — the ONE statement of
+    ///     that rule, consulted by both readers of these attributes.
+    ///     <para>
+    ///         It is a shared predicate rather than a check in each place because
+    ///         <see cref="TypedConstant.Value" /> <b>throws</b> <see cref="InvalidOperationException" /> for an
+    ///         array kind, and <c>[MapValue("Name", new[] { 1 })]</c> is legal C# — the constructor's parameter
+    ///         is <c>object?</c>. <c>TryFormatConstant</c> had guarded that since it was written; the
+    ///         element-wise gate was added later, read <c>.Value</c> directly, and crashed the whole generator.
+    ///         A second copy of the guard would have fixed the instance and left the shape, which on this
+    ///         branch is how the same defect has arrived seven times.
+    ///     </para>
+    ///     <para>
+    ///         <c>Type</c> (a <c>typeof(X)</c> argument) is excluded for a quieter reason: it does not throw,
+    ///         it answers an <see cref="ITypeSymbol" /> that <see cref="SymbolDisplay.FormatPrimitive" /> then
+    ///         declines to render — so the caller's <c>typeof</c> came back as the word <c>null</c>, which is
+    ///         a different constant from the one they wrote.
+    ///     </para>
+    /// </summary>
+    private static bool IsRenderableConstant(TypedConstant tc) =>
+        tc.Kind is not (TypedConstantKind.Array or TypedConstantKind.Type or TypedConstantKind.Error);
+
+    /// <summary>
+    ///     A <c>[MapValue]</c> constant as it should appear back in a diagnostic's quoted source — quoted for a
+    ///     string, bare for a number, <c>null</c> for a written <c>null</c> — or <c>null</c> when the value is
+    ///     not one this library renders, so the caller sees the bare <c>[MapValue("Target")]</c> form instead
+    ///     of an invented constant.
+    ///     <para>
+    ///         Separate from <c>RenderConstantLiteral</c> on purpose: that one renders a literal to be COMPILED
+    ///         into the generated mapper and therefore needs the destination type to cast against. This one
+    ///         renders text a human reads and copies back into their own source, where no destination type is
+    ///         in hand and a cast would be noise. They share <see cref="IsRenderableConstant" />, which is the
+    ///         part that must not differ.
+    ///     </para>
+    /// </summary>
+    private static string? FormatWrittenConstant(TypedConstant value) =>
+        !IsRenderableConstant(value)
+            ? null
+            : value.Value is null
+                ? "null"
+                : SymbolDisplay.FormatPrimitive(value.Value, quoteStrings: true, useHexadecimalNumbers: false);
+
+    /// <summary>
+    ///     The tail of <c>DWARF090</c>'s message for the two member directives: where the unscoped form DOES
+    ///     act, which is what makes its silence element-wise worth saying out loud.
+    ///     <para>
+    ///         Parametrized rather than baked into the message because it is a per-directive claim and this
+    ///         repository verifies claims in both directions. <c>[MapNullSkip]</c>'s method form is REFUSED at
+    ///         projection rather than honoured there, so the sentence below would have been false for it — and a
+    ///         diagnostic that misstates where a directive works sends the reader to the wrong endpoint.
+    ///     </para>
+    /// </summary>
+    private const string MemberDirectiveElsewhere =
+        "The unscoped form is honoured at the create-map, update-into and projection endpoints, which is why "
+        + "its silence here is worth saying out loud.";
+
+    /// <summary>
+    ///     Reports <c>DWARF088</c> for every MEMBER-placement <c>[MapProperty]</c> / <c>[MapIgnore]</c> found
+    ///     on a mapper class or a mapping method — the overloads <see cref="ReadExplicitMaps" /> and
+    ///     <see cref="ReadIgnores" /> skip, and skipped in silence until this check existed.
+    ///     <para>
+    ///         ONE check for both attributes and both sites, because it is one mistake: the caller reached for
+    ///         the placement that belongs on a member of a type that declares its own mapping. Splitting it
+    ///         per attribute would have produced two ids saying the same sentence, and splitting it per site
+    ///         would have left whichever site was written second silent — the shape the surface matrix found
+    ///         it in.
+    ///     </para>
+    ///     <para>
+    ///         Reported per APPLICATION rather than per symbol: both attributes are <c>AllowMultiple</c>, and
+    ///         two wrong ones are two mistakes to fix.
+    ///     </para>
+    /// </summary>
+    /// <param name="symbol">The mapper class, or one partial mapping method on it.</param>
+    /// <param name="site">
+    ///     How the message names the place — "mapper class" or "mapping method". Passed in rather than
+    ///     derived from <paramref name="symbol" /> so the two call sites read as the two cases they are.
+    /// </param>
+    private static void ReportMemberFormDirectives(ISymbol symbol, string site, LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        foreach (var attr in symbol.GetAttributes())
+        {
+            var cls = attr.AttributeClass?.ToDisplayString();
+            string message;
+
+            if (cls == KnownNames.MapPropertyFqn && attr.ConstructorArguments.Length == 1)
+            {
+                // The name is a string by construction (both constructors take strings only), but a
+                // half-typed application in the IDE can hand us an error constant; fall back rather than
+                // reporting a message with the word "null" in it.
+                var name = attr.ConstructorArguments[0].Value as string ?? "…";
+                message =
+                    $"[MapProperty(\"{name}\")] on this {site} uses the MEMBER-placement overload, which names "
+                    + "the destination THE ANNOTATED MEMBER supplies — it is the form for a member of a "
+                    + "[MapTo] source or a [GenerateMap] host, where the annotated type declares the mapping. "
+                    + $"Here it binds '{name}' to itself, which is what auto-matching already does, and any "
+                    + "Use / When / NullSubstitute / StringFormat written beside it is discarded with it "
+                    + $"(they are named arguments on this same overload). Supply both names: "
+                    + $"[MapProperty(\"{name}\", \"<destination>\")].";
+            }
+            else if (cls == KnownNames.MapIgnoreFqn && attr.ConstructorArguments.Length == 0)
+            {
+                message =
+                    $"[MapIgnore] with no argument on this {site} uses the MEMBER-placement overload, where "
+                    + "THE ANNOTATED MEMBER is the thing ignored — it is the form for a member of a [MapTo] "
+                    + $"source or a [GenerateMap] host. On a {site} it names nothing and excludes nothing, so "
+                    + "the completeness gate goes on demanding the member you meant to exclude. Name it: "
+                    + "[MapIgnore(\"<destination>\")].";
+            }
+            else
+            {
+                continue;
+            }
+
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.MemberFormDirectiveOnMapper, location, message));
+        }
     }
 
     private static List<(string Source, string Target, string? Use)> ReadExplicitMaps(ISymbol method)
@@ -2721,7 +3378,7 @@ internal static partial class MapperExtractor
     {
         literal = "";
         why = "";
-        if (tc.Kind is TypedConstantKind.Array or TypedConstantKind.Type or TypedConstantKind.Error)
+        if (!IsRenderableConstant(tc))
         {
             why =
                 $"[MapValue] constant for '{targetType.ToDisplayString()}' must be a string, bool, char, numeric, enum, or null";

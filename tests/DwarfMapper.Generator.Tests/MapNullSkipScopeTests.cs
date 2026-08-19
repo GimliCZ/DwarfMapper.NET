@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using DwarfMapper;
 
 namespace DwarfMapper.Generator.Tests;
@@ -146,6 +147,173 @@ public class MapNullSkipScopeTests
             """);
 
         Assert.Contains(Guard, generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pair_scoped_MapNullSkip_reaches_a_pair_declared_as_a_partial_method()
+    {
+        // D7. The pair-scoped form was read only by the [GenerateMap] and auto-synthesized paths, so a mapper
+        // that declares its pair as a METHOD got nothing from it — silently, on the endpoint patch-merge is
+        // chiefly for. "Pair-scoped attributes do not reach method-declared pairs" was never the rule:
+        // [MapProperty<S,T>] and its siblings always did.
+        var generated = GeneratorAssert.EmitsCompilableCode(Types + """
+
+            [DwarfMapper]
+            [MapNullSkip<Dto, Entity>]
+            public partial class M
+            {
+                public partial Entity Create(Dto src);
+
+                public partial void Patch(Dto src, Entity dst);
+            }
+            """);
+
+        Assert.Contains(Guard, Body(generated, "Create"), StringComparison.Ordinal);
+        Assert.Contains(Guard, Body(generated, "Patch"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_method_form_outranks_a_contradicting_pair_form_in_both_directions()
+    {
+        // Newly reachable: until the two forms fed ONE resolution, no input could set them against each other.
+        // Most-specific-wins, which is what both attributes' documentation already implied — the method form
+        // exists to "carve one method out of a class", and carving out only works if it outranks the class.
+        var pairOnMethodOff = GeneratorAssert.EmitsCompilableCode(Types + """
+
+            [DwarfMapper]
+            [MapNullSkip<Dto, Entity>(true)]
+            public partial class M
+            {
+                [MapNullSkip(false)]
+                public partial void Replace(Dto src, Entity dst);
+            }
+            """);
+        Assert.DoesNotContain(Guard, Body(pairOnMethodOff, "Replace"), StringComparison.Ordinal);
+
+        var pairOffMethodOn = GeneratorAssert.EmitsCompilableCode(Types + """
+
+            [DwarfMapper]
+            [MapNullSkip<Dto, Entity>(false)]
+            public partial class M
+            {
+                [MapNullSkip(true)]
+                public partial void Patch(Dto src, Entity dst);
+            }
+            """);
+        Assert.Contains(Guard, Body(pairOffMethodOn, "Patch"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_method_form_is_refused_element_wise_and_the_pair_form_is_honoured_there()
+    {
+        // D6. A span or async-stream map takes its configuration only from directives that NAME the pair, so
+        // the method form cannot reach it — the same rule DWARF090 already stated for [MapIgnore] and
+        // [MapProperty]. Refused rather than propagated, for the reason DWARF077 gives: one method's directive
+        // must not silently reconfigure a mapper another route to the pair shares.
+        const string spanMethod = """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapNullSkip]
+                public partial void MapSpan(System.ReadOnlySpan<Dto> s, System.Span<Entity> d);
+            }
+            """;
+
+        var reported = GeneratorAssert.Reports(Types + spanMethod, "DWARF090");
+        Assert.Contains(reported, d => d.GetMessage(CultureInfo.InvariantCulture)
+            .Contains("[MapNullSkip<Dto, Entity>(true)]", StringComparison.Ordinal));
+
+        // And the remedy the message prescribes must actually work here, or DWARF090 would be sending the
+        // caller to a form that does nothing either.
+        var withPairForm = GeneratorAssert.EmitsCompilableCode(Types + """
+
+            [DwarfMapper]
+            [MapNullSkip<Dto, Entity>]
+            public partial class M
+            {
+                public partial void MapSpan(System.ReadOnlySpan<Dto> s, System.Span<Entity> d);
+            }
+            """);
+        Assert.Contains(Guard, withPairForm, StringComparison.Ordinal);
+        GeneratorAssert.DoesNotReport(Types + """
+
+            [DwarfMapper]
+            [MapNullSkip<Dto, Entity>]
+            public partial class M
+            {
+                public partial void MapSpan(System.ReadOnlySpan<Dto> s, System.Span<Entity> d);
+            }
+            """, "DWARF090");
+    }
+
+    [Fact]
+    public void The_element_wise_remedy_carries_the_value_that_was_written_not_the_default()
+    {
+        // The assertion above uses a BARE [MapNullSkip], whose remedy renders (true) — indistinguishable from
+        // the constructor default, so it cannot tell a message that echoes the caller's value from one that
+        // always prints `true`. This is the case that can: a written `false` must come back as `false`.
+        //
+        // It is the hazard the arm was built around. [MapNullSkip(false)] on a class that enables skipping means
+        // "replace, do not patch"; a remedy of [MapNullSkip<Dto, Entity>] or [MapNullSkip<Dto, Entity>(true)]
+        // copied out in answer to it would turn the guard ON — actively harmful advice, worse than the silence
+        // DWARF090 replaced, and it would look correct in a diff.
+        var reported = GeneratorAssert.Reports(Types + """
+
+            [DwarfMapper(SkipNullSourceMembers = true)]
+            public partial class M
+            {
+                [MapNullSkip(false)]
+                public partial void MapSpan(System.ReadOnlySpan<Dto> s, System.Span<Entity> d);
+            }
+            """, "DWARF090");
+
+        var message = Assert.Single(
+            reported.Select(d => d.GetMessage(CultureInfo.InvariantCulture)),
+            m => m.Contains("MapNullSkip", StringComparison.Ordinal));
+
+        Assert.Contains("[MapNullSkip(false)] on this mapping method", message, StringComparison.Ordinal);
+        Assert.Contains("[MapNullSkip<Dto, Entity>(false)]", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("(true)", message, StringComparison.Ordinal);
+
+        // And the tail must state the endpoint the method form actually reaches. This sentence has been wrong
+        // in BOTH directions already: it shipped as "refused at projection" while the projection resolver was
+        // not fed the scoped forms and the endpoint was silent, was corrected to "silent at projection", and
+        // that correction went stale the moment the threading landed (D6/D7 closed). Projection now refuses,
+        // as DWARF028, and the pin runs both ways so neither drift can come back unnoticed.
+        Assert.Contains("refused at projection (DWARF028", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("silent at projection", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_malformed_or_absent_argument_falls_back_to_enabled_at_every_scope()
+    {
+        // The three-state reader treats "present but unreadable" as the constructor's default rather than as
+        // absent, at BOTH scopes, because one reader now serves every endpoint: a fallback that differed per
+        // scope would be the D6/D7 shape again one level down. The bare form is the reachable case (an
+        // argument of the wrong TYPE is CS1503 and never compiles); it is pinned here because the unified
+        // resolver reads the value on paths that never saw it before.
+        var bareMethod = GeneratorAssert.EmitsCompilableCode(Types + """
+
+            [DwarfMapper]
+            public partial class M
+            {
+                [MapNullSkip]
+                public partial void Patch(Dto src, Entity dst);
+            }
+            """);
+        Assert.Contains(Guard, Body(bareMethod, "Patch"), StringComparison.Ordinal);
+
+        var barePair = GeneratorAssert.EmitsCompilableCode(Types + """
+
+            [DwarfMapper]
+            [MapNullSkip<Dto, Entity>]
+            public partial class M
+            {
+                public partial void Patch(Dto src, Entity dst);
+            }
+            """);
+        Assert.Contains(Guard, Body(barePair, "Patch"), StringComparison.Ordinal);
     }
 
     [Fact]

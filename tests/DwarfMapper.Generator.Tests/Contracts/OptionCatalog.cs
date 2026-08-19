@@ -6,14 +6,21 @@ using DwarfMapper;
 
 namespace DwarfMapper.Generator.Tests.Contracts;
 
-/// <summary>One class-level option, discovered by scanning the assembly rather than listed by hand.</summary>
+/// <summary>One class-level option AT ONE VALUE, discovered by scanning the assembly rather than listed by hand.</summary>
 /// <param name="Name">The property name, as written inside <c>[DwarfMapper(...)]</c>.</param>
+/// <param name="ValueLabel">
+///     The value text alone — <c>NullStrategy.SetDefault</c>, <c>true</c>, <c>1</c>. An option whose domain
+///     holds more than one non-default value contributes one row PER value, and this is what tells those rows
+///     apart: in test output, in the <c>TheoryData</c> key, and in the <c>Single</c> lookups that resolve a
+///     theory argument back to its row. Keying on <see cref="Name" /> alone would collapse them.
+/// </param>
 /// <param name="NonDefault">A C# initialiser setting it to something other than its default.</param>
 /// <param name="Default">The value a caller gets when they do not set it.</param>
 /// <param name="Types">
 ///     A DTO pair shaped to trigger this option, when one is needed. Null means the default flat pair.
 /// </param>
-public sealed record OptionInfo(string Name, string NonDefault, object? Default, string? Types);
+public sealed record OptionInfo(
+    string Name, string ValueLabel, string NonDefault, object? Default, string? Types);
 
 /// <summary>
 ///     The class-level <c>[DwarfMapper]</c> options, SCANNED from the attribute and with their non-default
@@ -35,132 +42,40 @@ public sealed record OptionInfo(string Name, string NonDefault, object? Default,
 public static class OptionCatalog
 {
     /// <summary>
-    ///     The one thing that genuinely cannot be derived: the SHAPE that makes an option observable. No
-    ///     amount of reflection over <c>AutoNest</c> yields "you need a nested class pair here". These are
-    ///     inputs to the experiment, not a description of the API — and an option without one is reported as
-    ///     "not probed" rather than quietly assumed fine.
+    ///     Each option's fixture, READ OFF <see cref="DwarfMapperAttribute" />'s own
+    ///     <c>[DwarfSurfaceProbe]</c> declarations rather than listed here.
+    ///     <para>
+    ///         This used to be a hand-written option → key map, kept here because the type-level
+    ///         <c>[DwarfSurface(ProbeKey = ...)]</c> could not express one fixture per property. It can now,
+    ///         so the map is derived and the option matrix and the surface matrix read the SAME declaration:
+    ///         one way to say a thing. A second copy would have been free to drift, and a drifted copy points
+    ///         one of the two matrices at a shape that cannot trigger the option it is measuring.
+    ///     </para>
     /// </summary>
-    private static readonly Dictionary<string, string> TriggeringShapes = new(StringComparer.Ordinal)
-    {
-        ["AutoNest"] = """
-            public sealed class Inner { public int X { get; set; } }
-            public sealed class InnerDto { public int X { get; set; } }
-            public sealed class Src { public int Id { get; set; } public Inner Child { get; set; } = new(); }
-            public sealed class Dst { public int Id { get; set; } public InnerDto Child { get; set; } = new(); }
-            """,
-
-        ["AllowNonPublic"] = """
-            public sealed class Src { public int Id { get; set; } internal string? Name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-            """,
-
-        ["NameConvention"] = """
-            public sealed class Src { public int Id { get; set; } public string? user_name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string? UserName { get; set; } }
-            """,
-
-        ["CaseInsensitive"] = """
-            public sealed class Src { public int Id { get; set; } public string? name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-            """,
-
-        ["IgnoreObsoleteMembers"] = """
-            public sealed class Src { public int Id { get; set; } [System.Obsolete] public string? Name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } [System.Obsolete] public string? Name { get; set; } }
-            """,
-
-        ["SkipNullSourceMembers"] = """
-            public sealed class Src { public int Id { get; set; } public string? Name { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string Name { get; set; } = ""; }
-            """,
-
-        ["NullStrategy"] = """
-            public sealed class Src { public int Id { get; set; } public int? Val { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public int Val { get; set; } }
-            """,
-
-        ["RequiredMapping"] = """
-            public sealed class Src { public int Id { get; set; } public string? Name { get; set; } public int Extra { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string? Name { get; set; } }
-            """,
-
-        // Two enums whose members are declared in DIFFERENT order, so ByName and ByValue genuinely disagree
-        // about the result. Same-order enums would map identically under both strategies and the cell would
-        // read "no effect" while the option was working perfectly.
-        ["EnumStrategy"] = """
-            public enum SrcKind { A, B }
-            public enum DstKind { B, A }
-            public sealed class Src { public int Id { get; set; } public SrcKind Kind { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public DstKind Kind { get; set; } }
-            """,
-
-        // An enum member whose [Description] differs from its identifier, mapped to a string — otherwise the
-        // two settings describe the same mapping and the option reads as having no effect.
-        ["EnumStringSource"] = """
-            public enum Kind { [System.ComponentModel.Description("in-progress")] InProgress, Done }
-            public sealed class Src { public int Id { get; set; } public Kind Kind { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public string Kind { get; set; } = ""; }
-            """,
-
-        // A NULLABLE collection member: the option decides what a null source collection becomes.
-        // DIFFERENT collection types, so the mapper must REBUILD rather than assign the reference across.
-        // With List<int> on both sides it is a straight copy and the null policy never comes up, which read
-        // as "the option does nothing" when the fixture simply never asked it anything.
-        ["NullCollections"] = """
-            public sealed class Src { public int Id { get; set; } public System.Collections.Generic.List<int>? Items { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public int[]? Items { get; set; } }
-            """,
-
-        // A self-referencing graph, so there is a cycle for the policy to have an opinion about.
-        ["OnCycle"] = """
-            public sealed class Node { public int Id { get; set; } public Node? Next { get; set; } }
-            public sealed class NodeDto { public int Id { get; set; } public NodeDto? Next { get; set; } }
-            public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public NodeDto? Root { get; set; } }
-            """,
-
-        // Nesting deeper than the probe's MaxDepth (see ProbeOverrides), so the budget actually binds.
-        // A RECURSIVE graph. A fixed three-level chain does not exercise a depth budget — the generator
-        // simply walks it — whereas a self-referencing type forces depth tracking, which is what MaxDepth
-        // bounds.
-        ["MaxDepth"] = """
-            public sealed class Node { public int Id { get; set; } public Node? Next { get; set; } }
-            public sealed class NodeDto { public int Id { get; set; } public NodeDto? Next { get; set; } }
-            public sealed class Src { public int Id { get; set; } public Node? Root { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public NodeDto? Root { get; set; } }
-            """,
-
-        // A NARROWING pair. Widening (int->long) is allowed regardless, so it cannot distinguish the option;
-        // narrowing is what ImplicitConversions actually gates, by escalating DWARF038 to an error.
-        ["ImplicitConversions"] = """
-            public sealed class Src { public int Id { get; set; } public long Val { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public int Val { get; set; } }
-            """,
-
-        ["ReferenceHandling"] = """
-            public sealed class Inner { public int X { get; set; } }
-            public sealed class InnerDto { public int X { get; set; } }
-            public sealed class Src { public int Id { get; set; } public Inner? Child { get; set; } }
-            public sealed class Dst { public int Id { get; set; } public InnerDto? Child { get; set; } }
-            """
-    };
+    internal static IReadOnlyDictionary<string, string> ProbeKeys { get; } =
+        typeof(DwarfMapperAttribute).GetCustomAttributes<DwarfSurfaceProbeAttribute>(inherit: false)
+            .Where(a => a.Property is not null && a.ProbeKey is not null)
+            .ToDictionary(a => a.Property!, a => a.ProbeKey!, StringComparer.Ordinal);
 
     /// <summary>
-    ///     Probe values that cannot be derived sensibly from the default. Only <c>MaxDepth</c> so far: the
-    ///     generic rule for an int is "step it", which turns a default of 64 into 65 and binds on nothing.
-    ///     A depth BUDGET needs a value below the graph to have any effect, and no amount of reflection over
-    ///     an <c>int</c> property reveals that it is a limit rather than a count.
+    ///     Probe values that cannot be derived sensibly from the default — also read off the declaration,
+    ///     where <c>[DwarfSurfaceProbe(nameof(MaxDepth), Value = "1")]</c> states it. The generic rule for an
+    ///     int is "step it", which turns a default of 64 into 65 and binds on nothing; a depth BUDGET needs a
+    ///     value below the graph to have any effect, and no amount of reflection over an <c>int</c> property
+    ///     reveals that it is a limit rather than a count.
+    ///     <para>
+    ///         An override REPLACES the derived domain, so on a multi-member enum it would drop every member
+    ///         it does not name. That is not re-checked here: the same declarations are validated once, in
+    ///         <see cref="SurfaceCatalog.ValidateProbeClaims" />, which refuses a <c>Value</c> whose property's
+    ///         derived domain holds more than one member. A second copy of the rule could only drift from it.
+    ///     </para>
     /// </summary>
-    private static readonly Dictionary<string, string> ProbeOverrides = new(StringComparer.Ordinal)
-    {
-        ["MaxDepth"] = "MaxDepth = 1"
-    };
+    private static readonly Dictionary<string, string> ProbeOverrides =
+        typeof(DwarfMapperAttribute).GetCustomAttributes<DwarfSurfaceProbeAttribute>(inherit: false)
+            .Where(a => a.Property is not null && a.Value is not null)
+            .ToDictionary(a => a.Property!, a => a.Value!, StringComparer.Ordinal);
 
     public static IReadOnlyList<OptionInfo> Options { get; } = Build();
-
-    /// <summary>Options with a shape that makes them observable — the ones the matrix can actually judge.</summary>
-    public static IReadOnlyList<string> WithTriggeringShape { get; } =
-        TriggeringShapes.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
 
     private static List<OptionInfo> Build()
     {
@@ -170,45 +85,62 @@ public static class OptionCatalog
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p is { CanWrite: true, CanRead: true } && p.GetIndexParameters().Length == 0)
             .OrderBy(p => p.Name, StringComparer.Ordinal)
-            .Select(p =>
+            .SelectMany(p =>
             {
                 var def = p.GetValue(probe);
-                return new OptionInfo(
-                    p.Name,
-                    ProbeOverrides.TryGetValue(p.Name, out var over) ? over : NonDefaultFor(p, def),
-                    def,
-                    TriggeringShapes.TryGetValue(p.Name, out var shape) ? shape : null);
+                var types = ProbeKeys.TryGetValue(p.Name, out var key) ? SurfaceFixtures.Get(key) : null;
+                IReadOnlyList<string> domain = ProbeOverrides.TryGetValue(p.Name, out var over)
+                    ? [over]
+                    : ValueDomain(p, def);
+
+                return domain.Select(v => new OptionInfo(p.Name, v, $"{p.Name} = {v}", def, types));
             })
             .ToList();
     }
 
     /// <summary>
-    ///     Builds an initialiser that differs from the default. Returning something equal to the default
-    ///     would make every cell read "no change" and the matrix would look authoritative while measuring
-    ///     nothing — which is exactly what the hand-written list did for <c>RequiredMapping</c>, where
-    ///     someone had typed the default value as the probe.
+    ///     Every value of <paramref name="p" /> that DIFFERS from its default — the option's probe domain,
+    ///     one matrix row each. Returning something equal to the default would make the cell read "no change"
+    ///     and the matrix would look authoritative while measuring nothing, which is exactly what the
+    ///     hand-written list did for <c>RequiredMapping</c>, where someone had typed the default as the probe.
+    ///     <para>
+    ///         The enum branch enumerates the WHOLE domain. It used to take
+    ///         <c>FirstOrDefault(v =&gt; !v.Equals(def))</c> — complete for a two-member enum, which is every
+    ///         option enum shipped today, and silently dropping members two and three the day one grows. A
+    ///         partially-probed enum reads in the matrix exactly like a fully-covered one, so the omission
+    ///         would have been invisible at the moment it was introduced.
+    ///     </para>
+    ///     <para>
+    ///         The default value is deliberately NOT probed. A probe that sets an option to the value it
+    ///         already has is byte-identical to the baseline at every endpoint, so it can only ever read
+    ///         <c>Silent</c> — silent by construction, whatever the generator does. That is the same reason
+    ///         <c>[DwarfMapper]</c>'s own zero-argument case carries an <c>Unmeasured</c> declaration.
+    ///     </para>
     /// </summary>
-    private static string NonDefaultFor(PropertyInfo p, object? def)
+    internal static IReadOnlyList<string> ValueDomain(PropertyInfo p, object? def)
     {
         var t = Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType;
 
         if (t == typeof(bool))
-            return $"{p.Name} = {(def is true ? "false" : "true")}";
+            return [def is true ? "false" : "true"];
 
         if (t.IsEnum)
         {
-            var alternative = Enum.GetValues(t).Cast<object>().FirstOrDefault(v => !v.Equals(def));
-            if (alternative is null)
+            var alternatives = Enum.GetValues(t).Cast<object>()
+                .Where(v => !v.Equals(def))
+                .Select(v => $"{t.Name}.{v}")
+                .ToList();
+            if (alternatives.Count == 0)
                 throw new InvalidOperationException(
                     $"Enum option {p.Name} has only one value, so no non-default probe exists.");
-            return $"{p.Name} = {t.Name}.{alternative}";
+            return alternatives;
         }
 
         if (t == typeof(int))
-            return string.Create(CultureInfo.InvariantCulture, $"{p.Name} = {(def is int i ? i + 1 : 1)}");
+            return [string.Create(CultureInfo.InvariantCulture, $"{(def is int i ? i + 1 : 1)}")];
 
         if (t == typeof(string))
-            return $"{p.Name} = \"probe\"";
+            return ["\"probe\""];
 
         throw new InvalidOperationException(
             $"No non-default probe strategy for option {p.Name} of type {t.Name}. Add one rather than "

@@ -7,6 +7,12 @@ namespace DwarfMapper;
 ///     Applying <c>[AutoNest(false)]</c> to a single mapping method disables auto-synthesis of nested
 ///     object mappers for that method, even when the enclosing class has <c>AutoNest = true</c>.
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective, ProbeKey = "nested-pair")]
+// Only `false` asks anything. Auto-nesting is already on by default, so [AutoNest(true)] restates the ambient
+// state and cannot change a byte — the matrix's sampled `true` produced a cell that read "silent" for a
+// reason that had nothing to do with the generator. Which bool bites is not derivable: [MapNullSkip(true)] is
+// the biting value of the same-shaped constructor next door, so it is stated here rather than guessed.
+[DwarfSurfaceProbe(constructorArity: 1, Arguments = "false")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class AutoNestAttribute : Attribute
 {

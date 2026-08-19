@@ -9,6 +9,7 @@ namespace DwarfMapper;
 ///     the same completeness gate and conversion engine as the class model. Per-member configuration uses
 ///     <see cref="MapPropertyAttribute" /> / <see cref="MapIgnoreAttribute" /> on the source members.
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = true, Inherited = false)]
 public sealed class MapToAttribute : Attribute
 {

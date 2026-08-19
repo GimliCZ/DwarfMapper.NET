@@ -289,5 +289,43 @@ R.Check("F46 [RestatesBase] base pair converts", f46.Map(new F46Command { Raw = 
 R.Check("F46 [RestatesBase] restated pair converts too",
     f46.Map(new F46AliasCommand { Raw = "  hi  ", Alias = "a" }) is { Text: "hi", Alias: "a" });
 
+// F47 SkipNullSourceMembers on the MAPPER — patch semantics with no per-method annotation. F31 shows the
+// [MapNullSkip] narrowing of the same setting; this is the scope a migrating consumer starts from.
+var f47 = new F47D { Name = "kept", Note = "kept" };
+new F47M().Patch(new F47S { Name = "new" }, f47);
+#pragma warning disable CA1508
+R.Check("F47 class-scoped patch keeps", f47 is { Name: "new", Note: "kept" });
+#pragma warning restore CA1508
+
+// F48 RegisterCollectionShapes = false — the element map is registered, the collection shapes are not. Both
+// halves are asserted: without the first, "it threw" would be indistinguishable from a mapper that never
+// registered anything at all.
+RuntimeHelpers.RunModuleConstructor(typeof(F48M).Module.ModuleHandle);
+R.Check("F48 element map still registered",
+    ((F48D)DwarfMapperRegistry.Map(new F48S { Id = 5 }, typeof(F48D))).Id == 5);
+R.Check("F48 collection shape withheld",
+    R.Throws<DwarfMapMissingException>(() => DwarfMapperRegistry.Map(
+        new List<F48S> { new() { Id = 1 } }, typeof(ICollection<F48D>))));
+
+// F49 [MapTo] on a STRUCT. F18 shows the same front door on a class; this is the other half of what the
+// attribute's own AttributeUsage permits, and until this feature existed nothing in samples/ or tests/ ever
+// put [MapTo] on a value type — which is why the generator shipped a null guard it could not compile there
+// (CS0037) and no build noticed. Both shapes of the emitted API are called, and the values are asserted:
+// "it compiles" and "it maps" are different claims.
+var f49 = new F49S { Id = 3, Name = "runestone" };
+R.Check("F49 [MapTo] on a struct (named extension)", f49.ToF49D() is { Id: 3, Name: "runestone" });
+R.Check("F49 [MapTo] on a struct (generic dispatch)", f49.MapTo<F49D>() is { Id: 3, Name: "runestone" });
+R.Check("F49 struct source is copied, not aliased", F49Copies());
+
 Console.WriteLine($"\n{R.Pass} passed, {R.Fail} failed  (of {R.Pass + R.Fail})");
 return R.Fail == 0 ? 0 : 1;
+
+// A struct source is taken BY VALUE, so a destination already produced cannot see a later mutation. The one
+// behaviour F18's class source could never have shown.
+static bool F49Copies()
+{
+    var s = new F49S { Id = 1, Name = "before" };
+    var d = s.ToF49D();
+    s.Name = "after";
+    return d.Name == "before";
+}

@@ -89,5 +89,13 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF083` | Info | Enum maps to strings that are not its member identifiers |
 | `DWARF084` | Error | [RestatesBase] cannot identify the base pair |
 | `DWARF085` | Warning | Restated base configuration has drifted |
+| `DWARF086` | Error | Manifest attribute is emitted by the generator |
+| `DWARF087` | Error | Duplicate [FlattenGraph] destination collection |
+| `DWARF088` | Error | Member-placement directive written on a mapper |
+| `DWARF089` | Warning | Directive on a co-located host member cannot be applied |
+| `DWARF090` | Warning | Member directive is not applied element-wise |
+| `DWARF091` | Warning | Mapping hook on a partial method with no body |
+| `DWARF092` | Warning | Directive is not read at this mapping endpoint |
+| `DWARF093` | Warning | [GenerateWrapperMap] has no declared pair to expand |
 
-81 diagnostics.
+89 diagnostics.

@@ -1369,3 +1369,71 @@ public partial class F46M
     /// <summary>Drop the second [MapProperty] and DWARF085 says so — that is the whole feature.</summary>
     private static string Clean(string raw) => raw.Trim();
 }
+
+// ── F47 SkipNullSourceMembers (the CLASS-scoped patch policy) ────────────────
+// F31 shows [MapNullSkip] narrowing this to one method. This is the other half: the option written on the
+// mapper, where it is the policy for every method on it. The two forms are documented as the same setting at
+// two scopes, and until this feature existed only the narrowing form was ever demonstrated — the option a
+// migrating consumer actually reaches for first appeared in no runnable sample at all.
+public class F47S
+{
+    public string? Name { get; set; }
+    public string? Note { get; set; }
+}
+
+public class F47D
+{
+    public string? Name { get; set; }
+    public string? Note { get; set; }
+}
+
+[DwarfMapper(SkipNullSourceMembers = true)]
+public partial class F47M
+{
+    /// <summary>Patch semantics, without any per-method annotation: a null source member changes nothing.</summary>
+    public partial void Patch(F47S s, F47D d);
+}
+
+// ── F48 RegisterCollectionShapes = false (opting out of the registry rows) ───
+// F37 shows the DEFAULT: an element map declared once also answers a facade call for a COLLECTION of it.
+// This is the switch that withholds those rows. Its whole observable effect is their ABSENCE, so the only
+// honest demonstration is the contrast — the element map still resolves through the facade, and the
+// collection shape no longer does. Note that is a deliberate opt-out, not a defect: it is what an assembly
+// with hundreds of pairs sets when it wants the registry to hold only what it asked for.
+public class F48S
+{
+    public int Id { get; set; }
+}
+
+public class F48D
+{
+    public int Id { get; set; }
+}
+
+[DwarfMapper(RegisterCollectionShapes = false)]
+[GenerateMap<F48S, F48D>]
+public partial class F48M
+{
+}
+
+// ── F49 [MapTo] on a STRUCT (the value-type half of the registry front door) ─
+// F18 is the same front door on a class. This one exists because nothing else in the repository put [MapTo]
+// on a value type: the attribute's own AttributeUsage admits AttributeTargets.Struct, but the generator wrote
+// `if (source is null) throw …` into every extension method it emitted, and that pattern against a
+// non-nullable value type is CS0037 — a legal placement whose generated file did not compile, at any
+// endpoint. The blind spot was in the corpus, not in the code review, so the remedy is a shape a reader can
+// run rather than only a generator test.
+[MapTo(typeof(F49D))]
+public struct F49S
+{
+    public int Id { get; set; }
+
+    public string Name { get; set; }
+}
+
+public class F49D
+{
+    public int Id { get; set; }
+
+    public string Name { get; set; } = "";
+}

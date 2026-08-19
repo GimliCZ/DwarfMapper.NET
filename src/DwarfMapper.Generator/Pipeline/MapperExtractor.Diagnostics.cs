@@ -14,6 +14,12 @@ internal static partial class MapperExtractor
     /// <c>[GenerateMap&lt;A, B&gt;]</c> pair. The wrapper must be a single-payload generic (one type parameter,
     /// one member of that parameter's type) or a DWARF067 is reported and the attribute is skipped. Only closed
     /// instantiations are produced — open generics are never emitted (AOT-safe).
+    /// <para>
+    /// A class that declares NO <c>[GenerateMap]</c> pair is <c>DWARF093</c>: the attribute is an expansion of
+    /// that list, and an expansion of an empty list is an opt-in nobody reads. Reported here rather than
+    /// wherever the caller's endpoint happens to be, because it is a fact about the CLASS — this one function
+    /// is what both the <c>[DwarfMapper]</c> and the co-located-host front doors call (finding D15).
+    /// </para>
     /// </summary>
     private static void ExpandWrapperMaps(
         INamedTypeSymbol classSymbol, Compilation comp,
@@ -22,8 +28,14 @@ internal static partial class MapperExtractor
     {
         // Snapshot the explicitly-declared pairs; expansion applies only to those, so a wrapper is never
         // wrapped around another wrapper's synthesized pair (no W<W<A>>).
+        //
+        // An EMPTY list used to return here, before the loop, which is the whole of finding D15: on a
+        // [DwarfMapper] class whose maps are declared as partial METHODS rather than as [GenerateMap] pairs,
+        // the attribute was neither honoured nor refused — it was read by nobody at all, at every one of the
+        // five mapper endpoints. The return is now INSIDE the loop, after the same guard the expansion path
+        // uses, so an application with a malformed argument is skipped by ONE rule and a well-formed one is
+        // named back to the caller as DWARF093.
         var declared = genPairs.ToArray();
-        if (declared.Length == 0) return;
 
         foreach (var attr in classSymbol.GetAttributes())
         {
@@ -32,6 +44,27 @@ internal static partial class MapperExtractor
                 || attr.ConstructorArguments.Length != 1
                 || attr.ConstructorArguments[0].Value is not INamedTypeSymbol wrapperArg)
                 continue;
+
+            // Before the wrapper's SHAPE is checked, deliberately. With no pairs to expand even a
+            // perfectly-shaped Envelope<T> expands nothing, so "there is nothing to expand" is the actionable
+            // statement and DWARF067 would send the caller to fix something that changes no output. It is also
+            // an Error, and raising it here would strand every partial mapping method on this class behind
+            // CS8795 — the refusal buried under the cascade it caused.
+            if (declared.Length == 0)
+            {
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.WrapperMapExpandsNothing, loc,
+                    $"[GenerateWrapperMap(typeof({wrapperArg.OriginalDefinition.Name}<>))] on "
+                    + $"'{classSymbol.Name}' expands nothing: it synthesizes the closed wrapper instantiation "
+                    + "W<A> -> W<B> for every [GenerateMap<A, B>] declared on this class, and this class "
+                    + "declares none. A pair declared as a partial mapping METHOD is not expanded — it is a "
+                    + "different declaration mechanism, and an update-into, a projection, a span map and an "
+                    + "async-stream map have no create-map shape to wrap at all. Declare the payload pair as "
+                    + "[GenerateMap<A, B>] on this class, which is the list this attribute expands. Note that "
+                    + "[GenerateMap<A, B>] emits its own `B Map(A)`, so on a class that already declares a "
+                    + "`partial B Map(A)` over the SAME pair that is CS0111 — there, declare the pair with "
+                    + "[GenerateMap] INSTEAD of the partial method."));
+                continue;
+            }
 
             var wrapper = wrapperArg.OriginalDefinition;
             if (wrapper.TypeParameters.Length != 1)

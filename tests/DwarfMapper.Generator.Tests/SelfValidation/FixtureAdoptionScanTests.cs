@@ -30,7 +30,18 @@ public class FixtureAdoptionScanTests
 
     // Direct RunAndGetCompilationErrors calls that remain on purpose: they capture the errors and assert
     // something specific about them (a particular CS id, a count), which the fixture deliberately does not model.
-    private const int DirectCompileErrorCallBaseline = 50;
+    // Raised from 50 to 51 for SurfaceProbe.Classify (Task 4): it reads the specific CS ids the compiler
+    // rejected a placement with, to distinguish NotCompilable from a generator refusal — exactly the kind of
+    // assertion this exemption exists for.
+    // Raised from 51 to 52 for FlattenGraphGeneratorTests.AssertNoDuplicateInitialization (DWARF087): it must
+    // assert that CS1912 SPECIFICALLY is gone, not that the emission compiles. A refused mapper emits nothing,
+    // so its partial method reports CS8795 and EmitsCompilableCode could never pass — while CS1912, the
+    // duplicate initializer the generator used to hand the consumer, must never come back.
+    // Raised from 52 to 53 for WrapperMapExpansionReachTests.The_message_names_the_CS0111_edge_and_that_edge_is_real
+    // (DWARF093): the message tells a caller that adding [GenerateMap<A, B>] beside a `partial B Map(A)` over
+    // the same pair is CS0111, and that sentence has to be measured rather than believed. The assertion is on
+    // that ONE id — the emission deliberately does not compile, so EmitsCompilableCode could never express it.
+    private const int DirectCompileErrorCallBaseline = 53;
 
     private static IEnumerable<(string File, string Text)> TestSources()
     {

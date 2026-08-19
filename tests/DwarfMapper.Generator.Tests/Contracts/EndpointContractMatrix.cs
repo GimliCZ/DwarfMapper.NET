@@ -87,26 +87,47 @@ public static class EndpointContractMatrix
         new("MapProperty", Endpoint.Projection, CellStatus.Honoured),
         new("MapProperty", Endpoint.Registry, CellStatus.Honoured),
 
-        // ── [MapValue] — a source-less constant. Verified: works on .Map, DWARF001 on .Project ────────────
+        // ── [MapValue] — a source-less constant, honoured wherever a destination member is written ────────
+        // Projection was `Refused, DWARF001, "projection does not receive mapValues"` — which described the
+        // DEFECT (finding D9) rather than a contract: the resolver never saw the directive, so the target
+        // went unmapped and the completeness gate complained about the member the caller had just assigned.
+        // The projection resolver reads mapValues now, in the position the create map reads them. A constant
+        // becomes a literal in the SELECT; only the Use= value provider is refused, as DWARF028, because a
+        // query provider cannot call back into managed code from inside an expression tree.
         new("MapValue", Endpoint.CreateMap, CellStatus.Honoured),
         new("MapValue", Endpoint.UpdateInto, CellStatus.Honoured),
-        new("MapValue", Endpoint.Projection, CellStatus.Refused, "DWARF001",
-            "no source member exists, and projection does not receive mapValues"),
+        new("MapValue", Endpoint.Projection, CellStatus.Honoured),
 
         // ── [MapNullSkip] — the pair/method scope of SkipNullSourceMembers ───────────────────────────────
-        // Two forms with different reach, and the distinction is the point:
-        //   * [MapNullSkip]            on a mapping METHOD  — read by CreateMap and UpdateInto
-        //   * [MapNullSkip<S,T>]       on the mapper CLASS  — read by [GenerateMap] pairs AND by the nested/
-        //                                                     element pairs the span & async-stream endpoints
-        //                                                     map through
+        // ONE option at two scopes, and the rows below are per usage NAME, so they collapse the two forms:
+        //   * [MapNullSkip]            on a mapping METHOD  — the carve-out for one method
+        //   * [MapNullSkip<S,T>]       on the mapper CLASS  — the form for a pair declared as an attribute
+        // Both now resolve through one reader (MapperExtractor.ResolveNullSkip), most-specific-wins: method,
+        // then pair, then the mapper/assembly policy. The comment here used to describe the two forms as
+        // having different REACH — "method read by CreateMap and UpdateInto, class form read by [GenerateMap]
+        // pairs and the element pairs" — which was a description of the defect the surface matrix later
+        // measured as D6/D7: between them a caller reached every endpoint and with either alone reached about
+        // half, silently.
+        //
         // Patch-merge lives at UpdateInto, so that is the cell that matters most.
+        //
+        // The two element-wise rows are Honoured for the CLASS form; the METHOD form is refused there as
+        // DWARF090 (an element pair's mapper is shared by every route to it, so only a pair-scoped directive
+        // can configure it — the same rule [MapIgnore] and [MapProperty] follow). A row keyed on the usage
+        // name alone cannot carry both verdicts; the surface matrix keys on arity and does.
         new("MapNullSkip", Endpoint.CreateMap, CellStatus.Honoured),
         new("MapNullSkip", Endpoint.UpdateInto, CellStatus.Honoured),
         new("MapNullSkip", Endpoint.SpanMap, CellStatus.Honoured),
         new("MapNullSkip", Endpoint.AsyncStream, CellStatus.Honoured),
-        new("MapNullSkip", Endpoint.Projection, CellStatus.NotApplicable,
-            Reason: "projection translates to a query expression and never reads the null-skip policy at all "
-                    + "— the class-level SkipNullSourceMembers is DWARF028 there for the same reason"),
+        // Refused, not NotApplicable, and the difference is the whole of D6/D7's closure. "A null source
+        // member must not overwrite the destination's current value" genuinely has no referent in a
+        // projection — the object initializer CONSTRUCTS the destination, so there is no prior value to keep,
+        // and omitting the member unconditionally is a different mapping (a non-null source row must still be
+        // assigned). But structural meaninglessness is not a licence to say nothing: the class-level
+        // SkipNullSourceMembers has always said DWARF028 here, and the two scoped forms simply never reached
+        // the resolver that reports it. They do now, through the same ResolveNullSkip every other endpoint
+        // calls, so all four scopes of one option get the same answer at this endpoint.
+        new("MapNullSkip", Endpoint.Projection, CellStatus.Refused, "DWARF028"),
         new("MapNullSkip", Endpoint.Registry, CellStatus.NotApplicable, Reason: NoMemberConfigOnRegistry),
 
         // ── [MapIgnore] / [MapIgnoreSource] — completeness control, meaningful wherever completeness runs ─

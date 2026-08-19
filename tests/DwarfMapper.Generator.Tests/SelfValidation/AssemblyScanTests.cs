@@ -7,9 +7,16 @@
 //  1. DWARF descriptor <=> AnalyzerReleases sync (both directions + metadata match)
 //  2. No dead/orphan diagnostic (every descriptor is actually emittable)
 //  3. Every diagnostic id has a triggering test
-//  4. Every public Attribute type has at least one test reference
+//  4. SUPERSEDED — see the banner at scan 4's former position
 //  5. Every public enum VALUE has at least one test reference
-//  6. TargetKind completeness via [InternalsVisibleTo] from the generator
+//  6a. TargetKind completeness via [InternalsVisibleTo] from the generator
+//  6b. SUPERSEDED — see the banner at scan 6b's former position
+//
+// A NOTE ON CORPORA, learned the expensive way (see Scan6a's remarks): a scan whose corpus contains its
+// own needles reports success while measuring nothing. Every text scan below therefore reads a corpus that
+// EXCLUDES this file, and Scan2/Scan6a additionally exclude (or step around) the text that declares the
+// thing they hunt for. `AllTestSourceText` — the unfiltered blob — survives only for the snapshot scan,
+// which legitimately needs to see every test method in the tree, this file's included.
 
 using System.Globalization;
 using System.Reflection;
@@ -17,6 +24,7 @@ using System.Text.RegularExpressions;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Pipeline;
 using DwarfMapper.Generator.Registry;
+using DwarfMapper.Generator.Tests.Contracts;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
@@ -49,6 +57,46 @@ file static class DiagnosticTestAllowlist
     public static readonly IReadOnlySet<string> Ids = new HashSet<string>(StringComparer.Ordinal);
 }
 
+/// <summary>
+///     DWARF0xx ids that existed before <c>CHANGELOG.md</c> did. The file's own preamble mandates an entry
+///     for every new/retired/re-severitied diagnostic id — Scan9 below enforces it — but that mandate is
+///     forward-looking: it was written the same round <c>CHANGELOG.md</c> was created (see the file's own
+///     "This file" bullet under <c>### Added</c>), and cannot retroactively demand prose for a diagnostic
+///     that shipped before the file existed to hold it.
+///     <para>
+///         This set is CLOSED, not an escape hatch: it is exactly "DWARF0xx ids present when
+///         <c>CHANGELOG.md</c> was introduced, minus the ones already documented at that point", frozen at
+///         commit b723ece (2026-08-16). It may only SHRINK — remove an id the moment somebody writes its
+///         entry — and Scan9 pins it by EXACT membership (not a count) so one id silently swapping for
+///         another fails the build instead of passing as a wash. The eventual write-up is tracked as a
+///         `LATER` item in <c>Issues/round20/CARRY-FORWARD.md</c> §1.
+///     </para>
+///     <para>
+///         Scope: DWARF0xx only, deliberately. The DWARFR (registry) family is announced in
+///         <c>CHANGELOG.md</c> as the range "DWARFR01–DWARFR10" (see the <c>### Added</c> entry for
+///         ISSUE-047) — a per-id substring scan would fail on DWARFR02..08 despite the family being fully
+///         announced. Do not "fix" that by adding DWARFR ids here or to Scan9; the range notation is the
+///         intended announcement.
+///     </para>
+/// </summary>
+file static class PredatesTheChangelog
+{
+    public static readonly IReadOnlySet<string> Ids = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "DWARF002", "DWARF003", "DWARF005", "DWARF007", "DWARF008", "DWARF009", "DWARF010",
+        "DWARF011", "DWARF012", "DWARF013", "DWARF015", "DWARF016", "DWARF017", "DWARF018",
+        "DWARF020", "DWARF021", "DWARF022", "DWARF023", "DWARF024", "DWARF025", "DWARF026",
+        "DWARF027", "DWARF028", "DWARF030", "DWARF031", "DWARF032", "DWARF033", "DWARF034",
+        "DWARF035", "DWARF036", "DWARF037", "DWARF038", "DWARF039", "DWARF040", "DWARF041",
+        "DWARF042", "DWARF044", "DWARF046", "DWARF047", "DWARF048", "DWARF049", "DWARF050",
+        "DWARF051", "DWARF052", "DWARF053", "DWARF054", "DWARF055", "DWARF056", "DWARF057",
+        "DWARF058", "DWARF059", "DWARF060", "DWARF061", "DWARF062", "DWARF064", "DWARF065",
+        "DWARF066", "DWARF067", "DWARF068", "DWARF069", "DWARF070", "DWARF071", "DWARF072",
+        "DWARF073", "DWARF074", "DWARF075", "DWARF076", "DWARF077", "DWARF078", "DWARF079",
+        "DWARF080", "DWARF081", "DWARF082", "DWARF083", "DWARF084", "DWARF085"
+    };
+}
+
 public sealed class AssemblyScanTests
 {
     // ── Assembly & path resolution ────────────────────────────────────────────
@@ -59,9 +107,33 @@ public sealed class AssemblyScanTests
     /// <summary>
     ///     Read all test source text into a single concatenated blob for substring scanning.
     ///     Cached per test run.
+    ///     <para>
+    ///         Use this ONLY where the scan's needles cannot appear in this file — in practice, only the
+    ///         snapshot scan, whose needles are other files' test-method names. Every other scan reads
+    ///         <see cref="TestSourceTextExcluding" /> instead, because this file is itself under
+    ///         <c>tests/</c>: a diagnostic id listed in <see cref="PredatesTheChangelog" />, an option named
+    ///         in a comment, or an enum value written out in a doc-comment all satisfy a substring scan
+    ///         whose corpus includes them, and the scan then reports success having measured nothing.
+    ///     </para>
     /// </summary>
     private static readonly Lazy<string> AllTestSourceText = new(() =>
         string.Concat(TestSources().Select(File.ReadAllText)));
+
+    /// <summary>
+    ///     The test-source blob with the named files removed, so a scan cannot be satisfied by text that
+    ///     exists only to declare or exempt the very thing being scanned for.
+    /// </summary>
+    /// <param name="fileNames">Bare file names (not paths) to drop from the corpus.</param>
+    private static string TestSourceTextExcluding(params string[] fileNames)
+    {
+        return string.Concat(
+            TestSources()
+                .Where(f => Array.IndexOf(fileNames, Path.GetFileName(f)) < 0)
+                .Select(File.ReadAllText));
+    }
+
+    /// <summary>This file's own name — excluded from every corpus it would otherwise pollute.</summary>
+    private const string ThisFile = "AssemblyScanTests.cs";
 
     private static string RepoRoot { get; } = FindRepoRoot();
 
@@ -113,10 +185,16 @@ public sealed class AssemblyScanTests
     // ── Self-validation: every [DwarfMapper] option must be exercised by a test ──
     // This is the guard that would have caught a new option (e.g. AllowNonPublic) shipping with no test:
     // every public settable property on DwarfMapperAttribute must be named somewhere in the test sources.
+    //
+    // The corpus excludes THIS file. The comment two lines up names `AllowNonPublic`, and this file lives
+    // under tests/ — so with the unfiltered blob the scan was partly self-satisfying: a reviewer who added
+    // an option and mentioned it in a comment here would have discharged the very gate meant to catch them.
+    // Re-measured when the exclusion went in: nothing changed, all 18 options are referenced 6–181 times
+    // outside this file. The flaw was in the mechanism, not (yet) in the result.
     [Fact]
     public void Scan5_Every_DwarfMapper_option_has_a_test_reference()
     {
-        var testText = AllTestSourceText.Value;
+        var testText = TestSourceTextExcluding(ThisFile);
 
         var untested = typeof(DwarfMapperAttribute)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
@@ -360,10 +438,22 @@ public sealed class AssemblyScanTests
     // SCAN 3 — Every diagnostic id appears in at least one test source file
     // ─────────────────────────────────────────────────────────────────────────
 
+    // Two files in the tests/ tree hold a diagnostic id for the express purpose of EXEMPTING it, and both
+    // are in this scan's corpus by default:
+    //
+    //   • this file's `PredatesTheChangelog`      — 77 ids, Scan9's frozen baseline;
+    //   • `DiagnosticCoverageRatchetTests.cs`'s
+    //     `PredatesThisProject`                   — 73 ids, the negative-case ratchet's opt-out list.
+    //
+    // Between them they name almost every live id as a bare string literal, so "the id appears somewhere in
+    // tests/" was discharged by the two lists that say the id is NOT covered — the scan agreeing with the
+    // paperwork instead of with the tests. Both are excluded here. Re-measured when the exclusion went in:
+    // all 84 live ids still appear in at least one other test file (min 1, median 2), so the scan still
+    // passes, now for a reason. No allowlist entry was needed and DiagnosticTestAllowlist stays empty.
     [Fact]
     public void Scan3_Every_diagnostic_id_has_a_test_reference()
     {
-        var testText = AllTestSourceText.Value;
+        var testText = TestSourceTextExcluding(ThisFile, "DiagnosticCoverageRatchetTests.cs");
 
         var untested = GetAllDescriptors()
             .Select(d => d.Descriptor.Id)
@@ -377,40 +467,19 @@ public sealed class AssemblyScanTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SCAN 4 — Every public Attribute type has a test reference
+    // SCAN 4 — SUPERSEDED by SurfaceObligationTests (2026-08-16)
+    //
+    // It asked whether every public attribute's NAME appeared anywhere in the test sources, which a
+    // doc-comment mentioning it satisfied — so an attribute could sit at zero real use and still pass,
+    // and thirteen of them did. The replacement asks a different question per attribute, chosen at the
+    // attribute's own declaration: SurfaceDeclarationTests forces every public attribute to carry a
+    // [DwarfSurface] category, SurfaceObligationTests forces every category to carry an obligation, and
+    // the obligations demand a written USE in the corpus that category names — a consumer assembly and a
+    // runnable sample, a NegativeCases row, a multi-assembly fixture, or an assertion over emitted text.
+    //
+    // Nothing is lost by the removal: the set this scan covered is the set SurfaceDeclarationTests
+    // requires a category for, so a new attribute cannot escape by being added after this deletion.
     // ─────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Scan4_Every_public_attribute_type_has_a_test_reference()
-    {
-        var testText = AllTestSourceText.Value;
-
-        // Reflect all public Attribute subclasses from the DwarfMapper assembly.
-        // Strip the "Attribute" suffix for the usage form check (e.g. [MapProperty]).
-        var attrTypes = DwarfMapperAssembly
-            .GetTypes()
-            .Where(t => t.IsPublic && !t.IsAbstract && typeof(Attribute).IsAssignableFrom(t))
-            .ToList();
-
-        var missing = new List<string>();
-        foreach (var t in attrTypes)
-        {
-            // For generic types (MapDerivedTypeAttribute`2) strip the backtick suffix.
-            var rawName = t.Name;
-            var usageName = rawName.EndsWith("Attribute", StringComparison.Ordinal)
-                ? rawName[..^"Attribute".Length]
-                : rawName;
-            // Also handle generic mangling: e.g. "MapDerivedTypeAttribute`2" → "MapDerivedType"
-            var backtickIdx = usageName.IndexOf('`', StringComparison.Ordinal);
-            if (backtickIdx >= 0) usageName = usageName[..backtickIdx];
-
-            if (!testText.Contains(usageName, StringComparison.Ordinal))
-                missing.Add($"{t.FullName ?? t.Name} (searched for '{usageName}')");
-        }
-
-        Assert.True(missing.Count == 0,
-            "Public attribute type(s) with no test reference:\n" + string.Join("\n", missing));
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // SCAN 5 — Every public enum VALUE has a test reference
@@ -419,7 +488,10 @@ public sealed class AssemblyScanTests
     [Fact]
     public void Scan5_Every_public_enum_value_has_a_test_reference()
     {
-        var testText = AllTestSourceText.Value;
+        // Corpus excludes this file: the remarks below write out `NullStrategy.Throw` in full, which is
+        // exactly the qualified needle the scan looks for. The qualified form fixed one vacuity (a bare
+        // `Contains("Throw")` off any `Assert.Throws`) and left the other — a corpus containing the needle.
+        var testText = TestSourceTextExcluding(ThisFile);
 
         var publicEnums = DwarfMapperAssembly
             .GetTypes()
@@ -442,9 +514,41 @@ public sealed class AssemblyScanTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SCAN 6 — TargetKind completeness (via InternalsVisibleTo from generator)
+    // SCAN 6a — TargetKind completeness (via InternalsVisibleTo from generator)
     // ─────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    ///     Every value of the generator's internal collection taxonomy must be referenced, as a qualified
+    ///     <c>TargetKind.Value</c>, somewhere in the generator's own source — i.e. some recognition site
+    ///     assigns it and some emission site acts on it. A value nothing names is a taxonomy entry the
+    ///     pipeline can never produce or consume.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <b>This scan passed by construction from the day it was written until 2026-08-17.</b> Its
+    ///         corpus is all of <c>src/DwarfMapper.Generator/**</c>, and it searched for the BARE value name
+    ///         — but that corpus includes <c>Pipeline/CollectionConverter.cs</c>, which is where
+    ///         <c>enum TargetKind</c> is declared. Every needle matched its own declaration line, so
+    ///         <c>missing</c> was empty no matter what the pipeline did, and deleting the whole test would
+    ///         have changed nothing. It sat five scans below <see cref="Scan2_Every_descriptor_is_referenced_in_generator_pipeline_source" />,
+    ///         which had already solved the identical problem by excluding its own defining file.
+    ///     </para>
+    ///     <para>
+    ///         Scan2's remedy does not transfer verbatim: <c>DiagnosticDescriptors.cs</c> is a pure
+    ///         declaration file, whereas <c>CollectionConverter.cs</c> declares the enum AND holds most of
+    ///         the switch arms that consume it. Excluding the file would have discarded the real references
+    ///         and failed 14 of the 17 values for no defect at all. The fix is instead to exclude the
+    ///         DECLARATION TEXT rather than the file, by requiring the qualified <c>TargetKind.Value</c>
+    ///         form, which the enum body (<c>Array, // T[] …</c>) never produces. That is the same remedy
+    ///         <see cref="Scan5_Every_public_enum_value_has_a_test_reference" /> already applies to the
+    ///         public enums, for a related reason.
+    ///     </para>
+    ///     <para>
+    ///         Measured after the change: every one of the 17 values has 2–8 qualified references, so the
+    ///         scan still passes — and now for a reason. <see cref="Scan6a_qualified_needle_is_not_satisfied_by_the_enum_declaration" />
+    ///         pins the predicate against the exact text that used to satisfy it.
+    ///     </para>
+    /// </remarks>
     [Fact]
     public void Scan6a_TargetKind_values_are_referenced_in_generator_source()
     {
@@ -452,28 +556,79 @@ public sealed class AssemblyScanTests
         var allGeneratorText = string.Concat(GeneratorSources().Select(File.ReadAllText));
 
         var missing = Enum.GetNames<CollectionConverter.TargetKind>()
-            .Where(name => !allGeneratorText.Contains(name, StringComparison.Ordinal))
+            .Where(name => !IsQualifiedEnumReference(allGeneratorText, "TargetKind", name))
             .Select(name => $"TargetKind.{name}")
             .ToList();
 
         Assert.True(missing.Count == 0,
-            "TargetKind value(s) not referenced anywhere in generator source:\n" +
+            "TargetKind value(s) not referenced anywhere in generator source as `TargetKind.<value>`:\n" +
             string.Join("\n", missing));
     }
 
-    [Fact]
-    public void Scan6b_TargetKind_values_are_covered_by_a_test()
+    /// <summary>
+    ///     Scan6a's needle, isolated so it can be shown to REJECT things. The boundaries matter three ways:
+    ///     the enum name may not be a suffix of a longer identifier (<c>DictTargetKind.Dictionary</c> is a
+    ///     reference to the OTHER taxonomy, not this one); the value name may not be a prefix of a longer
+    ///     member (<c>TargetKind.ImmutableList</c> must not discharge a hypothetical <c>Immutable</c>); and
+    ///     a leading dot is fine, because <c>CollectionConverter.TargetKind.Array</c> — the form every
+    ///     reference outside the declaring file uses — is a perfectly good reference.
+    /// </summary>
+    private static bool IsQualifiedEnumReference(string text, string enumName, string valueName)
     {
-        var testText = AllTestSourceText.Value;
-
-        var missing = Enum.GetNames<CollectionConverter.TargetKind>()
-            .Where(name => !testText.Contains(name, StringComparison.Ordinal))
-            .Select(name => $"TargetKind.{name}")
-            .ToList();
-
-        Assert.True(missing.Count == 0,
-            "TargetKind value(s) with no test reference:\n" + string.Join("\n", missing));
+        return Regex.IsMatch(text, $@"(?<!\w){Regex.Escape(enumName)}\.{Regex.Escape(valueName)}\b");
     }
+
+    [Fact]
+    public void Scan6a_qualified_needle_is_not_satisfied_by_the_enum_declaration()
+    {
+        // The known-bad input is not hypothetical: it is a verbatim slice of the enum body that made Scan6a
+        // vacuous for its entire life. If this ever returns true again, Scan6a has stopped measuring.
+        //
+        // Stated limit (same as Scan9's control): this pins the PREDICATE, not Scan6a's [Fact] wiring to
+        // it — deleting the call to IsQualifiedEnumReference from Scan6a would still leave this green.
+        // Pinning the wiring too needs a mutation run.
+        const string declarationBody = """
+                                       internal enum TargetKind
+                                       {
+                                           Array, // T[]            — projection-translatable
+                                           List, // List<T>        — projection-translatable
+                                       }
+                                       """;
+        Assert.False(IsQualifiedEnumReference(declarationBody, "TargetKind", "Array"));
+        Assert.False(IsQualifiedEnumReference(declarationBody, "TargetKind", "List"));
+
+        // A real use site is accepted, in the switch-arm, assignment and type-qualified forms. The last one
+        // is not decoration: every TargetKind reference outside the declaring file writes
+        // `CollectionConverter.TargetKind.X`, and an over-strict lookbehind that rejected a leading dot
+        // silently discarded all of them — caught here while writing this control, not in review.
+        Assert.True(IsQualifiedEnumReference("case TargetKind.Array:", "TargetKind", "Array"));
+        Assert.True(IsQualifiedEnumReference("targetKind = TargetKind.List;", "TargetKind", "List"));
+        Assert.True(IsQualifiedEnumReference(
+            "collShape.Target == CollectionConverter.TargetKind.Array", "TargetKind", "Array"));
+
+        // The sibling taxonomy must not launder a value across enums, and a longer member name must not
+        // discharge a shorter one that is its prefix.
+        Assert.False(IsQualifiedEnumReference("DictTargetKind.Dictionary", "TargetKind", "Dictionary"));
+        Assert.False(IsQualifiedEnumReference("TargetKind.ImmutableList", "TargetKind", "Immutable"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCAN 6b — SUPERSEDED by CollectionCoverageSelfValidationTests (2026-08-17)
+    //
+    // It asked whether each TargetKind value's BARE name appeared anywhere under tests/. Every value is a
+    // BCL type name — Array, List, HashSet, Queue, Stack, IEnumerable — so the needles matched ordinary C#
+    // in unrelated files, and substring nesting made it worse still: `List` was discharged by any `IList`,
+    // `ISet` by any `IReadOnlySet`. It could not be repaired the way Scan6a was, either: no test source
+    // writes a qualified `TargetKind.Value` at all (measured: zero, all 17 values), because tests exercise
+    // the taxonomy through the mapped collection TYPE, never through the internal enum.
+    //
+    // The replacement asks the question by running it. CollectionCoverageSelfValidationTests reads the same
+    // enum reflectively — so a new value cannot escape by being added after this deletion — and then
+    // demands the value actually be EMITTED: once by the combinatorial matrix (crossed against widening,
+    // cycle mode, update-into and null strategy) and once by the fuzz schema, with ObjectFactory proven to
+    // populate the shape with real elements. That is the check that caught the IEnumerable<T> aliasing bug
+    // this scan's text search sat green through.
+    // ─────────────────────────────────────────────────────────────────────────
 
     // ─────────────────────────────────────────────────────────────────────────
     // SCAN 7 — Every descriptor has a prose section in docs/diagnostics.md
@@ -538,17 +693,11 @@ public sealed class AssemblyScanTests
             sections["DWARF" + headings[i].Groups[1].Value] = docText[start..end];
         }
 
-        // Tolerant of the punctuation the docs actually use: "**Fix:**", "**Fix**", "**Fix** — ...".
-        // Deliberately NOT tolerant of "**Fix (optional):**" for an error.
-        var fix = new Regex(@"\*\*Fix\*?\*?", RegexOptions.IgnoreCase);
-        var optional = new Regex(@"\*\*Fix\s*\(optional\)", RegexOptions.IgnoreCase);
-
         var offenders = GetAllDescriptors()
             .Where(d => d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error)
             .Select(d => d.Descriptor.Id)
             .Where(id => !ReservedIds.Ids.Contains(id))
-            .Where(id => sections.TryGetValue(id, out var body)
-                         && (!fix.IsMatch(body) || optional.IsMatch(body)))
+            .Where(id => sections.TryGetValue(id, out var body) && !StatesAFix(body))
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToList();
 
@@ -558,23 +707,144 @@ public sealed class AssemblyScanTests
             + string.Join("\n", offenders));
     }
 
+    /// <summary>
+    ///     Scan8's verdict on one section body, isolated so it can be shown to REJECT things. Tolerant of
+    ///     the punctuation the docs actually use — <c>**Fix:**</c>, <c>**Fix**</c>, <c>**Fix** — …</c> —
+    ///     and deliberately NOT tolerant of <c>**Fix (optional):**</c>, which is the warning-level form.
+    /// </summary>
+    private static bool StatesAFix(string sectionBody)
+    {
+        var fix = new Regex(@"\*\*Fix\*?\*?", RegexOptions.IgnoreCase);
+        var optional = new Regex(@"\*\*Fix\s*\(optional\)", RegexOptions.IgnoreCase);
+        return fix.IsMatch(sectionBody) && !optional.IsMatch(sectionBody);
+    }
+
     [Fact]
     public void Scan8_is_not_vacuous_it_actually_inspects_error_diagnostics()
     {
-        // Without this, deleting the DefaultSeverity filter's contents — or an id-format drift that made every
-        // TryGetValue miss — would leave Scan8 permanently, silently green.
+        // Two halves, and only the first was here originally. The COUNT half proves Scan8's corpus is real:
+        // deleting the DefaultSeverity filter's contents, or an id-format drift that made every TryGetValue
+        // miss, would leave it permanently and silently green. That says nothing about whether the VERDICT
+        // works — Scan8 gutted to `Assert.True(true)` would still satisfy a corpus check — so the second
+        // half feeds StatesAFix the three inputs it must separate.
+        //
+        // Floors are set to the values measured on 2026-08-17 (was `>= 40` for both, against actuals of 60
+        // and 84 — slack from birth, so a two-thirds collapse in either corpus passed unnoticed). They may
+        // only ever be TIGHTENED to a re-measured value, never raised past one.
+        //
+        // Stated limit (same as Scan9's control): the three StatesAFix assertions below pin the PREDICATE,
+        // not Scan8's [Fact] wiring to it — deleting the call to StatesAFix from Scan8 would still leave
+        // this green. Pinning the wiring too needs a mutation run.
         var errorIds = GetAllDescriptors()
             .Where(d => d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error)
             .Select(d => d.Descriptor.Id)
             .Where(id => !ReservedIds.Ids.Contains(id))
             .ToList();
 
-        Assert.True(errorIds.Count >= 40,
+        Assert.True(errorIds.Count >= 60,
             $"Expected Scan8 to inspect a substantial number of error diagnostics, saw {errorIds.Count}.");
 
         var docText = File.ReadAllText(Path.Combine(RepoRoot, "docs", "diagnostics.md"));
         var headings = Regex.Count(docText, @"(?im)^##\s+dwarf\d{3}\b");
-        Assert.True(headings >= 40, $"Expected to parse many doc sections, parsed {headings}.");
+        Assert.True(headings >= 84, $"Expected to parse many doc sections, parsed {headings}.");
+
+        Assert.True(StatesAFix("## dwarf001\nBody.\n\n**Fix:** map the member or ignore it."));
+        Assert.False(StatesAFix("## dwarf001\nBody describing the problem, and no remedy at all."));
+        Assert.False(StatesAFix("## dwarf038\nBody.\n\n**Fix (optional):** widen the target member."));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCAN 9 — Every live DWARF0xx id is announced in CHANGELOG.md
+    // ─────────────────────────────────────────────────────────────────────────
+    // Found by the final round-20 whole-branch review: DWARF086 was correctly present in
+    // AnalyzerReleases.Unshipped.md, docs/diagnostics.md and the generated index, but CHANGELOG.md's own
+    // preamble mandates an entry for any new/retired/re-severitied diagnostic id, and
+    // .github/workflows/release.yml publishes the matching section verbatim as the GitHub Release notes —
+    // so a new build-breaking Error would have shipped unannounced. No test in this repository read
+    // CHANGELOG.md at all before this scan; AssemblyScanTests otherwise stopped at the descriptor ↔
+    // AnalyzerReleases sync (Scan1) and never looked past it.
+
+    [Fact]
+    public void Scan9_Every_diagnostic_id_is_announced_in_the_changelog()
+    {
+        var changelogPath = Path.Combine(RepoPaths.Root, "CHANGELOG.md");
+        Assert.True(File.Exists(changelogPath), $"CHANGELOG.md not found at {changelogPath}");
+        var changelogText = File.ReadAllText(changelogPath);
+
+        var missing = UnannouncedIds(
+            GetAllDescriptors().Select(d => d.Descriptor.Id),
+            changelogText,
+            PredatesTheChangelog.Ids);
+
+        Assert.True(missing.Count == 0,
+            "Diagnostic id(s) with no CHANGELOG.md entry (add one under the current Unreleased heading — a "
+            + "new/retired/re-severitied diagnostic id is a user-visible change per the file's own preamble; "
+            + "if the id genuinely predates CHANGELOG.md, that belongs in PredatesTheChangelog instead, which "
+            + "may only shrink):\n" + string.Join("\n", missing));
+    }
+
+    /// <summary>
+    ///     Scan9's decision, isolated from its file I/O so a control can feed it inputs it must REJECT.
+    ///     Returns the ids that are neither reserved, nor in the frozen baseline, nor named anywhere in the
+    ///     changelog text.
+    /// </summary>
+    private static List<string> UnannouncedIds(
+        IEnumerable<string> descriptorIds, string changelogText, IReadOnlySet<string> baseline)
+    {
+        return descriptorIds
+            .Where(id => !ReservedIds.Ids.Contains(id))
+            .Where(id => !baseline.Contains(id))
+            .Where(id => !changelogText.Contains(id, StringComparison.Ordinal))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    [Fact]
+    public void Scan9_is_not_vacuous_it_actually_inspects_the_changelog()
+    {
+        // Non-vacuity guard (Issues/round20/CARRY-FORWARD.md §6 — this repository has hit "a scan finds
+        // nothing and passes by construction" six times, most recently a scan whose corpus included the
+        // very declaration it was meant to check). Three checks on the CORPUS: the descriptor set Scan9
+        // draws from is real and substantial; CHANGELOG.md actually loaded and contains a known-present
+        // id; and every frozen PredatesTheChangelog entry is still a live descriptor, so a descriptor
+        // rename/removal makes the baseline itself fail rather than silently stop meaning anything.
+        //
+        // Those three catch the failure this guard was written for — a mistyped path, six times over — but
+        // they would NOT catch Scan9 itself being gutted to `Assert.True(true)`: proving the inputs are
+        // real is not proving the assertion works. The fourth block below closes that by driving Scan9's
+        // extracted verdict, UnannouncedIds, over known-bad and known-good input directly. Stated limit:
+        // it pins the PREDICATE, not the [Fact]'s wiring to it — deleting the call from Scan9 would still
+        // leave this green. Pinning the wiring too needs a mutation run, which is where that belongs.
+        var liveIds = GetAllDescriptors()
+            .Select(d => d.Descriptor.Id)
+            .Where(id => !ReservedIds.Ids.Contains(id))
+            .ToHashSet(StringComparer.Ordinal);
+
+        // Floor tightened from `>= 80` to the value measured on 2026-08-17. May only ever move down.
+        Assert.True(liveIds.Count >= 84,
+            $"Expected Scan9 to inspect a substantial number of live DWARF0xx ids, saw {liveIds.Count}.");
+
+        var changelogText = File.ReadAllText(Path.Combine(RepoPaths.Root, "CHANGELOG.md"));
+        Assert.Contains("DWARF063", changelogText, StringComparison.Ordinal);
+
+        var staleBaselineEntries = PredatesTheChangelog.Ids
+            .Where(id => !liveIds.Contains(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+        Assert.True(staleBaselineEntries.Count == 0,
+            "PredatesTheChangelog contains id(s) that are no longer live descriptors (remove them — the set "
+            + "may only shrink, towards ids that still need writing up):\n"
+            + string.Join("\n", staleBaselineEntries));
+
+        // Known-bad / known-good, on synthetic text so each arm is proved in isolation rather than by
+        // whatever CHANGELOG.md happens to say today. DWARF999 exists nowhere; DWARF004 is reserved;
+        // DWARF002 is in the frozen baseline.
+        var empty = new HashSet<string>(StringComparer.Ordinal);
+        Assert.Equal(["DWARF999"], UnannouncedIds(["DWARF999"], "", empty));
+        Assert.Empty(UnannouncedIds(["DWARF999"], "- DWARF999 now refuses X. (#1)", empty));
+        Assert.Empty(UnannouncedIds(["DWARF004"], "", empty));
+        Assert.Empty(UnannouncedIds(["DWARF002"], "", PredatesTheChangelog.Ids));
+        Assert.Equal(["DWARF002"], UnannouncedIds(["DWARF002"], "", empty));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

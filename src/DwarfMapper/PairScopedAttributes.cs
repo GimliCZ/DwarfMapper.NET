@@ -22,6 +22,7 @@ namespace DwarfMapper;
 /// </summary>
 /// <typeparam name="TSource">The source type of the pair this linkage configures.</typeparam>
 /// <typeparam name="TTarget">The destination type of the pair this linkage configures.</typeparam>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapPropertyAttribute<TSource, TTarget> : Attribute
 {
@@ -67,6 +68,7 @@ public sealed class MapPropertyAttribute<TSource, TTarget> : Attribute
 ///     that matches no mapped pair is <c>DWARF056</c>.
 /// </summary>
 /// <typeparam name="TTarget">The destination type whose member is ignored.</typeparam>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapIgnoreAttribute<TTarget> : Attribute
 {
@@ -104,6 +106,7 @@ public sealed class MapIgnoreAttribute<TTarget> : Attribute
 /// </summary>
 /// <typeparam name="TSource">The source type of the pair whose construction this overrides.</typeparam>
 /// <typeparam name="TTarget">The destination type the factory produces.</typeparam>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapConstructorAttribute<TSource, TTarget> : Attribute
 {
@@ -131,6 +134,7 @@ public sealed class MapConstructorAttribute<TSource, TTarget> : Attribute
 ///     </para>
 /// </summary>
 /// <typeparam name="TTarget">The destination type whose member is assigned.</typeparam>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapValueAttribute<TTarget> : Attribute
 {

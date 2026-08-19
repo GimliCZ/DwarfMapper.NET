@@ -159,4 +159,42 @@ public class HookTests
         GeneratorAssert.EmitsCompilableCode(s);
         Assert.Contains("Fix(__dwarf_target)", gen, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    ///     A legitimate two-parameter <c>[AfterMap]</c> on an UPDATE-INTO mapper — the shape
+    ///     <c>DWARF091</c> must not reject, and the one every other two-arg hook test here misses by sitting
+    ///     on a create map.
+    /// </summary>
+    /// <remarks>
+    ///     The collision is exact: <c>void Update(Src, Dst)</c> and <c>void Fix(Src, Dst)</c> have the SAME
+    ///     signature, and it is the after-hook shape. That is why <c>DWARF091</c> discriminates on
+    ///     PARTIAL-ness — a declaration whose implementing part is absent has no body to run — rather than on
+    ///     the signature, which cannot tell the mapping method from the hook. Had it filtered on shape, this
+    ///     hook would have been refused along with the recursion it was written to stop (finding D16).
+    /// </remarks>
+    [Fact]
+    public void AfterMap_two_param_on_an_update_into_mapper_is_called_and_not_refused()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int X { get; set; } }
+                         public class Dst { public int X { get; set; } }
+                         [DwarfMapper] public partial class M
+                         {
+                             public partial void Update(Src s, Dst d);
+                             [AfterMap] private static void Fix(Src s, Dst d) { }
+                         }
+                         """;
+        var gen = GeneratorAssert.CompilesClean(s);
+
+        // The hook runs against the caller's own instance — an update-into writes into `d`, so there is no
+        // __dwarf_target here as there is on the create-map path.
+        Assert.Contains("Fix(s, d);", gen, StringComparison.Ordinal);
+
+        // And the mapping method does NOT call itself. This is the regression guard for D16's worst shape:
+        // before DWARF091, `Update(Src, Dst)` was registered as its own after-hook and the emitted body
+        // ended in `Update(s, d);` — unconditional infinite recursion that compiled.
+        Assert.DoesNotContain("Update(s, d);", gen, StringComparison.Ordinal);
+    }
 }

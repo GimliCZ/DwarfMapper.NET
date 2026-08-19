@@ -8,6 +8,7 @@ namespace DwarfMapper;
 ///     every referenced assembly to verify cross-assembly linkage at compile time (DWARF061). Hand-authoring
 ///     is not required.
 /// </summary>
+[DwarfSurface(SurfaceCategory.GeneratorEmitted)]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true, Inherited = false)]
 public sealed class DwarfProvidesMapAttribute : Attribute
 {
@@ -34,6 +35,7 @@ public sealed class DwarfProvidesMapAttribute : Attribute
 ///     <see cref="UsesMapAttribute" />). The validation root cross-checks these against the available
 ///     <see cref="DwarfProvidesMapAttribute" /> set.
 /// </summary>
+[DwarfSurface(SurfaceCategory.GeneratorEmitted)]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true, Inherited = false)]
 public sealed class DwarfRequiresMapAttribute : Attribute
 {
@@ -62,12 +64,14 @@ public sealed class DwarfRequiresMapAttribute : Attribute
 /// </summary>
 /// <typeparam name="TSource">The consumed map's source type.</typeparam>
 /// <typeparam name="TDestination">The consumed map's destination type.</typeparam>
+[DwarfSurface(SurfaceCategory.CrossAssembly)]
 [AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class UsesMapAttribute<TSource, TDestination> : Attribute
 {
 }
 
 /// <summary>Non-generic form of <see cref="UsesMapAttribute{TSource,TDestination}" />.</summary>
+[DwarfSurface(SurfaceCategory.CrossAssembly)]
 [AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class UsesMapAttribute : Attribute
 {
@@ -96,6 +100,7 @@ public sealed class UsesMapAttribute : Attribute
 ///     <c>DwarfMap</c> and <c>ValidateDwarfMaps</c> have fixed names, so two roots referenced by a single
 ///     consumer would collide (CS0433).
 /// </summary>
+[DwarfSurface(SurfaceCategory.BuildFailureOnly)]
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperValidationRootAttribute : Attribute
 {

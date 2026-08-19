@@ -175,7 +175,26 @@ public static class DwarfMapperRegistry
     /// </remarks>
     private static readonly ConcurrentDictionary<Key, Action<object, object>> UpdateMaps = new();
 
-    /// <summary>Registers an update-into map for the exact <paramref name="source" />/<paramref name="destination" /> pair.</summary>
+    /// <summary>
+    ///     The update table's own ambiguity set, separate from <see cref="Ambiguous" /> for the same reason
+    ///     <see cref="UpdateMaps" /> is separate from <see cref="Maps" />: the two key spaces answer different
+    ///     questions about the same pair.
+    /// </summary>
+    /// <remarks>
+    ///     <c>RegisterUpdate</c> used to mark a duplicate in <see cref="Ambiguous" /> — the CREATE table's set,
+    ///     the only one that existed. Two update registrations for a pair with no create map therefore left
+    ///     <see cref="IsAmbiguous" /> reporting <c>true</c> while <see cref="IsProvided" /> reported
+    ///     <c>false</c>: an ambiguous map that was never registered. The duplicate was real, but it was
+    ///     recorded against the wrong table, so the create-side accessor answered a question nobody asked.
+    /// </remarks>
+    private static readonly ConcurrentDictionary<Key, byte> UpdateAmbiguous = new();
+
+    /// <summary>
+    ///     Registers an update-into map for the exact <paramref name="source" />/<paramref name="destination" />
+    ///     pair. Idempotent per key; a second registration is recorded as ambiguous (the first wins) and
+    ///     surfaced by <see cref="IsUpdateAmbiguous" /> rather than throwing at load — the same contract
+    ///     <see cref="Register" /> gives the create table, on the update table's own set.
+    /// </summary>
     public static void RegisterUpdate(Type source, Type destination, Action<object, object> map)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -184,7 +203,7 @@ public static class DwarfMapperRegistry
 
         var key = new Key(source, destination);
         if (!UpdateMaps.TryAdd(key, map))
-            Ambiguous.TryAdd(key, 1);
+            UpdateAmbiguous.TryAdd(key, 1);
     }
 
     /// <summary>True if an update-into map for the exact pair is registered.</summary>
@@ -192,6 +211,32 @@ public static class DwarfMapperRegistry
     {
         return UpdateMaps.ContainsKey(new Key(source, destination));
     }
+
+    /// <summary>
+    ///     True if more than one update-into map was registered for the exact pair. Mirrors
+    ///     <see cref="IsAmbiguous" /> on the create table: a duplicate is first-wins and MARKED, and the two
+    ///     tables are marked independently, so neither accessor reports the other's duplicates.
+    /// </summary>
+    public static bool IsUpdateAmbiguous(Type source, Type destination)
+    {
+        return UpdateAmbiguous.ContainsKey(new Key(source, destination));
+    }
+
+    // ── Deliberate asymmetries with the create table ────────────────────────────────────────────────
+    // Three create-side members have NO update-side twin, and a reader looking for one should find this note
+    // rather than assume parity that does not exist:
+    //
+    //   * No `UpdateProvided` enumeration. `Provided` exists to feed validation, and validation asks only
+    //     whether a create map is reachable — the emitted `DwarfMap.Validate()` calls `IsProvided`, never
+    //     `Provided` — so an update-table enumerator would be surface added for no caller.
+    //   * No `TryGetUpdate`. `TryGet` hands out the create delegate for callers that want to invoke it
+    //     themselves; the update delegate is only ever meaningful applied to a destination the caller
+    //     already holds, which is exactly what `Update` does.
+    //   * No base/interface walk in `Update` — see its remarks below. That one is a SAFETY property, not an
+    //     omission, so mirroring the create table here would be a regression.
+    //
+    // Torture coverage mirrors the create table only where a twin exists; RegistryConcurrencyTortureTests
+    // states the same asymmetries at the point where the missing tests would otherwise be.
 
     /// <summary>
     ///     Applies the registered update-into map, mutating <paramref name="destination" /> in place.
@@ -213,14 +258,6 @@ public static class DwarfMapperRegistry
             throw new DwarfMapMissingException(sourceType, destinationType, null, isUpdate: true);
 
         map(source, destination);
-    }
-
-    /// <summary>Test-only: clears the registry. Not for production use.</summary>
-    internal static void ResetForTests()
-    {
-        Maps.Clear();
-        Ambiguous.Clear();
-        InterfaceMaps.Clear();
     }
 
     private readonly struct Key : IEquatable<Key>

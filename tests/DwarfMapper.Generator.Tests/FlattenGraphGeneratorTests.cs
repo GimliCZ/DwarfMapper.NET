@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests;
@@ -360,6 +361,103 @@ public class FlattenGraphGeneratorTests
                                public partial RootDto Map(Root r);
                            }
                            """;
+        GeneratorAssert.CompilesClean(src);
+
+        // The control for DWARF087 below, and it has to stay a real one: two directives naming DIFFERENT
+        // destination collections are what [FlattenGraph]'s AllowMultiple = true is FOR. CompilesClean already
+        // fails on any error diagnostic, so an over-eager (unconditional) duplicate refusal breaks this test —
+        // but say so explicitly, because a control nobody can see is a control nobody keeps.
+        GeneratorAssert.DoesNotReport(src, "DWARF087");
+    }
+
+    // ── 13. DWARF087: two directives may not fill the same destination collection ─────────────────────────
+    //
+    // Round 20's only NON-silent defect. The generator accepted a repeated directive, appended a second
+    // MemberMap for the same destination, and emitted `new RootDto { Nodes = …, Nodes = … }`:
+    //
+    //     CS1912: Duplicate initialization of member 'Nodes'
+    //       @SourceFile(DwarfMapper.Generator\DwarfMapper.Generator.DwarfGenerator\Demo.M.g.cs[779..784))
+    //
+    // — reported against the GENERATED file, so the consumer could not build and the error named source they
+    // never wrote. Found by the surface matrix's AllowMultiple ×2 axis, which is derived from
+    // AttributeUsage rather than from anyone's list of scenarios; no hand-written suite had this case.
+
+    private const string DuplicateTargetGraph = """
+                                                using DwarfMapper;
+                                                using System.Collections.Generic;
+                                                namespace Demo;
+                                                public class Node    { public string Name { get; set; } = ""; public Node? Next { get; set; } }
+                                                public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
+                                                public class Root    { public Node? Entry { get; set; } public Node? Other { get; set; } }
+                                                public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                                                """;
+
+    [Fact]
+    public void FlattenGraph_duplicate_directive_is_refused_with_DWARF087()
+    {
+        const string src = DuplicateTargetGraph + """
+                                                  [DwarfMapper]
+                                                  public partial class M
+                                                  {
+                                                      [FlattenGraph("Entry", "Nodes")]
+                                                      [FlattenGraph("Entry", "Nodes")]
+                                                      public partial RootDto Map(Root r);
+                                                  }
+                                                  """;
+        var d = Assert.Single(GeneratorAssert.Reports(src, "DWARF087"));
+        Assert.Contains("Nodes", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        AssertNoDuplicateInitialization(src);
+    }
+
+    [Fact]
+    public void FlattenGraph_two_directives_filling_one_collection_are_refused_even_when_not_identical()
+    {
+        // The defect is keyed on the DESTINATION, not on the directives being character-identical: these two
+        // are different directives and emitted the very same CS1912. A check that only caught exact duplicates
+        // would have left this half of the defect class in place.
+        const string src = DuplicateTargetGraph + """
+                                                  [DwarfMapper]
+                                                  public partial class M
+                                                  {
+                                                      [FlattenGraph("Entry", "Nodes")]
+                                                      [FlattenGraph("Other", "Nodes")]
+                                                      public partial RootDto Map(Root r);
+                                                  }
+                                                  """;
+        var d = Assert.Single(GeneratorAssert.Reports(src, "DWARF087"));
+        Assert.Contains("Nodes", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        AssertNoDuplicateInitialization(src);
+    }
+
+    /// <summary>
+    ///     The half of the DWARF087 fix that <see cref="GeneratorAssert.Reports" /> does not cover: the
+    ///     duplicate-initialization error must be GONE, not merely accompanied by a diagnostic explaining it.
+    ///     <para>
+    ///         Deliberately not <c>EmitsCompilableCode</c>. Every DWARF Error in this generator suppresses the
+    ///         emission, so a refused source has no implementation part for its partial method and reports
+    ///         CS8795 — the ordinary refusal cascade DWARF078 signposts, and the same for DWARF087 as for
+    ///         DWARF008 or DWARF011. What must never come back is CS1912, which was not a cascade: it was the
+    ///         generator handing the consumer invalid C# in a file they never wrote.
+    ///     </para>
+    /// </summary>
+    private static void AssertNoDuplicateInitialization(string source)
+    {
+        var compileErrors = GeneratorTestHarness.RunAndGetCompilationErrors(source);
+        Assert.DoesNotContain(compileErrors, e => string.Equals(e.Id, "CS1912", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FlattenGraph_single_directive_is_not_refused()
+    {
+        const string src = DuplicateTargetGraph + """
+                                                  [DwarfMapper]
+                                                  public partial class M
+                                                  {
+                                                      [FlattenGraph("Entry", "Nodes")]
+                                                      public partial RootDto Map(Root r);
+                                                  }
+                                                  """;
+        GeneratorAssert.DoesNotReport(src, "DWARF087");
         GeneratorAssert.CompilesClean(src);
     }
 }

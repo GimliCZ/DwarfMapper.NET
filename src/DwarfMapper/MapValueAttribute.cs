@@ -24,6 +24,12 @@ namespace DwarfMapper;
 ///     Conflicts with <c>[MapProperty]</c>/<c>[MapIgnore]</c> on the same target, an unknown target, or a
 ///     missing value/<see cref="Use" /> are reported as <c>DWARF042</c>.
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+// The target must be a member the constant can actually be assigned to. The sampled "Id" is an int and the
+// sampled constant is a string, so every case asked the generator about a type error rather than about a
+// constant assignment; `Name` is the flat pair's string member.
+[DwarfSurfaceProbe(constructorArity: 1, Arguments = "{Name}")]
+[DwarfSurfaceProbe(constructorArity: 2, Arguments = "{Name}, \"probe\"")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapValueAttribute : Attribute
 {

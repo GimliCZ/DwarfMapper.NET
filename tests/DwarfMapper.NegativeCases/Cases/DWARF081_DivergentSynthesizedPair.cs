@@ -15,6 +15,8 @@
 // EXPECT-MESSAGE DWARF081: Demo.InnerDto
 // EXPECT-MESSAGE DWARF081: Note
 // EXPECT-MESSAGE DWARF081: [MapNullSkip
+// EXPECT-MESSAGE DWARF058: was not generated
+// EXPECT-MESSAGE DWARF058: GenerateExtensions = false
 
 using DwarfMapper;
 

@@ -44,6 +44,7 @@ namespace DwarfMapper;
 ///         are unchanged.
 ///     </para>
 /// </remarks>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class ProvidesMapAttribute : Attribute
 {

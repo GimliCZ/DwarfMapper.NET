@@ -612,9 +612,17 @@ public static class DiagnosticDescriptors
     // member unmapped and forces a visible [MapProperty]/[MapIgnore] choice.
     // [MapProperty(StringFormat = "...")] used where it cannot apply: the destination is not string, the source
     // is not IFormattable, or a Use= converter is also present (the converter already owns the transform).
-    // [MapCollectionKey] used where the v1 key-based upsert cannot apply: not an update-into method, the named
-    // member is not a List<T>, the element type differs between source and target, or the key member is not
-    // found on the element type. Loud rather than silently falling back to whole-collection replacement.
+    // [MapCollectionKey] used where the v1 key-based upsert cannot apply: the named member is not a mapped
+    // destination member, is not a List<T> on both sides, the element type differs between source and target,
+    // or the key member is not found on the element type. Loud rather than silently falling back to
+    // whole-collection replacement.
+    //
+    // "Not an update-into method" was listed here for four rounds and NO call site ever implemented it:
+    // ApplyCollectionKeyUpserts is reached from the update-into branch alone, so a [MapCollectionKey] written
+    // anywhere else reached this id's checks not at all and was discarded in silence (finding D14). That case
+    // now lives on DWARF092 — a Warning, because an Error here would suppress the whole class's emission and
+    // bury the refusal under a wall of CS8795 — and is deliberately NOT this id's. Stated rather than deleted:
+    // a descriptor comment that documents a check nobody wrote is how a gap reads as covered.
     // [FlattenGraph] could not flatten a data-bearing complex leaf (a nested object, collection or dictionary
     // member of a graph node). Only reachable under ReferenceHandling = Preserve, where the synthesized helper
     // for such a leaf may later be force-marked recursion-capable (3-param) and would then be called with one
@@ -877,4 +885,439 @@ public static class DiagnosticDescriptors
         + "or make the destination member nullable.",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf070");
+
+    /// <summary>
+    ///     A cross-assembly manifest attribute the generator emits, written by hand instead.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>[assembly: DwarfProvidesMap]</c> and <c>[assembly: DwarfRequiresMap]</c> are output, not
+    ///         input: the generator writes one entry per map this assembly registers or consumes, and the
+    ///         <c>[DwarfMapperValidationRoot]</c> compilation reads those entries out of referenced metadata to
+    ///         decide DWARF061. Nothing else describes the graph, so the root can only be as truthful as the
+    ///         manifest is.
+    ///     </para>
+    ///     <para>
+    ///         A hand-written entry breaks that in the direction nothing catches. A fabricated <c>Provides</c>
+    ///         row satisfies a <c>Requires</c> row for a map no assembly registers, so the compile-time check
+    ///         passes and the failure moves to the first call site at run time — which is the exact failure
+    ///         DWARF061 exists to pull forward. Refused rather than ignored, because an ignored entry still
+    ///         reads to the next person as a supported way of declaring a map.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor HandWrittenManifestAttribute = new(
+        "DWARF086",
+        "Manifest attribute is emitted by the generator",
+        "'{0}' is emitted by the generator onto the assembly and must not be hand-written: it declares a map "
+        + "the generator never produced, so the cross-assembly manifest stops describing this assembly and "
+        + "the [DwarfMapperValidationRoot] check (DWARF061) trusts the difference. Delete it. To CONSUME a "
+        + "cross-assembly map, declare it with [UsesMap<TSource, TDestination>]; to PROVIDE one, declare the "
+        + "map itself ([GenerateMap] on a [DwarfMapper] class, or [ProvidesMap] on a hand-written method) and "
+        + "the generator writes the manifest entry for you.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf086");
+
+    /// <summary>
+    ///     Two or more <c>[FlattenGraph]</c> directives on one mapping method fill the same destination
+    ///     collection.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The one defect in round 20 that was not a silence: the generator ACCEPTED the shape and emitted
+    ///         <c>new Dst { Flat = …, Flat = … }</c>, which is <c>CS1912 "Duplicate initialization of member"</c>.
+    ///         The consumer therefore could not build at all, and the error they were shown pointed at
+    ///         <c>Demo.M.g.cs</c> — a generated file they never wrote and cannot edit. Emitting code that does
+    ///         not compile is strictly worse than any silent divergence, because there is no version of the
+    ///         program that runs.
+    ///     </para>
+    ///     <para>
+    ///         Refused rather than collapsed, matching DWARF011: a repeated directive is a copy-paste mistake,
+    ///         and quietly keeping one of them hides the mistake from the only person who can fix it. Keyed on
+    ///         the DESTINATION collection rather than on the directive being character-identical, because that
+    ///         is where the defect actually lives — <c>[FlattenGraph("Entry", "Nodes")]</c> next to
+    ///         <c>[FlattenGraph("Other", "Nodes")]</c> emits the same CS1912 from two directives that are not
+    ///         duplicates of each other at all. <c>[FlattenGraph]</c> stays <c>AllowMultiple</c>: several
+    ///         directives naming DIFFERENT destination collections remain the supported way to flatten more
+    ///         than one graph into one DTO.
+    ///     </para>
+    ///     <para>
+    ///         Found by the <c>AllowMultiple ×2</c> axis of the surface matrix, which exists only because the
+    ///         case space is derived from <c>AttributeUsage.AllowMultiple</c> rather than from a hand-written
+    ///         list of scenarios worth testing. Nobody would have written that test.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DuplicateFlattenGraphTarget = new(
+        "DWARF087",
+        "Duplicate [FlattenGraph] destination collection",
+        "Destination collection '{0}' is filled by more than one [FlattenGraph] directive on this method, "
+        + "which would emit an object initializer that assigns '{0}' twice (CS1912) — code that does not "
+        + "compile. Keep exactly one [FlattenGraph] per destination collection; to flatten a second graph, "
+        + "name a different collection member on the destination type.",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf087");
+
+    /// <summary>
+    ///     The MEMBER-placement overload of <c>[MapProperty]</c> or <c>[MapIgnore]</c>, written on a mapper
+    ///     class or a mapping method where there is no annotated member for it to be about.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Both attributes carry two placements behind one name, and each placement has its own
+    ///         constructor. <c>[MapProperty("X")]</c> names the destination THE ANNOTATED MEMBER supplies and
+    ///         a bare <c>[MapIgnore]</c> says "never read THE ANNOTATED MEMBER" — statements that only mean
+    ///         something where the annotated type is itself the declaration of the mapping (the <c>[MapTo]</c>
+    ///         registry, the co-located host). On a mapper class or a mapping method there is no annotated
+    ///         member: the mapping is declared by the method, and the DTO pair is two ordinary types.
+    ///     </para>
+    ///     <para>
+    ///         Until this id existed both were discarded without a word — <c>ReadExplicitMaps</c> accepts only
+    ///         the two-argument application and <c>ReadIgnores</c> only the one-argument one, and each simply
+    ///         skipped anything else. The <c>[MapProperty]</c> half is the worse of the two, because the named
+    ///         arguments ride on that same one-argument constructor: <c>[MapProperty("X", Use = "F")]</c> is
+    ///         <c>ctor(1)</c> plus a property initializer, so the converter, the <c>When</c> predicate, the
+    ///         null substitute and the format string went into the same bin as the binding. The caller named a
+    ///         conversion method and got auto-matching.
+    ///     </para>
+    ///     <para>
+    ///         Refused rather than honoured, and the reasoning survives either reading. Honouring
+    ///         <c>[MapProperty("X")]</c> at a method would bind <c>X</c> to itself — the identity binding
+    ///         auto-matching already produces, so it is a no-op by construction and the caller cannot have
+    ///         meant it. Discarding it evaporates a binding they wrote explicitly. Both are wrong; only saying
+    ///         so lets them fix it. A bare <c>[MapIgnore]</c> has no honourable reading at all: it names
+    ///         nothing.
+    ///     </para>
+    ///     <para>
+    ///         An <b>Error</b>, matching its registry mirror <c>DWARFR04</c>, which is an Error for the exact
+    ///         same misuse written at the other front door. It shipped as a Warning for one round and the
+    ///         reason given was never a product reason: an Error suppresses the whole class's emission, so the
+    ///         partial mapping method loses its implementing part and the consumer meets <c>CS8795</c> — and
+    ///         while the G4/R4 ordering defect stood, the surface matrix read that cascade as "the compiler
+    ///         rejected the placement" rather than as a refusal, so escalating would have moved ~25 measured
+    ///         cells into a population nothing judged. R4 is fixed: a <c>CS8795</c> behind a blocking DwarfMapper
+    ///         error is now read as the refusal it is, and the ratchet-avoidance argument died with it.
+    ///     </para>
+    ///     <para>
+    ///         What is left is the product argument, and it points the other way. The cascade is paid by EVERY
+    ///         blocking DwarfMapper error, including <c>DWARF011</c> (two <c>[MapProperty]</c> directives over
+    ///         one destination) and <c>DWARF087</c> (two <c>[FlattenGraph]</c> directives over one destination
+    ///         collection) — both Errors, both on this same class, both stranding the same partial method. A
+    ///         cost every id pays cannot decide the severity of one of them. And what this id refuses is
+    ///         SILENT DATA LOSS: the named arguments ride on the same one-argument constructor as the binding,
+    ///         so <c>[MapProperty("Name", Use = nameof(F))]</c> on a mapper discards the converter, the
+    ///         <c>When</c> predicate, the null substitute and the format string together with the binding, and
+    ///         the caller gets auto-matching. A suppressible Warning is the wrong instrument for a directive
+    ///         whose entire payload evaporates.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because the two attributes need different remedies: one says "supply both names", the other
+    ///         "name the destination to exclude". One descriptor for both regardless — they are one defect
+    ///         wearing two attribute names, and two ids would have said the same thing twice.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MemberFormDirectiveOnMapper = new(
+        "DWARF088",
+        "Member-placement directive written on a mapper",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf088");
+
+    /// <remarks>
+    ///     <para>
+    ///         The exact inverse of <see cref="MemberFormDirectiveOnMapper" />, and the reason it is a second
+    ///         id rather than a second message under the first: <c>DWARF088</c> says "you wrote the member
+    ///         form where there is no member", this says "you wrote the method form on a member, or wrote a
+    ///         member directive the declared pairs cannot receive". Same family, opposite mistake, different
+    ///         remedy — folding them together would produce a title that is false for half the cells it fires
+    ///         on.
+    ///     </para>
+    ///     <para>
+    ///         A co-located <c>[GenerateMap&lt;S,T&gt;]</c> host declares its own mapping, so a member of the
+    ///         host IS part of that declaration and carries the MEMBER form: <c>[MapProperty("SourceMember")]</c>
+    ///         names where the annotated destination member is filled from, and a bare <c>[MapIgnore]</c>
+    ///         excludes it. Everything else written there acts on nothing, and acted on nothing in silence
+    ///         until this check existed (surface-matrix finding D20).
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, and the reason is this id's own rather than borrowed from
+    ///         <c>DWARF088</c> — which is an <b>Error</b>, because what it refuses is a directive whose whole
+    ///         payload evaporates. Here a blocking error would suppress the
+    ///         whole host's emission, so the generated <c>&lt;Host&gt;Mapper</c>, its convenience extension
+    ///         and its DI registration would all vanish and the refusal would reach the consumer as
+    ///         <c>CS1061</c> at every call site instead. The offending directive is dropped and the rest of
+    ///         the host's mapping is emitted as if it had not been written; escalate with
+    ///         <c>dotnet_diagnostic.DWARF089.severity = error</c> where the stricter reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because the four shapes need four remedies — the two method-form placements, a directive count
+    ///         that does not match the declared pairs, and a host that is not the destination of any pair it
+    ///         declares.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MisplacedDirectiveOnCoLocatedHostMember = new(
+        "DWARF089",
+        "Directive on a co-located host member cannot be applied",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf089");
+
+    /// <summary>
+    ///     A member directive written on a mapping method (or its class) that the ELEMENT-WISE endpoints —
+    ///     the span map and the async-stream map — cannot apply.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The generalization of <see cref="ExplicitOnlyNotElementWise" />, and the same root cause: a
+    ///         span or async-stream method resolves no members of its own. It maps the ELEMENT pair through an
+    ///         auto-synthesized mapper, and a directive written without a pair scope belongs to the DECLARING
+    ///         method rather than to that pair, so it never reaches it. <c>DWARF077</c> closed the case for the
+    ///         explicit-only trust boundary alone; the surface matrix then measured the same silence for
+    ///         <c>[MapIgnore("X")]</c> and <c>[MapProperty("X", "Y")]</c> (findings D1 and D2), where one mapper
+    ///         dropped a member on three of its overloads and copied it on the other two, saying nothing.
+    ///     </para>
+    ///     <para>
+    ///         Refused rather than propagated, and the reason is the one <c>DWARF077</c> already states: the
+    ///         synthesized element mapper is keyed by <c>(source, target)</c> and shared by every route that
+    ///         reaches that pair. Pushing one method's unscoped directive into it would silently re-configure
+    ///         a nested mapping some other method owns — a worse defect than the silence, and invisible from
+    ///         the declaration that caused it.
+    ///     </para>
+    ///     <para>
+    ///         <c>[Reinterpret]</c> is the one arm with NO pair-scoped twin (finding <c>D12</c>: honoured at
+    ///         the create map and the update-into, silent at both element-wise endpoints — the two whose whole
+    ///         purpose is bulk element throughput, and therefore the two where a caller reaching for a forced
+    ///         blit most expects it to apply). Its remedy is a DECLARED create map instead of a re-scoped
+    ///         attribute, and that is not a weaker answer: an element-wise map resolves its element pair
+    ///         through a declared mapping method where the class has one rather than synthesizing a fresh one,
+    ///         so the loop becomes <c>d[__i] = Map(s[__i]);</c> and the blit runs per element through it.
+    ///         MEASURED at both element-wise endpoints — the member is assigned through
+    ///         <c>__DwarfBlit_…</c> (<c>MemoryMarshal.Cast</c>) rather than a per-element numeric conversion
+    ///         helper — before the message said it.
+    ///     </para>
+    ///     <para>
+    ///         The remedy is a form that already works here, which is what makes this a refusal a caller can
+    ///         act on rather than a capability withdrawal: the PAIR-SCOPED twins
+    ///         <c>[MapIgnore&lt;TTarget&gt;("X")]</c> and <c>[MapProperty&lt;TSource, TTarget&gt;("X", "Y")]</c>
+    ///         are matched against every synthesized pair, including this element pair. Measured on the surface
+    ///         matrix, and stated exactly because the two readings differ: <c>[MapIgnore&lt;TTarget&gt;]</c> reads
+    ///         <c>Honoured</c> at both element-wise endpoints, while <c>[MapProperty&lt;TSource, TTarget&gt;]</c>
+    ///         reads <c>Refused</c> there — the bind happens and a <c>DWARF038</c> about the resulting
+    ///         <c>int → string</c> conversion rides along, and the classifier tests for an added diagnostic
+    ///         before it compares output. The conversion warning IS the evidence the rename was applied, but it
+    ///         is not the same observation as <c>Honoured</c>. The message names the exact replacement text.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF089</c> is: a blocking error
+    ///         suppresses the whole class's emission, so every partial mapping method on it loses its
+    ///         implementing part and the consumer meets a wall of <c>CS8795</c> with this refusal buried under
+    ///         it. The directive is dropped for this endpoint and the rest of the mapper is emitted; escalate
+    ///         with <c>dotnet_diagnostic.DWARF090.severity = error</c> where the stricter reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because the replacement text differs per directive and per element pair.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DirectiveNotAppliedElementWise = new(
+        "DWARF090",
+        "Member directive is not applied element-wise",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf090");
+
+    /// <summary>
+    ///     <c>[BeforeMap]</c> or <c>[AfterMap]</c> on a partial method that has no implementing part — a
+    ///     hook whose body does not exist.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>CollectHooks</c> scanned every method on the mapper class and accepted anything whose
+    ///         signature fitted, which includes the partial MAPPING METHOD declarations themselves: the
+    ///         generator writes those bodies, so the caller has no code there for a hook to run. The
+    ///         signature filter let some through and not others purely by shape, and the three outcomes were
+    ///         all wrong in different ways.
+    ///     </para>
+    ///     <para>
+    ///         Measured on the surface matrix (finding D16). On <c>Dst Map(Src)</c> the method is not void, so
+    ///         <c>DWARF018</c> fired and the build failed with a signature complaint about a method whose
+    ///         signature was never the problem. On <c>void MapSpan(ReadOnlySpan&lt;S&gt;, Span&lt;D&gt;)</c> it
+    ///         fitted the two-parameter after-hook shape exactly, was registered, and was never called — the
+    ///         silent cell the matrix reported. And on <c>void Update(S, D)</c> it fitted too and WAS called:
+    ///         the emitted body ended in <c>Update(s, d);</c>, unconditional infinite recursion that the matrix
+    ///         scored as the directive being honoured.
+    ///     </para>
+    ///     <para>
+    ///         The rule is not specific to mapping methods and does not need to be. A partial method with no
+    ///         implementing part is erased by the C# compiler along with every call to it, so as a hook it can
+    ///         only ever be a no-op — or, where the generator supplies the missing part, a call back into the
+    ///         method being generated. Neither is what <c>[AfterMap]</c> means, at any endpoint, which is why
+    ///         this replaces the <c>DWARF018</c> signature complaint rather than sitting after it.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF089</c> and <c>DWARF090</c> are: an error would strand
+    ///         every partial
+    ///         mapping method on the class behind <c>CS8795</c>. The hook is dropped — which is what the
+    ///         caller already had at three of the five endpoints, minus the recursion at the fourth — and the
+    ///         mapper is emitted; escalate with <c>dotnet_diagnostic.DWARF091.severity = error</c> where the
+    ///         stricter reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because it names both the attribute and the method, and <c>DiagnosticInfo</c> carries one
+    ///         message argument.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor HookOnMethodWithNoBody = new(
+        "DWARF091",
+        "Mapping hook on a partial method with no body",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf091");
+
+    /// <summary>
+    ///     A directive the generator reads at ONE mapping endpoint only, written on a mapping method that is
+    ///     one of the other four, where it is discarded.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Two families share this id, and they point in opposite directions. Three directives are read
+    ///         only where the destination is CONSTRUCTED and RETURNED — the create map — and are discarded on
+    ///         an update-into, projection, span or async-stream method. One is read only where the
+    ///         destination ALREADY EXISTS — the update-into — and is discarded everywhere else, the create
+    ///         map included. What they have in common is the shape, not the direction: a directive read at
+    ///         exactly one endpoint, so the identical text on the identical mapper class means one thing on
+    ///         one overload and nothing on the next four.
+    ///     </para>
+    ///     <para>
+    ///         Measured on the surface matrix, which found the create-map shape three times over (findings
+    ///         <c>D8</c>, <c>D11</c> and <c>D13</c>) and the update-into shape once
+    ///         (<c>[MapCollectionKey]</c>, finding <c>D14</c>). The refusal is the closure rather than the
+    ///         feature in both directions: the three create-map directives are about the destination the
+    ///         create map BUILDS —
+    ///         <c>[FlattenGraph]</c> replaces the source of a destination collection with a graph walk and
+    ///         <c>[MapDerivedType]</c> chooses which destination type to construct, so at an update-into —
+    ///         which writes into an instance the caller already built — there is no construction step for
+    ///         either to redirect. <c>[ReverseMap]</c> shares the endpoint, not the reason: it makes a
+    ///         SEPARATELY-DECLARED inverse method inherit this one's simple renames with their ends swapped,
+    ///         and the match is by signature — a forward <c>TDto Map(TSource s)</c> against an inverse
+    ///         <c>TSource Back(TDto d)</c>, both one-parameter create maps, which no other endpoint's
+    ///         signature is. It does not GENERATE a method, and a missing inverse is <c>DWARF052</c> rather
+    ///         than a silence; task A9a's own finding entry (<c>D13</c>) asserted otherwise and was
+    ///         measurably wrong, so the wrong model is restated here only to say it is wrong.
+    ///     </para>
+    ///     <para>
+    ///         <c>[MapCollectionKey]</c> is the mirror image and is here for the same reason. A key-based
+    ///         upsert merges the source elements into the list the destination already holds, matching on the
+    ///         named key, so untouched elements survive; that needs a destination to merge INTO, and the
+    ///         create map, the projection, the span map and the async stream all build a fresh one. Its own
+    ///         <c>DWARF074</c> already validates the directive at the update-into and its documentation
+    ///         already named "not an update-into method" as a case it covered — but no call site ever asked
+    ///         that question, because <c>ApplyCollectionKeyUpserts</c> is only reached from the update-into
+    ///         branch. The check could not live on <c>DWARF074</c> once it was written: that id is an
+    ///         <b>Error</b>, and an error here suppresses the whole class's emission (see the severity note
+    ///         below).
+    ///     </para>
+    ///     <para>
+    ///         One id and one gate rather than four, for the reason <c>DWARF088</c> is one check over two
+    ///         attributes and two sites: it is one mistake, made about four directives, and a per-directive
+    ///         id would leave whichever directive was added last silent at whichever endpoint was written
+    ///         last. All five branches call the same gate, and each ARM names its own home endpoint and is
+    ///         skipped there — <c>[FlattenGraph]</c>, <c>[MapDerivedType]</c> in both of its forms and
+    ///         <c>[ReverseMap]</c> are at home on the create map, <c>[MapCollectionKey]</c> on the
+    ///         update-into.
+    ///     </para>
+    ///     <para>
+    ///         <c>[ReverseMap]</c> is the one whose message carries NO transfer claim, even element-wise. The
+    ///         adoption sentence is true of a directive that changes what the create map EMITS, because that
+    ///         emission is what the element-wise loop calls; <c>[ReverseMap]</c> changes nothing about the
+    ///         method it sits on and instead makes a separately-declared inverse inherit its renames. Saying
+    ///         otherwise would have told a caller their inverse reaches the span map, which is not a claim
+    ///         about anything.
+    ///     </para>
+    ///     <para>
+    ///         The remedy the message names was MEASURED before it was prescribed. At the two ELEMENT-WISE
+    ///         endpoints a create map declared beside the span or stream method over the same pair is adopted
+    ///         as the element converter — the emitted loop is literally <c>d[__i] = Map(s[__i]);</c> — so
+    ///         moving the directive onto that create map really does make it reach this method. At
+    ///         update-into and projection nothing of the sort happens, and the message says only that the
+    ///         create map honours it; a remedy nobody ran is how a diagnostic sends a caller in a circle.
+    ///         <c>[MapCollectionKey]</c>'s remedy names an update-into and carries NO adoption claim at any
+    ///         endpoint, which is a sharper point than <c>[ReverseMap]</c>'s: what an element-wise loop adopts
+    ///         is a declared CREATE map for the element pair, and a declared update-into is not one.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF089</c>, <c>DWARF090</c> and <c>DWARF091</c> are: a
+    ///         blocking error suppresses the whole class's emission, so every partial mapping method on it
+    ///         loses its implementing part and the consumer meets a wall of <c>CS8795</c> with this refusal
+    ///         buried under it. The directive is dropped for this endpoint and the rest of the mapper is
+    ///         emitted; escalate with <c>dotnet_diagnostic.DWARF092.severity = error</c> where the stricter
+    ///         reading is wanted.
+    ///     </para>
+    ///     <para>
+    ///         The message is composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>)
+    ///         because it names the directive as written, the method, the endpoint and the pair.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DirectiveNotReadAtThisEndpoint = new(
+        "DWARF092",
+        "Directive is not read at this mapping endpoint",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf092");
+
+    /// <summary>
+    ///     <c>[GenerateWrapperMap(typeof(W&lt;&gt;))]</c> on a class that declares no
+    ///     <c>[GenerateMap&lt;A, B&gt;]</c> pair — an opt-in with an empty list to expand.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The attribute is defined RELATIVE to <c>[GenerateMap]</c>, and that is the whole of the
+    ///         argument for refusing rather than widening it. Its own documentation opens "for every
+    ///         <c>[GenerateMap&lt;A, B&gt;]</c> declared on the same <c>[DwarfMapper]</c> class", and
+    ///         <c>ExpandWrapperMaps</c> is literally an append to that pair list: it takes the declared pairs
+    ///         and adds <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> per pair. A pair declared as a partial mapping
+    ///         METHOD is a different mechanism with a different signature, and four of the five mapping
+    ///         endpoints are not create maps at all — an update-into, a projection, a span map and an
+    ///         async-stream map have no <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> shape to synthesize. Expanding
+    ///         those would hand the caller a create map they never asked for.
+    ///     </para>
+    ///     <para>
+    ///         Measured on the surface matrix as finding <c>D15</c>: on a <c>[DwarfMapper]</c> class at any of
+    ///         the five mapper endpoints the attribute produced NOTHING and said nothing. And the mechanism
+    ///         the finding gave for that was wrong. It read the <c>DWARF067</c> at the co-located host as the
+    ///         generator "having an opinion about where the attribute is valid" — <c>DWARF067</c> is an
+    ///         opinion about the WRAPPER TYPE, not about placement, and it fired there only because the
+    ///         co-located host template declares <c>[GenerateMap&lt;Src, Dst&gt;]</c> and the sampled argument
+    ///         <c>typeof(Dst)</c> is not a single-parameter generic. The mapper-endpoint silence was
+    ///         <c>ExpandWrapperMaps</c> returning early on an empty pair list, before any validation at all.
+    ///     </para>
+    ///     <para>
+    ///         Reported BEFORE the wrapper's shape is validated, deliberately. With no pairs to expand, even a
+    ///         perfectly-shaped <c>Envelope&lt;T&gt;</c> expands nothing, so "there is nothing to expand" is
+    ///         the actionable statement and "your wrapper is the wrong shape" would send the caller to fix
+    ///         something that changes no output. It also keeps the class emitting: <c>DWARF067</c> is an
+    ///         <b>Error</b>, and raising it here would strand every partial mapping method on the class behind
+    ///         <c>CS8795</c>. The co-located host still validates the wrapper, because there the pair list is
+    ///         not empty.
+    ///     </para>
+    ///     <para>
+    ///         The remedy was MEASURED before it was prescribed, and so was its ONE sharp edge:
+    ///         <c>[GenerateMap&lt;A, B&gt;]</c> beside <c>[GenerateWrapperMap]</c> emits the wrapper map
+    ///         cleanly — but <c>[GenerateMap]</c> also emits its own <c>B Map(A)</c>, so adding it to a class
+    ///         that already declares a <c>partial B Map(A)</c> over the SAME pair is <c>CS0111</c>. The
+    ///         message says so rather than sending a create-map caller into a duplicate-member error.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, for the reason <c>DWARF090</c> and <c>DWARF092</c> are, and the message is
+    ///         composed at report time (<c>MessageFormat</c> is the pass-through <c>{0}</c>) because it quotes
+    ///         the wrapper the caller wrote.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor WrapperMapExpandsNothing = new(
+        "DWARF093",
+        "[GenerateWrapperMap] has no declared pair to expand",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf093");
 }

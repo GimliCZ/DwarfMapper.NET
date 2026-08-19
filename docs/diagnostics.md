@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF083`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF093`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -66,7 +66,7 @@ mostly have a better in-place answer already — `[MapIgnore]`, `[MapValue]`, `[
 
 `DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
 
-The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR06` family — see
+The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR11` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
 
 ### Adopting incrementally (the strictness valve)
@@ -106,11 +106,13 @@ DWARF0xx self-validation scans that the rest of this reference is held to.
 | `DWARFR01` | **Invalid `[MapTo]` target** — the target type isn't a mappable class/struct. |
 | `DWARFR02` | **Destination member is not mapped** — the registry's completeness gate (the `[MapTo]` counterpart of `DWARF001`). Add a source member, a `[MapProperty]` binding, or drop it. Member enumeration now walks the base-type chain exactly as the `[DwarfMapper]` class model does, so this gate also covers **inherited destination members** — a base-class member that was never mapped before now trips `DWARFR02`. Because `DWARFR02` is Error severity, this can turn a project that built yesterday into a build failure today. **Fix:** supply the inherited member (a source member, a `[MapProperty]` binding) or `[MapIgnore]` it. |
 | `DWARFR03` | **Conflicting sources for one destination member** — more than one source claims it; give them distinct positional `[MapProperty]` names. Inherited members now participate too: a member the source class picks up from a base class can conflict with one declared directly, and a derived member renamed onto a name its base also supplies is now a conflict where it previously wasn't. |
-| `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. `[MapProperty]` on a base class is now read for every derived `[MapTo]` source, not just the class that declares it — so a base annotated for a 2-target derived type can emit `DWARFR04` on a 1-target sibling derived type that inherits the same attribute. |
+| `DWARFR04` | **`[MapProperty]` value count doesn't match the targets** — supply one value (all targets) or exactly one per `[MapTo]` target, in order. Two arities can be wrong and both report this code. **How many attributes are stacked:** `[MapProperty]` on a base class is read for every derived `[MapTo]` source, not just the class that declares it — so a base annotated for a 2-target derived type can emit `DWARFR04` on a 1-target sibling derived type that inherits the same attribute. **How many values one of them carries:** `[MapProperty("A", "X")]` on a source member is the `[DwarfMapper]` class model's *method* form; the member form takes the single destination name this member supplies. It used to bind nothing at all and the member fell back to its own name — silently. Drop the first argument. |
 | `DWARFR05` | **No conversion between mapped members** — the member types are incompatible; use the `[DwarfMapper]` class model for a custom `Use=` converter. |
 | `DWARFR06` | **Recursive nested mapping is not supported by the registry** — the front door threads no reference context; use the `[DwarfMapper]` class model (`ReferenceHandling`/`OnCycle`) for cyclic graphs. |
+| `DWARFR10` | **Member has a source match but auto-matching is disabled** — the registry counterpart of `DWARF072`. Under `[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]` nothing is auto-wired by name, so a destination the names merely happen to line up with is refused rather than copied. The front door read no assembly-level configuration before, which meant an assembly that had switched auto-matching off still had every `[MapTo]` map auto-matching — half a trust boundary. **Fix:** name the destination deliberately with `[MapProperty("Dest")]` on the source member, or exclude the source member with `[MapIgnore]`. A member refused here does *not* also draw `DWARFR02`. |
 | `DWARFR08` | **Two `[MapTo]` targets generate the same method name** — targets whose *simple* names collide (`Foo.Order` and `Bar.Order`) would each emit `ToOrder(this Src)` into one static class (CS0111). Rename a target, or use the `[DwarfMapper]` class model where every method is named explicitly. |
 | `DWARFR09` | **`[MapTo]` target has no accessible parameterless constructor** — the registry constructs targets with `new T { … }`. Add a public parameterless constructor, or use the `[DwarfMapper]` class model, which supports constructor mapping. |
+| `DWARFR11` | **`[DwarfMapperConstructor]` is not read by the `[MapTo]` registry** (Warning) — the directive names the constructor DwarfMapper must build a target with, and this front door selects no constructor at all: every type it constructs — the `[MapTo]` target and every nested object (including a collection's element type) — is built with `new T { … }` and its members assigned afterwards. The mapping is still generated and still complete; what it is not is the construction the caller asked for, and the *same* annotation on the *same* type is honoured through a `[DwarfMapper]` class-model map over that pair. **Fix:** map the pair with the class model — a `partial Dst Map(Src s)` on a `[DwarfMapper]` class, which selects the annotated constructor — or remove the attribute if the object-initializer mapping is what you want. |
 | `DWARFR07` | **Lossy implicit numeric conversion** (Info) — the conversion is implicit in C# but crosses numeric categories (`long`→`double`, `int`→`float`, `long`→`decimal`) and loses precision for large magnitudes. The `[DwarfMapper]` class model reports the same thing as `DWARF038`; map through an explicit member type if the precision matters. |
 
 ---
@@ -270,11 +272,13 @@ supply `[MapProperty(Use = ...)]`, or map it manually.
 **Projection member cannot be translated to a database query** · Error
 
 An `IQueryable` projection becomes an expression tree your database/ORM provider translates into a query. A
-member that needs a runtime conversion, a custom converter, a non-translatable collection/dictionary target
+member that needs a runtime conversion, a custom converter, a `[MapValue(Use = ...)]` value provider, a
+non-translatable collection/dictionary target
 (`HashSet`/`ISet`/immutable/`Dictionary` — `List<T>`/`T[]` targets *do* translate), or reference handling has no
-query equivalent. The build error names the specific reason (narrowing, parse, by-name, converter, collection
-kind, hook, reference handling, …). **Fix:** map those members with a runtime mapper (an ordinary `Map` method)
-rather than `Project`.
+query equivalent. The build error names the specific reason (narrowing, parse, by-name, converter, value
+provider, collection kind, hook, reference handling, …). **Fix:** map those members with a runtime mapper (an
+ordinary `Map` method) rather than `Project`. A `[MapValue]` **constant** does translate — it becomes a literal
+in the query — so only the `Use =` form is refused.
 
 ## dwarf030
 **Constructor parameter is part of a reference cycle** · Error
@@ -1096,6 +1100,478 @@ Not reported for `[Flags]` enums: their string form is the comma-joined list `En
 identifiers, so the attributes do not apply.
 
 > Round 18 came within one code review of shipping the `Next-Day` case into a live MongoDB collection.
+
+---
+
+## dwarf086
+**Manifest attribute is emitted by the generator** · Error
+
+`[assembly: DwarfProvidesMap(…)]` and `[assembly: DwarfRequiresMap(…)]` are **output, not input**. The
+generator writes one entry per map an assembly registers or consumes, and the `[DwarfMapperValidationRoot]`
+compilation reads those entries back out of referenced metadata to decide [`DWARF061`](#dwarf061). Writing one
+by hand is therefore not a shortcut — it is an assertion about this assembly that nothing checked:
+
+<!-- fence-exempt: the shape IS the error; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[assembly: DwarfProvidesMap(typeof(Legacy), typeof(Modern))]   // DWARF086
+```
+
+That row satisfies a `DwarfRequiresMap` row for a pair no assembly actually registers, so the whole-graph
+check passes and the failure moves back to the first call site at run time (`DwarfMapMissingException`) —
+which is precisely what `DWARF061` exists to pull forward.
+
+**Fix — declare the thing itself and let the generator write the manifest:**
+
+| You meant | Write this instead |
+|---|---|
+| this assembly **consumes** a cross-assembly map | `[assembly: UsesMap<TSource, TDestination>]` — or nothing at all, since a direct `IDwarfMapper.Map<…>` call site is detected automatically |
+| this assembly **provides** a map | declare the map: `[GenerateMap<TSource, TTarget>]` on a `[DwarfMapper]` class, or `[ProvidesMap]` on a hand-written method |
+| I was mirroring a referenced assembly's manifest | delete it; the root reads that assembly's own metadata directly |
+
+Only **hand-written** occurrences are refused. The generator's own emission arrives in a `.g.cs` file and is
+recognised as its own, so an ordinary multi-assembly build never sees this diagnostic.
+
+> **Why this is refused rather than ignored.** Ignoring it would still leave the attribute reading, to the
+> next person, like a supported way of declaring a map — and the one thing it is guaranteed not to do is make
+> the map exist.
+
+---
+
+## dwarf087
+**Duplicate `[FlattenGraph]` destination collection** · Error
+
+`[FlattenGraph]` is `AllowMultiple`, so one method may flatten **several** graphs — but each directive
+contributes its own initializer for the collection it names, and two directives naming the **same** collection
+therefore assign it twice:
+
+<!-- fence-exempt: the shape IS the error; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[FlattenGraph("Entry", "Nodes")]
+[FlattenGraph("Entry", "Nodes")]   // DWARF087 — 'Nodes' is filled twice
+public partial RootDto Map(Root r);
+```
+
+Before this diagnostic existed the generator **accepted** that shape and emitted
+`new RootDto { Nodes = …, Nodes = … }`, so the consumer's build failed with
+`CS1912: Duplicate initialization of member 'Nodes'` — pointing at `Demo.M.g.cs`, a generated file they never
+wrote and cannot edit. That is why this is an `Error` rather than a `Warning`: there was no version of the
+program that built.
+
+**Fix:**
+
+| You meant | Do |
+|---|---|
+| the second directive is a copy-paste | delete it |
+| flatten a second graph as well | name a **different** collection member on the destination type, as [`FlattenGraph`](options.md) intends |
+| merge two navigations into one collection | not supported; give each its own collection, or flatten one and map the other with `[MapProperty]` |
+
+Keyed on the **destination collection**, not on the two directives being character-identical:
+`[FlattenGraph("Entry", "Nodes")]` beside `[FlattenGraph("Other", "Nodes")]` produced the same `CS1912` from
+two directives that are not duplicates of each other at all. Both shapes are refused.
+
+> **Refused rather than collapsed**, matching [`DWARF011`](#dwarf011) on `[MapProperty]`. Silently keeping one
+> of the two would hide a copy-paste mistake from the only person able to fix it — and if the intent was the
+> second directive rather than the first, the collapse would quietly pick the wrong one.
+
+---
+
+## dwarf088
+**Member-placement directive written on a mapper** · Error
+
+`[MapProperty]` and `[MapIgnore]` each cover **two placements** behind one name, and each placement has its
+own constructor. The member form belongs on a member of a type that declares its own mapping — a `[MapTo]`
+source, a `[GenerateMap]` host — where "the annotated member" is a real thing:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[MapProperty("Name")]              // DWARF088 — member form: binds 'Name' to itself
+[MapIgnore]                        // DWARF088 — member form: names nothing to ignore
+public partial Target Map(Source s);
+```
+
+On a mapper class or a mapping method there **is** no annotated member: the mapping is declared by the method
+and the DTO pair is two ordinary types. Both directives were previously discarded without a word.
+
+**Fix — supply the argument the method form takes:**
+
+| You wrote | You meant | Write |
+|---|---|---|
+| `[MapProperty("Name")]` | map a source member to a differently-named destination | `[MapProperty("Name", "FullName")]` |
+| `[MapProperty("Name", Use = nameof(F))]` | convert a member with `F` | `[MapProperty("Name", "Name", Use = nameof(F))]` |
+| `[MapIgnore]` | exclude a destination member from `DWARF001` | `[MapIgnore("Extra")]` |
+
+The `[MapProperty]` half is the sharper of the two, because the named arguments ride on that **same**
+one-argument constructor: `[MapProperty("Name", Use = "F")]` is `ctor(1)` plus a property initializer, so the
+converter, the `When` predicate, the `NullSubstitute` and the `StringFormat` were discarded along with the
+binding. A caller named a conversion method and got auto-matching.
+
+> **Refused whichever way you read it.** Honouring `[MapProperty("Name")]` at a method would bind `Name` to
+> itself — the identity binding auto-matching already produces, so it is a no-op by construction and cannot be
+> what the caller wanted. Discarding it evaporates a binding they wrote explicitly. Only saying so lets them
+> fix it.
+
+> **An `Error`, matching its registry mirror `DWARFR04`.** It shipped as a Warning for one
+> round because a blocking DwarfMapper error suppresses the whole class's emission, so the partial mapping
+> method loses its implementing part and the refusal arrives alongside `CS8795` (see
+> [`DWARF078`](#dwarf078)). That cost is paid by **every** blocking DwarfMapper error — [`DWARF011`](#dwarf011)
+> and [`DWARF087`](#dwarf087) refuse the same duplicate-directive shape on the same class and are both Errors —
+> so it cannot decide the severity of this one. What this id refuses is silent data loss:
+> `[MapProperty("Name", Use = nameof(F))]` on a mapper discards the converter, the `When` predicate, the null
+> substitute and the format string along with the binding, and hands you auto-matching instead. Downgrade with
+> `dotnet_diagnostic.DWARF088.severity = warning` if you need the build to proceed while you fix the call
+> sites.
+
+---
+
+## dwarf089
+**Directive on a co-located host member cannot be applied** · Warning
+
+The inverse of [`DWARF088`](#dwarf088). A co-located `[GenerateMap<S, T>]` host **declares its own mapping**,
+so a member of the host *is* part of that declaration and takes the **member** form. The host is the
+destination, so the one argument names the **source** member it is filled from — the mirror image of the
+`[MapTo]` registry, where the annotated type is the source and the argument names the destination.
+`[MapProperty("Full")]` on a `Name` member means *`Name` comes from `Person.Full`*; a bare `[MapIgnore]` means
+*never assign this member*. Anything else acts on nothing:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[GenerateMap<Person, PersonDto>]
+public sealed class PersonDto
+{
+    [MapProperty("Full", "Name")] public string Name { get; set; } = "";  // DWARF089 — method form
+    [MapIgnore("Age")]            public int Age { get; set; }            // DWARF089 — names it twice
+}
+```
+
+Refused rather than dropped, in all four shapes:
+
+| You wrote, on a host member | Why it cannot apply | Write |
+|---|---|---|
+| `[MapProperty("Full", "Name")]` | the method form names a source *and* a destination; here the destination is the annotated member | `[MapProperty("Full")]` |
+| `[MapIgnore("Age")]` | the method/class form names what to exclude; here that is the annotated member | `[MapIgnore]`, or `[MapIgnore("Age")]` on the **host class** |
+| two directives, one declared pair | stacked directives bind **positionally**, one per pair in source order | one directive (it applies to every pair), or exactly one per pair |
+| any member directive on a host that is not the destination of a pair it declares | its members are part of no mapping | move it to the destination type, or use `[MapProperty<TSource, TTarget>]` / `[MapIgnore<TTarget>]` on the class |
+
+The named arguments ride on that same one-argument constructor, so `Use`, `When`, `NullSubstitute` and
+`StringFormat` are carried with the binding — and were discarded with it before this check existed.
+
+> **Why a Warning.** A blocking error suppresses the whole host's emission, so the generated `<Host>Mapper`,
+> its convenience extension and its DI registration all vanish and every call site meets `CS1061` instead of
+> the refusal. (Not the reasoning of [`DWARF088`](#dwarf088), which is an `Error`: there the directive's whole
+> payload is discarded, here it is one directive dropped off an otherwise-emitted host.) The offending
+> directive is dropped and the rest
+> of the host's mapping is emitted as though it had not been written. Escalate with
+> `dotnet_diagnostic.DWARF089.severity = error` where the stricter reading is wanted.
+
+---
+
+## dwarf090
+**Member directive is not applied element-wise** · Warning
+
+The generalization of [`DWARF077`](#dwarf077), and the same root cause. A **span map** and an **async-stream
+map** resolve no members of their own: they map the *element* pair through a mapper the generator synthesizes
+per `(source, target)`, and that mapper is shared by every route which reaches that pair. So it takes its
+configuration only from directives that **name the pair**. A directive written without a pair scope belongs to
+the declaration it sits on, and never arrives:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+[MapIgnore("Id")]                                  // reaches Map and Update, not MapSpan — DWARF090
+public partial class M
+{
+    public partial Dst Map(Src s);                 // Id excluded here
+
+    [MapProperty("Id", "Name")]                    // DWARF090 — dropped element-wise
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+}
+```
+
+Before this check existed, one mapper excluded a member on three of its overloads and copied it on the other
+two, saying nothing — surface-matrix findings `D1` and `D2`.
+
+The same rule reaches a third directive, `[MapNullSkip]`, for the same reason and with the same remedy. The
+null-skip policy of an element pair comes from the synthesized mapper, so a `[MapNullSkip]` on the span or
+stream method decided nothing at all — finding `D6`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapNullSkip]                                  // DWARF090 — the element pair never sees it
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+}
+```
+
+Two more directives join it for the same reason — `[MapValue]`, whose constant reached two overloads of a
+mapper and not the other three, and `[Flatten]`, whose pulled-up members were left at their defaults
+element-wise. Findings `D9` and `D10`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapValue("Name", "api-v2")]                   // DWARF090 — the constant never reaches the element pair
+    [Flatten("Child")]                             // DWARF090 — the leaves are never pulled up
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+}
+```
+
+`[Reinterpret]` joins them, and it is the one with **no pair-scoped twin**. A forced blit is exactly the thing
+a caller reaches for when they are moving elements in bulk, so the two endpoints that dropped it are the two
+where it was most expected to apply — finding `D12`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [Reinterpret("Data")]                          // DWARF090 — the element pair copies Data element by element
+    public partial void MapSpan(ReadOnlySpan<Src> s, Span<Dst> d);
+}
+```
+
+**Fix:** write the directive in its **pair-scoped** form on the mapper class. Those forms *are* matched against
+every synthesized pair, this element pair included, and are measured **applying** at both endpoints:
+
+| You wrote | Write instead | What the matrix measures for the replacement |
+|---|---|---|
+| `[MapIgnore("Id")]` on the method or the class | `[MapIgnore<Dst>("Id")]` on the class | `Honoured` |
+| `[MapProperty("Id", "Name")]` on the method | `[MapProperty<Src, Dst>("Id", "Name")]` on the class | `Refused` — the rename **is** applied, and the added diagnostic is `DWARF038` about the `int → string` conversion that results. The classifier tests for a new diagnostic before it compares output, so an applied-and-warned cell reads the same as a refused one (see [B19](../Issues/round20/TASKS.md)) |
+| `[MapNullSkip(false)]` on the method | `[MapNullSkip<Src, Dst>(false)]` on the class | `Honoured`. The value is repeated in the message rather than the bare form quoted back, because copying out a remedy without it would invert the semantics you asked for. `[DwarfMapper(SkipNullSourceMembers = …)]` reaches the element pair too, if the policy is meant to be the whole mapper's |
+| `[MapValue("Name", "api-v2")]` on the method | `[MapValue<Dst>("Name", "api-v2")]` on the class | `Honoured` — the constant is assigned in the element map. The written form is echoed rather than normalized, so a `Use =` you wrote comes back as a `Use =` |
+| `[Flatten("Child")]` on the method | `[MapProperty<Src, Dst>("Child.<leaf>", "<leaf>")]` on the class, one per pulled-up leaf | `Honoured`. There is **no** `[Flatten<Src, Dst>]`; the dotted source path on the pair-scoped `[MapProperty]` is the form that reaches an element pair, and it names each leaf explicitly rather than pulling up whatever the root happens to carry |
+| `[Reinterpret("Data")]` on the method | the same attribute on a **declared** `partial Dst Map(Src s)` beside it | the emitted loop becomes `d[__i] = Map(s[__i]);` and `Data` is assigned through `__DwarfBlit_…` (`MemoryMarshal.Cast`) instead of a per-element numeric conversion helper. There is no `[Reinterpret<Src, Dst>]` at all: an element-wise map resolves its pair through a **declared** mapping method where the class has one rather than synthesizing a fresh one, so declaring the create map *is* the pair scope here |
+
+> **Why refused rather than propagated.** For the reason [`DWARF077`](#dwarf077) already states: the
+> synthesized element mapper is keyed by `(source, target)` and shared. Pushing one method's unscoped directive
+> into it would silently re-configure a nested mapping some **other** method owns — a worse defect than the
+> silence, and invisible from the declaration that caused it. The pair-scoped forms exist precisely so the
+> caller can say which pair they mean — and where there is no pair-scoped form, as for `[Reinterpret]`, a
+> declared mapping method for the pair says the same thing.
+
+> **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
+> it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see
+> [`DWARF078`](#dwarf078)) — the same reasoning as [`DWARF089`](#dwarf089). The directive is dropped for this
+> endpoint and the rest of the mapper is emitted. Escalate with
+> `dotnet_diagnostic.DWARF090.severity = error` where the stricter reading is wanted.
+
+---
+
+## dwarf091
+**Mapping hook on a partial method with no body** · Warning
+
+`[BeforeMap]` and `[AfterMap]` mark a method **you** wrote to run around the mapping. Written on a **partial
+mapping method** they mark a method whose body the generator writes, so there is no code of yours there to run:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [AfterMap]                                          // DWARF091 — no body to run
+    public partial void Update(Src s, Dst d);
+}
+```
+
+C# **erases** a partial method with no implementing part, along with every call to it — so as a hook it can
+only ever be a no-op. And where DwarfMapper supplies the missing part, the call is into the method being
+generated. Neither is what `[AfterMap]` means, at any endpoint, which is why this is refused before the
+signature is considered at all.
+
+Until it was, the signature filter alone decided, and gave three different answers to one mistake:
+
+| Written on | What used to happen |
+|---|---|
+| `Dst Map(Src s)` | [`DWARF018`](#dwarf018) complained the hook was not `void` — a signature complaint about a signature that was never the problem |
+| `void MapSpan(ReadOnlySpan<Src>, Span<Dst>)` | fitted the two-parameter after-hook shape exactly, was registered, and was **never called** |
+| `void Update(Src, Dst)` | fitted **and was called**: the generated body of `Update` ended in `Update(s, d);` — unconditional **infinite recursion**, which compiled |
+
+**Fix:** move the attribute to an ordinary method on the mapper — one with a body — whose parameters are the
+mapped types: `void Hook(TSource)` for `[BeforeMap]`, `void Hook(TTarget)` or `void Hook(TSource, TTarget)` for
+`[AfterMap]`. Or remove it, if the mapping method was the fixup you meant.
+
+> **Why a Warning.** An error would strand every partial mapping method on the class behind `CS8795`, the same
+> reasoning as [`DWARF089`](#dwarf089) and [`DWARF090`](#dwarf090). The hook is not registered — which is what you already had at three of
+> the five endpoints, minus the recursion at the fourth — and the mapper is emitted. Escalate with
+> `dotnet_diagnostic.DWARF091.severity = error` where the stricter reading is wanted.
+
+---
+
+## dwarf092
+**Directive is not read at this mapping endpoint** · Warning
+
+Some directives are read at **one** mapping endpoint and at no other. Written on one of the other four they
+were read by nobody and reported by nobody — the identical text on the identical mapper class meaning one
+thing on one overload and nothing on the next four.
+
+Two families share this id, pointing in opposite directions. Three directives are about the destination the
+mapper **constructs and returns**, so only the create map reads them; one is about a destination that
+**already exists**, so only the update-into reads it. First the create-map three:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [FlattenGraph("Root", "Flat")]                 // honoured — Flat is a walk of Root's graph
+    public partial TreeDto Map(Tree t);
+
+    [FlattenGraph("Root", "Flat")]                 // DWARF092 — Flat is a shallow copy here
+    public partial void Update(Tree t, TreeDto d);
+}
+```
+
+One mapper, one declaration, two answers: `.Map` returned a flattened graph and `.Update` copied the source
+collection straight across, silently — surface-matrix finding `D11`.
+
+`[MapDerivedType]` joins it, in **both** of its forms, for the same reason: a dispatch arm decides which
+destination **type** to construct from the source's runtime type, and only the create map constructs one.
+Written elsewhere, a derived instance was mapped as its base and every member the derived DTO declares beyond
+the base one was dropped — finding `D8`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapDerivedType<Dog, DogDto>]                  // DWARF092 — a Dog is mapped as an Animal here,
+    public partial void Update(Animal a, AnimalDto d);  //           and DogDto.Breed is dropped
+}
+```
+
+The create map also **validates** these arms — [`DWARF035`](#dwarf035) for a type that is not assignable, a
+duplicate source type, or a pair that is not mappable. Nothing validated them at the other four endpoints
+either, which is the second half of the asymmetry below.
+
+`[ReverseMap]` is the third, and the one whose remedy carries no transfer. It makes a **separately-declared**
+inverse method inherit the forward renames with their ends swapped, matched by signature — a forward
+`TDto Map(TSource s)` against an inverse `TSource Back(TDto d)`, both **create maps**. No other endpoint's
+signature is that shape, so nothing looked for an inverse and nothing inherited a rename — finding `D13`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [ReverseMap]                                   // DWARF092 — Back inherits nothing, and DWARF052
+    [MapProperty("A", "B")]                        //            is not raised here either
+    public partial void Update(Src s, Dst d);
+
+    public partial void Back(Dst d, Src s);        // still DWARF001: Src.A has no source on the way back
+}
+```
+
+`[MapCollectionKey]` is the mirror image, and it is the reason this id is no longer named after the create
+map. A key-based upsert **merges** the source elements into the list the destination already holds — matching
+on the named key, replacing what matches and appending what does not, so untouched elements survive. That
+needs a destination to merge **into**, and the create map, the projection, the span map and the async stream
+all build a fresh one. Written on any of those four it was discarded and the collection was rebuilt by
+whole-collection replacement, which is what it would have been without the directive — finding `D14`:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    [MapCollectionKey("Items", "Id")]              // honoured — d.Items is merged by Id
+    public partial void Update(Order o, OrderDto d);
+
+    [MapCollectionKey("Items", "Id")]              // DWARF092 — Items is rebuilt wholesale here
+    public partial OrderDto Map(Order o);
+}
+```
+
+[`DWARF074`](#dwarf074) already validates this directive at the update-into, and its documentation already
+named "not an update-into method" as a case it covered — but no call site ever asked that question, because
+the upsert path is reached from the update-into branch alone. The check could not have lived on `DWARF074`
+in any case: that id is an **Error**, and an error here suppresses the whole class's emission.
+
+**Fix:** declare the directive at its **home** endpoint over the same pair — a create map for the first three,
+an update-into for `[MapCollectionKey]`. For the create-map three, at the two **element-wise** endpoints that
+is more than advice: a span or async-stream map resolves its element pair through a **declared** mapping
+method for that pair where one exists, so the create map carrying the directive is what the emitted loop
+calls, and the directive reaches the element-wise endpoint through it. Measured, not asserted:
+
+| You wrote | Write instead | What the matrix measures for the replacement |
+|---|---|---|
+| `[FlattenGraph("Root", "Flat")]` on `void MapSpan(ReadOnlySpan<Tree>, Span<TreeDto>)` | the same on a `partial TreeDto Map(Tree t)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` — the walk runs per element |
+| `[FlattenGraph("Root", "Flat")]` on `void Update(Tree, TreeDto)` or on a projection | the same on a `partial TreeDto Map(Tree t)` | `Honoured` **at the create map**. Nothing carries it to the update or the projection; those resolve their own members and never call a sibling create map |
+| `[MapDerivedType<Dog, DogDto>]` on `void MapSpan(ReadOnlySpan<Animal>, Span<AnimalDto>)` | the same on a `partial AnimalDto Map(Animal a)` beside it | the emitted loop is `d[__i] = Map(s[__i]);` and that create map is the runtime-type switch, so the dispatch runs per element |
+| `[ReverseMap]` on **any** of the four | the same on a `partial Dst Map(Src s)`, with the inverse declared as a `partial Src Back(Dst d)` | the inverse emits `A = d.B`; without `[ReverseMap]` the same two methods are `DWARF001`. **No transfer**, at any of the four — `[ReverseMap]` does not change what the create map emits, so the element-wise adoption above does not carry it, and the message deliberately does not claim it does |
+| `[MapCollectionKey("Items", "Id")]` on **any** of the other four | the same on a `partial void Update(Order o, OrderDto d)` beside it | the update-into emits the key index and the replace-or-append merge, and the method you wrote it on is unchanged. **No transfer**, at any of the four, including element-wise — what a span or stream loop adopts is a declared **create** map for the element pair, and an update-into is not one |
+
+The directive is quoted back in the **form you wrote it** — `[MapDerivedType<Dog, DogDto>]` stays generic and
+`[MapDerivedType(typeof(Dog), typeof(DogDto))]` stays open — rather than normalized into whichever one the
+reader happens to build, so the remedy is text you can paste.
+
+Reported per **application**, malformed ones included. A `[FlattenGraph]` naming members that do not exist is
+refused as [`DWARF034`](#dwarf034) at a create map, a `[MapDerivedType]` naming an unassignable type as
+[`DWARF035`](#dwarf035), and a `[MapCollectionKey]` naming a member that is not a mapped `List<T>` as
+[`DWARF074`](#dwarf074) at an update-into; all were refused as nothing at all here — that asymmetry is half of
+what made the silence worth a diagnostic, since at the home endpoint even nonsense is validated.
+
+> **Why refused rather than honoured.** The create-map three redirect how the destination is **built**, and an
+> update-into writes into an instance the caller already constructed — one whose type the caller chose, which
+> is precisely what a dispatch arm would be overriding. There is no construction step at the other four
+> endpoints for a graph walk to replace or for a dispatch arm to redirect, and no create-map-shaped inverse
+> for `[ReverseMap]` to find. `[MapCollectionKey]` is refused for the opposite half of the same fact: a merge
+> needs an existing destination collection, and the other four endpoints have none to merge into.
+
+> **Why a Warning.** A blocking error suppresses the whole class's emission, so every partial mapping method on
+> it loses its implementing part and this refusal arrives buried under a wall of `CS8795` (see
+> [`DWARF078`](#dwarf078)) — the same reasoning as [`DWARF089`](#dwarf089), [`DWARF090`](#dwarf090) and
+> [`DWARF091`](#dwarf091). The directive is dropped for this
+> endpoint and the rest of the mapper is emitted. Escalate with
+> `dotnet_diagnostic.DWARF092.severity = error` where the stricter reading is wanted.
+
+---
+
+## dwarf093
+**[GenerateWrapperMap] has no declared pair to expand** · Warning
+
+`[GenerateWrapperMap(typeof(W<>))]` is an **expansion** of the `[GenerateMap<A, B>]` pair list: for every pair
+declared on the class it appends the closed instantiation `W<A> -> W<B>`. On a class that declares **no** such
+pair there is nothing to expand — and the attribute was neither honoured nor refused, at any of the five
+mapper endpoints, because the expansion returned early on the empty list before any validation ran:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+[GenerateWrapperMap(typeof(Envelope<>))]           // DWARF093 — no [GenerateMap] pair on this class
+public partial class M
+{
+    public partial Dst Map(Src s);                 // a partial METHOD is a different declaration mechanism
+}
+
+[DwarfMapper]
+[GenerateMap<Src, Dst>]                            // the fix: the pair the wrapper family expands
+[GenerateWrapperMap(typeof(Envelope<>))]           // Envelope<Src> -> Envelope<Dst> is emitted
+public partial class N
+{
+}
+```
+
+**Fix:** declare the payload pair as `[GenerateMap<A, B>]` on the class — that is the list this attribute
+expands, and against it `Envelope<Dst> Map(Envelope<Src> src)` is emitted. One sharp edge, measured rather than
+assumed: `[GenerateMap<A, B>]` emits its **own** `B Map(A)`, so adding it to a class that already declares a
+`partial B Map(A)` over the same pair is `CS0111`. There, declare the pair with `[GenerateMap]` *instead of*
+the partial method — which is why the two classes above are separate.
+
+> **Why refused rather than widened to partial methods.** The attribute is defined *relative to*
+> `[GenerateMap]` — "for every `[GenerateMap<A, B>]` declared on the same class". A partial mapping method is
+> a different declaration mechanism with a different signature, and four of the five mapping endpoints are not
+> create maps at all: an update-into, a projection, a span map and an async-stream map have no
+> `W<A> -> W<B>` shape to synthesize, so expanding them would hand the caller a create map they never asked
+> for.
+
+> **Why it is reported before the wrapper's shape.** With no pairs to expand, even a perfectly-shaped
+> `Envelope<T>` expands nothing, so [`DWARF067`](#dwarf067) would send you to fix something that changes no
+> output. `DWARF067` is also an **Error**, and raising it here would strand every partial mapping method on the
+> class behind `CS8795`. A class that *does* declare a pair still gets `DWARF067` for a wrapper that does not
+> qualify.
 
 ---
 

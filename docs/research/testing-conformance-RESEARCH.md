@@ -45,8 +45,8 @@ Confirmed locally on 2026-06-21 (master @ 57d92fc):
 | Round-trip property verification | `[RoundTrip]` + `RoundTrip.Verify`, seeded `ObjectFactory`/`Fuzzer` | ✅ strong |
 | AOT/trim gate + coverage gate (CI) | `aot-trim-gate` matrix, generator coverage gate | ✅ strong |
 | **Incremental-generator cacheability** (`WithTrackingName` → assert `Cached`/`Unchanged` across driver runs) | **0 references** | 🔴 **GAP** |
-| **Lowest-supported-Roslyn matrix** | single pin `Microsoft.CodeAnalysis.CSharp 4.14.0` | 🟠 **GAP** |
-| **Mutation testing** (Stryker.NET) | none (home-grown coverage/"test-the-tests" instead) | 🟠 **GAP** |
+| **Lowest-supported-Roslyn matrix** | single floor `Microsoft.CodeAnalysis.CSharp 5.0.0`, plus a `roslyn-forward-compat` CI leg | 🟠 **GAP** |
+| **Mutation testing** (Stryker.NET) | adopted — nightly CI leg on the runtime assembly, `break: 61`, unfiltered | 🟢 **closed** |
 | **Property-based w/ shrinking** (FsCheck/CsCheck) | hand-rolled seeded `Fuzzer` (no shrinking → no minimal counterexample) | 🟠 **GAP** |
 
 ## Load-bearing sources (from the harvest)
@@ -62,7 +62,7 @@ Confirmed locally on 2026-06-21 (master @ 57d92fc):
 2. Produce: **(a)** per-category landscape survey (cite the sources above), **(b)** the technique→who-uses-it→do-WE?→gap table (extend the inventory above with citations), **(c)** prioritised adopt-list.
 3. Likely top adopt items to detail with concrete steps:
    - **Incremental cacheability test** — add `[GeneratorTest]` that runs the driver twice with `WithTrackingName` on pipeline stages and asserts every step is `Cached`/`Unchanged` on the 2nd run; assert the model types are equatable (we already have `EquatableArray`). Mirror Mapperly's `IncrementalGeneratorTest.cs`.
-   - **Lowest-supported-Roslyn CI leg** — float-test against the minimum `Microsoft.CodeAnalysis.CSharp` we claim to support, not just 4.14.0.
+   - **Lowest-supported-Roslyn CI leg** — float-test against the minimum `Microsoft.CodeAnalysis.CSharp` we claim to support (5.0.0), not just the forward-compat leg.
    - **Stryker.NET mutation run** (at least on the generator's core resolver) to validate the suite catches injected faults.
    - **CsCheck** (preferred over FsCheck for C#) for shrinking property-based tests — minimal counterexamples on fuzz failures.
 4. Decide what's worth implementing vs. documenting as "deliberately not done."

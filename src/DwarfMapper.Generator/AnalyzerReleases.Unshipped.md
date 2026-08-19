@@ -91,6 +91,14 @@ DWARF082 | DwarfMapper | Error | [ProvidesMap] method cannot be registered
 DWARF083 | DwarfMapper | Info | Enum maps to strings that are not its member identifiers
 DWARF084 | DwarfMapper | Error | [RestatesBase] cannot identify the base pair
 DWARF085 | DwarfMapper | Warning | Restated base configuration has drifted
+DWARF086 | DwarfMapper | Error | Manifest attribute is emitted by the generator
+DWARF087 | DwarfMapper | Error | Duplicate [FlattenGraph] destination collection
+DWARF088 | DwarfMapper | Error | Member-placement directive written on a mapper
+DWARF089 | DwarfMapper | Warning | Directive on a co-located host member cannot be applied
+DWARF090 | DwarfMapper | Warning | Member directive is not applied element-wise
+DWARF091 | DwarfMapper | Warning | Mapping hook on a partial method with no body
+DWARF092 | DwarfMapper | Warning | Directive is not read at this mapping endpoint
+DWARF093 | DwarfMapper | Warning | [GenerateWrapperMap] has no declared pair to expand
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a
@@ -106,3 +114,5 @@ DWARFR06 | DwarfMapper.Registry | Error | Recursive nested mapping is not suppor
 DWARFR07 | DwarfMapper.Registry | Info | Lossy implicit numeric conversion
 DWARFR08 | DwarfMapper.Registry | Error | Two [MapTo] targets generate the same method name
 DWARFR09 | DwarfMapper.Registry | Error | [MapTo] target has no accessible parameterless constructor
+DWARFR10 | DwarfMapper.Registry | Error | Member has a source match but auto-matching is disabled
+DWARFR11 | DwarfMapper.Registry | Warning | [DwarfMapperConstructor] is not read by the [MapTo] registry

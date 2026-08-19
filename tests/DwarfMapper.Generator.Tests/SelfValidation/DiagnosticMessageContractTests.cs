@@ -41,7 +41,8 @@ public class DiagnosticMessageContractTests
         ("DWARF079", "[MapValue", "the required+ignore remedy three separate migrations each reinvented"),
         ("DWARF080", "[MapProperty]", "prefer constructor-parameter binding to a factory — the generalisable fix"),
         ("DWARF082", "public", "the shape requirement is the fix"),
-        ("DWARF083", "display", "the whole point is that the annotation was probably meant for display")
+        ("DWARF083", "display", "the whole point is that the annotation was probably meant for display"),
+        ("DWARF086", "[UsesMap", "a refusal of the only spelling a reader knows must name the one that works")
 
         // Deliberately absent: DWARF084 and DWARF085, whose MessageFormat is the pass-through "{0}" — the
         // text is composed at report time, so there is no format string here to pin and a row asserting

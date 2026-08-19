@@ -145,7 +145,7 @@ internal static partial class MapperExtractor
                 foreach (var mv in mapValues)
                     explicitTargets.Add(mv.Target);
 
-            ignores = new HashSet<string>(ignores, StringComparer.Ordinal);
+            ignores = new HashSet<string>(ignores, IgnoreNameComparer);
             foreach (var name in ObsoleteMemberNames(targetType))
                 if (!explicitTargets.Contains(name))
                     ignores.Add(name);
@@ -181,44 +181,10 @@ internal static partial class MapperExtractor
         // Phase 5: which additional parameters were consumed by a destination (the rest → DWARF047).
         var consumedExtraParams = new HashSet<string>(comparer);
 
-        var comparerForLeaves = comparer; // same comparer used for member matching
-        var flattenInfos = new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)>();
-        foreach (var root in flattenRoots)
-        {
-            var match = ReadableMembers(sourceType, compilation, allowNonPublic)
-                .Where(m => comparerForLeaves.Equals(m.Name, root))
-                .Select(m => ((string Name, ITypeSymbol Type)?)m)
-                .FirstOrDefault();
-            if (match is null)
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
-                continue;
-            }
-
-            var rootType = match.Value.Type;
-            // Scalars (string, primitives, enums) are not flattenable roots — flattening their
-            // BCL members (e.g. string.Length) is never intended and must not happen silently.
-            if (rootType.SpecialType != SpecialType.None || rootType.TypeKind == TypeKind.Enum)
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
-                continue;
-            }
-
-            var leaves = ReadableMembers(rootType, compilation, allowNonPublic).ToList();
-            if (leaves.Count == 0)
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.FlattenRootInvalid, location, root));
-                continue;
-            }
-
-            // A [Flatten] over a nullable-reference root emits unguarded `src.Root.Leaf` accesses that NRE
-            // at runtime if the root is null. The dotted [MapProperty] path warns DWARF044 for the same
-            // hazard; the [Flatten] path must be consistent (loud, never silent).
-            if (SourceMayBeNullRef(rootType))
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
-                    $"[Flatten] source '{root}' is a nullable reference; a null value throws at runtime when its flattened members are read"));
-            flattenInfos.Add((match.Value.Name, leaves));
-        }
+        // Shared with the projection resolver — see ResolveFlattenInfos for why the two must not each keep
+        // their own copy of this walk.
+        var flattenInfos = ResolveFlattenInfos(flattenRoots, sourceType, comparer, compilation, allowNonPublic,
+            warnNullableHop: true, location, diagnostics);
 
         // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
         // Methods dedicated to one member by [MapProperty(Use = …)] / [MapValue(Use = …)]. They are
@@ -418,54 +384,18 @@ internal static partial class MapperExtractor
 
         // MAPVALUE: constant / computed values assigned to a destination member (no source). Processed
         // after [MapProperty] (so conflicts are caught) and before AUTO matching. A [MapValue]'d target
-        // counts as mapped, suppressing DWARF001.
+        // counts as mapped, suppressing DWARF001. The projection resolver reads the directive in the SAME
+        // position for the same reason, through the SAME validation below.
         foreach (var mv in mapValues ?? Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
                      string? Use, string? ConstLiteral)>())
         {
             var mvTgt = mv.Target;
-            if (!handledTargets.Add(mvTgt))
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
-                    $"[MapValue] target '{mvTgt}' conflicts with another mapping for the same member"));
+            if (!TryValidateMapValueTarget(mvTgt, handledTargets, ignores,
+                    name => consumedCtorParams is not null && consumedCtorParams.Contains(name),
+                    writableByName,
+                    name => sourceGroups.ContainsKey(flexible ? NormalizeName(name) : name),
+                    location, diagnostics, out var mvTgtType))
                 continue;
-            }
-
-            if (ignores.Contains(mvTgt))
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
-                    $"[MapValue] target '{mvTgt}' is also [MapIgnore]d"));
-                continue;
-            }
-
-            if (consumedCtorParams is not null && consumedCtorParams.Contains(mvTgt))
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
-                    $"[MapValue] cannot target constructor parameter '{mvTgt}' yet (object-initialized members only)"));
-                continue;
-            }
-
-            if (mvTgt.IndexOf('.') >= 0)
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
-                    $"[MapValue] does not support a dotted target path '{mvTgt}'; assign the leaf member directly or use [MapProperty] for unflattening"));
-                continue;
-            }
-
-            if (!writableByName.TryGetValue(mvTgt, out var mvTgtType))
-            {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
-                    $"[MapValue] target '{mvTgt}' is not a writable destination member"));
-                continue;
-            }
-
-            // Item 12 (DWARF064): the [MapValue] shadows a real same-named source member that would have
-            // auto-matched. The constant/provider silently masks the source data — usually a leftover stub
-            // from before the source member existed (DWARF039 source-coverage does not fire here).
-            if (sourceGroups.ContainsKey(flexible ? NormalizeName(mvTgt) : mvTgt))
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.MapValueShadowsSource, location, mvTgt));
-            }
 
             if (mv.IsConstant)
             {
@@ -784,6 +714,91 @@ internal static partial class MapperExtractor
     }
 
     /// <summary>
+    ///     Everything true of a <c>[MapValue]</c> target regardless of which endpoint reads the directive:
+    ///     it may not collide with another mapping, be ignored, name a constructor parameter, carry a dotted
+    ///     path, or name something the destination cannot be written through — and if it shadows a source
+    ///     member that would have auto-matched, that is <c>DWARF064</c>. On success the target is marked
+    ///     handled and its type is returned, and the caller supplies the value (a rendered constant, a
+    ///     <c>Use=</c> provider call, or a refusal for a <c>Use=</c> the endpoint cannot translate).
+    ///     <para>
+    ///         ONE statement of the sequence, called by <see cref="ResolveMembers" /> and by
+    ///         <c>ResolveProjectionMembers</c>. It was written inline on the create-map path and had no copy
+    ///         at the projection one, which is precisely why the directive was SILENT there (finding
+    ///         <c>D9</c>); a second copy bolted on to close that finding would have fixed the instance and
+    ///         left the shape — the recurring defect of this round, and the reason <c>ResolveFlattenInfos</c>
+    ///         exists in the same form one file over.
+    ///     </para>
+    ///     <para>
+    ///         The two endpoints differ in what they can SEE, not in what the rule is, so the differences are
+    ///         parameters rather than branches: the projection passes its public-only writable set, its
+    ///         projection source lookup, and the chosen projection constructor's parameter names.
+    ///     </para>
+    /// </summary>
+    /// <param name="target">The destination member the directive names.</param>
+    /// <param name="handledTargets">Targets already claimed by an earlier mapping; the target is ADDED here.</param>
+    /// <param name="ignores">The effective ignore set, with whichever comparer the caller built it under.</param>
+    /// <param name="isConstructorParameter">Whether the name is a parameter of the constructor in force.</param>
+    /// <param name="writableByName">The destination members this endpoint can write, by name.</param>
+    /// <param name="sourceHasMatchingMember">Whether a source member of this name would have auto-matched.</param>
+    private static bool TryValidateMapValueTarget(
+        string target,
+        HashSet<string> handledTargets,
+        HashSet<string> ignores,
+        Func<string, bool> isConstructorParameter,
+        Dictionary<string, ITypeSymbol> writableByName,
+        Func<string, bool> sourceHasMatchingMember,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics,
+        out ITypeSymbol targetType)
+    {
+        targetType = null!;
+
+        if (!handledTargets.Add(target))
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                $"[MapValue] target '{target}' conflicts with another mapping for the same member"));
+            return false;
+        }
+
+        if (ignores.Contains(target))
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                $"[MapValue] target '{target}' is also [MapIgnore]d"));
+            return false;
+        }
+
+        if (isConstructorParameter(target))
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                $"[MapValue] cannot target constructor parameter '{target}' yet (object-initialized members only)"));
+            return false;
+        }
+
+        if (target.IndexOf('.') >= 0)
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                $"[MapValue] does not support a dotted target path '{target}'; assign the leaf member directly or use [MapProperty] for unflattening"));
+            return false;
+        }
+
+        if (!writableByName.TryGetValue(target, out targetType))
+        {
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid, location,
+                $"[MapValue] target '{target}' is not a writable destination member"));
+            return false;
+        }
+
+        // Item 12 (DWARF064): the [MapValue] shadows a real same-named source member that would have
+        // auto-matched. The constant/provider silently masks the source data — usually a leftover stub
+        // from before the source member existed (DWARF039 source-coverage does not fire here). Reported,
+        // not refused: the directive still applies.
+        if (sourceHasMatchingMember(target))
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueShadowsSource, location, target));
+
+        return true;
+    }
+
+    /// <summary>
     ///     For each constructor parameter, find a matching source member and resolve the conversion.
     ///     Every parameter is mandatory — if any fails, DWARF024 is reported and the method returns false.
     /// </summary>
@@ -961,11 +976,19 @@ internal static partial class MapperExtractor
     ///     Reads [MapDerivedType&lt;TSource,TTarget&gt;] (generic) and
     ///     [MapDerivedType(typeof(TSource),typeof(TTarget))] (non-generic) annotations from a method.
     ///     Returns raw pairs of (srcType, tgtType) INamedTypeSymbol — not yet validated.
+    ///     <para>
+    ///         <c>WrittenGeneric</c> records WHICH of the two forms the caller typed. Resolution has no use
+    ///         for it — the two forms mean the same thing — but <c>DWARF092</c> quotes the directive back at
+    ///         the caller, and quoting a form they did not write is the defect A8's <c>[MapValue]</c> arm
+    ///         records. Carried on the one reader rather than recovered by a second pass over the attributes,
+    ///         because a second reader of these same attributes is how this branch has shipped two generator
+    ///         crashes.
+    ///     </para>
     /// </summary>
-    private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt)> ReadDerivedTypeAttributes(
-        IMethodSymbol method, Compilation compilation)
+    private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>
+        ReadDerivedTypeAttributes(IMethodSymbol method, Compilation compilation)
     {
-        var result = new List<(INamedTypeSymbol, INamedTypeSymbol)>();
+        var result = new List<(INamedTypeSymbol, INamedTypeSymbol, bool)>();
         foreach (var attr in method.GetAttributes())
         {
             var cls = attr.AttributeClass;
@@ -979,7 +1002,7 @@ internal static partial class MapperExtractor
                 && cls.TypeArguments[0] is INamedTypeSymbol gSrc
                 && cls.TypeArguments[1] is INamedTypeSymbol gTgt)
             {
-                result.Add((gSrc, gTgt));
+                result.Add((gSrc, gTgt, true));
                 continue;
             }
 
@@ -989,7 +1012,7 @@ internal static partial class MapperExtractor
                 && attr.ConstructorArguments.Length == 2
                 && attr.ConstructorArguments[0].Value is INamedTypeSymbol nSrc
                 && attr.ConstructorArguments[1].Value is INamedTypeSymbol nTgt)
-                result.Add((nSrc, nTgt));
+                result.Add((nSrc, nTgt, false));
         }
 
         return result;

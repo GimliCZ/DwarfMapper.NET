@@ -42,7 +42,10 @@ public class DiagnosticCoverageRatchetTests
         "DWARF023", "DWARF024", "DWARF025", "DWARF026",
         "DWARF027", "DWARF028", "DWARF030", "DWARF031",
         "DWARF032", "DWARF033", "DWARF034", "DWARF035",
-        "DWARF036", "DWARF037", "DWARF038", "DWARF039",
+        // DWARF038 removed 2026-08-16: [DwarfMapper(ImplicitConversions = false)] has no observable effect
+        // OTHER than escalating this suggestion to a refusal, so the option's own proof obligation is this
+        // case. The ratchet tightening, again as intended.
+        "DWARF036", "DWARF037", "DWARF039",
         "DWARF040", "DWARF041", "DWARF042", "DWARF043",
         "DWARF044", "DWARF045", "DWARF046", "DWARF047",
         "DWARF048", "DWARF049", "DWARF050", "DWARF051",
@@ -50,7 +53,9 @@ public class DiagnosticCoverageRatchetTests
         // DWARF058 removed 2026-08-12: DWARF081's case declares it, because two mappers from one source type
         // provoke it inherently. The ratchet tightening, exactly as intended.
         "DWARF056", "DWARF057", "DWARF059",
-        "DWARF060", "DWARF061", "DWARF062", "DWARF063",
+        // DWARF061 removed 2026-08-16: the validation root's whole observable effect is this refusal, so it
+        // is where [assembly: DwarfMapperValidationRoot] is proved to do anything at all.
+        "DWARF060", "DWARF062", "DWARF063",
         "DWARF064", "DWARF065", "DWARF066", "DWARF067",
         "DWARF068", "DWARF069", "DWARF070", "DWARF071",
         "DWARF073", "DWARF074", "DWARF075", "DWARF076",
@@ -82,6 +87,46 @@ public class DiagnosticCoverageRatchetTests
             + "exist.\n\nIf it genuinely cannot be reached from a single compilation unit (DWARF061 and the "
             + "DWARFR family need several assemblies), add it to PredatesThisProject with that reason in the "
             + "commit message.");
+    }
+
+    /// <summary>
+    ///     REG-05: no id ships with an id-only assertion.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         All 81 live ids are accounted for today — every one has a case file or an entry in
+    ///         <see cref="PredatesThisProject" /> — but that accounting says only that the diagnostic FIRES.
+    ///         The remedy prose, the half that tells a reader with a red build what to write instead, is
+    ///         pinned by <c>EXPECT-MESSAGE</c>, and nothing required one: <c>A_case_gets_the_message_it_declares</c>
+    ///         returns early when a case declares none, so an id-only case is green and silent.
+    ///     </para>
+    ///     <para>
+    ///         Composed with the ratchet above, this closes the class rather than the instance. A new
+    ///         diagnostic must have a case file (or a visible exemption); a case file must pin wording. The
+    ///         property therefore holds by construction for every id that ever arrives, instead of holding by
+    ///         the diligence of whoever wrote the last one. It was green when written — <c>DWARF086</c> is the
+    ///         first id it had the chance to fail on.
+    ///     </para>
+    /// </remarks>
+    [Fact]
+    public void Every_covered_diagnostic_pins_its_remedy_wording()
+    {
+        // Without this, a Load() that returned cases whose headers failed to parse would leave both sets
+        // empty and the Except() below vacuously satisfied.
+        Assert.NotEmpty(NegativeCase.CoveredIds);
+
+        var unpinned = NegativeCase.CoveredIds
+            .Where(id => !NegativeCase.WordingPinnedIds.Contains(id, StringComparer.Ordinal))
+            .ToList();
+
+        Assert.True(unpinned.Count == 0,
+            "Diagnostic(s) with a case file that pins the id but not the wording:\n  "
+            + string.Join("\n  ", unpinned)
+            + "\n\nAdd an `// EXPECT-MESSAGE <id>: <substring>` line naming the part of the message a reader "
+            + "must be able to act on — the attribute to write instead, the option to set, the shape to "
+            + "change. Pinning the id alone lets the remedy prose rot into something that no longer tells "
+            + "anyone what to do, with every test still green: exactly the defect three Round-18 tasks "
+            + "existed to repair.");
     }
 
     [Fact]

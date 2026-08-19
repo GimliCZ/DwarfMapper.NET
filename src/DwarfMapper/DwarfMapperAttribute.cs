@@ -6,6 +6,44 @@ namespace DwarfMapper;
 ///     Marks a partial class as a DwarfMapper. The generator implements the
 ///     partial mapping methods declared on it at compile time.
 /// </summary>
+[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+// One fixture per OPTION, not per element. Every key below names a DTO shape that makes exactly that option
+// observable; probed against the flat pair the whole bag reads "no effect" while the options work perfectly.
+// The three unlisted options (AutoMatchMembers, GenerateExtensions, RegisterCollectionShapes) are already
+// observable against the flat pair, and an option with no fixture demand says so by not appearing here.
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.AutoNest), ProbeKey = "nested-pair")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.AllowNonPublic), ProbeKey = "internal-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NameConvention), ProbeKey = "snake-case-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.CaseInsensitive), ProbeKey = "case-mismatched-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.IgnoreObsoleteMembers), ProbeKey = "obsolete-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.SkipNullSourceMembers), ProbeKey = "nullable-source-nonnull-target")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NullStrategy), ProbeKey = "nullable-value-to-nonnull")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.RequiredMapping), ProbeKey = "unconsumed-source-member")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.EnumStrategy), ProbeKey = "divergent-order-enums")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.EnumStringSource), ProbeKey = "described-enum-to-string")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NullCollections), ProbeKey = "nullable-collection-rebuild")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.OnCycle), ProbeKey = "recursive-graph")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.ImplicitConversions), ProbeKey = "narrowing-conversion")]
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.ReferenceHandling), ProbeKey = "shared-reference-graph")]
+// A budget, not a count: stepping the default to 65 binds on nothing against a graph three deep. Value = "1"
+// is the only probe that makes a depth limit observable at all, and no reflection over an int reveals that.
+[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.MaxDepth), ProbeKey = "recursive-graph", Value = "1")]
+// Two of the eighteen options are not the same KIND of surface as the bag they sit in, so they do not carry
+// the element's ConsumerDirective obligation ("demonstrate it where a reader can run it"). Each names the
+// obligation it satisfies instead; there is no way to name none. MaxDepth deliberately has no redirect — its
+// former excuse ("a sample that throws on purpose reads as a broken sample") went stale the day AotSample
+// began catching DwarfMappingDepthException on purpose, and it now passes the ordinary obligation on evidence.
+[DwarfSurfaceOption(nameof(DwarfMapperAttribute.GenerateExtensions), SurfaceCategory.EmissionShape,
+    "its whole observable effect is the ABSENCE of a generated `source.ToTarget()` extension, which no "
+    + "running sample can show; the proof is a structural assertion over the generated text")]
+[DwarfSurfaceOption(nameof(DwarfMapperAttribute.ImplicitConversions), SurfaceCategory.BuildFailureOnly,
+    "true is the default and changes nothing to observe; false turns the DWARF038 narrowing-conversion "
+    + "warning into a refusal, so the sample that would demonstrate the difference could not compile. The "
+    + "proof is a NegativeCases row pinning the id and its remedy wording")]
+[DwarfSurfaceProbe(constructorArity: 0,
+    Unmeasured = "a bare [DwarfMapper] selects every option's default, so there is nothing here for any "
+                 + "endpoint to honour or refuse — the case is silent by construction, whatever the generator "
+                 + "does. The questions this element can actually pose are the eighteen option cases above.")]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class DwarfMapperAttribute : Attribute
 {
@@ -66,6 +104,12 @@ public sealed class DwarfMapperAttribute : Attribute
     ///         Explicit <c>[MapProperty]</c>, <c>[MapValue]</c>, <c>[Flatten]</c>, additional mapping parameters,
     ///         and constructor parameters still resolve — they are all explicit or structurally required. Only
     ///         the implicit by-name matching of settable members is disabled.
+    ///     </para>
+    ///     <para>
+    ///         The <b>assembly-level</b> form (<c>[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]</c>)
+    ///         closes the boundary for the <c>[MapTo]</c> registry front door as well, which refuses the by-name
+    ///         wire there with <c>DWARFR10</c>. A guard honoured at only some front doors is worse than no guard,
+    ///         because the developer believes they have one.
     ///     </para>
     /// </summary>
     public bool AutoMatchMembers { get; set; } = true;
