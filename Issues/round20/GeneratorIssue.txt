@@ -1,0 +1,41 @@
+﻿The matrix works
+
+  854 cells, 14 seconds — baseline memoization held completely, so the CI-leg concern is moot.
+
+  It found that some earlier measurement was fiction
+
+  Two more instrument defects, both caught by running the full cross-product rather than a spot check:
+
+  - The harness never drove MapToGenerator. All 122 Registry cells were fiction — they weren't measuring the registry generator at all. That column now shows 18 genuine DWARFR refusals.
+  - Build appended the class-site case beside its own [DwarfMapper], which is AllowMultiple = false → CS0579. 95 cells were "passing" as NotCompilable without ever being measured.
+
+  Worth sitting with: both would have read as green forever. Every earlier task's review was clean, and a chunk of what those reviews blessed was measuring nothing. That's the argument for the executed
+  cross-product in one line.
+
+  18 real divergences, none ratified
+
+  165 cells. The implementer refused to narrow a single claim to get green, which was the instruction. The sharpest ones:
+
+  - D3 — [MapProperty("Id", Use=…/When=…/NullSubstitute=…/StringFormat=…)] on a method is silent at all five endpoints. It names a nonexistent converter and no diagnostic fires. The pair-scoped
+  MapProperty<S,T> raises DWARF014/049/050 for the same arguments. Hand-verified.
+  - D7 — [MapNullSkip<Src,Dst>] and [MapNullSkip] are exact inverses: the class form acts at Span/Async/CoLocated and is silent at Create/Update; the method form does the reverse. Its pair-scoped siblings
+  all act at method endpoints, so one of the two is wrong.
+  - D4 — RegistryDiagnostics.MapPropertyArity exists for precisely this case and never fires.
+  - D10–D14 — [Flatten], [FlattenGraph], [Reinterpret], [ReverseMap], [MapCollectionKey] all refuse at some endpoints and are silently swallowed at the rest. Endpoint-inconsistent refusal is the ISSUE-044
+  shape your own docs call the most frequent defect class of the engagement.
+
+  Two things need your ruling before I continue
+
+  A gap in my design. AppliesTo cannot express a claim that differs by declaration site — the same element at the same endpoint can be refused at the method site and silent at the member site. 100 cells
+  are currently held by a test-side predicate, which is precisely the hand-kept test-side knowledge this architecture exists to delete. My design was wrong here, not the implementation.
+
+  A fourth bucket I didn't anticipate. 188 cells where the case-space cannot pose a meaningful question: [DwarfSurface] binds one ProbeKey per element, but [DwarfMapper] and [DwarfMapperDefaults] are
+  option bags of 15–19 properties each needing different shapes; and sampled ctor args produce non-questions like [AutoNest(true)] (the default) or [MapIgnoreSource("Id")] naming a consumed member. They
+  were left red rather than narrowed green — the right call, but it means the matrix cannot go green as designed.
+  N4 — a new codegen bug, directly observed. Two identical [FlattenGraph] directives make the generator emit uncompilable code: CS1912: Duplicate initialization of member 'Flat', located in Demo.M.g.cs —
+  the generated file, not the fixture. This came from the AllowMultiple ×2 axis, which exists only because SurfaceCatalog derives cases from AttributeUsage.AllowMultiple rather than from anyone's list of
+  scenarios worth testing. Nobody would have written that test.
+
+  One limitation I'm carrying forward rather than fixing here: 96 cells (~11% of the matrix) read NotCompilable because of CS8795 — an unimplemented partial method, which the generator emits after a
+  blocking DWARF error. Conceptually those are Refused, not NotCompilable. It's a pre-existing defect (your G4/R4), it's disclosed in the code and the report, and it's pinned shrink-only — but it means
+  about a ninth of the matrix currently carries the wrong verdict and is skipped rather than judged. Worth knowing before you read the final numbers as coverage.
