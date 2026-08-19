@@ -466,3 +466,92 @@ The first drops measurement; the second and third were ruled out for the runtime
    coverage capture sees the generator being invoked, not of the tests — which means it may be recoverable
    without touching a single assertion. That is the generator-side twin of R21-1, and it is worth measuring
    before anyone proposes cutting what the leg mutates.
+
+---
+
+## T3-H1 fix — the write-back guard, and the honest DocTooling floor it exposed
+
+Round 21, 2026-08-19, branch `feat/round21-depth-tier`. Fixes the destruction recorded above ("The DocTooling
+leg destroys tracked documentation when run locally") and **closes open action item 1**: of the two shapes
+offered there (restore-after vs. redirect), a third was chosen deliberately — **guarded refusal**. Every
+test-side repo write now routes through one gate that refuses the write under mutation while every staleness
+assertion still runs and still fails. No test is excluded from any leg (the binding ruling), nothing is
+restored after the fact (nothing is written), and nothing is redirected (every writer asserts independently
+of its write, so no redirect target is needed).
+
+### The verified mechanism — the sandbox-escape hypothesis is WRONG
+
+There is no sandbox and no escape. `StrykerOutput/<timestamp>/` holds only reports; Stryker 4.16 runs the
+tests **in the real tree**: it swaps the mutated assembly into each test project's real `bin/` folder in
+place, keeping the original beside it as `X.dll.stryker-unchanged` for the duration of the run (observed
+directly: `tests/DwarfMapper.Generator.Tests/bin/Debug/net10.0/DwarfMapper.DocTooling.dll` carried
+"Stryker was here!" and namespace `StrykernkatKqYxLiqJmLE`; nine `*.stryker-unchanged` backups sat across the
+test bins). So `AppContext.BaseDirectory` is the real bin, every repo-root walk (`RepoLayout.Root`,
+`RepoPaths.Root`, the two private copies) resolves the real repository **correctly**, and a mutated renderer
+wrote its output over the real files. The heal-or-fail write-back in `DocsAreSnippetCurrentTests` (README.md,
+CONTRIBUTING.md, docs/diagnostics.md, docs/options.md, Gallery README) and `GeneratedDocsAreCurrentTests`
+(docs/generated/*) did the writing; the mutants under test were the code producing the content.
+
+### The guard
+
+`tests/DwarfMapper.Generator.Tests/Contracts/RepoWriteGuard.cs` — ARCH-06's registered pattern, deliberately
+in the TEST project (a guard inside the mutation target could itself be mutated off). Detection is resolved
+once per process, filesystem-only:
+
+1. any `*.stryker-unchanged` beside the test assembly (the in-place swap Stryker 4.16 actually performs —
+   the signal that fires for all three legs; a leftover after an interrupted run means the sibling DLLs may
+   still be mutants, so refusing then is equally correct), and
+2. any ancestor directory named `StrykerOutput` or `.stryker-tmp` (the copy-sandbox shape, covering the
+   general "root walk escaped a sandbox upward" case).
+
+Rewired writers (all four known repo writers; a broad-pattern sweep of `tests/` and `conformance/` found no
+fifth): `DocsAreSnippetCurrentTests` and `GeneratedDocsAreCurrentTests.AssertCurrent` (refuse write, keep
+compare-and-fail, failure message names the marker), `AssemblyScanTests` `DWARF_SELF_HEAL` append (refusal
+leaves `missing` populated so the assert fails truthfully), `GoldenManifest.Write` (refusal throws — its
+caller passes right after writing, so a silent refusal would green-light a manifest never written).
+`RepoWriteGuardTests` pins detection against fabricated marker directories, pins the refusal (pre-existing
+target byte-identical after a refused write; no directory even created), and carries the ARCH-06 scan: every
+raw file-writing API use in the test tree must be a registered pattern with a reason and a pinned count.
+
+### Measurements (all on this worktree, quiet machine)
+
+- Whole solution `dotnet build`: **0 warnings / 0 errors** (after decontaminating the bins — the pre-fix
+  Stryker run had left the MUTATED `DwarfMapper.DocTooling.dll` and `DwarfMapper.Generator.dll` live in the
+  test bins with newer timestamps than the source outputs, so an incremental build kept them; the nine
+  backups and their siblings were deleted and rebuilt, then verified string-clean).
+- Full suite `dotnet test DwarfMapper.NET.sln`: **7,665 passed, 0 failed, 0 skipped**.
+- **The leg was unrunnable since T3 and nobody could know from the exit code**: T3 raised `break` to 83 but
+  left `low` at 80, and Stryker 4.16 refuses `low < break` outright — *with exit code 0*. `low` now tracks
+  `break` (NOTE 9 of the config).
+- DocTooling leg re-run (`dotnet stryker --config-file stryker-config.doctooling.json`, repo root):
+  **5 min 27 s**, 4,787 tests discovered, 284 scoreable (Assert-MutantsWereTested non-vacuity holds),
+  **score 67.96 % = 193 detected (191 Killed + 2 Timeout), 54 Survived, 37 NoCoverage**.
+- **Post-run `git status`: byte-identical to the pre-run status.** README.md, CONTRIBUTING.md, docs/, the
+  Gallery README and every other tracked file untouched. The run also restored the clean DLL on completion
+  (verified string-clean) but left its `.stryker-unchanged` backup behind — the guard deliberately treats
+  that leftover as mutation state (conservative), and its refusal message says how to clean it.
+
+### Why the score fell from 83.10 and why 67 is the honest floor, not a regression
+
+The mutant space is identical (284 scoreable in both runs; same files, same lines). Exactly **43 mutants
+flipped Killed → Survived** and one Timeout became a clean Kill (`DocSnippetInjector.cs` L39 `i++` deletion —
+detected either way). The 43 were never killed by an assertion about their own behaviour: with write-back
+live, the first destructive mutant emptied the committed documents on disk, and every later mutant session
+compared its renderer output against that polluted committed text — a mismatch regardless of the mutant. The
+83.10 baseline was self-contaminated in the kill-inflating direction (the same genre as the generator leg's
+inflated 72.64 first run, recorded above). Per the engagement rule, `break` moves to the re-measured floor
+**in the same commit as this measurement**: 83 → **67** (67.96 floored). Margin is now three mutants
+(190/284 = 66.90 % fails).
+
+The 43 exposed survivors — all no-ops on the current documentation corpus, i.e. corpus holes of the
+test-infra-holes pattern, NOT judged equivalent — by file (line/mutator from the 11-49-34 report):
+
+- `OptionTableRenderer.cs` (15): L27, L38 (ThenBy→ThenByDescending), L45, L57, L60, L62, L81, L86, L88 (x2),
+  L91, L94 (x3), L129
+- `DocSnippetInjector.cs` (9): L23, L24, L26, L43, L50, L71, L83, L86, L96
+- `SnippetScanner.cs` (9): L27 (OrderBy→OrderByDescending), L28, L41, L59, L67, L81, L102, L118, L164
+- `DocTableInjector.cs` (7): L17, L18, L23, L25, L29, L31, L41
+- `ExampleCatalogue.cs` (3): L29, L46, L59
+
+Triage of these 43 (real hole vs. equivalent, per the house judgement format used for the original 11) is
+follow-up work — raising `break` back up happens only by killing them, never by re-measuring luck.
