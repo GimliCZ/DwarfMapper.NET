@@ -22,6 +22,7 @@
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit"/>
         <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="coverlet.collector"/>
         <!-- The BEFORE side. The corpus exists to be converted off this. -->
         <PackageReference Include="AutoMapper"/>
     </ItemGroup>

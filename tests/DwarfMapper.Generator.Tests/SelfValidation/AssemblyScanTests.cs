@@ -254,8 +254,12 @@ public sealed class AssemblyScanTests
         {
             var lines = File.ReadAllLines(path).ToList();
             lines.AddRange(missing.Select(d => $"{d.Id} | {d.Category} | {d.DefaultSeverity} | {d.Title}"));
-            File.WriteAllLines(path, lines);
-            missing = new List<DiagnosticDescriptor>(); // healed
+
+            // ARCH-06: repo writes go through RepoWriteGuard; under a Stryker mutation run the write is
+            // refused, `missing` stays populated, and the assert below fails truthfully instead of claiming
+            // a heal that never touched the file (T3-H1).
+            if (RepoWriteGuard.WriteBackLines(path, lines))
+                missing = new List<DiagnosticDescriptor>(); // healed
         }
 
         Assert.True(missing.Count == 0,

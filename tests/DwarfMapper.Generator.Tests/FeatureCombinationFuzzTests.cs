@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Text;
+using DwarfMapper.TestInfrastructure;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests;
@@ -105,6 +106,16 @@ public class FeatureCombinationFuzzTests
         for (var i = 0; i < n; i++)
         for (var j = i + 1; j < n; j++)
             full.Add(new[] { i, j }); // pairs
+
+        // Deep tier only (fast 2 / deep 3 — see DeepPopulation.FeatureCombinationSubsetOrder): the next
+        // complete structural tier, all C(16,3) = 560 triples, on every emit-path consumer of the full
+        // subsets. Fast keeps exactly singles+pairs+all — the surface where the deferred-member bugs hid.
+        if (DeepTier.Count(DeepPopulation.FeatureCombinationSubsetOrder) >= 3)
+            for (var i = 0; i < n; i++)
+            for (var j = i + 1; j < n; j++)
+            for (var k = j + 1; k < n; k++)
+                full.Add(new[] { i, j, k }); // triples
+
         full.Add(Enumerable.Range(0, n).ToArray()); // all features at once
 
         foreach (var kind in Kinds)

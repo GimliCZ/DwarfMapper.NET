@@ -70,6 +70,16 @@ public class SnippetScannerTests
     }
 
     [Fact]
+    public void Leading_and_trailing_blank_lines_are_trimmed_from_the_region()
+    {
+        // The trim is what keeps a region author free to pad the markers for readability without the
+        // padding showing up inside the rendered fence. Whitespace-only lines count as blank.
+        var source = "// <snippet: demo>\n\n   \nvar x = 1;\n\t\n\n// </snippet>";
+
+        Assert.Equal("var x = 1;", SnippetScanner.ScanFile("F.cs", source)[0].Body);
+    }
+
+    [Fact]
     public void An_unclosed_region_is_a_loud_failure()
     {
         var ex = Assert.Throws<DocToolingException>(

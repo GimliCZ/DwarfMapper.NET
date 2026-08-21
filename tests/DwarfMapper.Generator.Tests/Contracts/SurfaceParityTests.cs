@@ -272,28 +272,39 @@ public sealed class SurfaceParityTests
     ///         a <c>.g.cs</c> file.
     ///     </para>
     ///     <para>
-    ///         <b>Eight are the shape already filed as B27</b>: <c>[GenerateMap&lt;Src, Dst&gt;]</c> on a
-    ///         class that also declares a <c>partial Dst Map(Src)</c> over the same pair — and the ×2 case,
-    ///         which is that collision twice. The generator emits its own <c>Map</c> beside the one it is
-    ///         implementing and the consumer gets <c>CS0111</c> plus a <c>CS0121</c> cascade, with no
-    ///         DwarfMapper diagnostic about a collision the generator created. B27 says exactly that, and
-    ///         names <c>DWARF060</c> and <c>DWARF057</c> as the ids either side of the gap.
+    ///         <b>Eight were the shape filed as B27</b>: <c>[GenerateMap&lt;Src, Dst&gt;]</c> on a class that
+    ///         also declares a <c>partial Dst Map(Src)</c> over the same pair — and the ×2 case, which is
+    ///         that collision twice. The generator emitted its own <c>Map</c> beside the one it was
+    ///         implementing and the consumer got <c>CS0111</c> plus a <c>CS0121</c> cascade, with no
+    ///         DwarfMapper diagnostic about a collision the generator created. <b>Closed as B27</b> (8 → 0):
+    ///         the gap B27 named between <c>DWARF060</c> and <c>DWARF057</c> is now <c>DWARF094</c>, an
+    ///         Error raised in the same signature pass <c>DWARF060</c> runs in, where identical-with-identical
+    ///         used to fall through a <c>continue</c> labelled "a duplicate-pair concern" that nothing
+    ///         downstream owned. All eight cells read <see cref="SurfaceEffect.Refused" /> now.
     ///     </para>
     ///     <para>
-    ///         <b>Two are <c>[DwarfMapper(ReferenceHandling = Preserve)]</c> at <c>SpanMap</c> and
+    ///         <b>Two more were <c>[DwarfMapper(ReferenceHandling = Preserve)]</c> at <c>SpanMap</c> and
     ///         <c>AsyncStream</c></b> — <c>CS7036</c> in the emitted mapper, because <c>Preserve</c> adds a
-    ///         reference-tracker parameter that the element-wise emission does not pass. The note this
-    ///         replaces called that "the hand-written partial declaration fits no generated overload", which
-    ///         would have been <c>CS8795</c> in the caller's file; the error is in the GENERATED file, so it
-    ///         is the emission that is wrong, not the template.
+    ///         reference-tracker parameter that the element-wise emission did not pass. The note that verdict
+    ///         replaced called them "the hand-written partial declaration fits no generated overload", which
+    ///         would have been <c>CS8795</c> in the caller's file; the error was in the GENERATED file, so it
+    ///         was the emission that was wrong, not the template. <b>Closed as B33</b> (10 → 8): the span and
+    ///         async-stream emitters now thread ONE shared <c>DwarfRefContext</c> per call into a ctx-tailed
+    ///         element converter — the identity-map scope the top-level collection path already gave a
+    ///         <c>List&lt;T&gt;</c> map — and the same missing tail turned out to be reachable with no
+    ///         <c>Preserve</c> in sight (a recursive element pair under default None, and under
+    ///         <c>OnCycle = SetNull</c>). All three modes are pinned by EXECUTING tests in
+    ///         <c>ElementWiseReferenceHandlingRuntimeTests</c>, not by the matrix's difference reading —
+    ///         B19's point, honoured: two span slots or stream elements holding the same source object land
+    ///         the SAME target instance under <c>Preserve</c>.
     ///     </para>
     ///     <para>
-    ///         Neither shape is A12's to fix — one is a new diagnostic id with the five-file sync, the other
-    ///         an emission defect at two endpoints — so the ceiling records what is measurably there rather
-    ///         than pretending otherwise. What it buys immediately is that an eleventh cannot appear quietly.
+    ///         Neither shape was A12's to fix — one is a new diagnostic id with the five-file sync, the other
+    ///         an emission defect at two endpoints — so the ceiling recorded what was measurably there rather
+    ///         than pretending otherwise. What it bought immediately is that an eleventh cannot appear quietly.
     ///     </para>
     /// </summary>
-    private const int EmittedInvalidCodeCellCeiling = 10;
+    private const int EmittedInvalidCodeCellCeiling = 0;
 
     /// <summary>
     ///     The cells where the generator emitted code the C# compiler rejects, counted, with the ids that

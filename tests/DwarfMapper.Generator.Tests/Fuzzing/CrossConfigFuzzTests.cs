@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 using Microsoft.CodeAnalysis;
 
@@ -65,8 +66,9 @@ public class CrossConfigFuzzTests
             $"config pair [{attrArgs}] not value-preserving:\n{CrossTypeComparer.Render(diff)}\n--- source ---\n{src}");
     }
 
+    // Fast 20 / deep 200 — see DeepPopulation.CrossConfigUpdateSeeds.
     public static IEnumerable<object[]> UpdateModeSeeds() =>
-        from seed in Enumerable.Range(0, 20)
+        from seed in Enumerable.Range(0, DeepTier.Count(DeepPopulation.CrossConfigUpdateSeeds))
         from cfg in new[]
         {
             "ReferenceHandling = global::DwarfMapper.ReferenceHandlingStrategy.Preserve",

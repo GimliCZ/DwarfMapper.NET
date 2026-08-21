@@ -2,6 +2,7 @@
 
 using System.Collections;
 using System.Reflection;
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
@@ -70,12 +71,14 @@ public class FlattenGraphFuzzTests
 
     public static IEnumerable<object[]> HomoSeeds()
     {
-        return Enumerable.Range(0, 25).Select(i => new object[] { i });
+        // Fast 25 / deep 250 — see DeepPopulation.FlattenHomoSeeds.
+        return Enumerable.Range(0, DeepTier.Count(DeepPopulation.FlattenHomoSeeds)).Select(i => new object[] { i });
     }
 
     public static IEnumerable<object[]> HeteroSeeds()
     {
-        return Enumerable.Range(0, 15).Select(i => new object[] { i });
+        // Fast 15 / deep 150 — see DeepPopulation.FlattenHeteroSeeds.
+        return Enumerable.Range(0, DeepTier.Count(DeepPopulation.FlattenHeteroSeeds)).Select(i => new object[] { i });
     }
 
     // ── Homo fuzz ─────────────────────────────────────────────────────────────

@@ -1,0 +1,8 @@
+P:System.DateTime.Now;Emission must be deterministic - identical inputs must produce byte-identical output on every machine and every run
+P:System.DateTime.UtcNow;Emission must be deterministic - no timestamps in generated output
+P:System.DateTimeOffset.Now;Emission must be deterministic - no timestamps in generated output
+M:System.Guid.NewGuid;Emission must be deterministic - derive identifiers from the input model, never from fresh GUIDs
+T:System.Random;Emission must be deterministic - no randomness in the generator
+P:System.Globalization.CultureInfo.CurrentCulture;Emission must be culture-invariant - format with CultureInfo.InvariantCulture so output does not vary by build-machine locale
+P:System.Globalization.CultureInfo.CurrentUICulture;Emission must be culture-invariant - diagnostics and output must not vary by build-machine locale
+P:System.Environment.NewLine;Generated output is LF-normalised through AddNormalizedSource; platform-dependent newlines break reproducible builds

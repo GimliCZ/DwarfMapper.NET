@@ -272,13 +272,13 @@ internal static partial class MapperExtractor
         static string PropKey(PairProp p) => p.Source.ToDisplayString() + "|" + p.Target.ToDisplayString() + "|" + p.TgtMember;
         static string ValKey(PairValue v) => v.Target.ToDisplayString() + "|" + v.Member;
 
-        var propKeys = new HashSet<string>(attrProps.ConvertAll(PropKey));
+        var propKeys = new HashSet<string>(attrProps.ConvertAll(PropKey), StringComparer.Ordinal);
         foreach (var p in config.Props)
             if (!propKeys.Add(PropKey(p)))
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigConflict, p.Loc,
                     $"Destination member '{p.TgtMember}' of {p.Target.ToDisplayString()} is configured more than once (MapConfig and/or attribute); remove one"));
 
-        var valKeys = new HashSet<string>(attrValues.ConvertAll(ValKey));
+        var valKeys = new HashSet<string>(attrValues.ConvertAll(ValKey), StringComparer.Ordinal);
         foreach (var v in config.Values)
             if (!valKeys.Add(ValKey(v)))
                 diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConfigConflict, v.Loc,

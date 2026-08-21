@@ -1,0 +1,53 @@
+{
+  "_comment": [
+    "Allocation exact-pin baseline (round-21 T8, maintainer-ruled rider from",
+    "Issues/round22/RESEARCH-97-PERCENT-GATES.md, allocation-gate row). Gate:",
+    "scripts/housekeeping.ps1 -BenchSmoke (part of -Nightly) re-runs the benchmark suite in smoke mode",
+    "(DWARF_BENCH_SMOKE=1, ShortRun) and FAILS unless every pinned scenario's MemoryDiagnoser",
+    "BytesAllocatedPerOperation EQUALS its pin exactly. Allocated bytes per op are deterministic for a",
+    "fixed SDK - verified 2026-08-21 by two full smoke runs on this machine: all 41 benchmarks were",
+    "byte-identical across runs, so 'unstable' is empty and every DwarfMapper scenario is pinned.",
+    "",
+    "UPDATE PROTOCOL (the measured-floor philosophy applied to allocations): an UNEXPLAINED increase is",
+    "a regression; an unexplained DECREASE is also a finding - the gate reports and fails on BOTH",
+    "directions. The only fix is a deliberate commit that re-measures (run the smoke, read the new",
+    "numbers) and updates this file WITH THE REASON in the same commit. The measuring commit for the",
+    "current pins is therefore always `git log -1 -- <this file>`. An SDK change is the one legitimate",
+    "silent-change vector, so the gate also compares the running SDK against measuredWith.sdk and",
+    "demands the same re-measure-and-update-together move.",
+    "",
+    "Timing numbers from a smoke run are NON-GATES (see SmokeConfig in Program.cs). Only DwarfMapper's",
+    "OWN scenarios (*_Dwarf) are pinned; competitor rows (Mapperly/Mapster/AutoMapper) and Flat_Hand are",
+    "informational context printed by the gate, never gated.",
+    "",
+    "totalBenchmarks pins the executed-benchmark COUNT: BenchmarkRunner exits 0 even when individual",
+    "benchmarks crash (they become NA rows), and a stray --filter would silently shrink the suite - the",
+    "count plus the per-row Statistics/Memory presence check is what makes 'every benchmark still runs'",
+    "mechanical rather than hoped."
+  ],
+  "measuredWith": {
+    "sdk": "10.0.101",
+    "runtime": ".NET 10.0.1 (10.0.125.57005), RyuJIT AVX2",
+    "os": "Windows 10 (10.0.19045.6332/22H2/2022Update), x64",
+    "date": "2026-08-21",
+    "tree": "d7b60cd4ae425dfc735b66622c50f5e8f0babfdb plus the T8 smoke config committed together with this file",
+    "job": "ShortRun via DWARF_BENCH_SMOKE=1, N=1000, seed RealisticPayloads.Seed=20260724"
+  },
+  "totalBenchmarks": 41,
+  "pins": {
+    "Flat_Dwarf": 40,
+    "Nested_Dwarf": 112,
+    "Array_Dwarf": 48048,
+    "Seq_Dwarf": 48088,
+    "List_Dwarf": 48112,
+    "Blit_Dwarf": 12048,
+    "Widen_Dwarf": 8048,
+    "Flatten_Dwarf": 48,
+    "Enum_Dwarf": 24,
+    "Dict_Dwarf": 31120,
+    "NullMismatch_Dwarf": 32,
+    "Set_Dwarf": 17856,
+    "Immutable_Dwarf": 4048
+  },
+  "unstable": {}
+}

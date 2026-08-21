@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Text;
+using DwarfMapper.Generator.Tests.Contracts;
 
 namespace DwarfMapper.Generator.Tests.Framework;
 
@@ -70,8 +71,12 @@ internal static class GoldenManifest
         foreach (var kv in entries.OrderBy(kv => kv.Key, StringComparer.Ordinal))
             sb.Append(CultureInfo.InvariantCulture, $"{kv.Key} {kv.Value}\n");
 
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
-        File.WriteAllText(Path, sb.ToString());
+        // ARCH-06: repo writes go through RepoWriteGuard. Refusal throws rather than returning: the caller
+        // passes immediately after a successful regeneration, so a silent refusal here would let a Stryker
+        // run (or a tree still carrying its leftovers) green-light a manifest it never wrote (T3-H1).
+        if (!RepoWriteGuard.WriteBack(Path, sb.ToString()))
+            throw new InvalidOperationException(
+                $"Refusing to regenerate the golden manifest. {RepoWriteGuard.RefusalNotice}");
     }
 
     private static string RepoRoot()

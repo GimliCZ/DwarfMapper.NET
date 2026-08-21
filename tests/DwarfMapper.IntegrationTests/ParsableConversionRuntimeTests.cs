@@ -128,6 +128,7 @@ public partial class StringToFloatMapper
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+[Collection("culture-swap")] // one test below swaps CurrentCulture to de-DE; see CultureSwapCollection
 public class ParsableConversionRuntimeTests
 {
     // ── string → int ──────────────────────────────────────────────────────────

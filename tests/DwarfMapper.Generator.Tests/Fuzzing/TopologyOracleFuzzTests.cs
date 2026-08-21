@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
@@ -191,7 +192,8 @@ public class TopologyOracleFuzzTests
 
     public static IEnumerable<object[]> GraphSeeds()
     {
-        return Enumerable.Range(0, 12).Select(i => new object[] { i });
+        // Fast 12 / deep 120 — see DeepPopulation.TopologyGraphSeeds.
+        return Enumerable.Range(0, DeepTier.Count(DeepPopulation.TopologyGraphSeeds)).Select(i => new object[] { i });
     }
 
     [Theory]

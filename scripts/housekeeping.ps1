@@ -7,15 +7,67 @@
 #   pwsh scripts/housekeeping.ps1 -SkipExhaustion # skip the ~6 min full power-set
 #   pwsh scripts/housekeeping.ps1 -Mutation       # also run Stryker mutation testing (very slow)
 #   pwsh scripts/housekeeping.ps1 -Heal           # regenerate AnalyzerReleases rows (self-heal) then test
+#   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
+#   pwsh scripts/housekeeping.ps1 -ILVerify       # ILVerify the shipped runtime + a generated-consumer assembly
+#   pwsh scripts/housekeeping.ps1 -Deep           # DWARF_DEEP=1 for stage 1: multiplied fuzz/property/torture counts
+#   pwsh scripts/housekeeping.ps1 -BenchSmoke     # benchmark smoke (ShortRun) + allocation exact-pin gate (~7 min)
+#   pwsh scripts/housekeeping.ps1 -Nightly        # EXACTLY what CI's nightly deep-test job runs: -Deep -Coverage
+#                                                 # -ILVerify -BenchSmoke, exhaustion and AOT skipped. Mutation stays
+#                                                 # behind -Mutation (its own cost class; CI runs those legs as own jobs).
+#                                                 # Needs: dotnet-reportgenerator-globaltool + dotnet-ilverify.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 param(
     [switch]$SkipAot,
     [switch]$SkipExhaustion,
     [switch]$Mutation,
-    [switch]$Heal
+    [switch]$Heal,
+    [switch]$Coverage,
+    [switch]$ILVerify,
+    [switch]$Deep,
+    [switch]$BenchSmoke,
+    [switch]$Nightly
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+
+# -Nightly is an AGGREGATE, not a new stage: it pins the exact switch set the CI deep-test job runs
+# (.github/workflows/ci.yml), so a maintainer reproduces the nightly locally with one switch and the two
+# cannot drift apart. It skips exhaustion and AOT (exhaustion is a default local stage, AOT has its own
+# aot-trim-gate CI job) and deliberately does NOT imply -Mutation — the mutation legs are their own cost
+# class and their own nightly CI jobs (the 'mutation' matrix).
+if ($Nightly) {
+    # -BenchSmoke rides the nightly per the T8 placement rule: its measured wall-clock (6:36/6:44 across
+    # the two pin-verification runs, 12-core machine) is proportionate to the deep tier now that the
+    # 44-minute ceiling is raised - it does not dwarf the mutation legs (~37 min aggregate) the nightly
+    # already carries on sibling jobs.
+    $Deep = $true; $Coverage = $true; $ILVerify = $true; $BenchSmoke = $true
+    $SkipExhaustion = $true; $SkipAot = $true
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Coverage floors — per-assembly LINE coverage, percent. MEASURED, not aspired-to: each value is the
+# full-suite Release measurement (coverlet XPlat collector merged by ReportGenerator) rounded DOWN to one
+# decimal place ([math]::Floor(x*10)/10), so run-to-run float noise cannot flip the gate — that truncation
+# is the only slack, no cushion is added on top. The gate is line coverage; branch coverage is printed as
+# informational only. Raising a floor to a new measured value is the normal move; lowering one demands a
+# written reason in the commit that lowers it.
+#
+# Re-measured 2026-08-21 (round-21 T5, fast tier, Release) at the commit that wires the nightly — line / branch:
+#   DwarfMapper 78.3/76.1 · Generator 93.7/87.4 · DocTooling 90.7/84.2 · CodeFixes 92.4/68.4 · Testing 83.2/81.9
+# DwarfMapper rose 77.7 -> 78.3: raised, the normal move. Generator moved 93.8 -> 93.7 (raw 93.781,
+# 8,384/8,940) — NOT a lost test: T6 (B27's DWARF094 refusal, B33's span/async-stream context threading)
+# grew the coverable-line DENOMINATOR after the floor's measuring commit (cedad48), and a measured floor
+# tracks the measurement at HEAD; the written reason this lowering demands is this comment plus the commit
+# that carries it. The deep tier (-Nightly, same day) measures the same five line values to this decimal,
+# so the floors hold for both tiers — deep coverage is a superset of fast on the same tree.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+$coverageFloors = [ordered]@{
+    'DwarfMapper'            = 78.3
+    'DwarfMapper.Generator'  = 93.7
+    'DwarfMapper.DocTooling' = 90.7
+    'DwarfMapper.CodeFixes'  = 92.4
+    'DwarfMapper.Testing'    = 83.2
+}
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 # Stryker EXITS 0 when its `mutate` filter matches nothing. Every mutant comes back "Removed by mutate
@@ -53,6 +105,121 @@ function Assert-MutantsWereTested {
     Write-Host "   ${Leg}: $scoreable scoreable mutants" -ForegroundColor DarkGray
 }
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The OTHER way a leg dies silently (H4): Stryker 4.16 refuses to run a config whose thresholds.break >
+# thresholds.low ("Threshold low must be more than or equal to threshold break") — AND EXITS 0. That is
+# exactly how the doctooling leg was unrunnable from 2026-08-19 until H1 noticed: T3 raised break to 83
+# and left low at 80. Checked BEFORE the run so the mistake fails in milliseconds with its cause named,
+# instead of surfacing as Assert-MutantsWereTested's "no report was written". Mirrored inline in the CI
+# 'mutation' matrix job (.github/workflows/ci.yml); the two must stay in step.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-StrykerConfigSane {
+    param([Parameter(Mandatory)][string]$ConfigFile)
+    $thresholds = (Get-Content -Raw -LiteralPath (Join-Path $root $ConfigFile) |
+                   ConvertFrom-Json).'stryker-config'.thresholds
+    if ($null -eq $thresholds.break -or $null -eq $thresholds.low) {
+        throw "mutation ($ConfigFile): thresholds.break/low missing - the config cannot prove it is runnable"
+    }
+    if ($thresholds.break -gt $thresholds.low) {
+        throw ("mutation ($ConfigFile): thresholds.break ($($thresholds.break)) > thresholds.low " +
+               "($($thresholds.low)) - Stryker 4.16 refuses to run this config AND EXITS 0, so the leg " +
+               "would be silently dead. Whenever break moves, move low with it (NOTE 9 in " +
+               "stryker-config.doctooling.json).")
+    }
+    Write-Host "   ${ConfigFile}: break $($thresholds.break) <= low $($thresholds.low) - runnable" -ForegroundColor DarkGray
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Allocation exact-pin gate (round-21 T8; the RESEARCH-97-PERCENT-GATES allocation-gate row). Allocated
+# bytes per op from MemoryDiagnoser are DETERMINISTIC for a fixed SDK (verified 2026-08-21: two full
+# smoke runs, all 41 benchmarks byte-identical), which is what makes an exact pin honest where a timing
+# gate would violate the no-nondeterministic-oracle rule. The gate fails on ANY change to a pinned
+# scenario - an unexplained INCREASE is a regression, an unexplained DECREASE is also a finding - and the
+# only fix is a deliberate commit that re-measures and updates allocation-baseline.json with the reason.
+# Competitor rows (Mapperly/Mapster/AutoMapper, Flat_Hand) are printed as informational context, never
+# gated. Timing numbers from the smoke are NON-GATES (see SmokeConfig in benchmarks/.../Program.cs).
+#
+# A separate function so it can be exercised NEGATIVELY against an existing report + doctored baseline
+# (the T5/H4 positive-AND-negative discipline) without paying for another ~7-minute smoke run.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-BenchAllocationsPinned {
+    param(
+        [Parameter(Mandatory)][string]$ReportPath,
+        [Parameter(Mandatory)][string]$BaselinePath
+    )
+    if (-not (Test-Path $ReportPath)) {
+        throw "bench smoke: no JSON report at $ReportPath - the run produced no parseable results"
+    }
+    $baseline = Get-Content -Raw -LiteralPath $BaselinePath | ConvertFrom-Json
+    $report = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
+    $failures = @()
+
+    # SDK drift is the one legitimate silent-change vector for allocated bytes: same code, new SDK, new
+    # numbers. Name it instead of letting it masquerade as a code regression.
+    $sdk = (dotnet --version | Select-Object -First 1).Trim()
+    if ($sdk -ne $baseline.measuredWith.sdk) {
+        $failures += ("bench smoke: running SDK $sdk != baseline SDK $($baseline.measuredWith.sdk) - " +
+                      "allocated bytes are deterministic PER SDK; re-measure and update " +
+                      "allocation-baseline.json in the same commit as the SDK change.")
+    }
+
+    # BenchmarkRunner exits 0 even when individual benchmarks crash (NA rows) or a stray --filter shrinks
+    # the suite, so 'every benchmark still executes' must be counted, not inferred from the exit code.
+    $benchmarks = @($report.Benchmarks)
+    if ($benchmarks.Count -ne $baseline.totalBenchmarks) {
+        $failures += ("bench smoke: $($benchmarks.Count) benchmarks in the report, baseline pins " +
+                      "$($baseline.totalBenchmarks) - a benchmark was added/removed or a filter shrank " +
+                      "the suite; update the baseline deliberately with the reason.")
+    }
+
+    $measured = @{}
+    foreach ($b in $benchmarks) {
+        if ($null -eq $b.Statistics -or $null -eq $b.Memory) {
+            $failures += ("bench smoke: $($b.Method) has no Statistics/Memory in the report - it " +
+                          "CRASHED or was skipped, and BenchmarkDotNet still exited 0.")
+            continue
+        }
+        $measured[$b.Method] = [long]$b.Memory.BytesAllocatedPerOperation
+    }
+
+    $pins = @($baseline.pins.PSObject.Properties)
+    $unstableNames = @($baseline.unstable.PSObject.Properties.Name)
+    foreach ($pin in $pins) {
+        if (-not $measured.ContainsKey($pin.Name)) {
+            # The vacuity guard: a renamed scenario must FAIL the gate, not silently fall out of it.
+            $failures += "bench smoke: pinned scenario '$($pin.Name)' is missing from the report - the gate cannot see it"
+            continue
+        }
+        $got = $measured[$pin.Name]
+        $want = [long]$pin.Value
+        if ($got -ne $want) {
+            $direction = if ($got -gt $want) { "INCREASE (allocation regression)" }
+                         else { "DECREASE (also a finding: something changed the emitted path)" }
+            $failures += ("bench smoke: $($pin.Name) allocated $got B/op, pinned $want B/op - unexplained " +
+                          "$direction. Exact-pin protocol: re-measure and update allocation-baseline.json " +
+                          "with the reason in the same commit.")
+        }
+    }
+
+    # Every DwarfMapper scenario must be accounted for - pinned, or listed unstable with its observed
+    # variance. A new *_Dwarf benchmark cannot land ungated.
+    foreach ($name in @($measured.Keys) | Where-Object { $_ -like '*_Dwarf' }) {
+        if ($name -notin @($pins.Name) -and $name -notin $unstableNames) {
+            $failures += ("bench smoke: '$name' is a DwarfMapper scenario with neither a pin nor an " +
+                          "unstable entry - verify byte-stability across two runs and pin it in the " +
+                          "commit that adds it.")
+        }
+    }
+
+    foreach ($b in ($benchmarks | Sort-Object Method)) {
+        if ($null -eq $b.Memory) { continue }
+        $tag = if ($b.Method -in @($pins.Name)) { 'pin ' } else { 'info' }
+        Write-Host ("   [{0}] {1}: {2} B/op" -f $tag, $b.Method, $b.Memory.BytesAllocatedPerOperation) -ForegroundColor DarkGray
+    }
+    if ($failures) { throw ($failures -join [Environment]::NewLine) }
+    Write-Host "   allocation pins: $($pins.Count) scenarios exact-matched, $($benchmarks.Count)/$($baseline.totalBenchmarks) benchmarks executed" -ForegroundColor DarkGray
+}
+
 Push-Location $root
 try {
     if ($Heal) {
@@ -64,8 +231,63 @@ try {
     }
 
     Write-Host "== 1/4 Full self-test suite ==" -ForegroundColor Cyan
-    dotnet test DwarfMapper.NET.sln -c Release --nologo
+    if ($Deep) {
+        # One knob, one reader: tests/Shared/DeepTier.cs. Multiplies every registered fuzz/property/torture
+        # population per its catalog entry; the fast tier (unset) is byte-for-byte the routine counts.
+        $env:DWARF_DEEP = '1'
+        Write-Host "   (deep tier: DWARF_DEEP=1)" -ForegroundColor DarkGray
+    }
+    $covDir = Join-Path $root 'TestResults/coverage'
+    # --blame-hang is the H7-f runner-level backstop (Issues/ledgers/H7-timeout-dissection.md §4): a hung
+    # testhost is dumped and killed with the offending test NAMED, instead of idling until someone kills
+    # the run (or, in CI, until the job-level timeout eats the evidence). VSTest infrastructure, not test
+    # semantics — nothing about pass/fail changes for a test that terminates. 5m is ~3x the longest
+    # observed single-test runtime in this stage; the exhaustion stage (a single multi-minute test) and
+    # the Stryker legs (per-mutant ceiling plays this role) deliberately do NOT carry it.
+    $testArgs = @('--blame-hang', '--blame-hang-timeout', '5m')
+    if ($Coverage) {
+        # Collect during the SAME stage-1 run rather than in a second pass: the suite is the cost driver
+        # (measured 2026-08-21: 74.5 s plain, 92.9 s collecting, both Release/--no-build), so folding the
+        # collector in prices -Coverage at ~+18 s instead of a whole extra suite run. Stale cobertura
+        # files from a previous run would merge silently and corrupt the floor comparison — wipe first
+        # (the coverage analog of Assert-MutantsWereTested's -Since filter).
+        if (Test-Path $covDir) { Remove-Item -Recurse -Force $covDir }
+        $testArgs += @('--collect:XPlat Code Coverage', '--results-directory', $covDir)
+    }
+    dotnet test DwarfMapper.NET.sln -c Release --nologo @testArgs
+    if ($Deep) { Remove-Item Env:DWARF_DEEP }
     if ($LASTEXITCODE) { throw "self-test suite failed" }
+
+    if ($Coverage) {
+        Write-Host "== 1b Coverage floors (install: dotnet tool install -g dotnet-reportgenerator-globaltool) ==" -ForegroundColor Cyan
+        # TestResults/ is git-ignored, so both the raw cobertura files and the rendered report stay out of
+        # the repo tree. The HTML report is for humans; the gate reads Summary.json.
+        $reportDir = Join-Path $root 'TestResults/coverage-report'
+        reportgenerator "-reports:$covDir/**/coverage.cobertura.xml" "-targetdir:$reportDir" `
+            '-reporttypes:Html;JsonSummary;TextSummary' `
+            ('-assemblyfilters:+' + ($coverageFloors.Keys -join ';+'))
+        if ($LASTEXITCODE) { throw "coverage: ReportGenerator failed" }
+        $summary = Get-Content -Raw -LiteralPath (Join-Path $reportDir 'Summary.json') | ConvertFrom-Json
+        $failures = @()
+        foreach ($name in $coverageFloors.Keys) {
+            $asm = @($summary.coverage.assemblies | Where-Object { $_.name -eq $name })
+            if (-not $asm) {
+                # The vacuity guard — the same reason Assert-MutantsWereTested exists: a renamed or
+                # dropped assembly must FAIL the gate, not silently fall out of it.
+                $failures += "coverage: assembly '$name' is missing from the merged report - the gate cannot see it"
+                continue
+            }
+            # Same rounding rule as the floors: truncate to one decimal, computed from the raw line
+            # counts rather than trusting the report's own culture-formatted percentage strings.
+            $measured = [math]::Floor($asm[0].coveredlines / $asm[0].coverablelines * 1000) / 10
+            Write-Host ("   {0}: line {1}% (floor {2}%), branch {3}% (informational)" -f `
+                $name, $measured, $coverageFloors[$name], $asm[0].branchcoverage) -ForegroundColor DarkGray
+            if ($measured -lt $coverageFloors[$name]) {
+                $failures += "coverage: $name line coverage $measured% fell below the measured floor $($coverageFloors[$name])%"
+            }
+        }
+        if ($failures) { throw ($failures -join [Environment]::NewLine) }
+    }
 
     if (-not $SkipExhaustion) {
         Write-Host "== 2/4 Full exhaustion (DWARF_FUZZ_FULL=1, ~6 min) ==" -ForegroundColor Cyan
@@ -90,8 +312,105 @@ try {
         if ($LASTEXITCODE) { throw "AotBench reported AOT instability (exit $LASTEXITCODE)" }
     }
 
+    if ($ILVerify) {
+        Write-Host "== ILVerify (install: dotnet tool install -g dotnet-ilverify) ==" -ForegroundColor Cyan
+        # Resolve against the newest installed net10 REF PACK — the contract surface the compiler resolved
+        # against — rather than shared/Microsoft.NETCore.App. Verified empirically 2026-08-21: the ref pack
+        # resolves everything both assemblies need (ilverify 10.0.11).
+        # Resolution is cross-platform (T5: the nightly deep-test CI job runs this stage on a Linux
+        # runner, where $env:ProgramFiles is empty): try the packs dir of every dotnet root we can name
+        # (DOTNET_ROOT, wherever `dotnet` on PATH lives, Program Files on Windows), then the NuGet cache's
+        # microsoft.netcore.app.ref — both layouts share the '<version>/ref/net10.0' shape. Newest by
+        # [version], not by string sort (which ranks 10.0.9 above 10.0.11); prerelease suffixes stripped
+        # before the cast so a rc/preview pack dir cannot crash the stage.
+        $dotnetRoots = @()
+        if ($env:DOTNET_ROOT) { $dotnetRoots += $env:DOTNET_ROOT }
+        $dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
+        if ($dotnetCmd) { $dotnetRoots += (Split-Path -Parent $dotnetCmd.Source) }
+        if ($env:ProgramFiles) { $dotnetRoots += (Join-Path $env:ProgramFiles 'dotnet') }
+        $packRoots = @($dotnetRoots | ForEach-Object { Join-Path $_ 'packs/Microsoft.NETCore.App.Ref' }) +
+                     @(Join-Path ([Environment]::GetFolderPath('UserProfile')) '.nuget/packages/microsoft.netcore.app.ref')
+        $refPack = $packRoots | Where-Object { Test-Path $_ } |
+                   ForEach-Object { Get-ChildItem $_ -Directory } |
+                   Where-Object { $_.Name -like '10.*' } |
+                   Sort-Object { [version]($_.Name -replace '-.*$', '') } -Descending |
+                   Select-Object -First 1
+        if (-not $refPack) { throw "ilverify: no net10 ref pack found (searched: $($packRoots -join '; '))" }
+        $refPackGlob = Join-Path $refPack.FullName 'ref/net10.0/*.dll'
+
+        # Known-unverifiable methods. NEVER a blanket suppression: each entry is ONE exact method whose
+        # unverifiable IL is a deliberate source construct, named here. Anything else fails the stage.
+        $knownUnverifiable = @{
+            # samples/DwarfMapper.Gallery/18_SpanMap.cs lines 25-26: two `stackalloc` buffers in the
+            # sample's HAND-WRITTEN Run() — localloc at IL_0003/IL_002F plus the cpblk initializer copy at
+            # IL_001E — demonstrating the zero-alloc span overload. stackalloc is unverifiable IL by design.
+            # The generator-emitted Mapper::Map(ReadOnlySpan<int>, Span<long>) itself verifies clean.
+            'DwarfMapper.Gallery.Ex18.Example::Run()' = 'stackalloc (localloc + cpblk) in hand-written sample code'
+        }
+        # '(?!)' never matches: with an EMPTY known map, an empty pattern would match every line and turn
+        # the filter into a blanket suppression — exactly the failure mode this stage exists to prevent.
+        $knownPattern = if ($knownUnverifiable.Count -gt 0) {
+            ($knownUnverifiable.Keys | ForEach-Object { [regex]::Escape($_) }) -join '|'
+        } else { '(?!)' }
+
+        # Targets: the SHIPPED runtime, and the Gallery — a generated-consumer assembly whose IL contains
+        # generator-emitted mapping code including the blit/SIMD paths (21_BlittableSimd, 22_Reinterpret).
+        # The Gallery's bin dir doubles as its own dependency root (DwarfMapper.dll etc. are copied there).
+        $targets = @(
+            @{ Dll = 'src/DwarfMapper/bin/Release/net10.0/DwarfMapper.dll'; ExtraRefs = @() }
+            @{ Dll = 'samples/DwarfMapper.Gallery/bin/Release/net10.0/DwarfMapper.Gallery.dll'
+               ExtraRefs = @('samples/DwarfMapper.Gallery/bin/Release/net10.0/*.dll') }
+        )
+        foreach ($target in $targets) {
+            $dll = Join-Path $root $target.Dll
+            if (-not (Test-Path $dll)) { throw "ilverify: $($target.Dll) not built - build the solution Release first" }
+            $refArgs = @('-r', $refPackGlob)
+            foreach ($extra in $target.ExtraRefs) { $refArgs += @('-r', (Join-Path $root $extra)) }
+            $out = @(& ilverify $dll @refArgs | ForEach-Object { $_.ToString() })
+            $exit = $LASTEXITCODE
+            $out | ForEach-Object { Write-Host "   $_" -ForegroundColor DarkGray }
+            $errors = @($out | Where-Object { $_ -match '\[IL\]:\s*Error' })
+            $unexpected = @($errors | Where-Object { $_ -notmatch $knownPattern })
+            if ($unexpected) {
+                throw ("ilverify: unexpected IL errors in $($target.Dll):`n" + ($unexpected -join "`n"))
+            }
+            if ($exit -ne 0 -and $errors.Count -eq 0) {
+                # Nonzero exit with no [IL] error lines means the tool itself failed (bad -r resolution,
+                # missing file...) — never treat that as a pass.
+                throw "ilverify: exited $exit for $($target.Dll) without reporting IL errors - tool failure"
+            }
+            $known = $errors.Count - $unexpected.Count
+            if ($known -gt 0) {
+                Write-Host "   $($target.Dll): $known known-unverifiable finding(s), all matched to declared source constructs" -ForegroundColor DarkGray
+            }
+        }
+    }
+
+    if ($BenchSmoke) {
+        Write-Host "== Benchmark smoke + allocation exact-pin gate ==" -ForegroundColor Cyan
+        # Stale results from a previous run would let the gate pass on yesterday's numbers - wipe first
+        # (the benchmark analog of the coverage wipe above and Assert-MutantsWereTested's -Since filter).
+        $benchResults = Join-Path $root 'BenchmarkDotNet.Artifacts/results'
+        if (Test-Path $benchResults) { Remove-Item -Recurse -Force $benchResults }
+        $env:DWARF_BENCH_SMOKE = '1'
+        $benchStart = Get-Date
+        dotnet run -c Release --project benchmarks/DwarfMapper.Benchmarks
+        $benchExit = $LASTEXITCODE
+        Remove-Item Env:DWARF_BENCH_SMOKE
+        Write-Host ("   smoke wall-clock: {0:mm\:ss} (NON-GATE - timing from a smoke run proves nothing)" -f ((Get-Date) - $benchStart)) -ForegroundColor DarkGray
+        if ($benchExit) { throw "bench smoke: benchmark run failed (exit $benchExit)" }
+        Assert-BenchAllocationsPinned `
+            -ReportPath (Join-Path $benchResults 'MapperBenchmarks-report-full.json') `
+            -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/allocation-baseline.json')
+    }
+
     if ($Mutation) {
         Write-Host "== 4/4 Mutation testing (Stryker — install: dotnet tool install -g dotnet-stryker) ==" -ForegroundColor Cyan
+        # All three configs sanity-checked up front: a break > low mistake in leg 3 should fail here, not
+        # after legs 1 and 2 have spent half an hour proving what was already known.
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.doctooling.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
         $legStart = Get-Date
         dotnet stryker
         if ($LASTEXITCODE) { throw "mutation score below break threshold (generator)" }

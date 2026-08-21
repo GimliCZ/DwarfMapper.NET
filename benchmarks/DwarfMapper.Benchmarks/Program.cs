@@ -3,6 +3,8 @@
 using AutoMapper;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Exporters.Json;
+using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
 using DwarfMapper;
 using Mapster;
@@ -11,7 +13,33 @@ using Mapster;
 // `--filter`, `--anyCategories` and `--job` do nothing and the FULL suite runs every time — a targeted
 // re-measurement of one category quietly becomes a ~40-minute sweep, and the operator has no signal that
 // their filter was dropped. This cost several timed-out runs before it was spotted.
-BenchmarkRunner.Run<MapperBenchmarks>(args: args);
+BenchmarkRunner.Run<MapperBenchmarks>(
+    Environment.GetEnvironmentVariable("DWARF_BENCH_SMOKE") == "1" ? SmokeConfig.Create() : null,
+    args);
+
+/// <summary>
+///     Deep-tier smoke configuration (round-21 T8), activated by <c>DWARF_BENCH_SMOKE=1</c> — an env var
+///     rather than a CLI switch so the arg-forwarding contract above stays untouched and a stray extra
+///     argument cannot half-apply the mode. <c>scripts/housekeeping.ps1 -BenchSmoke</c> sets it.
+///     <para>
+///     ShortRun (1 launch, 3 warmup, 3 measured iterations) runs every benchmark end-to-end against
+///     current source in single-digit minutes. TIMING numbers from a smoke run are explicitly NON-GATES:
+///     three short iterations measure nothing reliable about speed, and throughput is platform-dependent
+///     anyway (see benchmarks/results/). The ONLY numbers the smoke gate reads are MemoryDiagnoser's
+///     allocated bytes per op — deterministic for a fixed SDK — which the gate compares byte-exactly
+///     against allocation-baseline.json. Full measured runs use the default job: run WITHOUT the env var.
+///     </para>
+/// </summary>
+internal static class SmokeConfig
+{
+    /// <summary>Default config + the ShortRun job + the full JSON exporter the gate parses.</summary>
+    public static IConfig Create()
+    {
+        return DefaultConfig.Instance
+            .AddJob(Job.ShortRun.WithId("Smoke"))
+            .AddExporter(JsonExporter.Full);
+    }
+}
 
 // ── Shared benchmark types (auto-properties → every mapper handles them) ───────
 // Nullable on BOTH sides. The payload factory draws null for a nullable position ~15% of the time; a

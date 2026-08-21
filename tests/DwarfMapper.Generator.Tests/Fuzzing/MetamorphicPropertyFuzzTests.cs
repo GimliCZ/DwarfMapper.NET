@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
@@ -13,7 +14,9 @@ namespace DwarfMapper.Generator.Tests.Fuzzing;
 /// </summary>
 public class MetamorphicPropertyFuzzTests
 {
-    public static IEnumerable<object[]> Seeds() => Enumerable.Range(0, 50).Select(i => new object[] { i });
+    // Fast 50 / deep 250 (×5, not ×10 — two theories share this class) — see DeepPopulation.MetamorphicSeeds.
+    public static IEnumerable<object[]> Seeds() =>
+        Enumerable.Range(0, DeepTier.Count(DeepPopulation.MetamorphicSeeds)).Select(i => new object[] { i });
 
     [Theory]
     [MemberData(nameof(Seeds))]

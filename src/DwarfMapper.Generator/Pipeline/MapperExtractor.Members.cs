@@ -459,7 +459,7 @@ internal static partial class MapperExtractor
                 // Only reported when a source member actually WOULD have supplied a value — a member nothing
                 // maps to loses nothing, and warning about it would be noise on every record type.
                 if (factoryExcludedMembers is not null
-                    && factoryExcludedMembers.Contains(target.Name)
+                    && factoryExcludedMembers.Contains(target.Name, StringComparer.Ordinal)
                     && !ignores.Contains(target.Name)
                     && sourceGroups.ContainsKey(flexible ? NormalizeName(target.Name) : target.Name))
                     diagnostics.Add(new DiagnosticInfo(

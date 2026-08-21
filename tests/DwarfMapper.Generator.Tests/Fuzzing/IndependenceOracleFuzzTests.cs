@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
@@ -25,7 +26,9 @@ namespace DwarfMapper.Generator.Tests.Fuzzing;
 /// </summary>
 public class IndependenceOracleFuzzTests
 {
-    public static IEnumerable<object[]> Seeds() => Enumerable.Range(0, 60).Select(i => new object[] { i });
+    // Fast 60 / deep 600 — see DeepPopulation.IndependenceSeeds.
+    public static IEnumerable<object[]> Seeds() =>
+        Enumerable.Range(0, DeepTier.Count(DeepPopulation.IndependenceSeeds)).Select(i => new object[] { i });
 
     [Theory]
     [MemberData(nameof(Seeds))]

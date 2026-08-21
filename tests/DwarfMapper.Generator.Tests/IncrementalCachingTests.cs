@@ -244,6 +244,101 @@ public class IncrementalCachingTests
         Assert.Contains(afterEdit, d => d.Id == "DWARF070");
     }
 
+    // R22-03: the allowlist-free contract. The named-step tests above cover the stages of their era; this
+    // one enumerates EVERY tracked step of EVERY generator in the driver wholesale, so a future pipeline
+    // stage is covered the day it appears — the moment someone threads a Compilation/ISymbol (or any
+    // non-value-equatable model) into a node, the offending step is named here without anyone remembering
+    // to extend an allowlist.
+    private static CSharpGeneratorDriver NewAllGeneratorsDriver()
+    {
+        return CSharpGeneratorDriver.Create(
+            new[]
+            {
+                new DwarfGenerator().AsSourceGenerator(),
+                new DwarfMapper.Generator.Registry.MapToGenerator().AsSourceGenerator(),
+            },
+            driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, true));
+    }
+
+    // Roslyn's OWN tracked plumbing, excluded by NAME OF ORIGIN, not by behaviour: the raw input nodes
+    // (WellKnownGeneratorInputs — the Compilation input is DEFINITIONALLY Modified on any edit, conveying
+    // the new compilation is its entire job) and ForAttributeWithMetadataName's internal stages (their
+    // "_ForAttribute…" suffixes are Roslyn implementation details; the compilation object sits inside some
+    // of their outputs by design, e.g. compilationAndGroupedNodes). Measured at tip 2026-08-21: exactly
+    // "Compilation" and "compilationAndGroupedNodes_ForAttributeWithMetadataName" report Modified while
+    // every product step stays Cached/Unchanged — the RFC sketch's bare no-filter enumeration can never
+    // pass for ANY generator. This exclusion exempts NO product step, present or future: a product stage's
+    // tracking name is chosen in this repo and never carries these Roslyn-internal shapes.
+    private static bool IsRoslynInfrastructureStep(string stepName) =>
+        stepName is "Compilation" or "CompilationOptions" or "ParseOptions" or "SyntaxTrees"
+            or "AdditionalTexts" or "AnalyzerConfigOptions" or "MetadataReferences"
+        || stepName.EndsWith("_ForAttributeWithMetadataName", StringComparison.Ordinal)
+        || stepName.EndsWith("_ForAttribute", StringComparison.Ordinal);
+
+    private static void AssertEveryTrackedStepCached(Compilation compilation, string requiredStepName)
+    {
+        GeneratorDriver driver = NewAllGeneratorsDriver();
+        driver = driver.RunGenerators(compilation);
+
+        var modified = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Other { public class Unrelated { public int Z; } }"));
+        driver = driver.RunGenerators(modified);
+
+        var outputs =
+            (from result in driver.GetRunResult().Results
+             from step in result.TrackedSteps
+             where !IsRoslynInfrastructureStep(step.Key)
+             from execution in step.Value
+             from output in execution.Outputs
+             select (Step: step.Key, output.Reason)).ToList();
+
+        // Non-vacuity: if a tracking-name rename (or a driver change) emptied the enumeration, this test
+        // would otherwise pass while asserting nothing.
+        Assert.NotEmpty(outputs);
+        Assert.Contains(outputs, o => o.Step == requiredStepName);
+
+        var notCached = outputs
+            .Where(o => o.Reason is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged))
+            .Select(o => $"{o.Step}: {o.Reason}")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(notCached.Count == 0,
+            "Every tracked step must be Cached/Unchanged after an unrelated edit, but: "
+            + string.Join("; ", notCached)
+            + ". A non-value-equatable model (raw ImmutableArray, leaked ISymbol/Compilation, a lambda "
+            + "capturing either) in that step likely broke value equality and disabled incremental caching.");
+    }
+
+    [Fact]
+    public void Every_tracked_step_is_cached_on_an_unrelated_edit()
+    {
+        AssertEveryTrackedStepCached(
+            GeneratorTestHarness.BuildCompilation("IncCacheAll", MapperSource),
+            DwarfGenerator.ExtractStepName);
+    }
+
+    [Fact]
+    public void Every_tracked_step_is_cached_on_an_unrelated_edit_in_a_validation_root()
+    {
+        // The CompilationProvider-fed path (rootInfo + manifests) with NON-empty provided/required sets, so
+        // the wholesale sweep exercises the nodes that re-run on every keystroke and must therefore produce
+        // value-equal output to stay cached.
+        var provRef = CompileProviderRef("Prov2");
+        const string rootSrc = """
+                               [assembly: global::DwarfMapper.DwarfMapperValidationRoot]
+                               namespace App;
+                               public class Consumer
+                               {
+                                   public global::Prov2.Model C(global::DwarfMapper.IDwarfMapper m, global::Prov2.Doc d)
+                                       => m.Map<global::Prov2.Model>(d);
+                               }
+                               """;
+        AssertEveryTrackedStepCached(
+            GeneratorTestHarness.BuildCompilation("RootIncCacheAll", rootSrc).AddReferences(provRef),
+            DwarfGenerator.AmbientRegistrationStepName);
+    }
+
     [Fact]
     public void Editing_the_mapper_does_recompute_it()
     {

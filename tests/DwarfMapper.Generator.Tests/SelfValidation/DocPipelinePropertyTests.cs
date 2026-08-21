@@ -2,6 +2,7 @@
 
 using CsCheck;
 using DwarfMapper.DocTooling;
+using DwarfMapper.TestInfrastructure;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
 
@@ -20,6 +21,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 /// </summary>
 public class DocPipelinePropertyTests
 {
+    // CsCheck iteration counts: fast 500/200 (the values these properties always ran with), deep ×10 —
+    // see DeepPopulation.DocPipelineIters / DocPipelineScanIters.
+    private static readonly int Iters = DeepTier.Count(DeepPopulation.DocPipelineIters);
+    private static readonly int ScanIters = DeepTier.Count(DeepPopulation.DocPipelineScanIters);
+
     /// <summary>
     ///     Deliberately adversarial: the lines a naive implementation mishandles. Ordinary code lines would
     ///     only ever exercise the happy path.
@@ -65,7 +71,7 @@ public class DocPipelinePropertyTests
             var twice = DocSnippetInjector.Inject(once, regions, "d.md").Markdown;
 
             Assert.Equal(once, twice);
-        }, iter: 500);
+        }, iter: Iters);
     }
 
     [Fact]
@@ -85,7 +91,7 @@ public class DocPipelinePropertyTests
 
             Assert.Contains(before, result, StringComparison.Ordinal);
             Assert.Contains(after, result, StringComparison.Ordinal);
-        }, iter: 500);
+        }, iter: Iters);
     }
 
     [Fact]
@@ -108,7 +114,7 @@ public class DocPipelinePropertyTests
 
             var region = Assert.Single(SnippetScanner.ScanFile("F.cs", source));
             Assert.Equal(expected, region.Body);
-        }, iter: 500);
+        }, iter: Iters);
     }
 
     [Fact]
@@ -123,7 +129,7 @@ public class DocPipelinePropertyTests
                 Gen.Const("// <snippet: >\nx\n// </snippet>\n"),                 // empty id
                 Gen.Const("// <snippet: a>\n// </snippet>\n"))                   // empty body
             .Sample(source => Assert.Throws<DocToolingException>(
-                () => SnippetScanner.ScanFile("F.cs", source)), iter: 200);
+                () => SnippetScanner.ScanFile("F.cs", source)), iter: ScanIters);
     }
 
 

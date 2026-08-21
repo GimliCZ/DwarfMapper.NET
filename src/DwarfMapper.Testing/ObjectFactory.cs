@@ -15,8 +15,14 @@ public static class ObjectFactory
     /// <summary>Concrete stand-ins for an abstract/interface type, cached per type.</summary>
     private static readonly Dictionary<Type, Type[]> ConcreteCandidates = [];
 
+    /// <summary>Create a populated instance of <typeparamref name="T" /> for seed 0.</summary>
+    public static T Create<T>()
+    {
+        return Create<T>(0);
+    }
+
     /// <summary>Create a populated instance of <typeparamref name="T" /> for the given seed.</summary>
-    public static T Create<T>(int seed = 0)
+    public static T Create<T>(int seed)
     {
         return (T)Create(typeof(T), new Random(seed), 0)!;
     }

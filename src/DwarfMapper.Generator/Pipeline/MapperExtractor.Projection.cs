@@ -99,7 +99,7 @@ internal static partial class MapperExtractor
 
         public override int GetHashCode(string obj)
         {
-            return obj is null ? 0 : NormalizeName(obj).GetHashCode();
+            return obj is null ? 0 : StringComparer.Ordinal.GetHashCode(NormalizeName(obj));
         }
     }
 

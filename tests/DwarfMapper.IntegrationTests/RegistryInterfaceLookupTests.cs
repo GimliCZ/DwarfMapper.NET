@@ -26,6 +26,9 @@ public sealed class IfDstF { public int X { get; set; } }
 public sealed class IfSrcG { public int X { get; set; } }
 public sealed class IfDstG { public int X { get; set; } }
 
+public sealed class IfSrcH { public int X { get; set; } }
+public sealed class IfDstH { public int X { get; set; } }
+
 
 /// <summary>
 ///     The ambient registry resolves through the source's <b>interfaces</b>, not only its base chain.
@@ -125,6 +128,28 @@ public sealed class RegistryInterfaceLookupTests
 
         Assert.Equal(2, ex.AmbiguousInterfaces.Count);
         Assert.Contains("Ambiguous", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_duplicate_interface_registration_is_marked_but_does_not_poison_lookup()
+    {
+        // Pins the stated invariant in Register: the InterfaceMaps mirror is appended ONLY on a successful
+        // TryAdd. If a duplicate fell through to the mirror as well, the same interface would appear twice in
+        // the assignability list, single-candidate resolution would count two candidates for ONE registered
+        // pair, and lookup would throw "ambiguous" for a map that is not ambiguous at all — the duplicate is
+        // first-wins and merely MARKED, so resolution must keep working with the first delegate.
+        DwarfMapperRegistry.Register(typeof(IEnumerable<IfSrcH>), typeof(List<IfDstH>),
+            o => ((IEnumerable<IfSrcH>)o).Select(s => new IfDstH { X = s.X }).ToList());
+        DwarfMapperRegistry.Register(typeof(IEnumerable<IfSrcH>), typeof(List<IfDstH>),
+            _ => new List<IfDstH> { new() { X = -1 } });
+
+        Assert.True(DwarfMapperRegistry.IsAmbiguous(typeof(IEnumerable<IfSrcH>), typeof(List<IfDstH>)),
+            "sanity: the duplicate itself must still be marked on the create table.");
+
+        var mapped = (List<IfDstH>)DwarfMapperRegistry.Map(
+            new List<IfSrcH> { new() { X = 5 } }, typeof(List<IfDstH>));
+
+        Assert.Equal(5, Assert.Single(mapped).X);
     }
 
     [Fact]

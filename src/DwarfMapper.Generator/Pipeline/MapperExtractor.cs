@@ -350,11 +350,13 @@ internal static partial class MapperExtractor
                     "",
                     IsSpanMap: true,
                     SpanTargetParameterName: method.Parameters[1].Name,
-                    // The create and update models carry MaxDepth and these did not, which is an omission
-                    // relative to its siblings. Passing it changes no generated output that any test can see:
-                    // the depth guard for an element pair comes from the synthesized mapper, not this model.
-                    // Kept for consistency, NOT claimed as a fix — the gap it looks like it should close is
-                    // recorded in DeclaredDivergences.Reasons["MaxDepth"], still open.
+                    // The create and update models carry MaxDepth and these did not, which was an omission
+                    // relative to its siblings. Since B33 it is READ: when the element converter carries the
+                    // (ctx, depth) tail, EmitElementContext sizes the shared DwarfRefContext from this value,
+                    // and a cyclic element under None throws DwarfMappingDepthException at exactly this depth
+                    // (pinned in ElementWiseReferenceHandlingRuntimeTests). The MaxDepth OPTION divergence in
+                    // DeclaredDivergences.Reasons["MaxDepth"] is still open for the non-ctx-tailed case — a
+                    // non-recursive element pair creates no context, so the option changes nothing there.
                     MaxDepth: maxDepth));
                 continue;
             }
@@ -1757,9 +1759,53 @@ internal static partial class MapperExtractor
                 }
 
                 var owner = methods[ownerIdx];
-                // Identical (name, params, return) is a duplicate-pair concern, not a return-type clash.
+                // Identical (name, params, return): both would be EMITTED, so this is CS0111 in the
+                // generated file plus a CS0121 ambiguity cascade in the caller's — the B27 shape. Only
+                // possible when at least one side is [GenerateMap]-synthesized (wrapper-expanded pairs
+                // included, since ExpandWrapperMaps appends to the same pair list): two identical
+                // user-declared partial DEFINITIONS are the compiler's own error in the caller's file,
+                // and not the generator's collision to announce.
                 if (string.Equals(owner.ReturnTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))
+                {
+                    if (!owner.EmitAsNonPartial && !m.EmitAsNonPartial) continue;
+
+                    var dupLoc = publicMethodLocs.TryGetValue(i, out var dl) ? dl
+                        : publicMethodLocs.TryGetValue(ownerIdx, out var dl2) ? dl2 : null;
+                    // Which of the two shapes it met decides the remedy sentence. Refused rather than
+                    // deduplicated (DWARF087's reasoning): keeping one silently would hide the mistake,
+                    // and a co-located host's member directives bind to declared pairs POSITIONALLY, so
+                    // a duplicated pair shifts what a directive configures.
+                    var message = owner.EmitAsNonPartial && m.EmitAsNonPartial
+                        ? $"Duplicate [GenerateMap]: the pair '{m.ParameterTypeFullName}' -> "
+                          + $"'{m.ReturnTypeFullName}' is declared more than once on this class, so two "
+                          + $"identical '{m.ReturnTypeFullName} {m.MethodName}({m.ParameterTypeFullName})' "
+                          + "methods would be emitted (CS0111 in the generated file). Declare each pair "
+                          + "exactly once — remove the duplicate [GenerateMap] attribute."
+                        : $"[GenerateMap] would emit '{m.ReturnTypeFullName} {m.MethodName}"
+                          + $"({m.ParameterTypeFullName})', but this class already declares a partial "
+                          + "method with that exact signature over the same pair (CS0111 in the generated "
+                          + "file). The pair is mapped either way, so declare it once: remove the "
+                          + "[GenerateMap] and keep the partial method, or delete the partial method and "
+                          + "let [GenerateMap] emit it.";
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.DuplicateGenerateMapSignature, dupLoc, message));
+
+                    // Drop the synthesized side so a declared partial (when one exists) keeps its
+                    // implementation slot; by construction the declared method was extracted first, so
+                    // the LATER entry is the [GenerateMap]-synthesized one — asserted rather than
+                    // assumed, in case extraction order ever changes.
+                    if (m.EmitAsNonPartial)
+                    {
+                        collisionDrop.Add(i);
+                    }
+                    else
+                    {
+                        collisionDrop.Add(ownerIdx);
+                        sigOwner[sig] = i;
+                    }
+
                     continue;
+                }
 
                 var loc = publicMethodLocs.TryGetValue(i, out var l) ? l
                     : publicMethodLocs.TryGetValue(ownerIdx, out var l2) ? l2 : null;
@@ -1772,7 +1818,10 @@ internal static partial class MapperExtractor
                 collisionDrop.Add(i);
             }
 
-            // Remove dropped methods (highest index first to keep indices valid).
+            // Remove dropped methods (highest index first to keep indices valid). Sorted first: the
+            // DWARF094 declared-partial arm can add an OWNER index, which is smaller than every index
+            // appended before it, so append order alone is no longer ascending.
+            collisionDrop.Sort();
             for (var k = collisionDrop.Count - 1; k >= 0; k--)
                 methods.RemoveAt(collisionDrop[k]);
         }
@@ -2505,7 +2554,13 @@ internal static partial class MapperExtractor
             {
                 var m = methods[i];
                 if (!m.IsRecursionCapable) continue; // only pairs that can re-enter
-                if (!m.ParameterIsReferenceType) continue; // value types never form ref cycles
+                // Value types never form ref cycles — but the span / async-stream models record their
+                // PARAMETER (a span struct / IAsyncEnumerable) here, not their ELEMENT, and it is the
+                // element pair whose converter carries the on-stack guard. Without this exemption the
+                // element-wise emitters allocated their shared DwarfRefContext without `setNull: true`,
+                // so the guard the converter runs had no stack set behind it.
+                if (!m.ParameterIsReferenceType && !m.IsSpanMap && !m.IsAsyncStreamMap)
+                    continue;
                 methods[i] = m with { IsSetNullMode = true };
             }
 

@@ -28,8 +28,22 @@ public static class DocSnippetInjector
         var referenced = new HashSet<string>(StringComparer.Ordinal);
 
         var i = 0;
+        var previous = -1;
         while (i < lines.Length)
         {
+            // Stryker disable all : progress guard, not logic. The loop has exactly two advance sites —
+            // the prose branch's i++ and the snippet branch's i = closeIndex + 1 — and EVERY non-throwing
+            // branch must advance i, or the same line is reprocessed forever (appending it to sb each time
+            // until memory exhaustion). The guard turns that defect into an instant loud failure naming the
+            // file and line. It is reachable only when the loop body itself is defective, so no test of
+            // correct code can trigger it and its own mutants are untestable by construction.
+            if (i <= previous)
+                throw new InvalidOperationException(
+                    $"DocSnippetInjector stopped advancing at {docPath}:{i + 1} — injector bug, not a "
+                    + "document error. Every branch of the injection loop must advance the line index.");
+            previous = i;
+            // Stryker restore all
+
             var line = lines[i];
             var trimmed = line.TrimStart();
 

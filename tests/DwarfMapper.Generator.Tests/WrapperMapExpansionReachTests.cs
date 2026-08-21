@@ -22,7 +22,8 @@ namespace DwarfMapper.Generator.Tests;
 ///         The fork was <b>emit</b> versus <b>refuse</b>, and the answer is refuse, argued from what the
 ///         attribute means rather than from what is easier: it is defined relative to <c>[GenerateMap]</c>,
 ///         and four of the five endpoints have no <c>W&lt;A&gt; -&gt; W&lt;B&gt;</c> create-map shape to
-///         synthesize at all. The remedy — and its <c>CS0111</c> edge — is measured below, not asserted.
+///         synthesize at all. The remedy — and its collision edge (<c>DWARF094</c>) — is measured below,
+///         not asserted.
 ///     </para>
 /// </remarks>
 public class WrapperMapExpansionReachTests
@@ -143,11 +144,12 @@ public class WrapperMapExpansionReachTests
     /// <summary>
     ///     The remedy's SHARP EDGE, measured rather than discovered by the reader. <c>[GenerateMap&lt;A, B&gt;]</c>
     ///     emits its own <c>B Map(A)</c>, so adding it to a class that already declares a
-    ///     <c>partial B Map(A)</c> over the same pair is <c>CS0111</c>. The message names that case explicitly;
-    ///     without this test the sentence would be a claim nobody ran.
+    ///     <c>partial B Map(A)</c> over the same pair collides — originally as a raw generated-code
+    ///     <c>CS0111</c>, refused as <c>DWARF094</c> since B27 closed. The message names that case
+    ///     explicitly; without this test the sentence would be a claim nobody ran.
     /// </summary>
     [Fact]
-    public void The_message_names_the_CS0111_edge_and_that_edge_is_real()
+    public void The_message_names_the_DWARF094_edge_and_that_edge_is_real()
     {
         var message = GeneratorAssert.Reports(Types + """
 
@@ -159,10 +161,12 @@ public class WrapperMapExpansionReachTests
             }
             """, "DWARF093")[0].GetMessage(CultureInfo.InvariantCulture);
 
-        Assert.Contains("that is CS0111", message, StringComparison.Ordinal);
+        Assert.Contains("it is refused as DWARF094", message, StringComparison.Ordinal);
 
-        // The edge itself: the naive remedy on a create-map class really does collide.
-        var errors = GeneratorTestHarness.RunAndGetCompilationErrors(Types + """
+        // The edge itself: the naive remedy on a create-map class really does collide — and since B27
+        // closed, the collision arrives as the generator's own refusal, never as CS0111 in a file the
+        // caller cannot edit.
+        const string naiveRemedy = Types + """
 
             [DwarfMapper]
             [GenerateMap<Src, Dst>]
@@ -171,9 +175,12 @@ public class WrapperMapExpansionReachTests
             {
                 public partial Dst Map(Src s);
             }
-            """);
+            """;
 
-        Assert.Contains(errors, d => d.Id == "CS0111");
+        GeneratorAssert.Reports(naiveRemedy, "DWARF094");
+
+        var errors = GeneratorTestHarness.RunAndGetCompilationErrors(naiveRemedy);
+        Assert.DoesNotContain(errors, d => d.Id == "CS0111");
     }
 
     // ── Malformed input, through the guard the expansion path already had ────

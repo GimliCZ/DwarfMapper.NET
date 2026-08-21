@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF093`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF094`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -1557,8 +1557,8 @@ public partial class N
 **Fix:** declare the payload pair as `[GenerateMap<A, B>]` on the class — that is the list this attribute
 expands, and against it `Envelope<Dst> Map(Envelope<Src> src)` is emitted. One sharp edge, measured rather than
 assumed: `[GenerateMap<A, B>]` emits its **own** `B Map(A)`, so adding it to a class that already declares a
-`partial B Map(A)` over the same pair is `CS0111`. There, declare the pair with `[GenerateMap]` *instead of*
-the partial method — which is why the two classes above are separate.
+`partial B Map(A)` over the same pair is refused as [`DWARF094`](#dwarf094). There, declare the pair with
+`[GenerateMap]` *instead of* the partial method — which is why the two classes above are separate.
 
 > **Why refused rather than widened to partial methods.** The attribute is defined *relative to*
 > `[GenerateMap]` — "for every `[GenerateMap<A, B>]` declared on the same class". A partial mapping method is
@@ -1572,6 +1572,51 @@ the partial method — which is why the two classes above are separate.
 > output. `DWARF067` is also an **Error**, and raising it here would strand every partial mapping method on the
 > class behind `CS8795`. A class that *does* declare a pair still gets `DWARF067` for a wrapper that does not
 > qualify.
+
+---
+
+## dwarf094
+**[GenerateMap] duplicates an existing map method** · Error
+
+Every `[GenerateMap]`-synthesized mapping method is named `Map` and overloaded by the **source** (parameter)
+type. Two declarations that produce the same signature **and** the same return type therefore collide — and
+both used to be emitted, so the consumer saw a raw `CS0111` (plus a `CS0121` ambiguity cascade at every call
+site) inside a generated file they never wrote. The collision is reported here instead, **before** anything is
+emitted. It has two shapes:
+
+<!-- fence-exempt: the shape IS the diagnostic; a compiling sample cannot demonstrate a refusal -->
+```csharp
+[DwarfMapper]
+[GenerateMap<Src, Dst>]
+[GenerateMap<Src, Dst>]                 // DWARF094 — the same pair declared twice
+public partial class M
+{
+}
+
+[DwarfMapper]
+[GenerateMap<Src, Dst>]                 // DWARF094 — the partial method below already maps this pair
+public partial class N
+{
+    public partial Dst Map(Src s);
+}
+```
+
+**Fix:** declare each pair exactly once. For the duplicate-attribute shape, remove the duplicate
+`[GenerateMap]`. Where a `partial` method already maps the pair, either remove the `[GenerateMap]` and keep
+the partial method, or delete the partial method and let `[GenerateMap]` emit the map — with one exception:
+a class using `[GenerateWrapperMap]` needs the `[GenerateMap]` form, because the wrapper family expands the
+**pair list** and a partial method is not on it (see [`DWARF093`](#dwarf093)).
+
+> **Why refused rather than deduplicated.** [`DWARF087`](#dwarf087)'s reasoning: silently keeping one of two
+> identical directives hides the mistake from the only person able to fix it — and here the duplicate is not
+> even harmless, because a co-located host's member directives bind to its declared pairs **positionally**, so
+> a duplicated pair shifts which pair a directive configures. It sits in the gap between two neighbours:
+> [`DWARF060`](#dwarf060) covers the same signature with **different** return types, and
+> [`DWARF057`](#dwarf057) covers the generated mapper **type** colliding with an existing type.
+
+> **Why an Error.** Unlike [`DWARF090`](#dwarf090)–[`DWARF093`](#dwarf093), the build could not succeed either
+> way — emitting both members is `CS0111` — so suppressing emission costs nothing and makes this the single
+> actionable statement instead of a compiler error in generated code.
 
 ---
 

@@ -151,16 +151,19 @@ public class GeneratedDocsAreCurrentTests
     private static void AssertCurrent(string relativePath, string expected)
     {
         var path = Path.Combine(RepoRoot, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
         var actual = File.Exists(path) ? File.ReadAllText(path) : null;
         if (string.Equals(Normalise(actual), Normalise(expected), StringComparison.Ordinal)) return;
 
-        File.WriteAllText(path, expected);
-        Assert.Fail(
-            $"{relativePath} was out of date and has been regenerated in your working tree.\n"
-            + "Review the diff and commit it. This test fails rather than healing quietly on purpose: a "
-            + "healing doc test goes green in CI while the file people actually read stays stale.");
+        // ARCH-06: repo writes go through RepoWriteGuard, which refuses them under a Stryker mutation run —
+        // a mutated renderer must never overwrite the real document (T3-H1). The comparison above and the
+        // failure below are unaffected, so every mutant this test kills is still killed.
+        var written = RepoWriteGuard.WriteBack(path, expected);
+        Assert.Fail(written
+            ? $"{relativePath} was out of date and has been regenerated in your working tree.\n"
+              + "Review the diff and commit it. This test fails rather than healing quietly on purpose: a "
+              + "healing doc test goes green in CI while the file people actually read stays stale."
+            : $"{relativePath} is out of date. {RepoWriteGuard.RefusalNotice}");
     }
 
     private static string? Normalise(string? text) =>

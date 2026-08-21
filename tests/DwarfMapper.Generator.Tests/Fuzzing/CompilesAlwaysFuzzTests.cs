@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using DwarfMapper.TestInfrastructure;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
 
 public class CompilesAlwaysFuzzTests
 {
+    // Fast 200 / deep 1000 (×5 — both theories dial together, serial in one class) —
+    // see DeepPopulation.CompilesAlwaysSeeds.
     public static IEnumerable<object[]> Seeds()
     {
-        return Enumerable.Range(0, 200).Select(i => new object[] { i });
+        return Enumerable.Range(0, DeepTier.Count(DeepPopulation.CompilesAlwaysSeeds))
+            .Select(i => new object[] { i });
     }
 
+    // Fast 50 / deep 250 — see DeepPopulation.CompilesAlwaysAdvancedSeeds.
     public static IEnumerable<object[]> AdvancedSeeds()
     {
-        return Enumerable.Range(0, 50).Select(i => new object[] { i });
+        return Enumerable.Range(0, DeepTier.Count(DeepPopulation.CompilesAlwaysAdvancedSeeds))
+            .Select(i => new object[] { i });
     }
 
     [Theory]

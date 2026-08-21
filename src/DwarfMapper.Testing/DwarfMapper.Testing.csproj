@@ -8,5 +8,19 @@
         <!-- CA1510: ThrowIfNull style rule; explicit pattern is fine here. -->
         <!-- CA1032: RoundTripException always requires diff data; parameterless/string ctors would produce useless objects. -->
         <NoWarn>$(NoWarn);CA5394;CA1510;CA1032</NoWarn>
+        <!-- Deep-tier hook: structural pack validation only. NO PackageValidationBaselineVersion here -
+             DwarfMapper.Testing has never been published to nuget.org (verified 2026-08-21), so there is
+             no baseline package to download; add one with the first real publish. -->
+        <EnablePackageValidation>true</EnablePackageValidation>
     </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all"/>
+        <!-- No BannedApiAnalyzers here: reflection is this package's product (seeded fuzzing,
+             structural comparison), so the runtime's reflection ban list must not apply. -->
+    </ItemGroup>
+    <ItemGroup>
+        <AdditionalFiles Include="PublicAPI.Shipped.txt"/>
+        <AdditionalFiles Include="PublicAPI.Unshipped.txt"/>
+    </ItemGroup>
 </Project>

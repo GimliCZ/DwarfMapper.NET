@@ -1,6 +1,7 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
@@ -31,6 +32,7 @@ internal enum EnumStringSource
 ///     Adding a parameter beside it means every one of those has to be edited correctly, and a site that was
 ///     missed would silently fall back to the default — the failure this option exists to prevent.
 /// </remarks>
+[StructLayout(LayoutKind.Auto)]
 internal readonly struct EnumPolicy
 {
     public EnumPolicy(EnumStrategy strategy, EnumStringSource stringSource)

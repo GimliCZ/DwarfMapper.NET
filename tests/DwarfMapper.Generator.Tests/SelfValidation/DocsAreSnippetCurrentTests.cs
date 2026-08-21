@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper.DocTooling;
+using DwarfMapper.Generator.Tests.Contracts;
 
 namespace DwarfMapper.Generator.Tests.SelfValidation;
 
@@ -68,16 +69,22 @@ public class DocsAreSnippetCurrentTests
 
             if (string.Equals(Normalise(committed), Normalise(injected), StringComparison.Ordinal)) continue;
 
-            File.WriteAllText(Path.Combine(RepoLayout.Root, relative), injected);
+            // ARCH-06: repo writes go through RepoWriteGuard, which refuses them under a Stryker mutation
+            // run. This is the write that emptied README.md, CONTRIBUTING.md and docs/diagnostics.md when
+            // the DocTooling leg mutated the very renderers producing `injected` (T3-H1). The staleness
+            // detection and the failure below are unaffected, so the leg's kills are unaffected.
+            RepoWriteGuard.WriteBack(Path.Combine(RepoLayout.Root, relative), injected);
             stale.Add(relative);
         }
 
         Assert.True(stale.Count == 0,
-            "Snippet(s) in these documents no longer match the sample code they came from. Each file has "
-            + "been regenerated in your working tree — review the diff and commit it:\n  "
+            "Snippet(s) in these documents no longer match the sample code they came from:\n  "
             + string.Join("\n  ", stale)
-            + "\n\nThis fails rather than healing quietly on purpose: a healing doc test goes green in CI "
-            + "while the file people read stays stale.");
+            + (RepoWriteGuard.IsMutationRun
+                ? "\n\n" + RepoWriteGuard.RefusalNotice
+                : "\n\nEach file has been regenerated in your working tree — review the diff and commit it."
+                  + "\nThis fails rather than healing quietly on purpose: a healing doc test goes green in "
+                  + "CI while the file people read stays stale."));
     }
 
     private static string Normalise(string text) =>

@@ -61,6 +61,7 @@ public partial class Sec_FmtMapper
     public partial Sec_FmtDst Map(Sec_FmtSrc s);
 }
 
+[Collection("culture-swap")] // the culture-footgun tests swap CurrentCulture to de-DE; see CultureSwapCollection
 public class SecurityRegressionRuntimeTests
 {
     [Fact]
