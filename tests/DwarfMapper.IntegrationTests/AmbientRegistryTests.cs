@@ -125,6 +125,24 @@ public sealed class AmbientRegistryTests
         Assert.Throws<ArgumentNullException>(() => DwarfMapperRegistry.Register(typeof(S1), typeof(D1), null!));
     }
 
+    /// <summary>
+    ///     The primary map entry point must refuse null arguments AS ArgumentNullException, naming the
+    ///     offending parameter — not surface whatever downstream failure a null happens to hit (an NRE from
+    ///     <c>GetType()</c>, or a missing-map throw for a key built around null). E3-E1 hole 3: both guard
+    ///     statements on <see cref="DwarfMapperRegistry.Map" /> could be deleted with no test noticing.
+    /// </summary>
+    [Fact]
+    public void Map_null_arguments_throw_with_the_offending_parameter_named()
+    {
+        var forSource = Assert.Throws<ArgumentNullException>(
+            () => DwarfMapperRegistry.Map(null!, typeof(D1)));
+        Assert.Equal("source", forSource.ParamName);
+
+        var forDestination = Assert.Throws<ArgumentNullException>(
+            () => DwarfMapperRegistry.Map(new S1(), null!));
+        Assert.Equal("destination", forDestination.ParamName);
+    }
+
     // --- per-test type families (distinct so registrations never collide across tests) ---
     private sealed class S1
     {
