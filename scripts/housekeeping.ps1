@@ -8,13 +8,15 @@
 #   pwsh scripts/housekeeping.ps1 -Mutation       # also run Stryker mutation testing (very slow)
 #   pwsh scripts/housekeeping.ps1 -Heal           # regenerate AnalyzerReleases rows (self-heal) then test
 #   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
+#   pwsh scripts/housekeeping.ps1 -ILVerify       # ILVerify the shipped runtime + a generated-consumer assembly
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 param(
     [switch]$SkipAot,
     [switch]$SkipExhaustion,
     [switch]$Mutation,
     [switch]$Heal,
-    [switch]$Coverage
+    [switch]$Coverage,
+    [switch]$ILVerify
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -151,6 +153,64 @@ try {
         Write-Host "Running native AOT binary: $($bin.FullName)"
         & $bin.FullName
         if ($LASTEXITCODE) { throw "AotBench reported AOT instability (exit $LASTEXITCODE)" }
+    }
+
+    if ($ILVerify) {
+        Write-Host "== ILVerify (install: dotnet tool install -g dotnet-ilverify) ==" -ForegroundColor Cyan
+        # Resolve against the newest installed net10 REF PACK — the contract surface the compiler resolved
+        # against — rather than shared/Microsoft.NETCore.App. Verified empirically 2026-08-21: the ref pack
+        # resolves everything both assemblies need (ilverify 10.0.11).
+        $refPack = Get-ChildItem (Join-Path $env:ProgramFiles 'dotnet/packs/Microsoft.NETCore.App.Ref') -Directory |
+                   Where-Object { $_.Name -like '10.*' } | Sort-Object Name -Descending | Select-Object -First 1
+        if (-not $refPack) { throw "ilverify: no net10 ref pack found under dotnet/packs" }
+        $refPackGlob = Join-Path $refPack.FullName 'ref/net10.0/*.dll'
+
+        # Known-unverifiable methods. NEVER a blanket suppression: each entry is ONE exact method whose
+        # unverifiable IL is a deliberate source construct, named here. Anything else fails the stage.
+        $knownUnverifiable = @{
+            # samples/DwarfMapper.Gallery/18_SpanMap.cs lines 25-26: two `stackalloc` buffers in the
+            # sample's HAND-WRITTEN Run() — localloc at IL_0003/IL_002F plus the cpblk initializer copy at
+            # IL_001E — demonstrating the zero-alloc span overload. stackalloc is unverifiable IL by design.
+            # The generator-emitted Mapper::Map(ReadOnlySpan<int>, Span<long>) itself verifies clean.
+            'DwarfMapper.Gallery.Ex18.Example::Run()' = 'stackalloc (localloc + cpblk) in hand-written sample code'
+        }
+        # '(?!)' never matches: with an EMPTY known map, an empty pattern would match every line and turn
+        # the filter into a blanket suppression — exactly the failure mode this stage exists to prevent.
+        $knownPattern = if ($knownUnverifiable.Count -gt 0) {
+            ($knownUnverifiable.Keys | ForEach-Object { [regex]::Escape($_) }) -join '|'
+        } else { '(?!)' }
+
+        # Targets: the SHIPPED runtime, and the Gallery — a generated-consumer assembly whose IL contains
+        # generator-emitted mapping code including the blit/SIMD paths (21_BlittableSimd, 22_Reinterpret).
+        # The Gallery's bin dir doubles as its own dependency root (DwarfMapper.dll etc. are copied there).
+        $targets = @(
+            @{ Dll = 'src/DwarfMapper/bin/Release/net10.0/DwarfMapper.dll'; ExtraRefs = @() }
+            @{ Dll = 'samples/DwarfMapper.Gallery/bin/Release/net10.0/DwarfMapper.Gallery.dll'
+               ExtraRefs = @('samples/DwarfMapper.Gallery/bin/Release/net10.0/*.dll') }
+        )
+        foreach ($target in $targets) {
+            $dll = Join-Path $root $target.Dll
+            if (-not (Test-Path $dll)) { throw "ilverify: $($target.Dll) not built - build the solution Release first" }
+            $refArgs = @('-r', $refPackGlob)
+            foreach ($extra in $target.ExtraRefs) { $refArgs += @('-r', (Join-Path $root $extra)) }
+            $out = @(& ilverify $dll @refArgs | ForEach-Object { $_.ToString() })
+            $exit = $LASTEXITCODE
+            $out | ForEach-Object { Write-Host "   $_" -ForegroundColor DarkGray }
+            $errors = @($out | Where-Object { $_ -match '\[IL\]:\s*Error' })
+            $unexpected = @($errors | Where-Object { $_ -notmatch $knownPattern })
+            if ($unexpected) {
+                throw ("ilverify: unexpected IL errors in $($target.Dll):`n" + ($unexpected -join "`n"))
+            }
+            if ($exit -ne 0 -and $errors.Count -eq 0) {
+                # Nonzero exit with no [IL] error lines means the tool itself failed (bad -r resolution,
+                # missing file...) — never treat that as a pass.
+                throw "ilverify: exited $exit for $($target.Dll) without reporting IL errors - tool failure"
+            }
+            $known = $errors.Count - $unexpected.Count
+            if ($known -gt 0) {
+                Write-Host "   $($target.Dll): $known known-unverifiable finding(s), all matched to declared source constructs" -ForegroundColor DarkGray
+            }
+        }
     }
 
     if ($Mutation) {
