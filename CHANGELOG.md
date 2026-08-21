@@ -31,6 +31,24 @@ so a version with no section here ships with no notes.
   retention cost, stretched over a lazy sequence.) Pinned by *executing* tests
   (`ElementWiseReferenceHandlingRuntimeTests`), each mode sabotage-verified red before the fix; the
   `EmittedInvalidCodeCellCeiling` re-measured 10 → **8**. (round 21, T6/B33)
+- **`[GenerateMap<A, B>]` colliding with an existing map over the same pair was a bare `CS0111` out of
+  generated code.** Every `[GenerateMap]`-synthesized method is named `Map` and overloaded by the *source*
+  type, so the same pair declared twice — or declared beside a `partial B Map(A)` over the same pair — would
+  emit two members with an identical signature *and* return type: `CS0111` plus a `CS0121` ambiguity cascade
+  at every call site, about a collision the generator created (B27; eight surface-matrix
+  `EmittedInvalidCode` cells). It is now refused as the new **`DWARF094`**, an Error, reported *before*
+  anything is emitted — the gap between **`DWARF060`** (same signature, *different* return types) and
+  **`DWARF057`** (the generated mapper *type* collides) is closed. The message names which of the two shapes
+  it met and the way out of each: remove the duplicate attribute, or declare the pair once — keep the
+  partial method, or keep the `[GenerateMap]` (the `[GenerateWrapperMap]` family needs the latter, and
+  `DWARF093`'s sharp-edge sentence now points here instead of narrating the raw `CS0111`). Refused rather
+  than deduplicated for `DWARF087`'s reason — keeping one of two identical directives silently hides the
+  mistake — plus one sharper: a co-located host's member directives bind to declared pairs *positionally*,
+  so a duplicated pair shifts which pair a directive configures. Wrapper-expanded pairs flow through the
+  same detection, and the legal neighbours are pinned: a *differently-named* partial over the same pair and
+  two pairs sharing only a source or only a target stay accepted. The `EmittedInvalidCodeCellCeiling`
+  re-measured 8 → **0** — the population this repository says must not exist, actually emptied. (round 21,
+  T6/B27)
 - **`[DwarfMapperConstructor]` was accepted and ignored by the `[MapTo]` registry.** The directive names the
   constructor DwarfMapper must build a target with; the registry front door selects no constructor *at all*
   — there is no `ConstructorSelector` call anywhere under `Registry/` — and builds every type it constructs
@@ -104,7 +122,8 @@ so a version with no section here ships with no notes.
   mapping *methods*, the opt-in was read by nobody at every one of the five mapper endpoints: no wrapper map,
   no refusal. It is now refused as the new **`DWARF093`** (a Warning, so the mapper is still emitted), naming
   the working form — and naming its one sharp edge, which was measured: `[GenerateMap<A, B>]` emits its own
-  `B Map(A)`, so adding it beside a `partial B Map(A)` over the same pair is `CS0111`, and there the pair must
+  `B Map(A)`, so adding it beside a `partial B Map(A)` over the same pair collides (originally a raw
+  `CS0111`; refused as `DWARF094` since round 21), and there the pair must
   be declared with `[GenerateMap]` *instead of* the partial method. Refused rather than widened, argued from
   what the attribute means: it is defined relative to `[GenerateMap]`, a partial mapping method is a different
   declaration mechanism, and four of the five endpoints — update-into, projection, span map, async stream —

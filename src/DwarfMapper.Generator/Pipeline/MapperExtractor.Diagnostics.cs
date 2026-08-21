@@ -61,8 +61,8 @@ internal static partial class MapperExtractor
                     + "async-stream map have no create-map shape to wrap at all. Declare the payload pair as "
                     + "[GenerateMap<A, B>] on this class, which is the list this attribute expands. Note that "
                     + "[GenerateMap<A, B>] emits its own `B Map(A)`, so on a class that already declares a "
-                    + "`partial B Map(A)` over the SAME pair that is CS0111 — there, declare the pair with "
-                    + "[GenerateMap] INSTEAD of the partial method."));
+                    + "`partial B Map(A)` over the SAME pair it is refused as DWARF094 — there, declare the "
+                    + "pair with [GenerateMap] INSTEAD of the partial method."));
                 continue;
             }
 

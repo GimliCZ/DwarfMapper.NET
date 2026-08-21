@@ -272,12 +272,15 @@ public sealed class SurfaceParityTests
     ///         a <c>.g.cs</c> file.
     ///     </para>
     ///     <para>
-    ///         <b>Eight are the shape already filed as B27</b>: <c>[GenerateMap&lt;Src, Dst&gt;]</c> on a
-    ///         class that also declares a <c>partial Dst Map(Src)</c> over the same pair — and the ×2 case,
-    ///         which is that collision twice. The generator emits its own <c>Map</c> beside the one it is
-    ///         implementing and the consumer gets <c>CS0111</c> plus a <c>CS0121</c> cascade, with no
-    ///         DwarfMapper diagnostic about a collision the generator created. B27 says exactly that, and
-    ///         names <c>DWARF060</c> and <c>DWARF057</c> as the ids either side of the gap.
+    ///         <b>Eight were the shape filed as B27</b>: <c>[GenerateMap&lt;Src, Dst&gt;]</c> on a class that
+    ///         also declares a <c>partial Dst Map(Src)</c> over the same pair — and the ×2 case, which is
+    ///         that collision twice. The generator emitted its own <c>Map</c> beside the one it was
+    ///         implementing and the consumer got <c>CS0111</c> plus a <c>CS0121</c> cascade, with no
+    ///         DwarfMapper diagnostic about a collision the generator created. <b>Closed as B27</b> (8 → 0):
+    ///         the gap B27 named between <c>DWARF060</c> and <c>DWARF057</c> is now <c>DWARF094</c>, an
+    ///         Error raised in the same signature pass <c>DWARF060</c> runs in, where identical-with-identical
+    ///         used to fall through a <c>continue</c> labelled "a duplicate-pair concern" that nothing
+    ///         downstream owned. All eight cells read <see cref="SurfaceEffect.Refused" /> now.
     ///     </para>
     ///     <para>
     ///         <b>Two more were <c>[DwarfMapper(ReferenceHandling = Preserve)]</c> at <c>SpanMap</c> and
@@ -301,7 +304,7 @@ public sealed class SurfaceParityTests
     ///         than pretending otherwise. What it bought immediately is that an eleventh cannot appear quietly.
     ///     </para>
     /// </summary>
-    private const int EmittedInvalidCodeCellCeiling = 8;
+    private const int EmittedInvalidCodeCellCeiling = 0;
 
     /// <summary>
     ///     The cells where the generator emitted code the C# compiler rejects, counted, with the ids that

@@ -369,35 +369,33 @@ public sealed class SurfaceProbeTests
         new DiagnosticDescriptor(id, id, id, "Dwarf", severity, isEnabledByDefault: true), Location.None);
 
     /// <summary>
-    ///     THE DISCRIMINATION, direction two: a compiler error against the GENERATOR'S OWN OUTPUT reads
-    ///     <see cref="SurfaceEffect.EmittedInvalidCode" />, not <see cref="SurfaceEffect.NotCompilable" />
-    ///     and not <see cref="SurfaceEffect.Refused" />.
+    ///     THE DISCRIMINATION, direction two — and the history of its exemplar. Two
+    ///     <c>[GenerateMap&lt;Src, Dst&gt;]</c> attributes over a class that also declares
+    ///     <c>partial Dst Map(Src)</c> used to make the generator emit that method again — <c>CS0111</c> in
+    ///     <c>Demo.M.g.cs</c> plus the <c>CS0121</c> cascade — and this test held that cell to
+    ///     <see cref="SurfaceEffect.EmittedInvalidCode" /> (before the verdict existed it read
+    ///     <c>NotCompilable</c>, which its own doc comment then called honest; the declaration was telling
+    ///     the truth, the GENERATOR was not). The collision was filed as <b>B27</b> and is FIXED: the shape
+    ///     is refused as <c>DWARF094</c> before anything is emitted, which this test now pins end-to-end —
+    ///     if the refusal regressed, the cell would fall back to <c>EmittedInvalidCode</c> and both this
+    ///     assertion and the ceiling's zero would go red.
     ///     <para>
-    ///         Two <c>[GenerateMap&lt;Src, Dst&gt;]</c> attributes over a class that also declares
-    ///         <c>partial Dst Map(Src)</c> make the generator emit that method again — <c>CS0111</c> in
-    ///         <c>Demo.M.g.cs</c>, plus the <c>CS0121</c> ambiguity that follows. The site is perfectly legal
-    ///         per <c>AttributeUsage</c>, so this is exactly the case a rule keyed on "is the site legal"
-    ///         would get wrong, and it is also the case that shows why the verdict cannot be keyed on the CS
-    ///         id: <c>CS0111</c> against the caller's own duplicate member would be a placement rejection.
-    ///         Where the error was reported is the whole discrimination.
-    ///     </para>
-    ///     <para>
-    ///         This test read <c>NotCompilable</c> until the verdict existed, and its own doc comment called
-    ///         that "the honest verdict for the C# compiler rejected this, and the declaration was telling
-    ///         the truth". The declaration was telling the truth; the GENERATOR was not. The collision is
-    ///         filed as <b>B27</b>.
+    ///         The verdict rule itself does not lose its proof by the population emptying — that is the
+    ///         design stated on <see cref="EmittedCodeErrorIds_flags_an_error_reported_against_a_generated_file" />:
+    ///         the location predicate is pure and pinned in both directions below, so on a healthy day the
+    ///         rule stays provably right with nothing in the matrix to point at.
     ///     </para>
     /// </summary>
     [Fact]
-    public void A_compiler_error_against_generated_code_is_EmittedInvalidCode()
+    public void The_duplicate_generated_map_collision_reads_Refused_now_that_B27_is_fixed()
     {
         var c = Case("GenerateMap", "×2", AttributeTargets.Class);
 
         var (effect, detail) = SurfaceProbe.Classify(c, Endpoint.CreateMap);
 
-        Assert.Equal(SurfaceEffect.EmittedInvalidCode, effect);
-        Assert.Contains("CS0111", detail, StringComparison.Ordinal);
-        Assert.Contains("in generated code", detail, StringComparison.Ordinal);
+        Assert.Equal(SurfaceEffect.Refused, effect);
+        Assert.Contains("DWARF094", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("in generated code", detail, StringComparison.Ordinal);
     }
 
     /// <summary>

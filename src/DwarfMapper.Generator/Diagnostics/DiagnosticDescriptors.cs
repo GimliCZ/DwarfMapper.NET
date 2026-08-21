@@ -1320,4 +1320,45 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf093");
+
+    /// <summary>
+    ///     A <c>[GenerateMap&lt;S, T&gt;]</c> would synthesize a <c>Map</c> method whose exact signature AND
+    ///     return type this class already produces — either the same pair is declared twice, or the class
+    ///     declares a partial mapping method over the same pair.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Both shapes used to reach the compiler as a bare <c>CS0111</c> plus a <c>CS0121</c> ambiguity
+    ///         cascade, reported against the GENERATED file — a collision the generator created, announced by
+    ///         nobody. Filed as <b>B27</b>, and measured before it was filed: eight surface-matrix cells sat
+    ///         in the <c>EmittedInvalidCode</c> population for exactly this. It is the gap between two
+    ///         neighbours: <c>DWARF060</c> covers the same signature with DIFFERENT return types (an
+    ///         overload-by-return-type clash between two pairs), and <c>DWARF057</c> covers the generated
+    ///         mapper TYPE colliding with an existing type — a generated member duplicating an existing map
+    ///         over the SAME pair was neither.
+    ///     </para>
+    ///     <para>
+    ///         Refused rather than deduplicated, for <c>DWARF087</c>'s reason: silently keeping one of two
+    ///         identical directives hides the mistake from the only person able to fix it — and here the
+    ///         duplicate is not even harmless, because a co-located host's member directives bind to its
+    ///         declared pairs POSITIONALLY, so a duplicated pair shifts which pair a directive configures.
+    ///         The declared-partial variant matters doubly because <c>DWARF093</c>'s remedy sends a
+    ///         <c>[GenerateWrapperMap]</c> caller to add <c>[GenerateMap&lt;A, B&gt;]</c>, and on a create-map
+    ///         class that lands exactly here — the caller must arrive at a named refusal, not a raw compiler
+    ///         error.
+    ///     </para>
+    ///     <para>
+    ///         An <b>Error</b>, like <c>DWARF060</c> and <c>DWARF087</c>: the build could not succeed either
+    ///         way, and an Error makes this the single actionable statement instead of the <c>CS0111</c> it
+    ///         replaces. The full, formatted message is built at the call site (<c>{0}</c>) because it names
+    ///         the colliding pair and which of the two shapes it met.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor DuplicateGenerateMapSignature = new(
+        "DWARF094",
+        "[GenerateMap] duplicates an existing map method",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        "DwarfMapper names every [GenerateMap]-synthesized mapping method `Map` and overloads it by the SOURCE (parameter) type, so a pair declared twice — or declared beside a partial mapping method over the same pair — would emit two members with an identical signature and return type: CS0111 in a generated file the caller never wrote. The collision is reported here instead, before anything is emitted. Declare each pair exactly once: keep one [GenerateMap] per pair, and where a partial method already maps the pair, either remove the [GenerateMap] or give the partial method a different name.",
+        HelpBase + "dwarf094");
 }

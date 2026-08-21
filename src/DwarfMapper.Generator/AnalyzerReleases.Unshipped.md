@@ -99,6 +99,7 @@ DWARF090 | DwarfMapper | Warning | Member directive is not applied element-wise
 DWARF091 | DwarfMapper | Warning | Mapping hook on a partial method with no body
 DWARF092 | DwarfMapper | Warning | Directive is not read at this mapping endpoint
 DWARF093 | DwarfMapper | Warning | [GenerateWrapperMap] has no declared pair to expand
+DWARF094 | DwarfMapper | Error | [GenerateMap] duplicates an existing map method
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

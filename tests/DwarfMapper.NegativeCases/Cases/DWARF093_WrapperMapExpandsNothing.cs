@@ -20,7 +20,7 @@
 // EXPECT-MESSAGE DWARF093: [GenerateWrapperMap(typeof(WrapEnvelope<>))] on 'WrapperFamilyMapper' expands nothing
 // EXPECT-MESSAGE DWARF093: this class declares none
 // EXPECT-MESSAGE DWARF093: Declare the payload pair as [GenerateMap<A, B>] on this class
-// EXPECT-MESSAGE DWARF093: that is CS0111
+// EXPECT-MESSAGE DWARF093: it is refused as DWARF094
 
 using DwarfMapper;
 
