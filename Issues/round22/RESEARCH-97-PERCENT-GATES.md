@@ -393,3 +393,15 @@ own numbers support:
    so ALL legs run EVERY night — no alternating rotation. The static-mutant attribution research remains
    worthwhile for wall-time but is no longer the enabling constraint. T5 should assemble the nightly with
    everything included and simply record the measured total; the fast tier's cap is unchanged.
+
+### H2 ruling — 2026-08-21: SonarAnalyzer REJECTED outright
+
+The maintainer rejected the SSAL, citing its key rules as problematic for this project: the no-competing-
+services restriction; the **no-unapproved-AI clause** (this repository is actively developed with AI
+tooling, making the restriction directly applicable, ambiguous, and disqualifying); the requirement that
+derivative works be bound to SSAL and released publicly; and the notice-preservation obligations layered on
+top. The LGPL-3.0 9.x pin is not adopted either — the line is frozen and aging, and the research already
+recommended against gating on it. **Sonar is dropped entirely.** The symbolic-execution coverage gap it
+would have filled remains addressed by CodeQL (already in CI) and the round-22 differential/metamorphic arc,
+which pressure the same defect classes (always-true/false conditions, null-dereference paths) through
+execution rather than static symbolic analysis.
