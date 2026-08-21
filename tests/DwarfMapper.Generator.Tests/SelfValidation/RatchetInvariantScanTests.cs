@@ -164,12 +164,18 @@ public class RatchetInvariantScanTests
         ["generator|proven-equivalent"] = 16,
         ["generator|probably-equivalent"] = 8,
         ["doctooling|proven-equivalent"] = 1,
-        ["runtime|proven-equivalent"] = 1,
+        // Round-22 P2 grew the runtime rows by two, each with its proof in the E3-E1 round-22 appendix
+        // (same commit): the facade TryGet-guard && -> || (proven — the operands co-vary via the
+        // TryGetValue out-contract and Register's ThrowIfNull) and the FormatMessage 'Count: > 1'
+        // boundary (probably — divergence needs a 1-element list only an off-contract direct ctor call
+        // can supply).
+        ["runtime|proven-equivalent"] = 2,
         ["runtime|ruled-in-practice"] = 1,
+        ["runtime|probably-equivalent"] = 1,
     };
 
-    private const int PinnedEntryRows = 10;
-    private const int PinnedTotalOccurrences = 27;
+    private const int PinnedEntryRows = 12;
+    private const int PinnedTotalOccurrences = 29;
 
     [Fact]
     public void R3_the_equivalents_ledger_counts_are_exactly_pinned_and_every_entry_is_proof_anchored()

@@ -40,13 +40,16 @@ recomputes the ceilings in the same commit.
 |---|---|---:|---:|---:|---:|---:|---:|
 | generator | `stryker-config.json` | 201 | 71.64 % (2026-08-19, run `12-10-18`) | 16 | 0 | 8 | 92.03 % |
 | doctooling | `stryker-config.doctooling.json` | 284 | 67.96 % (2026-08-21, H7 phase-2 re-measure) | 1 | 0 | 0 | 99.64 % |
-| runtime | `stryker-config.runtime.json` | 113 | 87.61 % (2026-08-21, T7 re-measure) | 1 | 1 | 0 | 99.11 % |
+| runtime | `stryker-config.runtime.json` | 113 | 96.46 % (2026-08-21, P2 re-measure) | 2 | 1 | 1 | 98.23 % |
 
 Fuller arithmetic, carried from the research (context, not gates): the generator leg's *realistic* raw
 ceiling is lower than 92.03 — the 8 probably-equivalent survivors and the 11 NoCoverage mutants T3 judged
 unreachable-branch/defensive/dead-code-question cap the killable set at ≈ 167/201 = 83.08 % raw until the
-maintainer's dead-code rulings (research Q2) land. The runtime figure net of the ruled-in-practice entry
-is 111/113 = 98.23 %. The research's oft-quoted "generator ≈ 89.8 ceiling" is 167/186 — an
+maintainer's dead-code rulings (research Q2) land. The runtime figure net of the ruled-in-practice and
+probably-equivalent entries is 109/113 = 96.46 % raw — and net of the filed-uncoverable
+`Key.Equals(object)` override (E3-E1 hole 7, a denominator question awaiting the maintainer, not a ledger
+entry) the leg's currently killable set is exactly that 109. The research's oft-quoted
+"generator ≈ 89.8 ceiling" is 167/186 — an
 **adjudicated-denominator** figure that predates ruling (b); it is not a raw number and no raw gate may
 be set from it.
 
@@ -101,13 +104,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "runtime": {
       "config": "stryker-config.runtime.json",
       "scoreable": 113,
-      "measuredRawScore": 87.61,
+      "measuredRawScore": 96.46,
       "measuredOn": "2026-08-21",
-      "provenEquivalent": 1,
+      "provenEquivalent": 2,
       "ruledInPractice": 1,
-      "probablyEquivalent": 0,
-      "rawCeiling": 99.11,
-      "rawCeilingFormula": "(113 - 1) / 113"
+      "probablyEquivalent": 1,
+      "rawCeiling": 98.23,
+      "rawCeilingFormula": "(113 - 2) / 113"
     }
   },
   "entries": [
@@ -236,6 +239,34 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "category": "proven-equivalent",
       "proof": "The two forms differ on exactly one input, maxDepth == 1, and agree there: the original falls through '1 > AbsoluteMaxDepth' (false) and yields maxDepth = 1; the mutant takes the clamp branch and yields the literal 1. Identical output for every input. (The sibling L77 Conditional-false mutant is a REAL hole - E3-E1 #8 - not this entry.)",
       "anchor": "Issues/ledgers/E3-E1-report.md § the equivalent mutant (DwarfRefContext L77 Equality)"
+    },
+    {
+      "leg": "runtime",
+      "file": "src/DwarfMapper/IDwarfMapper.cs",
+      "member": "DwarfMapperFacade.Map<TSource, TDestination>(TSource) (TryGet fast-path guard)",
+      "lineAtProof": 73,
+      "lineCurrent": 73,
+      "mutator": "Logical",
+      "original": "DwarfMapperRegistry.TryGet(typeof(TSource), typeof(TDestination), out var map) && map is not null",
+      "mutated": "that && -> ||",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The operands co-vary on every reachable input: ConcurrentDictionary.TryGetValue sets the out value to default (null) exactly when it returns false, and the dictionary can never hold a null delegate because Register ThrowIfNull-guards it before TryAdd. Only (true, true) and (false, false) are reachable, and && and || agree on both; evaluation order is unchanged (TryGet stays the left operand). The 'map is not null' arm exists for nullable flow analysis, not as a reachable branch. (E3-E1 hole 13 re-examined in round-22 P2: the 'independently asserted' framing presumed the operands could be driven apart.)",
+      "anchor": "Issues/ledgers/E3-E1-report.md § Round-22 P2 appendix, proven equivalent (facade TryGet guard)"
+    },
+    {
+      "leg": "runtime",
+      "file": "src/DwarfMapper/DwarfMapExceptions.cs",
+      "member": "FormatMessage (ambiguous-branch guard)",
+      "lineAtProof": 86,
+      "lineCurrent": 86,
+      "mutator": "Equality (recursive pattern)",
+      "original": "ambiguousInterfaces is { Count: > 1 }",
+      "mutated": "ambiguousInterfaces is { Count: >= 1 }",
+      "occurrences": 1,
+      "category": "probably-equivalent",
+      "proof": "Diverges only on a ONE-element list, which DwarfMapperRegistry.Map can never construct the exception with: a single accepting interface resolves (candidates.Count == 1 returns before the throw), so Map passes null or a >= 2-element list. The only distinguishing input is a direct public-ctor call with a 1-element list, which the ctor's own doc excludes ('when there was more than one') - a test on it would pin undocumented off-contract behaviour. Probably rather than proven because that call IS expressible; the grade records the plan's P2 disposition: adjudicate, do not chase.",
+      "anchor": "Issues/ledgers/E3-E1-report.md § Round-22 P2 appendix, probably equivalent (Count: > 1 boundary); Issues/ledgers/round21-sdd-ledger.md § T7"
     },
     {
       "leg": "runtime",

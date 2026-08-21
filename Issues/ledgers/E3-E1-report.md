@@ -504,6 +504,67 @@ It was reverted, not committed. Two consequences:
 It is not worth a guard on its own, but if generated docs ever gain a ratchet that runs in the same session as
 the mutation leg, the two will fight, and this is the reason.
 
+## Round-22 P2 appendix (2026-08-21) — the post-T7 remainder, dispositioned
+
+T7 (round 21) killed the three C6-named survivors and re-measured the leg at 87.61 % (99 K / 12 S / 2 NC of
+113 scoreable). Round-22 P2 works the remainder. Holes 2–3 (the `Map`/`Update` guard deletions), the three
+remedy string tails of hole 11 (L98/L101/L104 at the T7 measurement) and no-coverage hole 10 (`TryEnterNode`)
+are killed test-side — `AmbientRegistryTests.Map_null_arguments_throw_with_the_offending_parameter_named`,
+`RegistryUpdateContractTests.Update_null_arguments_throw_with_the_offending_parameter_named`, the extended
+remedy-tail assertions in `RegistryInterfaceLookupTests.A_lazy_iterator_with_no_map_at_all_is_told_to_materialize`
+/ `DwarfExceptionContractTests.A_plain_type_is_told_to_declare_the_pair`, and the new
+`DwarfRefContextOnStackGuardTests`. Two survivors are adjudicated into
+`Issues/ledgers/equivalent-mutants.md` with the proofs below, and hole 7 is FILED as killable only via a
+product change. This section is the proof anchor the ledger entries point at.
+
+### Proven equivalent — the facade `TryGet` guard `&&` → `||` (hole 13, `IDwarfMapper.cs` L73)
+
+The guard is `DwarfMapperRegistry.TryGet(typeof(TSource), typeof(TDestination), out var map) && map is not
+null`. The two operands cannot disagree on any reachable input, so flipping the connective changes nothing:
+
+- `TryGet` forwards `ConcurrentDictionary.TryGetValue`, whose contract sets the `out` value to `default`
+  (null) exactly when it returns `false` — so **false ⇒ `map is null`**.
+- The dictionary's values can never BE null: `Register` is the only writer and it
+  `ThrowIfNull`-guards the delegate before `TryAdd` — so **true ⇒ `map is not null`**.
+
+The operands therefore co-vary — the only reachable states are (true, true) and (false, false) — and on
+those `&&` and `||` agree (evaluation order and side effects are unchanged: the `TryGet` call is the left
+operand under both connectives). E3's "missing case" framing ("the two conditions are not independently
+asserted") presumed the operands could be driven apart; they cannot, which is the T3 bar for
+proven-equivalent. No test is attempted — the `map is not null` arm exists to satisfy nullable flow
+analysis, not as a reachable branch.
+
+### Probably equivalent — the ambiguous-branch guard `Count: > 1` → `>= 1` (hole-11 residue, `DwarfMapExceptions.cs` L86)
+
+`FormatMessage` takes the ambiguous branch on `ambiguousInterfaces is { Count: > 1 }`. The mutant diverges
+only on a **one-element** list. `DwarfMapperRegistry.Map` can never produce one: a single accepting
+interface RESOLVES (the `candidates!.Count == 1` path returns before the throw), so the exception is
+constructed with either null or a ≥2-element list. The only remaining path is calling the public ctor
+directly with a 1-element list — an input its own documentation excludes (`ambiguousInterfaces` is passed
+"when there was more than one") — so a killing test would pin undocumented off-contract behaviour, which is
+implementation trivia, not an invariant. Graded probably-equivalent rather than proven because that direct
+ctor call IS expressible; the grade records the judgement that it should not be written, per the plan's P2
+disposition ("adjudicate rather than chase").
+
+### FILED, not killed — `Key.Equals(object)` no-coverage (hole 7, `DwarfMapperRegistry.cs` L285–288)
+
+`Key` is a **private** nested struct. Its `IEquatable<Key>.Equals` is what `ConcurrentDictionary`'s default
+comparer calls; the `object`-typed override is reachable only by boxing a `Key`, which no public surface
+does. A test-side kill therefore requires bypassing accessibility by reflection — rejected by the house
+accessibility stance — so per the P2 rule ("killable only via product change: stop and file") the item is
+filed rather than killed: the candidate remedy is the one-word `private` → `internal` on the nested struct
+(`[InternalsVisibleTo("DwarfMapper.Generator.Tests")]` already exists) plus a contract test pinning
+equal-pair → true, half-matching pair → false, non-`Key` object → false, null → false. NOT entered in the
+equivalents ledger — an uncovered override is a coverage/denominator question, which that ledger's own
+rules exclude; the maintainer may instead prefer a denominator ruling (the D-b `ResetForTests` precedent).
+Recorded in `Issues/round20/TASKS.md` as a new finding.
+
+### The re-measure
+
+See the RE-MEASURED 2026-08-21 (round-22 P2) entry in `stryker-config.runtime.json`'s comment and the
+refreshed runtime row of `Issues/ledgers/equivalent-mutants.md` — the score, `break` move and ledger
+summary land in the same commit as this appendix.
+
 ## Superseded history on this branch
 
 Two earlier decisions are left in the history deliberately, because both were measured and the reasoning is
