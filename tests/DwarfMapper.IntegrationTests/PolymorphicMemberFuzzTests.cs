@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 
 namespace DwarfMapper.IntegrationTests;
@@ -91,12 +92,21 @@ public sealed class PolymorphicMemberFuzzTests
         Assert.All(profile.ByChannel.Values, Assert.NotNull);
     }
 
+    /// <summary>
+    ///     Fast = exactly the original five hand-picked seeds; deep (fast 5 / deep 45 — see
+    ///     <see cref="DeepPopulation.PolymorphicGraphSeeds" />) extends with the contiguous seeds 9-48,
+    ///     which do not repeat the fast five.
+    /// </summary>
+    public static IEnumerable<object[]> GraphSeeds()
+    {
+        int[] fastSeeds = [1, 2, 3, 5, 8];
+        var n = DeepTier.Count(DeepPopulation.PolymorphicGraphSeeds);
+        for (var i = 0; i < n; i++)
+            yield return [i < fastSeeds.Length ? fastSeeds[i] : i + 4];
+    }
+
     [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(5)]
-    [InlineData(8)]
+    [MemberData(nameof(GraphSeeds))]
     public void Mapping_a_fuzzed_abstract_membered_graph_dispatches_on_the_runtime_type(int seed)
     {
         var profile = ObjectFactory.Create<AlertProfile>(seed);

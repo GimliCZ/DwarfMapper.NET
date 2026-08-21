@@ -19,11 +19,15 @@ namespace DwarfMapper.Testing.Tests;
 /// </summary>
 public class ObjectFactoryV2DistributionTests
 {
-    private const int Seeds = 400;
+    // Fast 400 / deep 4000 — see DeepPopulation.ObjectFactoryDistributionSeeds. Every reach assertion
+    // below is an existence (Contains) or depth-property claim, so more seeds only strengthen it.
+    private static readonly int Seeds =
+        TestInfrastructure.DeepTier.Count(TestInfrastructure.DeepPopulation.ObjectFactoryDistributionSeeds);
 
-    private static IEnumerable<object?> Sample(Type t, int seeds = Seeds, int depth = 0)
+    private static IEnumerable<object?> Sample(Type t, int? seeds = null, int depth = 0)
     {
-        for (var seed = 0; seed < seeds; seed++)
+        var count = seeds ?? Seeds;
+        for (var seed = 0; seed < count; seed++)
             yield return ObjectFactoryV2.Create(t, new Random(seed), depth);
     }
 

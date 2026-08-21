@@ -4,6 +4,7 @@ using System.Collections;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
@@ -12,7 +13,8 @@ public class BehavioralFuzzTests
 {
     public static IEnumerable<object[]> Seeds()
     {
-        return Enumerable.Range(0, 60).Select(i => new object[] { i });
+        // Fast 60 / deep 600 — see DeepPopulation.BehavioralSeeds.
+        return Enumerable.Range(0, DeepTier.Count(DeepPopulation.BehavioralSeeds)).Select(i => new object[] { i });
     }
 
     [Theory]

@@ -47,4 +47,9 @@
     <ItemGroup>
         <Using Include="Xunit"/>
     </ItemGroup>
+    <ItemGroup>
+        <!-- The DWARF_DEEP tier knob is ONE shared source of truth, linked (not copied) into every test
+             project that owns a dialable population; DeepTierSelfTests pins its catalog. -->
+        <Compile Include="..\Shared\DeepTier.cs" Link="Shared\DeepTier.cs"/>
+    </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Concurrent;
+using DwarfMapper.TestInfrastructure;
 
 namespace DwarfMapper.IntegrationTests;
 
@@ -49,6 +50,12 @@ namespace DwarfMapper.IntegrationTests;
 ///         The first version of that observer was weaker still, at 2 of 60: it polled inside a
 ///         <c>try</c>/<c>catch</c>, so every poll before the first registration landed threw
 ///         <c>DwarfMapMissingException</c> and the observer spent the contested window unwinding stacks.
+///     </para>
+///     <para>
+///         The round counts discussed above (60 create / 240 update) are the FAST tier and still run on
+///         every <c>dotnet test</c>; under <c>DWARF_DEEP=1</c> both sides run ×4
+///         (<see cref="DwarfMapper.TestInfrastructure.DeepPopulation.TortureCreateRounds" /> /
+///         <see cref="DwarfMapper.TestInfrastructure.DeepPopulation.TortureUpdateRounds" />).
 ///     </para>
 /// </summary>
 [Collection("registry-torture")]
@@ -127,7 +134,9 @@ public sealed class RegistryConcurrencyTortureTests
         // One storm is also not enough: a single key is contested for microseconds and an observer thread
         // may not be scheduled inside that window at all. So the experiment is repeated over many FRESH
         // keys, and the violation counter accumulates across all of them.
-        const int rounds = 60;
+        // Fast 60 (the measured-power count in the class remarks) / deep 240 (×4, the multiplier the
+        // update side needed for a comfortable detection margin) — see DeepPopulation.TortureCreateRounds.
+        var rounds = DeepTier.Count(DeepPopulation.TortureCreateRounds);
         var replacementsSeen = 0;
         var allFailures = new List<Exception>();
 
@@ -404,7 +413,9 @@ public sealed class RegistryConcurrencyTortureTests
         // 240, not the create side's 60: the update observer must poll through Update (which invokes the
         // delegate) rather than TryGet, so it samples the contested window far less densely. See the power
         // figures in the class remarks — at 60 rounds the check-then-act mutant scored as low as 1.
-        const int rounds = 240;
+        // Fast 240 (measured power: check-then-act caught 23/54/58 of 240 vs 1/6/7 of 60) / deep 960 (×4,
+        // more samples inside the contested window) — see DeepPopulation.TortureUpdateRounds.
+        var rounds = DeepTier.Count(DeepPopulation.TortureUpdateRounds);
         var replacementsSeen = 0;
         var allFailures = new List<Exception>();
 

@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using DwarfMapper.Generator.Tests.Fuzzing;
+using DwarfMapper.TestInfrastructure;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
 
@@ -48,15 +49,16 @@ public class CultureInvarianceFuzzTests
         }
     }
 
+    // Fast 8 / deep 80 — see DeepPopulation.CultureBehavioralSeeds.
+    public static IEnumerable<object[]> BehavioralSeeds() =>
+        Enumerable.Range(0, DeepTier.Count(DeepPopulation.CultureBehavioralSeeds)).Select(i => new object[] { i });
+
+    // Fast 4 / deep 40 — see DeepPopulation.CultureAdvancedSeeds.
+    public static IEnumerable<object[]> AdvancedSeeds() =>
+        Enumerable.Range(0, DeepTier.Count(DeepPopulation.CultureAdvancedSeeds)).Select(i => new object[] { i });
+
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(5)]
-    [InlineData(6)]
-    [InlineData(7)]
+    [MemberData(nameof(BehavioralSeeds))]
     public void Behavioral_schema_output_is_identical_under_tr_TR_and_invariant(int seed)
     {
         var src = SyntheticSchema.GenerateBehavioral(seed);
@@ -68,10 +70,7 @@ public class CultureInvarianceFuzzTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
+    [MemberData(nameof(AdvancedSeeds))]
     public void Advanced_feature_schema_output_is_identical_under_de_DE_and_invariant(int seed)
     {
         var src = SyntheticSchema.Generate(seed);

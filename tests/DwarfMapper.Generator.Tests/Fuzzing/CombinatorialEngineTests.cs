@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Reflection;
 using System.Text;
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 using Microsoft.CodeAnalysis;
 
@@ -267,8 +268,10 @@ public class ExtendedBehavioralFuzzTests
 {
     public static IEnumerable<object[]> Seeds()
     {
-        return Enumerable.Range(200, 40).Select(i => new object[] { i });
-        // seeds 200-239, no overlap with existing
+        // Fast 40 (seeds 200-239, no overlap with existing) / deep 400 (seeds 200-599) —
+        // see DeepPopulation.ExtendedBehavioralSeeds.
+        return Enumerable.Range(200, DeepTier.Count(DeepPopulation.ExtendedBehavioralSeeds))
+            .Select(i => new object[] { i });
     }
 
     [Theory]

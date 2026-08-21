@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.TestInfrastructure;
+
 namespace DwarfMapper.Generator.Tests.Fuzzing;
 
 /// <summary>
@@ -16,8 +18,9 @@ public class DeterminismFuzzTests
     // Broad-loop determinism: the same byte-identical double-run check across a wide contiguous seed range
     // (not just the hand-picked seeds above), so output stability is verified over the same broad surface the
     // compile/behavioural fuzz covers — not a thin sample.
+    // Fast 120 / deep 1200 — see DeepPopulation.DeterminismBroadSeeds.
     public static IEnumerable<object[]> BroadSeeds =>
-        Enumerable.Range(0, 120).Select(i => new object[] { i });
+        Enumerable.Range(0, DeepTier.Count(DeepPopulation.DeterminismBroadSeeds)).Select(i => new object[] { i });
 
     // GenerateBehavioral covers scalars, conversions, nullable, collections, dictionaries, enums, nesting.
     [Theory]

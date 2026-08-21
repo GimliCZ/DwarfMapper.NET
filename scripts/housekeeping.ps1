@@ -9,6 +9,7 @@
 #   pwsh scripts/housekeeping.ps1 -Heal           # regenerate AnalyzerReleases rows (self-heal) then test
 #   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
 #   pwsh scripts/housekeeping.ps1 -ILVerify       # ILVerify the shipped runtime + a generated-consumer assembly
+#   pwsh scripts/housekeeping.ps1 -Deep           # DWARF_DEEP=1 for stage 1: multiplied fuzz/property/torture counts
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 param(
     [switch]$SkipAot,
@@ -16,7 +17,8 @@ param(
     [switch]$Mutation,
     [switch]$Heal,
     [switch]$Coverage,
-    [switch]$ILVerify
+    [switch]$ILVerify,
+    [switch]$Deep
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -87,6 +89,12 @@ try {
     }
 
     Write-Host "== 1/4 Full self-test suite ==" -ForegroundColor Cyan
+    if ($Deep) {
+        # One knob, one reader: tests/Shared/DeepTier.cs. Multiplies every registered fuzz/property/torture
+        # population per its catalog entry; the fast tier (unset) is byte-for-byte the routine counts.
+        $env:DWARF_DEEP = '1'
+        Write-Host "   (deep tier: DWARF_DEEP=1)" -ForegroundColor DarkGray
+    }
     $covDir = Join-Path $root 'TestResults/coverage'
     $testArgs = @()
     if ($Coverage) {
@@ -99,6 +107,7 @@ try {
         $testArgs = @('--collect:XPlat Code Coverage', '--results-directory', $covDir)
     }
     dotnet test DwarfMapper.NET.sln -c Release --nologo @testArgs
+    if ($Deep) { Remove-Item Env:DWARF_DEEP }
     if ($LASTEXITCODE) { throw "self-test suite failed" }
 
     if ($Coverage) {

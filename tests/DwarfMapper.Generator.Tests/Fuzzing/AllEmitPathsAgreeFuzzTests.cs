@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DwarfMapper.TestInfrastructure;
 using DwarfMapper.Testing;
 
 namespace DwarfMapper.Generator.Tests.Fuzzing;
@@ -16,7 +17,9 @@ namespace DwarfMapper.Generator.Tests.Fuzzing;
 /// </summary>
 public class AllEmitPathsAgreeFuzzTests
 {
-    public static IEnumerable<object[]> Seeds() => Enumerable.Range(0, 50).Select(i => new object[] { i });
+    // Fast 50 / deep 250 (×5, not ×10 — ~300 ms per seed) — see DeepPopulation.AllEmitPathsSeeds.
+    public static IEnumerable<object[]> Seeds() =>
+        Enumerable.Range(0, DeepTier.Count(DeepPopulation.AllEmitPathsSeeds)).Select(i => new object[] { i });
 
     [Theory]
     [MemberData(nameof(Seeds))]
