@@ -19,6 +19,7 @@
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit"/>
         <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="coverlet.collector"/>
         <!-- The oracles. Mapperly is a source generator like DwarfMapper, so it is referenced as an analyzer;
              AutoMapper is a runtime library. Both licence-compatible — see Directory.Packages.props. -->
         <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all"/>

@@ -7,15 +7,36 @@
 #   pwsh scripts/housekeeping.ps1 -SkipExhaustion # skip the ~6 min full power-set
 #   pwsh scripts/housekeeping.ps1 -Mutation       # also run Stryker mutation testing (very slow)
 #   pwsh scripts/housekeeping.ps1 -Heal           # regenerate AnalyzerReleases rows (self-heal) then test
+#   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 param(
     [switch]$SkipAot,
     [switch]$SkipExhaustion,
     [switch]$Mutation,
-    [switch]$Heal
+    [switch]$Heal,
+    [switch]$Coverage
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Coverage floors — per-assembly LINE coverage, percent. MEASURED, not aspired-to: each value is the
+# full-suite Release measurement (coverlet XPlat collector merged by ReportGenerator) rounded DOWN to one
+# decimal place ([math]::Floor(x*10)/10), so run-to-run float noise cannot flip the gate — that truncation
+# is the only slack, no cushion is added on top. The gate is line coverage; branch coverage is printed as
+# informational only. Raising a floor to a new measured value is the normal move; lowering one demands a
+# written reason in the commit that lowers it.
+#
+# Measured 2026-08-21 on cedad48 plus this commit's collector refs (7,669 tests) — line / branch:
+#   DwarfMapper 77.7/76.1 · Generator 93.8/87.4 · DocTooling 90.7/84.2 · CodeFixes 92.4/68.4 · Testing 83.2/82.2
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+$coverageFloors = [ordered]@{
+    'DwarfMapper'            = 77.7
+    'DwarfMapper.Generator'  = 93.8
+    'DwarfMapper.DocTooling' = 90.7
+    'DwarfMapper.CodeFixes'  = 92.4
+    'DwarfMapper.Testing'    = 83.2
+}
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 # Stryker EXITS 0 when its `mutate` filter matches nothing. Every mutant comes back "Removed by mutate
@@ -64,8 +85,50 @@ try {
     }
 
     Write-Host "== 1/4 Full self-test suite ==" -ForegroundColor Cyan
-    dotnet test DwarfMapper.NET.sln -c Release --nologo
+    $covDir = Join-Path $root 'TestResults/coverage'
+    $testArgs = @()
+    if ($Coverage) {
+        # Collect during the SAME stage-1 run rather than in a second pass: the suite is the cost driver
+        # (measured 2026-08-21: 74.5 s plain, 92.9 s collecting, both Release/--no-build), so folding the
+        # collector in prices -Coverage at ~+18 s instead of a whole extra suite run. Stale cobertura
+        # files from a previous run would merge silently and corrupt the floor comparison — wipe first
+        # (the coverage analog of Assert-MutantsWereTested's -Since filter).
+        if (Test-Path $covDir) { Remove-Item -Recurse -Force $covDir }
+        $testArgs = @('--collect:XPlat Code Coverage', '--results-directory', $covDir)
+    }
+    dotnet test DwarfMapper.NET.sln -c Release --nologo @testArgs
     if ($LASTEXITCODE) { throw "self-test suite failed" }
+
+    if ($Coverage) {
+        Write-Host "== 1b Coverage floors (install: dotnet tool install -g dotnet-reportgenerator-globaltool) ==" -ForegroundColor Cyan
+        # TestResults/ is git-ignored, so both the raw cobertura files and the rendered report stay out of
+        # the repo tree. The HTML report is for humans; the gate reads Summary.json.
+        $reportDir = Join-Path $root 'TestResults/coverage-report'
+        reportgenerator "-reports:$covDir/**/coverage.cobertura.xml" "-targetdir:$reportDir" `
+            '-reporttypes:Html;JsonSummary;TextSummary' `
+            ('-assemblyfilters:+' + ($coverageFloors.Keys -join ';+'))
+        if ($LASTEXITCODE) { throw "coverage: ReportGenerator failed" }
+        $summary = Get-Content -Raw -LiteralPath (Join-Path $reportDir 'Summary.json') | ConvertFrom-Json
+        $failures = @()
+        foreach ($name in $coverageFloors.Keys) {
+            $asm = @($summary.coverage.assemblies | Where-Object { $_.name -eq $name })
+            if (-not $asm) {
+                # The vacuity guard — the same reason Assert-MutantsWereTested exists: a renamed or
+                # dropped assembly must FAIL the gate, not silently fall out of it.
+                $failures += "coverage: assembly '$name' is missing from the merged report - the gate cannot see it"
+                continue
+            }
+            # Same rounding rule as the floors: truncate to one decimal, computed from the raw line
+            # counts rather than trusting the report's own culture-formatted percentage strings.
+            $measured = [math]::Floor($asm[0].coveredlines / $asm[0].coverablelines * 1000) / 10
+            Write-Host ("   {0}: line {1}% (floor {2}%), branch {3}% (informational)" -f `
+                $name, $measured, $coverageFloors[$name], $asm[0].branchcoverage) -ForegroundColor DarkGray
+            if ($measured -lt $coverageFloors[$name]) {
+                $failures += "coverage: $name line coverage $measured% fell below the measured floor $($coverageFloors[$name])%"
+            }
+        }
+        if ($failures) { throw ($failures -join [Environment]::NewLine) }
+    }
 
     if (-not $SkipExhaustion) {
         Write-Host "== 2/4 Full exhaustion (DWARF_FUZZ_FULL=1, ~6 min) ==" -ForegroundColor Cyan
