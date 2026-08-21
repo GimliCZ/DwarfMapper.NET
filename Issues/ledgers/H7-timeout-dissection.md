@@ -372,3 +372,15 @@ Controller-approved implementation of §5 items 1–3, on branch `feat/round21-d
 DocTooling **0** (this run); generator **0** (2026-08-19.12-10-18, authoritative, zero flips); runtime — the
 single historical Timeout was clock noise on a mutant that cannot hang (§0), already resolved by
 `additional-timeout: 120000`. **Exit criterion met: no leg's score rides on a wall-clock classification.**
+
+## §5 item 4 closed — the runner-level backstop landed (round-21 T5, 2026-08-21)
+
+`--blame-hang --blame-hang-timeout 5m` is now on every plain `dotnet test` step: CI's `build-test`,
+`surface-matrix` and `roslyn-forward-compat` jobs, and the suite stage of `scripts/housekeeping.ps1` —
+which is also what the nightly `deep-test` CI job executes via `-Nightly`, so the deep tier (where the
+multiplied populations make a future product hang most likely to surface first) is bounded too. Verified
+locally against the repo's invocation shape (flags + the XPlat coverage collector in one run: accepted,
+"all tests completed, sequence file not generated", coverage attachment produced). Per §4, the Stryker
+legs deliberately do NOT carry it — the per-mutant ceiling already plays that role there, and a second
+killer would fight it. 5m is ~3× the longest observed single-test runtime in the bounded stages; the
+exhaustion stage (one multi-minute test by design) is also excluded.
