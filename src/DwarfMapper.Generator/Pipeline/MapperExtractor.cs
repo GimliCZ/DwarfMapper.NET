@@ -2505,7 +2505,13 @@ internal static partial class MapperExtractor
             {
                 var m = methods[i];
                 if (!m.IsRecursionCapable) continue; // only pairs that can re-enter
-                if (!m.ParameterIsReferenceType) continue; // value types never form ref cycles
+                // Value types never form ref cycles — but the span / async-stream models record their
+                // PARAMETER (a span struct / IAsyncEnumerable) here, not their ELEMENT, and it is the
+                // element pair whose converter carries the on-stack guard. Without this exemption the
+                // element-wise emitters allocated their shared DwarfRefContext without `setNull: true`,
+                // so the guard the converter runs had no stack set behind it.
+                if (!m.ParameterIsReferenceType && !m.IsSpanMap && !m.IsAsyncStreamMap)
+                    continue;
                 methods[i] = m with { IsSetNullMode = true };
             }
 

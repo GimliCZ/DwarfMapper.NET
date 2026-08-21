@@ -15,6 +15,22 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **The span map and the async-stream map emitted code that did not compile when the element converter
+  carried the reference-tracking tail.** Under `ReferenceHandling = Preserve` every auto-nested element
+  mapper takes a `(DwarfRefContext, int)` tail, and the element-wise emissions called it without one —
+  **`CS7036`** in the generated file, at both endpoints, with no DwarfMapper word (the surface matrix's two
+  `EmittedInvalidCode` cells, filed as B33). The same missing tail was reachable with no `Preserve` in
+  sight: a *recursive* element pair under default `None` handling, and under `OnCycle = SetNull` — where a
+  second sibling gap compounded it, the SetNull post-pass skipping the span/async models because it read
+  their *parameter* type (a span struct) where the *element* is what cycles. Both emitters now allocate
+  **one shared `DwarfRefContext` per call** and thread it into every element — the identity-map scope the
+  top-level collection path already gives a `List<T>` map, which is what made correct emission the
+  non-ambiguous choice over a refusal: under `Preserve`, two span slots or two stream elements holding the
+  same source object land the **same** target instance, and a child shared between two elements stays one
+  child. (For an async stream that identity map lives as long as the iterator — the collection path's
+  retention cost, stretched over a lazy sequence.) Pinned by *executing* tests
+  (`ElementWiseReferenceHandlingRuntimeTests`), each mode sabotage-verified red before the fix; the
+  `EmittedInvalidCodeCellCeiling` re-measured 10 → **8**. (round 21, T6/B33)
 - **`[DwarfMapperConstructor]` was accepted and ignored by the `[MapTo]` registry.** The directive names the
   constructor DwarfMapper must build a target with; the registry front door selects no constructor *at all*
   — there is no `ConstructorSelector` call anywhere under `Registry/` — and builds every type it constructs

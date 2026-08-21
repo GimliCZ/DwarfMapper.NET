@@ -678,6 +678,17 @@ internal static class MapEmitter
         // ConfiguredCancelableAsyncEnumerable<T>, whose ConfigureAwait IS an instance method — hence the two
         // shapes below.
         const string ext = "global::System.Threading.Tasks.TaskAsyncEnumerableExtensions.";
+
+        // A ctx-carrying element converter needs the shared DwarfRefContext threaded per call, exactly as
+        // the top-level collection path threads it (one context per CALL, shared across all elements) — so
+        // two stream elements holding the same source object yield the SAME target instance under Preserve.
+        // Without this the call below is missing the converter's required (ctx, depth) tail: CS7036 in the
+        // generated file (B33). Note the retention cost is the collection path's, stretched over a lazy
+        // sequence: under Preserve the identity map lives as long as the iterator does.
+        var elem = method.Members.Count > 0 ? method.Members[0] : null;
+        if (elem?.ConverterMethod is not null && elem.ConverterNeedsDepthCtx)
+            EmitElementContext(sb, method, indent);
+
         sb.Append(indent).Append("    await foreach (var __item in ");
         if (ct is not null)
             sb.Append(ext).Append("WithCancellation(").Append(src).Append(", ").Append(ct)
@@ -686,15 +697,40 @@ internal static class MapEmitter
             sb.Append(ext).Append("ConfigureAwait(").Append(src).Append(", false)");
         sb.AppendLine(")");
 
-        var elem = method.Members.Count > 0 ? method.Members[0] : null;
         sb.Append(indent).Append("        yield return ");
         if (elem?.ConverterMethod is null)
             // Direct/implicit element conversion.
             sb.Append("__item");
         else
-            sb.Append(elem.ConverterMethod).Append("(__item)");
+        {
+            sb.Append(elem.ConverterMethod).Append("(__item");
+            if (elem.ConverterNeedsDepthCtx) sb.Append(", __dwarf_ctx, 0");
+            sb.Append(')');
+        }
+
         sb.AppendLine(";");
         sb.Append(indent).AppendLine("}");
+    }
+
+    /// <summary>
+    ///     Emits the shared <c>DwarfRefContext</c> local for an element-wise method (span / async-stream)
+    ///     whose element converter carries the <c>(ctx, depth)</c> tail. Mirrors the public-method context
+    ///     creation in <see cref="EmitMethod" /> flag for flag: <c>preserve: true</c> under
+    ///     <see cref="MapMethodModel.IsPreserveMode" />, <c>setNull: true</c> under
+    ///     <see cref="MapMethodModel.IsSetNullMode" />, plain depth guard otherwise. ONE context per call,
+    ///     shared across every element — the same identity-map scope the top-level collection conversion
+    ///     already gives a <c>List&lt;T&gt;</c> map, so element-wise endpoints preserve references ACROSS
+    ///     elements, not merely inside each one.
+    /// </summary>
+    private static void EmitElementContext(StringBuilder sb, MapMethodModel method, string indent)
+    {
+        sb.Append(indent).Append("    var __dwarf_ctx = new global::DwarfMapper.DwarfRefContext(")
+            .Append(method.MaxDepth.ToString(CultureInfo.InvariantCulture));
+        if (method.IsPreserveMode)
+            sb.Append(", true");
+        else if (method.IsSetNullMode)
+            sb.Append(", preserve: false, setNull: true");
+        sb.AppendLine(");");
     }
 
     /// <summary>
@@ -720,15 +756,27 @@ internal static class MapEmitter
             .Append(".Length + \") is smaller than the source span (length \" + ")
             .Append(src).Append(".Length + \").\", nameof(").Append(dst).AppendLine("));");
 
+        // Same shared-context rule as the async-stream emission above (see EmitElementContext): a
+        // ctx-carrying element converter gets ONE DwarfRefContext for the whole call, so two span slots
+        // holding the same source object land the SAME target instance under Preserve. Without it the call
+        // below is missing the converter's required (ctx, depth) tail: CS7036 in the generated file (B33).
+        var elem = method.Members.Count > 0 ? method.Members[0] : null;
+        if (elem?.ConverterMethod is not null && elem.ConverterNeedsDepthCtx)
+            EmitElementContext(sb, method, indent);
+
         sb.Append(indent).Append("    for (int __i = 0; __i < ").Append(src).AppendLine(".Length; __i++)");
         sb.Append(indent).Append("        ").Append(dst).Append("[__i] = ");
 
-        var elem = method.Members.Count > 0 ? method.Members[0] : null;
         if (elem?.ConverterMethod is null)
             // Direct/implicit element assignment (e.g. int → long widening).
             sb.Append(src).Append("[__i]");
         else
-            sb.Append(elem.ConverterMethod).Append('(').Append(src).Append("[__i])");
+        {
+            sb.Append(elem.ConverterMethod).Append('(').Append(src).Append("[__i]");
+            if (elem.ConverterNeedsDepthCtx) sb.Append(", __dwarf_ctx, 0");
+            sb.Append(')');
+        }
+
         sb.AppendLine(";");
 
         sb.Append(indent).AppendLine("}");
