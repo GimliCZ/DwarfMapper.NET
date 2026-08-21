@@ -555,3 +555,21 @@ test-infra-holes pattern, NOT judged equivalent — by file (line/mutator from t
 
 Triage of these 43 (real hole vs. equivalent, per the house judgement format used for the original 11) is
 follow-up work — raising `break` back up happens only by killing them, never by re-measuring luck.
+
+## H5 — generator floor re-validated under the RepoWriteGuard (2026-08-19 run, closed 2026-08-21)
+
+The H1 defect inflated DocTooling's floor by 43 artifact kills, so the generator leg's `break: 71` had to be
+re-earned under the guard. Re-run `2026-08-19.12-10-18` (the analyst agent was cut off by a usage limit after
+launching it; the run itself completed and the comparison was finished by the controller):
+
+- **Wall-clock 19:41** (12:10:18 → 12:29:59), quiet machine. T3's 21:02 confirmed as the right ballpark.
+- **Score 71.64% — identical**: Killed 144, Survived 46, NoCoverage 11, Ignored 204, CompileError 66.
+- **Per-mutant diff vs the pre-guard run (`06-41-40`): 471 mutants, zero status flips.** The generator leg
+  carried none of the corpus-self-corruption artifact class; its kills do not route through the
+  doc-comparison assertions that DocTooling's 43 phantom kills did.
+- **Timeout: 0** in both accepted generator runs. The two Timeouts existed only in T3's first, load-noisy
+  run (`06-17-43`) on `static` mutants — load noise, not hangs. Relevant to H7: the generator leg is already
+  clock-clean; the genuine-hang population lives in the DocTooling leg (2 Timeout in `11-49-34`).
+
+**`break: 71` stands, unchanged — validated by re-measurement, not inherited.** Post-run `git status` clean:
+the guard held on the generator leg too (first time it ran under it).
