@@ -372,3 +372,24 @@ own numbers support:
   <https://github.com/benchmark-action/github-action-benchmark>
 - NuGet lock files / repeatable restore —
   <https://devblogs.microsoft.com/dotnet/enable-repeatable-package-restores-using-a-lock-file/>
+
+---
+
+## Maintainer rulings — 2026-08-21, session Q&A
+
+1. **The reframe is ACCEPTED**: 97% delivered as per-dimension honest targets; the generator-mutation and
+   surface-matrix dimensions ship adjudicated-denominator targets plus proven ceilings, never a gamed raw
+   number.
+2. **In-source adjudication markers are REJECTED** ("No in-source markers"). Equivalent mutants stay
+   **ledger-only**: no `// Stryker disable once` adjudication comments in product code. Consequence, stated
+   plainly: raw scores stay depressed by the proven-equivalent residue, and every gate/floor works on the RAW
+   measured score, with the ceiling gap carried as a **documented offset** (the equivalents ledger with its
+   per-mutant proofs and an exact-pinned count). The mandatory-raise invariant (R2) still applies to the raw
+   score. The generator leg's honest asymptote is therefore its ~89.8% raw ceiling, and "97%" for that leg
+   formally means: raw floor at ceiling-with-proof, offset ledger discharged. (H7's existing
+   `Stryker disable all` around the DocSnippetInjector progress guard predates this ruling and guards
+   test-infrastructure honesty, not score adjudication — it stays.)
+3. **The 44-minute deep-tier ceiling is RAISED** ("Raise the ceiling"): the nightly budget may exceed 44 min
+   so ALL legs run EVERY night — no alternating rotation. The static-mutant attribution research remains
+   worthwhile for wall-time but is no longer the enabling constraint. T5 should assemble the nightly with
+   everything included and simply record the measured total; the fast tier's cap is unchanged.
