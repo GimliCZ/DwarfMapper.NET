@@ -117,6 +117,8 @@ public class RepoWriteGuardTests
         {
             ["DwarfMapper.Generator.Tests/Contracts/RepoWriteGuard.cs"] =
                 (2, "the guard itself — the only place a guarded write is performed"),
+            ["DwarfMapper.Generator.Tests/SelfValidation/GateBandLogicTests.cs"] =
+                (1, "WriteTemp helper: fake Stryker reports + the pwsh battery script, temp directory only"),
             ["DwarfMapper.Generator.Tests/SelfValidation/GeneratedDocsAreCurrentTests.cs"] =
                 (1, "HasGitMarker probe writing a fake .git file into a temp directory"),
             ["DwarfMapper.Generator.Tests/SelfValidation/RepoWriteGuardTests.cs"] =

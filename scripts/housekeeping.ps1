@@ -30,6 +30,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
+# The R2 mandatory-raise band checks (invariant R2, Issues/round22/RESEARCH-97-PERCENT-GATES.md §3) live
+# in their own function-only file so GateBandLogicTests can drive them against fake inputs in both
+# failure directions without executing this script's stages.
+. (Join-Path $PSScriptRoot 'gate-checks.ps1')
+
 # -Nightly is an AGGREGATE, not a new stage: it pins the exact switch set the CI deep-test job runs
 # (.github/workflows/ci.yml), so a maintainer reproduces the nightly locally with one switch and the two
 # cannot drift apart. It skips exhaustion and AOT (exhaustion is a default local stage, AOT has its own
@@ -282,9 +287,10 @@ try {
             $measured = [math]::Floor($asm[0].coveredlines / $asm[0].coverablelines * 1000) / 10
             Write-Host ("   {0}: line {1}% (floor {2}%), branch {3}% (informational)" -f `
                 $name, $measured, $coverageFloors[$name], $asm[0].branchcoverage) -ForegroundColor DarkGray
-            if ($measured -lt $coverageFloors[$name]) {
-                $failures += "coverage: $name line coverage $measured% fell below the measured floor $($coverageFloors[$name])%"
-            }
+            # Both directions gate (invariant R2): below the floor is a regression, >= 1.0 pp above it is
+            # a floor that stopped equalling the measurement - raise it in this commit.
+            $bandFailure = Test-CoverageWithinBand -AssemblyName $name -Measured $measured -Floor $coverageFloors[$name]
+            if ($bandFailure) { $failures += $bandFailure }
         }
         if ($failures) { throw ($failures -join [Environment]::NewLine) }
     }
@@ -415,6 +421,8 @@ try {
         dotnet stryker
         if ($LASTEXITCODE) { throw "mutation score below break threshold (generator)" }
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
 
         # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
         # this leg the doc tests are trusted on the strength of being green — the evidence a vacuous test
@@ -424,6 +432,8 @@ try {
         dotnet stryker --config-file stryker-config.doctooling.json
         if ($LASTEXITCODE) { throw "mutation score below break threshold (doc tooling)" }
         Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
 
         # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
         # facade and the exception types have no derivable case-space — no AttributeUsage to decompose, no
@@ -434,6 +444,8 @@ try {
         dotnet stryker --config-file stryker-config.runtime.json
         if ($LASTEXITCODE) { throw "mutation score below break threshold (runtime)" }
         Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green
