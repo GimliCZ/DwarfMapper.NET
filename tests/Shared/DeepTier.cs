@@ -104,7 +104,15 @@ public enum DeepPopulation
     PolymorphicGraphSeeds,
 
     /// <summary>ObjectFactoryV2DistributionTests sample count per type. Deep ×10 (in-process sampling, cheap).</summary>
-    ObjectFactoryDistributionSeeds
+    ObjectFactoryDistributionSeeds,
+
+    /// <summary>
+    ///     RegistryPropertyTests CsCheck <c>iter</c> for the three ambient-registry contract properties.
+    ///     Deep ×10 — each iteration is a handful of <c>ConcurrentDictionary</c> operations against
+    ///     pre-declared closed types, in-process and allocation-light, the same cost class as
+    ///     <see cref="DocPipelineIters" />.
+    /// </summary>
+    RegistryPropertyIters
 }
 
 /// <summary>
@@ -145,7 +153,8 @@ public static class DeepTier
         [DeepPopulation.TortureCreateRounds] = (60, 240),
         [DeepPopulation.TortureUpdateRounds] = (240, 960),
         [DeepPopulation.PolymorphicGraphSeeds] = (5, 45),
-        [DeepPopulation.ObjectFactoryDistributionSeeds] = (400, 4000)
+        [DeepPopulation.ObjectFactoryDistributionSeeds] = (400, 4000),
+        [DeepPopulation.RegistryPropertyIters] = (200, 2000)
     };
 
     /// <summary>The count a call site should run with right now (fast unless <see cref="Enabled" />).</summary>
