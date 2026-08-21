@@ -112,11 +112,14 @@ internal static class DeclaredDivergences
         ["MaxDepth"] = new(
             "honoured at CreateMap and UpdateInto, silent at the span and async-stream endpoints. Found only "
             + "once a RECURSIVE fixture existed — a fixed-depth chain never exercises a depth BUDGET, so the "
-            + "row read 'not probed' and claimed nothing. The element pair's depth guard comes from the "
-            + "auto-synthesized mapper rather than the method model, so adding MaxDepth to the span/async "
-            + "models (done, for consistency with their siblings) changes no output. Lower severity than it "
-            + "sounds: the default bound of 64 still applies, so this is a tighter bound being ignored, not "
-            + "unguarded recursion",
+            + "row read 'not probed' and claimed nothing. Narrowed but not closed by B33: when the element "
+            + "converter carries the (ctx, depth) tail — a recursive element pair, or any pair under "
+            + "Preserve/SetNull — the span/async models' MaxDepth now sizes the shared DwarfRefContext and "
+            + "IS honoured (ElementWiseReferenceHandlingRuntimeTests pins the depth throw). THESE cells stay "
+            + "divergent because their fixture pair is non-recursive under None handling, so no context is "
+            + "created and the option still changes nothing. Lower severity than it sounds: the default "
+            + "bound of 64 still applies where a guard exists at all, so this is a tighter bound being "
+            + "ignored, not unguarded recursion",
             Findings + "#MaxDepth",
             [new DivergentCell("DwarfMapper", 0, "MaxDepth=1", AttributeTargets.Class,
                 SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)],

@@ -350,11 +350,13 @@ internal static partial class MapperExtractor
                     "",
                     IsSpanMap: true,
                     SpanTargetParameterName: method.Parameters[1].Name,
-                    // The create and update models carry MaxDepth and these did not, which is an omission
-                    // relative to its siblings. Passing it changes no generated output that any test can see:
-                    // the depth guard for an element pair comes from the synthesized mapper, not this model.
-                    // Kept for consistency, NOT claimed as a fix — the gap it looks like it should close is
-                    // recorded in DeclaredDivergences.Reasons["MaxDepth"], still open.
+                    // The create and update models carry MaxDepth and these did not, which was an omission
+                    // relative to its siblings. Since B33 it is READ: when the element converter carries the
+                    // (ctx, depth) tail, EmitElementContext sizes the shared DwarfRefContext from this value,
+                    // and a cyclic element under None throws DwarfMappingDepthException at exactly this depth
+                    // (pinned in ElementWiseReferenceHandlingRuntimeTests). The MaxDepth OPTION divergence in
+                    // DeclaredDivergences.Reasons["MaxDepth"] is still open for the non-ctx-tailed case — a
+                    // non-recursive element pair creates no context, so the option changes nothing there.
                     MaxDepth: maxDepth));
                 continue;
             }
