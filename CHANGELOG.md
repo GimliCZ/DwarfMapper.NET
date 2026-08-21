@@ -413,6 +413,94 @@ so a version with no section here ships with no notes.
   found") — safe, but the reason is wrong, since the method is plainly there. See
   `Issues/round17/roslyn-5-upgrade-opportunities.md`.
 - **This file**, and a release-workflow step that publishes the matching section as the release notes.
+- **The initial diagnostic surface — the 76 ids that predate this file, announced retroactively.** DwarfMapper
+  has never shipped, so nothing was ever mis-announced: this Unreleased section becomes the first release's
+  notes, and with this block those notes carry every diagnostic the first release ships. They are announced as
+  one block, in id order per severity, rather than attributed to a per-version history that never existed.
+  Severities are the descriptors' defaults; each id's full trigger-and-remedy documentation is its section in
+  `docs/diagnostics.md` (the IDE "learn more" link).
+
+  **Errors** — the mapping is incomplete or the configuration is invalid; the build fails:
+  - `DWARF002` — a class annotated `[DwarfMapper]` is not `partial`, so the generator cannot add the method bodies.
+  - `DWARF003` — a mapping method's signature matches no supported shape (create, update-into, projection, span, async-stream).
+  - `DWARF005` — a paired source and destination member have no implicit conversion and no converter applies.
+  - `DWARF007` — a mapping targets a read-only destination member, so the value would be lost.
+  - `DWARF008` — `[MapProperty]`'s destination member does not exist or is not writable.
+  - `DWARF009` — `[MapProperty]`'s source member does not exist or is not readable.
+  - `DWARF010` — under `CaseInsensitive = true`, a destination member matches more than one source member.
+  - `DWARF011` — a destination member has more than one `[MapProperty]`.
+  - `DWARF012` — a member is both `[MapIgnore]`d and `[MapProperty]`-mapped.
+  - `DWARF013` — more than one mapping method can convert the member's types.
+  - `DWARF015` — by-name enum mapping found a source enum member with no same-named destination member.
+  - `DWARF016` — `[Flatten]`'s root does not exist, is not readable, or exposes no readable sub-members.
+  - `DWARF017` — a destination member is flattened from more than one source root.
+  - `DWARF018` — a `[BeforeMap]`/`[AfterMap]` hook method has the wrong shape.
+  - `DWARF020` — a `[RoundTrip]` method has no inverse mapping method.
+  - `DWARF021` — a `[RoundTrip]` method has more than one candidate inverse.
+  - `DWARF022` — `[Reinterpret]` must map an array to an array of an unmanaged (blittable) element type.
+  - `DWARF023` — an `[AfterMap]` on a value-type target takes it by value, so changes are lost; take it by `ref`.
+  - `DWARF024` — a required constructor parameter has no mappable source member.
+  - `DWARF025` — several constructors tie for the most parameters, or more than one carries `[DwarfMapperConstructor]`.
+  - `DWARF026` — the destination type has no accessible, non-obsolete instance constructor to map into.
+  - `DWARF027` — the collection/dictionary target type is not supported.
+  - `DWARF028` — a projection member has no database-query translation (converter, value provider, non-translatable collection kind, reference handling, …).
+  - `DWARF030` — a member set through a constructor parameter or `init`-only property takes part in a reference cycle under `ReferenceHandling = Preserve`, so the cycle cannot be reconstructed.
+  - `DWARF031` — the generator reached its limit of 512 synthesized nested mappers.
+  - `DWARF032` — a `[MapProperty(Use=)]` converter is opaque, so `ReferenceHandling = Preserve` cannot track the converted value's identity.
+  - `DWARF033` — auto-nesting an abstract/interface source would silently drop members that exist only on derived runtime types.
+  - `DWARF034` — a `[FlattenGraph]` is misconfigured; the message states the specific problem.
+  - `DWARF035` — a `[MapDerivedType]` arm is invalid; the message states the specific problem.
+  - `DWARF036` — two `[MapDerivedType]` arms overlap, so dispatch is ambiguous.
+  - `DWARF040` — a constant `[MapValue]` literal is not assignable to the destination type.
+  - `DWARF041` — a `[MapValue(Use=)]` provider must be parameterless and return a value assignable to the destination.
+  - `DWARF042` — `[MapValue]` conflicts with `[MapProperty]`/`[MapIgnore]` on the same target, names an unknown member, or targets a constructor parameter.
+  - `DWARF046` — a `[MapProperty]` unflatten target conflicts with a direct mapping of the same root.
+  - `DWARF048` — under `NameConvention.Flexible`, two source members normalize to the same destination member.
+  - `DWARF049` — a `[MapProperty(NullSubstitute=)]` value is not assignable to the destination member.
+  - `DWARF050` — a `[MapProperty(When=)]` predicate must be a `bool` method taking the source.
+  - `DWARF052` — a `[ReverseMap]` has no inverse mapping method (types swapped) to attach to.
+  - `DWARF053` — a mapping method declares type parameters; a generator cannot emit a body for an unbound type.
+  - `DWARF054` — the class carrying the mapping is generic, which is not supported.
+  - `DWARF057` — the generated `<Host>Mapper` type name collides with an existing type.
+  - `DWARF059` — a `[MapConstructor]` factory method does not exist or its signature is incompatible.
+  - `DWARF060` — two maps from the same source type to different targets would overload `Map` by return type alone (`CS0111`); give one a distinct method name.
+  - `DWARF061` — a required ambient map consumed through `IDwarfMapper` is provided by no assembly in the graph (reported at the `[DwarfMapperValidationRoot]`, pulling a runtime `DwarfMapMissingException` forward to build time).
+  - `DWARF067` — `[GenerateWrapperMap]`'s wrapper is not a generic type with exactly one type parameter and one payload member of that type.
+  - `DWARF068` — a `MapConfig<S,T>` fluent call uses a selector that is not a member-access chain, or an argument that is not a method group.
+  - `DWARF069` — the same destination member is configured more than once, by attribute and/or `MapConfig<S,T>` call.
+  - `DWARF072` — under `[DwarfMapper(AutoMatchMembers = false)]` (the trust-boundary / anti-over-posting guard), a destination member has a same-named source match that the explicit-only mode refuses to auto-wire silently.
+  - `DWARF073` — `[MapProperty(StringFormat=)]` requires a `string` destination and an `IFormattable` source, and cannot combine with `Use=`.
+  - `DWARF074` — `[MapCollectionKey]` is outside the v1 upsert's scope (update-into method, same-element-type `List<T>` on both sides, readable key member).
+  - `DWARF077` — explicit-only mapping cannot be enforced element-wise, so a span/async-stream method on an `AutoMatchMembers = false` mapper is refused rather than left half-guarded.
+  - `DWARF079` — `[MapIgnore]` cannot ignore a `required` destination member; omitting it from the generated initializer would be `CS9035` in generated code.
+  - `DWARF082` — a `[ProvidesMap]` method cannot be registered into the ambient registry (it must be public, take one parameter, return a value, and both types must be publicly nameable).
+  - `DWARF084` — `[RestatesBase]` cannot identify the base pair to compare against.
+
+  **Warnings** — the configuration compiles but something was skipped or will not behave as expected:
+  - `DWARF037` — `OnCycle` is set together with `ReferenceHandling = Preserve`, where it has no effect.
+  - `DWARF044` — a dotted `[MapProperty]` source path traverses a nullable member and can throw `NullReferenceException` at runtime.
+  - `DWARF051` — a forward `[MapProperty]` cannot be auto-inverted by `[ReverseMap]` (it uses `Use=`, a dotted path, `NullSubstitute`, or `When`); declare the reverse rename explicitly.
+  - `DWARF056` — a class-level pair-scoped attribute matches no mapped pair, so it silently does nothing (usually a typo'd type argument or a missing `[GenerateMap]`).
+  - `DWARF070` — a nullable reference source member is assigned to a non-nullable target member; reported against your DTO instead of the compiler's `CS8601` inside generated code, which is suppressed.
+  - `DWARF075` — a `[FlattenGraph]` data-bearing complex leaf could not be flattened under `ReferenceHandling = Preserve` and the destination member is left at its default.
+  - `DWARF076` — a declared create-map maps a type to itself, a shallow copy that is usually a mistyped type argument.
+  - `DWARF078` — no code was generated for a mapper that had at least one DwarfMapper error; the signpost for the wall of `CS8795` that follows.
+  - `DWARF085` — a pair declared with `[RestatesBase]` no longer maps a member the way its base pair does.
+
+  **Info** — visible in the IDE, never build-breaking; surfaces a footgun without forcing a change:
+  - `DWARF038` — an implicit type conversion is applied (lossy sub-cases report as Warning; `[DwarfMapper(ImplicitConversions = false)]` turns them into errors).
+  - `DWARF039` — under `RequiredMapping = Both`, a source member is read by no destination member.
+  - `DWARF047` — an additional mapping parameter matched no destination member by name.
+  - `DWARF055` — a single mapper resolves a very large number of members, which can add IDE/compile latency.
+  - `DWARF058` — two mappers would produce the same `source.ToTarget()` convenience extension, so it was generated for neither; the instance methods still work.
+  - `DWARF062` — a mapper with constructor dependencies cannot be constructed by the ambient registry's module initializer and is left out of ambient `IDwarfMapper` resolution.
+  - `DWARF064` — a `[MapValue]` shadows a same-named readable source member, so the real source value is never read.
+  - `DWARF065` — an update-into maps a nested object member by replacing the destination's instance, not by deep-merging into it.
+  - `DWARF066` — a `[MapProperty(When=)]` guards a non-nullable member, which keeps its default when the predicate is false.
+  - `DWARF071` — the source member's declared type has derived types in the compilation whose extra members would be silently dropped at run time.
+  - `DWARF080` — a `[MapConstructor]` factory owns construction, so a mapped source value for an `init`-only or `required` member is discarded.
+  - `DWARF081` — two mappers auto-synthesize the same nested pair two different ways, because a synthesized helper inherits the policy of the mapper that reached it.
+  - `DWARF083` — a declared enum↔string mapping writes `[EnumMember]`/`[Description]` values rather than the member identifiers.
 
 ### Changed
 
@@ -456,12 +544,8 @@ When cutting a release, replace the `## [Unreleased]` heading with `## [X.Y.Z] -
 fresh Unreleased section above it. The release workflow matches on the bare version (`X.Y.Z`, including any
 pre-release suffix), so the heading must contain the tag's version without the leading `v`.
 
-BEFORE THE FIRST TAG, READ THIS. Seventy-six diagnostic ids predate this file and have NEVER been announced
-in it. They are listed in `PredatesTheChangelog` in
-tests/DwarfMapper.Generator.Tests/SelfValidation/AssemblyScanTests.cs, and that list is the worklist. The
-`Scan9` gate guards only NEW ids: it will not fail for any of the seventy-six, so nothing in this repository
-will stop a first release from shipping with three quarters of its build-breaking diagnostics undocumented in
-the release notes. The release workflow publishes this file's section verbatim as the GitHub Release body,
-which is exactly where a consumer looks for them. This is tracked as `D-e` in Issues/round20/TASKS.md and is
-a maintainer decision, not a task anyone else can close.
+Every live diagnostic id is announced in this file. The seventy-six ids that predated it are the "initial
+diagnostic surface" block under `### Added` (task `D-e` in Issues/round20/TASKS.md, resolved 2026-08-21),
+and the `Scan9` gate in tests/DwarfMapper.Generator.Tests/SelfValidation/AssemblyScanTests.cs fails the
+build for any id with no entry — with no exemption set, so this holds for future ids too.
 -->
