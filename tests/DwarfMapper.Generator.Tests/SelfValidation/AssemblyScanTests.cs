@@ -57,45 +57,18 @@ file static class DiagnosticTestAllowlist
     public static readonly IReadOnlySet<string> Ids = new HashSet<string>(StringComparer.Ordinal);
 }
 
-/// <summary>
-///     DWARF0xx ids that existed before <c>CHANGELOG.md</c> did. The file's own preamble mandates an entry
-///     for every new/retired/re-severitied diagnostic id — Scan9 below enforces it — but that mandate is
-///     forward-looking: it was written the same round <c>CHANGELOG.md</c> was created (see the file's own
-///     "This file" bullet under <c>### Added</c>), and cannot retroactively demand prose for a diagnostic
-///     that shipped before the file existed to hold it.
-///     <para>
-///         This set is CLOSED, not an escape hatch: it is exactly "DWARF0xx ids present when
-///         <c>CHANGELOG.md</c> was introduced, minus the ones already documented at that point", frozen at
-///         commit b723ece (2026-08-16). It may only SHRINK — remove an id the moment somebody writes its
-///         entry — and Scan9 pins it by EXACT membership (not a count) so one id silently swapping for
-///         another fails the build instead of passing as a wash. The eventual write-up is tracked as a
-///         `LATER` item in <c>Issues/round20/CARRY-FORWARD.md</c> §1.
-///     </para>
-///     <para>
-///         Scope: DWARF0xx only, deliberately. The DWARFR (registry) family is announced in
-///         <c>CHANGELOG.md</c> as the range "DWARFR01–DWARFR10" (see the <c>### Added</c> entry for
-///         ISSUE-047) — a per-id substring scan would fail on DWARFR02..08 despite the family being fully
-///         announced. Do not "fix" that by adding DWARFR ids here or to Scan9; the range notation is the
-///         intended announcement.
-///     </para>
-/// </summary>
-file static class PredatesTheChangelog
-{
-    public static readonly IReadOnlySet<string> Ids = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "DWARF002", "DWARF003", "DWARF005", "DWARF007", "DWARF008", "DWARF009", "DWARF010",
-        "DWARF011", "DWARF012", "DWARF013", "DWARF015", "DWARF016", "DWARF017", "DWARF018",
-        "DWARF020", "DWARF021", "DWARF022", "DWARF023", "DWARF024", "DWARF025", "DWARF026",
-        "DWARF027", "DWARF028", "DWARF030", "DWARF031", "DWARF032", "DWARF033", "DWARF034",
-        "DWARF035", "DWARF036", "DWARF037", "DWARF038", "DWARF039", "DWARF040", "DWARF041",
-        "DWARF042", "DWARF044", "DWARF046", "DWARF047", "DWARF048", "DWARF049", "DWARF050",
-        "DWARF051", "DWARF052", "DWARF053", "DWARF054", "DWARF055", "DWARF056", "DWARF057",
-        "DWARF058", "DWARF059", "DWARF060", "DWARF061", "DWARF062", "DWARF064", "DWARF065",
-        "DWARF066", "DWARF067", "DWARF068", "DWARF069", "DWARF070", "DWARF071", "DWARF072",
-        "DWARF073", "DWARF074", "DWARF075", "DWARF076", "DWARF077", "DWARF078", "DWARF079",
-        "DWARF080", "DWARF081", "DWARF082", "DWARF083", "DWARF084", "DWARF085"
-    };
-}
+// A frozen `PredatesTheChangelog` baseline used to sit here: the 76 DWARF0xx ids that existed before
+// CHANGELOG.md did, exempted from Scan9 because the file's per-id mandate could not retroactively demand
+// prose for a diagnostic that shipped before the file existed to hold it. Its own comment said it may only
+// SHRINK, and on 2026-08-21 it shrank to empty: task D-e (Issues/round20/TASKS.md) wrote all 76 entries as
+// the "initial diagnostic surface" block under CHANGELOG.md's `### Added`, and the emptied set was deleted
+// rather than kept as dead code. Scan9 now guards every live DWARF0xx id uniformly, with no exemptions.
+//
+// Scope note that survives the deletion: Scan9 is DWARF0xx only, deliberately. The DWARFR (registry)
+// family is announced in CHANGELOG.md as the range "DWARFR01–DWARFR10" (see the `### Added` entry for
+// ISSUE-047) — a per-id substring scan would fail on DWARFR02..08 despite the family being fully
+// announced. Do not "fix" that by adding DWARFR ids to Scan9; the range notation is the intended
+// announcement.
 
 public sealed class AssemblyScanTests
 {
@@ -111,9 +84,10 @@ public sealed class AssemblyScanTests
     ///         Use this ONLY where the scan's needles cannot appear in this file — in practice, only the
     ///         snapshot scan, whose needles are other files' test-method names. Every other scan reads
     ///         <see cref="TestSourceTextExcluding" /> instead, because this file is itself under
-    ///         <c>tests/</c>: a diagnostic id listed in <see cref="PredatesTheChangelog" />, an option named
-    ///         in a comment, or an enum value written out in a doc-comment all satisfy a substring scan
-    ///         whose corpus includes them, and the scan then reports success having measured nothing.
+    ///         <c>tests/</c>: a diagnostic id listed in <see cref="ReservedIds" /> or written as a control
+    ///         literal in Scan9's non-vacuity guard, an option named in a comment, or an enum value written
+    ///         out in a doc-comment all satisfy a substring scan whose corpus includes them, and the scan
+    ///         then reports success having measured nothing.
     ///     </para>
     /// </summary>
     private static readonly Lazy<string> AllTestSourceText = new(() =>
@@ -442,17 +416,19 @@ public sealed class AssemblyScanTests
     // SCAN 3 — Every diagnostic id appears in at least one test source file
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Two files in the tests/ tree hold a diagnostic id for the express purpose of EXEMPTING it, and both
-    // are in this scan's corpus by default:
+    // Two files in the tests/ tree held diagnostic ids for the express purpose of EXEMPTING them, and both
+    // were in this scan's corpus by default:
     //
-    //   • this file's `PredatesTheChangelog`      — 77 ids, Scan9's frozen baseline;
+    //   • this file's `PredatesTheChangelog`      — Scan9's frozen baseline; drained and deleted 2026-08-21
+    //                                               (task D-e), but this file still holds id literals in
+    //                                               `ReservedIds` and Scan9's non-vacuity controls;
     //   • `DiagnosticCoverageRatchetTests.cs`'s
     //     `PredatesThisProject`                   — 73 ids, the negative-case ratchet's opt-out list.
     //
-    // Between them they name almost every live id as a bare string literal, so "the id appears somewhere in
-    // tests/" was discharged by the two lists that say the id is NOT covered — the scan agreeing with the
-    // paperwork instead of with the tests. Both are excluded here. Re-measured when the exclusion went in:
-    // all 84 live ids still appear in at least one other test file (min 1, median 2), so the scan still
+    // Between them they named almost every live id as a bare string literal, so "the id appears somewhere in
+    // tests/" was discharged by the lists that say the id is NOT covered — the scan agreeing with the
+    // paperwork instead of with the tests. Both files are excluded here. Re-measured when the exclusion went
+    // in: all 84 live ids still appear in at least one other test file (min 1, median 2), so the scan still
     // passes, now for a reason. No allowlist entry was needed and DiagnosticTestAllowlist stays empty.
     [Fact]
     public void Scan3_Every_diagnostic_id_has_a_test_reference()
@@ -777,27 +753,22 @@ public sealed class AssemblyScanTests
 
         var missing = UnannouncedIds(
             GetAllDescriptors().Select(d => d.Descriptor.Id),
-            changelogText,
-            PredatesTheChangelog.Ids);
+            changelogText);
 
         Assert.True(missing.Count == 0,
             "Diagnostic id(s) with no CHANGELOG.md entry (add one under the current Unreleased heading — a "
-            + "new/retired/re-severitied diagnostic id is a user-visible change per the file's own preamble; "
-            + "if the id genuinely predates CHANGELOG.md, that belongs in PredatesTheChangelog instead, which "
-            + "may only shrink):\n" + string.Join("\n", missing));
+            + "new/retired/re-severitied diagnostic id is a user-visible change per the file's own "
+            + "preamble):\n" + string.Join("\n", missing));
     }
 
     /// <summary>
     ///     Scan9's decision, isolated from its file I/O so a control can feed it inputs it must REJECT.
-    ///     Returns the ids that are neither reserved, nor in the frozen baseline, nor named anywhere in the
-    ///     changelog text.
+    ///     Returns the ids that are neither reserved nor named anywhere in the changelog text.
     /// </summary>
-    private static List<string> UnannouncedIds(
-        IEnumerable<string> descriptorIds, string changelogText, IReadOnlySet<string> baseline)
+    private static List<string> UnannouncedIds(IEnumerable<string> descriptorIds, string changelogText)
     {
         return descriptorIds
             .Where(id => !ReservedIds.Ids.Contains(id))
-            .Where(id => !baseline.Contains(id))
             .Where(id => !changelogText.Contains(id, StringComparison.Ordinal))
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToList();
@@ -808,17 +779,16 @@ public sealed class AssemblyScanTests
     {
         // Non-vacuity guard (Issues/round20/CARRY-FORWARD.md §6 — this repository has hit "a scan finds
         // nothing and passes by construction" six times, most recently a scan whose corpus included the
-        // very declaration it was meant to check). Three checks on the CORPUS: the descriptor set Scan9
-        // draws from is real and substantial; CHANGELOG.md actually loaded and contains a known-present
-        // id; and every frozen PredatesTheChangelog entry is still a live descriptor, so a descriptor
-        // rename/removal makes the baseline itself fail rather than silently stop meaning anything.
+        // very declaration it was meant to check). Two checks on the CORPUS: the descriptor set Scan9
+        // draws from is real and substantial, and CHANGELOG.md actually loaded and contains a
+        // known-present id.
         //
-        // Those three catch the failure this guard was written for — a mistyped path, six times over — but
-        // they would NOT catch Scan9 itself being gutted to `Assert.True(true)`: proving the inputs are
-        // real is not proving the assertion works. The fourth block below closes that by driving Scan9's
-        // extracted verdict, UnannouncedIds, over known-bad and known-good input directly. Stated limit:
-        // it pins the PREDICATE, not the [Fact]'s wiring to it — deleting the call from Scan9 would still
-        // leave this green. Pinning the wiring too needs a mutation run, which is where that belongs.
+        // Those catch the failure this guard was written for — a mistyped path, six times over — but they
+        // would NOT catch Scan9 itself being gutted to `Assert.True(true)`: proving the inputs are real is
+        // not proving the assertion works. The block below closes that by driving Scan9's extracted
+        // verdict, UnannouncedIds, over known-bad and known-good input directly. Stated limit: it pins the
+        // PREDICATE, not the [Fact]'s wiring to it — deleting the call from Scan9 would still leave this
+        // green. Pinning the wiring too needs a mutation run, which is where that belongs.
         var liveIds = GetAllDescriptors()
             .Select(d => d.Descriptor.Id)
             .Where(id => !ReservedIds.Ids.Contains(id))
@@ -831,24 +801,11 @@ public sealed class AssemblyScanTests
         var changelogText = File.ReadAllText(Path.Combine(RepoPaths.Root, "CHANGELOG.md"));
         Assert.Contains("DWARF063", changelogText, StringComparison.Ordinal);
 
-        var staleBaselineEntries = PredatesTheChangelog.Ids
-            .Where(id => !liveIds.Contains(id))
-            .OrderBy(id => id, StringComparer.Ordinal)
-            .ToList();
-        Assert.True(staleBaselineEntries.Count == 0,
-            "PredatesTheChangelog contains id(s) that are no longer live descriptors (remove them — the set "
-            + "may only shrink, towards ids that still need writing up):\n"
-            + string.Join("\n", staleBaselineEntries));
-
         // Known-bad / known-good, on synthetic text so each arm is proved in isolation rather than by
-        // whatever CHANGELOG.md happens to say today. DWARF999 exists nowhere; DWARF004 is reserved;
-        // DWARF002 is in the frozen baseline.
-        var empty = new HashSet<string>(StringComparer.Ordinal);
-        Assert.Equal(["DWARF999"], UnannouncedIds(["DWARF999"], "", empty));
-        Assert.Empty(UnannouncedIds(["DWARF999"], "- DWARF999 now refuses X. (#1)", empty));
-        Assert.Empty(UnannouncedIds(["DWARF004"], "", empty));
-        Assert.Empty(UnannouncedIds(["DWARF002"], "", PredatesTheChangelog.Ids));
-        Assert.Equal(["DWARF002"], UnannouncedIds(["DWARF002"], "", empty));
+        // whatever CHANGELOG.md happens to say today. DWARF999 exists nowhere; DWARF004 is reserved.
+        Assert.Equal(["DWARF999"], UnannouncedIds(["DWARF999"], ""));
+        Assert.Empty(UnannouncedIds(["DWARF999"], "- DWARF999 now refuses X. (#1)"));
+        Assert.Empty(UnannouncedIds(["DWARF004"], ""));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
