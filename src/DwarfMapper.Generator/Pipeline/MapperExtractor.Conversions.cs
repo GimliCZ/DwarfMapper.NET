@@ -393,7 +393,7 @@ internal static partial class MapperExtractor
         // member, so every record would have stored the decorated id in the plain field. An explicit
         // Use= for THIS member still resolves above and is unaffected — only auto-adoption is blocked.
         static bool IsReserved(IReadOnlyCollection<string>? reserved, string name) =>
-            reserved is not null && reserved.Contains(name);
+            reserved is not null && reserved.Contains(name, StringComparer.Ordinal);
 
         string? found = null;
         foreach (var c in autoCandidates)

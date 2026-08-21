@@ -133,7 +133,13 @@ public static class DwarfMapperRegistry
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
 
+        // RS0030: object.GetType() is banned project-wide (zero-reflection claim). This call is the ONE
+        // sanctioned exception the ban message itself names: ambient-registry dispatch resolves the map by
+        // the value's runtime type (then base types, then interfaces) - the documented core mechanism of
+        // this API. GetType() is AOT- and trim-safe; no member metadata is reflected over.
+#pragma warning disable RS0030
         var runtimeType = source.GetType();
+#pragma warning restore RS0030
         if (Maps.TryGetValue(new Key(runtimeType, destination), out var direct))
             return direct(source);
 

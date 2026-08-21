@@ -161,7 +161,7 @@ public sealed class MapToGenerator : IIncrementalGenerator
             var writables = MemberFacts.Writable(target, RegistryCompilation, RegistryAllowNonPublic).ToList();
 
             // destName -> chosen source member (resolved per target, independently).
-            var chosen = new Dictionary<string, (ISymbol Sym, ITypeSymbol Type)>();
+            var chosen = new Dictionary<string, (ISymbol Sym, ITypeSymbol Type)>(StringComparer.Ordinal);
             // Destinations the trust boundary refused below. Kept so the completeness gate does not go on to
             // report DWARFR02 about them: "has no source member" would be false — it has one, and refusing to
             // wire it is the entire point. Two diagnostics about one member, one of them a lie, is how a caller
@@ -473,9 +473,9 @@ public sealed class MapToGenerator : IIncrementalGenerator
     {
         private readonly Compilation _comp;
         private readonly List<DiagnosticInfo> _diags;
-        private readonly HashSet<string> _inProgress = new();
+        private readonly HashSet<string> _inProgress = new(StringComparer.Ordinal);
         private readonly LocationInfo? _loc;
-        public readonly Dictionary<string, SynthesizedMethod> Synth = new();
+        public readonly Dictionary<string, SynthesizedMethod> Synth = new(StringComparer.Ordinal);
 
         public Resolver(Compilation comp, List<DiagnosticInfo> diags, LocationInfo? loc)
         {

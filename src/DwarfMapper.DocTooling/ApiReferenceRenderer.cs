@@ -47,7 +47,7 @@ public static class ApiReferenceRenderer
         sb.Append("Attribute properties list their **default**, read from a fresh instance — the value you get\n");
         sb.Append("when you do not set it, which is the question a reference page is usually opened to answer.\n\n");
 
-        foreach (var group in types.GroupBy(t => t.Namespace).OrderBy(g => g.Key, StringComparer.Ordinal))
+        foreach (var group in types.GroupBy(t => t.Namespace, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
             sb.Append(CultureInfo.InvariantCulture, $"## `{group.Key}`\n\n");
 
@@ -215,7 +215,9 @@ public static class ApiReferenceRenderer
                     break;
             }
 
-        var flat = Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+        // The pattern cannot backtrack catastrophically, but MA0009 is right that an unbounded Regex over
+        // XML-doc input deserves a ceiling; a second is orders of magnitude above any real summary.
+        var flat = Regex.Replace(sb.ToString(), @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1)).Trim();
         return flat.Replace("|", @"\|", StringComparison.Ordinal);
     }
 }

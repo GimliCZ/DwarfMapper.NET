@@ -65,8 +65,14 @@ public static class ObjectFactoryV2
 
     // ── Public entry points ──────────────────────────────────────────────────────
 
+    /// <summary>Create a populated instance of <typeparamref name="T" /> for seed 0.</summary>
+    public static T Create<T>()
+    {
+        return Create<T>(0);
+    }
+
     /// <summary>Create a populated instance of <typeparamref name="T" /> for the given seed.</summary>
-    public static T Create<T>(int seed = 0)
+    public static T Create<T>(int seed)
     {
         return (T)Create(typeof(T), new Random(seed), 0)!;
     }
@@ -338,7 +344,7 @@ public static class ObjectFactoryV2
         if (nodeType is null) throw new ArgumentNullException(nameof(nodeType));
         var node = Create(nodeType, rng, 0)!;
         var prop = nodeType.GetProperty(selfPropName, BindingFlags.Public | BindingFlags.Instance)
-                   ?? throw new ArgumentException($"Property '{selfPropName}' not found on {nodeType.Name}");
+                   ?? throw new ArgumentException($"Property '{selfPropName}' not found on {nodeType.Name}", nameof(selfPropName));
         prop.SetValue(node, node);
         return node;
     }
@@ -353,7 +359,7 @@ public static class ObjectFactoryV2
         var a = Create(nodeType, rng, 0)!;
         var b = Create(nodeType, rng, 0)!;
         var prop = nodeType.GetProperty(nextPropName, BindingFlags.Public | BindingFlags.Instance)
-                   ?? throw new ArgumentException($"Property '{nextPropName}' not found on {nodeType.Name}");
+                   ?? throw new ArgumentException($"Property '{nextPropName}' not found on {nodeType.Name}", nameof(nextPropName));
         prop.SetValue(a, b);
         prop.SetValue(b, a);
         return (a, b);
@@ -380,7 +386,7 @@ public static class ObjectFactoryV2
         void Set(object target, string propName, object value)
         {
             var p = target.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance)
-                    ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}");
+                    ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}", nameof(propName));
             p.SetValue(target, value);
         }
 
@@ -408,7 +414,7 @@ public static class ObjectFactoryV2
         void Set(object target, string propName, object? value)
         {
             var p = target.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance)
-                    ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}");
+                    ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}", nameof(propName));
             p.SetValue(target, value);
         }
 

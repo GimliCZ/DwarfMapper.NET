@@ -161,7 +161,7 @@ internal static partial class MapperExtractor
 
         foreach (var baseMember in baseModel.Members)
         {
-            if (overrides.Contains(baseMember.TargetName)) continue;
+            if (overrides.Contains(baseMember.TargetName, StringComparer.Ordinal)) continue;
 
             // A member the derived target REDECLARES (a `new` member of a different type) is a different
             // member wearing the same name; comparing their mappings would be comparing two unrelated things.
