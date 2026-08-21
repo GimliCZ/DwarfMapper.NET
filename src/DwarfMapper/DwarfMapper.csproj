@@ -7,6 +7,12 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <Description>DwarfMapper — a compile-time object mapper for .NET where an unmapped member is a build error, maps are round-trip-verifiable (opt in with [RoundTrip]), and blittable data falls back to SIMD/blittable bulk copy. The shipped runtime library uses zero reflection and is NativeAOT- and trim-safe. This single package bundles the attributes, the Roslyn source generator, and the IDE code fixes — just reference it.</Description>
         <!-- PackageRequireLicenseAcceptance is set for all packages in Directory.Build.props. -->
+        <!-- Deep-tier hook: every pack is validated against the latest published rc on nuget.org, so an
+             accidental API break is caught at pack time. Intentional rc-phase breaks go into
+             ApiCompatSuppressions.xml with a reason, or bump the baseline. -->
+        <EnablePackageValidation>true</EnablePackageValidation>
+        <PackageValidationBaselineVersion>1.0.2-rc.1</PackageValidationBaselineVersion>
+        <ApiCompatSuppressionFile>ApiCompatSuppressions.xml</ApiCompatSuppressionFile>
     </PropertyGroup>
 
     <!--
@@ -24,6 +30,17 @@
       inside this repo, so the test/sample projects keep their own explicit analyzer references and nothing is
       applied twice.
     -->
+    <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all"/>
+    </ItemGroup>
+    <ItemGroup>
+        <AdditionalFiles Include="PublicAPI.Shipped.txt"/>
+        <AdditionalFiles Include="PublicAPI.Unshipped.txt"/>
+        <AdditionalFiles Include="BannedSymbols.txt"/>
+    </ItemGroup>
+
     <ItemGroup>
         <ProjectReference Include="..\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
                           ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" PrivateAssets="all"/>

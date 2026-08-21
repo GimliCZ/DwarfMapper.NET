@@ -11,6 +11,10 @@
              renderer itself. -->
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+        <!-- No BannedApiAnalyzers here: reflection over the Gallery assembly is this tool's product. -->
+    </ItemGroup>
+    <ItemGroup>
         <ProjectReference Include="..\DwarfMapper\DwarfMapper.csproj"/>
         <!-- The example catalogue is reflected out of the Gallery assembly. This library, not the test
              project, carries that dependency. If the Gallery stops building, the doc tests fail loudly
