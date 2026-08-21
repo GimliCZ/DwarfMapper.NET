@@ -407,6 +407,7 @@ public partial class UseMethodOverrideMapper
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+[Collection("culture-swap")] // two tests below swap CurrentCulture to de-DE; see CultureSwapCollection
 public class ConversionDefensiveRuntimeTests
 {
     // ── long → short ──────────────────────────────────────────────────────────
