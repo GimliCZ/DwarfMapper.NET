@@ -13,8 +13,9 @@ on:
   #
   # The nightly tier's cost, from the local measurements each job's timeout is derived from (12-core machine):
   # mutation runtime 11:36 + generator 19:41 + doctooling ~5:30 ≈ 37 min aggregate, deep suite ~1:45 with
-  # coverage ~+0:30, ILVerify ~1 s — plus per-job restore/build/tool-install overhead. The jobs run in
-  # PARALLEL on separate runners, so nightly wall-clock ≈ the slowest leg (the generator's), not the sum.
+  # coverage ~+0:30, ILVerify ~1 s, benchmark smoke + allocation pins ~6:40 (round-21 T8) — plus per-job
+  # restore/build/tool-install overhead. The jobs run in PARALLEL on separate runners, so nightly
+  # wall-clock ≈ the slowest leg (the generator's), not the sum.
   # There is deliberately NO total-duration gate: the maintainer's 2026-08-21 ruling raised the old 44-minute
   # deep-tier ceiling so that ALL legs run EVERY night with no rotation — record the measured total, do not
   # arbitrate it (Issues/round22/RESEARCH-97-PERCENT-GATES.md, "Maintainer rulings").
@@ -307,10 +308,12 @@ jobs:
     # Nightly cron and manual dispatch only — never on push or pull_request.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     # Sized from measurement + margin, NOT an aspirational cap: locally (12 cores) the deep suite is ~105 s,
-    # coverage collection adds ~18 s, ReportGenerator ~15 s, ILVerify ~1 s; restore+build ~3 min and the
-    # tool installs ~1 min put the whole job near 7 min. A ~4-core hosted runner is ~3x slower on the
-    # test/build parts (~20 min), plus ~50% margin -> 30.
-    timeout-minutes: 30
+    # coverage collection adds ~18 s, ReportGenerator ~15 s, ILVerify ~1 s, and the T8 benchmark smoke +
+    # allocation exact-pin gate ~6:40 (measured twice, 6:36/6:44); restore+build ~3 min and the tool
+    # installs ~1 min put the whole job near 14 min. A ~4-core hosted runner is ~3x slower on the
+    # test/build parts but the smoke is mostly single-threaded measurement (~1.5-2x) — ~28 min total,
+    # plus ~50% margin -> 45.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
@@ -332,6 +335,13 @@ jobs:
         with:
           name: deep-coverage-report
           path: TestResults/coverage-report/
+      # The smoke's full JSON report — the allocation gate's evidence. Same keep-on-failure reason: a
+      # pin failure names its numbers, and the report carries the competitor context around them.
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bench-smoke-results
+          path: BenchmarkDotNet.Artifacts/results/
 
   aot-trim-gate:
     strategy:

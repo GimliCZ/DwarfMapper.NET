@@ -10,9 +10,10 @@
 #   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
 #   pwsh scripts/housekeeping.ps1 -ILVerify       # ILVerify the shipped runtime + a generated-consumer assembly
 #   pwsh scripts/housekeeping.ps1 -Deep           # DWARF_DEEP=1 for stage 1: multiplied fuzz/property/torture counts
+#   pwsh scripts/housekeeping.ps1 -BenchSmoke     # benchmark smoke (ShortRun) + allocation exact-pin gate (~7 min)
 #   pwsh scripts/housekeeping.ps1 -Nightly        # EXACTLY what CI's nightly deep-test job runs: -Deep -Coverage
-#                                                 # -ILVerify, exhaustion and AOT skipped. Mutation stays behind
-#                                                 # -Mutation (its own cost class; CI runs those legs as own jobs).
+#                                                 # -ILVerify -BenchSmoke, exhaustion and AOT skipped. Mutation stays
+#                                                 # behind -Mutation (its own cost class; CI runs those legs as own jobs).
 #                                                 # Needs: dotnet-reportgenerator-globaltool + dotnet-ilverify.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 param(
@@ -23,6 +24,7 @@ param(
     [switch]$Coverage,
     [switch]$ILVerify,
     [switch]$Deep,
+    [switch]$BenchSmoke,
     [switch]$Nightly
 )
 $ErrorActionPreference = 'Stop'
@@ -34,7 +36,11 @@ $root = Split-Path -Parent $PSScriptRoot
 # aot-trim-gate CI job) and deliberately does NOT imply -Mutation — the mutation legs are their own cost
 # class and their own nightly CI jobs (the 'mutation' matrix).
 if ($Nightly) {
-    $Deep = $true; $Coverage = $true; $ILVerify = $true
+    # -BenchSmoke rides the nightly per the T8 placement rule: its measured wall-clock (6:36/6:44 across
+    # the two pin-verification runs, 12-core machine) is proportionate to the deep tier now that the
+    # 44-minute ceiling is raised - it does not dwarf the mutation legs (~37 min aggregate) the nightly
+    # already carries on sibling jobs.
+    $Deep = $true; $Coverage = $true; $ILVerify = $true; $BenchSmoke = $true
     $SkipExhaustion = $true; $SkipAot = $true
 }
 
@@ -121,6 +127,97 @@ function Assert-StrykerConfigSane {
                "stryker-config.doctooling.json).")
     }
     Write-Host "   ${ConfigFile}: break $($thresholds.break) <= low $($thresholds.low) - runnable" -ForegroundColor DarkGray
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Allocation exact-pin gate (round-21 T8; the RESEARCH-97-PERCENT-GATES allocation-gate row). Allocated
+# bytes per op from MemoryDiagnoser are DETERMINISTIC for a fixed SDK (verified 2026-08-21: two full
+# smoke runs, all 41 benchmarks byte-identical), which is what makes an exact pin honest where a timing
+# gate would violate the no-nondeterministic-oracle rule. The gate fails on ANY change to a pinned
+# scenario - an unexplained INCREASE is a regression, an unexplained DECREASE is also a finding - and the
+# only fix is a deliberate commit that re-measures and updates allocation-baseline.json with the reason.
+# Competitor rows (Mapperly/Mapster/AutoMapper, Flat_Hand) are printed as informational context, never
+# gated. Timing numbers from the smoke are NON-GATES (see SmokeConfig in benchmarks/.../Program.cs).
+#
+# A separate function so it can be exercised NEGATIVELY against an existing report + doctored baseline
+# (the T5/H4 positive-AND-negative discipline) without paying for another ~7-minute smoke run.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-BenchAllocationsPinned {
+    param(
+        [Parameter(Mandatory)][string]$ReportPath,
+        [Parameter(Mandatory)][string]$BaselinePath
+    )
+    if (-not (Test-Path $ReportPath)) {
+        throw "bench smoke: no JSON report at $ReportPath - the run produced no parseable results"
+    }
+    $baseline = Get-Content -Raw -LiteralPath $BaselinePath | ConvertFrom-Json
+    $report = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
+    $failures = @()
+
+    # SDK drift is the one legitimate silent-change vector for allocated bytes: same code, new SDK, new
+    # numbers. Name it instead of letting it masquerade as a code regression.
+    $sdk = (dotnet --version | Select-Object -First 1).Trim()
+    if ($sdk -ne $baseline.measuredWith.sdk) {
+        $failures += ("bench smoke: running SDK $sdk != baseline SDK $($baseline.measuredWith.sdk) - " +
+                      "allocated bytes are deterministic PER SDK; re-measure and update " +
+                      "allocation-baseline.json in the same commit as the SDK change.")
+    }
+
+    # BenchmarkRunner exits 0 even when individual benchmarks crash (NA rows) or a stray --filter shrinks
+    # the suite, so 'every benchmark still executes' must be counted, not inferred from the exit code.
+    $benchmarks = @($report.Benchmarks)
+    if ($benchmarks.Count -ne $baseline.totalBenchmarks) {
+        $failures += ("bench smoke: $($benchmarks.Count) benchmarks in the report, baseline pins " +
+                      "$($baseline.totalBenchmarks) - a benchmark was added/removed or a filter shrank " +
+                      "the suite; update the baseline deliberately with the reason.")
+    }
+
+    $measured = @{}
+    foreach ($b in $benchmarks) {
+        if ($null -eq $b.Statistics -or $null -eq $b.Memory) {
+            $failures += ("bench smoke: $($b.Method) has no Statistics/Memory in the report - it " +
+                          "CRASHED or was skipped, and BenchmarkDotNet still exited 0.")
+            continue
+        }
+        $measured[$b.Method] = [long]$b.Memory.BytesAllocatedPerOperation
+    }
+
+    $pins = @($baseline.pins.PSObject.Properties)
+    $unstableNames = @($baseline.unstable.PSObject.Properties.Name)
+    foreach ($pin in $pins) {
+        if (-not $measured.ContainsKey($pin.Name)) {
+            # The vacuity guard: a renamed scenario must FAIL the gate, not silently fall out of it.
+            $failures += "bench smoke: pinned scenario '$($pin.Name)' is missing from the report - the gate cannot see it"
+            continue
+        }
+        $got = $measured[$pin.Name]
+        $want = [long]$pin.Value
+        if ($got -ne $want) {
+            $direction = if ($got -gt $want) { "INCREASE (allocation regression)" }
+                         else { "DECREASE (also a finding: something changed the emitted path)" }
+            $failures += ("bench smoke: $($pin.Name) allocated $got B/op, pinned $want B/op - unexplained " +
+                          "$direction. Exact-pin protocol: re-measure and update allocation-baseline.json " +
+                          "with the reason in the same commit.")
+        }
+    }
+
+    # Every DwarfMapper scenario must be accounted for - pinned, or listed unstable with its observed
+    # variance. A new *_Dwarf benchmark cannot land ungated.
+    foreach ($name in @($measured.Keys) | Where-Object { $_ -like '*_Dwarf' }) {
+        if ($name -notin @($pins.Name) -and $name -notin $unstableNames) {
+            $failures += ("bench smoke: '$name' is a DwarfMapper scenario with neither a pin nor an " +
+                          "unstable entry - verify byte-stability across two runs and pin it in the " +
+                          "commit that adds it.")
+        }
+    }
+
+    foreach ($b in ($benchmarks | Sort-Object Method)) {
+        if ($null -eq $b.Memory) { continue }
+        $tag = if ($b.Method -in @($pins.Name)) { 'pin ' } else { 'info' }
+        Write-Host ("   [{0}] {1}: {2} B/op" -f $tag, $b.Method, $b.Memory.BytesAllocatedPerOperation) -ForegroundColor DarkGray
+    }
+    if ($failures) { throw ($failures -join [Environment]::NewLine) }
+    Write-Host "   allocation pins: $($pins.Count) scenarios exact-matched, $($benchmarks.Count)/$($baseline.totalBenchmarks) benchmarks executed" -ForegroundColor DarkGray
 }
 
 Push-Location $root
@@ -287,6 +384,24 @@ try {
                 Write-Host "   $($target.Dll): $known known-unverifiable finding(s), all matched to declared source constructs" -ForegroundColor DarkGray
             }
         }
+    }
+
+    if ($BenchSmoke) {
+        Write-Host "== Benchmark smoke + allocation exact-pin gate ==" -ForegroundColor Cyan
+        # Stale results from a previous run would let the gate pass on yesterday's numbers - wipe first
+        # (the benchmark analog of the coverage wipe above and Assert-MutantsWereTested's -Since filter).
+        $benchResults = Join-Path $root 'BenchmarkDotNet.Artifacts/results'
+        if (Test-Path $benchResults) { Remove-Item -Recurse -Force $benchResults }
+        $env:DWARF_BENCH_SMOKE = '1'
+        $benchStart = Get-Date
+        dotnet run -c Release --project benchmarks/DwarfMapper.Benchmarks
+        $benchExit = $LASTEXITCODE
+        Remove-Item Env:DWARF_BENCH_SMOKE
+        Write-Host ("   smoke wall-clock: {0:mm\:ss} (NON-GATE - timing from a smoke run proves nothing)" -f ((Get-Date) - $benchStart)) -ForegroundColor DarkGray
+        if ($benchExit) { throw "bench smoke: benchmark run failed (exit $benchExit)" }
+        Assert-BenchAllocationsPinned `
+            -ReportPath (Join-Path $benchResults 'MapperBenchmarks-report-full.json') `
+            -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/allocation-baseline.json')
     }
 
     if ($Mutation) {
