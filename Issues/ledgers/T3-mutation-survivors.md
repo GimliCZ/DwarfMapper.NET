@@ -573,3 +573,109 @@ launching it; the run itself completed and the comparison was finished by the co
 
 **`break: 71` stands, unchanged — validated by re-measurement, not inherited.** Post-run `git status` clean:
 the guard held on the generator leg too (first time it ran under it).
+
+---
+
+## P3 — the DocTooling kill program: families A–D + ParseId, and the 43 dispositioned (2026-08-22)
+
+Round 22, task P3, branch `feat/round22-gates`. Baseline re-confirmed before any edit
+(`StrykerOutput/2026-08-21.23-32-50`, quiet machine, 4:56): **67.96 % = 193/284, 54 Survived,
+37 NoCoverage, 0 Timeout — byte-for-byte the H7 phase-2 figure**, so the kill work started from a
+verified floor, not an inherited one. Kill commit `1132586` (tests + the sanctioned `Build` seam);
+re-measure `StrykerOutput/2026-08-21.23-56-18` (quiet machine, **4:36**):
+
+**Score 95.42 % = 271 detected / 284 scoreable. Survived 13, NoCoverage 0, Timeout 0.**
+Per-mutant diff against baseline: **81 status flips — 44 Survived→Killed, 34 NoCoverage→Killed,
+3 NoCoverage→Survived (all three adjudicated below), zero Killed→anything regressions.**
+`break` 67 → **95** (95.42 floored), `low` with it, `high` 90 → 96, in the same commit as this record.
+
+### The five families, each killed by its named test
+
+| Family | Kill (representative `killedBy`, verified in the JSON) |
+|---|---|
+| **B** `DocTableInjector` refusals (5 NC) | `DocTableInjectorTests.A_document_without_the_marker_is_refused` / `An_unclosed_table_is_refused_not_truncated` — message + path pinned |
+| **C** `ExampleCatalogue.Build` refusals (14 NC) | `ExampleCatalogueTests.A_type_without_a_public_static_run_is_refused` / `An_example_whose_file_was_renamed_is_refused` / `An_example_matching_two_files_is_refused_naming_both`, via the private→internal `Build` seam (+`InternalsVisibleTo`) |
+| **A** message text + line numbers (~30) | the convention: every `Assert.Throws<DocToolingException>` in `SnippetScannerTests` / `DocSnippetInjectorTests` / `DocPipelinePropertyTests` now asserts a discriminating fragment AND the reported `file:line` (markers moved off line 1 so `i+1 → i-1` discriminates) |
+| **D** `OptionTableRenderer` formatting/fallbacks (11 NC) | `OptionTableRendererTests` — synthetic `string`/empty-`string`/`int?`/null-default/`bool`/enum option types, both em-dash fallbacks, ragged/five-cell rows, endtable stop, header-masquerade, CRLF |
+| **ParseId** malformed markers (7 NC) | `A_marker_missing_its_close_delimiter_is_a_loud_failure` in BOTH test classes + empty-id line pins |
+
+### The 43 write-back-exposed survivors — triaged row-by-row, and one mis-filing corrected
+
+All 43 were re-identified in the fresh baseline by expression (lines had drifted with H7 phase 2).
+**None carries any residue of the corrupted-corpus story: every one survived on a stable tree under the
+guard, i.e. an ordinary corpus hole, exactly as the T3-H1 record claimed.** One bookkeeping error in that
+record is corrected here: its per-file list gave DocSnippetInjector 9 rows including "L83" — but old-L83
+is the **family-E proven equivalent** (`run > longest`, already in the equivalents ledger), double-counted
+into the 43; the actual 43rd survivor is a **fourth** `OptionTableRenderer` L94 mutant (the list said
+"L94 (x3)"). Corrected split: **OptionTableRenderer 16, DocSnippetInjector 8, SnippetScanner 9,
+DocTableInjector 7, ExampleCatalogue 3.** Disposition of the 43: **38 killed** by the family tests above
+(CRLF normalization literals, the single-trailing-newline contract, the backtick-run reset, ThrowIfNull
+deletions, prose-reader boundary/ordering/stop conditions, `IsNotBuildOutput` or-vs-and via the internal
+seam, the `05_`-prefix underscore); **2 adjudicated** proven-equivalent (SnippetScanner close-branch
+`continue` and dedent `prefix.Length > 0`, proofs below); **3 left with a stated reason** (below).
+
+### Nine new proven-equivalent adjudications (ledger entries + pins moved in this commit)
+
+The bar is T3's: original and mutant agree on every reachable input. Ids from `23-56-18`; lines current.
+
+1. **`DocSnippetInjector.ParseId` L110, `end < 0` → `end <= 0`** (id263). `ParseId` is called only on a
+   line whose `TrimStart()` begins with `<!-- snippet:`, so characters 0–2 are `<!-` and
+   `IndexOf("-->")` can never return 0. The two comparisons differ only at `end == 0` — unreachable.
+2. **`SnippetScanner.ParseId` L121, `close < 0` → `close <= 0`** (id516). Same shape: the line begins
+   with `// <snippet:`, character 0 is `/`, so `IndexOf('>')` can never return 0.
+3. **`DocTableInjector` L31, `end < 0` → `end <= 0`** (id291). `end = Array.FindIndex(lines, start + 1, …)`
+   with `start >= 0` returns −1 or a value `>= start + 1 >= 1`; 0 is not in its range.
+4. **`ExampleCatalogue.Build` L74, `matches.Count > 1` → `>= 1`** (id340). The ternary sits inside the
+   `matches.Count != 1` throw's message, so it is evaluated only for counts {0, 2, 3, …}; `> 1` and
+   `>= 1` agree on every one of those. The only distinguishing count, 1, never reaches it.
+5. **`SnippetScanner.ScanFile` L105, close-branch `continue` → `;`** (id508). The only statement the
+   deleted `continue` would fall through to is `if (openId is not null) body.Add(lines[i]);`, and the
+   branch sets `openId = null` on its previous line — the fall-through is a guaranteed no-op.
+6. **`SnippetScanner.Dedent` L170, `prefix.Length > 0` → `>= 0`** (id558). The loop's other conjunct is
+   `!w.StartsWith(prefix)`; at `prefix == ""`, `StartsWith("")` is true for every string, so the
+   conjunction is false either way and the loop exits identically.
+7. **`OptionTableRenderer.ExistingProse` L94, `"---"` → `""`** (id421). The mutant stops skipping
+   separator-shaped rows, so `"---"` can enter the prose/order dictionaries. Both consumers key those
+   dictionaries by `PropertyInfo.Name` — a valid C# identifier, which `"---"` can never be — and the
+   order values of real keys keep their relative order (insertion order is preserved, values shift
+   uniformly), so `OrderBy` is unaffected. No observable difference. (The sibling `"Option"` arm is NOT
+   equivalent — a property CAN be named `Option` — and is killed by
+   `Header_and_separator_rows_never_masquerade_as_prose`.)
+8. **`OptionTableRenderer.TryCreate` L109, catch-block removal → `{}`** (id426). The removed block
+   contains exactly `return null;`. Stryker keeps block-removal mutants compilable by appending a
+   `return default` epilogue to the method, and `default` for `object?` IS null — the mutant returns
+   null on the same `TargetInvocationException` path. Behaviourally identical by the mutation tooling's
+   own mechanics; confirmed empirically by `A_throwing_constructor_falls_back_to_em_dashes` covering it
+   and passing.
+9. **`OptionTableRenderer.Format` L118, conditional-false on the empty-string arm** (id433). The
+   original is `s.Length == 0` choosing between a literal empty-quotes rendering and the interpolated
+   quoted rendering; the mutant always takes the interpolated arm — which, at `s == ""`, renders the
+   byte-identical text. The literal arm is a readability duplicate of the interpolated arm's empty case,
+   so the one input the conditional-false changes is the one input where the arms agree. (The sibling
+   conditional-true and `s.Length != 0` mutants DO diverge for non-empty strings and are Killed.)
+
+### Three survivors left, each with its reason — filed as TASKS.md I2
+
+`ScanAll`'s `OrderBy → OrderByDescending` (L27) and `"*.cs" → ""` (L28), and `ExampleCatalogue.Scan`'s
+`"*.cs" → ""` (L29). All three live in filesystem composition roots that enumerate the REAL
+`samples/` tree via `RepoLayout`. They are corpus holes, NOT equivalents: a marker-bearing non-`.cs` file
+would change `ScanAll` under the pattern mutants (empty pattern returns ALL files — measured: 105 vs 44
+under the Gallery), and a duplicate id split across two files would make scan order observable. But no
+honest test can reach them: killing them requires planting files in the real tree (banned — the
+RepoWriteGuard exists precisely to stop test-side repo writes) or redirecting `RepoLayout.Root` (banned —
+the doc pipeline must prove itself against the real repository; a redirect changes what the leg proves).
+The seam that would fix this honestly — the composition roots taking an injectable file list the way
+`Build` already does — is a product-shape decision, filed as **I2** in `Issues/round20/TASKS.md`.
+
+### Post-run state
+
+- Post-run `git status`: **byte-identical to pre-run** (tracked tree; the guard held). One
+  `DwarfMapper.DocTooling.dll.stryker-unchanged` backup deleted; every test-bin
+  `DwarfMapper.DocTooling.dll` string-scanned clean of Stryker markers.
+- Non-vacuity: 284 scoreable statuses in the JSON (271 Killed + 13 Survived), the five configured files
+  and no others; 7 progress-guard mutants Ignored (the pinned in-source disable, unchanged).
+- Full suite **7,747 / 0** foreground in 66 s (baseline 7,716 in 73 s — inside the fast-tier cap;
+  +31 tests are the new family tests).
+- The margin to `break` is now **two flips**: 270/284 = 95.07 % still passes at 95; 269/284 = 94.71 %
+  fails. Every one of the 13 undetected mutants is dispositioned, so any future flip below 95 is a real
+  regression or a mutant-population shift from a product edit — not an undispositioned leftover.

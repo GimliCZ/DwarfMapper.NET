@@ -39,7 +39,7 @@ recomputes the ceilings in the same commit.
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
 | generator | `stryker-config.json` | 201 | 71.64 % (2026-08-19, run `12-10-18`) | 16 | 0 | 8 | 92.03 % |
-| doctooling | `stryker-config.doctooling.json` | 284 | 67.96 % (2026-08-21, H7 phase-2 re-measure) | 1 | 0 | 0 | 99.64 % |
+| doctooling | `stryker-config.doctooling.json` | 284 | 95.42 % (2026-08-22, P3 re-measure) | 10 | 0 | 0 | 96.47 % |
 | runtime | `stryker-config.runtime.json` | 113 | 96.46 % (2026-08-21, P2 re-measure) | 2 | 1 | 1 | 98.23 % |
 
 Fuller arithmetic, carried from the research (context, not gates): the generator leg's *realistic* raw
@@ -93,13 +93,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "doctooling": {
       "config": "stryker-config.doctooling.json",
       "scoreable": 284,
-      "measuredRawScore": 67.96,
-      "measuredOn": "2026-08-21",
-      "provenEquivalent": 1,
+      "measuredRawScore": 95.42,
+      "measuredOn": "2026-08-22",
+      "provenEquivalent": 10,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 99.64,
-      "rawCeilingFormula": "(284 - 1) / 284"
+      "rawCeiling": 96.47,
+      "rawCeilingFormula": "(284 - 10) / 284"
     },
     "runtime": {
       "config": "stryker-config.runtime.json",
@@ -225,6 +225,132 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "category": "proven-equivalent",
       "proof": "The two forms differ on exactly one input, run == longest, and there they agree anyway: the mutant assigns longest = run where run already equals longest, which changes nothing. No test can detect it. (Line drifted 83 -> 97 when the H7 progress guard landed above it.)",
       "anchor": "Issues/ledgers/T3-mutation-survivors.md § DocTooling family E"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/DocSnippetInjector.cs",
+      "member": "ParseId (malformed-marker guard)",
+      "lineAtProof": 110,
+      "lineCurrent": 110,
+      "mutator": "Equality",
+      "original": "end < 0",
+      "mutated": "end <= 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "ParseId is called only on a line whose TrimStart() begins with '<!-- snippet:', so characters 0-2 are '<!-' and IndexOf(\"-->\") can never return 0; the comparisons differ only at end == 0, which is unreachable.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 1"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
+      "member": "ParseId (malformed-marker guard)",
+      "lineAtProof": 121,
+      "lineCurrent": 121,
+      "mutator": "Equality",
+      "original": "close < 0",
+      "mutated": "close <= 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Same shape as the injector entry: the line begins with '// <snippet:', character 0 is '/', so IndexOf('>') can never return 0 and the comparisons differ only at an unreachable input.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 2"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/DocTableInjector.cs",
+      "member": "Inject (unclosed-table guard)",
+      "lineAtProof": 31,
+      "lineCurrent": 31,
+      "mutator": "Equality",
+      "original": "end < 0",
+      "mutated": "end <= 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "end = Array.FindIndex(lines, start + 1, ...) with start >= 0 returns -1 or a value >= start + 1 >= 1; 0 is not in its range, so the widened comparison admits no new input. (The open-marker sibling start < 0 -> <= 0 IS reachable - a marker on the first line - and is Killed.)",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 3"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/ExampleCatalogue.cs",
+      "member": "Build (ambiguous-match message ternary)",
+      "lineAtProof": 74,
+      "lineCurrent": 74,
+      "mutator": "Equality",
+      "original": "matches.Count > 1",
+      "mutated": "matches.Count >= 1",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The ternary sits inside the matches.Count != 1 throw's message, so it is evaluated only for counts {0, 2, 3, ...}; > 1 and >= 1 agree on every one of those, and the only distinguishing count, 1, never reaches it.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 4"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
+      "member": "ScanFile (close-marker branch)",
+      "lineAtProof": 105,
+      "lineCurrent": 105,
+      "mutator": "Statement",
+      "original": "continue;",
+      "mutated": ";",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The only statement the deleted continue would fall through to is 'if (openId is not null) body.Add(lines[i]);', and the branch sets openId = null on its previous line - the fall-through is a guaranteed no-op.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 5"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
+      "member": "Dedent (common-prefix loop guard)",
+      "lineAtProof": 170,
+      "lineCurrent": 170,
+      "mutator": "Equality",
+      "original": "prefix.Length > 0",
+      "mutated": "prefix.Length >= 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The loop's other conjunct is !w.StartsWith(prefix); at prefix == \"\", StartsWith(\"\") is true for every string, so the conjunction is false either way and the loop exits identically.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 6"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/OptionTableRenderer.cs",
+      "member": "ExistingProse (header/separator skip)",
+      "lineAtProof": 94,
+      "lineCurrent": 94,
+      "mutator": "String",
+      "original": "name is \"Option\" or \"---\" (the \"---\" literal)",
+      "mutated": "that \"---\" -> \"\"",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The mutant stops skipping separator-shaped rows, so '---' can enter the prose/order dictionaries - but both consumers key them by PropertyInfo.Name, a valid C# identifier which '---' can never be, and real keys keep their relative insertion order so OrderBy is unaffected. (The sibling 'Option' arm is NOT equivalent - a property CAN be named Option - and is Killed by the header-masquerade test.)",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 7"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/OptionTableRenderer.cs",
+      "member": "TryCreate (TargetInvocationException catch)",
+      "lineAtProof": 109,
+      "lineCurrent": 109,
+      "mutator": "Block removal",
+      "original": "{ return null; }",
+      "mutated": "{}",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The removed catch block contains exactly 'return null;'. Stryker keeps block-removal mutants compilable by appending a 'return default' epilogue to the method, and default for object? IS null - the mutant returns null on the same exception path. Identical by the mutation tooling's own mechanics; empirically covered-and-passing under A_throwing_constructor_falls_back_to_em_dashes.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 8"
+    },
+    {
+      "leg": "doctooling",
+      "file": "src/DwarfMapper.DocTooling/OptionTableRenderer.cs",
+      "member": "Format (empty-string arm)",
+      "lineAtProof": 118,
+      "lineCurrent": 118,
+      "mutator": "Conditional (false)",
+      "original": "s.Length == 0 ? <empty-quotes literal> : <interpolated quoted s>",
+      "mutated": "false ? ... (always the interpolated arm)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "At s == \"\" the interpolated arm renders the byte-identical text to the literal arm - the literal is a readability duplicate of the interpolated arm's empty case - so the one input the conditional-false changes is the one input where the arms agree. (The sibling conditional-true and s.Length != 0 mutants DO diverge for non-empty strings and are Killed.)",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P3 adjudication 9"
     },
     {
       "leg": "runtime",

@@ -163,7 +163,13 @@ public class RatchetInvariantScanTests
     {
         ["generator|proven-equivalent"] = 16,
         ["generator|probably-equivalent"] = 8,
-        ["doctooling|proven-equivalent"] = 1,
+        // Round-22 P3 grew the doctooling rows by nine, each with its case-analysis proof in the T3
+        // ledger's P3 section (same commit): two unreachable-zero IndexOf/FindIndex boundaries, the
+        // ambiguous-match ternary evaluated only outside its distinguishing count, a fall-through
+        // guaranteed no-op continue, the StartsWith("") loop-exit identity, the '---' separator key no
+        // property name can collide with, Stryker's own return-default epilogue reproducing the removed
+        // 'return null', and the Format empty-string arm whose two branches agree at the one changed input.
+        ["doctooling|proven-equivalent"] = 10,
         // Round-22 P2 grew the runtime rows by two, each with its proof in the E3-E1 round-22 appendix
         // (same commit): the facade TryGet-guard && -> || (proven — the operands co-vary via the
         // TryGetValue out-contract and Register's ThrowIfNull) and the FormatMessage 'Count: > 1'
@@ -174,8 +180,8 @@ public class RatchetInvariantScanTests
         ["runtime|probably-equivalent"] = 1,
     };
 
-    private const int PinnedEntryRows = 12;
-    private const int PinnedTotalOccurrences = 29;
+    private const int PinnedEntryRows = 21;
+    private const int PinnedTotalOccurrences = 38;
 
     [Fact]
     public void R3_the_equivalents_ledger_counts_are_exactly_pinned_and_every_entry_is_proof_anchored()
