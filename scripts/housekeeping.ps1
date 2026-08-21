@@ -57,19 +57,21 @@ if ($Nightly) {
 # informational only. Raising a floor to a new measured value is the normal move; lowering one demands a
 # written reason in the commit that lowers it.
 #
-# Re-measured 2026-08-21 (round-21 T5, fast tier, Release) at the commit that wires the nightly — line / branch:
-#   DwarfMapper 78.3/76.1 · Generator 93.7/87.4 · DocTooling 90.7/84.2 · CodeFixes 92.4/68.4 · Testing 83.2/81.9
-# DwarfMapper rose 77.7 -> 78.3: raised, the normal move. Generator moved 93.8 -> 93.7 (raw 93.781,
-# 8,384/8,940) — NOT a lost test: T6 (B27's DWARF094 refusal, B33's span/async-stream context threading)
-# grew the coverable-line DENOMINATOR after the floor's measuring commit (cedad48), and a measured floor
-# tracks the measurement at HEAD; the written reason this lowering demands is this comment plus the commit
-# that carries it. The deep tier (-Nightly, same day) measures the same five line values to this decimal,
-# so the floors hold for both tiers — deep coverage is a superset of fast on the same tree.
+# Re-measured 2026-08-22 (round-22 P4, fast tier, Release) at the commit that carries the raise — line / branch:
+#   DwarfMapper 91.2/77.2 · Generator 93.7/87.4 · DocTooling 95.7/91.7 · CodeFixes 92.4/68.4 · Testing 83.2/82.2
+# DwarfMapper rose 78.3 -> 91.2 by DENOMINATOR HONESTY, not new tests: P4 excluded the nine 0%-covered
+# compile-time-only attribute classes (the one sanctioned [ExcludeFromCodeCoverage] category, 51 by-design-
+# dead lines; 282/360 -> 282/309), each justified on the attribute and exactly pinned by
+# RatchetInvariantScanTests. MapToAttribute (0/4) deliberately STAYS in the denominator — its ctor's
+# defensive `?? Array.Empty` arm is research Q3's unruled category. DocTooling rose 90.7 -> 95.7 from P3's
+# kill-list tests (34 NoCoverage mutants killed = covered lines grew) — the co-movement the plan predicted.
+# Generator, CodeFixes and Testing line values measured unchanged to this decimal (Testing's branch moved
+# 81.9 -> 82.2 with no code change — the R4 wobble exhibit; branch stays informational).
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
-    'DwarfMapper'            = 78.3
+    'DwarfMapper'            = 91.2
     'DwarfMapper.Generator'  = 93.7
-    'DwarfMapper.DocTooling' = 90.7
+    'DwarfMapper.DocTooling' = 95.7
     'DwarfMapper.CodeFixes'  = 92.4
     'DwarfMapper.Testing'    = 83.2
 }

@@ -301,10 +301,16 @@ public class RatchetInvariantScanTests
     {
         // P4's instrument, guarded from day one (the ruling-(b) boundary: [ExcludeFromCodeCoverage] with
         // a sanctioned justification is the coverage-denominator mechanism the reframe covers — it is NOT
-        // a score adjudication, and it is pinned exactly like one anyway). Today src/ has none; when P4
-        // classifies the 0%-covered by-design classes, this pin moves in the same commit as each
-        // justified exclusion.
-        const int pinnedExclusionCount = 0;
+        // a score adjudication, and it is pinned exactly like one anyway). Round-22 P4 classified every
+        // 0%-covered class in the five gated assemblies (all ten sat in src/DwarfMapper) and excluded the
+        // NINE that fit the one sanctioned category — compile-time-only attributes the generator reads
+        // from the semantic model, every one carrying [DwarfSurface] so the surface catalog is its
+        // non-vacuity anchor: AutoNest, FlattenGraph, GenerateWrapperMap, MapCollectionKey,
+        // MapDerivedType (non-generic), MapIgnoreSource, and the pair-scoped MapProperty<,>, MapIgnore<>,
+        // MapValue<> (51 by-design-dead lines out of the denominator). The tenth, MapToAttribute, STAYS
+        // at 0/4: its ctor's `targets ?? Array.Empty<Type>()` is a defensive arm — research Q3's example
+        // of a category that needs a maintainer ruling first, a hole by definition until ruled.
+        const int pinnedExclusionCount = 9;
 
         var occurrences = new List<string>();
         foreach (var file in RepoPaths.SourceFiles(RepoPaths.Src))

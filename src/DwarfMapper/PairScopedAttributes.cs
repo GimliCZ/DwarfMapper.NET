@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace DwarfMapper;
 
 /// <summary>
@@ -23,6 +25,9 @@ namespace DwarfMapper;
 /// <typeparam name="TSource">The source type of the pair this linkage configures.</typeparam>
 /// <typeparam name="TTarget">The destination type of the pair this linkage configures.</typeparam>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
+    + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
+    + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapPropertyAttribute<TSource, TTarget> : Attribute
 {
@@ -69,6 +74,9 @@ public sealed class MapPropertyAttribute<TSource, TTarget> : Attribute
 /// </summary>
 /// <typeparam name="TTarget">The destination type whose member is ignored.</typeparam>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
+    + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
+    + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapIgnoreAttribute<TTarget> : Attribute
 {
@@ -135,6 +143,9 @@ public sealed class MapConstructorAttribute<TSource, TTarget> : Attribute
 /// </summary>
 /// <typeparam name="TTarget">The destination type whose member is assigned.</typeparam>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
+    + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
+    + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapValueAttribute<TTarget> : Attribute
 {

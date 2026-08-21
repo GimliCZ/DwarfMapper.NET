@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace DwarfMapper;
 
 /// <summary>
@@ -25,6 +27,9 @@ namespace DwarfMapper;
 // fixture's element type is int, which has neither of the sampled names, so the directive named nothing that
 // existed. `Items` is the collection; `Id` is a member of its element type, which is where the key lives.
 [DwarfSurfaceProbe(constructorArity: 2, Arguments = "{Items}, {Id}")]
+[ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
+    + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
+    + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapCollectionKeyAttribute : Attribute
 {

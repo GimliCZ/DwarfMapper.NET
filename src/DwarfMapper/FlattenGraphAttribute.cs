@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace DwarfMapper;
 
 /// <summary>
@@ -33,6 +35,9 @@ namespace DwarfMapper;
 // nested-pair fixture has neither, so both sampled arguments named scalars and the directive was nonsense at
 // every endpoint. `Root` enters the recursive graph, `Flat` is the collection it flattens into.
 [DwarfSurfaceProbe(constructorArity: 2, Arguments = "{Root}, {Flat}")]
+[ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
+    + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
+    + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class FlattenGraphAttribute : Attribute
 {

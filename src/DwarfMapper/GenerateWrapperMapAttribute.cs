@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace DwarfMapper;
 
@@ -27,6 +28,9 @@ namespace DwarfMapper;
 /// </code>
 /// </summary>
 [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+[ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
+    + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
+    + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class GenerateWrapperMapAttribute : Attribute
 {
