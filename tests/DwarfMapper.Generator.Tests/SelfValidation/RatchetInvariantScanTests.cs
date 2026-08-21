@@ -161,8 +161,14 @@ public class RatchetInvariantScanTests
     /// </summary>
     private static readonly Dictionary<string, int> PinnedEquivalentCounts = new(StringComparer.Ordinal)
     {
-        ["generator|proven-equivalent"] = 16,
-        ["generator|probably-equivalent"] = 8,
+        // Round-22 P5 grew the generator proven rows by two (L80/L81 file-path-key guards: every field
+        // reachable through IsSourceSequential's source-struct gate has a source location with a non-null
+        // SourceTree, so the guard is always true and the string.Empty arms are dead) and SHRANK the L86
+        // probably row 4 -> 2 with the invalidating evidence (the partial-file fixture KILLED the b-side
+        // cond->false and < 0 tie-break mutants T3 had judged no-op). Proofs in the T3 ledger's P5 section
+        // (same commit).
+        ["generator|proven-equivalent"] = 24,
+        ["generator|probably-equivalent"] = 6,
         // Round-22 P3 grew the doctooling rows by nine, each with its case-analysis proof in the T3
         // ledger's P3 section (same commit): two unreachable-zero IndexOf/FindIndex boundaries, the
         // ambiguous-match ternary evaluated only outside its distinguishing count, a fall-through
@@ -180,8 +186,8 @@ public class RatchetInvariantScanTests
         ["runtime|probably-equivalent"] = 1,
     };
 
-    private const int PinnedEntryRows = 21;
-    private const int PinnedTotalOccurrences = 38;
+    private const int PinnedEntryRows = 23;
+    private const int PinnedTotalOccurrences = 44;
 
     [Fact]
     public void R3_the_equivalents_ledger_counts_are_exactly_pinned_and_every_entry_is_proof_anchored()

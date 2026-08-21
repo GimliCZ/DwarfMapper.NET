@@ -679,3 +679,101 @@ The seam that would fix this honestly — the composition roots taking an inject
 - The margin to `break` is now **two flips**: 270/284 = 95.07 % still passes at 95; 269/284 = 94.71 %
   fails. Every one of the 13 undetected mutants is dispositioned, so any future flip below 95 is a real
   regression or a mutant-population shift from a product edit — not an undispositioned leftover.
+
+---
+
+## P5 — the generator kill program: the three T3 families + the NoCoverage sweep (2026-08-22)
+
+Round 22, task P5, branch `feat/round22-gates`. Kill commit `6bf89c4` (test-side only, src untouched);
+re-measure `StrykerOutput/2026-08-22.01-14-14` (quiet machine, foreground-launched, **21:19** wall,
+5,897 tests discovered):
+
+**Score 81.59 % = 164 detected / 201 scoreable. Survived 30, NoCoverage 7, Timeout 0.**
+`break` 71 → **81** (81.59 floored), `low` 80 → 81 with it, `high` stays 90, in the same commit as this
+record.
+
+**Baseline discipline (a disclosed deviation from P3's baseline-first precedent):** no fresh pre-kill
+baseline run was made. Justification: all four mutated files are unchanged since well before T3
+(git log: `BlittableProof.cs` last touched `c30052e`, `ConstructorSelector.cs` `d394df4`,
+`EquatableArray.cs` `c476714`, `LocationInfo.cs` `9b09f76`), and the H5 record above re-validated the
+71.64 % figure on 2026-08-19 with **zero per-mutant flips** against the T3 run — so the T3/H5 catalog IS
+the per-mutant baseline, and a second 21-minute run would have re-measured a number two runs had already
+agreed on. The reconciliation held: the fresh report's scoreable population is exactly 201 in exactly the
+four configured files (non-vacuity), and every baseline Killed stayed Killed.
+
+### Flip census vs the 2026-08-19 `12-10-18` baseline
+
+**20 flips: 16 Survived→Killed + 4 NoCoverage→Killed. Zero Killed→anything regressions**
+(164 = 144 + 20 exactly; per-file kills 19/5/58/82 vs 19/5/46/74).
+
+| Family | Killed mutants | `killedBy` (verified in the JSON) |
+|---|---|---|
+| **1** `IsSourceSequential` L97 `l.IsInSource` → `true` | 1 | `BlittableProofCoverageTests.CanReinterpret_field_compatible_bcl_struct_is_still_refused` — user `{float X, Y}` vs `System.Numerics.Vector2`, the field-compatible pair the old name-mismatched BCL test could not discriminate |
+| **2** `InstanceFields` L78 sort deletion; L80/L81 cond→false, `< 0`, coalesce-remove-left; L83 `byFile != 0` → `== 0`; **plus L86 cond→false and `< 0` from the probably-equivalent rows** | 10 | `BlittableProofCoverageTests.CanReinterpret_partial_file_struct_verdict_is_file_order_independent` — the partial-file fixture, both compile orders, both directions, geometry engineered (path order vs source-offset inversion) |
+| **3a** `ConstructorSelector` L288 `Any` → `All` (the CS1620 invariant) | 1 | `ConstructorSelectorHardeningTests.Mixed_ref_and_value_param_ctor_is_unusable_and_reports_DWARF026` — the mixed `Dst(int a, ref int b)` shape |
+| **3b** L55 predicate `&&` → `\|\|` ×3 | 3 | `Struct_with_only_a_private_param_ctor_uses_the_implicit_parameterless_path` (×2, plus one incidental static kill by `TopologyOracleFuzzTests`); the obsolete-conjunct flip at L59 by `Struct_with_only_an_obsolete_param_ctor_uses_the_implicit_parameterless_path` |
+| **3c** L230 `\|\|` → `&&` (Survived) + `continue` deletion (NC) | 2 | `Optional_param_with_no_source_keeps_the_wide_ctor_satisfiable` — the wide ctor binds `name`, so a silently-preferred narrow ctor is observable |
+| **3d** L246 (NC) and L250 (NC) `return false` → `true` | 2 | `Unresolvable_dotted_explicit_map_scores_the_ctor_unsatisfiable` / `Explicit_map_naming_a_nonexistent_source_member_scores_the_ctor_unsatisfiable` — direct `Select` calls, because the real pipeline reports DWARF012 before selection ever sees an unresolvable `[MapProperty]` |
+| **NC sweep** BlittableProof L32 `na.TypeKind != Struct` → `true` | 1 | `CanReinterpret_enum_vs_struct_returns_false` — the na-side mirror of the existing struct-vs-enum test. **T3's "unreachable branch" judgement for this row was wrong**: the branch was merely uncovered (no test drove an enum as the FIRST argument), and one symmetric fixture both covered and killed it |
+
+### Two new proven-equivalent adjudications + one probably-equivalent correction (ledger + pins, this commit)
+
+The T3 bar: original and mutant agree on every reachable input. Precedent for reversing a T3 "real hole"
+judgement with a case analysis: the P2 facade-TryGet adjudication.
+
+1. **L80 file-path-key guard, 4 mutants (cond→true, `> 0` → `>= 0`, both `string.Empty` literals):
+   proven equivalent.** `InstanceFields` is reached only after `IsSourceSequential(na)` AND `(nb)` both
+   pass, which demands source-declared structs. Every field symbol of a source-declared struct —
+   explicit fields, fixed buffers, auto-property and record-primary-constructor backing fields (whose
+   `Locations` delegate to the property/parameter identifier in source) — has `Locations.Length >= 1`
+   with `Locations[0]` a source location whose `SourceTree` is non-null (and `SyntaxTree.FilePath` is
+   non-null by contract). So the guard is true on every reachable input and both `string.Empty`
+   positions are dead — which is also why the two String mutants were NoCoverage in every accepted run.
+   The proof discriminates: the SIBLING cond→false / `< 0` / coalesce-remove-left mutants on the same
+   expression are reachable-divergent and the fixture killed all three.
+2. **L81, the b-side mirror, 4 mutants: proven equivalent** by the same analysis; its killable siblings
+   died to the same fixture.
+3. **L86 probably-equivalent row SHRUNK 4 → 2.** T3's "the tie-break is a no-op within a single file"
+   claim is REFUTED for the b-side cond→false and `< 0` forms: both were killed by the fixture. The
+   mechanism T3 missed is the framework's `SwapIfGreater(keys[0], keys[1])` argument order — a zeroed
+   b-side position makes the single comparison on the destination's same-file pair return positive and
+   swaps a correctly-ordered pair. The a-side mirrors (L85) survive precisely because zeroing `posA`
+   biases the same comparison towards "already ordered"; they stay probably-equivalent (killable in
+   principle with a deliberately mis-ordered same-file pair), not do-not-attempt.
+
+Ledger counts: generator proven 16 → **24**, probably 8 → **6**; rows 21 → 23, occurrences 38 → 44;
+rawCeiling 92.03 → **88.05** = (201 − 24)/201. Scan pins moved in the same commit.
+
+### The NoCoverage 11, dispositioned
+
+| Mutants | Disposition |
+|---|---|
+| CS L230 `continue`, L246, L250 | **Killed** (3b/3d above) |
+| BP L32 | **Killed** (NC sweep above; the "unreachable branch" judgement corrected) |
+| BP L80/L81 `string.Empty` → `"Stryker was here!"` ×4 | **Adjudicated proven-equivalent** (dead arms per the L80/L81 proof; they remain NoCoverage in the report and in the denominator) |
+| BP L30 second-conjunct mutant | **Left with reason**: it sits in the `&&` right operand that only evaluates when two DISTINCT symbols share a `SpecialType` — the L29–L30 unreachable-true-return dead-code question, a maintainer denominator decision (research Q2), deliberately NOT an equivalence entry |
+| CS L281 (`IsStatic`), L285 (record copy-ctor) | **Left with reason**: dead-code questions per the same Q2 list — `InstanceConstructors` never contains a static ctor; the copy ctor is rejected as `IsImplicitlyDeclared` one line earlier |
+
+### The honest remainder — every undetected mutant dispositioned
+
+30 Survived = 22 proven-equivalent (L28, L29, L58×12, CS L58, CS L243, L80×2, L81×2) + 6
+probably-equivalent (L85×4, L86×2) + **2 real holes left deliberately** (`EquatableArray.GetHashCode`
+L53 ×2 — not in the plan's P5 fold-in; the `+ → −` mutant is an affine transform of the original within
+any fixed length, so only exact-value or cross-length collision pins kill it, a test shape worth deciding
+deliberately alongside the runtime leg's `Key.GetHashCode` hole) + **1 real hole low-consequence**
+(`IsSourceSequential` `Any → All`, divergent only for a zero-location or source/metadata-mixed struct
+symbol, which Roslyn's compilation model does not produce for reachable struct inputs) + **1 question**
+(CS L88 `useObjectInitializerOnly` — possibly a redundant out-parameter, T3's investigate-first note
+stands). 7 NoCoverage = 4 adjudicated + 3 dead-code questions. Nothing undetected is undispositioned.
+
+### Post-run state
+
+- Margin to `break`: one flip survivable (163/201 = 81.09 % passes at 81), two not (162/201 = 80.59 %).
+- Wall-clock 21:19 vs H5's 19:41 — the +1:38 is the P1 pwsh gate battery plus the 9 new P5 tests
+  absorbed by the 85 static whole-suite mutants (~493k test executions), the absorption P1's closeout
+  predicted; recorded, not a regression.
+- Non-vacuity: 201 scoreable statuses in exactly the four configured files; Ignored 204, in-scope
+  CompileError 66, Timeout 0.
+- Post-run tracked tree byte-identical except the intended ratchet edits; the
+  `DwarfMapper.Generator.dll.stryker-unchanged` backups deleted; test-bin generator DLLs string-scanned
+  clean of Stryker markers.

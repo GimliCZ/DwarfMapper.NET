@@ -38,14 +38,16 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 201 | 71.64 % (2026-08-19, run `12-10-18`) | 16 | 0 | 8 | 92.03 % |
+| generator | `stryker-config.json` | 201 | 81.59 % (2026-08-22, P5 re-measure) | 24 | 0 | 6 | 88.05 % |
 | doctooling | `stryker-config.doctooling.json` | 284 | 95.42 % (2026-08-22, P3 re-measure) | 10 | 0 | 0 | 96.47 % |
 | runtime | `stryker-config.runtime.json` | 113 | 96.46 % (2026-08-21, P2 re-measure) | 2 | 1 | 1 | 98.23 % |
 
-Fuller arithmetic, carried from the research (context, not gates): the generator leg's *realistic* raw
-ceiling is lower than 92.03 — the 8 probably-equivalent survivors and the 11 NoCoverage mutants T3 judged
-unreachable-branch/defensive/dead-code-question cap the killable set at ≈ 167/201 = 83.08 % raw until the
-maintainer's dead-code rulings (research Q2) land. The runtime figure net of the ruled-in-practice and
+Fuller arithmetic, carried from the research and updated by P5 (context, not gates): the generator leg's
+*realistic* raw ceiling is lower than 88.05 — the 6 probably-equivalent survivors and the 3 NoCoverage
+mutants T3 judged dead-code-question (BlittableProof L30's short-circuited conjunct, ConstructorSelector
+L281/L285) plus the L88 flag question cap the currently killable set at the 3 named real holes
+(`EquatableArray.GetHashCode` ×2 and `IsSourceSequential`'s `Any → All`), ≈ 167/201 = 83.08 % raw, until
+the maintainer's dead-code rulings (research Q2) land. The runtime figure net of the ruled-in-practice and
 probably-equivalent entries is 109/113 = 96.46 % raw — and net of the filed-uncoverable
 `Key.Equals(object)` override (E3-E1 hole 7, a denominator question awaiting the maintainer, not a ledger
 entry) the leg's currently killable set is exactly that 109. The research's oft-quoted
@@ -82,13 +84,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "generator": {
       "config": "stryker-config.json",
       "scoreable": 201,
-      "measuredRawScore": 71.64,
-      "measuredOn": "2026-08-19",
-      "provenEquivalent": 16,
+      "measuredRawScore": 81.59,
+      "measuredOn": "2026-08-22",
+      "provenEquivalent": 24,
       "ruledInPractice": 0,
-      "probablyEquivalent": 8,
-      "rawCeiling": 92.03,
-      "rawCeilingFormula": "(201 - 16) / 201"
+      "probablyEquivalent": 6,
+      "rawCeiling": 88.05,
+      "rawCeilingFormula": "(201 - 24) / 201"
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
@@ -187,7 +189,35 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     {
       "leg": "generator",
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
-      "member": "InstanceFields (sort comparator, position tie-break)",
+      "member": "InstanceFields (sort comparator, file-path key, a-side)",
+      "lineAtProof": 80,
+      "lineCurrent": 80,
+      "mutator": "Conditional/Equality/String (4 distinct: cond->true, > -> >=, both string.Empty literals -> \"Stryker was here!\")",
+      "original": "a.Locations.Length > 0 ? a.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty",
+      "mutated": "the four forms above",
+      "occurrences": 4,
+      "category": "proven-equivalent",
+      "proof": "InstanceFields is reached only after IsSourceSequential(na) AND IsSourceSequential(nb) both pass (LayoutIdentical's gate), which demands SOURCE-declared structs. Every field symbol of a source-declared struct - explicit fields, fixed buffers, auto-property and record-primary-constructor backing fields (whose Locations delegate to the property/parameter identifier in source) - carries Locations.Length >= 1 with Locations[0] a source location whose SourceTree is non-null (and SyntaxTree.FilePath is non-null by contract, empty at worst). So 'Length > 0' is true on every reachable input (cond->true and >= 0 agree with the original) and both string.Empty fallback positions (the coalesce right operand and the ternary else arm) are never evaluated, making their literal mutants unobservable - the two String rows were NoCoverage in every accepted run, consistent with this proof. The SIBLING mutants on the same expression (cond->false, < 0, coalesce-remove-left) ARE reachable-divergent and were killed by the round-22 partial-file fixture, so the proof discriminates rather than blanket-excuses the line. (Reverses T3's 'real hole, same cause as L78' grouping for these four; precedent for reversing a T3 judgement with a case analysis: the P2 facade-TryGet adjudication.)",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P5 adjudications"
+    },
+    {
+      "leg": "generator",
+      "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
+      "member": "InstanceFields (sort comparator, file-path key, b-side)",
+      "lineAtProof": 81,
+      "lineCurrent": 81,
+      "mutator": "Conditional/Equality/String (4 distinct: cond->true, > -> >=, both string.Empty literals -> \"Stryker was here!\")",
+      "original": "b.Locations.Length > 0 ? b.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty",
+      "mutated": "the four forms above",
+      "occurrences": 4,
+      "category": "proven-equivalent",
+      "proof": "Mirror of the L80 entry, same case analysis: every reachable field has a source location with a non-null SourceTree, so the guard is always true and the string.Empty arms are dead on every reachable input; the b-side cond->false / < 0 / coalesce-remove-left siblings were killed by the same fixture.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P5 adjudications"
+    },
+    {
+      "leg": "generator",
+      "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
+      "member": "InstanceFields (sort comparator, position tie-break, a-side)",
       "lineAtProof": 85,
       "lineCurrent": 85,
       "mutator": "Conditional/Equality (4 distinct: cond->true, cond->false, > -> <, > -> >=)",
@@ -195,22 +225,22 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "mutated": "the four guard mutations above",
       "occurrences": 4,
       "category": "probably-equivalent",
-      "proof": "Within a single file GetMembers() is already position-ordered, so the SourceSpan.Start tie-break is a no-op there and a test cannot easily distinguish it; T3: treat as probably-equivalent, low priority, do not count toward a raised break.",
-      "anchor": "Issues/ledgers/T3-mutation-survivors.md § BlittableProof.InstanceFields"
+      "proof": "Within a single file GetMembers() is already position-ordered, so the SourceSpan.Start tie-break is a no-op there and a test cannot easily distinguish it; T3: treat as probably-equivalent, low priority, do not count toward a raised break. P5 caveat: the b-side cond->false and < 0 mirrors WERE killed by the partial-file fixture (the framework's SwapIfGreater(keys[0], keys[1]) argument order makes a neutered b-side position observable on a same-file pair), so the a-side cond->true / > -> >= remain equivalent-shaped (guard always true, as the L80 proof) while a-side cond->false / < 0 are plausibly killable with a deliberately mis-ordered same-file pair - kept probably-equivalent, not do-not-attempt.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § BlittableProof.InstanceFields; § P5 adjudications"
     },
     {
       "leg": "generator",
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
-      "member": "InstanceFields (sort comparator, position tie-break)",
+      "member": "InstanceFields (sort comparator, position tie-break, b-side)",
       "lineAtProof": 86,
       "lineCurrent": 86,
-      "mutator": "Conditional/Equality (4 distinct: cond->true, cond->false, > -> <, > -> >=)",
+      "mutator": "Conditional/Equality (2 remaining: cond->true, > -> >=)",
       "original": "b.Locations.Length > 0 ? b.Locations[0].SourceSpan.Start : 0",
-      "mutated": "the four guard mutations above",
-      "occurrences": 4,
+      "mutated": "the two guard mutations above",
+      "occurrences": 2,
       "category": "probably-equivalent",
-      "proof": "Mirror of the L85 entry: the tie-break is a no-op within a single file; T3: probably-equivalent, low priority.",
-      "anchor": "Issues/ledgers/T3-mutation-survivors.md § BlittableProof.InstanceFields"
+      "proof": "CORRECTED by P5 (shrink 4 -> 2 with the invalidating evidence, per this ledger's rule): T3's no-op claim was refuted for the cond->false and < 0 forms - both were KILLED by the round-22 partial-file fixture (a zeroed b-side position flips SwapIfGreater's single comparison on the destination's same-file pair). The surviving cond->true and > -> >= forms diverge only on a zero-location field, unreachable per the L80/L81 proof - they stay probably-equivalent only because this row predates that proof's grade; a future pass may promote them with it.",
+      "anchor": "Issues/ledgers/T3-mutation-survivors.md § P5 adjudications"
     },
     {
       "leg": "doctooling",
