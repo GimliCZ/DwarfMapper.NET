@@ -55,7 +55,10 @@ public static class SnippetScanner
         return result;
     }
 
-    private static bool IsNotBuildOutput(string path) =>
+    // Internal rather than private: the exclusion is a path-shape contract the tests pin directly —
+    // the live corpus keeps no marker-bearing sources under bin/obj, so no test through ScanAll() can
+    // tell a correct predicate from a broken one.
+    internal static bool IsNotBuildOutput(string path) =>
         !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
             StringComparison.Ordinal)
         && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",

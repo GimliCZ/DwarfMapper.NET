@@ -93,11 +93,15 @@ public class DocSnippetInjectorTests
     [Fact]
     public void An_unknown_id_is_a_loud_failure()
     {
+        // The marker sits on line 2 so the reported line number discriminates: a maintainer chasing a
+        // doc-pipeline failure goes to the number the message quotes, and an off-by-one (or negated)
+        // line is worse than none. The remedy sentence is asserted too — it is pasteable output.
         var ex = Assert.Throws<DocToolingException>(() => DocSnippetInjector.Inject(
-            "<!-- snippet: ghost -->\n<!-- endsnippet -->\n", Regions(("demo", "x")), "d.md"));
+            "Intro.\n<!-- snippet: ghost -->\n<!-- endsnippet -->\n", Regions(("demo", "x")), "d.md"));
 
-        Assert.Contains("ghost", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("d.md:2: snippet 'ghost'", ex.Message, StringComparison.Ordinal);
         Assert.Contains("no sample defines it", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("'// <snippet: ghost>' region to a file under samples/", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -105,9 +109,69 @@ public class DocSnippetInjectorTests
     {
         // The dangerous failure mode: swallowing the rest of the file while looking for a close marker.
         var ex = Assert.Throws<DocToolingException>(() => DocSnippetInjector.Inject(
-            "<!-- snippet: demo -->\nprose that must not be eaten\n", Regions(("demo", "x")), "d.md"));
+            "Intro.\n<!-- snippet: demo -->\nprose that must not be eaten\n", Regions(("demo", "x")), "d.md"));
 
-        Assert.Contains("endsnippet", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("d.md:2: snippet 'demo' is never closed with '<!-- endsnippet -->'",
+            ex.Message, StringComparison.Ordinal);
+        Assert.Contains("the rest of the file as its body", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_marker_missing_its_close_delimiter_is_a_loud_failure()
+    {
+        // A line that starts like a marker but never closes its comment must be refused, not guessed at.
+        var ex = Assert.Throws<DocToolingException>(() => DocSnippetInjector.Inject(
+            "Intro.\n<!-- snippet: demo\n<!-- endsnippet -->\n", Regions(("demo", "x")), "d.md"));
+
+        Assert.Contains("d.md:2: malformed marker", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("expected '<!-- snippet: id -->'", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_marker_with_an_empty_id_is_a_loud_failure()
+    {
+        var ex = Assert.Throws<DocToolingException>(() => DocSnippetInjector.Inject(
+            "Intro.\n<!-- snippet: -->\n<!-- endsnippet -->\n", Regions(("demo", "x")), "d.md"));
+
+        Assert.Contains("d.md:2: snippet marker has an empty id", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Handles_crlf_line_endings()
+    {
+        // Exact equality, untrimmed: this also pins the single-trailing-newline contract of the writer.
+        var result = DocSnippetInjector.Inject(
+            "<!-- snippet: demo -->\r\n<!-- endsnippet -->\r\n", Regions(("demo", "var x = 1;")), "d.md");
+
+        Assert.Equal("<!-- snippet: demo -->\n```csharp\nvar x = 1;\n```\n<!-- endsnippet -->\n",
+            result.Markdown);
+    }
+
+    [Fact]
+    public void Two_separate_backtick_runs_do_not_widen_the_fence()
+    {
+        // The fence must beat the longest single run, not the sum of all runs: a counter that never
+        // resets between runs would emit an ever-wider fence and a different document each time.
+        var result = DocSnippetInjector.Inject(
+            "<!-- snippet: demo -->\n<!-- endsnippet -->\n",
+            Regions(("demo", "var a = \"```\";\nvar b = \"```\";")), "d.md");
+
+        Assert.Equal("<!-- snippet: demo -->\n````csharp\nvar a = \"```\";\nvar b = \"```\";\n````\n"
+                     + "<!-- endsnippet -->\n", result.Markdown);
+    }
+
+    [Fact]
+    public void Null_arguments_throw_with_the_offending_parameter_named()
+    {
+        // The document carries a real marker so a deleted regions-guard is reached by the null it was
+        // guarding and lands on the wrong exception type deterministically.
+        var exMarkdown = Assert.Throws<ArgumentNullException>(
+            () => DocSnippetInjector.Inject(null!, Regions(("demo", "x")), "d.md"));
+        var exRegions = Assert.Throws<ArgumentNullException>(
+            () => DocSnippetInjector.Inject("<!-- snippet: demo -->\n<!-- endsnippet -->\n", null!, "d.md"));
+
+        Assert.Equal("markdown", exMarkdown.ParamName);
+        Assert.Equal("regions", exRegions.ParamName);
     }
 
     [Fact]

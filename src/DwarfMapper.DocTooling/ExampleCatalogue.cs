@@ -42,13 +42,19 @@ public static class ExampleCatalogue
             .ToList();
     }
 
-    private static bool IsNotBuildOutput(string path) =>
+    // Internal rather than private: the exclusion is a path-shape contract the tests pin directly —
+    // the live corpus keeps no marker-bearing sources under bin/obj, so no test through Scan() can
+    // tell a correct predicate from a broken one.
+    internal static bool IsNotBuildOutput(string path) =>
         !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
             StringComparison.Ordinal)
         && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
             StringComparison.Ordinal);
 
-    private static DocExampleEntry Build(Type type, DocExampleAttribute attr, List<string> galleryFiles)
+    // Internal rather than private: this is the file-list seam. Both refusals below exist to stop a
+    // silently wrong index, and the real Gallery is well-formed by construction, so they are reachable
+    // only with a synthetic type and a controlled file list.
+    internal static DocExampleEntry Build(Type type, DocExampleAttribute attr, List<string> galleryFiles)
     {
         var run = type.GetMethod("Run", BindingFlags.Public | BindingFlags.Static)
                   ?? throw new DocToolingException(

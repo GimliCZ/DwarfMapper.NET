@@ -158,7 +158,10 @@ public class DocPipelinePropertyTests
         var ex = Assert.Throws<DocToolingException>(() => SnippetScanner.ScanFile(
             "F.cs", "// <snippet: demo>\nvar a = 1;\n<!-- endsnippet -->\nvar b = 2;\n// </snippet>\n"));
 
+        Assert.Contains("F.cs:1: snippet 'demo' contains the line '<!-- endsnippet -->'",
+            ex.Message, StringComparison.Ordinal);
         Assert.Contains("injector marker", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Remove the line or narrow the region", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>The dedent oracle, written independently of the implementation.</summary>
