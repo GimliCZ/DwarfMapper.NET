@@ -134,14 +134,17 @@ public static class SnippetScanner
     /// </summary>
     private static string Dedent(List<string> body, string id, string relativePath, int openLine)
     {
-        var kept = new List<string>(body);
-        while (kept.Count > 0 && string.IsNullOrWhiteSpace(kept[0])) kept.RemoveAt(0);
-        while (kept.Count > 0 && string.IsNullOrWhiteSpace(kept[^1])) kept.RemoveAt(kept.Count - 1);
-
-        if (kept.Count == 0)
+        // Trim leading/trailing blank lines by index computation and one slice rather than a mutable
+        // remove-loop: the trim is a pure function of the body, and this shape has no loop state to get
+        // wrong. first < 0 means every line is blank (or the body is empty) — the old Count == 0 path.
+        var first = body.FindIndex(l => !string.IsNullOrWhiteSpace(l));
+        if (first < 0)
             throw new DocToolingException(
                 $"{relativePath}:{openLine}: snippet '{id}' is empty. An empty region renders as an empty "
                 + "code fence, which reads as \"this feature needs no code\".");
+
+        var last = body.FindLastIndex(l => !string.IsNullOrWhiteSpace(l));
+        var kept = body.GetRange(first, last - first + 1);
 
         // A body carrying the injector's own closing marker has no correct rendering: once written into a
         // document, the next run would find THAT line first and treat everything after it as prose, garbling

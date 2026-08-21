@@ -151,6 +151,21 @@ public class DocSnippetInjectorTests
     }
 
     [Fact]
+    public void A_document_of_prose_and_markers_terminates_and_reproduces_every_line()
+    {
+        // Pins the loop's progress contract: every input line appears exactly once in the output. Under an
+        // advance-loss defect (a branch that forgets to move the line index) the in-loop progress guard
+        // turns this into an instant loud failure instead of a hang.
+        const string doc = "one\n<!-- snippet: demo -->\n<!-- endsnippet -->\ntwo\nthree\n";
+
+        var result = DocSnippetInjector.Inject(doc, Regions(("demo", "var x = 1;")), "d.md").Markdown;
+
+        Assert.Single(result.Split('\n'), l => l == "one");
+        Assert.Single(result.Split('\n'), l => l == "two");
+        Assert.Single(result.Split('\n'), l => l == "three");
+    }
+
+    [Fact]
     public void A_document_with_no_markers_is_returned_unchanged()
     {
         // The harness must be inert before it has work to do, or a later diff is ambiguous.
