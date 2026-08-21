@@ -10,6 +10,10 @@
 #   pwsh scripts/housekeeping.ps1 -Coverage       # collect coverage during stage 1, enforce per-assembly floors
 #   pwsh scripts/housekeeping.ps1 -ILVerify       # ILVerify the shipped runtime + a generated-consumer assembly
 #   pwsh scripts/housekeeping.ps1 -Deep           # DWARF_DEEP=1 for stage 1: multiplied fuzz/property/torture counts
+#   pwsh scripts/housekeeping.ps1 -Nightly        # EXACTLY what CI's nightly deep-test job runs: -Deep -Coverage
+#                                                 # -ILVerify, exhaustion and AOT skipped. Mutation stays behind
+#                                                 # -Mutation (its own cost class; CI runs those legs as own jobs).
+#                                                 # Needs: dotnet-reportgenerator-globaltool + dotnet-ilverify.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 param(
     [switch]$SkipAot,
@@ -18,10 +22,21 @@ param(
     [switch]$Heal,
     [switch]$Coverage,
     [switch]$ILVerify,
-    [switch]$Deep
+    [switch]$Deep,
+    [switch]$Nightly
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+
+# -Nightly is an AGGREGATE, not a new stage: it pins the exact switch set the CI deep-test job runs
+# (.github/workflows/ci.yml), so a maintainer reproduces the nightly locally with one switch and the two
+# cannot drift apart. It skips exhaustion and AOT (exhaustion is a default local stage, AOT has its own
+# aot-trim-gate CI job) and deliberately does NOT imply -Mutation — the mutation legs are their own cost
+# class and their own nightly CI jobs (the 'mutation' matrix).
+if ($Nightly) {
+    $Deep = $true; $Coverage = $true; $ILVerify = $true
+    $SkipExhaustion = $true; $SkipAot = $true
+}
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 # Coverage floors — per-assembly LINE coverage, percent. MEASURED, not aspired-to: each value is the
@@ -31,12 +46,18 @@ $root = Split-Path -Parent $PSScriptRoot
 # informational only. Raising a floor to a new measured value is the normal move; lowering one demands a
 # written reason in the commit that lowers it.
 #
-# Measured 2026-08-21 on cedad48 plus this commit's collector refs (7,669 tests) — line / branch:
-#   DwarfMapper 77.7/76.1 · Generator 93.8/87.4 · DocTooling 90.7/84.2 · CodeFixes 92.4/68.4 · Testing 83.2/82.2
+# Re-measured 2026-08-21 (round-21 T5, fast tier, Release) at the commit that wires the nightly — line / branch:
+#   DwarfMapper 78.3/76.1 · Generator 93.7/87.4 · DocTooling 90.7/84.2 · CodeFixes 92.4/68.4 · Testing 83.2/81.9
+# DwarfMapper rose 77.7 -> 78.3: raised, the normal move. Generator moved 93.8 -> 93.7 (raw 93.781,
+# 8,384/8,940) — NOT a lost test: T6 (B27's DWARF094 refusal, B33's span/async-stream context threading)
+# grew the coverable-line DENOMINATOR after the floor's measuring commit (cedad48), and a measured floor
+# tracks the measurement at HEAD; the written reason this lowering demands is this comment plus the commit
+# that carries it. The deep tier (-Nightly, same day) measures the same five line values to this decimal,
+# so the floors hold for both tiers — deep coverage is a superset of fast on the same tree.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
-    'DwarfMapper'            = 77.7
-    'DwarfMapper.Generator'  = 93.8
+    'DwarfMapper'            = 78.3
+    'DwarfMapper.Generator'  = 93.7
     'DwarfMapper.DocTooling' = 90.7
     'DwarfMapper.CodeFixes'  = 92.4
     'DwarfMapper.Testing'    = 83.2
@@ -78,6 +99,30 @@ function Assert-MutantsWereTested {
     Write-Host "   ${Leg}: $scoreable scoreable mutants" -ForegroundColor DarkGray
 }
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# The OTHER way a leg dies silently (H4): Stryker 4.16 refuses to run a config whose thresholds.break >
+# thresholds.low ("Threshold low must be more than or equal to threshold break") — AND EXITS 0. That is
+# exactly how the doctooling leg was unrunnable from 2026-08-19 until H1 noticed: T3 raised break to 83
+# and left low at 80. Checked BEFORE the run so the mistake fails in milliseconds with its cause named,
+# instead of surfacing as Assert-MutantsWereTested's "no report was written". Mirrored inline in the CI
+# 'mutation' matrix job (.github/workflows/ci.yml); the two must stay in step.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-StrykerConfigSane {
+    param([Parameter(Mandatory)][string]$ConfigFile)
+    $thresholds = (Get-Content -Raw -LiteralPath (Join-Path $root $ConfigFile) |
+                   ConvertFrom-Json).'stryker-config'.thresholds
+    if ($null -eq $thresholds.break -or $null -eq $thresholds.low) {
+        throw "mutation ($ConfigFile): thresholds.break/low missing - the config cannot prove it is runnable"
+    }
+    if ($thresholds.break -gt $thresholds.low) {
+        throw ("mutation ($ConfigFile): thresholds.break ($($thresholds.break)) > thresholds.low " +
+               "($($thresholds.low)) - Stryker 4.16 refuses to run this config AND EXITS 0, so the leg " +
+               "would be silently dead. Whenever break moves, move low with it (NOTE 9 in " +
+               "stryker-config.doctooling.json).")
+    }
+    Write-Host "   ${ConfigFile}: break $($thresholds.break) <= low $($thresholds.low) - runnable" -ForegroundColor DarkGray
+}
+
 Push-Location $root
 try {
     if ($Heal) {
@@ -96,7 +141,13 @@ try {
         Write-Host "   (deep tier: DWARF_DEEP=1)" -ForegroundColor DarkGray
     }
     $covDir = Join-Path $root 'TestResults/coverage'
-    $testArgs = @()
+    # --blame-hang is the H7-f runner-level backstop (Issues/ledgers/H7-timeout-dissection.md §4): a hung
+    # testhost is dumped and killed with the offending test NAMED, instead of idling until someone kills
+    # the run (or, in CI, until the job-level timeout eats the evidence). VSTest infrastructure, not test
+    # semantics — nothing about pass/fail changes for a test that terminates. 5m is ~3x the longest
+    # observed single-test runtime in this stage; the exhaustion stage (a single multi-minute test) and
+    # the Stryker legs (per-mutant ceiling plays this role) deliberately do NOT carry it.
+    $testArgs = @('--blame-hang', '--blame-hang-timeout', '5m')
     if ($Coverage) {
         # Collect during the SAME stage-1 run rather than in a second pass: the suite is the cost driver
         # (measured 2026-08-21: 74.5 s plain, 92.9 s collecting, both Release/--no-build), so folding the
@@ -104,7 +155,7 @@ try {
         # files from a previous run would merge silently and corrupt the floor comparison — wipe first
         # (the coverage analog of Assert-MutantsWereTested's -Since filter).
         if (Test-Path $covDir) { Remove-Item -Recurse -Force $covDir }
-        $testArgs = @('--collect:XPlat Code Coverage', '--results-directory', $covDir)
+        $testArgs += @('--collect:XPlat Code Coverage', '--results-directory', $covDir)
     }
     dotnet test DwarfMapper.NET.sln -c Release --nologo @testArgs
     if ($Deep) { Remove-Item Env:DWARF_DEEP }
@@ -169,9 +220,25 @@ try {
         # Resolve against the newest installed net10 REF PACK — the contract surface the compiler resolved
         # against — rather than shared/Microsoft.NETCore.App. Verified empirically 2026-08-21: the ref pack
         # resolves everything both assemblies need (ilverify 10.0.11).
-        $refPack = Get-ChildItem (Join-Path $env:ProgramFiles 'dotnet/packs/Microsoft.NETCore.App.Ref') -Directory |
-                   Where-Object { $_.Name -like '10.*' } | Sort-Object Name -Descending | Select-Object -First 1
-        if (-not $refPack) { throw "ilverify: no net10 ref pack found under dotnet/packs" }
+        # Resolution is cross-platform (T5: the nightly deep-test CI job runs this stage on a Linux
+        # runner, where $env:ProgramFiles is empty): try the packs dir of every dotnet root we can name
+        # (DOTNET_ROOT, wherever `dotnet` on PATH lives, Program Files on Windows), then the NuGet cache's
+        # microsoft.netcore.app.ref — both layouts share the '<version>/ref/net10.0' shape. Newest by
+        # [version], not by string sort (which ranks 10.0.9 above 10.0.11); prerelease suffixes stripped
+        # before the cast so a rc/preview pack dir cannot crash the stage.
+        $dotnetRoots = @()
+        if ($env:DOTNET_ROOT) { $dotnetRoots += $env:DOTNET_ROOT }
+        $dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
+        if ($dotnetCmd) { $dotnetRoots += (Split-Path -Parent $dotnetCmd.Source) }
+        if ($env:ProgramFiles) { $dotnetRoots += (Join-Path $env:ProgramFiles 'dotnet') }
+        $packRoots = @($dotnetRoots | ForEach-Object { Join-Path $_ 'packs/Microsoft.NETCore.App.Ref' }) +
+                     @(Join-Path ([Environment]::GetFolderPath('UserProfile')) '.nuget/packages/microsoft.netcore.app.ref')
+        $refPack = $packRoots | Where-Object { Test-Path $_ } |
+                   ForEach-Object { Get-ChildItem $_ -Directory } |
+                   Where-Object { $_.Name -like '10.*' } |
+                   Sort-Object { [version]($_.Name -replace '-.*$', '') } -Descending |
+                   Select-Object -First 1
+        if (-not $refPack) { throw "ilverify: no net10 ref pack found (searched: $($packRoots -join '; '))" }
         $refPackGlob = Join-Path $refPack.FullName 'ref/net10.0/*.dll'
 
         # Known-unverifiable methods. NEVER a blanket suppression: each entry is ONE exact method whose
@@ -224,6 +291,11 @@ try {
 
     if ($Mutation) {
         Write-Host "== 4/4 Mutation testing (Stryker — install: dotnet tool install -g dotnet-stryker) ==" -ForegroundColor Cyan
+        # All three configs sanity-checked up front: a break > low mistake in leg 3 should fail here, not
+        # after legs 1 and 2 have spent half an hour proving what was already known.
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.doctooling.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
         $legStart = Get-Date
         dotnet stryker
         if ($LASTEXITCODE) { throw "mutation score below break threshold (generator)" }

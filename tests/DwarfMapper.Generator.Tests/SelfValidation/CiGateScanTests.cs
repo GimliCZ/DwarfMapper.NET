@@ -29,6 +29,12 @@ public class CiGateScanTests
     [InlineData("conformance-gate", "the 47-assertion conformance sample would stop being executed")]
     [InlineData("aot-trim-gate", "trim/AOT cleanliness would stop being verified")]
     [InlineData("codeql", "static security analysis would stop running")]
+    // The nightly tier (round-21 T5). These two only TRIGGER on the default branch's cron (plus manual
+    // dispatch), so "declared" is an even weaker claim than for the per-push jobs above — but deleting
+    // either would still turn three mutation floors, five coverage floors, the deep tier and ILVerify
+    // into decoration, silently.
+    [InlineData("mutation", "all three Stryker legs' break floors would stop being measured nightly")]
+    [InlineData("deep-test", "the deep suite, the coverage floors and ILVerify would stop running nightly")]
     public void The_workflow_declares_the_gate_job(string job, string consequence)
     {
         Assert.True(Workflow.Contains("\n  " + job + ":", StringComparison.Ordinal),

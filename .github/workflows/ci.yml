@@ -5,12 +5,21 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-  # Both added for the `runtime-mutation` job, which is full-suite mutation testing and far too slow to gate a
-  # push — see its own comment. It is the ONLY job guarded to these two events; every other job keeps running
-  # exactly when it did before. The side effect is that the nightly cron also re-runs the push/PR jobs, which
-  # is harmless (they are the same jobs on the same commit) and gives a daily green/red signal on master.
+  # Both added for the NIGHTLY TIER — the `mutation` matrix (all three Stryker legs) and the `deep-test` job
+  # (deep suite + coverage floors + ILVerify) — which is far too slow to gate a push; see each job's own
+  # comment. Those are the ONLY jobs guarded to these two events; every other job keeps running exactly when
+  # it did before. The side effect is that the nightly cron also re-runs the push/PR jobs, which is harmless
+  # (they are the same jobs on the same commit) and gives a daily green/red signal on master.
   #
-  # NOTE: GitHub runs `schedule` ONLY on the repository's DEFAULT BRANCH. The nightly mutation leg therefore
+  # The nightly tier's cost, from the local measurements each job's timeout is derived from (12-core machine):
+  # mutation runtime 11:36 + generator 19:41 + doctooling ~5:30 ≈ 37 min aggregate, deep suite ~1:45 with
+  # coverage ~+0:30, ILVerify ~1 s — plus per-job restore/build/tool-install overhead. The jobs run in
+  # PARALLEL on separate runners, so nightly wall-clock ≈ the slowest leg (the generator's), not the sum.
+  # There is deliberately NO total-duration gate: the maintainer's 2026-08-21 ruling raised the old 44-minute
+  # deep-tier ceiling so that ALL legs run EVERY night with no rotation — record the measured total, do not
+  # arbitrate it (Issues/round22/RESEARCH-97-PERCENT-GATES.md, "Maintainer rulings").
+  #
+  # NOTE: GitHub runs `schedule` ONLY on the repository's DEFAULT BRANCH. The nightly tier therefore
   # stays dormant until this lands on master — on a feature branch it can only be started by hand via
   # workflow_dispatch. That is not a misconfiguration, but it does mean "it is in CI" and "it has actually
   # run" are different claims until the merge happens.
@@ -55,7 +64,12 @@ jobs:
       # of the default leg. It is excluded for isolation, not for speed — it is the one leg whose red is
       # expected to be a list of findings rather than a regression, so mixing it into the ordinary run would
       # make every build look broken.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --collect:"XPlat Code Coverage" --results-directory TestResults
+      # --blame-hang is the H7-f runner-level backstop (Issues/ledgers/H7-timeout-dissection.md §4): a hung
+      # testhost is dumped and killed with the offending test NAMED, instead of the job idling until its
+      # timeout eats the evidence. Applied to every plain `dotnet test` step in this workflow; the Stryker
+      # legs deliberately do NOT carry it — there the per-mutant ceiling plays that role and a second killer
+      # would fight it.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults
 
       # ── Coverage gate for DwarfMapper.Generator ─────────────────────────────
       # Thresholds: line ≥ 80% / branch ≥ 70% (achieved ≈84.5%/77.4%; gate is −5pp margin).
@@ -154,40 +168,76 @@ jobs:
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
-      - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix"
+      # --blame-hang: the H7-f backstop, same rationale as in build-test.
+      - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
-  # ── Mutation testing for the SHIPPED RUNTIME assembly ─────────────────────────────────────────────────
-  # This leg previously ran in NO job at all — it existed only as a config someone had to remember to invoke
-  # via `housekeeping.ps1 -Mutation`. A score nobody measures is free to regress silently in either
-  # direction, which makes it decoration rather than a gate; closing that gap is the point of this job.
+  # ── Mutation testing: ALL THREE legs, nightly ─────────────────────────────────────────────────────────
+  # One matrix, three configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
+  # (stryker-config.json) and the DOCUMENTATION PIPELINE (stryker-config.doctooling.json). The runtime leg
+  # ran here first (it previously ran in NO job at all — a config someone had to remember to invoke via
+  # `housekeeping.ps1 -Mutation`, and a score nobody measures is free to regress silently in either
+  # direction); round-21 T5 brought the two sibling legs in beside it under the maintainer's 2026-08-21
+  # ruling that ALL legs run EVERY night, no rotation (Issues/round22/RESEARCH-97-PERCENT-GATES.md).
   #
-  # SCHEDULED, NOT PER-PUSH, AND DELIBERATELY NOT FILTERED. The leg runs the WHOLE test suite against every
+  # SCHEDULED, NOT PER-PUSH, AND DELIBERATELY NOT FILTERED. Each leg runs the WHOLE test suite against every
   # mutant, which costs tens of minutes — too slow to gate a push, so it runs nightly plus on demand.
-  # Do NOT "fix" the runtime by narrowing the test set. Stryker does support a `test-case-filter`, and
-  # scoping this leg to the 23 classes that currently kill something does cut it to ~3 minutes — that was
+  # Do NOT "fix" a slow leg by narrowing the test set. Stryker does support a `test-case-filter`, and
+  # scoping the runtime leg to the 23 classes that then killed something did cut it to ~3 minutes — that was
   # measured. It was REJECTED on purpose: a filter is a hand-maintained LIST, and lists drift. The first
   # time someone adds a test that becomes the sole killer of a mutant, the filter silently drops that kill,
   # the SCORE GOES UP, and coverage goes down with nothing in the repo noticing. A coverage tool is the
   # worst possible place to install that failure mode. The real defect behind the old slowness was
-  # load-induced timeouts being credited as detections, and that is fixed in the config by
+  # load-induced timeouts being credited as detections, and that is fixed per-config by
   # `additional-timeout`, not by running fewer tests. See Issues/ledgers/E3-E1-report.md.
-  #
-  # Only the runtime config runs here. The generator and doc-tooling legs remain housekeeping-only.
-  runtime-mutation:
+  mutation:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    # Sized from the local measurement rather than guessed: the full leg is 12 min 25 s on 12 cores (and that
-    # on a busy machine). Stryker's default concurrency is cores/2, so a ~4-core hosted runner drops from 6
-    # parallel mutant sessions to ~2 and each pass is slower too. ~10x the measured figure covers that with
-    # room to spare, and this job should fail on a real score regression — never because the box was slower
-    # than the day the number was recorded.
-    timeout-minutes: 120
+    strategy:
+      # One leg failing its break threshold must NOT cancel the others mid-run: the whole point of the
+      # nightly is three scored reports every night, and a cancelled leg leaves no report at all.
+      fail-fast: false
+      matrix:
+        include:
+          # timeout-minutes per leg, sized from the local measurement rather than guessed (~10x measured,
+          # same rule the runtime leg used from the start): Stryker's default concurrency is cores/2, so a
+          # ~4-core hosted runner drops from 6 parallel mutant sessions on the measuring machine to ~2 and
+          # each pass is slower too. These jobs should fail on a real score regression — never because the
+          # box was slower than the day the number was recorded.
+          - leg: runtime      # measured 11:36 (2026-08-21, 12 cores)
+            config: stryker-config.runtime.json
+            timeout: 120
+          - leg: generator    # measured 19:41 (2026-08-21, 12 cores; 85 static mutants re-run the suite)
+            config: stryker-config.json
+            timeout: 200
+          - leg: doctooling   # measured 5:04-5:30 (2026-08-21, 12 cores)
+            config: stryker-config.doctooling.json
+            timeout: 60
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.101'
+      # A mis-ordered config silently disables the leg (H4): Stryker 4.16 refuses to run when
+      # thresholds.break > thresholds.low ("Threshold low must be more than or equal to threshold break")
+      # AND EXITS 0 — exactly how the doctooling leg sat unrunnable-and-green from 2026-08-19 until H1
+      # noticed. Checked BEFORE the tool install so the mistake fails in seconds, with its cause named.
+      # Mirrors Assert-StrykerConfigSane in scripts/housekeeping.ps1; the two must stay in step.
+      - name: Assert the config is runnable (break <= low)
+        run: |
+          set -euo pipefail
+          python3 - '${{ matrix.config }}' <<'PYEOF'
+          import json, sys
+          path = sys.argv[1]
+          t = json.load(open(path))["stryker-config"]["thresholds"]
+          if t["break"] > t["low"]:
+              print(f"::error::{path}: thresholds.break ({t['break']}) > thresholds.low ({t['low']}) - "
+                    "Stryker 4.16 refuses to run this config AND exits 0, so the leg would be silently "
+                    "dead. Whenever break moves, move low with it.")
+              sys.exit(1)
+          print(f"{path}: break {t['break']} <= low {t['low']} - runnable")
+          PYEOF
       # Pinned, like CycloneDX in the sbom job, and for the same reason the SDK is pinned in build-test: the
       # score is only comparable across runs if the thing computing it does not move. Stryker's test
       # DISCOVERY and its TIMEOUT arithmetic both feed the score directly, and both are version behaviour —
@@ -196,41 +246,92 @@ jobs:
       # on the pinned 10.0.101 runtime with no .NET 8 installed. Verified locally on a machine carrying only
       # runtimes 7/9/10.
       - run: dotnet tool install --global dotnet-stryker --version 4.16.0
-      # Exits non-zero when the score falls below thresholds.break. See the config comment for why the earlier
-      # 66 was INFLATED and must not be "restored": it counted load-induced timeouts on mutants that cannot
-      # hang — plus one provably equivalent mutant — as detections. If this job reports Timeouts on those
-      # mutants, the runner is slower than the timeout cushion assumes: raise `additional-timeout` in the
-      # config. Do NOT add a test filter to make it fit.
-      - run: dotnet stryker --config-file stryker-config.runtime.json
+      # Exits non-zero when the score falls below the config's thresholds.break — each leg keeps its own
+      # measured floor (see each config's comment for the measurement it came from, and for why an older,
+      # higher number must not be "restored": the runtime leg's 66 counted load-induced timeouts on mutants
+      # that cannot hang as detections). If a leg reports Timeouts on mutants that cannot hang, the runner
+      # is slower than the timeout cushion assumes: raise `additional-timeout` in that config. Do NOT add a
+      # test filter to make it fit.
+      - run: dotnet stryker --config-file ${{ matrix.config }}
       # The exit code is necessary but NOT sufficient: Stryker exits 0 when its `mutate` globs match nothing.
       # Every mutant comes back "Removed by mutate filter", no score is calculated, and a leg that tested
-      # NOTHING passes. That is not hypothetical — it is what this very config did on 2026-08-16, because the
-      # globs must be PROJECT-relative ('**/Name.cs'), not repo-root-relative. This mirrors
+      # NOTHING passes. That is not hypothetical — it is what stryker-config.runtime.json did on 2026-08-16,
+      # because the globs must be PROJECT-relative ('**/Name.cs'), not repo-root-relative. This mirrors
       # Assert-MutantsWereTested in scripts/housekeeping.ps1; the two must stay in step.
       - name: Assert the run was not vacuous
         run: |
           set -euo pipefail
           report=$(find StrykerOutput -name mutation-report.json -print | sort | tail -n 1)
           if [ -z "$report" ]; then
-            echo "::error::runtime mutation: no mutation-report.json was written — the leg produced no report at all"
+            echo "::error::${{ matrix.leg }} mutation: no mutation-report.json was written — the leg produced no report at all"
             exit 1
           fi
           # Counted over the raw text rather than parsed: the report embeds every mutated file's full source,
           # so it runs to megabytes and parsing buys nothing this check needs.
           scoreable=$(grep -o '"status"[[:space:]]*:[[:space:]]*"\(Killed\|Survived\|Timeout\|NoCoverage\)"' "$report" | wc -l)
-          echo "runtime: $scoreable scoreable mutants"
+          echo "${{ matrix.leg }}: $scoreable scoreable mutants"
           if [ "$scoreable" -eq 0 ]; then
-            echo "::error::runtime mutation: 0 scoreable mutants — the run was VACUOUS and Stryker still exited 0." \
+            echo "::error::${{ matrix.leg }} mutation: 0 scoreable mutants — the run was VACUOUS and Stryker still exited 0." \
                  "Check that the config's 'mutate' globs are PROJECT-relative ('**/Name.cs')."
             exit 1
           fi
+      # The doctooling leg once wrote a mutated renderer's output over 2,523 lines of tracked documentation
+      # (H1, 2026-08-19): Stryker has no test sandbox, so a mutated writer writes to the REAL tree.
+      # RepoWriteGuard's contract since then is that a mutation run leaves the tracked tree byte-clean —
+      # this step makes that contract a checked CI invariant for every leg instead of a ledger sentence.
+      - name: Assert the tracked tree survived the leg
+        run: git diff --exit-code
       # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
       # only thing that distinguishes a real regression from a re-classification.
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mutation-report-runtime
+          name: mutation-report-${{ matrix.leg }}
           path: StrykerOutput/**/reports/mutation-report.*
+
+  # ── The nightly DEEP TIER: DWARF_DEEP suite + coverage floors + ILVerify ──────────────────────────────
+  # The other half of the nightly (round-21 T5): the deep test tier (every registered fuzz/property/torture
+  # population multiplied per tests/Shared/DeepTier.cs — 15,786 tests vs the fast tier's ~7,700), coverage
+  # collected in the SAME run and gated against the measured per-assembly floors, and ILVerify over the
+  # shipped runtime + a generated-consumer assembly. The fast per-push jobs are untouched by this tier.
+  #
+  # The job body is ONE housekeeping invocation on purpose: `-Nightly` pins exactly this recipe
+  # (-Deep -Coverage -ILVerify, exhaustion/AOT skipped), so a maintainer reproduces the nightly locally
+  # with one switch and the CI job and the local gate cannot drift apart — the same reason the mutation
+  # guard is mirrored rather than reinvented. Unlike build-test, this runs the sln WITHOUT the
+  # SurfaceMatrix exclusion, exactly as housekeeping always has locally: the matrix is green and blocking
+  # now, and the deep tier wants the whole population. The floors inside are MEASURED fast-tier values;
+  # deep coverage is a superset, so the gate can only be tighter than its measurement, never looser.
+  deep-test:
+    runs-on: ubuntu-latest
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Sized from measurement + margin, NOT an aspirational cap: locally (12 cores) the deep suite is ~105 s,
+    # coverage collection adds ~18 s, ReportGenerator ~15 s, ILVerify ~1 s; restore+build ~3 min and the
+    # tool installs ~1 min put the whole job near 7 min. A ~4-core hosted runner is ~3x slower on the
+    # test/build parts (~20 min), plus ~50% margin -> 30.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      # Pinned for the same reason as Stryker and CycloneDX: both tools' output feeds a gate (the floors
+      # read ReportGenerator's Summary.json; ILVerify's verdict IS the stage), so the thing computing the
+      # number must not move under the gate. Versions are the locally-verified ones.
+      - run: dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
+      - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
+      - run: dotnet restore DwarfMapper.NET.sln
+      # Housekeeping's suite stage builds incrementally; building here first keeps a compile failure
+      # distinguishable from a test failure in the job log, same as build-test.
+      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
+      - run: pwsh scripts/housekeeping.ps1 -Nightly
+      # Kept on failure too, same idiom as the mutation reports: a floor failure names its numbers.
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deep-coverage-report
+          path: TestResults/coverage-report/
 
   aot-trim-gate:
     strategy:
@@ -336,7 +437,8 @@ jobs:
       # Same exclusion as build-test: this leg asks "does the generator still LOAD in a newer compiler", and
       # the matrix has its own dedicated job above. (Until 2026-08-18 the stated reason was that the matrix's
       # expected red would drown the answer; it is green now, so the reason is duplication, not noise.)
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix"
+      # --blame-hang: the H7-f backstop, same rationale as in build-test.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   codeql:
     runs-on: ubuntu-latest
