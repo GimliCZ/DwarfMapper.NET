@@ -549,6 +549,29 @@ job's own comment.
 
 ### S3 — generator compile-time cost: time-to-first-emit, per-1000-mappers scaling
 
+> **DONE (2026-08-23, `63e7248`), and NOT with the gate this row asked for — read why.** The row wanted a
+> wall-clock ratio gate (fail above ~1.5× a pinned baseline) in the deep tier. That contradicts the
+> repository's own rules — **R4** forbids a gate whose oracle is nondeterministic, H7's discipline is that
+> no gate reads a clock — so the split S2 already established is applied here: the **time is recorded**,
+> the **deterministic property is gated**. Judged deviation, stated for a reviewer to overrule.
+> **Recorded** (`benchmarks/results/2026-08-23-generator-compile-cost.md`, Windows, SDK 10.0.101, 12 cores,
+> three runs): 1,000 mappers in ONE compilation — parse+compilation 366/374/398 ms, **time to first emit
+> 3,637/3,502/3,762 ms ≈ 3.6 s per 1,000 mappers**, 1,002 generated files, 116 diagnostics. **Gated**: a
+> generator's real consumer cost is every keystroke after the cold build, so editing ONE mapper must
+> re-extract ONE and re-emit TWO files (its own plus the single aggregate facade) — **measured identical at
+> 40 and at 1,000 mappers** (1/40 = 1/1000, 2/44 = 2/1004), which is what makes the constant pinnable as a
+> constant rather than as a fraction. Corpus is K0's `TypeGraphRenderer` over `PinnedSampling`'s
+> deterministic draws, one mapper per namespace; the renderer gained an optional `namespaceName` (default
+> `"T"`) and every existing population stays byte-identical. **Three measurement traps, all found by
+> measuring:** `Remove+Add` is not an edit (it reorders every later tree and recomputes all N — use
+> `ReplaceSyntaxTree`); *"did the step RUN"* is **red on a healthy tree** (FAWMN's transform takes a
+> semantic model, so Roslyn re-executes it for every attributed class on any compilation change — the
+> strict metric measures the host, so the gate counts changed VALUES, the existing `GeneratorCacheAssert`
+> idiom); and Roslyn's own steps always re-run, so the assertions are scoped to `DwarfMapper*` +
+> `SourceOutput` behind a five-step floor. **Sabotage-demoed against the PRODUCT**: `MapperClassModel` given
+> an `object SabotageTag` — two facts red naming the counts ("re-extracted 40 of 40 … expected exactly 1");
+> reverted, green. New deep-tier population `CompilerCostCorpusMappers` (fast 40, deep 1,000).
+
 **What:** a `GeneratorDriver`-based benchmark in the benchmark project; gate = **ratio against a pinned
 baseline** (e.g. fail above 1.5×), deep tier; and assert the incremental re-run is **cached** (R22-03 already
 pins per-step). **Why:** a real consumer-facing cost with no gate today — and **K0's renderer makes a
@@ -633,6 +656,26 @@ dependency that started shipping).
 **Expected cost:** seconds. **Exit:** the ceiling pinned with its measurement annotation.
 
 ### S7 — generated quality badges, byte-compared *(maintainer-requested)*
+
+> **DONE (2026-08-23, `1a7bf3e`).** Eight badges — five coverage floors, three mutation raw scores — plus a
+> generated note carrying each leg's `break`, rendered into a `<!-- table: quality-badges -->` region of
+> `README.md` through the SAME `DocTableInjector` the options and gallery tables use, and byte-compared by
+> `DocsAreSnippetCurrentTests` (heal-or-fail). Numbers are read from `scripts/housekeeping.ps1`'s
+> `$coverageFloors`, the ledger's per-leg summary, and the `stryker-config*.json` **that ledger row names** —
+> the join is the ledger's own config column, so the two files are cross-checked at render time rather than
+> trusted to agree. **Colour is derived, in one function**: `BandColour(measured, gate, step)` IS
+> `gate-checks.ps1`'s two band checks — below the gate red, inside `[gate, gate+1)` brightgreen, at or above
+> `gate+1` yellow (R2 broken, re-measure due) — with `step` the granularity the matching check truncates to
+> (tenths for coverage, whole points for mutation), so the badge cannot reach a different verdict from the
+> check. **Placement is under `## Status`, not the top badge block**, because the maintainer had just pruned
+> that block (`8328c81`) and eight more badges would run against that signal. The renderer is TEST-PROJECT
+> code beside `GeneratedDocsAreCurrentTests`' two renderers, deliberately: DocTooling is coverage-floored and
+> a mutation target, and the measured numbers must not move because the thing that renders them was added.
+> Every reader refuses loudly on a shape change and asserts its own count (5 floors, 3 legs) — a reader that
+> silently matched nothing would render an EMPTY region and the README would be healed to match it.
+> **Sabotage-demoed both ways:** hand-edited `91.2` → `99.9` and two tests red naming `README.md`; moved the
+> floor 91.2 → 92.0 in `housekeeping.ps1` and the regenerated README carried 92.0 in the same tree. Both
+> reverted. (B23/W4 had already landed on master, so constraint 1 was satisfied before this started.)
 
 **What:** render the coverage floors (from `scripts/housekeeping.ps1`'s `$coverageFloors`) and the three
 mutation `break` values and raw scores (from `stryker-config*.json` plus
