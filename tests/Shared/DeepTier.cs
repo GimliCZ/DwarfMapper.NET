@@ -112,7 +112,17 @@ public enum DeepPopulation
     ///     pre-declared closed types, in-process and allocation-light, the same cost class as
     ///     <see cref="DocPipelineIters" />.
     /// </summary>
-    RegistryPropertyIters
+    RegistryPropertyIters,
+
+    /// <summary>
+    ///     CompilerTests/TypeGraphSmokeTests CsCheck <c>iter</c> (round-22 K0). Each iteration renders a
+    ///     sampled type graph and runs BOTH generators plus a full in-memory compile (~15–45 ms serial per
+    ///     sample, CsCheck-parallelized across cores). Deep ×10, measured before entering the catalog per
+    ///     the round-21 rule: fast 25 ≈ 1 s in-class, deep 250 ≈ 2 s in-class on the 12-core reference
+    ///     machine (2026-08-22) — cheap enough that ×10 is the right multiplier despite the per-sample cost
+    ///     class being <see cref="AllEmitPathsSeeds" />', because the base count is small.
+    /// </summary>
+    CompilerGraphSmokeSeeds
 }
 
 /// <summary>
@@ -154,7 +164,8 @@ public static class DeepTier
         [DeepPopulation.TortureUpdateRounds] = (240, 960),
         [DeepPopulation.PolymorphicGraphSeeds] = (5, 45),
         [DeepPopulation.ObjectFactoryDistributionSeeds] = (400, 4000),
-        [DeepPopulation.RegistryPropertyIters] = (200, 2000)
+        [DeepPopulation.RegistryPropertyIters] = (200, 2000),
+        [DeepPopulation.CompilerGraphSmokeSeeds] = (25, 250)
     };
 
     /// <summary>The count a call site should run with right now (fast unless <see cref="Enabled" />).</summary>

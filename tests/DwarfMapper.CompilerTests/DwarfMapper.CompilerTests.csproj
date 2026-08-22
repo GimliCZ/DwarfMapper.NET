@@ -1,0 +1,34 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <!-- CA1707: test methods intentionally use underscores (Given_When_Then / Method_Scenario_Expected style) -->
+        <!-- CA1515: test types need not be sealed/internal - xunit discovers public classes -->
+        <!-- CA1861: inline array literals are acceptable in test code -->
+        <NoWarn>$(NoWarn);CA1707;CA1515;CA1861</NoWarn>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="xunit"/>
+        <PackageReference Include="xunit.runner.visualstudio"/>
+        <PackageReference Include="coverlet.collector"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
+        <PackageReference Include="CsCheck"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
+        <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"/>
+    </ItemGroup>
+    <ItemGroup>
+        <Using Include="Xunit"/>
+    </ItemGroup>
+    <ItemGroup>
+        <!-- The DWARF_DEEP tier knob is ONE shared source of truth, linked (not copied) into every test
+             project that owns a dialable population; DeepTierSelfTests pins its catalog. -->
+        <Compile Include="..\Shared\DeepTier.cs" Link="Shared\DeepTier.cs"/>
+        <!-- RepoPaths is the shared repo-root walk (W6 exists to delete private copies; a linked file is the
+             sanctioned way for a second test project to reuse it without a cross-test-project reference). -->
+        <Compile Include="..\DwarfMapper.Generator.Tests\Contracts\RepoPaths.cs" Link="Shared\RepoPaths.cs"/>
+    </ItemGroup>
+</Project>

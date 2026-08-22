@@ -668,11 +668,14 @@ public class BlittableProofCoverageTests
         Assert.False(BlittableProof.CanReinterpret(vector2, user));
     }
 
-    // K0 FORWARD-REFERENCE (round-22 plan, P5 → K0): this partial-file fixture is deliberately written as
-    // a corpus row — the same struct pair split across two files, compiled in BOTH file orders, same
-    // CanReinterpret verdict — because it is exactly a shape the compiler-tests type-graph descriptor
-    // (K0's GraphSpec validity rules) must be able to express. When K0 lands, lift this shape into its
-    // corpus rather than re-inventing it.
+    // K0 CROSS-REFERENCE (round-22, P5 → K0, landed): this partial-file fixture was deliberately written
+    // as a K0 corpus row in waiting — the same struct pair split across two files, compiled in BOTH file
+    // orders, same CanReinterpret verdict. K0 lifted the shape rather than re-inventing it: the descriptor
+    // expresses it via NodeSpec.SplitAcrossFiles, and it is pinned END-TO-END (same accept/refuse outcome
+    // AND byte-identical generated source in both file orders) as PinnedCorpus row
+    // 'P5-K0-partial-split-struct-pair' in tests/DwarfMapper.CompilerTests (PinnedCorpusTests). This test
+    // remains the seam-level kill (the comparator-mutant geometry below needs BlittableProof directly);
+    // the corpus row is the emission-level restatement, not a replacement.
     //
     // The geometry is engineered so every comparator mutant diverges:
     //  - "Alpha.cs" < "Beta.cs" ordinally, and the field declared in Alpha.cs is the one that must sort

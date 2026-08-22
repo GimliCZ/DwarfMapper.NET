@@ -49,7 +49,8 @@ public class DeepTierSelfTests
         [DeepPopulation.TortureUpdateRounds] = 240,
         [DeepPopulation.PolymorphicGraphSeeds] = 5,
         [DeepPopulation.ObjectFactoryDistributionSeeds] = 400,
-        [DeepPopulation.RegistryPropertyIters] = 200
+        [DeepPopulation.RegistryPropertyIters] = 200,
+        [DeepPopulation.CompilerGraphSmokeSeeds] = 25
     };
 
     [Fact]
