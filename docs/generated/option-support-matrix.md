@@ -26,7 +26,7 @@ neither has a mapper class to carry a class-level option.
 
 | Option | CreateMap | UpdateInto | Projection | SpanMap | AsyncStream |
 |---|---|---|---|---|---|
-| `AllowNonPublic` | honoured | honoured | `DWARF028` | honoured | honoured |
+| `AllowNonPublic` | honoured | honoured | `DWARF028,DWARF096 (Warning)` | honoured | honoured |
 | `AutoMatchMembers` | `DWARF072` | `DWARF072` | `DWARF072` | `DWARF077` | `DWARF077` |
 | `AutoNest` | `DWARF005` | `DWARF005` | `DWARF005` | `DWARF005` | `DWARF005` |
 | `CaseInsensitive` | honoured | honoured | honoured | honoured | honoured |
@@ -40,10 +40,10 @@ neither has a mapper class to carry a class-level option.
 | `NullCollections` | honoured | honoured | **SILENT** | honoured | honoured |
 | `NullStrategy` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `OnCycle` | honoured | honoured | n/a (loud) | honoured | honoured |
-| `ReferenceHandling` | honoured | honoured | `DWARF028` | honoured | honoured |
+| `ReferenceHandling` | honoured | honoured | `DWARF028,DWARF096 (Warning)` | honoured | honoured |
 | `RegisterCollectionShapes` | honoured | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) |
 | `RequiredMapping` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` |
-| `SkipNullSourceMembers` | honoured | honoured | `DWARF028` | honoured | honoured |
+| `SkipNullSourceMembers` | honoured | honoured | `DWARF028,DWARF096 (Warning)` | honoured | honoured |
 
 Option list and defaults scanned from `DwarfMapperAttribute`; each probe value derived
 from its default (invert a bool, pick another enum member, step an int), so a new option

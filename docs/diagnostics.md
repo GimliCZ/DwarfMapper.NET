@@ -289,6 +289,9 @@ so: that link needs a null decision, and `NullStrategy` — the option that make
 form. A nullable-*annotated* reference target can hold the null; an un-annotated one is a promise that it holds
 none, and keeps the refusal. See [`NullStrategy`](options.md).
 
+Only the **projection method** is refused, never the whole mapper: the `Map` methods beside it are still
+generated, and the one `CS8795` that follows is signposted by [`DWARF096`](#dwarf096).
+
 ## dwarf030
 **Constructor parameter is part of a reference cycle** · Error
 
@@ -808,10 +811,15 @@ mapper that does cross one — see [`SECURITY.md`](SECURITY.md#over-posting--mas
 Reported once per mapper class that had at least one DwarfMapper **error**. It is not a problem in its own
 right — it is a **signpost for the wall of `CS8795` that is about to appear**.
 
-When any diagnostic on a class is an error, the generator emits **nothing at all** for that class. That is the
-right call (half-generated code produces worse errors than none), but it means every `partial` mapping method
-on the class loses its implementing part simultaneously, and the build fills with
+When any **class-level** diagnostic on a class is an error, the generator emits **nothing at all** for that
+class. That is the right call (half-generated code produces worse errors than none), but it means every
+`partial` mapping method on the class loses its implementing part simultaneously, and the build fills with
 `CS8795: … must have an implementing part`.
+
+One error is **not** class-level: [`DWARF028`](#dwarf028), an untranslatable projection member. It is a fact
+about one `Project` method and says nothing about the `Map` methods beside it, so that one method is dropped,
+the rest of the mapper is generated as usual, and [`DWARF096`](#dwarf096) — not this diagnostic — signposts the
+single `CS8795` that follows.
 
 That wall is ambiguous, and both readings are common:
 
@@ -1649,6 +1657,26 @@ not this one.
 **Fix:** fix the name (the message quotes it as written), or remove the attribute. To ignore a member of a
 specific pair from the class, prefer the pair-scoped `[MapIgnore<TTarget>("Name")]`, which
 [`DWARF056`](#dwarf056) guards against typos in the type argument the same way.
+
+## dwarf096
+**Projection method was not generated** · Warning
+
+The per-method twin of [`DWARF078`](#dwarf078). One `Project` method carried a
+[`DWARF028`](#dwarf028) — a member with no expression-tree form — so **that method** was not generated. The rest
+of the mapper was: every `Map` method on the same class is emitted normally, and so are the facade extensions,
+the DI registration and the ambient registry entries built from them.
+
+Exactly one `CS8795: … must have an implementing part` follows, on the `Project` method, and this warning marks
+it so it is not mistaken for the other cause of that message (a project missing the analyzer reference — see
+[`DWARF078`](#dwarf078)'s table).
+
+Refusing the method rather than emitting a partial one is deliberate: a projection missing the members that did
+not resolve would return objects with those members silently unset, which is the failure this endpoint reports
+`DWARF028` to prevent.
+
+**Fix:** fix the `DWARF028` error(s) above it — usually by making the destination member nullable, widening a
+narrowing numeric target, or choosing a translatable collection target. Or drop the `Project` method and map
+those members with a runtime `Map` method, which has none of these restrictions.
 
 ---
 

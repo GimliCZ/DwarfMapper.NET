@@ -78,6 +78,17 @@ so a version with no section here ships with no notes.
   agree with `.Map`, diagonals included; a collection of them (`List<S1?> → List<D1?>`) projects through the
   same widening. What is still refused is a target that genuinely **cannot** hold the null, and the message says
   that instead of naming the kind. (round 23, I14)
+- **One untranslatable projection member stopped a mapper from generating *anything*.** The cascade behind the
+  entry above, and it outlives it: a `HashSet` target, a `Use =` converter, a hook, `ReferenceHandling` — any
+  `DWARF028` at all — suppressed the entire class, so every `Map` method on it lost its implementing part and
+  the build filled with `CS8795`, with `DWARF078` announcing that nothing had been generated. The `Map` methods
+  were collateral: nothing about them is translated by a query provider, so nothing about them can fail to
+  translate. A projection refusal is now scoped to the method that carries it. The `Project` method is dropped
+  (a projection missing the members that did not resolve would return them silently unset), the class is emitted
+  with its `Map` methods — which keep their facade extensions, DI registration and ambient-registry entries —
+  and exactly **one** `CS8795` follows, signposted by the new `DWARF096` instead of `DWARF078`. Class-level
+  errors are unchanged: an ambiguous member or an unknown destination still suppresses everything, because those
+  describe a model the emitter cannot trust. (round 23, I14)
 - **A nullable object source projected into a value-type nested target emitted code that did not compile.**
   Found by I14's sibling hunt, not by sampling. `class Src { Nested? N }` → `class Dst { NestedStruct N }`
   through `Project` emitted `__s.N == null ? null : new NestedStruct { … }` — two arms with no common type,
@@ -424,6 +435,14 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF096` — the per-method twin of `DWARF078` (Warning).** Reported when one `Project` method was not
+  generated because a member of it cannot be translated, and the rest of the mapper was. `DWARF078` says
+  *"no code was generated for this mapper"*, which used to be true of a projection refusal and is not any more:
+  the class is emitted, its `Map` methods with it, and exactly one `CS8795` follows on the dropped `Project`.
+  That single `CS8795` needs the same signpost the class-wide wall has always had — it is a cascade, not a
+  missing analyzer reference — and `DWARF078` could no longer supply it without lying about the scope. A
+  Warning, like `DWARF078`, and for the same reason: the `DWARF028` above it is the error and the thing to fix.
+  (round 23, I14)
 - **`DWARF090` — a member directive that the element-wise endpoints cannot apply.** The generalization of
   `DWARF077`, and the same root cause: a span map or an async-stream map resolves no members of its own. It
   maps the *element* pair through a mapper synthesized per `(source, target)` and shared by every route that

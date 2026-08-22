@@ -611,9 +611,14 @@ internal static partial class MapperExtractor
                 && IsQueryable(method.Parameters[0].Type, out var projSource)
                 && projTarget is INamedTypeSymbol projTargetNamed)
             {
-                // Before the DWARF028 early exit below, which adds the method with empty projection members
-                // and continues: a directive dropped here is dropped whether or not reference handling also
-                // refuses the endpoint.
+                // Everything this projection method reports lands at or after this index, and that is what
+                // makes a refusal ATTRIBUTABLE to one method rather than to the class (TASKS.md I14 — see
+                // TryScopeProjectionRefusalToItsMethod).
+                var projDiagStart = diagnostics.Count;
+
+                // Before the DWARF028 early exit below, which used to add the method with empty projection
+                // members and continue: a directive dropped here is dropped whether or not reference
+                // handling also refuses the endpoint.
                 ReportDirectivesNotReadHere(method, ctx.SemanticModel.Compilation, projSource,
                     projTargetNamed, MapEndpointKind.Projection, methodLocation, diagnostics);
 
@@ -629,20 +634,13 @@ internal static partial class MapperExtractor
                 {
                     EmitDWARF028(diagnostics, methodLocation, method.Name,
                         "reference handling is not supported in projection (stateful identity map cannot live in an expression tree); use ReferenceHandling=None or map at runtime");
-                    // Still add the method with empty projection members so no further cascades.
-                    methods.Add(new MapMethodModel(
-                        method.Name,
-                        AccessibilityText(method.DeclaredAccessibility),
-                        method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        method.Parameters[0].Name,
-                        true,
-                        EquatableArray.From(Array.Empty<MemberMap>()),
-                        EquatableArray.From(Array.Empty<string>()),
-                        EquatableArray.From(Array.Empty<HookCall>()),
-                        true,
-                        projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        ProjectionMembers: EquatableArray.From(Array.Empty<ProjectionMemberMap>())));
+                    // The method used to be added with EMPTY projection members "so no further cascades" —
+                    // which only ever worked because the DWARF028 above suppressed the whole class, so the
+                    // empty model was never emitted. Now that a projection refusal is scoped to its own
+                    // method, emitting it would produce `Select(q, __s => new D { })`: a projection that
+                    // silently drops every member. Dropped, like every other refused projection.
+                    TryScopeProjectionRefusalToItsMethod(diagnostics, projDiagStart, method.Name,
+                        methodLocation);
                     continue;
                 }
 
@@ -723,6 +721,13 @@ internal static partial class MapperExtractor
                         projSource, projConsumedSources, classIgnoreSources, ReadIgnoreSources(method),
                         ignoreObsolete, ctx.SemanticModel.Compilation, allowNonPublic, methodLocation,
                         diagnostics);
+
+                // A refused projection member means this method has no honest body — half a projection is
+                // silently wrong data, which is worse than none. Drop the METHOD; the mapper's Map methods
+                // are untouched by anything a query provider cannot translate and are still emitted.
+                if (TryScopeProjectionRefusalToItsMethod(diagnostics, projDiagStart, method.Name,
+                        methodLocation))
+                    continue;
 
                 methods.Add(new MapMethodModel(
                     method.Name,

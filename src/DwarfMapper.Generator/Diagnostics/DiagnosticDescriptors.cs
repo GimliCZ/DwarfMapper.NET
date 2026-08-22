@@ -1401,4 +1401,37 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf095");
+
+    /// <summary>
+    ///     The per-METHOD twin of <see cref="NoCodeGenerated" /> (DWARF078): one projection method was not
+    ///     generated because a member of it cannot be translated, and the rest of the mapper WAS.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         DWARF028 is an error, and an error used to suppress the whole class — so a mapper declaring a
+    ///         <c>Map</c> and a <c>Project</c> over the same pair generated NOTHING the moment one projected
+    ///         member was untranslatable, and every method on it reported CS8795. The <c>Map</c> methods were
+    ///         collateral: nothing about them was untranslatable, because nothing about them is translated
+    ///         (TASKS.md I14). A refusal is now proportional to what was refused — the projection method is
+    ///         dropped, the class is emitted, and this signpost explains the ONE CS8795 that follows.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, exactly like DWARF078, and for the same reason: it is a signpost, not the
+    ///         defect. The DWARF028 above it is the error, and it is the one to fix.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ProjectionMethodNotGenerated = new(
+        "DWARF096",
+        "Projection method was not generated",
+        "Projection method '{0}' was not generated because of the DWARF028 error(s) above; it will ALSO "
+        + "report CS8795 (\"must have an implementing part\") — that is a cascade of this, not a separate "
+        + "problem, and it is not caused by a missing analyzer reference. The rest of this mapper WAS "
+        + "generated: only this method is missing. Fix the error(s) above, or drop the Project method and "
+        + "map those members with a runtime Map method instead.",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        "A projection becomes an expression tree that a database provider translates. When one member of it "
+        + "has no translatable form the projection method cannot be generated — but the ordinary Map methods "
+        + "on the same mapper are unaffected and are still generated. This warning marks the one method that "
+        + "is missing so its CS8795 is not mistaken for a broken analyzer reference.",
+        HelpBase + "dwarf096");
 }

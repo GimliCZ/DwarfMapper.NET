@@ -27,6 +27,67 @@ internal static partial class MapperExtractor
     /// </summary>
     private const bool ProjectionPublicOnly = false;
 
+    /// <summary>
+    ///     Decide whether the projection method that has just been resolved must be DROPPED, and confine its
+    ///     refusal to itself when it can be confined.
+    /// </summary>
+    /// <param name="diagnostics">The class's diagnostic list; entries from <paramref name="start" /> on
+    ///     belong to this one method.</param>
+    /// <param name="start">The list's length when this method's resolution began.</param>
+    /// <returns>True when the caller must NOT add this method's model.</returns>
+    /// <remarks>
+    ///     <para>
+    ///         DWARF028 is an Error and an error suppressed the entire class, so a mapper declaring a
+    ///         <c>Map</c> and a <c>Project</c> over the same pair generated <b>nothing at all</b> the moment
+    ///         one projected member was untranslatable — and DWARF078 said so, accurately and unhelpfully.
+    ///         The <c>Map</c> methods were collateral: nothing about them is translated, so nothing about
+    ///         them can fail to translate (TASKS.md I14). This scopes the refusal to what was actually
+    ///         refused.
+    ///     </para>
+    ///     <para>
+    ///         Only DWARF028 is scoped, and only when it is the <em>sole</em> kind of error this method
+    ///         raised. Every other error a projection method can collect — an ambiguous member name
+    ///         (DWARF010), an unknown destination (DWARF008), a duplicate <c>[MapProperty]</c> — describes
+    ///         the SOURCE MODEL, is equally true of the <c>Map</c> methods over the same pair, and keeps the
+    ///         whole-class suppression it has always had. "Untranslatable" is the one error that is a
+    ///         property of the endpoint rather than of the mapping.
+    ///     </para>
+    ///     <para>
+    ///         The method is dropped either way. A projection whose members did not all resolve has no
+    ///         honest body: emitting it with the members that DID resolve would silently drop the rest,
+    ///         which is the failure mode this whole endpoint is written to refuse.
+    ///     </para>
+    /// </remarks>
+    private static bool TryScopeProjectionRefusalToItsMethod(
+        List<DiagnosticInfo> diagnostics, int start, string methodName, LocationInfo? location)
+    {
+        var sawError = false;
+        var allAreTranslatability = true;
+
+        for (var i = start; i < diagnostics.Count; i++)
+        {
+            var d = diagnostics[i];
+            if (!d.IsError) continue;
+            sawError = true;
+            if (!ReferenceEquals(d.Descriptor, DiagnosticDescriptors.ProjectionNotTranslatable))
+                allAreTranslatability = false;
+        }
+
+        if (!sawError) return false;
+        if (!allAreTranslatability) return true; // dropped, but the class still dies on the other error
+
+        for (var i = start; i < diagnostics.Count; i++)
+            if (diagnostics[i].IsError)
+                diagnostics[i] = diagnostics[i] with { ScopedToMethod = true };
+
+        // The per-method twin of DWARF078, at the method's own location: exactly one CS8795 follows, and it
+        // needs the same "this is a cascade, not a missing analyzer reference" signpost the class-wide wall
+        // has always had.
+        diagnostics.Add(new DiagnosticInfo(
+            DiagnosticDescriptors.ProjectionMethodNotGenerated, location, methodName));
+        return true;
+    }
+
     private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
     {
         element = type;

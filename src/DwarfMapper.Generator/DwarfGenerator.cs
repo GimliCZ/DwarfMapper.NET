@@ -453,10 +453,21 @@ public sealed class DwarfGenerator : IIncrementalGenerator
     ///     Explains the <c>CS8795</c> wall that is about to appear, because nothing else can.
     /// </summary>
     /// <remarks>
-    ///     Suppressing emission for the whole class is the right call — half-generated code would produce worse
-    ///     errors than none. But it means every partial mapping method loses its implementing part at once, and
-    ///     the resulting pile of <c>CS8795</c> looks identical to the OTHER cause of that wall: a project that
-    ///     never wired the analyzer at all. One signpost, at the first real error's location, separates them.
+    ///     <para>
+    ///         Suppressing emission for the whole class is the right call for a CLASS-level error —
+    ///         half-generated code would produce worse errors than none. But it means every partial mapping
+    ///         method loses its implementing part at once, and the resulting pile of <c>CS8795</c> looks
+    ///         identical to the OTHER cause of that wall: a project that never wired the analyzer at all. One
+    ///         signpost, at the first real error's location, separates them.
+    ///     </para>
+    ///     <para>
+    ///         What no longer reaches here is a PROJECTION-METHOD error. An untranslatable projected member
+    ///         says nothing about the <c>Map</c> methods beside it, and used to take them down anyway
+    ///         (TASKS.md I14); <c>MapperExtractor.TryScopeProjectionRefusalToItsMethod</c> now drops that one
+    ///         method, marks its DWARF028 method-scoped so <c>HasBlockingError</c> ignores it, and signposts
+    ///         the single CS8795 that follows with DWARF096. The ids listed below therefore exclude scoped
+    ///         errors: DWARF096 has already named them, at the method they belong to.
+    ///     </para>
     /// </remarks>
     private static void ReportCascadeSignpost(SourceProductionContext spc, MapperClassModel model)
     {
@@ -467,7 +478,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
         foreach (var d in model.Diagnostics)
         {
-            if (!d.IsError) continue;
+            if (!d.IsError || d.ScopedToMethod) continue;
 
             first ??= d.Location;
             var id = d.Descriptor.Id;
