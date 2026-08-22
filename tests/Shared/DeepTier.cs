@@ -134,7 +134,33 @@ public enum DeepPopulation
     ///     CompilerTests project deep wall 16.2–16.5 s. The 10,000 variant stays a knob value only,
     ///     unmeasured and therefore unused.
     /// </summary>
-    CompilerOracleSeeds
+    CompilerOracleSeeds,
+
+    /// <summary>
+    ///     CompilerTests/MetamorphicTests MR-1 CsCheck <c>iter</c> (round-22 K2). Each iteration is TWO
+    ///     full K1-style runs (render + both generators + compile + emit + load + populate + map +
+    ///     fingerprint) — base graph and its member-order-reversed variant. Measured before entering the
+    ///     catalog per the round-21 rule (2026-08-22, 12-core reference machine): fast 10 ≈ 2 s in-class
+    ///     (first metamorphic test in the class, so it pays the warmup); deep 250 ≈ 8 s in-class;
+    ///     CompilerTests project deep wall 30.4–31.7 s across 3 runs with all three MR entries live.
+    /// </summary>
+    CompilerMrMemberOrderSeeds,
+
+    /// <summary>
+    ///     CompilerTests/MetamorphicTests MR-2 CsCheck <c>iter</c> (round-22 K2). Two runs per iteration,
+    ///     same cost class as <see cref="CompilerMrMemberOrderSeeds" /> (the variant adds one scalar
+    ///     member per non-dest-reachable node). Measured 2026-08-22 with MR-1: fast 10 ≈ 0.3 s in-class;
+    ///     deep 250 ≈ 14 s in-class.
+    /// </summary>
+    CompilerMrUnmappedMemberSeeds,
+
+    /// <summary>
+    ///     CompilerTests/MetamorphicTests MR-3 CsCheck <c>iter</c> (round-22 K2). The heaviest relation:
+    ///     up to THREE full runs per iteration (Class/Record/RecordStruct uniform re-kinds; two when the
+    ///     graph uses inheritance), so deep 150 prices out near MR-1's 250 pairs in run count. Measured
+    ///     2026-08-22 with MR-1: fast 8 ≈ 0.25 s in-class; deep 150 ≈ 4 s in-class.
+    /// </summary>
+    CompilerMrRekindSeeds
 }
 
 /// <summary>
@@ -178,7 +204,10 @@ public static class DeepTier
         [DeepPopulation.ObjectFactoryDistributionSeeds] = (400, 4000),
         [DeepPopulation.RegistryPropertyIters] = (200, 2000),
         [DeepPopulation.CompilerGraphSmokeSeeds] = (25, 250),
-        [DeepPopulation.CompilerOracleSeeds] = (20, 1000)
+        [DeepPopulation.CompilerOracleSeeds] = (20, 1000),
+        [DeepPopulation.CompilerMrMemberOrderSeeds] = (10, 250),
+        [DeepPopulation.CompilerMrUnmappedMemberSeeds] = (10, 250),
+        [DeepPopulation.CompilerMrRekindSeeds] = (8, 150)
     };
 
     /// <summary>The count a call site should run with right now (fast unless <see cref="Enabled" />).</summary>
