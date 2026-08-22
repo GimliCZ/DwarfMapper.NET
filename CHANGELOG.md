@@ -15,6 +15,13 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`DWARF044` warned about a `[Flatten]` that pulled nothing up.** The nullable-reference-root warning —
+  *"a null value throws at runtime when its flattened members are read"* — was reported the moment the root
+  resolved, before anything asked whether a single leaf landed on a destination member. A flatten that maps
+  nothing at all still warned, about members nobody reads. It now fires only for a root some destination
+  member really pulled a leaf up from, which is the unguarded `src.Root.Leaf` the warning is about; where
+  two nullable roots are declared and one lands a leaf, exactly that one is reported. No other trigger
+  changed: a consumed nullable root still warns, and a non-nullable root still does not. (round 22, W2/B26)
 - **A `[MapIgnore]` that named nothing was silently inert at every endpoint — and the `[MapTo]` registry
   silently discarded its argument.** Two halves of one silence (B20 and B15), decided one way. Class model:
   an unscoped `[MapIgnore("Name")]` whose name matches no destination member anywhere it is read — a typo,

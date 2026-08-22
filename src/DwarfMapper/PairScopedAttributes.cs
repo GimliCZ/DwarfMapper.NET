@@ -146,6 +146,13 @@ public sealed class MapConstructorAttribute<TSource, TTarget> : Attribute
 [ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
     + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
     + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
+// B25 (round 22 W2): the same correction the arity-0 twin got, applied to the generic form it was left off.
+// Without a declared argument list the catalogue samples "Id" for the target and "probe" for the object-typed
+// value — a string constant assigned to an int member — so every one of these cells measured the generator's
+// reaction to a TYPE ERROR (DWARF040) rather than to a constant assignment. `Name` is the flat pair's string
+// member, so the constant is assignable and the cell asks about the directive.
+[DwarfSurfaceProbe(constructorArity: 1, Arguments = "{Name}")]
+[DwarfSurfaceProbe(constructorArity: 2, Arguments = "{Name}, \"probe\"")]
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class MapValueAttribute<TTarget> : Attribute
 {
