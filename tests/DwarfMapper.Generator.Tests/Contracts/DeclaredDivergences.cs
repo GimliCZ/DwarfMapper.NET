@@ -240,6 +240,16 @@ internal static class DeclaredDivergences
         //   Use="probe" => DWARF028, DWARF064 (behind CS8795)
         //   ×2          => DWARF042, DWARF064 (behind CS8795)
         //
+        // RE-MEASURED 2026-08-23 (round 23 N6/B37). The ×2 axis used to render two BYTE-IDENTICAL
+        // applications for every element with a declared argument list, so the ×2 readings quoted
+        // above were measured against "the same directive stated twice". The axis now rotates the
+        // declared {Member} placeholders by variant, so it renders two DIFFERENT applications and
+        // those cells ask a different question. The finding itself is untouched - what follows is
+        // the ×2 reading as it stands today, so the history above stays readable as history:
+        //   ×2 (now `[MapValue("Name", "probe")] + [MapValue("Tag", "probe")]`, two DIFFERENT
+        //   targets rather than a duplicate) => Refused, DWARF064 (Info) at Projection. No longer
+        //   DWARF042: two distinct targets are not a duplicate-target collision.
+        //
         // Use= is the one part a query provider cannot take — it would have to call back into managed code
         // from inside an expression tree — so it is refused as DWARF028 rather than emitted, which is the
         // treatment [MapProperty(Use=)] already gets at this endpoint. Everything else about the directive is
@@ -263,6 +273,11 @@ internal static class DeclaredDivergences
         // The entry's evidence held exactly as filed; it is the one of A9a's three that did. Its own note
         // about the ×2 CreateMap cell being N4 rather than a silence is also still true: that cell reads
         // NotCompilable (CS8795 behind DWARF087) and is untouched by this commit.
+        //
+        // RE-MEASURED 2026-08-23 (round 23 N6/B37): the ×2 rendering is now
+        // `[FlattenGraph("Root", "Flat")] + [FlattenGraph("Children", "Id")]` rather than the same
+        // application twice, and that CreateMap cell reads Refused, DWARF034 (behind CS8795). Still not
+        // a silence, which is what the note above claims; the id it reads under moved.
 
         // D12 closed 2026-08-17 (task A9b). [Reinterpret("Data")] forces a blit the automatic layout proof
         // declines to make on its own, and both element-wise cells now read Refused (DWARF090) — the gate for
@@ -402,6 +417,11 @@ internal static class DeclaredDivergences
         // measured Honoured there first. Final reading: Honoured / Honoured / Honoured / Refused / Refused
         // for ctor(1), and Refused (DWARF017, ambiguous flatten) / DWARF090 for ×2. No cell silent, none
         // moved into a population judged by nothing.
+        //
+        // RE-MEASURED 2026-08-23 (round 23 N6/B37): the ×2 rendering is now
+        // `[Flatten("Child")] + [Flatten("Id")]` - two DIFFERENT roots, so it is no longer the
+        // ambiguous-duplicate question DWARF017 answered. It reads Refused, DWARF016 at CreateMap /
+        // UpdateInto / Projection and DWARF090 at the two element-wise endpoints. Still no cell silent.
         //
         // D20 was here — the co-located host read no member-level directive, twenty cells across the
         // Property and Field sites. Closed by teaching MapperExtractor's co-located path to read those

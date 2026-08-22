@@ -551,7 +551,7 @@ internal static class SurfaceCatalog
                 var arity = ctor.GetParameters().Length;
                 var claim = ProbeFor(element, arity);
                 cases.Add(new SurfaceCase(element, site,
-                    Render(element, ArgumentsFor(ctor, claim, variant: 1), ""), $"ctor({arity})",
+                    Render(element, ArgumentsFor(element, ctor, claim, variant: 1), ""), $"ctor({arity})",
                     claim?.ProbeKey ?? element.ProbeKey, claim?.Unmeasured, claim?.MapperOptions));
             }
 
@@ -563,7 +563,8 @@ internal static class SurfaceCatalog
                 var claim = ProbeFor(element, p.Name);
                 var baseArgs = shortest is null
                     ? ""
-                    : ArgumentsFor(shortest, ProbeFor(element, shortest.GetParameters().Length), variant: 1);
+                    : ArgumentsFor(element, shortest, ProbeFor(element, shortest.GetParameters().Length),
+                        variant: 1);
 
                 foreach (var value in ValueDomainFor(element, p, claim))
                     cases.Add(new SurfaceCase(element, site,
@@ -571,15 +572,20 @@ internal static class SurfaceCatalog
                         claim?.ProbeKey ?? element.ProbeKey, claim?.Unmeasured, claim?.MapperOptions));
             }
 
-            // Axis 3 — multiplicity, where the attribute permits it. With a DECLARED argument list the two
-            // applications are identical, and deliberately so: "the same real directive stated twice" is the
-            // sharpest form of the multiplicity question, whereas inventing a second sampled argument would
-            // reintroduce the non-question the declaration exists to remove.
+            // Axis 3 — multiplicity, where the attribute permits it. The two applications must DIFFER:
+            // an attribute that may be written twice is being asked whether it acts twice, and two
+            // byte-identical applications cannot tell "applied twice" from "applied once" — the degeneracy
+            // SampleArgument's own comment names, and which ArgumentsFor reproduced one method up for every
+            // element with a DECLARED argument list (B37). The earlier reading here — that "the same real
+            // directive stated twice" is the sharpest form of the question — is OVERRULED rather than
+            // silently dropped: identical-twice measures duplicate-application refusal, which the
+            // NegativeCases corpus already owns per diagnostic id, while only two DIFFERENT applications can
+            // pose multiplicity at all. Nothing else can reach a contradictory pair of directives.
             if (element.AllowMultiple && ctors.Length > 0)
             {
                 var claim = ProbeFor(element, ctors[0].GetParameters().Length);
-                var one = Render(element, ArgumentsFor(ctors[0], claim, variant: 1), "");
-                var two = Render(element, ArgumentsFor(ctors[0], claim, variant: 2), "");
+                var one = Render(element, ArgumentsFor(element, ctors[0], claim, variant: 1), "");
+                var two = Render(element, ArgumentsFor(element, ctors[0], claim, variant: 2), "");
                 cases.Add(new SurfaceCase(element, site, one + "\n" + two, "×2",
                     claim?.ProbeKey ?? element.ProbeKey, claim?.Unmeasured, claim?.MapperOptions));
             }
@@ -599,11 +605,55 @@ internal static class SurfaceCatalog
     ///         emitting two byte-identical applications where the axis exists to vary them.
     ///     </para>
     /// </summary>
-    private static string ArgumentsFor(ConstructorInfo ctor, SurfaceProbeClaim? claim, int variant) =>
+    private static string ArgumentsFor(SurfaceElement element, ConstructorInfo ctor, SurfaceProbeClaim? claim,
+        int variant) =>
         claim?.Arguments is { } declared
-            ? ExpandArguments(declared)
+            ? ExpandArguments(RotateMembers(declared, claim.ProbeKey ?? element.ProbeKey, variant))
             : string.Join(", ", ctor.GetParameters()
                 .Select((p, position) => SampleArgument(p, variant, position)));
+
+    /// <summary>
+    ///     Rotates every <c>{Member}</c> placeholder in a declared argument list onto the next member the
+    ///     fixture declares, so the multiplicity axis renders two DIFFERENT applications (B37).
+    ///     <para>
+    ///         <c>ExpandArguments</c> alone was variant-blind, so the second application of a declared-
+    ///         arguments element was byte-identical to the first — precisely the degeneracy
+    ///         <see cref="SampleArgument" /> was fixed for, left standing one method up. This is the same
+    ///         rotation, over the fixture's own declared names instead of a hard-coded pair: the substitute
+    ///         is a real member of the shape the cell is measured against, by construction, which is why the
+    ///         rendering cannot degrade into a name matching nothing.
+    ///     </para>
+    ///     <para>
+    ///         <b>Variant 1 returns the declaration untouched</b>, and that is load-bearing: axes 1 and 2
+    ///         also render at variant 1, so a rotation that moved it would move every constructor and every
+    ///         property cell of every declared-arguments element. Pinned by a test.
+    ///     </para>
+    ///     <para>
+    ///         Non-placeholder literals pass through — a <c>typeof(X)</c> or a constant is not a member name
+    ///         and has no fixture axis to rotate along. <c>[MapDerivedType]</c>, whose declared list is two
+    ///         <c>typeof</c>s, therefore keeps an identical second application: the residual this mechanism
+    ///         structurally cannot reach, recorded rather than papered over.
+    ///     </para>
+    /// </summary>
+    private static string RotateMembers(string declared, string? probeKey, int variant)
+    {
+        if (variant == 1) return declared;
+
+        var fixture = FixtureNames(probeKey);
+        if (fixture is not { } f) return declared;
+
+        // Ordinal-sorted, because the parse returns a SET: an unordered pool would make the rendering — and
+        // therefore the census — depend on hash iteration order, which is the nondeterministic oracle R4
+        // forbids anywhere near a gate.
+        var pool = f.Members.OrderBy(m => m, StringComparer.Ordinal).ToList();
+        if (pool.Count < 2) return declared;
+
+        return System.Text.RegularExpressions.Regex.Replace(declared, @"\{(\w+)\}", m =>
+        {
+            var index = pool.IndexOf(m.Groups[1].Value);
+            return index < 0 ? m.Value : "{" + pool[(index + variant - 1) % pool.Count] + "}";
+        });
+    }
 
     /// <summary>
     ///     Expands <c>{Member}</c> to a quoted member-name literal. Everything else is passed through
@@ -732,7 +782,13 @@ internal static class SurfaceCatalog
         }
 
         if (t == typeof(Type)) return "typeof(Dst)";
-        if (t == typeof(bool)) return "true";
+
+        // Varies by variant for the same reason the string names do: a bool-taking directive written twice
+        // with the SAME literal is one directive stated twice, and the multiplicity axis learns nothing from
+        // it. Varying it renders a CONTRADICTING pair — `(true)` then `(false)` — which is the only shape
+        // that can ask what the generator does when two applications disagree. Nothing else in the matrix
+        // reaches that question (the round-23 plan's Layer 4 records B24 as unmeasurable until it does).
+        if (t == typeof(bool)) return variant == 1 ? "true" : "false";
         if (t == typeof(int)) return variant.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (t.IsEnum) return $"{t.Name}.{Enum.GetNames(t)[0]}";
 
