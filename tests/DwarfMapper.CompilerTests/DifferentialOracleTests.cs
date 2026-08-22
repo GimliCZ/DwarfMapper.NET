@@ -293,53 +293,91 @@ public class DifferentialOracleTests
     }
 
     /// <summary>
-    ///     The I7 pins (TASKS.md I7; found by this leg's FIRST 1,000-sample deep run, seed 0vihQF5Vee7b,
-    ///     minimized by a 6-cell kind-pair probe): a plain nullable nested member across a RE-KINDED pair.
-    ///     Both directions used to THROW on a null value although the destination member is nullable-capable
-    ///     in both — <c>"Source member 'M0_0' was null"</c> one way,
-    ///     <c>"Cannot map a null … to value-type …"</c> the other.
+    ///     I7's pin (TASKS.md I7; found by this leg's FIRST 1,000-sample deep run, seed 0vihQF5Vee7b,
+    ///     minimized by a 6-cell kind-pair probe, FIXED across N1/N2): a plain nullable nested member across
+    ///     a re-kinded pair lifts <c>null → null</c> for <b>every</b> kind pair, because the destination
+    ///     member is nullable-capable in every one of them. Before the fix the same member's behaviour was
+    ///     decided by the mirrored type's KIND: the two diagonals lifted, four cells threw
+    ///     <c>"Source member 'M0_0' was null"</c>, and the reverse genre threw a different message again,
+    ///     <c>"Cannot map a null 'global::T.S1' to value-type 'global::T.D1'."</c>.
     ///     <para>
-    ///     <b>Value-kind source × reference-kind dest is FIXED (round 23 N1)</b> and now asserts the lift:
-    ///     the nullable-capable-target gate that N1 widened for I5's element loops is the same gate this
-    ///     member resolves through, so the two halves of the ruling could not land separately. The reverse
-    ///     genre — reference-kind source × value-kind dest — is N2's, and still throws here; its expectation
-    ///     is pinned exactly so the flip is visible in the commit that makes it.
+    ///     The table is run in FULL rather than only over the cells that used to throw: the diagonals are
+    ///     the control, and a fix that lifted the broken cells by breaking the working ones would pass a
+    ///     four-cell version of this test. The two pinned corpus rows (<c>I7-nullable-rekind-*</c>) are the
+    ///     two ends of it and are asserted to be present in the table, so the corpus and the executor cannot
+    ///     drift apart.
+    ///     </para>
+    ///     <para>
+    ///     This must stay a DETERMINISTIC executor even now that the I7 sampled-space exclusion is gone:
+    ///     the reference-source half is unreachable by sampling for a reason that has nothing to do with the
+    ///     product — the oracle's population never nulls reference members, a declared bias in the
+    ///     <c>ReflectionOracle</c> header. Sampling does not cover it; this does.
     ///     </para>
     /// </summary>
-    [Fact]
-    public void I7_null_across_a_rekinded_pair_lifts_when_the_source_is_a_value_kind()
+    [Theory]
+    [InlineData(TypeKind.Struct, TypeKind.Struct)] // control — always lifted
+    [InlineData(TypeKind.Class, TypeKind.Class)] // control — always propagated
+    [InlineData(TypeKind.Struct, TypeKind.Class)] // was: "Source member 'M0_0' was null"
+    [InlineData(TypeKind.Struct, TypeKind.Record)] // was: the same throw
+    [InlineData(TypeKind.RecordStruct, TypeKind.Class)] // was: the same throw
+    [InlineData(TypeKind.Class, TypeKind.Struct)] // was: "Cannot map a null … to value-type …"
+    public void I7_null_across_a_rekinded_pair_lifts_for_every_kind_pair(TypeKind sourceKind, TypeKind destKind)
     {
-        var row = PinnedCorpus.Rows.Single(r => r.Id == "I7-nullable-rekind-value-to-reference");
+        var graph = new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.None, 1)],
+                    BaseRef: null),
+                new NodeSpec("S1", sourceKind,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.None, 3)],
+                    BaseRef: null),
+                new NodeSpec("D1", destKind,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null)
+            ],
+            "S0", "D0");
+
+        var (result, assembly) = CompilerTestHarness.RunAndEmit(TypeGraphRenderer.Render(graph));
+        Assert.False(result.RefusedLoudly, "I7's shapes must map, not refuse — the ruling was LIFT");
+        Assert.True(result.CompilationErrors.Length == 0, "I7 regression — the re-kinded pair no longer compiles");
+        Assert.NotNull(assembly);
+
+        var sourceType = assembly.GetType("T.S0")!;
+        var destMember = assembly.GetType("T.D0")!.GetProperty("M0_0")!;
+
+        // Null in → null out. Not "it does not throw": the destination member must actually BE null,
+        // which a default-constructed D1 (the other way to make the exception disappear) would fail.
+        var nullSource = Activator.CreateInstance(sourceType)!; // M0_0 stays null — the pinned case
+        Assert.Null(destMember.GetValue(CompilerTestHarness.InvokeMap(assembly, nullSource)));
+
+        // …and a non-null still maps, so the lift is not a blanket "write null and move on".
+        var valueSource = Activator.CreateInstance(sourceType)!;
+        sourceType.GetProperty("M0_0")!.SetValue(valueSource, Activator.CreateInstance(assembly.GetType("T.S1")!));
+        Assert.NotNull(destMember.GetValue(CompilerTestHarness.InvokeMap(assembly, valueSource)));
+    }
+
+    /// <summary>
+    ///     The two pinned I7 corpus rows are exactly the two ends of the kind-pair table above — asserted
+    ///     rather than assumed, so renaming or re-shaping a row cannot quietly remove a cell from the
+    ///     executor while both still look green.
+    /// </summary>
+    [Theory]
+    [InlineData("I7-nullable-rekind-value-to-reference")]
+    [InlineData("I7-nullable-rekind-reference-to-value")]
+    public void I7_pinned_corpus_rows_lift_null_to_null(string id)
+    {
+        var row = PinnedCorpus.Rows.Single(r => r.Id == id);
         var (result, assembly) = CompilerTestHarness.RunAndEmit(TypeGraphRenderer.Render(row.Graph));
-        Assert.False(result.RefusedLoudly, "I7's value-to-reference row must map, not refuse");
-        Assert.True(result.CompilationErrors.Length == 0, "I7's value-to-reference row no longer compiles clean");
+        Assert.False(result.RefusedLoudly, $"I7 row '{id}' now REFUSES — re-file, don't absorb");
+        Assert.True(result.CompilationErrors.Length == 0, $"I7 row '{id}' no longer compiles clean");
         Assert.NotNull(assembly);
 
         var source = Activator.CreateInstance(assembly.GetType("T.S0")!)!; // M0_0 stays null — the pinned case
         var mapped = CompilerTestHarness.InvokeMap(assembly, source);
         Assert.Null(assembly.GetType("T.D0")!.GetProperty("M0_0")!.GetValue(mapped));
-    }
-
-    /// <summary>
-    ///     I7's reverse genre, still open at N1: a possibly-null REFERENCE source into a
-    ///     <c>Nullable&lt;D1&gt;</c> destination throws inside the synthesized value-returning helper. The
-    ///     message is pinned exactly, so N2's fix cannot land without this expectation being flipped
-    ///     deliberately. Unreachable in sampling (the oracle population never nulls reference members — a
-    ///     declared bias in the <c>ReflectionOracle</c> header), which is why it needs a deterministic
-    ///     executor at all.
-    /// </summary>
-    [Fact]
-    public void I7_pinned_runtime_divergence_null_across_rekinded_pair_throws_for_a_reference_source()
-    {
-        var row = PinnedCorpus.Rows.Single(r => r.Id == "I7-nullable-rekind-reference-to-value");
-        var (result, assembly) = CompilerTestHarness.RunAndEmit(TypeGraphRenderer.Render(row.Graph));
-        Assert.False(result.RefusedLoudly, "I7's reference-to-value row now REFUSES — re-file, don't absorb");
-        Assert.True(result.CompilationErrors.Length == 0, "I7's reference-to-value row no longer compiles clean");
-        Assert.NotNull(assembly);
-
-        var source = Activator.CreateInstance(assembly.GetType("T.S0")!)!; // M0_0 stays null — the pinned case
-        var thrown = Assert.Throws<InvalidOperationException>(() => CompilerTestHarness.InvokeMap(assembly, source));
-        Assert.Equal("Cannot map a null 'global::T.S1' to value-type 'global::T.D1'.", thrown.Message);
     }
 
     private static void RunOracleLeg(

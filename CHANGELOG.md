@@ -15,6 +15,20 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A null nested value threw instead of arriving as a null, whenever the destination type was declared a
+  different kind from the source's.** With the entry above, this completes the rule: `S1? M → D1? M` now
+  lifts `null → null` for **all six** kind pairs, so the behaviour of a member follows what its destination
+  can hold and not how the two types happen to be declared. The last one to move is the reverse of the
+  entry above — a possibly-null **reference** source into a `Nullable<D1>` destination, which threw
+  `"Cannot map a null 'S1' to value-type 'D1'."` from *inside* the generated helper. That helper returns a
+  value type, so it has no way to say "null"; the call site is the only place that can, and it now tests
+  first: `s.M is null ? null : Helper(s.M)`. The two diagonals that always worked are unchanged, and were
+  measured before and after rather than assumed. **This changes behaviour for code that today receives an
+  exception** — same shape of change as the entry above, and equally bounded: the destination member's
+  declared type already accepts the null it now receives. `docs/options.md` states the rule the
+  `NullStrategy` row had only half of: that option governs a nullable-value source into a **non-nullable**
+  target; where the target can hold the null, the null is lifted regardless of the setting, across nested
+  pairs and per element of a collection or dictionary. (round 23, N2/I7)
 - **A nullable element over a value-type source emitted code that did not compile, and the generator said
   nothing.** `List<S?> → List<D?>` — and `T[]`, `IReadOnlyList<T>`, `HashSet<T>`, a dictionary value, every
   wrapper measured — where the element pair `S → D` needs a synthesized element map and `S` is a struct or

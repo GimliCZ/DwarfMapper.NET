@@ -331,13 +331,15 @@ public class MetamorphicTests
     ///     a value-kind node is <c>Nullable&lt;T&gt;</c> at runtime (nulled ~25% by the populator), while
     ///     over a reference-kind node the annotation is erased and the oracle's DECLARED bias never nulls
     ///     it; the variants would receive DIFFERENT inputs and the relation would compare populations, not
-    ///     mappings. (3) <b>I7</b> — null across nested pairs is the pinned undocumented-throw family;
-    ///     its coverage lives in the I7 pins and K1's sampling, not here. Scalar nullability stays: a
+    ///     mappings. (3) <b>I7 — RETIRED 2026-08-23 (round 23 N1/N2).</b> Null across nested pairs used to
+    ///     be the undocumented-throw family; all six kind-pairs lift now and their coverage lives in the I7
+    ///     pins and K1's sampling, not here. Scalar nullability stays: a
     ///     <c>Nullable&lt;int&gt;</c> populates identically under every kind. The nullable-NESTED axis is
     ///     therefore a DECLARED exclusion of this relation (this remark is the declaration), not a silent
-    ///     one. With reason (1) retired it rests on (2) and (3); reason (2) is a property of the ORACLE's
-    ///     population bias, not of the product, so it survives any product fix and keeps the normalizer
-    ///     alive on its own.
+    ///     one. With reasons (1) and (3) retired it rests on (2) ALONE — which is enough, and is the
+    ///     durable one: reason (2) is a property of the ORACLE's population bias, not of the product, so no
+    ///     product fix can retire it. If the populator ever nulls reference members, re-derive this
+    ///     normalizer from scratch rather than assuming it is still needed.
     /// </summary>
     private static GraphSpec ClearNestedNullability(GraphSpec graph)
     {

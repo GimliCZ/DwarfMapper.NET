@@ -1496,15 +1496,19 @@ internal static partial class MapperExtractor
         {
             // The null handling must reach the flat-node emitter too: a converter does NOT make it moot
             // (the third site of the same defect — see CollectionConverter.ElementExpr and
-            // DictionaryConverter.Expr; TASKS.md I5, round 23 N1). Reaching the lift here needs a
+            // DictionaryConverter.Expr; TASKS.md I5/I7, round 23 N1/N2). Reaching either lift here needs a
             // nullable-capable DTO member, which the leaf resolver only produces for a nullable leaf — so
             // this is a guard-inheritance fix rather than a measured repro, and it costs nothing to keep
-            // every consumer of NullHandling saying the same thing.
+            // all four consumers of NullHandling saying the same thing.
             switch (nh)
             {
                 case NullHandling.NullableProject:
                     sb.Append(access).Append(".HasValue ? ")
                         .Append(conv).Append('(').Append(access).Append(".Value) : null");
+                    return;
+                case NullHandling.NullableProjectRef:
+                    sb.Append(access).Append(" is null ? null : ")
+                        .Append(conv).Append('(').Append(access).Append(')');
                     return;
                 case NullHandling.ThrowIfNull:
                     sb.Append(conv).Append('(').Append(access)

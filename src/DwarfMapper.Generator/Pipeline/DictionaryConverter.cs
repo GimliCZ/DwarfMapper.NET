@@ -244,6 +244,8 @@ internal static class DictionaryConverter
         {
             NullHandling.NullableProject =>
                 "(" + access + ".HasValue ? (" + tgtFq + ")" + Call(access + ".Value") + " : null)",
+            NullHandling.NullableProjectRef =>
+                "(" + access + " is null ? null : (" + tgtFq + ")" + Call(access) + ")",
             NullHandling.ThrowIfNull => Call(access +
                                              " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")"),
             NullHandling.ValueOrDefault => Call(access + ".GetValueOrDefault()"),

@@ -898,6 +898,8 @@ internal static class CollectionConverter
         {
             NullHandling.NullableProject =>
                 "(" + item + ".HasValue ? (" + elemFq + ")" + Call(item + ".Value") + " : null)",
+            NullHandling.NullableProjectRef =>
+                "(" + item + " is null ? null : (" + elemFq + ")" + Call(item) + ")",
             NullHandling.ThrowIfNull => Call(item +
                                              " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")"),
             NullHandling.ValueOrDefault => Call(item + ".GetValueOrDefault()"),

@@ -363,11 +363,18 @@ internal static partial class MapperExtractor
             // Fall through — let the rest of TryResolveConversion attempt further resolutions.
         }
 
-        // Target-nullable composition: non-nullable src → T? (nullable target).
-        // When the source is NOT nullable but the target IS nullable, resolve src→underlying
-        // and let the implicit T→T? lift do the rest (valid C# assignment).
-        // Scope: non-nullable source only. A nullable-value source is handled by the
-        // nullable-capable-target branch above.
+        // Target-nullable composition: non-Nullable<> src → T? (Nullable<> target).
+        // The source is not a Nullable<T>, so resolve src→underlying and let the implicit T→T? lift do the
+        // rest (valid C# assignment). A nullable-VALUE source is handled by the nullable-capable-target
+        // branch above.
+        //
+        // The source may still be a possibly-null REFERENCE, and then the lift has to be explicit: the
+        // converter is a synthesized nested mapper with a value-type return, which cannot answer null, so
+        // it threw ("Cannot map a null 'S' to value-type 'D'.") on a null the Nullable<U> destination could
+        // have held — I7's reverse genre, and the mirror of the kind-instead-of-capability confusion the
+        // gate above had. NullableProjectRef makes the CALL SITE test for null first, which is the only
+        // place that can: the helper's return type leaves it no way to express the answer.
+        // TASKS.md I7 / round 23 N2.
         if (!IsNullableValue(srcType, out _) && IsNullableValue(tgtType, out var tgtUnderlying))
         {
             if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
@@ -376,7 +383,11 @@ internal static partial class MapperExtractor
                     reservedConverters: reservedConverters))
             {
                 converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
-                // nullHandling stays None — source is non-null, always yields a value
+                // A possibly-null reference source needs the explicit null test. A value-type source
+                // (non-Nullable<>) always yields a value, and a direct assignment (no converter) already
+                // lifts through the implicit U→U?, so both keep NullHandling.None.
+                if (innerConvT is not null && SourceMayBeNullRef(srcType))
+                    nullHandling = NullHandling.NullableProjectRef;
                 return true;
             }
 

@@ -1188,11 +1188,12 @@ internal static class MapEmitter
             return;
         }
 
-        // NullableProject: the source is Nullable<T> and the destination can hold null. Emit the
-        // null-preserving ternary rather than unwrapping — the lift, not the throw:
-        //   src.X.HasValue ? Conv(src.X.Value) : null
+        // NullableProject / NullableProjectRef: the source may be null and the destination can hold null.
+        // Emit the null-preserving ternary rather than unwrapping — the lift, not the throw:
+        //   value source     src.X.HasValue ? Conv(src.X.Value) : null
+        //   reference source src.X is null ? null : Conv(src.X)
         // C# 9+ target-typed conditional unifies U (from Conv) and null into the destination's U?.
-        if (member.NullHandling == NullHandling.NullableProject)
+        if (member.NullHandling is NullHandling.NullableProject or NullHandling.NullableProjectRef)
         {
             var srcExpr = paramName + "." + member.EmitSourceName;
             if (member.ConverterMethod is null)
@@ -1205,9 +1206,13 @@ internal static class MapEmitter
             // A recursion-capable converter takes (value, ctx, depth) — the ternary must thread them too,
             // exactly as the non-lifting converter paths below do.
             var extraArgs = member.ConverterNeedsDepthCtx ? ", " + ctxVarName + ", " + depthArg : "";
-            sb.Append(srcExpr).Append(".HasValue ? ")
-                .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value")
-                .Append(extraArgs).Append(')').Append(" : null");
+            if (member.NullHandling == NullHandling.NullableProjectRef)
+                sb.Append(srcExpr).Append(" is null ? null : ")
+                    .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(extraArgs).Append(')');
+            else
+                sb.Append(srcExpr).Append(".HasValue ? ")
+                    .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value")
+                    .Append(extraArgs).Append(')').Append(" : null");
             return;
         }
 

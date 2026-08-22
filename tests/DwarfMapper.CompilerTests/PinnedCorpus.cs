@@ -196,26 +196,37 @@ public static class PinnedCorpus
     ///     although the destination member (<c>D1?</c>) is nullable-capable and the lossless emission
     ///     exists next door (the NullableProject ternary used by the same-kind diagonal, which the probe
     ///     measured lifting correctly: Struct→Struct and Class→Class both propagate null). Undocumented —
-    ///     the <c>NullStrategy</c> doc row covers "nullable-value source → NON-nullable target" only. The
-    ///     compile contract here is the NORMAL one; the runtime divergence itself is pinned red-on-fix in
-    ///     <c>DifferentialOracleTests.I7_pinned_runtime_divergence…</c>, and the matching sampled-space
-    ///     exclusion in TypeGraphGen is keyed to these rows and dies with them.
+    ///     the <c>NullStrategy</c> doc row covered "nullable-value source → NON-nullable target" only.
+    ///     <para>
+    ///     <b>FIXED 2026-08-23</b> — this half with the shared nullable-capable-target gate in round 23 N1,
+    ///     the reverse half in N2. The row stays and its contract is unchanged (it always compiled clean);
+    ///     what moved is the RUNTIME expectation, now
+    ///     <c>DifferentialOracleTests.I7_pinned_corpus_rows_lift_null_to_null</c> plus the full six-cell
+    ///     kind-pair table beside it. The sampled-space exclusion keyed to these rows died in N2, so the
+    ///     shape is reachable by sampling again — on this side. The other side is not, and says so below.
+    ///     </para>
     /// </summary>
     public static CorpusRow NullableRekindValueToReference { get; } = new(
         "I7-nullable-rekind-value-to-reference",
-        "S1? plain member, struct S1 -> class D1: runtime throw on null instead of null->null (TASKS.md I7)",
+        "S1? plain member, struct S1 -> class D1: lifts null -> null (TASKS.md I7, fixed)",
         PlainNullableRekindPair(TypeKind.Struct, TypeKind.Class));
 
     /// <summary>
-    ///     I7's reverse genre, same filing: reference-kind source × value-kind dest throws
+    ///     I7's reverse genre, same filing: reference-kind source × value-kind dest threw
     ///     "Cannot map a null 'global::T.S1' to value-type 'global::T.D1'." although the destination
-    ///     member is <c>Nullable&lt;D1&gt;</c> and could hold the null. Unreachable in sampling only
-    ///     because the oracle population never nulls reference members (a DECLARED bias) — pinned here so
-    ///     the genre has a deterministic executor anyway.
+    ///     member is <c>Nullable&lt;D1&gt;</c> and could hold the null — the throw came from INSIDE the
+    ///     synthesized helper, whose value-type return leaves it no way to answer null, so only the call
+    ///     site could fix it (<c>NullHandling.NullableProjectRef</c>, round 23 N2).
+    ///     <para>
+    ///     Still unreachable in SAMPLING, and deleting the I7 exclusion did not change that: the reason is
+    ///     the oracle population's DECLARED bias against nulling reference members, a property of the
+    ///     oracle rather than of the product. This row's deterministic executor is therefore the only
+    ///     coverage the genre has, and must not be retired on the grounds that sampling now reaches I7.
+    ///     </para>
     /// </summary>
     public static CorpusRow NullableRekindReferenceToValue { get; } = new(
         "I7-nullable-rekind-reference-to-value",
-        "S1? plain member, class S1 -> struct D1: runtime throw on null instead of null->null (TASKS.md I7)",
+        "S1? plain member, class S1 -> struct D1: lifts null -> null (TASKS.md I7, fixed)",
         PlainNullableRekindPair(TypeKind.Class, TypeKind.Struct));
 
     private static GraphSpec PlainNullableRekindPair(TypeKind sourceElement, TypeKind destElement)

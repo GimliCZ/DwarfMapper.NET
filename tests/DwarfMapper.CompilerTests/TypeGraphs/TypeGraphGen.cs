@@ -130,23 +130,14 @@ public static class TypeGraphGen
                 // 'I5-nullable-struct-element-rekinded-dest', now under the normal must-compile contract.)
                 var nullable = roll.Nullable;
 
-                // KNOWN DIVERGENCE I7 (round 22, found by K1's FIRST 1,000-sample oracle run), NOT a
-                // validity rule: a PLAIN nullable nested member whose source node is a VALUE kind and whose
-                // mirrored dest node re-kinded to a REFERENCE kind compiles clean but THROWS at runtime on a
-                // null value ("Source member 'X' was null") instead of lifting null -> null, although the
-                // dest member is nullable-capable. Same-kind pairs lift correctly (measured, K1 probe
-                // 2026-08-22); the reverse genre (reference source x value dest, "Cannot map a null ... to
-                // value-type ...") is unreachable in sampling only because the oracle's population bias
-                // never nulls reference members. Excluded from the SAMPLED space only; the shape stays
-                // reachable and PINNED as PinnedCorpus rows 'I7-*' whose runtime-throw assertions in
-                // DifferentialOracleTests go red the moment the product lifts — that red is the signal to
-                // delete this exclusion in the same commit.
-                if (nested is int plainTarget && roll.Coll == CollShape.None
-                    && sourceKinds[plainTarget] is TypeKind.Struct or TypeKind.RecordStruct
-                    && destKinds[plainTarget] is TypeKind.Class or TypeKind.Record)
-                {
-                    nullable = false;
-                }
+                // (The I7 exclusion that used to sit here — plain nullable nested members whose source node
+                // is a VALUE kind and whose mirrored dest node re-kinded to a REFERENCE kind, held out
+                // because the map THREW on a null instead of lifting it — was DELETED with the fix in
+                // round 23 N2. All six kind-pairs lift now, pinned cell by cell in
+                // DifferentialOracleTests.I7_null_across_a_rekinded_pair_lifts_for_every_kind_pair. The
+                // reverse genre stays unreachable by SAMPLING for a reason that has nothing to do with the
+                // product — the oracle's population never nulls reference members, a declared bias in the
+                // ReflectionOracle header — which is why its pin is a deterministic executor.)
 
                 // Names are unique per node index ("M{i}_{k}"), which makes rule V4 hold by construction
                 // AND keeps inherited members from shadowing derived ones (CS0108 would be warning-only
