@@ -19,21 +19,96 @@ internal static class GeneratorTestHarness
     ///     instances are immutable and thread-safe to share, so a single cached array is both correct and far
     ///     faster for the whole generator-test suite.
     /// </summary>
-    private static readonly Lazy<MetadataReference[]> References = new(() =>
-        AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .Select(a => MetadataReference.CreateFromFile(a.Location))
-            .Cast<MetadataReference>()
-            .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location))
-            .Append(MetadataReference.CreateFromFile(typeof(RoundTrip).Assembly.Location))
-            .Append(MetadataReference.CreateFromFile(typeof(Queryable).Assembly.Location))
-            .Append(MetadataReference.CreateFromFile(typeof(IServiceCollection).Assembly.Location))
-            // System.Collections.Specialized is type-forwarded and not loaded by default, so a test source that
-            // names NameValueCollection/OrderedDictionary would otherwise hit CS1069 (missing reference) rather
-            // than exercising the generator. Reference it explicitly so those legacy System.* members compile.
-            .Append(MetadataReference.CreateFromFile(
-                typeof(System.Collections.Specialized.NameValueCollection).Assembly.Location))
-            .ToArray());
+    private static readonly Lazy<MetadataReference[]> References = new(BuildReferences);
+
+    /// <summary>
+    ///     Loaded assemblies FIRST, then every remaining assembly the host could load, from the runtime's
+    ///     trusted-platform-assemblies list.
+    ///     <para>
+    ///     The sweep alone is <b>environment-dependent</b>: <see cref="AppDomain.CurrentDomain" />'s assembly
+    ///     list contains only what something has already touched, so whether a fixture compiles depended on
+    ///     which tests ran first and on which runner hosted them — the same source passed under
+    ///     <c>dotnet test</c> and failed in an IDE, reported as a generator bug rather than a harness one.
+    ///     It had already been patched three times, once per victim: <c>System.Linq.Queryable</c>,
+    ///     <c>System.Collections.Specialized</c> (see the CS1069 note below), and finally
+    ///     <c>EnumMemberAttribute</c> in <c>System.Runtime.Serialization.Primitives</c>, whose absence
+    ///     surfaced as CS0246 inside <c>EnumSerializedNameTests</c>. A hand-kept list that grows by one entry
+    ///     each time it bites someone is an allowlist; TPA is the whole set, so the class is closed rather
+    ///     than its latest instance.
+    ///     </para>
+    ///     <para>
+    ///     STRICTLY ADDITIVE, deliberately: the loaded set is taken first and TPA only contributes simple
+    ///     names it does not already carry, so this can add a reference that was missing but can never
+    ///     substitute a different build of one that already worked.
+    ///     </para>
+    ///     <para>
+    ///     Built ONCE and reused. <see cref="MetadataReference.CreateFromFile(string)" /> reads metadata from
+    ///     disk under a lock — rebuilding per call serialised parallel compilations on metadata I/O and
+    ///     dominated wall-clock (the full power-set fuzz was contention-bound, not CPU-bound). The instances
+    ///     are immutable and thread-safe to share.
+    ///     </para>
+    /// </summary>
+    /// <summary>
+    ///     Framework assemblies fixture sources name but that the host does not necessarily load. A
+    ///     REQUIREMENT list, not an allowlist — an entry states what must be reachable, so adding one
+    ///     tightens the contract. <c>HarnessReferenceSetTests</c> holds it to that.
+    /// </summary>
+    internal static readonly string[] RequiredFrameworkAssemblies =
+    [
+        "System.Runtime.Serialization.Primitives", // EnumMemberAttribute — EnumSerializedNameTests
+        "System.Linq.Queryable",                   // IQueryable projections
+        "System.Collections.Specialized",          // NameValueCollection / OrderedDictionary
+        "System.ComponentModel.Primitives",        // DescriptionAttribute, used by enum-name fixtures
+        "System.Text.Json"                         // JsonPropertyName, same family
+    ];
+
+    private static MetadataReference[] BuildReferences()
+    {
+        var byName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        void Offer(string? path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            var name = Path.GetFileNameWithoutExtension(path);
+            if (name.Length != 0 && !byName.ContainsKey(name)) byName[name] = path;
+        }
+
+        foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic))
+            Offer(loaded.Location);
+
+        // The four the fixtures reach for by type rather than by name; they are ordinarily in TPA too, and are
+        // kept explicit so a packaging change that drops one fails here instead of somewhere less legible.
+        Offer(typeof(DwarfMapperAttribute).Assembly.Location);
+        Offer(typeof(RoundTrip).Assembly.Location);
+        Offer(typeof(Queryable).Assembly.Location);
+        Offer(typeof(IServiceCollection).Assembly.Location);
+
+        // System.Collections.Specialized is type-forwarded and not loaded by default, so a test source that
+        // names NameValueCollection/OrderedDictionary would otherwise hit CS1069 (missing reference) rather
+        // than exercising the generator.
+        Offer(typeof(System.Collections.Specialized.NameValueCollection).Assembly.Location);
+
+        // Resolved from the runtime's trusted-platform list, which enumerates every assembly the host COULD
+        // load rather than only what it has touched. Restricted to the names fixtures actually need, and that
+        // restriction is a measurement, not caution: offering the whole TPA set closes the class outright but
+        // takes this project from 62s to 83s (~34%), because every one of the thousands of compilations then
+        // binds against ~200 references instead of ~50. That is four times the ~10% fast-tier growth cap.
+        // HarnessReferenceSetTests turns the residual risk into a loud, named failure instead of a CS0246 the
+        // next reader blames on the generator; the cheap way to close the class properly is to retry a failed
+        // compilation once against the full TPA set and report what it needed (recorded, not built).
+        if (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") is string tpa)
+            foreach (var path in tpa.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                if (RequiredFrameworkAssemblies.Contains(Path.GetFileNameWithoutExtension(path)))
+                    Offer(path);
+
+        return byName.Values.Select(p => (MetadataReference)MetadataReference.CreateFromFile(p)).ToArray();
+    }
+
+    /// <summary>
+    ///     The reference set the compilations run against. Exposed so a self-validation test can assert that
+    ///     it is complete independently of what the host happens to have loaded.
+    /// </summary>
+    internal static IReadOnlyList<MetadataReference> ReferenceSet => References.Value;
 
     public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(string source,
         NullableContextOptions nullable = NullableContextOptions.Disable)
