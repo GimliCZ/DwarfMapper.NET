@@ -323,9 +323,16 @@ internal static partial class MapperExtractor
         // NON-nullable target). TASKS.md I7 / round 23 N2. Nullable-capable is deliberately annotation-strict
         // for references: an unannotated or oblivious reference target keeps the documented throw.
         if (IsNullableValue(srcType, out var bothSrcU) && TryGetNullableCapableTarget(tgtType, out var bothTgtU))
+            // implicitConversions is threaded, and it used to be dropped here. Every recursion that crosses
+            // a Nullable<> wrapper defaulted the option back to `true` (permissive), so under
+            // [DwarfMapper(ImplicitConversions = false)] a lossy conversion between two nullable members
+            // reported DWARF038 as a WARNING and the mapper was still generated — the strict setting was
+            // silently off for the whole nullable half of the type space. The collection-element and
+            // dictionary key/value recursions above always passed it; these three did not. (TASKS.md I20.)
             if (TryResolveConversion(compilation, bothSrcU, bothTgtU, useMethod, allMethods, autoCandidates,
                     enumPolicy, synthesized, nullStrategy, location, targetName, diagnostics,
                     out var innerNN, out _, out _, autoNest, nestedRegistry, nullAsNull,
+                    implicitConversions: implicitConversions,
                     reservedConverters: reservedConverters) && innerNN is not null)
             {
                 converterMethod = innerNN;
@@ -339,6 +346,13 @@ internal static partial class MapperExtractor
             // First check the simple implicit-conversion path (int? → int, int? → long, etc.)
             if (HasImplicitConversion(compilation, underlying, tgtType))
             {
+                // Same question the direct-assign path at the top of this method asks, and this arm never
+                // asked it: `long? → double` unwraps to `long → double`, which IS implicit in C# and IS
+                // lossy, so it was assigned in silence at every severity. The DWARF038 names the UNWRAPPED
+                // pair, because that is the conversion being applied. (TASKS.md I20.)
+                if (NumericConverter.IsCrossCategoryLossy(underlying, tgtType))
+                    EmitImplicitConversionDiag(diagnostics, location, targetName, underlying, tgtType,
+                        "cross-category numeric", implicitConversions, lossy: true);
                 nullHandling = nullStrategy == NullStrategy.SetDefault
                     ? NullHandling.ValueOrDefault
                     : NullHandling.ThrowIfNull;
@@ -351,6 +365,7 @@ internal static partial class MapperExtractor
             if (TryResolveConversion(compilation, underlying, tgtType, useMethod, allMethods, autoCandidates,
                     enumPolicy, synthesized, nullStrategy, location, targetName, diagnostics,
                     out var innerConv, out _, out _, autoNest, nestedRegistry, nullAsNull,
+                    implicitConversions: implicitConversions,
                     reservedConverters: reservedConverters))
             {
                 nullHandling = nullStrategy == NullStrategy.SetDefault
@@ -380,6 +395,7 @@ internal static partial class MapperExtractor
             if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
                     enumPolicy, synthesized, nullStrategy, location, targetName, diagnostics,
                     out var innerConvT, out _, out _, autoNest, nestedRegistry, nullAsNull,
+                    implicitConversions: implicitConversions,
                     reservedConverters: reservedConverters))
             {
                 converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?

@@ -37,6 +37,19 @@ internal static class NumericConverter
     {
         static int Cat(ITypeSymbol t)
         {
+            // Nullable<T> answers the SAME numeric question one wrapper up, and this classifier used to say
+            // no to all of them: `Nullable<long>` carries SpecialType.System_Nullable_T, not
+            // System_Int64, so `long? → double?` and `long → double?` were classified "not a numeric basic
+            // type" and passed silently — the direct-assign path takes them, because C# LIFTS the implicit
+            // numeric conversion over Nullable<>. The lifted conversion loses exactly the precision the
+            // unlifted one does. Unwrapping here rather than at the two call sites is deliberate: this
+            // predicate is shared by the class engine and the [MapTo] registry precisely so the two cannot
+            // disagree, and a guard written outside it would be the drift the sharing exists to prevent.
+            // (TASKS.md I20; the same silence at the projection endpoint is the other half of that row.)
+            if (t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } n
+                && n.TypeArguments.Length == 1)
+                t = n.TypeArguments[0];
+
             return t.SpecialType switch
             {
                 SpecialType.System_SByte or SpecialType.System_Byte

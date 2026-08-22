@@ -15,6 +15,20 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`ImplicitConversions = false` was silently off for every `Nullable<T>` member.** The strict setting is the
+  trust boundary — a consumer turns it on precisely to be told about lossy conversions — and a `Nullable<>`
+  wrapper took it off, three different ways. `long? → double?` and `long → double?` reported **nothing at any
+  severity**: the lossiness classifier read `Nullable<T>`'s own `SpecialType` and answered "not a numeric
+  type", while C# happily *lifted* the lossy conversion and the direct-assign path took it. `long? → double`
+  went down an unwrap-then-assign arm that asked no lossiness question at all. And every conversion recursion
+  that crossed a `Nullable<>` wrapper dropped the option back to its permissive default, so `long? → int?`
+  (narrowing) and `string → int?` (parse) — which *did* report — reported a **Warning** under
+  `ImplicitConversions = false` and the mapper was generated anyway. All four now answer exactly as the
+  unwrapped pair does, at both severities, in the class engine and in the `[MapTo]` registry (they share the
+  classifier). **Same-category widening stays silent, wrapped or not** (`int? → long?` is not a loss).
+  **This can break a build that compiled before** — that is the option doing what it promises; the remedy is
+  the one `DWARF038` already names, `[MapProperty(Use = nameof(...))]`.
+
 - **`[MapProperty(StringFormat = "…")]` emitted a `private static` helper that nothing called.** A format
   string replaces the converter the member's conversion had already resolved to, and the replaced one stayed
   in the synthesized-helper table, so every formatted member shipped a second, unreferenced
