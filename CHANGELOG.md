@@ -15,6 +15,22 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A collection member whose `Count` is an explicit interface implementation emitted code that did not
+  compile.** The buffer pre-sizing predicate asked whether the source type *implements* `ICollection<T>` or
+  `IReadOnlyCollection<T>`, and then wrote `s.Count` as the `List<T>` capacity. Implementing an interface is
+  not exposing a member: `ImmutableArray<T>` implements both **explicitly**, and so can any user type —
+  reference types included, so this was never confined to structs. The emitted `s.Count` did not bind, in
+  two ways. In the generated file as written, with no `using` directives, it is **`CS1061`** — a clean
+  break. In a consumer project with implicit usings on, `System.Linq` is in scope, `s.Count` binds to the
+  extension **method group**, the capacity overload stops matching and overload selection quietly moves to
+  a different `List<T>` constructor — **`CS1503`**. The predicate is now a member lookup: a public instance
+  `int Count`, else a public instance `int Length`, following C# hiding rules, so `ImmutableArray<T>` still
+  pre-sizes (from `Length`) and a type that exposes neither simply does not. Interfaces and type parameters
+  keep the interface reading, because ordinary member lookup on those really does see a base interface's or
+  a constraint's `Count` — a source member declared `IReadOnlyCollection<T>` pre-sizes exactly as before.
+  The class engine and the dictionary engine ask the same question and were fixed with it: the dictionary's
+  `new Dictionary(src.Count)` carried its own copy of the interface test. No generated output changes for
+  any type that really exposes `Count`. (round 23, N3/B28)
 - **A nullable element over a value-type source emitted code that did not compile, and the generator said
   nothing.** `List<S?> → List<D?>` — and `T[]`, `IReadOnlyList<T>`, `HashSet<T>`, a dictionary value, every
   wrapper measured — where the element pair `S → D` needs a synthesized element map and `S` is a struct or

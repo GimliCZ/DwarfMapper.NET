@@ -328,15 +328,11 @@ internal static class DictionaryConverter
         key = kvp.TypeArguments[0];
         val = kvp.TypeArguments[1];
 
-        foreach (var c in Self(src))
-            if (c is INamedTypeSymbol named
-                && (named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_ICollection_T
-                    || named.OriginalDefinition.SpecialType ==
-                    SpecialType.System_Collections_Generic_IReadOnlyCollection_T))
-            {
-                hasCount = true;
-                break;
-            }
+        // The SIBLING of B28, fixed with the same predicate rather than the interface test it used to
+        // carry: `new Dictionary(src.Count)` is the identical question one file over, and a dictionary type
+        // whose Count is an EXPLICIT interface implementation would not bind it either. Length is not a
+        // dictionary shape, so only the Count answer is taken here.
+        hasCount = CollectionConverter.CountOf(src) == CollectionConverter.CountKind.Count;
 
         return true;
     }

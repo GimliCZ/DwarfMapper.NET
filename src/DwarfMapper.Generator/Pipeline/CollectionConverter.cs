@@ -983,17 +983,94 @@ internal static class CollectionConverter
 
         element = enumerable.TypeArguments[0];
 
-        foreach (var candidate in Self(src))
-            if (candidate is INamedTypeSymbol named
-                && (named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_ICollection_T
-                    || named.OriginalDefinition.SpecialType ==
-                    SpecialType.System_Collections_Generic_IReadOnlyCollection_T))
-            {
-                count = CountKind.Count;
-                break;
-            }
-
+        count = CountOf(src);
         return true;
+    }
+
+    /// <summary>
+    ///     The cheap-count member the emitters may write on a value of this static type, resolved by MEMBER
+    ///     LOOKUP rather than by an interface test (B28).
+    ///     <para>
+    ///         Implementing an interface is not the same as exposing a member. <c>ImmutableArray&lt;T&gt;</c>
+    ///         implements both <c>ICollection&lt;T&gt;</c> and <c>IReadOnlyCollection&lt;T&gt;</c>
+    ///         EXPLICITLY, and so can any user type: <c>s.Count</c> then does not bind and the emitted helper
+    ///         does not compile. Two failure modes, and the second is the worse one — in the generated file
+    ///         as written (no usings) it is <c>CS1061</c>, a clean break; in a consumer project with implicit
+    ///         usings on, <c>System.Linq</c> is in scope, <c>s.Count</c> binds to the extension METHOD GROUP,
+    ///         the capacity overload stops matching and overload selection quietly moves to a different
+    ///         <c>List&lt;T&gt;</c> constructor (<c>CS1503</c>).
+    ///     </para>
+    ///     <para>
+    ///         Interfaces and type parameters keep the interface reading, and that distinction is the whole
+    ///         correctness argument: ordinary member lookup on an interface-typed value DOES see the members
+    ///         of its base interfaces, and on a type parameter it DOES see the members of its constraints, so
+    ///         a source member declared <c>IReadOnlyCollection&lt;T&gt;</c> must keep pre-sizing. Only for a
+    ///         class or a struct is "implements" different from "exposes".
+    ///     </para>
+    ///     <para>
+    ///         <c>Count</c> is preferred over <c>Length</c> where both are exposed. That is the
+    ///         churn-minimising choice, stated so it is a decision and not an accident: every pre-sizing
+    ///         source reaching this predicate today (<c>List&lt;T&gt;</c>, <c>HashSet&lt;T&gt;</c>, the
+    ///         collection interfaces) exposes <c>Count</c>, so preferring it leaves every existing emission
+    ///         byte-identical, and arrays never reach here at all — they return
+    ///         <see cref="CountKind.Length" /> from the <c>IArrayTypeSymbol</c> branch above.
+    ///         <c>Length</c> is the fallback for the array-shaped types (<c>ImmutableArray&lt;T&gt;</c>,
+    ///         <c>string</c>) that expose it instead.
+    ///     </para>
+    /// </summary>
+    internal static CountKind CountOf(ITypeSymbol src)
+    {
+        if (src.TypeKind is TypeKind.Interface or TypeKind.TypeParameter)
+        {
+            foreach (var candidate in Self(src))
+                if (candidate is INamedTypeSymbol named
+                    && (named.OriginalDefinition.SpecialType ==
+                        SpecialType.System_Collections_Generic_ICollection_T
+                        || named.OriginalDefinition.SpecialType ==
+                        SpecialType.System_Collections_Generic_IReadOnlyCollection_T))
+                    return CountKind.Count;
+
+            return CountKind.None;
+        }
+
+        if (HasPublicInstanceInt32(src, "Count")) return CountKind.Count;
+        if (HasPublicInstanceInt32(src, "Length")) return CountKind.Length;
+        return CountKind.None;
+    }
+
+    /// <summary>
+    ///     True when <c>value.<paramref name="name" /></c> binds to a public, readable, non-static,
+    ///     non-indexed <c>int</c> property on <paramref name="type" /> or one of its base types.
+    ///     <para>
+    ///         The walk stops at the FIRST type declaring the name, which is what C# member lookup does: a
+    ///         derived <c>public new string Count</c> HIDES a base <c>int Count</c>, and treating the hidden
+    ///         one as visible would emit a capacity argument of the wrong type. Public only — an
+    ///         <c>internal</c> member binds solely with an <c>InternalsVisibleTo</c> this generator cannot
+    ///         see from here, and a missed pre-size costs one reallocation while a wrong one costs the build.
+    ///     </para>
+    /// </summary>
+    private static bool HasPublicInstanceInt32(ITypeSymbol type, string name)
+    {
+        for (ITypeSymbol? t = type; t is not null; t = t.BaseType)
+        {
+            var declared = t.GetMembers(name);
+            if (declared.Length == 0) continue;
+
+            foreach (var member in declared)
+                if (member is IPropertySymbol
+                    {
+                        IsStatic: false,
+                        DeclaredAccessibility: Accessibility.Public,
+                        Parameters.IsEmpty: true,
+                        Type.SpecialType: SpecialType.System_Int32
+                    } property
+                    && property.GetMethod is { DeclaredAccessibility: Accessibility.Public })
+                    return true;
+
+            return false;
+        }
+
+        return false;
     }
 
     private static IEnumerable<ITypeSymbol> Self(ITypeSymbol t)
