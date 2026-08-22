@@ -15,6 +15,19 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`Project` did not read `ImplicitConversions` at all, so the strictness gate was silently off at that
+  endpoint.** `ImplicitConversions = false` is the trust setting — a consumer turns it on to be told about
+  lossy conversions — and `long → double` was an **Error** through `.Map` and produced **no diagnostic at
+  all** through `.Project`, which then emitted the assignment. The projection pipeline now reports the same
+  `DWARF038`, from the same emitter, at the same severity: a Warning under the permissive default (the member
+  still maps, at both endpoints, to the same value) and an Error under `ImplicitConversions = false`. It is
+  deliberately **not** a `DWARF028` — that id means "a query provider cannot translate this", and a widening
+  cast is the most translatable thing there is; refusing it would make the permissive default reject a member
+  `.Map` happily maps. **Not a single character of generated code changes** — a provider that translated your
+  projection yesterday translates the identical expression today; what changes is that the build now breaks at
+  both endpoints or at neither. Reaches the plain member, the nested object, the collection element and the
+  constructor parameter.
+
 - **`ImplicitConversions = false` was silently off for every `Nullable<T>` member.** The strict setting is the
   trust boundary — a consumer turns it on precisely to be told about lossy conversions — and a `Nullable<>`
   wrapper took it off, three different ways. `long? → double?` and `long → double?` reported **nothing at any

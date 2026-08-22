@@ -745,6 +745,10 @@ internal static partial class MapperExtractor
                     // value, same shape as the four .Map call sites above — a null source collection now
                     // materialises the documented AsEmpty default through .Project too.
                     nullCollections == NullCollectionsBehavior.AsNull,
+                    // I20: the SIXTH reader of ImplicitConversions, and the endpoint that never read it.
+                    // Same value the five .Map call sites get — a lossy cross-category conversion now
+                    // reports at .Project too, and breaks the build at both endpoints or at neither.
+                    implicitConversions,
                     projConsumedSources,
                     // Both [Flatten] and [MapValue] are threaded now, and they arrive from opposite
                     // directions worth keeping distinct. A flattened leaf is `__s.Root.Leaf`, the navigation

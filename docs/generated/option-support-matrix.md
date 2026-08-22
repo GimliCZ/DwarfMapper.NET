@@ -34,7 +34,7 @@ neither has a mapper class to carry a class-level option.
 | `EnumStringSource` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `GenerateExtensions` | honoured | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) |
 | `IgnoreObsoleteMembers` | honoured | honoured | honoured | honoured | honoured |
-| `ImplicitConversions` | `DWARF038` | `DWARF038` | n/a (loud) | `DWARF038` | `DWARF038` |
+| `ImplicitConversions` | `DWARF038` | `DWARF038` | `DWARF038` | `DWARF038` | `DWARF038` |
 | `MaxDepth` | honoured | honoured | n/a (loud) | **SILENT** | **SILENT** |
 | `NameConvention` | honoured | honoured | honoured | n/a (loud) | n/a (loud) |
 | `NullCollections` | honoured | honoured | honoured | honoured | honoured |

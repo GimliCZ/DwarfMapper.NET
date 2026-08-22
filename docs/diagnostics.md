@@ -352,8 +352,10 @@ you wanted cycle-breaking.
 A non-lossless conversion is being applied. It's visible, not silent. **Lossy** sub-cases — numeric
 narrowing/sign-change, parse/format (`string ↔ T`, which can throw `FormatException` / `OverflowException` at
 runtime), and cross-category numeric (precision loss) — are **Warnings**. A user-defined explicit conversion
-operator stays **Info** (you defined it deliberately). **Fix (optional):** make it explicit with
-`[MapProperty(Use = nameof(...))]`. Set `[DwarfMapper(ImplicitConversions = false)]` to turn all such
+operator stays **Info** (you defined it deliberately). It is reported from **every endpoint that applies the
+conversion, including `Project`** — a lossy conversion that C# nonetheless performs implicitly (`long → double`)
+is not translatability-refused there, it is reported here, at the same severity `Map` reports it. **Fix
+(optional):** make it explicit with `[MapProperty(Use = nameof(...))]`. Set `[DwarfMapper(ImplicitConversions = false)]` to turn all such
 conversions into build errors. To silence a specific instance, downgrade in `.editorconfig`:
 `dotnet_diagnostic.DWARF038.severity = suggestion` (a `-warnaserror` build treats the Warning as an error
 until downgraded). A conversion on a nested/collection element may be reported without a file location; for a
