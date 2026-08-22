@@ -23,11 +23,13 @@ behind these items — the detail is worth keeping, it just should not be where 
 Everything below this line is a backlog. This section is what is *actually happening*, so it can be read
 without asking.
 
-**Branch:** `feat/round22-gates`, worktree `C:/Users/Jouda/RiderProjects/DwarfMapper-r22`. Nothing pushed.
-Whole solution builds 0 warnings / 0 errors with samples.
-*(Corrected 2026-08-22, W6. This block described the pre-merge world: `feat/surface-coverage-architecture`
-in the `DwarfMapper-surface` worktree, F1 and D-e blocked on a human. All three are closed — see the rows.
-The sections BELOW this one are history and are not rewritten; this one is a status board and is.)*
+**Branch:** `feat/round23-product`, worktree `C:/Users/Jouda/RiderProjects/DwarfMapper-r23`. Nothing pushed.
+Whole solution builds 0 warnings / 0 errors with samples; suite **7,952 / 0** foreground; census **866 / 866**.
+**Round 22 is MERGED to master** (`d0e5bca`), and the `DwarfMapper-r22` worktree is gone.
+*(Swept 2026-08-23, round 23 V2. This block previously described round 22 in flight on its own branch. W6
+swept it once on 2026-08-22 and the sweep itself went stale within a round — which is the standing argument
+for doing this at the END of a round rather than in the plan written before it. The sections BELOW this one
+are history and are not rewritten; this one is a status board and is.)*
 
 **THE A-TRACK IS CLOSED.** Every round-20 generator task, A0 through A14, is complete and reviewed. **The
 surface matrix is GREEN: 866 passed, 0 failed** (re-measured 2026-08-22 on `feat/round22-gates`). Every
@@ -36,16 +38,16 @@ structural with the measurement in the commit that did it.
 
 | | |
 |---|---|
-| **In flight** | **Round 22** — the 97 % gates program and the compiler-testing arc, per `docs/superpowers/plans/2026-08-21-round22-compiler-testing-and-97-gates.md`. Layers 1–4 are landing on `feat/round22-gates`; the round-20 rows below are being closed as that work reaches them. |
-| **Next** | **Nothing queued.** W7 (H3, Meziantou phase 2) was the last agent row of round 22 and landed 2026-08-22 (`7b2ee1d` + `d57ac03`); the **I11** blocking fix (fast-tier seed determinism + the set-shaped oracle gap) landed after it, and round 22 is merge-ready. Layer 0 is maintainer-gated on the master/`ci.yml` push. |
+| **In flight** | **Round 23** — the product defects the compiler arc found, plus the r23 gate slice, per `docs/superpowers/plans/2026-08-23-round23-product-defects-and-r23-gates.md`. Layers 1 and 3 are complete; Layer 4's reconciliation is discharged (V1 closed with no work — round 22's W5 had already landed all seven of its rows). |
+| **Next** | **V3** — B18, B24, B31, the three "a new id for a silent discard" rows decided as one shape. B24 became measurable when **N6** (`1decd32`) stopped the matrix rendering identical `[MapNullSkip]` applications. Layer 2 (M1–M5) needs a quiet machine for its mutation re-measures; Layer 0 is maintainer-gated on the master/`ci.yml` push. |
 
-| **Blocked on a human** | **D-a**, **D-c**, **D-f**, **F3**, **H2**, **H8** and the generator dead-code rulings — all listed in the plan's maintainer-only section. F1 and D-e are DONE. |
+| **Blocked on a human** | **D-c**, **D-f**, **F3**, **H2**, **H8**, **I1**, **I2**, **I3**, **I9** and the generator dead-code rulings — all listed in the round-23 plan's maintainer-only section. **D-a is no longer among them: I19 superseded it** (see its row). F1 and D-e are DONE. |
 
-**Live ceilings, read from the code 2026-08-22:** findings **2** · declared cells **4** · `NotCompilable`
-**0** · `EmittedInvalidCode` **0** · `NoSuchSite` **48 + 68** (exact per-cause pins,
-`registry-has-no-mapper-class` and `no-mapping-method`, replacing the old total of 116 — B6) ·
-`StructurallyExcused` **13** · `UnhonouredButLoud` **14** · `Unaskable` **44**. From **23 findings / 162
-cells** when round 20 began.
+**Live ceilings, read from the code 2026-08-23:** findings **1** · declared cells **2** (both taken down by
+**I19**, which closed `NullCollections`@`Projection`) · `NotCompilable` **0** · `EmittedInvalidCode` **0** ·
+`NoSuchSite` **48 + 68** (exact per-cause pins, `registry-has-no-mapper-class` and `no-mapping-method`,
+replacing the old total of 116 — B6) · `StructurallyExcused` **13** · `UnhonouredButLoud` **14** ·
+`Unaskable` **44**. From **23 findings / 162 cells** when round 20 began.
 
 `EmittedInvalidCode` — *the generator emitted code that does not compile*, a NEW population A12 introduced
 and a genuinely different thing from `NotCompilable` — stood at **10** when the surface branch merged
@@ -54,9 +56,10 @@ duplicates an existing map signature as `DWARF094`, taking the population 8 → 
 Both populations are exact pins at zero now, so neither can refill quietly. (An earlier version of the line
 above confused the two populations; this one had gone on quoting the 10 for a round after it was paid off.)
 
-The two findings that remain are **`NullCollections`@`Projection`** (a ruled design decision) and
-**`MaxDepth`@`Span`/`AsyncStream`** (a tighter bound ignored; the default 64 still applies). Both are
-maintainer-acknowledged, neither is a silent defect.
+**One finding remains: `MaxDepth`@`Span`/`AsyncStream`** (a tighter bound ignored; the default 64 still
+applies) — maintainer-acknowledged, not a silent defect. The other, **`NullCollections`@`Projection`**, was a
+ruled design decision until **I19** (2026-08-23, `cbfd415`) ruled the other way and made the endpoints agree;
+its divergence entry was retired in that commit, which is what took the two ceilings to 1 / 2.
 
 **Layers 0 and 1 are complete.** Seven new diagnostics (`DWARF087`–`DWARF093`) plus `DWARFR10` and `DWARFR11`,
 eleven structural unifications, and three product defects found that no test or sample reached: a shipped
@@ -164,7 +167,7 @@ Full reasoning is in the ledger under `Ruling:`.
 
 | # | Status | Ruling | Cost if wrong |
 |---|---|---|---|
-| D-a | `TODO` | **`NullCollections`@`Projection`: keep today's behaviour, keep the divergence entry, and document it** in `docs/options.md` as *projection's collection null-semantics are `AsNull` by nature*. Option (a) risks failing inside a translated query at runtime — worse than a documented divergence. Option (b) was implemented and reverted after breaking seven tests. | Nothing changes at runtime; the entry stays recorded and (a)/(b) remain open to a later maintainer. |
+| D-a | `DONE` | **(Superseded 2026-08-23 by round 23 I19, `cbfd415` — the ruling went the OTHER way, and the row is closed rather than left waiting on a word that can no longer be given.)** D-a asked to *keep* today's projection behaviour, *keep* the divergence entry, and document the keeping. I19 ruled **honour the option** — candidate (a), the one this row called "risks failing inside a translated query at runtime" — and it was decided from the documented option rather than from the endpoint's convenience: `docs/options.md` states one behaviour for `NullCollections` with no endpoint qualifier, and an empty-collection materialisation *is* expressible in an expression tree, so this was never the "a provider cannot translate it" class `DWARF028` exists for. The divergence entry is **retired**, not kept (`DivergenceFindingCeiling` 2 → 1, `DivergentCellCeiling` 4 → 2). The documentation this row wanted was written, in the opposite sense: `docs/options.md` now pins the ONE residual I19 ruled rather than overlooked — the guard is still gated on `ProjectionSourceMayBeNull`, so a `#nullable`-enabled consumer whose non-nullable collection member is null at runtime throws from `Project` where `Map` returns empty. Option (b), the one "implemented and reverted after breaking seven tests", stays rejected on I19's own reasoning: it is a capability regression larger than the divergence it closes. | Nothing is left open. The residual is pinned in `docs/options.md`, so widening it later is a decision rather than a drift. |
 | D-b | `DONE` | **Delete `ResetForTests`.** Landed at the final fix wave, not when it was ruled: round 19 had *extended* it instead, and the final review found both halves of the inconsistency independently. **Delete**,  Zero callers; its IVT targets a project whose registry tests do not use it; the mutation leg excludes that project — so round-19's additions to it are unverifiable dead code *by construction*. | A future test wants a reset hook and re-adds ~8 lines. |
 | D-c | `TODO` | **Delete the stale items from `CLAUDE.md`'s working note** — the file's own rule is to delete each once decided, and one describes a fence-allowlist mechanism that no longer exists. ⚠️ This edits the agent's own instructions, so it is called out rather than done quietly. | Two historical notes lost — both preserved here and in `CARRY-FORWARD.md`. |
 | D-d | `DONE` | **Keep `internal` + `[InternalsVisibleTo]`.** The four meta-attributes need it; public would grow the shipped API for test-only metadata, and a separate assembly breaks the single-package delivery story. The CRA objection was about what the IVT *exposes* — **D-b resolves it**, leaving only inert metadata with zero runtime reads. | If the CRA posture later demands zero IVT, the meta-attributes move to their own assembly — a contained refactor. |
@@ -199,27 +202,30 @@ how the same item ended up recorded in three places and the ceilings ended up mi
 | Machine | Where | Holds | Drained by |
 |---|---|---|---|
 | **Round-20 task list** | `Issues/round20/TASKS.md` | this file — ~40 items | the standing rule: every issue lands here |
-| **Divergence store** | `Contracts/DeclaredDivergences.cs` | **2 findings / 4 cells**, each asserting its defect *still exists* | section **A** — closed; both survivors are maintainer-acknowledged design decisions |
+| **Divergence store** | `Contracts/DeclaredDivergences.cs` | **1 finding / 2 cells**, each asserting its defect *still exists* | section **A** — closed; the last survivor (`MaxDepth`@`Span`/`AsyncStream`) is a maintainer-acknowledged design decision. **I19** retired the other one |
 | ~~**`PredatesTheChangelog`**~~ | *deleted* | held **76** diagnostics never announced | **D-e** — DRAINED and the store DELETED 2026-08-21; `Scan9` now guards every live id uniformly, with no exemptions |
 | **Mutation survivors** | `StrykerOutput/…/mutation-report.json` | re-measured round 22: runtime **96.46 %** (P2, `b74023f`), doctooling **95.42 %** (P3, `254c500`), generator **81.59 %** (P5, `270d5cf`); the three `break` values moved to those measurements in the same commits. Was 66.95 % / 39 survivors when round 20 began | **C6** done; **P2/P3/P5** are the round-22 kill lists; the remainder is catalogued in `Issues/ledgers/` |
 | **Round-19 SDD workspace** | `.superpowers/sdd/2026-08-13-…/` | ledger + briefs + reports, **git-ignored** | complete; captured into `Issues/ledgers/` at `656042c` before the worktree went (**F2**) |
 | **Round-20 SDD workspace** | `.superpowers/sdd/2026-08-16-…/` | ledger + briefs + reports, **git-ignored** | complete; captured as `Issues/ledgers/round20-ledger.md` (`656042c`) |
-| **Round-21 / round-22 SDD workspaces** | `.superpowers/sdd/2026-08-2…/` | ledger + briefs + reports, **git-ignored** | round 21 captured at `96e62f9`; round 22 in use |
-| **Worktrees** | `DwarfMapper.NET` (master), `DwarfMapper-r22` (`feat/round22-gates`) | the surface worktree is gone: its ~106 commits merged at `dc385d4`, round 21's at `d131c76`. Round 22's count moves daily — re-run `git rev-list --count master..HEAD` rather than trusting a digit written here | **F1**/**F2** done; the round-22 merge is the maintainer's |
+| **Round-21 / -22 / -23 SDD workspaces** | `.superpowers/sdd/2026-08-2…/` | ledger + briefs + reports, **git-ignored** | round 21 captured at `96e62f9`; round 22 captured at `52fdc26` BEFORE its worktree was removed (**F2**'s rule, honoured); round 23 in use — capture it before `DwarfMapper-r23` goes |
+| **Worktrees** | `DwarfMapper.NET` (master), `DwarfMapper-r23` (`feat/round23-product`) | the surface worktree merged at `dc385d4`, round 21's at `d131c76`, **round 22's at `d0e5bca`** — all three gone. Round 23's commit count moves daily: re-run `git rev-list --count master..HEAD` rather than trusting a digit written here | **F1**/**F2** done; the round-23 merge is the maintainer's |
 | **CI** | `.github/workflows/ci.yml`, `release.yml` | build/test legs incl. the `SurfaceMatrix` trait leg **and the mutation leg** (nightly cron + `workflow_dispatch`, merged at `d2d54cf`, dormant until master) | **C1** — done; **C5** — the cell counts in `ci.yml` are corrected at the final fix wave |
 | **Scripts** | `scripts/` — `housekeeping.ps1`, `mutation-battery.sh`, `conformance-gate.sh`, `run-aot-bench.ps1`, `git-hooks/` | the `-Mutation` legs and the non-vacuity guard | **C1**, **C3** |
 | **Stryker configs** | `stryker-config{,.doctooling,.runtime}.json` | three mutation legs, all three run and measured | **C3** done; round-22 P2/P3/P5 re-measured every `break` (96 / 95 / 81) and `RatchetInvariantScanTests` (P1) now asserts each one equals a dated measurement in its own comment |
 | **Research** | `Issues/round21/RESEARCH.md` | 3 items, one already measured | section **E** |
 | **Reasoning archive** | `Issues/round20/CARRY-FORWARD.md` | the *why* behind these items | not a worklist — do not track work there |
 
-### The eleven shrink-only ratchets
+### The ten shrink-only ratchets
 
 Each is a population that may only get smaller. **No task may lower one it did not re-measure in the same
 commit** — predicted movement has proven unreliable (A1 moved a cell between two `NotCompilable`
 sub-populations and no ceiling changed at all).
 
-Values below are read from the code at branch HEAD. `EmittedInvalidCode` is the eleventh, added by **A12
-item 5**; the table used to be titled "the ten" and did not list it.
+Values below are read from the code at branch HEAD, re-read 2026-08-23. `EmittedInvalidCode` was added by
+**A12 item 5** (the table once said "ten" and did not list it); `PredatesTheChangelog` was **drained and
+deleted** by **D-e** at `73c58c3`, so the count is back to ten by a different route. The W6 sweep corrected
+the *Machines* row for that store and left this table beside it quoting 76 — a reminder that a number is
+stale in every place it was copied to, not only in the one that was noticed.
 
 | Ratchet | Value | Meaning |
 |---|---:|---|
@@ -228,15 +234,14 @@ item 5**; the table used to be titled "the ten" and did not list it.
 | `EmittedInvalidCodeCellCeiling` | 0 | **the generator emitted code that does not compile.** The population this repository says must not exist is EMPTY: B33's 2 cells closed by correct emission and B27's 8 by `DWARF094` (round 21 T6, 10 → 8 → 0, each re-measured in its own commit) |
 | `UnaskableCellCeiling` | 44 | the case-space cannot pose a question |
 | `UnhonouredButLoudCellCeiling` | 14 | changed nothing, but the build fails anyway |
-| `DivergentCellCeiling` | 4 | cells covered by a recorded divergence |
-| `DivergenceFindingCeiling` | 2 | recorded divergences — `NullCollections`@`Projection` and `MaxDepth`@`Span`/`AsyncStream` |
+| `DivergentCellCeiling` | 2 | cells covered by a recorded divergence — 4 → 2 at **I19** |
+| `DivergenceFindingCeiling` | 1 | recorded divergences — `MaxDepth`@`Span`/`AsyncStream` alone; **I19** closed `NullCollections`@`Projection` and retired its entry |
 | `StructurallyExcusedCellCeiling` | 13 | shape-based, not behavioural. The 12 → 13 raise is **the one sanctioned raise of the round** (A12 item 4, D17) |
-| `PredatesTheChangelog` | 76 | diagnostics never announced — **D-e**, needs a human before the first tag |
-| `DirectCompileErrorCallBaseline` | 53 | direct `RunAndGetCompilationErrors` call sites |
-| `MapMethodModelBoolFlagBaseline` | 15 | signature-triggered map modes |
+| `DirectCompileErrorCallBaseline` | 55 | direct `RunAndGetCompilationErrors` call sites — 53 → 55 for `DuplicateGenerateMapSignatureTests` (DWARF094/B27), reasoned at the constant |
+| `MapMethodModelBoolFlagBaseline` | 16 | signature-triggered map modes — 15 → 16 for `Withheld` (**I17**), an internal codegen flag rather than a new map mode, reasoned at the constant |
 
 **Four of these are pinned EXACTLY rather than ratcheted**, as of the final fix wave:
-`NotCompilable` (0), `DivergenceFinding` (2), `DivergentCell` (4) and `EmittedInvalidCode` (0). The shared
+`NotCompilable` (0), `DivergenceFinding` (**1**), `DivergentCell` (**2**) and `EmittedInvalidCode` (0). The shared
 `AssertRatchet` helper's shrink side is a ten-wide tolerance band, which for a population of ten or fewer
 passes every count from zero upward — so closing one cell silently funded a replacement of the same shape,
 and the acute case was `EmittedInvalidCode`: fixing B27's eight cells would have let eight brand-new
@@ -305,11 +310,20 @@ smallest ratchets over those exemptions so churn below ten cells can no longer h
 cross-product's element count so a population cannot leave the matrix silently. **B3, B5, B6, B7 and B32 are
 the remaining members of that family**, and they are the honest cut line now. *(Round-22 P6 update: B3 and
 B6 closed 2026-08-22 — along with B11, every excuse category they named now carries a live, re-measured,
-exactly counted obligation. B5, B7 and B32 remain.)*
+exactly counted obligation. B5 closed at W5 the same day. **B7 and B32 remain**, and both are round 23's
+M1.)*
 
 ---
 
 ## F1 — the merge handoff, written for the person who reads this cold tomorrow
+
+> **HISTORICAL — the decision described below was taken.** `feat/surface-coverage-architecture` merged at
+> **`dc385d4`**, round 21 at `d131c76`, round 22 at `d0e5bca`. The section is kept verbatim as the record of
+> what was handed over and on what evidence; **its numbers are the numbers of that moment and are not the
+> live ones** (the live values are in the NOW block and in the ratchet table above — notably
+> `EmittedInvalidCode` is **0** now, `PredatesTheChangelog` is **deleted**, and the ceilings read **1 / 2**).
+> The one thing it says still needs a human — **D-e** — was done on 2026-08-21. *(Banner added 2026-08-23,
+> round 23 V2; nothing below it is rewritten.)*
 
 **Everything below is in the repo so it survives a shutdown. Nothing is pushed. Nothing here needs me.**
 
