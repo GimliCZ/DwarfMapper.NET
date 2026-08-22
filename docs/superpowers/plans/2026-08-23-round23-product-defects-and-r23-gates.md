@@ -522,6 +522,22 @@ every cost below is an **expectation to be replaced by a measurement**, never a 
 
 ### S2 — wall-time regression: alert-only, never a per-PR gate
 
+> **DONE (2026-08-23, `aed031e`).** `bench-wall-time-alert`, nightly, `needs: deep-test` — it consumes the
+> existing `bench-smoke-results` artifact rather than re-running the ~6:40 smoke. The platform caveat
+> (2.13× Windows / ~1.14× Linux; these are **Linux** numbers) is in the job's own comment, as the exit
+> criterion required. **The wiring is not the obvious one, and the reason is measured from the action's
+> own `dist`:** `handleAlert()` returns early when both `comment-on-alert` and `fail-on-alert` are false,
+> so `alert-threshold` alone is dead decoration; `comment-on-alert` needs a token and `contents: write`.
+> So `fail-on-alert: true` with **`continue-on-error: true` on the step** — the threshold bites, the job
+> and the workflow stay green, the alert table lands as an ignored step failure plus a job summary. The
+> data file is written *before* the alert throws (verified in `write.js`), so a regression does not freeze
+> the baseline. A deterministic input guard runs *before* it and DOES fail the job, because absence is not
+> a nondeterministic measurement; that guard was executed locally five ways. Pinned:
+> `benchmark-action/github-action-benchmark@52576c92…` (v1.22.1, 2026-05-06, newest tag),
+> `actions/cache@0057852b…` (v4.3.0), `actions/download-artifact@d3f86a10…` (v4.3.0). Storage is
+> `external-data-json-path` + `actions/cache` with a **rotating** key (a fixed key is never re-saved and
+> would freeze the baseline at night one). **Unexercised until it runs on master.**
+
 **What:** `github-action-benchmark`'s BenchmarkDotNet adapter, `alert-threshold` ~150 %, **comment-only** —
 never `fail-on-alert` per-PR. **Why:** wall-clock is R4-nondeterministic on shared runners; industry practice
 is baseline-plus-generous-threshold, not exact. **The caveat that must be written into the job:** the
@@ -544,6 +560,22 @@ per R1.
 
 ### S4 — reproducible-build verification
 
+> **DONE (2026-08-23, `de5f696`), and the answer is not the one this row assumed — read it.** Measured on
+> Windows, SDK 10.0.101, at `81c4ace`, two packs from a `git clean -xdf` tree with `CI=true`: **the
+> whole-file SHA-256 of every `.nupkg`/`.snupkg` DIFFERS on every pack, and every build-produced entry
+> inside them is BYTE-IDENTICAL.** `DwarfMapper.1.0.2-rc.1.nupkg` even differed in *length*, by one byte.
+> The entire difference is NuGet.Packaging's OPC envelope: the `<32 hex>.psmdcp` core-properties part is
+> named after a GUID drawn fresh per pack, and `_rels/.rels` names it back. So: **DwarfMapper's bytes
+> reproduce; NuGet's envelope does not** — and recording that as "not reproducible" would be as wrong as
+> recording it as "reproducible" on a hash that never matches. `scripts/repro-pack-check.py` gates the
+> deterministic layer and *normalises* the two OPC parts by name rather than skipping them (the `.psmdcp`
+> is compared by content under a canonical name; `.rels` byte-for-byte after replacing only the
+> relationship that targets it). Sabotage-demoed four ways. `ContinuousIntegrationBuild`, `Deterministic`,
+> `EmbedUntrackedSources` and SourceLink were **already** set repo-wide; nothing was added for this leg.
+> **One finding filed rather than fixed: `I15`** — `dotnet pack` exits 1 today on an ApiCompat break that
+> IS already suppressed, because the csproj wires the suppression through a *property* the SDK reads as an
+> *item*; the next release tag would have failed at the pack step. **Unexercised until it runs on master.**
+
 **What:** `ContinuousIntegrationBuild=true` plus a build-twice-compare-hashes leg (or `dotnet-validate`),
 nightly. **Why:** it fits the CRA-defensive posture this repository has taken deliberately — an SBOM plus SLSA
 attestation without bit-reproducibility is a claim without a check.
@@ -551,6 +583,20 @@ attestation without bit-reproducibility is a claim without a check.
 non-determinism is named and recorded.
 
 ### S5 — cross-platform nightly legs (windows-latest, macos-latest) and the preview-SDK canary
+
+> **DONE (2026-08-23, `3405353`).** `cross-platform` (matrix `windows-latest`/`macos-latest`, `fail-fast:
+> false`, nightly) runs the sln **without** the `Category!=SurfaceMatrix` filter — deep-test's precedent,
+> not build-test's, because the nightly tier wants the whole population — and carries the ISSUE-038 SDK
+> drift assertion per-runner with `shell: bash` (windows-latest defaults to pwsh). No coverage gate: the
+> floors are measured on one platform and R1 cannot mean two measurements at once. `preview-sdk-canary`
+> targets **.NET 11 preview**, verified live before writing the leg (release index: channel 11.0,
+> support-phase `preview`, SDK `11.0.100-preview.7.26381.103`), `continue-on-error: true` with the flip
+> condition written into the job exactly as `roslyn-forward-compat` states it and Z3 precedents. Its
+> vacuity guard is the part that earns its keep: it asserts the resolved SDK's **major ≥ 11**, because a
+> setup-dotnet fallback to 10.0.x would leave the canary green and make it a slow duplicate of build-test.
+> Expected red at first, for a reason the comment names so it is not misdiagnosed: `TreatWarningsAsErrors`
+> + `AnalysisLevel=latest-all` turns every analyzer rule a new SDK *adds* into a build error.
+> **Both timeouts are stated estimates, not measurements; both jobs are unexercised until master.**
 
 **What:** two rows, one task because they are the same CI shape. (1) nightly full-suite legs on
 `windows-latest` and `macos-latest` — not per-push (runner cost and wall-clock). Correctness is de-facto
@@ -563,6 +609,22 @@ to load it"*.
 hosted-runner wall-clocks; the canary's flip obligation written into its own comment with the condition.
 
 ### S6 — package/binary size ratchet
+
+> **DONE (2026-08-23, `e9d2a77`).** `Assert-PackageSizeWithinCeiling`, appended as a self-contained
+> function at the END of `scripts/gate-checks.ps1` (so a concurrent edit to the R2 band checks above it
+> cannot collide), plus its own nightly `package-size` job that dot-sources it rather than re-implementing
+> it. **Measured** 2026-08-22, Windows, SDK 10.0.101, `81c4ace`, two packs each: `DwarfMapper` 253,420 /
+> 253,421 B → **ceiling 247 KB**; `DwarfMapper.Testing` 48,508 B → **ceiling 47 KB**. Note the tightness
+> that R1 buys: **~530 bytes of headroom** on DwarfMapper, so any change adding half a kilobyte of IL
+> re-measures in its own commit — the same bargain the one-decimal coverage floors and the byte-exact
+> allocation pins already make. Deliberately **one-sided** (this row's own "raise-only-with-re-measure"):
+> a shrinking package is not a finding the way a smaller allocation is, since size has no correctness
+> meaning; `Test-CoverageWithinBand` is the template if the forcing direction is ever wanted. Three
+> vacuity guards — a ceilinged package that was not produced fails, an empty/absent directory fails, and
+> a packed `.nupkg` with **no** ceiling fails. Sabotage-demoed six ways through the real pwsh function.
+> Its own job rather than a step in `reproducible-build`, because a size red and a reproducibility red
+> mean different things. **Ubuntu re-validation is a first-run obligation — the ceiling is
+> Windows-measured, and a per-OS difference is a re-measurement, never a tolerance band (the Z2 rule).**
 
 **What:** `dotnet pack` in the deep tier; ceiling = the measured KB truncated, raise-only-with-re-measure.
 **Why:** pre-1.0, and ApiCompat plus the `PublicAPI.Shipped/Unshipped` files already guard *surface* growth;
