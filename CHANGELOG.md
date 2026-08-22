@@ -15,6 +15,13 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`[MapProperty(StringFormat = "…")]` emitted a `private static` helper that nothing called.** A format
+  string replaces the converter the member's conversion had already resolved to, and the replaced one stayed
+  in the synthesized-helper table, so every formatted member shipped a second, unreferenced
+  `__DwarfMap_FmtToStr_*` beside the `__DwarfMap_FmtStrF_*` that is actually used. No behaviour change — the
+  method was dead — but it was generated code in a file the consumer cannot edit. A helper another member
+  still needs is untouched, whichever side of the formatted member it is declared on.
+
 - **One incomplete mapping method took every other method on the mapper down with it.** A destination member
   with no source is `DWARF001`, an Error, and an error suppressed the whole class — so a mapper declaring a
   complete `MapGood` beside an incomplete `MapBad` generated **nothing**, and the consumer got one real error
