@@ -16,7 +16,25 @@ namespace DwarfMapper.CompilerTests.TypeGraphs;
 public static class TypeGraphRenderer
 {
     /// <summary>Render every compilation unit. Unit 0 carries the graph and the mapper declaration.</summary>
-    public static IReadOnlyList<string> Render(GraphSpec graph)
+    /// <param name="graph">The spec to render.</param>
+    /// <param name="withProjection">
+    ///     When true the mapper ALSO declares
+    ///     <c>public partial IQueryable&lt;RootDest&gt; Project(IQueryable&lt;RootSource&gt;)</c> beside
+    ///     <c>Map</c> — the <c>IQueryable</c> projection endpoint (round 23, I18).
+    ///     <para>
+    ///         <b>Opt-in, and it must stay opt-in.</b> Emitting <c>Project</c> unconditionally would
+    ///         silently re-cut the sampled space of every population that already exists
+    ///         (<c>CompilerGraphSmokeSeeds</c>, <c>CompilerOracleSeeds</c> and all three MR entries): the
+    ///         projection refuses a strictly wider grammar than <c>Map</c> does — a HashSet member, a
+    ///         converter, a hook, reference handling — and an error-severity DWARF028 on the projection
+    ///         makes the WHOLE run <c>RefusedLoudly</c>. Cases those populations sample today as ACCEPTED
+    ///         (and therefore compile-checked, oracle-compared, metamorphically related) would flip to
+    ///         "refused" and stop being checked at all, with every digest moving and nothing saying why.
+    ///         A separate flag and a separate <c>DeepPopulation</c> keeps the existing case sets
+    ///         byte-identical and makes the projection's own accept/refuse split measurable on its own.
+    ///     </para>
+    /// </param>
+    public static IReadOnlyList<string> Render(GraphSpec graph, bool withProjection = false)
     {
         ArgumentNullException.ThrowIfNull(graph);
         graph.Validate();
@@ -54,6 +72,14 @@ public static class TypeGraphRenderer
         main.AppendLine("{");
         main.AppendLine(FormattableString.Invariant(
             $"    public partial {graph.RootDest} Map({graph.RootSource} s);"));
+        if (withProjection)
+        {
+            // Fully qualified: the rendered unit has no `using System.Linq;`, and adding one would change
+            // the non-projection units too (an extra using is harmless but the two shapes must not drift).
+            main.AppendLine(FormattableString.Invariant(
+                $"    public partial System.Linq.IQueryable<{graph.RootDest}> Project(System.Linq.IQueryable<{graph.RootSource}> q);"));
+        }
+
         main.AppendLine("}");
 
         units.Insert(0, main.ToString());

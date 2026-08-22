@@ -45,6 +45,16 @@ internal static class CompilerTestHarness
             .Select(a => MetadataReference.CreateFromFile(a.Location))
             .Cast<MetadataReference>()
             .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location))
+            // System.Linq.Queryable, named EXPLICITLY rather than left to the AppDomain sweep above.
+            // The sweep only sees assemblies this test process has already LOADED, and nothing in this
+            // project touched Queryable until the projection leg (round 23, I18) started rendering
+            // `Project` methods — whose generated body calls `global::System.Linq.Queryable.Select`. The
+            // symptom was a CS1069 ("forwarded to assembly System.Linq.Queryable … consider adding a
+            // reference") on EVERY projection sample, which the smoke leg correctly reported as a silent
+            // miscompilation because that is exactly what it looks like from the outside. It was the
+            // harness, not the product. A `typeof` on the type is what pins it: it also forces the load,
+            // so the reference cannot go missing again by accident of which tests ran first.
+            .Append(MetadataReference.CreateFromFile(typeof(System.Linq.Queryable).Assembly.Location))
             .ToArray());
 
     /// <summary>Runs both generators over the given compilation units (nullable disabled, house default).</summary>
@@ -112,6 +122,71 @@ internal static class CompilerTestHarness
         {
             throw tie.InnerException;
         }
+    }
+
+    /// <summary>
+    ///     The projection twin of <see cref="InvokeMap" /> (round 23, I18): wraps <paramref name="source" />
+    ///     in a one-element <c>IQueryable&lt;TSource&gt;</c>, invokes the mapper's <c>Project</c>, and
+    ///     returns the single projected element.
+    ///     <para>
+    ///         ENUMERATING the returned <c>IQueryable</c> is what executes it. Under
+    ///         <c>Enumerable.AsQueryable</c> the provider is LINQ-to-Objects, so the emitted expression tree
+    ///         is COMPILED AND EVALUATED here — which is the honest limit of every projection claim in this
+    ///         project (B19's rule): no ORM runs, so this proves the tree is well-formed and evaluates,
+    ///         never that a database provider translates it.
+    ///     </para>
+    ///     <para>
+    ///         Reflection is test-side only, the same declared boundary as <see cref="InvokeMap" />, and a
+    ///         <see cref="System.Reflection.TargetInvocationException" /> is unwrapped for the same reason:
+    ///         the projection's own exception is a runtime-behaviour fact about the product and must reach
+    ///         the assertion undisguised.
+    ///     </para>
+    /// </summary>
+    public static object? InvokeProject(System.Reflection.Assembly assembly, Type sourceType, object source)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+        ArgumentNullException.ThrowIfNull(sourceType);
+
+        var mapper = assembly.GetType("T.M")
+                     ?? throw new InvalidOperationException("emitted assembly has no mapper type 'T.M'");
+        var project = mapper.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                          .SingleOrDefault(m => m.Name == "Project" && m.GetParameters().Length == 1)
+                      ?? throw new InvalidOperationException("mapper type 'T.M' has no one-parameter Project method");
+
+        var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(sourceType))!;
+        list.Add(source);
+
+        // Enumerable.AsQueryable<T>(IEnumerable<T>) — the generic overload, not the non-generic one, so
+        // the queryable's element type is TSource exactly and Project's parameter binds without a cast.
+        var asQueryable = typeof(Queryable)
+            .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Single(m => m.Name == nameof(Queryable.AsQueryable) && m.IsGenericMethodDefinition)
+            .MakeGenericMethod(sourceType);
+        var queryable = asQueryable.Invoke(null, [list]);
+
+        var instance = Activator.CreateInstance(mapper)
+                       ?? throw new InvalidOperationException("mapper type 'T.M' could not be instantiated");
+        object? projected;
+        try
+        {
+            projected = project.Invoke(instance, [queryable]);
+        }
+        catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+        {
+            throw tie.InnerException;
+        }
+
+        // The enumeration itself can throw from inside the tree, and that throw belongs to the product
+        // exactly as much as one from Project's own body — so it is deliberately NOT wrapped either.
+        var rows = ((System.Collections.IEnumerable)(projected
+                        ?? throw new InvalidOperationException("Project returned null")))
+            .Cast<object?>()
+            .ToList();
+
+        return rows.Count == 1
+            ? rows[0]
+            : throw new InvalidOperationException(
+                FormattableString.Invariant($"Project over a ONE-element queryable yielded {rows.Count} rows"));
     }
 
     private static (RunResult Result, CSharpCompilation Output) RunCore(

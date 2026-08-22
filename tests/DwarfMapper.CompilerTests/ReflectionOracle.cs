@@ -79,13 +79,31 @@ internal static class ReflectionOracle
     ///     re-kinded — populates identically, which K2's MR relations will rely on. The seed comes from the
     ///     CsCheck sample, so a shrunk failure replays exactly.
     /// </summary>
-    public static object Populate(Type type, int seed)
+    /// <param name="type">The type to build.</param>
+    /// <param name="seed">The CsCheck-sampled population seed.</param>
+    /// <param name="nullCollections">
+    ///     When false, collection members are never null (they are still sometimes EMPTY — the 0..2 element
+    ///     count is untouched). Default true, which is the documented-coverage behaviour every existing
+    ///     caller keeps byte-for-byte.
+    ///     <para>
+    ///         <b>The one caller that passes false, and why it is an exclusion rather than a preference:</b>
+    ///         <c>ProjectionAgreementTests</c>. A null source collection is a KNOWN, MEASURED endpoint
+    ///         divergence — <c>Map</c> materialises the documented <c>NullCollections=AsEmpty</c> default,
+    ///         <c>Project</c> propagates the null — filed as <b>I19</b> and pinned deterministically by
+    ///         <c>ProjectionAgreementTests.I19_a_null_source_collection_diverges_between_the_endpoints</c>.
+    ///         Leaving it in the sampled population would red that leg on ~20 % of every collection member
+    ///         forever, drowning every OTHER disagreement it exists to find. The exclusion is narrow (one
+    ///         population axis, one caller), named, and DELETED WITH THE FIX — exactly like the I5 and I7
+    ///         exclusions this project has already retired.
+    ///     </para>
+    /// </param>
+    public static object Populate(Type type, int seed, bool nullCollections = true)
     {
-        return BuildValue(type, seed, 0)
+        return BuildValue(type, seed, 0, nullCollections)
                ?? throw new InvalidOperationException($"population produced null for root type {type}");
     }
 
-    private static object? BuildValue(Type type, int key, int depth)
+    private static object? BuildValue(Type type, int key, int depth, bool nullCollections)
     {
         DemandDepth(depth, type);
 
@@ -93,7 +111,7 @@ internal static class ReflectionOracle
         if (nullable is not null)
         {
             // Documented-coverage null: a Nullable<T> member is null in ~25% of populations.
-            return Positive(key, "null?") % 4 == 0 ? null : BuildValue(nullable, key, depth + 1);
+            return Positive(key, "null?") % 4 == 0 ? null : BuildValue(nullable, key, depth + 1, nullCollections);
         }
 
         if (IsScalar(type)) return ScalarFor(type, key);
@@ -103,16 +121,17 @@ internal static class ReflectionOracle
             // Documented-coverage null: a collection member is null in ~20% of populations — this is the
             // NullCollections switch's food; its deterministic regression pin lives in
             // DifferentialOracleTests so the coverage here cannot silently go vacuous.
-            if (Positive(key, "nullcoll?") % 5 == 0) return null;
-            return BuildCollection(shape, type, elementType, valueType, key, depth);
+            if (nullCollections && Positive(key, "nullcoll?") % 5 == 0) return null;
+            return BuildCollection(shape, type, elementType, valueType, key, depth, nullCollections);
         }
 
         // Graph node type: construct it, every member keyed by name.
-        return Instantiate(type, (name, memberType) => BuildValue(memberType, Mix(key, name), depth + 1));
+        return Instantiate(type, (name, memberType) => BuildValue(memberType, Mix(key, name), depth + 1, nullCollections));
     }
 
     private static object BuildCollection(
-        CollectionShapeKind shape, Type type, Type elementType, Type? valueType, int key, int depth)
+        CollectionShapeKind shape, Type type, Type elementType, Type? valueType, int key, int depth,
+        bool nullCollections)
     {
         var count = Positive(key, "count") % 3; // 0..2 — empty collections stay reachable
 
@@ -123,7 +142,7 @@ internal static class ReflectionOracle
             {
                 dict.Add(
                     "K" + i.ToString(CultureInfo.InvariantCulture),
-                    BuildValue(valueType!, Mix(key, "[" + i.ToString(CultureInfo.InvariantCulture) + "]"), depth + 1));
+                    BuildValue(valueType!, Mix(key, "[" + i.ToString(CultureInfo.InvariantCulture) + "]"), depth + 1, nullCollections));
             }
 
             return dict;
@@ -131,7 +150,7 @@ internal static class ReflectionOracle
 
         var items = new object?[count];
         for (var i = 0; i < count; i++)
-            items[i] = BuildValue(elementType, Mix(key, "[" + i.ToString(CultureInfo.InvariantCulture) + "]"), depth + 1);
+            items[i] = BuildValue(elementType, Mix(key, "[" + i.ToString(CultureInfo.InvariantCulture) + "]"), depth + 1, nullCollections);
         return MaterializeSequence(shape, type, elementType, items);
     }
 
