@@ -24,6 +24,42 @@ namespace DwarfMapper.Generator.Tests.Contracts;
 ///     <para>
 ///         Traited so it can run as its own CI leg: this is roughly seven times the work of the option matrix.
 ///     </para>
+///     <para>
+///         <b>THE LIMITATION OF EVERY CEILING IN THIS FILE, stated where they are read (B19).
+///         <c>Honoured</c> proves an element had an EFFECT, not that the effect is RIGHT. A green matrix is
+///         not a correct generator.</b> <c>SurfaceProbe.Classify</c> returns <c>Honoured</c> when the emitted
+///         text merely DIFFERS between the with-and-without compilations. Nothing inspects what it differs
+///         INTO — so a cell can be green while the code it graded is broken, and none of the counts below
+///         will move.
+///     </para>
+///     <para>
+///         Not hypothetical. Round 20's A7: <c>[AfterMap]</c> on
+///         <c>public partial void Update(Src s, Dst d)</c> made the generator emit <c>Update(s, d);</c> as
+///         the last statement OF <c>Update</c> — unconditional infinite recursion, shipped, compiling. This
+///         matrix scored that cell <c>Honoured</c>, and the claim-parity theory passed it at the claimed
+///         reading AND at the honest unclaimed one. It was found only because the NEIGHBOURING cell at
+///         <c>SpanMap</c> read <c>Silent</c> and someone dumped the generated body while chasing that.
+///         Every other finding in this repository was the matrix failing to MEASURE something, and was
+///         therefore visible as a red or unaccounted cell; this one graded broken behaviour as working and
+///         left no trace in any count.
+///     </para>
+///     <para>
+///         <c>Refused</c> carries the same blind spot in weaker form: it proves a diagnostic was reported,
+///         not that it was the RIGHT diagnostic. D2 is the worked example — a <c>DWARF038</c> about an
+///         <c>int → string</c> conversion was filed for four rounds as a refusal of <c>[MapProperty]</c>'s
+///         PLACEMENT, which it never was.
+///     </para>
+///     <para>
+///         <b>No remedy is scoped here, deliberately.</b> "How does a cross-product of this size assert
+///         correctness rather than difference" is a design question, and the cheap answers — a golden output
+///         per cell, a runtime execution leg, a self-call check over generated bodies — differ enormously in
+///         cost and in what they actually catch. The systemic pressure on this class of failure is the
+///         round-22 compiler-testing arc: <b>R22-01</b>, a differential oracle that RUNS generated maps over
+///         generated type graphs and compares against a reference interpretation, and <b>R22-02</b>,
+///         metamorphic relations that assert properties of the result rather than of the diff. Until one of
+///         them lands, read these ceilings as "no element silently stopped acting" — never as "the generator
+///         is right".
+///     </para>
 /// </summary>
 [Trait("Category", "SurfaceMatrix")]
 public sealed class SurfaceParityTests
@@ -533,20 +569,26 @@ public sealed class SurfaceParityTests
             + "nothing can be done: give the endpoint template or the fixture in play the marker that site "
             + "splices at, rather than pinning the absence.");
 
+        // C5: this loop used to open-code AssertExactPin's two asserts. Every other pinned population in
+        // this file goes through the shared helper, and a hand-rolled copy is how one pin ends up with a
+        // different meaning from its neighbours after somebody improves the helper — the very drift the
+        // helper was extracted to stop. The per-cause reasoning that made the copy look necessary rides in
+        // as howToClose, and the full breakdown with it, so nothing the messages used to say is lost.
         foreach (var (cause, pinned) in NoSuchSiteCausePins)
         {
-            var actual = byCause.GetValueOrDefault(cause);
-            Assert.True(actual <= pinned,
-                $"{actual} cells have no declaration site under '{cause}', above its pin of {pinned}:\n"
-                + breakdown + "\n\nPer-cause and exact on purpose (B6): the old total-only ceiling let a "
-                + "slot go missing at one endpoint as long as a structural cell left at another — "
-                + "offsetting drift summing to green. This cause is structural and cannot grow; a growth "
-                + "here is a catalogue or template change someone must look at.");
-            Assert.True(actual >= pinned,
-                $"Only {actual} cells have no declaration site under '{cause}', under its pin of {pinned}:\n"
-                + breakdown + "\n\nCells left a structural population — either the endpoint gained the "
-                + "surface (lower the pin in the same commit to lock it in) or the catalogue lost cases "
-                + "that should still exist. Exact in both directions so neither reading passes unexamined.");
+            var cells = siteless
+                .Where(x => string.Equals(CauseOf(x.Detail), cause, StringComparison.Ordinal))
+                .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint}")
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToList();
+
+            AssertExactPin(cells, pinned, $"cells have no declaration site under '{cause}'",
+                $"Full breakdown:\n{breakdown}\n\nPer-cause and exact on purpose (B6): the old total-only "
+                + "ceiling let a slot go missing at one endpoint as long as a structural cell left at "
+                + "another — offsetting drift summing to green. Both pinned causes are STRUCTURAL and "
+                + "cannot grow, so a growth here is a catalogue or template change someone must look at; a "
+                + "shrink means the endpoint gained the surface (lower the pin in the same commit) or the "
+                + "catalogue lost cases that should still exist.");
         }
     }
 
