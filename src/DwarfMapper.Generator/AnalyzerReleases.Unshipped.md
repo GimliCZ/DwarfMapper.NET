@@ -104,6 +104,7 @@ DWARF095 | DwarfMapper | Warning | [MapIgnore] names no destination member
 DWARF096 | DwarfMapper | Warning | Projection method was not generated
 DWARF097 | DwarfMapper | Warning | Mapping method was not generated
 DWARF098 | DwarfMapper | Warning | [DwarfMapperConstructor] names a constructor the mapper cannot use
+DWARF099 | DwarfMapper | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

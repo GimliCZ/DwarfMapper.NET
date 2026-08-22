@@ -1772,6 +1772,36 @@ it twice — both methods really did ignore the directive.
 
 The `[MapTo]` registry answers the same mistake with its own id, [`DWARFR11`](#dwarfr11): it does not read
 `[DwarfMapperConstructor]` at all, which is a different statement from reading it and declining it.
+
+---
+
+## dwarf099
+**One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations** · Error
+
+`MapNullSkipAttribute<TSource, TTarget>` is `AllowMultiple`, so naming one pair twice compiles. When the two
+declarations **disagree**, the effective policy used to be decided by declaration order — the first match won
+and the second was discarded without a word, so swapping two lines silently produced a different mapper. That
+is refused now.
+
+<!-- fence-exempt: the sample must FAIL the build to show the rule — a compiling snippet would be the shape this diagnostic exists to reject -->
+```csharp
+[DwarfMapper]
+[MapNullSkip<Dto, Entity>(true)]
+[MapNullSkip<Dto, Entity>(false)]   // DWARF099 — identical scope, opposite answers
+public partial class Mappers { ... }
+```
+
+**Fix:** delete one of them. To vary the policy per method, use the method-scoped `[MapNullSkip(bool)]`, which
+wins over the pair-scoped form by design.
+
+**Why an error and not a warning.** There is nothing to rank. The two declarations have the *same* scope, and
+only source order separates them, so any choice the generator made would be an accident rather than a policy.
+Contrast the method-versus-pair contradiction, which is **not** an error: those forms have different scopes,
+so most-specific-wins is a defensible rule and it is the documented one.
+
+**Two declarations that AGREE are accepted, in silence.** A repeated declaration saying the same thing
+discards nothing, so there is nothing to report. Opposite values over *different* pairs are likewise fine —
+that is one policy per pair, which is what the attribute is for.
 ---
 
 ---

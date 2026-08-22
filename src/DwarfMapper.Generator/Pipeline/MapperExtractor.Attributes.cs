@@ -2,6 +2,7 @@
 
 using System.Collections.Immutable;
 using System.Text;
+using DwarfMapper.Generator.Diagnostics;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Pipeline;
@@ -293,7 +294,7 @@ internal static partial class MapperExtractor
     ///     keyed by the pair they configure.
     /// </summary>
     private static List<(ITypeSymbol Source, ITypeSymbol Target, bool Enabled)> ReadPairNullSkips(
-        INamedTypeSymbol classSymbol)
+        INamedTypeSymbol classSymbol, LocationInfo? location, List<DiagnosticInfo> diagnostics)
     {
         var result = new List<(ITypeSymbol, ITypeSymbol, bool)>();
 
@@ -308,10 +309,39 @@ internal static partial class MapperExtractor
                           || attr.ConstructorArguments[0].Value is not bool b
                           || b;
 
+            // B24 / DWARF099. The set is built here, so this is where a CONTRADICTION over one pair is
+            // visible: the resolver below returns the first match by declaration order, which made SOURCE
+            // ORDER decide whether a patch-merge mapper skips nulls. Checked against the entries already
+            // recorded and only where they DISAGREE — an identical duplicate discards nothing, so it stays
+            // accepted in silence. Reported before this entry is added, so the message can name the value
+            // it contradicts.
+            foreach (var (s, tg, already) in result)
+                if (SymbolEqualityComparer.Default.Equals(s, ac.TypeArguments[0])
+                    && SymbolEqualityComparer.Default.Equals(tg, ac.TypeArguments[1])
+                    && already != enabled)
+                {
+                    var src = ac.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                    var tgt = ac.TypeArguments[1].ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.ContradictingPairNullSkip, location,
+                        $"Mapper '{classSymbol.Name}' declares [MapNullSkip<{src}, {tgt}>({BoolLiteral(already)})] "
+                        + $"and [MapNullSkip<{src}, {tgt}>({BoolLiteral(enabled)})] over the SAME pair. The two "
+                        + "have identical scope, so only source order separates them and the second was "
+                        + "silently discarded. Delete one. To vary the policy per method, use the "
+                        + "method-scoped [MapNullSkip(bool)], which wins over this form by design."));
+                    break;
+                }
+
             result.Add((ac.TypeArguments[0], ac.TypeArguments[1], enabled));
         }
 
         return result;
+    }
+
+    /// <summary>The C# literal for a bool, spelled rather than lower-cased at runtime (CA1308).</summary>
+    private static string BoolLiteral(bool value)
+    {
+        return value ? "true" : "false";
     }
 
     /// <summary>
@@ -350,9 +380,10 @@ internal static partial class MapperExtractor
     {
         if (method is not null && ReadMapNullSkip(method) is { } methodScoped) return methodScoped;
 
-        // First match wins when the same pair is named twice with opposite values — declaration order. Legal
-        // (the generic form is AllowMultiple) and pre-existing; not refused here because a refusal is a new
-        // diagnostic, which is a decision with a five-file sync attached to it.
+        // First match wins among the entries that reach here, and they can no longer DISAGREE: a pair named
+        // twice with opposite values is refused as DWARF099 where the set is built (B24), because the two
+        // declarations have identical scope and only source order separated them. Identical duplicates still
+        // arrive, and first-match is the right answer for them — they say the same thing.
         foreach (var (s, t, enabled) in pairNullSkips)
             if (SymbolEqualityComparer.Default.Equals(s, source)
                 && SymbolEqualityComparer.Default.Equals(t, target))

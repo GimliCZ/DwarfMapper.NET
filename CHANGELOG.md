@@ -15,6 +15,17 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF099` — one pair carries two contradicting `[MapNullSkip<TSource, TTarget>]` declarations (Error).**
+  The generic form is `AllowMultiple`, so `[MapNullSkip<Dto, Entity>(true)]` beside
+  `[MapNullSkip<Dto, Entity>(false)]` compiled clean and the reader returned the first by declaration order —
+  **source order decided whether a patch-merge mapper skips nulls**, and the discarded declaration was an
+  explicit, opposite statement of the caller's intent. It is an error rather than a warning because the two
+  have *identical* scope, so there is nothing to rank; the method-versus-pair contradiction stays
+  most-specific-wins, because those forms have different scopes and therefore a defensible ordering. Two
+  declarations that **agree** are still accepted in silence, and opposite values over *different* pairs are
+  the option working as designed. **This can break a build that compiled before** — the fix is to delete one
+  of the two.
+
 - **`DWARF098` — `[DwarfMapperConstructor]` names a constructor the mapper cannot use (Warning).** An
   annotated constructor that is inaccessible, `[Obsolete]`, a copy constructor, or takes a `ref`/`out`
   parameter is filtered out before selection runs, and the destination is then built exactly as it would be

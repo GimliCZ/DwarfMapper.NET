@@ -192,7 +192,8 @@ internal static partial class MapperExtractor
         // this list used to be consulted only by the [GenerateMap] and synthesized-pair paths, so the two
         // documented scopes of one option each reached about half the endpoints and said nothing at the other
         // half. ResolveNullSkip is the single reader; do not add a second one.
-        var pairNullSkips = ReadPairNullSkips(classSymbol);
+        var pairNullSkips = ReadPairNullSkips(classSymbol,
+            LocationInfo.From(classSyntax.Identifier.GetLocation()), diagnostics);
         var allowNonPublic = ReadAllowNonPublic(opts);
         var nullCollections = ReadNullCollections(opts);
         var maxDepth = ReadMaxDepth(opts);

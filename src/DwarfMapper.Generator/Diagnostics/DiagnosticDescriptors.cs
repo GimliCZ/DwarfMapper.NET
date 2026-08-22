@@ -1506,4 +1506,32 @@ public static class DiagnosticDescriptors
         + "have been without it. The construction that results is safe — that is why it is a warning and not "
         + "an error — but the directive the caller wrote was discarded in silence.",
         HelpBase + "dwarf098");
+
+    /// <summary>
+    ///     <c>DWARF099</c> — one pair carries two <c>[MapNullSkip&lt;TSource, TTarget&gt;]</c> declarations
+    ///     with OPPOSITE values.
+    ///     <para>
+    ///         An <b>Error</b>, and the reason is that there is nothing to rank. The generic form is
+    ///         <c>AllowMultiple</c>, so two applications over one pair compile; the reader returned the first
+    ///         by declaration order and dropped the second without a word, which made SOURCE ORDER decide
+    ///         whether a patch-merge mapper skips nulls. That is an accidental rank, not a policy — unlike the
+    ///         method-versus-pair contradiction, which A6 settled as most-specific-wins because those two
+    ///         forms have different scopes and a defensible ordering. These have IDENTICAL scope.
+    ///     </para>
+    ///     <para>
+    ///         IDENTICAL duplicates are accepted in silence, deliberately: a repeated declaration that says
+    ///         the same thing discards nothing, so there is nothing to report. Only the contradiction is
+    ///         refused. TASKS.md <c>B24</c>.
+    ///     </para>
+    /// </summary>
+    public static readonly DiagnosticDescriptor ContradictingPairNullSkip = new(
+        "DWARF099",
+        "One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        "[MapNullSkip<TSource, TTarget>] is AllowMultiple, so a pair can be named twice. When the two "
+        + "declarations disagree the generator has no defensible way to choose between them — they have the "
+        + "same scope, and only source order separates them — so the mapper is refused rather than resolved "
+        + "by an accident of ordering. Two declarations that AGREE are accepted.",
+        HelpBase + "dwarf099");
 }

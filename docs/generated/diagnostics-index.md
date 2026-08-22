@@ -102,5 +102,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF096` | Warning | Projection method was not generated |
 | `DWARF097` | Warning | Mapping method was not generated |
 | `DWARF098` | Warning | [DwarfMapperConstructor] names a constructor the mapper cannot use |
+| `DWARF099` | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations |
 
-94 diagnostics.
+95 diagnostics.
