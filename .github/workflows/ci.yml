@@ -642,3 +642,134 @@ jobs:
         with:
           name: package-size-packages
           path: ${{ runner.temp }}/pack
+
+  # ── Cross-platform nightly legs: windows-latest and macos-latest (round-23 S5) ────────────────────────
+  # Every ordinary leg of this workflow runs on ubuntu, and the only cross-OS coverage the repo has is
+  # aot-trim-gate's linux-x64/win-x64 publish matrix — which proves the AOT sample compiles and runs, not
+  # that the SUITE passes. Correctness is de-facto dual-platform (the maintainer develops on Windows, CI
+  # runs ubuntu), so this is cheap insurance rather than an expected discovery; macOS in particular buys
+  # little for a Roslyn source generator and is here because "little" is not "nothing" and the leg is
+  # nightly.
+  #
+  # NOT per-push, deliberately: runner cost and wall-clock. The plan's budget puts these at ~10 min each.
+  #
+  # NO `Category!=SurfaceMatrix` filter, unlike build-test and following deep-test's precedent instead:
+  # the nightly tier wants the whole population, the matrix is green and blocking now, and splitting it
+  # into a second cross-OS job to preserve the isolation argument would double the runner cost for a leg
+  # whose whole purpose is breadth.
+  #
+  # NO coverage gate here either: the floors are measured on one platform and enforced by deep-test. A
+  # second, differently-measured coverage number would be a second thing to keep in sync, and R1's
+  # "the floor equals the measurement" cannot mean two measurements at once.
+  #
+  # Locked-mode restore (via RestoreLockedMode on CI=true) is RID-agnostic and is EXPECTED to hold on both
+  # runners. If macOS ever reds with NU1004 while ubuntu stays green, that IS the finding — a platform-
+  # dependent resolved graph in a repo that commits its graphs — and it belongs in a ledger, not in an
+  # exemption.
+  cross-platform:
+    strategy:
+      # fail-fast off: "does it pass on Windows" and "does it pass on macOS" are two independent
+      # questions, and cancelling one because the other failed throws away half the answer.
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ESTIMATE, not a measurement — neither runner has ever run this. The local basis, measured 2026-08-22
+    # on Windows (12 cores) at 81c4ace: whole-solution Release build 13 s warm, suite 56 s for 6,987 tests
+    # with Category!=SurfaceMatrix (the matrix adds ~25 s, so ~81 s for the unfiltered run this leg does).
+    # A ~4-core hosted runner is ~3x on the build/test parts and pays a cold NuGet restore on top:
+    # reckon ~1 min SDK setup + ~2 min restore + ~3 min build + ~4 min test ≈ 10 min, which is also the
+    # plan's own budget figure. Doubled -> 20. Replace with the first real per-OS wall-clocks.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      # The ISSUE-038 drift assertion, per-runner. build-test proves the pin holds on ubuntu and says
+      # nothing about the other two images, which is precisely the gap this job exists to close.
+      # `shell: bash` is mandatory here: on windows-latest the default shell is pwsh and this is sh.
+      - name: Verify the installed SDK matches global.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' global.json)
+          actual=$(dotnet --version)
+          echo "global.json pins: $pinned"
+          echo "dotnet resolves:  $actual"
+          if [ "$pinned" != "$actual" ]; then
+            echo "::error::SDK drift on ${{ matrix.os }} — global.json pins $pinned but the runner" \
+                 "resolved $actual. Update global.json AND the dotnet-version in every setup-dotnet step" \
+                 "together."
+            exit 1
+          fi
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
+      # --blame-hang: the H7-f runner-level backstop, same rationale as in build-test. It matters more
+      # here, not less: a hang that only happens on one OS is exactly the kind of finding this leg is for,
+      # and without the dump it would present as an anonymous 20-minute timeout.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --blame-hang --blame-hang-timeout 5m
+
+  # ── .NET preview-SDK canary (round-23 S5) ─────────────────────────────────────────────────────────────
+  # A source generator's worst consumer-facing failure is "the new SDK refuses to load it". roslyn-forward-
+  # compat asks that question one 10.0.x patch ahead; this asks it one MAJOR ahead, on the .NET 11 preview
+  # channel (11.0.100-preview.7 was the published preview SDK when this leg was written).
+  #
+  # NON-BLOCKING ON PURPOSE, FOR NOW — a deliberate clone of roslyn-forward-compat's shape and of the
+  # discipline stated in its own comment. FLIP `continue-on-error` TO FALSE once this leg has been seen
+  # GREEN on pushed master, citing that run id in the flip commit; that is the Z3 precedent and it is the
+  # same obligation. A gate that cannot fail is decoration. Until then, understand what a red here means:
+  # it is INFORMATION about a future SDK, not a regression in this commit.
+  #
+  # It is expected to be red at first, and for a reason worth naming so nobody "fixes" it wrongly:
+  # Directory.Build.props sets TreatWarningsAsErrors with AnalysisLevel=latest-all and AnalysisMode=All,
+  # so every analyzer rule a new SDK ADDS arrives as a build error. That is a real forward-compat signal
+  # (a consumer on the preview SDK compiling our analyzers sees the same thing), but it is a different
+  # finding from "the generator will not load", and the diagnosis has to say which one it saw.
+  #
+  # NIGHTLY, not per-push: the preview channel moves under us continuously, so a per-push leg would turn
+  # its own churn into log noise on every PR while never being able to fail anything.
+  preview-sdk-canary:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    # ESTIMATE, not a measurement. Same local basis as the cross-platform leg (build 13 s, suite ~81 s
+    # unfiltered on a 12-core Windows box at 81c4ace) plus a preview-SDK download and a fully cold,
+    # UNPINNED restore. The plan budgets ~5 min; reckon ~12 min on a hosted runner and take 20 so the leg
+    # cannot die of its own download. Replace with the first real wall-clock.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: preview   # the point of the leg: the newest preview of the next major
+      - name: Drop the SDK pin for this job only, and PROVE a preview SDK is what we got
+        run: |
+          set -euo pipefail
+          rm -f global.json     # the working copy only; the committed pin is untouched
+          actual=$(dotnet --version)
+          echo "preview SDK resolved: $actual"
+          # The vacuity guard, and it is the whole reason this step exists rather than a bare
+          # `dotnet --version`: if setup-dotnet ever falls back to an installed 10.0.x, every step below
+          # still passes and the leg becomes a slow, green duplicate of build-test that proves nothing
+          # about the next major. Same failure genre as Assert-MutantsWereTested.
+          major=${actual%%.*}
+          if [ "$major" -lt 11 ]; then
+            echo "::error::preview canary resolved SDK $actual, major $major < 11 — this is not a" \
+                 "next-major SDK, so the leg would be a duplicate of build-test rather than a canary." \
+                 "Check whether the 11.0 preview channel still publishes, or bump dotnet-version." >&2
+            exit 1
+          fi
+      # Locked-mode note, inherited from roslyn-forward-compat verbatim in spirit: this leg runs an
+      # UNPINNED, newer-MAJOR SDK, whose package-prune data can change the resolved graph. If it reds with
+      # NU1004 while build-test stays green, that IS the diagnosis — SDK-driven graph drift, not a
+      # lock-file defect — and it is information this leg exists to surface, not noise to exempt.
+      - name: Build the whole solution on the preview SDK
+        run: dotnet build DwarfMapper.NET.sln -c Release
+      # Same exclusion as build-test and roslyn-forward-compat: the question here is whether the generator
+      # still LOADS and EMITS under the next major, and the matrix has its own job.
+      # --blame-hang: the H7-f backstop, same rationale as in build-test.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
