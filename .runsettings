@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  IDE default: run the DEEP tier.
+
+  Rider (and VS) can auto-detect a .runsettings in the solution folder; when it does, every test run
+  started from the IDE gets DWARF_DEEP=1 and therefore the deep populations - the same counts
+  `scripts/housekeeping.ps1 -Deep` and CI's nightly `deep-test` job use. See tests/Shared/DeepTier.cs,
+  whose `DeepTier.Enabled` is the ONE reader of the variable.
+
+  WHY THIS FILE IS NOT WIRED INTO THE BUILD, AND MUST NOT BE:
+  `dotnet test` does NOT pick a .runsettings up on its own - it needs an explicit settings switch, or
+  an MSBuild `<RunSettingsFilePath>` property. That is deliberate. The fast tier's whole contract is a
+  ~90-second suite with a ~10% growth cap (round-21 T1/T4), and the deep tier is minutes longer. If
+  anyone ever points `<RunSettingsFilePath>` at this file from Directory.Build.props, CI silently
+  switches to the deep counts and the cap becomes meaningless without a single line of the gate
+  changing. Keep the IDE opt-in and the command line explicit.
+
+  To get the deep tier from the command line, be explicit instead:
+      pwsh scripts/housekeeping.ps1 -Deep          (the supported path)
+      dotnet test DwarfMapper.NET.sln -s .runsettings
+
+  DELIBERATELY NOT SET HERE - these change what the tests DO, not how much they cover:
+    DWARF_GOLDEN_UPDATE / DWARF_SELF_HEAL - make artifact tests REWRITE the artifact instead of
+      failing. Enabling them by default would turn a red gate into a silent commit of whatever the
+      code currently produces, which is the drift these gates exist to prevent.
+    DWARF_BENCH_SMOKE - drives the BenchmarkDotNet smoke leg; minutes of benchmarking is not what
+      "run the tests" should mean in an editor.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <DWARF_DEEP>1</DWARF_DEEP>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>
