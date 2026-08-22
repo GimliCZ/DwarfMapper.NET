@@ -122,7 +122,19 @@ public enum DeepPopulation
     ///     machine (2026-08-22) — cheap enough that ×10 is the right multiplier despite the per-sample cost
     ///     class being <see cref="AllEmitPathsSeeds" />', because the base count is small.
     /// </summary>
-    CompilerGraphSmokeSeeds
+    CompilerGraphSmokeSeeds,
+
+    /// <summary>
+    ///     CompilerTests/DifferentialOracleTests CsCheck <c>iter</c> (round-22 K1). Each iteration is a
+    ///     K0 smoke sample PLUS an in-memory emit, an assembly load, a name-keyed population, the generated
+    ///     map's execution and the naive-oracle comparison — the heaviest per-sample cost class in this
+    ///     registry. Fast 20 keeps the class ~2 s in the fast tier; deep 1000 is the plan's full-count
+    ///     target, measured before entering the catalog per the round-21 rule (2026-08-22, 12-core
+    ///     reference machine, 3 runs): the oracle theory runs 1000/1000 in ~10 s in-class, whole
+    ///     CompilerTests project deep wall 16.2–16.5 s. The 10,000 variant stays a knob value only,
+    ///     unmeasured and therefore unused.
+    /// </summary>
+    CompilerOracleSeeds
 }
 
 /// <summary>
@@ -165,7 +177,8 @@ public static class DeepTier
         [DeepPopulation.PolymorphicGraphSeeds] = (5, 45),
         [DeepPopulation.ObjectFactoryDistributionSeeds] = (400, 4000),
         [DeepPopulation.RegistryPropertyIters] = (200, 2000),
-        [DeepPopulation.CompilerGraphSmokeSeeds] = (25, 250)
+        [DeepPopulation.CompilerGraphSmokeSeeds] = (25, 250),
+        [DeepPopulation.CompilerOracleSeeds] = (20, 1000)
     };
 
     /// <summary>The count a call site should run with right now (fast unless <see cref="Enabled" />).</summary>

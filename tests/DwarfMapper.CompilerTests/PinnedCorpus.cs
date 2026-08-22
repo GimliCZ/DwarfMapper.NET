@@ -15,11 +15,19 @@ namespace DwarfMapper.CompilerTests;
 ///     when the product is fixed, which is the signal to flip the row to the normal contract and delete
 ///     any matching sampled-space exclusion in the same commit. Never a blanket skip.
 /// </param>
+/// <param name="ExpectedRefusalIds">
+///     Null unless this row pins a REFUSAL contract (K1 leg 1): the generators must refuse LOUDLY with
+///     exactly these error-severity DWARF ids. Such a row is the deterministic proof that the harness's
+///     <c>RefusedLoudly</c> branch executes at all — K0 shipped with that branch never taken (0 refusals
+///     across all sampling). Mutually exclusive with <paramref name="KnownSilentCsIds" /> (a run cannot be
+///     both silent and loud); the corpus sweep enforces the exclusivity.
+/// </param>
 public sealed record CorpusRow(
     string Id,
     string Reason,
     GraphSpec Graph,
-    IReadOnlyList<string>? KnownSilentCsIds = null);
+    IReadOnlyList<string>? KnownSilentCsIds = null,
+    IReadOnlyList<string>? ExpectedRefusalIds = null);
 
 /// <summary>
 ///     The pinned corpus: shapes that earned a permanent row — a shrunk fuzz finding, or a shape another
@@ -117,11 +125,92 @@ public static class PinnedCorpus
             "S0", "D0"),
         KnownSilentCsIds: ["CS1503"]);
 
+    /// <summary>
+    ///     K1's mandated refusal pin: a destination member with NO source counterpart hits the product's
+    ///     headline completeness rule — <c>DWARF001</c> "Destination member is not mapped", documented in
+    ///     <c>docs/diagnostics.md#dwarf001</c> as error severity and enforced by construction (the method
+    ///     body is not generated). This is the deterministic proof that the <c>RefusedLoudly</c> branch of
+    ///     the must-compile-or-refuse contract actually executes — K0 disclosed it never had (0 refusals in
+    ///     all sampling, mirrored pairs are complete by construction). Note the row asserts the GENERATOR
+    ///     ids only: an unimplemented partial method necessarily leaves CS errors (CS8795 family) in the
+    ///     output, which is exactly why a refusal returns before the silent-miscompilation check.
+    /// </summary>
+    public static CorpusRow UnmappedDestinationMemberRefusal { get; } = new(
+        "K1-refusal-unmapped-dest-member",
+        "leg-1 refusal contract: dest member without source counterpart must refuse loudly with DWARF001",
+        new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [
+                        new MemberSpec("M0_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null),
+                        new MemberSpec("MX_0", "string", Nullable: false, MemberShape.AutoProp, CollShape.None, null)
+                    ],
+                    BaseRef: null)
+            ],
+            "S0", "D0"),
+        ExpectedRefusalIds: ["DWARF001"]);
+
+    /// <summary>
+    ///     K1's FIRST-RUN FINDING (2026-08-22, CsCheck seed 0vihQF5Vee7b at 1,000 samples, then minimized
+    ///     by a 6-cell kind-pair probe — filed as TASKS.md I7): a PLAIN nullable nested member across a
+    ///     re-kinded pair, value-kind source × reference-kind dest. Compiles clean, but the emitted map
+    ///     unwraps with <c>?? throw</c> ("Source member 'M0_0' was null") instead of lifting null → null,
+    ///     although the destination member (<c>D1?</c>) is nullable-capable and the lossless emission
+    ///     exists next door (the NullableProject ternary used by the same-kind diagonal, which the probe
+    ///     measured lifting correctly: Struct→Struct and Class→Class both propagate null). Undocumented —
+    ///     the <c>NullStrategy</c> doc row covers "nullable-value source → NON-nullable target" only. The
+    ///     compile contract here is the NORMAL one; the runtime divergence itself is pinned red-on-fix in
+    ///     <c>DifferentialOracleTests.I7_pinned_runtime_divergence…</c>, and the matching sampled-space
+    ///     exclusion in TypeGraphGen is keyed to these rows and dies with them.
+    /// </summary>
+    public static CorpusRow NullableRekindValueToReference { get; } = new(
+        "I7-nullable-rekind-value-to-reference",
+        "S1? plain member, struct S1 -> class D1: runtime throw on null instead of null->null (TASKS.md I7)",
+        PlainNullableRekindPair(TypeKind.Struct, TypeKind.Class));
+
+    /// <summary>
+    ///     I7's reverse genre, same filing: reference-kind source × value-kind dest throws
+    ///     "Cannot map a null 'global::T.S1' to value-type 'global::T.D1'." although the destination
+    ///     member is <c>Nullable&lt;D1&gt;</c> and could hold the null. Unreachable in sampling only
+    ///     because the oracle population never nulls reference members (a DECLARED bias) — pinned here so
+    ///     the genre has a deterministic executor anyway.
+    /// </summary>
+    public static CorpusRow NullableRekindReferenceToValue { get; } = new(
+        "I7-nullable-rekind-reference-to-value",
+        "S1? plain member, class S1 -> struct D1: runtime throw on null instead of null->null (TASKS.md I7)",
+        PlainNullableRekindPair(TypeKind.Class, TypeKind.Struct));
+
+    private static GraphSpec PlainNullableRekindPair(TypeKind sourceElement, TypeKind destElement)
+    {
+        return new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.None, 1)],
+                    BaseRef: null),
+                new NodeSpec("S1", sourceElement,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.None, 3)],
+                    BaseRef: null),
+                new NodeSpec("D1", destElement,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null)
+            ],
+            "S0", "D0");
+    }
+
     /// <summary>Every pinned row, for the corpus test's sweep. Grows append-mostly; never shrinks to pass.</summary>
     public static IReadOnlyList<CorpusRow> Rows { get; } =
     [
         PartialFileSplitStructPair,
         RepresentationMirrorClassToStruct,
-        NullableStructElementMap
+        NullableStructElementMap,
+        UnmappedDestinationMemberRefusal,
+        NullableRekindValueToReference,
+        NullableRekindReferenceToValue
     ];
 }

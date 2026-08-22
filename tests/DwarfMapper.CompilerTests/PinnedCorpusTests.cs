@@ -30,6 +30,23 @@ public class PinnedCorpusTests
 
         var result = CompilerTestHarness.Run(TypeGraphRenderer.Render(row.Graph));
 
+        if (row.ExpectedRefusalIds is not null)
+        {
+            // A pinned REFUSAL contract (K1): the generators must say no, loudly, with exactly these
+            // error-severity DWARF ids. Deliberately NO assertion on CompilationErrors — a refused map
+            // leaves its partial method unimplemented, so CS errors in the output are part of the refusal
+            // shape (docs/diagnostics.md: DWARF001 is "enforced by construction"). This row is the
+            // deterministic executor of the RefusedLoudly true-branch, which no sampled graph has reached.
+            Assert.True(result.RefusedLoudly,
+                $"corpus row '{row.Id}' no longer refuses — the pinned refusal contract changed; "
+                + "re-measure and move this pin deliberately\n" + row.Graph.Describe());
+            Assert.Equal(row.ExpectedRefusalIds.Order(StringComparer.Ordinal),
+                result.GeneratorDiagnostics
+                    .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+                    .Select(d => d.Id).Distinct().Order(StringComparer.Ordinal));
+            return;
+        }
+
         if (row.KnownSilentCsIds is not null)
         {
             // A pinned KNOWN divergence: silent generators, exactly these CS ids. Both assertions go red
@@ -48,6 +65,19 @@ public class PinnedCorpusTests
             $"corpus row '{row.Id}' miscompiled silently: ["
             + string.Join(",", result.CompilationErrors.Select(e => e.Id).Distinct())
             + "]\n" + row.Graph.Describe());
+    }
+
+    /// <summary>
+    ///     A row cannot pin "silent with CS errors" and "refuses loudly" at once — the outcomes are
+    ///     mutually exclusive by definition, so a row claiming both is a defect of the corpus, caught here
+    ///     rather than resolved arbitrarily by branch order in the sweep above.
+    /// </summary>
+    [Fact]
+    public void No_row_pins_both_a_silent_divergence_and_a_refusal()
+    {
+        Assert.All(PinnedCorpus.Rows, row =>
+            Assert.False(row.KnownSilentCsIds is not null && row.ExpectedRefusalIds is not null,
+                $"corpus row '{row.Id}' pins both contracts — pick one"));
     }
 
     /// <summary>

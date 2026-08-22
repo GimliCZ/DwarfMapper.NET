@@ -138,6 +138,24 @@ public static class TypeGraphGen
                     nullable = false;
                 }
 
+                // KNOWN DIVERGENCE I7 (round 22, found by K1's FIRST 1,000-sample oracle run), NOT a
+                // validity rule: a PLAIN nullable nested member whose source node is a VALUE kind and whose
+                // mirrored dest node re-kinded to a REFERENCE kind compiles clean but THROWS at runtime on a
+                // null value ("Source member 'X' was null") instead of lifting null -> null, although the
+                // dest member is nullable-capable. Same-kind pairs lift correctly (measured, K1 probe
+                // 2026-08-22); the reverse genre (reference source x value dest, "Cannot map a null ... to
+                // value-type ...") is unreachable in sampling only because the oracle's population bias
+                // never nulls reference members. Excluded from the SAMPLED space only; the shape stays
+                // reachable and PINNED as PinnedCorpus rows 'I7-*' whose runtime-throw assertions in
+                // DifferentialOracleTests go red the moment the product lifts — that red is the signal to
+                // delete this exclusion in the same commit.
+                if (nested is int plainTarget && roll.Coll == CollShape.None
+                    && sourceKinds[plainTarget] is TypeKind.Struct or TypeKind.RecordStruct
+                    && destKinds[plainTarget] is TypeKind.Class or TypeKind.Record)
+                {
+                    nullable = false;
+                }
+
                 // Names are unique per node index ("M{i}_{k}"), which makes rule V4 hold by construction
                 // AND keeps inherited members from shadowing derived ones (CS0108 would be warning-only
                 // noise the errors-only compile leg cannot see — removed structurally instead).

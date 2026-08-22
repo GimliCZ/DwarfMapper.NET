@@ -19,6 +19,9 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
         <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"/>
+        <!-- K1 dogfoods the SHIPPED testing surface: the differential oracle's member-path diff is the
+             [RoundTrip] differ (StructuralComparer), reused rather than re-grown per the audit. -->
+        <ProjectReference Include="..\..\src\DwarfMapper.Testing\DwarfMapper.Testing.csproj"/>
     </ItemGroup>
     <ItemGroup>
         <Using Include="Xunit"/>

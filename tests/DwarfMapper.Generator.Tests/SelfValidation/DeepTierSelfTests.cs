@@ -50,7 +50,8 @@ public class DeepTierSelfTests
         [DeepPopulation.PolymorphicGraphSeeds] = 5,
         [DeepPopulation.ObjectFactoryDistributionSeeds] = 400,
         [DeepPopulation.RegistryPropertyIters] = 200,
-        [DeepPopulation.CompilerGraphSmokeSeeds] = 25
+        [DeepPopulation.CompilerGraphSmokeSeeds] = 25,
+        [DeepPopulation.CompilerOracleSeeds] = 20
     };
 
     [Fact]
