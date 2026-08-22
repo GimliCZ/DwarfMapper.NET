@@ -18,6 +18,9 @@
         <NoWarn>$(NoWarn);NU1903</NoWarn>
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+    </ItemGroup>
+    <ItemGroup>
         <PackageReference Include="BenchmarkDotNet"/>
         <!-- Competitor mappers (benchmark comparison only). -->
         <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all"/>

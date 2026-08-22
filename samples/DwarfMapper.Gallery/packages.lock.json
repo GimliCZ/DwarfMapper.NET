@@ -2,6 +2,12 @@
   "version": 2,
   "dependencies": {
     "net10.0": {
+      "Meziantou.Analyzer": {
+        "type": "Direct",
+        "requested": "[3.0.167, )",
+        "resolved": "3.0.167",
+        "contentHash": "+89C4lOxpn9fYGApExlQ+UZlxxxIjmCc7budUZnqi2AZPVjNMkMn/XU2zURaPczGHdLt7jLz/B/gv3nfdAUzZw=="
+      },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "Direct",
         "requested": "[9.0.0, )",

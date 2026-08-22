@@ -13,6 +13,9 @@
          them as .cs (rather than .txt) is what makes them editable, greppable and copy-pasteable into a
          scratch project when a maintainer wants to reproduce a refusal by hand. -->
     <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+    </ItemGroup>
+    <ItemGroup>
         <Compile Remove="Cases\**\*.cs"/>
         <EmbeddedResource Include="Cases\**\*.cs"/>
         <None Include="README.md"/>

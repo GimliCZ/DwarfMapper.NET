@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Benchmark-scoped global analyzer config (round-22 W7, Meziantou phase 2). Additive to the repo-root
+# .globalconfig (the SDK discovers every .globalconfig above a compiled file); applies only to benchmarks/.
+# Never repeat a key the root file sets — equal global_level conflicts DROP the key from both files.
+# BenchmarkDotNet dictates the shapes here: public types with parameterless constructors, public mutable
+# payload properties, and payload DTOs that must be what a consumer writes or the comparison is not fair.
+is_global = true
+
+# MA0047 (declare type in a namespace): 36 sites. Program.cs is a top-level-statement harness and its
+# payload DTOs live in the global namespace beside it. Meziantou twin of CA1050, already NoWarn'd in
+# DwarfMapper.Benchmarks.csproj for that reason.
+dotnet_diagnostic.MA0047.severity = none
+
+# MA0002 (use an overload that takes IEqualityComparer<string>/IComparer<string>): 2 sites, both the
+# Dictionary<string, …> payload DTOs of the dict benchmark. All four mappers under comparison must see the
+# dictionary a consumer would hand them; pinning a comparer here would change what is being measured.
+dotnet_diagnostic.MA0002.severity = none
+
+# MA0008 (add StructLayoutAttribute): 2 sites, Vec3Src/Vec3Dst — the blit benchmark's whole subject.
+# src/DwarfMapper.Generator/Pipeline/BlittableProof.cs refuses the auto-blit path for ANY struct carrying
+# [StructLayout] ("an absent [StructLayout] reliably means the C# default (Sequential)"), so annotating them
+# would benchmark the member-by-member path while claiming to benchmark the blit.
+dotnet_diagnostic.MA0008.severity = none

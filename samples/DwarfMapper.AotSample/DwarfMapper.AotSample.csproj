@@ -13,15 +13,19 @@
         <!-- Sample app: top-level-statement file has types not in a namespace (CA1050)
              and public types in an exe that doesn't expose a public API (CA1515).
              These are intentional in a single-file sample — suppress both. -->
-        <!-- CA2007 (ConfigureAwait): not needed in a self-contained sample app's await foreach.
+        <!-- CA2007 + MA0004 (ConfigureAwait): not needed in a self-contained sample app's await foreach.
+             Same ruling, one rule from the .NET analyzers and its Meziantou twin.
              CA1819 (array-returning properties): intentional for the SIMD-widen array gate. -->
         <!-- DWARF038/DWARF044 (lossy implicit conversion): this sample DELIBERATELY exercises the
              narrowing (long→int) and parse/format (string↔int/Guid) conversion paths to prove they are
              AOT-safe — that is the point of NarrowMapper / StringToIntAotMapper / the record's Score.
              The diagnostic is correct to flag them; making them explicit would defeat the sample, so it
              is suppressed here only. Mirrors the same suppression in DwarfMapper.IntegrationTests. -->
-        <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA2007;CA1819;DWARF038;DWARF044</NoWarn>
+        <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA2007;MA0004;CA1819;DWARF038;DWARF044</NoWarn>
     </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+    </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
         <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"

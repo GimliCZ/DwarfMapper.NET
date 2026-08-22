@@ -15,6 +15,9 @@
         <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA1819;CA1812;CA1815</NoWarn>
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
+    </ItemGroup>
+    <ItemGroup>
         <ProjectReference Include="..\..\src\DwarfMapper\DwarfMapper.csproj"/>
         <ProjectReference Include="..\..\src\DwarfMapper.Generator\DwarfMapper.Generator.csproj"
                           OutputItemType="Analyzer"
