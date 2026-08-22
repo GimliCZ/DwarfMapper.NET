@@ -58,13 +58,23 @@ internal static class RegistryDiagnostics
         "{0}",
         Category, DiagnosticSeverity.Error, true);
 
-    // The registry constructs targets with `new T { … }`, which requires an accessible parameterless ctor. A
-    // ctor-only target also has no writable members, so the completeness gate stays silent and the failure
-    // surfaced only as CS1729 out of generated code.
+    // The registry constructs every type it builds with `new T { … }`, which requires an accessible
+    // parameterless ctor. A ctor-only type also has no writable members the completeness gate can miss, so the
+    // failure surfaced only as CS1729 out of generated code.
+    //
+    // TWO call sites, because the registry constructs exactly two kinds of type (B30, round 22 W3): the
+    // [MapTo] target itself, and every nested object SynthNested builds — which is also the path a
+    // collection's ELEMENT type reaches (TryCollection → Resolve → SynthNested; the collection itself is
+    // always a List<T> or an array, neither of which can lack a parameterless constructor). Guarding only the
+    // target left the identical CS1729 one level down with no diagnostic at all, which is precisely what
+    // DWARFR11 had to be given both sites to avoid. ONE id rather than a second: a separate id for the second
+    // site would restate the same refusal in different words and re-open the asymmetry this fixes — so the
+    // TITLE names the registry rather than the target, and the message is composed at the call site ("{0}")
+    // so each can say which type is at fault and how it was reached.
     public static readonly DiagnosticDescriptor NoParameterlessConstructor = new(
         "DWARFR09",
-        "[MapTo] target has no accessible parameterless constructor",
-        "[MapTo] target {0} has no public parameterless constructor; the registry constructs targets with an object initializer — add one, or use the [DwarfMapper] class model (which supports constructor mapping)",
+        "A type the [MapTo] registry constructs has no accessible parameterless constructor",
+        "{0}",
         Category, DiagnosticSeverity.Error, true);
 
     // Info, mirroring DWARF038 in the class model: the conversion is legal and implicit in C#, so making it an

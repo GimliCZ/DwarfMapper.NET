@@ -15,6 +15,18 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A constructor-only NESTED type reached the compiler as `CS1729` out of a generated `[MapTo]` file.**
+  `DWARFR09` guarded the `[MapTo]` target and nothing else, but the registry constructs a second kind of
+  type with `new T { … }`: every nested object — and, through the collection path, every element type. A
+  positional record (or any other ctor-only type) in either position emitted an object initializer that
+  does not compile, with no diagnostic at all: exactly the failure `DWARFR09` exists to replace, one level
+  down. Both construction sites now ask the question, under the same id — its title changed from
+  *"[MapTo] target has no accessible parameterless constructor"* to **"A type the `[MapTo]` registry
+  constructs has no accessible parameterless constructor"**, and the message now names the type at fault
+  and, for a nested one, the member it was reached through. A nested type that *can* be built with an
+  object initializer still is. Alongside it, a loud nested refusal no longer also reports `DWARFR05`
+  *"the source and destination member types are incompatible"* — they are not incompatible, and the
+  recursive-nesting refusal (`DWARFR06`) drew one such false companion per nesting level. (round 22, W3/B30)
 - **`DWARF044` warned about a `[Flatten]` that pulled nothing up.** The nullable-reference-root warning —
   *"a null value throws at runtime when its flattened members are read"* — was reported the moment the root
   resolved, before anything asked whether a single leaf landed on a destination member. A flatten that maps
