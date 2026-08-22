@@ -229,6 +229,18 @@ function Assert-BenchAllocationsPinned {
 
 Push-Location $root
 try {
+    # ── Stage 0: locked-mode restore (round-22 S1) ───────────────────────────────────────────────────
+    # The same repeatable-restore proof CI runs (Directory.Build.props flips RestoreLockedMode on CI=true;
+    # ci.yml's explicit restores pass --locked-mode): every project must resolve EXACTLY its committed
+    # packages.lock.json or this fails NU1004 — local housekeeping and CI cannot drift apart on what a
+    # restore means. The ordinary local inner loop stays unlocked on purpose; after an INTENDED dependency
+    # change, regenerate with `dotnet restore DwarfMapper.NET.sln --force-evaluate` and commit the lock
+    # files with the change. NuGetAudit (level low, mode all) runs inside this restore, so a new advisory
+    # against the pinned graph also fails here first, loudly, before any stage builds.
+    Write-Host "== 0 Locked-mode restore (lock-file reproducibility + NuGet audit) ==" -ForegroundColor Cyan
+    dotnet restore DwarfMapper.NET.sln --locked-mode --nologo
+    if ($LASTEXITCODE) { throw "locked-mode restore failed - the resolved graph differs from the committed packages.lock.json files (or a NuGet audit advisory fired); see NU1004/NU19xx output above" }
+
     if ($Heal) {
         Write-Host "== self-heal: regenerate AnalyzerReleases rows ==" -ForegroundColor Cyan
         $env:DWARF_SELF_HEAL = '1'

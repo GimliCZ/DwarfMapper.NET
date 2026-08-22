@@ -59,7 +59,16 @@ jobs:
             exit 1
           fi
 
-      - run: dotnet restore DwarfMapper.NET.sln
+      # --locked-mode (round-22 S1): restore must resolve EXACTLY the committed packages.lock.json graphs
+      # or fail NU1004 — the repeatable-restore proof. The flag here is self-documentation; the load-bearing
+      # wiring is Directory.Build.props' RestoreLockedMode on '$(CI)' == 'true', which GitHub sets for every
+      # job, so the IMPLICIT restores (surface-matrix's test, the Stryker legs' builds, codeql's build,
+      # CycloneDX, the AOT publishes) run locked too without per-job flags. The AOT `-r` publishes work
+      # because every project in that P2P closure declares <RuntimeIdentifiers> so its lock file carries
+      # both RID graphs. NuGetAudit (level low, mode all) runs inside these restores and NU1901–NU1904 are
+      # errors under TreatWarningsAsErrors; the one advisory alive today (NU1903, AutoMapper 14.0.0) is
+      # suppressed per-project with the reason in each csproj — bumping is license-blocked (v15+ is RPL-1.5).
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
       # Category!=SurfaceMatrix keeps the executed surface cross-product (854 cells, its own job below) out
       # of the default leg. It is excluded for isolation, not for speed — it is the one leg whose red is
@@ -324,7 +333,8 @@ jobs:
       # number must not move under the gate. Versions are the locally-verified ones.
       - run: dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
       - run: dotnet tool install --global dotnet-ilverify --version 10.0.11
-      - run: dotnet restore DwarfMapper.NET.sln
+      # --locked-mode: same S1 repeatable-restore proof as build-test; see the comment there.
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
       # Housekeeping's suite stage builds incrementally; building here first keeps a compile failure
       # distinguishable from a test failure in the job log, same as build-test.
       - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
@@ -442,6 +452,11 @@ jobs:
           set -euo pipefail
           rm -f global.json     # the working copy only; the committed pin is untouched
           dotnet --version
+      # Locked-mode note (round-22 S1): this leg inherits RestoreLockedMode from CI=true like every job.
+      # It deliberately runs an UNPINNED newer SDK, and a newer SDK's package-prune data can in principle
+      # change the resolved graph — if this leg ever reds with NU1004 while build-test stays green, that IS
+      # the diagnosis (SDK-driven graph drift, not a lock-file defect), and it is information this
+      # forward-compat leg exists to surface, not noise to exempt.
       - name: Build the generator against the floor, on a newer compiler
         run: dotnet build DwarfMapper.NET.sln -c Release
       # Same exclusion as build-test: this leg asks "does the generator still LOAD in a newer compiler", and
