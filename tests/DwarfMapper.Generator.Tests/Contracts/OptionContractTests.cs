@@ -88,10 +88,21 @@ public class OptionContractTests
             "source-side completeness: an unconsumed source member is reported here exactly as it is at the "
             + "create and update endpoints"),
 
+        new("EnumStrategy", CellStatus.Honoured, null,
+            "the projection resolver consults the strategy directly: ByValue emits a plain enum cast in the "
+            + "SELECT (translatable), where the ByName default is refused as DWARF028 whose own remedy text "
+            + "says 'use EnumStrategy.ByValue'. This row was declared NotApplicable — 'the member is refused "
+            + "before the strategy is consulted' — until the B3 live re-measurement read it Honoured on its "
+            + "first run (2026-08-22): the excuse had gone stale against MapperExtractor.Projection's "
+            + "explicit ByValue branch, and nothing before that check could notice"),
+
         // ── Declared NotApplicable ────────────────────────────────────────────────────────────────────────
-        // The UNVERIFIED class. Each states why no fixture distinguishes honoured from dropped, because
-        // "I could not think of a fixture" and "there is nothing to observe" must not look alike. These are
-        // the rows the generated matrix renders as "not probed" — it does not claim they are fine.
+        // No longer the unverified class (B3). Each row still states why nothing distinguishes honoured
+        // from dropped — "I could not think of a fixture" and "there is nothing to observe" must not look
+        // alike — but the claim is now EXECUTED every run: the theory re-classifies each NotApplicable cell
+        // with OptionProbe and fails if the option has become observable, and the class is exactly counted
+        // by The_NotApplicable_excuse_class_is_a_counted_population. The first run of that check retired
+        // EnumStrategy from this section (its excuse had gone stale; see its row above).
         new("ImplicitConversions", CellStatus.NotApplicable, null,
             "verified against both endpoints rather than assumed: for a WIDENING pair (int->long) neither "
             + "endpoint reacts to the option at all, and for a NARROWING pair projection refuses the member "
@@ -101,10 +112,6 @@ public class OptionContractTests
         new("GenerateExtensions", CellStatus.NotApplicable, null,
             "projection emits no convenience extension in the first place (verified: no static class appears "
             + "in the output with or without the option), so there is nothing for it to suppress"),
-
-        new("EnumStrategy", CellStatus.NotApplicable, null,
-            "a cross-enum conversion is itself untranslatable, so the STRATEGY never gets to matter — the "
-            + "member is refused before the strategy is consulted"),
 
         new("EnumStringSource", CellStatus.Refused, "DWARF028",
             "measured, not assumed: enum<->string mapping is a generated switch, which projection refuses "
@@ -193,11 +200,70 @@ public class OptionContractTests
             case CellStatus.NotApplicable:
                 Assert.False(string.IsNullOrWhiteSpace(cell.Reason),
                     $"{cell.Option} is declared NotApplicable without saying why it cannot be observed.");
+
+                // The excuse is re-measured, not taken on the reason's word (B3). NotApplicable claims the
+                // option is UNOBSERVABLE at projection, and until this check that claim was never executed:
+                // a non-blank reason passed forever, so a cell whose option later started acting — or being
+                // refused — kept its excuse with nothing anywhere going red. The surface matrix's
+                // DeclaredDivergences re-runs Classify over every excused cell for exactly this reason;
+                // this is the option matrix's same obligation. Silent and UnhonouredButLoud both satisfy
+                // "unobservable" — in each the option itself introduced no diagnostic and no output change;
+                // they differ only in whether the fixture's BASELINE already fails to build.
+                var live = OptionProbe.Classify(Endpoint.Projection, scanned.NonDefault, scanned.Types);
+                Assert.True(live.Effect is OptionEffect.Silent or OptionEffect.UnhonouredButLoud,
+                    $"[DwarfMapper({scanned.NonDefault})] is declared NotApplicable at projection — "
+                    + $"unobservable, because {cell.Reason} — but re-measurement reads {live.Effect} "
+                    + $"({live.Detail}). The excuse is STALE: the option now observably "
+                    + (live.Effect == OptionEffect.Honoured ? "changes the output" : "draws a refusal")
+                    + " at this endpoint. Re-declare the row as "
+                    + (live.Effect == OptionEffect.Honoured ? "Honoured" : "Refused with the id measured")
+                    + ", and lower the NotApplicable pin in the same commit — a stale excuse left standing "
+                    + "is an allowlist wearing a measurement's clothes.");
                 break;
 
             default:
                 throw new InvalidOperationException($"Unhandled status {cell.Status}");
         }
+    }
+
+    /// <summary>
+    ///     The exact size of the <see cref="CellStatus.NotApplicable" /> class in
+    ///     <see cref="ProjectionCells" />. Measured 2026-08-22 at 7 of 18 rows — it was 8 when B3 was
+    ///     picked up, and the FIRST run of the live re-measurement below retired one: EnumStrategy's excuse
+    ///     was stale (see its row). Shrink-only: a row leaving
+    ///     the class (measured into Honoured or Refused) lowers the pin in the same commit, and a new
+    ///     NotApplicable row is a deliberate act with a number attached — the same rule every excuse
+    ///     population in the surface matrix already lives under.
+    /// </summary>
+    private const int NotApplicablePin = 7;
+
+    /// <summary>
+    ///     B3's counting half. The theory above makes each NotApplicable row LIVE (re-measured every run);
+    ///     this makes the class COUNTED, so trading a fixed excuse for a fresh one cannot happen at constant
+    ///     visibility. Exact in both directions for the small-population reason
+    ///     <c>SurfaceParityTests.AssertExactPin</c> states: under a tolerance band, closing one row buys
+    ///     silent room for a brand-new one of the same shape.
+    /// </summary>
+    [Fact]
+    public void The_NotApplicable_excuse_class_is_a_counted_population()
+    {
+        var excused = ProjectionCells
+            .Where(c => c.Status == CellStatus.NotApplicable)
+            .Select(c => "  " + c.Option)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(excused.Count <= NotApplicablePin,
+            $"{excused.Count} ProjectionCells rows are excused as NotApplicable, above the pinned "
+            + $"{NotApplicablePin}:\n" + string.Join("\n", excused)
+            + "\n\nThis population may only shrink. A new excuse is a maintainer decision with a number "
+            + "attached: raise the pin in the same commit that states why projection cannot observe the "
+            + "option, and expect the live re-measurement in the theory to hold you to it.");
+
+        Assert.True(excused.Count >= NotApplicablePin,
+            $"Only {excused.Count} ProjectionCells rows are excused as NotApplicable, under the pinned "
+            + $"{NotApplicablePin}. A row was measured into Honoured or Refused — good — but the pin must "
+            + "move in the same commit, or the room it freed silently funds a replacement excuse.");
     }
 
     [Fact]

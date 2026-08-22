@@ -459,16 +459,41 @@ internal static class DeclaredDivergences
     }
 
     /// <summary>
-    ///     Whether some finding is about this <c>[DwarfMapper]</c> option. Consulted by the OPTION matrix,
-    ///     which is keyed by option name rather than by cell, and which therefore sees only the subset of
-    ///     findings that carry one.
+    ///     Whether some finding is about this <c>[DwarfMapper]</c> option AT this endpoint. Consulted by the
+    ///     OPTION matrix, which is keyed by option name rather than by cell, and which therefore sees only
+    ///     the subset of findings that carry one.
+    ///     <para>
+    ///         Keyed by option AND endpoint, and the endpoint is load-bearing (B3): the one-argument form
+    ///         this replaces answered "is there a finding about MaxDepth?", so the two cells the MaxDepth
+    ///         entry actually measured (span, async-stream) excused the option's silence at EVERY endpoint —
+    ///         a divergence recorded at two cells wearing an excuse four wide. The lookup now matches the
+    ///         same <see cref="DivergentCell.Endpoints" /> flags the surface matrix re-measures, so an
+    ///         option-matrix excuse covers exactly the cells someone measured, nothing adjacent.
+    ///     </para>
     /// </summary>
-    public static bool CoversOption(string optionName) =>
-        Reasons.Values.Any(d => string.Equals(d.OptionName, optionName, StringComparison.Ordinal));
+    public static bool CoversOption(string optionName, Endpoint endpoint) =>
+        Reasons.Values.Any(d =>
+            string.Equals(d.OptionName, optionName, StringComparison.Ordinal)
+            && d.Cells.Any(c => (c.Endpoints & ToSurfaceFlag(endpoint)) != 0));
 
-    /// <summary>Every option name some finding is about.</summary>
-    public static IEnumerable<string> DeclaredOptions =>
-        Reasons.Values.Where(d => d.OptionName is not null).Select(d => d.OptionName!);
+    /// <summary>
+    ///     Every (option, endpoint) pair some finding claims — the exact population
+    ///     <c>GeneratedDocsAreCurrentTests.Every_known_gap_is_still_a_real_gap</c> holds to still being
+    ///     silent, per pair rather than per option for the reason <see cref="CoversOption" /> takes an
+    ///     endpoint.
+    /// </summary>
+    public static IEnumerable<(string Option, Endpoint Endpoint)> DeclaredOptionCells =>
+        AllDeclaredCells()
+            .Where(x => x.Divergence.OptionName is not null)
+            .Select(x => (x.Divergence.OptionName!, Enum.Parse<Endpoint>(x.Endpoint.ToString())))
+            .Distinct();
+
+    /// <summary>
+    ///     <see cref="Endpoint" /> and <see cref="SurfaceEndpoints" /> share member names by design; the
+    ///     name-parse is the same bridge <c>SurfaceParityTests.ToFlag</c> uses.
+    /// </summary>
+    private static SurfaceEndpoints ToSurfaceFlag(Endpoint e) =>
+        Enum.Parse<SurfaceEndpoints>(e.ToString());
 
     /// <summary>
     ///     Cells where the option CANNOT apply because the endpoint has no such surface — a different claim

@@ -96,8 +96,9 @@ public class OptionEndpointParityTests
 
         // Known and recorded, but not yet fixed. Failing here would mean either hiding the gap or blocking
         // every future change on fixing it; DeclaredDivergences names it instead, and the ratchet there stops
-        // it spreading and forces removal once it is fixed.
-        if (DeclaredDivergences.CoversOption(option)) return;
+        // it spreading and forces removal once it is fixed. Endpoint-aware (B3): a finding measured at the
+        // element-wise endpoints must not excuse the same option's silence at projection.
+        if (DeclaredDivergences.CoversOption(option, endpoint)) return;
 
         Assert.Fail(
             $"[DwarfMapper({cell.NonDefault})] is {reference.Effect} at CreateMap "
