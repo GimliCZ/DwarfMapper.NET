@@ -803,6 +803,14 @@ opposite way and wrote the residual into `docs/options.md` instead.
 **Statuses only — no history rewritten.** B17 gets its own commit (it is an emission change, not a record).
 **Exit:** the task list tells the truth at a glance; B17 DONE.
 
+**DONE 2026-08-23.** Sweep at `2eb0520`; **B17** at `230099c`. B17 was reproduced before it was fixed (a
+`StringFormat` member shipped `__DwarfMap_FmtStrF_*` beside an uncalled `__DwarfMap_FmtToStr_*`), fixed at the
+one site in the pipeline where a resolved converter is replaced, and sabotage-demoed **in both directions** —
+disabling the removal reds the orphan test, making it over-eager reds the sibling control with a real compile
+error. A ten-shape orphan sweep found no other unreferenced helper. `D-a` was flipped `DONE`/superseded in the
+same sweep: it asked to KEEP the `NullCollections`@`Projection` divergence and document the keeping, and I19
+ruled the other way, so it was waiting on a word that can no longer be given.
+
 ### V3 — the three "new id for a silent discard" rows, decided as one shape *(survives the reconciliation whole)*
 
 **Reconciled result:** B18, B24 and B31 are all still `TODO`. **B24 is now measurable** — the plan noted it
@@ -820,6 +828,30 @@ whose remarks say it does **not** bless the behaviour — so the pin already exi
 **Verification:** five-file sync per minted id; whole-solution build with samples (the over-eager-refusal
 detector); matrix re-measured. **Exit:** no directive form in these three shapes is silently inert; B18, B24,
 B31 DONE.
+
+**DONE 2026-08-23, one commit each, in the order that exercised the new-id plumbing before the pin inversion.**
+
+**The shape, answered once:** *a directive the generator reads and declines to act on is reported at its own
+site, with the reason and the remedy; it is an **Error** only where no defensible behaviour exists to keep,
+otherwise the documented behaviour is kept and the report is a **Warning**.* One policy, three different
+mechanics — which is what W1 did too (`DWARF095` + `DWARFR12` for its three).
+
+- **B31 → the new `DWARF098`, a Warning** (`cb868be`). The fallback construction is safe and documented, so
+  the behaviour is kept and only the report was missing. Answers the row's two-messages question by that
+  choice: an ABSENT annotation stays silent, because nothing written is nothing discarded.
+- **B24 → the new `DWARF099`, an Error** (`9d4371c`). Nothing to rank: identical scope, separated only by
+  source order. Identical duplicates stay accepted. **N6 is what made this measurable**, and the matrix now
+  poses it directly.
+- **B18 → no new id: `DWARF088` reaches its third placement** (`f453521`). Minting a fourth would have been an
+  id saying a sentence `DWARF088`'s own title already says. The row understated the defect — EVERY form is
+  inert on a mapper's own member, the legal class/method form included.
+
+**Ids allocated this round:** `DWARF096` (I14), `DWARF097` (I17), `DWARF098` (B31), `DWARF099` (B24). The
+plan's own "next free `DWARF097`" was stale before Layer 4 opened; **next free is `DWARF100` / `DWARFR13`.**
+
+**Measured at the Layer-4 tip (`f453521`), foreground:** whole solution **0 W / 0 E** with samples; suite
+**8,008 / 0** (from 7,952 at round start); census **866 / 866**; `EmittedInvalidCodeCellCeiling` exactly **0**;
+scans **15 / 15**; `src/` analyzers clean; no new allowlists; nothing pushed.
 
 ### The reconciliation obligation — read this at round-23 start
 
