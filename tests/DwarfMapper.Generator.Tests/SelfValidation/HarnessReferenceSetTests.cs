@@ -65,22 +65,25 @@ public sealed class HarnessReferenceSetTests
             "the loaded-assembly sweep it was written to replace. Every fixture that names an untouched " +
             "assembly is now one test-ordering change away from a spurious CS0246.");
 
-        var loaded = new HashSet<string>(
-            AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => Path.GetFileNameWithoutExtension(a.Location)),
+        var offered = new HashSet<string>(
+            tpa!.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(n => !string.IsNullOrEmpty(n))!,
             StringComparer.OrdinalIgnoreCase);
 
-        var suppliedByTpaAlone = tpa!.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Select(Path.GetFileNameWithoutExtension)
-            .Where(n => !string.IsNullOrEmpty(n) && !loaded.Contains(n!))
-            .Intersect(RequiredByFixtures, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var unofferable = RequiredByFixtures.Where(r => !offered.Contains(r)).ToArray();
 
-        Assert.True(suppliedByTpaAlone.Length > 0,
-            "Every required assembly happens to be loaded in this host, so the test above passes whether or " +
-            "not the TPA lookup works and cannot tell a healthy harness from the load-order-dependent sweep " +
-            "that produced the CS0246. Not necessarily a defect — but under THIS runner the assertion above " +
-            "is vacuous, and must not be quoted as proof that the class is closed.");
+        Assert.True(unofferable.Length == 0,
+            "TRUSTED_PLATFORM_ASSEMBLIES cannot supply: " + string.Join(", ", unofferable) +
+            ". The fixture requirement above is then satisfied only if the host happens to have loaded them, " +
+            "which is precisely the load-order dependence this replaced — the name is misspelled, or the " +
+            "assembly is not part of this runtime.");
+
+        // Deliberately NOT asserted: that TPA supplies a name the loaded sweep lacks. That was this test's
+        // first form, and it red-flagged a healthy tree — running the whole assembly loads every required
+        // assembly along the way, so TPA contributes nothing "new" and the check inverted into a false
+        // failure. It was order-dependent, which is the defect it was written to guard against. What is
+        // order-independent, and what actually matters, is that the fallback source COULD satisfy every
+        // requirement whatever the host has touched.
     }
 }
