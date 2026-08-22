@@ -2,6 +2,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
+        <!-- Restore-graph metadata only (round-22 S1): this project sits in the AOT samples' P2P closure,
+             whose `-r`-publish restore needs these RID graphs in packages.lock.json under locked mode
+             (NU1004 otherwise). Full rationale in DwarfMapper.csproj. -->
+        <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
         <IsRoslynComponent>true</IsRoslynComponent>
         <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
         <IncludeBuildOutput>false</IncludeBuildOutput>

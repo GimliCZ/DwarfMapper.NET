@@ -4,6 +4,12 @@
         <TargetFramework>net10.0</TargetFramework>
         <IsAotCompatible>true</IsAotCompatible>
         <IsTrimmable>true</IsTrimmable>
+        <!-- Restore-graph metadata only, nothing in the shipped package changes. The AOT samples publish
+             with `-r linux-x64|win-x64`, whose restore re-evaluates this whole P2P closure under that
+             global RID; locked-mode restore (round-22 S1) refuses NU1004 any RID graph the committed
+             packages.lock.json lacks, so every project in the AOT publish closure declares both RIDs and
+             its lock file carries both graphs. Same declaration in Generator/CodeFixes and both samples. -->
+        <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <Description>DwarfMapper — a compile-time object mapper for .NET where an unmapped member is a build error, maps are round-trip-verifiable (opt in with [RoundTrip]), and blittable data falls back to SIMD/blittable bulk copy. The shipped runtime library uses zero reflection and is NativeAOT- and trim-safe. This single package bundles the attributes, the Roslyn source generator, and the IDE code fixes — just reference it.</Description>
         <!-- PackageRequireLicenseAcceptance is set for all packages in Directory.Build.props. -->
