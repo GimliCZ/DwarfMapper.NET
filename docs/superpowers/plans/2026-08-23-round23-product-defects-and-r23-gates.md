@@ -720,71 +720,93 @@ DEFER = round 24+ with the reason stated; MAINT = maintainer-only, listed in the
 
 | Row | Disposition | Where / why |
 |---|---|---|
-| B4 | FOLD → V1 | round-22 W5's batch; not landed at the time of writing — reconcile |
-| B5 | FOLD → V1 | W5's batch; also the third of the excused-row family (B5/B7/B32) the final review named |
+| B4 | **CLOSED — r22 W5** | reconciled 2026-08-23: `DONE` in `TASKS.md`. V1 never had work to do |
+| B5 | **CLOSED — r22 W5** | reconciled: `DONE` (`Contracts/SurfaceFixtureBaselineTests.cs`). The excused-row family's other two, B7 and B32, are still open and are M1's |
 | B7 | FOLD → M1 | the research's own R23 staging: obligation completeness |
-| B8 | FOLD → V1 | W5's batch |
-| B10 | FOLD → V1 | W5's batch |
-| B12 | FOLD → V1 | W5's batch |
-| B13 | FOLD → V1 | W5's batch |
-| B14 | FOLD → V1 | W5's batch |
+| B8 | **CLOSED — r22 W5** | reconciled: `DONE` |
+| B10 | **CLOSED — r22 W5** | reconciled: `DONE` |
+| B12 | **CLOSED — r22 W5** | reconciled: `DONE` |
+| B13 | **CLOSED — r22 W5** | reconciled: `DONE` |
+| B14 | **CLOSED — r22 W5** | reconciled: `DONE` |
 | B16 | FOLD → M5 | wording; rides on B22's family decision, which is now a task rather than a deferral |
 | B17 | FOLD → V2 | cosmetic dead helper in generated output — one-line tidy-up, no behaviour effect; folded rather than deferred a third time |
 | B18 | FOLD → V3 | member-form directive on a `[DwarfMapper]` class member is swallowed; needs its own diagnostic decision + five-file sync — a real product silence, of the same genre W1 closed for `[MapIgnore]` |
-| B19 | FOLD → V2 (doc half) | round-22 W6 owed the written limitation; if W6 landed it, this row closes there — reconcile. The systemic remedy IS K1/K2, now live |
+| B19 | **CLOSED — r22 W6** | reconciled: W6 DID land the written limitation (the block in `SurfaceParityTests`' class doc), which is all the row asked for. The systemic remedy IS K1/K2, now live |
 | B22 | FOLD → M5 | round 22 called it "an r23 arc of its own"; it is now that arc |
-| B23 | FOLD → W4 (r22) | **round-22 work, may already be done** — reconcile; S7 is blocked behind it |
+| B23 | **CLOSED — r22 W4, `072c7ca`** | reconciled: `LoadOptions.PreserveWhitespace`, applied and regenerated. S7 was unblocked by it and has since landed (`1a7bf3e`) |
 | B24 | FOLD → V3 | contradicting `[MapNullSkip<S,T>]` silently discards the second; new diagnostic + five-file sync; unreachable by the matrix (its ×2 axis renders identical applications — which is **B37/N6**'s subject, so N6 must land first or the row stays unmeasurable) |
-| B28 | FOLD → **N3** | **NEVER DISPOSITIONED — omitted from the round-22 Layer 4 table.** A product defect of N1's genre; Layer 1 is its home |
+| B28 | **CLOSED — r23 N3, `9589e5a`** | was never dispositioned by round 22; N3 closed it, and found a third failure mode nobody had measured |
 | B29 | DEFER | changes WHICH constructor existing projections call; the honest fix is teaching `ConstructorSelector` that object-initializer construction is unavailable for the target, not a second filter — needs its own before/after measurement round |
 | B31 | FOLD → V3 | `[DwarfMapperConstructor]` on an unusable constructor is silently ignored; new id + the two-messages design question (is *unusable* a different message from *absent*?). Batched with B18/B24 because all three are "a new id for a silent discard" and one design session answers the shape for all |
 | B32 | FOLD → M1 | with B7, per the research staging |
 | B35 | FOLD → M5 | no viable remedy proposed yet; the family decision is where a new one comes from |
 | B36 | FOLD → M5 | prose-only; rides on B22 |
-| B37 | FOLD → **N6** | needs its own re-measurement commit |
-| C5 | FOLD → V2 | the open-coded `AssertRatchet` + the private repo-root walk `RepoPaths` exists to replace; round-22 W6's remainder — reconcile |
+| B37 | **CLOSED — r23 N6, `1decd32`** | landed with its own re-measurement. **This unblocks B24**, which was unmeasurable until the ×2 axis stopped rendering identical applications |
+| C5 | **CLOSED — r22 W6** | reconciled: both remainders routed to the shared helpers |
 | D-a | MAINT | ruled (keep + document); the `docs/options.md` write awaits the word |
 | D-c | MAINT | edits the agent's own instructions (`CLAUDE.md`) — called out, never done quietly |
 | D-f | MAINT | a design ruling: does `[MapTo]` participate in ambient registration at all |
-| F1 | FOLD → V2 | reality closed it (merged `dc385d4` / `d131c76`); flip with evidence — round-22 W6's job, reconcile |
-| F2 | FOLD → V2 | the round-21 ledger was captured at `96e62f9`; **the round-22 SDD progress log is the same hazard and is still git-ignored — capture it before that worktree is removed** |
+| F1 | **CLOSED — r22 W6** | reconciled: flipped with the merge commits cited |
+| F2 | **CLOSED — r22 W6 + `52fdc26`** | reconciled: the round-22 log WAS captured before the worktree went (`Issues/ledgers/round22-sdd-ledger.md`); `git worktree list` now shows only master and this one |
 | F3 | MAINT | where plan documents live is a repository-layout preference |
-| H3 | FOLD → W7 (r22) | Meziantou phase 2 — round-22 work, reconcile |
+| H3 | **CLOSED — r22 W7, `7b2ee1d` + `d57ac03`** | reconciled: Meziantou.Analyzer in all 17 remaining projects |
 | H8 | MAINT | the durable-form decision (document the pwsh / reportgenerator / ilverify prerequisites, and/or add a BOM); once ruled the edit is one small task |
 | I1 | MAINT → M3a | ruling first, then the pre-specced task |
 | I2 | MAINT → M3b | ruling first (a product-shape decision), then the pre-specced seam |
 | I3 | MAINT → M3c | ruling first (research Q3's category), then the pre-specced exclusion or deletion |
-| I4 | FOLD → **N5** | agent task with an in-task default ruling |
-| I5 | FOLD → **N1** | the round's core |
-| I6 | FOLD → **N4** | one line, blessed |
-| I7 | FOLD → **N2** | the round's core |
+| I4 | **CLOSED — r23 N5, `86f68f4`** | |
+| I5 | **CLOSED — r23 N1, `603047a`** | |
+| I6 | **CLOSED — r23 N4, `ff744ea`** | the one line alone would have been a regression in disguise |
+| I7 | **CLOSED — r23 N2, `4b7caa4`** | |
 | I8 | MAINT (record-only) | no license-compatible fix exists; the standing reasoned suppressions ARE the disposition. **No action** unless the maintainer revisits the benchmark competitor set |
 | I9 | MAINT → M4 | ruling first, then the pre-specced change |
 | K3 | DEFER (open research) | round-22's static-mutant attribution research **did not run** — no entry in the round-22 progress log. Per ruling (c) it is a wall-time optimization, no longer an enabling constraint: 85 of the generator leg's 201 mutants are `static`, ~14 min of the leg. Carry it as a low-priority research row |
 
-### V1 — the small-guards batch remainder *(reconcile first)*
+### V1 — the small-guards batch remainder — **NO WORK REMAINED. Closed by the reconciliation, 2026-08-23.**
 
-**What:** whichever of B4, B5, B8, B10, B12, B13, B14 round-22 W5 did not land: the legal same-source
-`[FlattenGraph]` shape pinned (B4); the fixture-baseline gate with its four `DWARF001`-by-design exceptions
-named (B5); one shrink-only guard over `DiagnosticTestAllowlist` (B8 — note `PredatesTheChangelog` is **gone**,
-drained by D-e and deleted at `73c58c3`, so B8's scope has halved and the row's own text is stale); the
-`CorpusFor` throwing default arm reached (B10); the Reasons/`StructurallyInapplicable` double-count forbidden
-(B12); evidence links **resolved**, not shape-checked (B13); the `IsGeneratorAuthored` `*.g.cs`-collision
-remarks completed (B14).
-**Verification:** every new guard sabotage-demoed red once. **Exit:** all remaining rows DONE.
+**Reconciled result:** round-22 W5 landed **all seven** — B4, B5, B8, B10, B12, B13, B14 — and every one reads
+`DONE` in `Issues/round20/TASKS.md` with its closing note. The plan's own hedge ("whichever ... W5 did not
+land") resolves to *none*. V1 therefore had an empty body, and re-deriving those seven guards would have been
+a second implementation of work already in the tree.
 
-### V2 — records hygiene and the stale-status sweep *(reconcile first)*
+**This is the reconciliation obligation paying for itself.** Had round 23 worked the plan's stale list instead
+of re-reading the task file, V1 would have been a full task's worth of duplicated effort producing merge
+conflicts against W5's own guards. **Exit: satisfied, with no commit of its own beyond this flip.**
 
-**What:** whatever of round-22 W6 remains — C5's two items (the open-coded `AssertRatchet`, the private
-repo-root walk), B19's written limitation *where the ceilings are read*, and the truth-sweep of
-`Issues/round20/TASKS.md`. **The sweep has grown since W6 was written:** the NOW section still describes the
-pre-merge branch and quotes `EmittedInvalidCode` **10** when it is **0**; the ratchet table still lists
-`PredatesTheChangelog` **76** when the baseline is **deleted**; F1/F2 still read TODO; the "Machines" table's
-`PredatesTheChangelog` and mutation-survivor rows are stale; the F1 merge-handoff section describes a merge
-that happened. **Statuses only — no history rewritten.** Plus B17's one-line dead-helper tidy-up.
-**Exit:** the task list tells the truth at a glance; C5, B19, B17, F1, F2 DONE.
+### V2 — records hygiene and the stale-status sweep — **narrowed by the reconciliation, 2026-08-23**
 
-### V3 — the three "new id for a silent discard" rows, decided as one shape
+**Reconciled result: C5, B19, F1 and F2 all landed at round-22 W6 and read `DONE`.** Four of the plan's six
+items were already paid. What genuinely survives is **B17** (still `TODO`) and **a truth-sweep whose contents
+are not the ones this plan predicted** — W6 already corrected the items it named, and a *new* layer of
+staleness has accumulated on top of W6's own corrections, most of it created by round 23 itself.
+
+**What the plan predicted, checked one by one against the file:**
+
+| Plan's sweep item | Actual state at round-23 start |
+|---|---|
+| NOW quotes `EmittedInvalidCode` **10** | **already corrected by W6** — the paragraph reads 0 and explains the 10 |
+| ratchet table lists `PredatesTheChangelog` **76** | **still there.** W6 fixed the *Machines* row, not the ratchet table |
+| F1 / F2 read TODO | **already `DONE`** |
+| "Machines" table's `PredatesTheChangelog` + mutation-survivor rows | **already corrected by W6** |
+| F1 merge-handoff section describes a merge that happened | **already corrected by W6** |
+
+**What the plan could NOT have predicted, and is the sweep's real content:** the NOW block names branch
+`feat/round22-gates` and worktree `DwarfMapper-r22`, both gone; "In flight" says round 22 and "Next" says
+nothing queued, when round 22 is **merged to master at `d0e5bca`** and round 23 is in flight; the live-ceiling
+line and the ratchet table quote `DivergenceFinding` **2** and `DivergentCell` **4** when I19 took them to
+**1** and **2**; the same table quotes `DirectCompileErrorCallBaseline` **53** (live **55**) and
+`MapMethodModelBoolFlagBaseline` **15** (live **16**), each raised deliberately with a reason at the call
+site; the two-remaining-findings sentence still names `NullCollections`@`Projection`, which **I19 closed**;
+and **D-a is superseded** — it asked to keep that divergence and document the keeping, and I19 ruled the
+opposite way and wrote the residual into `docs/options.md` instead.
+
+**Statuses only — no history rewritten.** B17 gets its own commit (it is an emission change, not a record).
+**Exit:** the task list tells the truth at a glance; B17 DONE.
+
+### V3 — the three "new id for a silent discard" rows, decided as one shape *(survives the reconciliation whole)*
+
+**Reconciled result:** B18, B24 and B31 are all still `TODO`. **B24 is now measurable** — the plan noted it
+was unreachable by the matrix until B37/N6 landed, and N6 landed at `1decd32`, so the blocker is gone.
 
 **What:** B18, B24 and B31 are the same question three times — *the caller wrote something, the generator
 declined to act on it, and the build said nothing* — and each was deferred separately for the same reason (a
@@ -811,6 +833,14 @@ round-22 progress log at the merged tip, and **reconcile Layer 4 against reality
 "reconcile" either closes (delete it from V1/V2, cite the commit) or survives (keep it, with the reason it
 survived). Re-verify the state-at-round-start numbers at the same time — the suite count, the census, and any
 floor W4–W7 moved. Then, and only then, start N0.
+
+**DISCHARGED 2026-08-23.** W4, W5, W6 and W7 **all landed**, and round 22 merged to master at `d0e5bca`.
+Every "reconcile" row above is flipped with its commit. The score: **V1 closed entirely with no work**
+(all seven of W5's rows `DONE`); **V2 narrowed to B17 plus a sweep whose contents differ from the ones
+predicted** (W6 fixed four of the six named items, and round 23's own I19/I17 work created new staleness the
+plan could not have known about); **V3 survives whole**, with B24 unblocked by N6. Measured at the same time
+and carried into the state header: suite **7,952 / 0**, census **866 / 866**, whole solution
+**0 W / 0 E** with samples. The full table is in the round-23 ledger.
 
 ---
 
