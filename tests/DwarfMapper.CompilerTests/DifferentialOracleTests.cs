@@ -25,9 +25,10 @@ namespace DwarfMapper.CompilerTests;
 ///         deliberately naive reflective copy, compared with the SHIPPED <c>[RoundTrip]</c> differ
 ///         (<see cref="StructuralComparer" /> — <c>RoundTrip.Verify</c>'s own member-path diff), dogfooding
 ///         the <c>DwarfMapper.Testing</c> package instead of growing a parallel comparer, per the audit's
-///         binding correction. Any disagreement shrinks (CsCheck) and is then classified: generator bug →
-///         pinned corpus row + I-row; undocumented semantic → corpus row + documentation-shaped I-row.
-///         Never ratified by silently teaching the oracle.
+///         binding correction. Any disagreement replays from its pinned case index
+///         (<see cref="PinnedSampling" />, I11) and is then classified: generator bug → pinned corpus row
+///         + I-row; undocumented semantic → corpus row + documentation-shaped I-row. Never ratified by
+///         silently teaching the oracle.
 ///     </para>
 ///     <para>
 ///         <b>Differ depth arithmetic</b> (StructuralComparer.MaxDepth = 12 returns SILENTLY past the cap,
@@ -53,9 +54,12 @@ public class DifferentialOracleTests
         var executed = 0;
         var refused = 0;
 
-        // Population seed sampled WITH the graph so a CsCheck shrink replays both together.
-        Gen.Select(TypeGraphGen.MirroredPair(), Gen.Int[0, int.MaxValue - 1])
-            .Sample(sample =>
+        // Population seed sampled WITH the graph so one pinned case index replays both together.
+        PinnedSampling.Run(DeepPopulation.CompilerOracleSeeds,
+            Gen.Select(TypeGraphGen.MirroredPair(), Gen.Int[0, int.MaxValue - 1]),
+            sample => sample.Item1.Describe()
+                      + "|" + sample.Item2.ToString(CultureInfo.InvariantCulture),
+            sample =>
             {
                 var (graph, seed) = sample;
                 var units = TypeGraphRenderer.Render(graph);
@@ -80,11 +84,11 @@ public class DifferentialOracleTests
                 // Leg 2 — the differential oracle.
                 RunOracleLeg(assembly, graph, seed, result.GeneratedSource);
                 Interlocked.Increment(ref executed);
-            }, iter: DeepTier.Count(DeepPopulation.CompilerOracleSeeds));
+            }, _output, "K1 oracle");
 
         // Vacuity guard, mirroring the smoke's: the oracle only has teeth when maps EXECUTE. A loose
-        // floor, not an exact pin — the accept/refuse split of a random sample is a nondeterministic
-        // oracle and R4 forbids gating on one; the measured split is reported instead.
+        // floor, not an exact pin — the accept/refuse split is a property of the sampled GRAMMAR, so it
+        // is reported rather than gated; the product-side gate is the comparison itself.
         Assert.True(executed > 0,
             $"no sampled graph executed ({refused} refusals, 0 executions) — the sampled space has "
             + "drifted into the refusal grammar and the differential leg is vacuous.");

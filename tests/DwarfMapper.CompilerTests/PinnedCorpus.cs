@@ -203,6 +203,85 @@ public static class PinnedCorpus
             "S0", "D0");
     }
 
+    /// <summary>
+    ///     K2's oracle-gap counterexample, preserved (2026-08-22, TASKS.md I11 — found by MR-3 at CsCheck
+    ///     seed <c>9EqkJlF93ol7</c> back when the fast tier still drew randomly, then minimized by hand;
+    ///     the seed string itself is dead now that <c>PinnedSampling</c> owns the case set, which is
+    ///     exactly why the SHAPE is pinned instead of the seed). A <c>HashSet</c> member whose element type
+    ///     is a graph node, populated at seed <see cref="SetOfStructuralElementsSeed" /> with two elements
+    ///     whose only member (<c>long?</c>) draws null on both — so the two elements are structurally
+    ///     equal and referentially distinct.
+    ///     <para>
+    ///         <b>This row pins CORRECT behaviour, not a defect.</b> Under the class representation the
+    ///         source set holds 2 and the mapped set holds 2; under record and record struct both hold 1,
+    ///         because record and struct equality is structural. Nothing in the mapper chooses this — the
+    ///         collapse happens in the SOURCE, before any mapping. It is pinned because it is the evidence
+    ///         behind <c>MetamorphicTests.ListifySetsOfStructuralElements</c>: delete the exclusion and
+    ///         this shape is what comes back. Its executor is
+    ///         <c>MetamorphicTests.Set_shaped_members_are_representation_dependent_by_design</c>; the
+    ///         compile contract here is the NORMAL one (clean or loud), because there is nothing wrong
+    ///         with the code.
+    ///     </para>
+    /// </summary>
+    public static CorpusRow SetOfStructuralElements { get; } = new(
+        "I11-set-of-structural-elements",
+        "HashSet<S1> with two structurally-equal elements: cardinality is representation-dependent BY "
+        + "DESIGN (record equality is structural) — MR-3's declared precondition (TASKS.md I11)",
+        new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_1", "int", Nullable: false, MemberShape.AutoProp, CollShape.HashSet, 1)],
+                    BaseRef: null),
+                new NodeSpec("S1", TypeKind.Class,
+                    [new MemberSpec("M1_0", "long", Nullable: true, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [new MemberSpec("M0_1", "int", Nullable: false, MemberShape.AutoProp, CollShape.HashSet, 3)],
+                    BaseRef: null),
+                new NodeSpec("D1", TypeKind.Class,
+                    [new MemberSpec("M1_0", "long", Nullable: true, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null)
+            ],
+            "S0", "D0"));
+
+    /// <summary>
+    ///     The population seed <see cref="SetOfStructuralElements" /> is pinned at — the one the original
+    ///     MR-3 red drew. Name-keyed population makes it portable: member <c>M0_1</c> keys the set to
+    ///     count 2 and both elements' <c>M1_0</c> to null regardless of what else the node declares, which
+    ///     is why the hand-minimized shape reproduces the sampled one exactly.
+    /// </summary>
+    public const int SetOfStructuralElementsSeed = 269828994;
+
+    /// <summary>
+    ///     I11's second route to the same precondition, pinned separately because it reaches it WITHOUT
+    ///     re-kinding: MR-2's injected unmapped member. The source element node is a RECORD (structural
+    ///     equality) and the destination element node a CLASS (referential), so the baseline maps a
+    ///     one-element set while the fattened variant — whose injected <c>X1</c> differs per element and
+    ///     therefore splits the tie — maps a two-element one. Again both are correct; the relation's
+    ///     premise is what fails, which is why MR-2 normalizes structural-element sets too. Executor:
+    ///     <c>MetamorphicTests.Set_shaped_members_are_unmapped_member_dependent_by_design</c>.
+    /// </summary>
+    public static CorpusRow SetOfStructuralElementsRecordToClass { get; } = new(
+        "I11-set-of-structural-elements-mr2",
+        "HashSet<S1> with record source element and class dest element: an injected unmapped member "
+        + "splits a structural tie and changes set cardinality — MR-2's declared precondition (I11)",
+        new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_1", "int", Nullable: false, MemberShape.AutoProp, CollShape.HashSet, 1)],
+                    BaseRef: null),
+                new NodeSpec("S1", TypeKind.Record,
+                    [new MemberSpec("M1_0", "long", Nullable: true, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [new MemberSpec("M0_1", "int", Nullable: false, MemberShape.AutoProp, CollShape.HashSet, 3)],
+                    BaseRef: null),
+                new NodeSpec("D1", TypeKind.Class,
+                    [new MemberSpec("M1_0", "long", Nullable: true, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null)
+            ],
+            "S0", "D0"));
+
     /// <summary>Every pinned row, for the corpus test's sweep. Grows append-mostly; never shrinks to pass.</summary>
     public static IReadOnlyList<CorpusRow> Rows { get; } =
     [
@@ -211,6 +290,8 @@ public static class PinnedCorpus
         NullableStructElementMap,
         UnmappedDestinationMemberRefusal,
         NullableRekindValueToReference,
-        NullableRekindReferenceToValue
+        NullableRekindReferenceToValue,
+        SetOfStructuralElements,
+        SetOfStructuralElementsRecordToClass
     ];
 }

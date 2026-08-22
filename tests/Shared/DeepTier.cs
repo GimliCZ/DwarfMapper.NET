@@ -179,6 +179,15 @@ public static class DeepTier
 
     // (fast, deep) per population. Fast values are the exact counts the suite ran with before the knob
     // existed; the per-entry multiplier rationale lives on the DeepPopulation member.
+    //
+    // The five Compiler* entries changed MECHANISM in round 22 (finding I11) without changing a count:
+    // they are now PINNED CASE INDEXES (CompilerTests/PinnedSampling — one deterministic CsCheck draw per
+    // index, run in parallel) rather than CsCheck iterations of a single random sample, because a random
+    // draw in the fast tier is a gate on a nondeterministic oracle (invariant R4). The fast list is a
+    // prefix of the deep list, so raising a deep count only ADDS cases. Re-measured on the 12-core
+    // reference machine, 2026-08-22: CompilerTests project-alone deep wall 31.1 / 34.4 / 32.4 s across 3
+    // runs (K2-era mechanism: 30.4–31.7 s), fast-tier project wall 2–3 s. The per-entry in-class figures
+    // below are from the K2-era measurement and remain the right order of magnitude.
     private static readonly Dictionary<DeepPopulation, (int Fast, int Deep)> Catalog = new()
     {
         [DeepPopulation.FeatureCombinationSubsetOrder] = (2, 3),
