@@ -1430,9 +1430,10 @@ public static class DiagnosticDescriptors
         + "map those members with a runtime Map method instead.",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         "A projection becomes an expression tree that a database provider translates. When one member of it "
-        + "has no translatable form the projection method cannot be generated — but the ordinary Map methods "
-        + "on the same mapper are unaffected and are still generated. This warning marks the one method that "
-        + "is missing so its CS8795 is not mistaken for a broken analyzer reference.",
+        + "has no translatable form — or has no source at all — the projection method cannot be generated, "
+        + "but the ordinary Map methods on the same mapper are unaffected and are still generated. This "
+        + "warning marks the one method that is missing so its CS8795 is not mistaken for a broken analyzer "
+        + "reference.",
         HelpBase + "dwarf096");
 
     /// <summary>

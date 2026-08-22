@@ -25,14 +25,18 @@ so a version with no section here ships with no notes.
   to it: the incomplete method is withheld, everything else on the mapper is generated, and the one `CS8795`
   that follows is signposted by the new `DWARF097`. **The build still fails** — `DWARF001` is unchanged and
   still an Error — so no mapping that compiled before compiles differently now; what changes is that the
-  errors point only at what is actually wrong. This reaches the create map, the update-into map and the
-  `[GenerateMap]` pair (where it is starkest: the pair has no partial declaration of its own, so every
-  `CS8795` a whole-class kill produced there landed on somebody else's method). Two shapes deliberately keep
-  the whole-class kill: a method that raises `DWARF001` *and* a class-level error such as `DWARF010`, and an
-  incomplete **synthesized** pair — a nested or element pair is mapped through a helper shared by every route
-  that reaches it, so its incompleteness is true of each of them and pinning it on one method would be wrong.
-  That last one is why an incomplete element pair behind a span map or an async-stream map still reports
-  `DWARF078`. (round 23, I17)
+  errors point only at what is actually wrong. This reaches the **create map**, the **update-into** map and
+  the **projection** (an unmapped member there is scoped exactly as an untranslatable one already was).
+  **Three shapes deliberately keep the whole-class kill.** A method that raises `DWARF001` *and* a
+  class-level error such as `DWARF010`. An incomplete **synthesized** pair — a nested or element pair is
+  mapped through a helper shared by every route that reaches it, so its incompleteness is true of each of
+  them and pinning it on one method would be wrong; that is why an incomplete element pair behind a span map
+  or an async-stream map still reports `DWARF078`. And an incomplete **`[GenerateMap]` pair**, which is the
+  boundary of the whole rule: withholding a method is only safe while its *declaration* survives. A `partial`
+  method is declared by you, so another method mapping a nested member through it still binds and the single
+  `CS8795` is the whole cost — but a `[GenerateMap]` pair has no declaration, and withholding it left a
+  sibling calling a method that does not exist (`CS0103`) in a file you cannot edit. Loud collateral beats
+  generated code that does not compile. (round 23, I17)
 
 - **`Project` ignored `NullCollections`, so a null source collection came back EMPTY through `Map` and
   `null` through `Project`.** The option is documented once, for the mapper, with no endpoint qualifier —
@@ -474,7 +478,8 @@ so a version with no section here ships with no notes.
   mapping method was not generated because a destination member of it has no source, and the rest of the
   mapper was. `DWARF078` says *"no code was generated for this mapper"*, which used to be true of a
   completeness failure and is not any more: the class is emitted, every other method with it, and exactly one
-  `CS8795` follows on the withheld method. That single `CS8795` needs the same signpost the class-wide wall
+  `CS8795` follows on the withheld method (none at all when it is declared without accessibility modifiers,
+  which C# allows to have no implementing part — there this warning is the only thing you see). That single `CS8795` needs the same signpost the class-wide wall
   has always had — it is a cascade, not a missing analyzer reference — and it needs different remedy text from
   `DWARF096`, which can suggest dropping the `Project` method and mapping at runtime: nonsense advice for a
   `Map` method whose destination simply has a member nobody mapped. Suppressible like any warning; it never

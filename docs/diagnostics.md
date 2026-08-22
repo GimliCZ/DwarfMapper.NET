@@ -1665,10 +1665,12 @@ specific pair from the class, prefer the pair-scoped `[MapIgnore<TTarget>("Name"
 ## dwarf096
 **Projection method was not generated** · Warning
 
-The per-method twin of [`DWARF078`](#dwarf078). One `Project` method carried a
-[`DWARF028`](#dwarf028) — a member with no expression-tree form — so **that method** was not generated. The rest
-of the mapper was: every `Map` method on the same class is emitted normally, and so are the facade extensions,
-the DI registration and the ambient registry entries built from them.
+The per-method twin of [`DWARF078`](#dwarf078). One `Project` method carried an error that belongs to it
+alone — [`DWARF028`](#dwarf028), a member with no expression-tree form, or [`DWARF001`](#dwarf001), a
+destination member nothing maps — so **that method** was not generated. The rest of the mapper was: every
+`Map` method on the same class is emitted normally, and so are the facade extensions, the DI registration and
+the ambient registry entries built from them. ([`DWARF097`](#dwarf097) is the same signpost for a `Map`
+method; the two exist separately because they prescribe different remedies.)
 
 Exactly one `CS8795: … must have an implementing part` follows, on the `Project` method, and this warning marks
 it so it is not mistaken for the other cause of that message (a project missing the analyzer reference — see
@@ -1678,13 +1680,20 @@ Refusing the method rather than emitting a partial one is deliberate: a projecti
 not resolve would return objects with those members silently unset, which is the failure this endpoint reports
 `DWARF028` to prevent.
 
+Only those two errors are scoped, and only when **every** error the method raised is one of them. Anything
+else a projection can collect — an ambiguous member name ([`DWARF010`](#dwarf010)), an unknown destination
+([`DWARF008`](#dwarf008)) — describes the source model, is equally true of the `Map` methods over the same
+pair, and still suppresses the whole class.
+
 You will never see this **and** [`DWARF078`](#dwarf078) on one mapper. If some other method on the class also
 has an error, nothing is generated after all — this warning's claim would be false, so it stands down and
 `DWARF078` reports the wider scope. The `DWARF028` itself is reported either way.
 
-**Fix:** fix the `DWARF028` error(s) above it — usually by making the destination member nullable, widening a
-narrowing numeric target, or choosing a translatable collection target. Or drop the `Project` method and map
-those members with a runtime `Map` method, which has none of these restrictions.
+**Fix:** fix the error(s) above it. For a `DWARF028` that usually means making the destination member
+nullable, widening a narrowing numeric target, or choosing a translatable collection target — or dropping the
+`Project` method and mapping those members with a runtime `Map` method, which has none of these restrictions.
+For a `DWARF001` it means mapping the destination member named, or annotating the method with
+`[MapIgnore("Name")]`.
 
 ## dwarf097
 **Mapping method was not generated** · Warning
