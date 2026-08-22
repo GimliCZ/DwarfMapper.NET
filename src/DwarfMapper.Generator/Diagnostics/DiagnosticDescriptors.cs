@@ -1478,4 +1478,32 @@ public static class DiagnosticDescriptors
         + "This warning marks the one method that is missing so its CS8795 is not mistaken for a broken "
         + "analyzer reference.",
         HelpBase + "dwarf097");
+
+    /// <summary>
+    ///     <c>DWARF098</c> — <c>[DwarfMapperConstructor]</c> names a constructor the selector cannot use.
+    ///     <para>
+    ///         The EMISSION is not the defect and is deliberately unchanged: an unusable annotated
+    ///         constructor falls back to the safe default policy (the parameterless object-initializer path
+    ///         where one exists) rather than emitting a call the compiler would reject. What was missing is
+    ///         the REPORT. The caller named one specific constructor, the selector declined it for a reason
+    ///         it knows exactly, and the build said nothing — a caller who marks a <c>private</c> constructor
+    ///         and gets object-initializer mapping has no way to learn why. TASKS.md <c>B31</c>.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, not an Error, and the row's own two-messages question is answered by that
+    ///         choice: the behaviour is defensible and is KEPT, so this reports rather than refuses. An
+    ///         ABSENT annotation stays silent — nothing was written, so nothing was discarded. Only the
+    ///         written-and-declined case is a caller mistake, and only it is reported.
+    ///     </para>
+    /// </summary>
+    public static readonly DiagnosticDescriptor AnnotatedConstructorUnusable = new(
+        "DWARF098",
+        "[DwarfMapperConstructor] names a constructor the mapper cannot use",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        "A constructor carrying [DwarfMapperConstructor] was filtered out of the candidate set before "
+        + "selection ran, so the annotation had no effect and the destination was built exactly as it would "
+        + "have been without it. The construction that results is safe — that is why it is a warning and not "
+        + "an error — but the directive the caller wrote was discarded in silence.",
+        HelpBase + "dwarf098");
 }

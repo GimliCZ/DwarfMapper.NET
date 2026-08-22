@@ -1742,6 +1742,36 @@ down and `DWARF078` reports the wider scope. The `DWARF001` itself is reported e
 **Fix:** map the destination member(s) named in the `DWARF001` above (`[MapProperty]`, `[MapValue]`, a matching
 source name), or annotate the method with `[MapIgnore("Name")]` if leaving it at its default is intended.
 
+
+---
+
+## dwarf098
+**[DwarfMapperConstructor] names a constructor the mapper cannot use** · Warning
+
+You annotated a constructor and the selector declined it, so the destination was built exactly as it would have
+been with no annotation at all. The **construction is safe** — that is why this is a warning and not an error:
+selecting the constructor would have emitted a call the compiler rejects, so the selector falls back to its
+default policy (the parameterless object-initializer path where one exists) rather than producing broken output.
+What was wrong before this diagnostic existed is that the fallback was **silent**: a caller who marked a
+`private` constructor got object-initializer mapping with no way to learn why.
+
+The message names the constructor and the **specific** filter that rejected it, because the remedies differ:
+
+| Why it was declined | Remedy |
+|---|---|
+| Not accessible, and the assembly *can* see it (`internal`, `protected internal`) | Set `[DwarfMapper(AllowNonPublic = true)]`, or make it `public` |
+| Not accessible, and the assembly *cannot* see it (`private`, `protected`) | Make it `internal` (with that option set) or `public`. **`AllowNonPublic` does not help here** — it widens the filter only as far as your own assembly can see, and a private member of another type never is |
+| Marked `[Obsolete]` | Drop the `[Obsolete]`, or annotate a supported constructor |
+| A copy constructor (its single parameter is the destination type) | Annotate a constructor whose parameters come from the source type |
+| A `ref` / `out` parameter | Take it by value or by `in` (CS1620 — `ref`/`out` cannot be written as a named argument), or annotate a different constructor |
+
+**An absent annotation is silent, and that is the rule rather than an oversight.** This reports a directive that
+was *written and discarded*; where nothing was written, nothing was discarded. It is raised once per mapping
+method that selects the destination, so a mapper with both a `Map` and a `Project` over the same pair reports
+it twice — both methods really did ignore the directive.
+
+The `[MapTo]` registry answers the same mistake with its own id, [`DWARFR11`](#dwarfr11): it does not read
+`[DwarfMapperConstructor]` at all, which is a different statement from reading it and declining it.
 ---
 
 ---

@@ -101,5 +101,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF095` | Warning | [MapIgnore] names no destination member |
 | `DWARF096` | Warning | Projection method was not generated |
 | `DWARF097` | Warning | Mapping method was not generated |
+| `DWARF098` | Warning | [DwarfMapperConstructor] names a constructor the mapper cannot use |
 
-93 diagnostics.
+94 diagnostics.

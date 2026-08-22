@@ -13,6 +13,17 @@ so a version with no section here ships with no notes.
 
 ## [Unreleased]
 
+### Added
+
+- **`DWARF098` — `[DwarfMapperConstructor]` names a constructor the mapper cannot use (Warning).** An
+  annotated constructor that is inaccessible, `[Obsolete]`, a copy constructor, or takes a `ref`/`out`
+  parameter is filtered out before selection runs, and the destination is then built exactly as it would be
+  with no annotation at all. That fallback is deliberate and unchanged — selecting the constructor would emit a
+  call the compiler rejects — so this reports rather than refuses. The message names the constructor and the
+  **specific** filter that rejected it, because the remedies differ; in particular `AllowNonPublic` rescues an
+  `internal` constructor and cannot rescue a `private` one. An **absent** annotation stays silent: nothing was
+  written, so nothing was discarded.
+
 ### Fixed
 
 - **`Project` did not read `ImplicitConversions` at all, so the strictness gate was silently off at that
