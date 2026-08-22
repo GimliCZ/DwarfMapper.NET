@@ -437,7 +437,23 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
     private static void Execute(SourceProductionContext spc, MapperClassModel model)
     {
-        foreach (var diagnostic in model.Diagnostics) spc.ReportDiagnostic(diagnostic.ToDiagnostic());
+        // DWARF096 says "the rest of this mapper WAS generated", and when a CLASS-level error is also
+        // present that is false: DWARF078 is about to say nothing was. Both would be reported, and one of
+        // them would be lying to the reader. Reachable without contriving — a refused-clean projection
+        // beside a Map method with an unmapped member is enough — so the scoped signpost stands down and
+        // lets the class-wide one speak. The DWARF028 underneath it is still reported either way; only the
+        // signpost, which exists solely to describe the SCOPE of the damage, is suppressed when the scope
+        // is no longer what it claims.
+        var suppressScopedSignpost = model.HasBlockingError;
+
+        foreach (var diagnostic in model.Diagnostics)
+        {
+            if (suppressScopedSignpost
+                && ReferenceEquals(diagnostic.Descriptor, DiagnosticDescriptors.ProjectionMethodNotGenerated))
+                continue;
+
+            spc.ReportDiagnostic(diagnostic.ToDiagnostic());
+        }
 
         if (model.HasBlockingError)
         {

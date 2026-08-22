@@ -1674,6 +1674,10 @@ Refusing the method rather than emitting a partial one is deliberate: a projecti
 not resolve would return objects with those members silently unset, which is the failure this endpoint reports
 `DWARF028` to prevent.
 
+You will never see this **and** [`DWARF078`](#dwarf078) on one mapper. If some other method on the class also
+has an error, nothing is generated after all — this warning's claim would be false, so it stands down and
+`DWARF078` reports the wider scope. The `DWARF028` itself is reported either way.
+
 **Fix:** fix the `DWARF028` error(s) above it — usually by making the destination member nullable, widening a
 narrowing numeric target, or choosing a translatable collection target. Or drop the `Project` method and map
 those members with a runtime `Map` method, which has none of these restrictions.

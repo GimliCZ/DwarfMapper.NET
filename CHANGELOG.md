@@ -442,7 +442,8 @@ so a version with no section here ships with no notes.
   That single `CS8795` needs the same signpost the class-wide wall has always had — it is a cascade, not a
   missing analyzer reference — and `DWARF078` could no longer supply it without lying about the scope. A
   Warning, like `DWARF078`, and for the same reason: the `DWARF028` above it is the error and the thing to fix.
-  (round 23, I14)
+  The two never appear together: if another method on the same class also has an error, nothing is generated
+  after all, so this one's claim would be false and it stands down in favour of `DWARF078`. (round 23, I14)
 - **`DWARF090` — a member directive that the element-wise endpoints cannot apply.** The generalization of
   `DWARF077`, and the same root cause: a span map or an async-stream map resolves no members of its own. It
   maps the *element* pair through a mapper synthesized per `(source, target)` and shared by every route that

@@ -108,6 +108,48 @@ public class ProjectionScopedRefusalTests
     }
 
     /// <summary>
+    ///     The two signposts must never contradict each other. A projection that refuses CLEANLY (only
+    ///     DWARF028) sits beside a Map method with an unmapped member: the projection's refusal is scoped, so
+    ///     DWARF096 would be added — and then the Map method's DWARF001 suppresses the class anyway and
+    ///     DWARF078 says nothing was generated. Both reported, one of them lying. DWARF096 exists solely to
+    ///     describe the SCOPE of the damage, so it stands down when the scope is no longer what it claims and
+    ///     lets the class-wide signpost speak. The errors underneath are unaffected.
+    /// </summary>
+    [Fact]
+    public void The_scoped_signpost_stands_down_when_a_class_level_error_kills_everything_anyway()
+    {
+        const string code = """
+            using System.Collections.Generic;
+            using System.Linq;
+            using DwarfMapper;
+            namespace Demo;
+
+            public sealed class Src { public List<int> Tags { get; set; } = new(); }
+            public sealed class Dst { public HashSet<int> Tags { get; set; } = new(); }
+            public sealed class Other { public int X { get; set; } }
+            public sealed class OtherDto { public int X { get; set; } public int Missing { get; set; } }
+
+            [DwarfMapper]
+            public partial class MixedFailureMapper
+            {
+                public partial OtherDto MapIncomplete(Other o);
+                public partial IQueryable<Dst> Project(IQueryable<Src> q);
+            }
+            """;
+
+        var (diagnostics, generated) = GeneratorTestHarness.Run(code);
+
+        // Both errors still reported — suppressing the signpost must not suppress the diagnosis.
+        Assert.Contains(diagnostics, d => d.Id == "DWARF001");
+        Assert.Contains(diagnostics, d => d.Id == "DWARF028");
+
+        // The accurate signpost speaks; the one whose claim has become false does not.
+        Assert.Contains(diagnostics, d => d.Id == "DWARF078");
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF096");
+        Assert.Equal(string.Empty, generated.Trim());
+    }
+
+    /// <summary>
     ///     The reference-handling early exit used to add the projection method with an EMPTY member list "so
     ///     no further cascades" — harmless only because the DWARF028 beside it suppressed the class, so the
     ///     empty model was never emitted. With the refusal scoped, emitting it would produce
