@@ -13,6 +13,20 @@ so a version with no section here ships with no notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `[MapProperty]` or `[MapIgnore]` written on a member of the mapper class was swallowed.** `DWARF088` was
+  raised off the mapper class and off each mapping method, never off a **member** of the mapper — so the one
+  placement left was silent, and a caller who annotated a property or field of their `[DwarfMapper]` type got
+  no binding, no exclusion, and no word about it. That member belongs to the mapper, not to either type of any
+  pair it maps, so **every** form is inert there: the class/method form too, which then left the completeness
+  gate demanding the member the caller believed they had excluded. All forms are now reported as `DWARF088`,
+  with the remedy that fits the form — the member-placement overloads were aimed at the wrong *kind of type*
+  (they belong on a `[MapTo]` source or a `[GenerateMap]` host), while the class/method overloads were aimed at
+  the wrong *symbol* and only need moving. A directive on a member of a real `[GenerateMap]` host is unchanged
+  and still read. **`DWARF088` is an Error, so this can break a build that compiled before** — the directive
+  never did anything, so no mapping changes; what changes is that the build now says so.
+
 ### Added
 
 - **`DWARF099` — one pair carries two contradicting `[MapNullSkip<TSource, TTarget>]` declarations (Error).**

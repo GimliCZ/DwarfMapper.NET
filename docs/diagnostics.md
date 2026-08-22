@@ -1228,6 +1228,22 @@ one-argument constructor: `[MapProperty("Name", Use = "F")]` is `ctor(1)` plus a
 converter, the `When` predicate, the `NullSubstitute` and the `StringFormat` were discarded along with the
 binding. A caller named a conversion method and got auto-matching.
 
+**Three placements, not two.** The same id also covers a `[MapProperty]` or `[MapIgnore]` written on a
+**member of the mapper class itself** — a property or field of your `[DwarfMapper]` type. That member belongs
+to the mapper, not to either type of any pair it maps, so no resolution step ever looks at it and **every**
+form is inert there, the class/method form included. The two remedies differ and the message says which
+applies:
+
+| Where you wrote it | What was wrong | Remedy in the message |
+|---|---|---|
+| Member form, on the mapper class or a mapping method | The wrong **overload** | Supply the missing argument (the table above) |
+| Member form, on a member of the mapper class | The wrong **kind of type** — the member form belongs on a `[MapTo]` source or a `[GenerateMap]` host | Name the destination and move it to the class or the method |
+| Class/method form, on a member of the mapper class | The wrong **symbol** — this overload *is* the one the mapper reads, just not from there | Move it to the mapper class or to a mapping method |
+
+A directive on a member of a real `[GenerateMap]` **host** is a different question and is *not* reported here:
+there the annotated type is a mapped type and its members are read as intended. A host directive that cannot
+be placed is [`DWARF089`](#dwarf089).
+
 > **Refused whichever way you read it.** Honouring `[MapProperty("Name")]` at a method would bind `Name` to
 > itself — the identity binding auto-matching already produces, so it is a no-op by construction and cannot be
 > what the caller wanted. Discarding it evaporates a binding they wrote explicitly. Only saying so lets them

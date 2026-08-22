@@ -135,6 +135,14 @@ internal static partial class MapperExtractor
         ReportMemberFormDirectives(classSymbol, "mapper class",
             LocationInfo.From(classSyntax.Identifier.GetLocation()), diagnostics);
 
+        // B18: the third placement, and the one left silent. DWARF088 was raised off the class symbol and off
+        // each mapping method, never off a MEMBER of the mapper — so a [MapProperty] or [MapIgnore] written on
+        // the mapper's own property or field was read by nothing and said nothing. Not on the separate-emit
+        // path: there the annotated type IS a mapped type and ReadCoLocatedHostDirectives reads its members
+        // (A4), which is a different question with a different answer.
+        if (!separateEmit)
+            ReportDirectivesOnMapperMembers(classSymbol, diagnostics);
+
         // Assembly-wide default options ([assembly: DwarfMapperDefaults(...)]) layer UNDER the mapper's own
         // options. Every option reader returns the first matching named argument across the attribute list, so
         // appending the assembly-defaults attribute AFTER the class's [DwarfMapper] attribute gives exactly the
@@ -3555,6 +3563,71 @@ internal static partial class MapperExtractor
 
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.MemberFormDirectiveOnMapper, location, message));
+        }
+    }
+
+    /// <summary>
+    ///     <c>DWARF088</c> for a <c>[MapProperty]</c> or <c>[MapIgnore]</c> written on a MEMBER of a
+    ///     <c>[DwarfMapper]</c> class (TASKS.md <c>B18</c>). Every form is reported, not just the
+    ///     member-placement overloads, because at this placement every form is inert: the mapper's own
+    ///     property or field belongs to neither type of any mapped pair, so there is nothing for the directive
+    ///     to bind to and nothing downstream ever asks.
+    ///     <para>
+    ///         The remedy DIFFERS by form and is stated per form. A member-placement overload was aimed at the
+    ///         wrong KIND of type — it belongs on a member of a <c>[MapTo]</c> source or a <c>[GenerateMap]</c>
+    ///         host, where the annotated type declares its own mapping. A class- or method-placement overload
+    ///         was aimed at the right kind of type and the wrong SYMBOL — it belongs on the mapper class or on
+    ///         one of its mapping methods, both of which read it.
+    ///     </para>
+    ///     <para>
+    ///         Not called on the separate-emit path. There the annotated type is a mapped type, its members
+    ///         ARE read (<c>ReadCoLocatedHostDirectives</c>, A4), and misplacement there is <c>DWARF089</c>'s
+    ///         question rather than this one. Reporting both would name one mistake twice.
+    ///     </para>
+    /// </summary>
+    private static void ReportDirectivesOnMapperMembers(
+        INamedTypeSymbol classSymbol, List<DiagnosticInfo> diagnostics)
+    {
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IPropertySymbol { IsIndexer: false }
+                && member is not IFieldSymbol { IsImplicitlyDeclared: false })
+                continue;
+
+            foreach (var attr in member.GetAttributes())
+            {
+                var cls = attr.AttributeClass?.ToDisplayString();
+                var isProperty = cls == KnownNames.MapPropertyFqn;
+                var isIgnore = cls == KnownNames.MapIgnoreFqn;
+                if (!isProperty && !isIgnore) continue;
+
+                // The member-placement overloads are [MapProperty("source")] (arity 1) and [MapIgnore] (arity
+                // 0); everything else on these two attributes is a class/method form.
+                var memberForm = isProperty
+                    ? attr.ConstructorArguments.Length == 1
+                    : attr.ConstructorArguments.Length == 0;
+                var written = isProperty ? "[MapProperty]" : "[MapIgnore]";
+
+                var message =
+                    $"{written} on '{classSymbol.Name}.{member.Name}' is read by nothing. This member belongs "
+                    + "to the MAPPER, not to either type of any pair it maps, so no resolution step ever looks "
+                    + "at it — the directive is inert and the mapping is exactly what it would be without it. "
+                    + (memberForm
+                        ? "This is the MEMBER-placement overload, where THE ANNOTATED MEMBER is the thing "
+                          + "named: it belongs on a member of a [MapTo] source or a [GenerateMap] host, where "
+                          + "the annotated type declares its own mapping. To say it here, name the "
+                          + "destination and move it to the mapper class or to a mapping method: "
+                          + (isProperty
+                              ? "[MapProperty(\"<source>\", \"<destination>\")]."
+                              : "[MapIgnore(\"<destination>\")].")
+                        : "This overload IS the one the mapper reads — but only from the mapper CLASS or from "
+                          + "one of its mapping METHODS. Move it to either.");
+
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.MemberFormDirectiveOnMapper,
+                    member.Locations.FirstOrDefault() is { } loc ? LocationInfo.From(loc) : null,
+                    message));
+            }
         }
     }
 

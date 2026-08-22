@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests;
@@ -239,17 +240,22 @@ public sealed class CoLocatedHostMemberDirectiveTests
     ///     and hooks, not destination members. Nothing here may be read as a directive — which is what makes
     ///     it safe for the co-located path to read them at all.
     ///     <para>
-    ///         <b>The <c>DWARF089</c> assertion is the claim; the absence of any other diagnostic is NOT.</b>
-    ///         A member-form directive on a member of a <c>[DwarfMapper]</c> class is reported by nothing at
-    ///         all today — <c>DWARF088</c> is raised off the class and method symbols, never off a member —
-    ///         so this shape is swallowed. That swallow PREDATES this reader and no cell of the surface
-    ///         matrix measures it; it is recorded as <b>B18</b> rather than fixed here, because fixing it
-    ///         would move a cell nobody is watching. This test pins the boundary, not that silence: read the
-    ///         two assertions as "the co-located reader did not reach into mode 1", and nothing more.
+    ///         <b>INVERTED 2026-08-23 (B18), and the old remarks asked for exactly this.</b> They said the
+    ///         absence of any other diagnostic was NOT a claim: a member-form directive on a member of a
+    ///         <c>[DwarfMapper]</c> class was reported by nothing at all, because <c>DWARF088</c> was raised
+    ///         off the class and method symbols and never off a member, and the shape was recorded as
+    ///         <b>B18</b> rather than fixed then. It is fixed now, so the silence this test declined to bless
+    ///         is gone and the assertion is the other way round: <c>DWARF088</c> is REPORTED, and because it
+    ///         is an Error the class is refused rather than generated.
+    ///     </para>
+    ///     <para>
+    ///         The boundary itself is unchanged and is still what this test is for: the co-located reader
+    ///         must not reach into mode 1, so the id is <c>DWARF088</c> (a directive the mapper does not read)
+    ///         and NOT <c>DWARF089</c> (a host directive that cannot be placed). Both are asserted.
     ///     </para>
     /// </summary>
     [Fact]
-    public void A_DwarfMapper_class_declaring_a_pair_does_not_read_its_own_members()
+    public void A_DwarfMapper_class_declaring_a_pair_refuses_a_directive_on_its_own_member()
     {
         const string src = Src + """
 
@@ -263,8 +269,81 @@ public sealed class CoLocatedHostMemberDirectiveTests
                                  }
                                  """;
         var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+
+        // The co-located reader did not reach into mode 1 — that is still the boundary this test pins.
         Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF089");
-        Assert.Contains("Full = src.Full", generated, StringComparison.Ordinal);
+
+        // B18: the placement is refused instead of swallowed, and the message says WHY it is inert here.
+        var d088 = diagnostics.Where(d => d.Id == "DWARF088").ToList();
+        Assert.True(d088.Count == 1,
+            $"expected one DWARF088 for [MapIgnore] on the mapper's own member; got {d088.Count}. "
+            + "B18: this placement used to be reported by nothing at all.");
+        Assert.Contains("Mappers.Scratch", d088[0].GetMessage(CultureInfo.InvariantCulture),
+            StringComparison.Ordinal);
+        Assert.Equal(DiagnosticSeverity.Error, d088[0].Severity);
+
+        // DWARF088 is an Error, so the class is refused — the [GenerateMap] pair is not emitted either.
+        Assert.DoesNotContain("Full = src.Full", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The other side of B18's boundary, and the reason the check is skipped on the separate-emit path:
+    ///     on a real <c>[GenerateMap]</c> host the annotated type IS a mapped type, so its members ARE read
+    ///     (A4) and reporting them would name a working feature as a mistake. Asserted here rather than
+    ///     assumed, because "skipped on that path" and "never reached on that path" look identical until one
+    ///     of them is wrong.
+    /// </summary>
+    [Fact]
+    public void A_directive_on_a_real_GenerateMap_host_member_is_read_and_not_reported()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class HostSrc { public int A { get; set; } public int B { get; set; } }
+            [GenerateMap<HostSrc, HostDst>]
+            public partial class HostDst
+            {
+                [MapIgnore] public int B { get; set; }
+                public int A { get; set; }
+            }
+            """;
+        var (diagnostics, generated) = GeneratorTestHarness.Run(src);
+
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF088");
+        Assert.NotEmpty(generated);
+    }
+
+    /// <summary>
+    ///     B18's second shape, which the row named only in passing and which is the same silence: the
+    ///     CLASS/METHOD-placement overload written on a mapper member. It is the form the mapper really does
+    ///     read — from the class or from a mapping method — and on a member it was inert too, with the
+    ///     completeness gate then demanding the member the caller believed they had excluded. The remedy in
+    ///     the message differs accordingly: move it, do not rewrite it.
+    /// </summary>
+    [Fact]
+    public void The_class_form_written_on_a_mapper_member_is_refused_with_a_move_it_remedy()
+    {
+        const string src = """
+            using DwarfMapper;
+            namespace Demo;
+            public class MSrc { public int A { get; set; } }
+            public class MDst { public int A { get; set; } public int B { get; set; } }
+            [DwarfMapper]
+            public partial class MoveMe
+            {
+                [MapIgnore("B")] public string Scratch { get; set; } = "";
+                public partial MDst Map(MSrc s);
+            }
+            """;
+        var (diagnostics, _) = GeneratorTestHarness.Run(src);
+
+        var d088 = diagnostics.Single(d => d.Id == "DWARF088");
+        var message = d088.GetMessage(CultureInfo.InvariantCulture);
+        Assert.Contains("MoveMe.Scratch", message, StringComparison.Ordinal);
+        Assert.Contains("Move it to either", message, StringComparison.Ordinal);
+
+        // And the proof that it really was inert: B is still unmapped, so completeness still complains.
+        Assert.Contains(diagnostics, d => d.Id == "DWARF001");
     }
 
     /// <summary>
