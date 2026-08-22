@@ -96,17 +96,24 @@ public static class PinnedCorpus
     /// <summary>
     ///     The first smoke sample's REAL FINDING (2026-08-22, CsCheck-shrunk, then minimized by probe —
     ///     filed as TASKS.md I5): a collection-wrapped nullable element whose source element type is a user
-    ///     STRUCT needing an element map. The generator is silent and emits
+    ///     STRUCT needing an element map. The generator was silent and emitted
     ///     <c>__DwarfMap_Obj_S_D(__item)</c> with <c>__item</c> of type <c>S?</c> — CS1503 in code the
-    ///     consumer cannot edit. Measured: every CollShape wrapper diverges (List/Array/IReadOnlyList/
-    ///     HashSet/Dictionary); class elements, non-nullable struct elements and non-collection nullable
-    ///     struct members are all fine; the trigger is the SOURCE side (struct source × class dest still
-    ///     diverges, class source × struct dest does not). Expected-divergent until I5 is fixed; the
-    ///     matching sampled-space exclusion lives in TypeGraphGen and dies with this pin.
+    ///     consumer cannot edit, measured for every CollShape wrapper (List/Array/IReadOnlyList/HashSet/
+    ///     Dictionary).
+    ///     <para>
+    ///     <b>FIXED 2026-08-23 (round 23 N1), and the row stays</b> — it has flipped from pinning the
+    ///     divergence (<c>KnownSilentCsIds: ["CS1503"]</c>) to pinning the CORRECT behaviour under the
+    ///     normal must-compile contract, which is what the K0/K1 sweep now enforces on it. Its runtime
+    ///     counterpart — a null element in yields a null element out, across every wrapper and both
+    ///     destination element kinds — is
+    ///     <c>DifferentialOracleTests.I5_nullable_struct_element_lifts_null_to_null…</c>. The matching
+    ///     sampled-space exclusion in <c>TypeGraphGen</c> died in the fixing commit, so the shape is now
+    ///     reachable by sampling as well as by this pin.
+    ///     </para>
     /// </summary>
     public static CorpusRow NullableStructElementMap { get; } = new(
         "I5-nullable-struct-element-map",
-        "List<S?> -> List<D?> with struct S needing an element map: silent CS1503 (TASKS.md I5)",
+        "List<S?> -> List<D?> with struct S needing an element map: lifts null -> null (TASKS.md I5, fixed)",
         new GraphSpec(
             [
                 new NodeSpec("S0", TypeKind.Class,
@@ -122,8 +129,36 @@ public static class PinnedCorpus
                     [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
                     BaseRef: null)
             ],
-            "S0", "D0"),
-        KnownSilentCsIds: ["CS1503"]);
+            "S0", "D0"));
+
+    /// <summary>
+    ///     I5's RE-KINDED half, pinned separately because it is the cell the CS1503 pin above could not
+    ///     see: the same nullable struct element, but the mirrored destination element is a CLASS. Before
+    ///     the fix this cell resolved through the nullable-source branch instead — <c>?? throw</c> composed
+    ///     with the element map — so it would have started COMPILING and started THROWING the moment the
+    ///     element loop learned to honour its null handling. Pinning it keeps the two halves of the same
+    ///     fix from drifting apart: both must lift, and the destination element (<c>D1?</c>, a nullable
+    ///     reference) can hold the null in this one exactly as <c>Nullable&lt;D1&gt;</c> can in the other.
+    /// </summary>
+    public static CorpusRow NullableStructElementRekindedDest { get; } = new(
+        "I5-nullable-struct-element-rekinded-dest",
+        "List<S?> -> List<D?> with struct S and CLASS D: lifts null -> null (TASKS.md I5, fixed)",
+        new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.List, 1)],
+                    BaseRef: null),
+                new NodeSpec("S1", TypeKind.Struct,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.List, 3)],
+                    BaseRef: null),
+                new NodeSpec("D1", TypeKind.Class,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null)
+            ],
+            "S0", "D0"));
 
     /// <summary>
     ///     K1's mandated refusal pin: a destination member with NO source counterpart hits the product's
@@ -161,26 +196,37 @@ public static class PinnedCorpus
     ///     although the destination member (<c>D1?</c>) is nullable-capable and the lossless emission
     ///     exists next door (the NullableProject ternary used by the same-kind diagonal, which the probe
     ///     measured lifting correctly: Struct→Struct and Class→Class both propagate null). Undocumented —
-    ///     the <c>NullStrategy</c> doc row covers "nullable-value source → NON-nullable target" only. The
-    ///     compile contract here is the NORMAL one; the runtime divergence itself is pinned red-on-fix in
-    ///     <c>DifferentialOracleTests.I7_pinned_runtime_divergence…</c>, and the matching sampled-space
-    ///     exclusion in TypeGraphGen is keyed to these rows and dies with them.
+    ///     the <c>NullStrategy</c> doc row covered "nullable-value source → NON-nullable target" only.
+    ///     <para>
+    ///     <b>FIXED 2026-08-23</b> — this half with the shared nullable-capable-target gate in round 23 N1,
+    ///     the reverse half in N2. The row stays and its contract is unchanged (it always compiled clean);
+    ///     what moved is the RUNTIME expectation, now
+    ///     <c>DifferentialOracleTests.I7_pinned_corpus_rows_lift_null_to_null</c> plus the full six-cell
+    ///     kind-pair table beside it. The sampled-space exclusion keyed to these rows died in N2, so the
+    ///     shape is reachable by sampling again — on this side. The other side is not, and says so below.
+    ///     </para>
     /// </summary>
     public static CorpusRow NullableRekindValueToReference { get; } = new(
         "I7-nullable-rekind-value-to-reference",
-        "S1? plain member, struct S1 -> class D1: runtime throw on null instead of null->null (TASKS.md I7)",
+        "S1? plain member, struct S1 -> class D1: lifts null -> null (TASKS.md I7, fixed)",
         PlainNullableRekindPair(TypeKind.Struct, TypeKind.Class));
 
     /// <summary>
-    ///     I7's reverse genre, same filing: reference-kind source × value-kind dest throws
+    ///     I7's reverse genre, same filing: reference-kind source × value-kind dest threw
     ///     "Cannot map a null 'global::T.S1' to value-type 'global::T.D1'." although the destination
-    ///     member is <c>Nullable&lt;D1&gt;</c> and could hold the null. Unreachable in sampling only
-    ///     because the oracle population never nulls reference members (a DECLARED bias) — pinned here so
-    ///     the genre has a deterministic executor anyway.
+    ///     member is <c>Nullable&lt;D1&gt;</c> and could hold the null — the throw came from INSIDE the
+    ///     synthesized helper, whose value-type return leaves it no way to answer null, so only the call
+    ///     site could fix it (<c>NullHandling.NullableProjectRef</c>, round 23 N2).
+    ///     <para>
+    ///     Still unreachable in SAMPLING, and deleting the I7 exclusion did not change that: the reason is
+    ///     the oracle population's DECLARED bias against nulling reference members, a property of the
+    ///     oracle rather than of the product. This row's deterministic executor is therefore the only
+    ///     coverage the genre has, and must not be retired on the grounds that sampling now reaches I7.
+    ///     </para>
     /// </summary>
     public static CorpusRow NullableRekindReferenceToValue { get; } = new(
         "I7-nullable-rekind-reference-to-value",
-        "S1? plain member, class S1 -> struct D1: runtime throw on null instead of null->null (TASKS.md I7)",
+        "S1? plain member, class S1 -> struct D1: lifts null -> null (TASKS.md I7, fixed)",
         PlainNullableRekindPair(TypeKind.Class, TypeKind.Struct));
 
     private static GraphSpec PlainNullableRekindPair(TypeKind sourceElement, TypeKind destElement)
@@ -288,6 +334,7 @@ public static class PinnedCorpus
         PartialFileSplitStructPair,
         RepresentationMirrorClassToStruct,
         NullableStructElementMap,
+        NullableStructElementRekindedDest,
         UnmappedDestinationMemberRefusal,
         NullableRekindValueToReference,
         NullableRekindReferenceToValue,

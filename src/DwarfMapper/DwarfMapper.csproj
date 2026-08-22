@@ -15,10 +15,28 @@
         <!-- PackageRequireLicenseAcceptance is set for all packages in Directory.Build.props. -->
         <!-- Deep-tier hook: every pack is validated against the latest published rc on nuget.org, so an
              accidental API break is caught at pack time. Intentional rc-phase breaks go into
-             ApiCompatSuppressions.xml with a reason, or bump the baseline. -->
+             CompatibilitySuppressions.xml with a reason, or bump the baseline.
+
+             DO NOT reintroduce <ApiCompatSuppressionFile>...</ApiCompatSuppressionFile> HERE. That is the
+             property-vs-item trap (round 23, I15): the SDK reads ApiCompatSuppressionFile as an ITEM, not
+             as a property — Microsoft.NET.ApiCompat.ValidatePackage.targets passes
+             SuppressionFiles="@(ApiCompatSuppressionFile)", and Microsoft.NET.ApiCompat.Common.targets
+             defaults that ITEM to $(MSBuildProjectDirectory)/CompatibilitySuppressions.xml (or to the
+             legacy PROPERTY $(CompatibilitySuppressionFilePath), if that one is set). A same-named
+             PROPERTY is simply never read: no warning, no error — the suppressions do not load and
+             `dotnet pack` fails on a break that IS suppressed on disk, three lines above. That is
+             precisely what shipped between round 21 and round 23, unnoticed because `dotnet pack` runs
+             in exactly one place, release.yml, on a version tag.
+
+             The file therefore sits at the SDK's DEFAULT name and needs no wiring at all — the remedy
+             with the fewest moving parts, and the only one that keeps the SDK's own remediation advice
+             working in place: the CP0006 message tells you to rebuild with
+             /p:ApiCompatGenerateSuppressionFile=true, which WRITES to that same default name. If a
+             non-default name is ever genuinely wanted, declare
+             <ItemGroup><ApiCompatSuppressionFile Include="..."/></ItemGroup> — an item, never a
+             property. -->
         <EnablePackageValidation>true</EnablePackageValidation>
         <PackageValidationBaselineVersion>1.0.2-rc.1</PackageValidationBaselineVersion>
-        <ApiCompatSuppressionFile>ApiCompatSuppressions.xml</ApiCompatSuppressionFile>
     </PropertyGroup>
 
     <!--

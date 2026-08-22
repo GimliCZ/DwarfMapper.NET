@@ -15,6 +15,198 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A `[MapProperty]` or `[MapIgnore]` written on a member of the mapper class was swallowed.** `DWARF088` was
+  raised off the mapper class and off each mapping method, never off a **member** of the mapper — so the one
+  placement left was silent, and a caller who annotated a property or field of their `[DwarfMapper]` type got
+  no binding, no exclusion, and no word about it. That member belongs to the mapper, not to either type of any
+  pair it maps, so **every** form is inert there: the class/method form too, which then left the completeness
+  gate demanding the member the caller believed they had excluded. All forms are now reported as `DWARF088`,
+  with the remedy that fits the form — the member-placement overloads were aimed at the wrong *kind of type*
+  (they belong on a `[MapTo]` source or a `[GenerateMap]` host), while the class/method overloads were aimed at
+  the wrong *symbol* and only need moving. A directive on a member of a real `[GenerateMap]` host is unchanged
+  and still read. **`DWARF088` is an Error, so this can break a build that compiled before** — the directive
+  never did anything, so no mapping changes; what changes is that the build now says so.
+
+### Added
+
+- **`DWARF099` — one pair carries two contradicting `[MapNullSkip<TSource, TTarget>]` declarations (Error).**
+  The generic form is `AllowMultiple`, so `[MapNullSkip<Dto, Entity>(true)]` beside
+  `[MapNullSkip<Dto, Entity>(false)]` compiled clean and the reader returned the first by declaration order —
+  **source order decided whether a patch-merge mapper skips nulls**, and the discarded declaration was an
+  explicit, opposite statement of the caller's intent. It is an error rather than a warning because the two
+  have *identical* scope, so there is nothing to rank; the method-versus-pair contradiction stays
+  most-specific-wins, because those forms have different scopes and therefore a defensible ordering. Two
+  declarations that **agree** are still accepted in silence, and opposite values over *different* pairs are
+  the option working as designed. **This can break a build that compiled before** — the fix is to delete one
+  of the two.
+
+- **`DWARF098` — `[DwarfMapperConstructor]` names a constructor the mapper cannot use (Warning).** An
+  annotated constructor that is inaccessible, `[Obsolete]`, a copy constructor, or takes a `ref`/`out`
+  parameter is filtered out before selection runs, and the destination is then built exactly as it would be
+  with no annotation at all. That fallback is deliberate and unchanged — selecting the constructor would emit a
+  call the compiler rejects — so this reports rather than refuses. The message names the constructor and the
+  **specific** filter that rejected it, because the remedies differ; in particular `AllowNonPublic` rescues an
+  `internal` constructor and cannot rescue a `private` one. An **absent** annotation stays silent: nothing was
+  written, so nothing was discarded.
+
+### Fixed
+
+- **`Project` did not read `ImplicitConversions` at all, so the strictness gate was silently off at that
+  endpoint.** `ImplicitConversions = false` is the trust setting — a consumer turns it on to be told about
+  lossy conversions — and `long → double` was an **Error** through `.Map` and produced **no diagnostic at
+  all** through `.Project`, which then emitted the assignment. The projection pipeline now reports the same
+  `DWARF038`, from the same emitter, at the same severity: a Warning under the permissive default (the member
+  still maps, at both endpoints, to the same value) and an Error under `ImplicitConversions = false`. It is
+  deliberately **not** a `DWARF028` — that id means "a query provider cannot translate this", and a widening
+  cast is the most translatable thing there is; refusing it would make the permissive default reject a member
+  `.Map` happily maps. **Not a single character of generated code changes** — a provider that translated your
+  projection yesterday translates the identical expression today; what changes is that the build now breaks at
+  both endpoints or at neither. Reaches the plain member, the nested object, the collection element and the
+  constructor parameter.
+
+- **`ImplicitConversions = false` was silently off for every `Nullable<T>` member.** The strict setting is the
+  trust boundary — a consumer turns it on precisely to be told about lossy conversions — and a `Nullable<>`
+  wrapper took it off, three different ways. `long? → double?` and `long → double?` reported **nothing at any
+  severity**: the lossiness classifier read `Nullable<T>`'s own `SpecialType` and answered "not a numeric
+  type", while C# happily *lifted* the lossy conversion and the direct-assign path took it. `long? → double`
+  went down an unwrap-then-assign arm that asked no lossiness question at all. And every conversion recursion
+  that crossed a `Nullable<>` wrapper dropped the option back to its permissive default, so `long? → int?`
+  (narrowing) and `string → int?` (parse) — which *did* report — reported a **Warning** under
+  `ImplicitConversions = false` and the mapper was generated anyway. All four now answer exactly as the
+  unwrapped pair does, at both severities, in the class engine and in the `[MapTo]` registry (they share the
+  classifier). **Same-category widening stays silent, wrapped or not** (`int? → long?` is not a loss).
+  **This can break a build that compiled before** — that is the option doing what it promises; the remedy is
+  the one `DWARF038` already names, `[MapProperty(Use = nameof(...))]`.
+
+- **`[MapProperty(StringFormat = "…")]` emitted a `private static` helper that nothing called.** A format
+  string replaces the converter the member's conversion had already resolved to, and the replaced one stayed
+  in the synthesized-helper table, so every formatted member shipped a second, unreferenced
+  `__DwarfMap_FmtToStr_*` beside the `__DwarfMap_FmtStrF_*` that is actually used. No behaviour change — the
+  method was dead — but it was generated code in a file the consumer cannot edit. A helper another member
+  still needs is untouched, whichever side of the formatted member it is declared on.
+
+- **One incomplete mapping method took every other method on the mapper down with it.** A destination member
+  with no source is `DWARF001`, an Error, and an error suppressed the whole class — so a mapper declaring a
+  complete `MapGood` beside an incomplete `MapBad` generated **nothing**, and the consumer got one real error
+  plus a `CS8795` for every *other* partial method on the class, each pointing at code they had not broken.
+  Completeness is a promise about ONE method: it is evaluated over that method's `(source, target)` pair and
+  honours that method's own `[MapIgnore]` set — which is why `DWARF001`'s own text tells you to annotate *the
+  method*. Its unit of evaluation and its unit of remedy are both the method, so the refusal is now confined
+  to it: the incomplete method is withheld, everything else on the mapper is generated, and the one `CS8795`
+  that follows is signposted by the new `DWARF097`. **The build still fails** — `DWARF001` is unchanged and
+  still an Error — so no mapping that compiled before compiles differently now; what changes is that the
+  errors point only at what is actually wrong. This reaches the **create map**, the **update-into** map and
+  the **projection** (an unmapped member there is scoped exactly as an untranslatable one already was).
+  **Three shapes deliberately keep the whole-class kill.** A method that raises `DWARF001` *and* a
+  class-level error such as `DWARF010`. An incomplete **synthesized** pair — a nested or element pair is
+  mapped through a helper shared by every route that reaches it, so its incompleteness is true of each of
+  them and pinning it on one method would be wrong; that is why an incomplete element pair behind a span map
+  or an async-stream map still reports `DWARF078`. And an incomplete **`[GenerateMap]` pair**, which is the
+  boundary of the whole rule: withholding a method is only safe while its *declaration* survives. A `partial`
+  method is declared by you, so another method mapping a nested member through it still binds and the single
+  `CS8795` is the whole cost — but a `[GenerateMap]` pair has no declaration, and withholding it left a
+  sibling calling a method that does not exist (`CS0103`) in a file you cannot edit. Loud collateral beats
+  generated code that does not compile. (round 23, I17)
+
+- **`Project` ignored `NullCollections`, so a null source collection came back EMPTY through `Map` and
+  `null` through `Project`.** The option is documented once, for the mapper, with no endpoint qualifier —
+  *"Null source collection → `AsEmpty` (never throws)"* — and the projection pipeline never read it: it
+  emitted `__s.M == null ? null : …` whatever the mapper had configured, so the same member answered
+  differently depending on which method the caller reached for. It reads the option now, and computes the
+  effective answer with the **same predicate the runtime endpoint uses** — `AsNull` propagates the null only
+  when the destination member can hold it, and degrades to `AsEmpty` when it cannot — so the two endpoints
+  agree in a `#nullable`-annotated context and in a nullable-oblivious one alike. The null arm is chosen per
+  translatable target kind so both arms of the conditional share one static type and no cast appears:
+  `new List<T>()` against `ToList`, `Array.Empty<T>()` against `ToArray`, `Enumerable.Empty<T>()` against
+  the lazy `Select`. **This changes behaviour for existing projections**: a consumer reading `null` out of a
+  projected collection member under the default now reads an empty collection, which is what the
+  documentation has always promised and what `Map` has always done. No ternary is added where none existed —
+  the guard is still emitted only for a source member that may be null, so a correctly-annotated query gains
+  no construct its provider has to translate. (round 23, I19)
+
+- **A collection member whose `Count` is an explicit interface implementation emitted code that did not
+  compile.** The buffer pre-sizing predicate asked whether the source type *implements* `ICollection<T>` or
+  `IReadOnlyCollection<T>`, and then wrote `s.Count` as the `List<T>` capacity. Implementing an interface is
+  not exposing a member: `ImmutableArray<T>` implements both **explicitly**, and so can any user type —
+  reference types included, so this was never confined to structs. The emitted `s.Count` did not bind, in
+  two ways. In the generated file as written, with no `using` directives, it is **`CS1061`** — a clean
+  break. In a consumer project with implicit usings on, `System.Linq` is in scope, `s.Count` binds to the
+  extension **method group**, the capacity overload stops matching and overload selection quietly moves to
+  a different `List<T>` constructor — **`CS1503`**. The predicate is now a member lookup: a public instance
+  `int Count`, else a public instance `int Length`, following C# hiding rules, so `ImmutableArray<T>` still
+  pre-sizes (from `Length`) and a type that exposes neither simply does not. Interfaces and type parameters
+  keep the interface reading, because ordinary member lookup on those really does see a base interface's or
+  a constraint's `Count` — a source member declared `IReadOnlyCollection<T>` pre-sizes exactly as before.
+  The class engine and the dictionary engine ask the same question and were fixed with it: the dictionary's
+  `new Dictionary(src.Count)` carried its own copy of the interface test. No generated output changes for
+  any type that really exposes `Count`. (round 23, N3/B28)
+- **A nullable element over a value-type source emitted code that did not compile, and the generator said
+  nothing.** `List<S?> → List<D?>` — and `T[]`, `IReadOnlyList<T>`, `HashSet<T>`, a dictionary value, every
+  wrapper measured — where the element pair `S → D` needs a synthesized element map and `S` is a struct or
+  record struct: the emitted loop handed the element helper an `S?` where it takes an `S`, which is
+  **`CS1503`** in a file the consumer cannot edit, with no DwarfMapper word anywhere. The element loops (and
+  the dictionary key/value loop next to them) ignored the element's null handling entirely whenever a
+  converter was present, so *no* value of that decision reached the emitted element. They now compose the
+  two, and the composition follows the destination rather than the source's kind: **an element the
+  destination can hold a null in lifts — null element in, null element out** — and one it cannot keeps the
+  documented `NullStrategy` unwrap. The same widening settles a sibling the element loops share their
+  resolver with: a plain nested member `S? → D?` used to lift only when the *mirrored* type happened to be
+  a struct too, and threw `"Source member 'X' was null"` when the same member's destination was declared a
+  class or a record — a decision no caller could predict from the types, and one the documented
+  `NullStrategy` sentence never covered (it governs nullable-value source into a **non-nullable** target).
+  All four value-kind→reference-kind cells now lift like the diagonals always did. **This changes behaviour
+  for code that today receives an exception**: an `InvalidOperationException` caught or relied on as a guard
+  at one of these members stops arriving, and a null arrives at a destination whose declared type already
+  accepts one. The shapes on the collection side emitted nothing that compiled, so no consumer can depend on
+  those. (round 23, N1/I5)
+- **A null nested value threw instead of arriving as a null, whenever the destination type was declared a
+  different kind from the source's.** With the entry above, this completes the rule: `S1? M → D1? M` now
+  lifts `null → null` for **all six** kind pairs, so the behaviour of a member follows what its destination
+  can hold and not how the two types happen to be declared. The last one to move is the reverse of the
+  entry above — a possibly-null **reference** source into a `Nullable<D1>` destination, which threw
+  `"Cannot map a null 'S1' to value-type 'D1'."` from *inside* the generated helper. That helper returns a
+  value type, so it has no way to say "null"; the call site is the only place that can, and it now tests
+  first: `s.M is null ? null : Helper(s.M)`. The two diagonals that always worked are unchanged, and were
+  measured before and after rather than assumed. **This changes behaviour for code that today receives an
+  exception** — same shape of change as the entry above, and equally bounded: the destination member's
+  declared type already accepts the null it now receives. `docs/options.md` states the rule the
+  `NullStrategy` row had only half of: that option governs a nullable-value source into a **non-nullable**
+  target; where the target can hold the null, the null is lifted regardless of the setting, across nested
+  pairs and per element of a collection or dictionary. (round 23, N2/I7)
+- **The same nested member lifted through `.Map` and took the whole mapper down through `.Project`.** Completing
+  the two entries above at the *other* endpoint: `S1? M → D1? M` across a re-kinded pair projected only when
+  the two types were declared the same kind. `struct → class`, `struct → record` and
+  `record struct → class` were refused with `DWARF028` *"a nullable source mapped to a non-nullable target"* —
+  wrong on its own terms, since the target `D1?` **is** nullable, only not a `Nullable<U>` — and
+  `class → struct` with *"no translatable conversion found"*. Because `DWARF028` is an **error**, and an error
+  suppressed the whole class, a mapper declaring both a `Map` and a `Project` over such a pair generated
+  **nothing at all**: the consumer lost every method, not just the projection. The projection resolver now asks
+  the same question the runtime one does — can the destination **hold** the null? — and emits the lift it
+  already had the vocabulary for: `__s.M.HasValue ? new D1 { … } : null` for a value-typed source, and
+  `__s.M == null ? null : (D1?)(new D1 { … })` for a reference one. All six kind pairs now project, run and
+  agree with `.Map`, diagonals included; a collection of them (`List<S1?> → List<D1?>`) projects through the
+  same widening. What is still refused is a target that genuinely **cannot** hold the null, and the message says
+  that instead of naming the kind. (round 23, I14)
+- **One untranslatable projection member stopped a mapper from generating *anything*.** The cascade behind the
+  entry above, and it outlives it: a `HashSet` target, a `Use =` converter, a hook, `ReferenceHandling` — any
+  `DWARF028` at all — suppressed the entire class, so every `Map` method on it lost its implementing part and
+  the build filled with `CS8795`, with `DWARF078` announcing that nothing had been generated. The `Map` methods
+  were collateral: nothing about them is translated by a query provider, so nothing about them can fail to
+  translate. A projection refusal is now scoped to the method that carries it. The `Project` method is dropped
+  (a projection missing the members that did not resolve would return them silently unset), the class is emitted
+  with its `Map` methods — which keep their facade extensions, DI registration and ambient-registry entries —
+  and exactly **one** `CS8795` follows, signposted by the new `DWARF096` instead of `DWARF078`. Class-level
+  errors are unchanged: an ambiguous member or an unknown destination still suppresses everything, because those
+  describe a model the emitter cannot trust. (round 23, I14)
+- **A nullable object source projected into a value-type nested target emitted code that did not compile.**
+  Found by I14's sibling hunt, not by sampling. `class Src { Nested? N }` → `class Dst { NestedStruct N }`
+  through `Project` emitted `__s.N == null ? null : new NestedStruct { … }` — two arms with no common type,
+  which is **`CS0037`** in a file the consumer cannot edit, with no DwarfMapper word anywhere. The nested-object
+  resolver guarded on whether the *source* could be null without asking whether the *target* could hold the
+  result. It now asks, and refuses with `DWARF028` naming the value-type target: the link needs a null decision,
+  `.Map` answers it with `NullStrategy`, and `NullStrategy` is precisely what an expression tree cannot express.
+  A nullable-annotated **reference** target keeps the long-standing conditional — it can hold the null.
+  (round 23, I14)
 - **A constructor-only NESTED type reached the compiler as `CS1729` out of a generated `[MapTo]` file.**
   `DWARFR09` guarded the `[MapTo]` target and nothing else, but the registry constructs a second kind of
   type with `new T { … }`: every nested object — and, through the collection path, every element type. A
@@ -352,6 +544,27 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF097` — the per-method twin of `DWARF078` for the `Map` endpoints (Warning).** Reported when one
+  mapping method was not generated because a destination member of it has no source, and the rest of the
+  mapper was. `DWARF078` says *"no code was generated for this mapper"*, which used to be true of a
+  completeness failure and is not any more: the class is emitted, every other method with it, and exactly one
+  `CS8795` follows on the withheld method (none at all when it is declared without accessibility modifiers,
+  which C# allows to have no implementing part — there this warning is the only thing you see). That single `CS8795` needs the same signpost the class-wide wall
+  has always had — it is a cascade, not a missing analyzer reference — and it needs different remedy text from
+  `DWARF096`, which can suggest dropping the `Project` method and mapping at runtime: nonsense advice for a
+  `Map` method whose destination simply has a member nobody mapped. Suppressible like any warning; it never
+  appears beside `DWARF078`, because when a class-level error takes the class down anyway the scoped signpost
+  stands down rather than claim a scope that is no longer true. (round 23, I17)
+
+- **`DWARF096` — the per-method twin of `DWARF078` (Warning).** Reported when one `Project` method was not
+  generated because a member of it cannot be translated, and the rest of the mapper was. `DWARF078` says
+  *"no code was generated for this mapper"*, which used to be true of a projection refusal and is not any more:
+  the class is emitted, its `Map` methods with it, and exactly one `CS8795` follows on the dropped `Project`.
+  That single `CS8795` needs the same signpost the class-wide wall has always had — it is a cascade, not a
+  missing analyzer reference — and `DWARF078` could no longer supply it without lying about the scope. A
+  Warning, like `DWARF078`, and for the same reason: the `DWARF028` above it is the error and the thing to fix.
+  The two never appear together: if another method on the same class also has an error, nothing is generated
+  after all, so this one's claim would be false and it stands down in favour of `DWARF078`. (round 23, I14)
 - **`DWARF090` — a member directive that the element-wise endpoints cannot apply.** The generalization of
   `DWARF077`, and the same root cause: a span map or an async-stream map resolves no members of its own. It
   maps the *element* pair through a mapper synthesized per `(source, target)` and shared by every route that

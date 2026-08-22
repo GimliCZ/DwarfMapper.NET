@@ -323,18 +323,23 @@ public class MetamorphicTests
     ///     Half of MR-3's input design (<see cref="Normalize" /> is the whole of it; the set half is
     ///     <see cref="ListifySetsOfStructuralElements" />): nested-member nullability is cleared before
     ///     re-kinding, for three distinct
-    ///     load-bearing reasons, each keyed to its evidence. (1) <b>I5</b> — a struct-kind re-kind of a
-    ///     nullable collection ELEMENT is the pinned silent-CS1503 miscompile
-    ///     (<c>PinnedCorpus.NullableStructElementMap</c>); the relation must not walk into a divergence
-    ///     that is already pinned deterministically. (2) <b>Population parity</b> — a nullable member over
+    ///     load-bearing reasons, each keyed to its evidence. (1) <b>I5 — RETIRED 2026-08-23 (round 23 N1).</b>
+    ///     A struct-kind re-kind of a nullable collection ELEMENT used to be the pinned silent-CS1503
+    ///     miscompile, so the relation was kept out of a divergence that was already pinned deterministically;
+    ///     the product now lifts and <c>PinnedCorpus.NullableStructElementMap</c> pins the lift, so this
+    ///     reason no longer holds anything up on its own. (2) <b>Population parity</b> — a nullable member over
     ///     a value-kind node is <c>Nullable&lt;T&gt;</c> at runtime (nulled ~25% by the populator), while
     ///     over a reference-kind node the annotation is erased and the oracle's DECLARED bias never nulls
     ///     it; the variants would receive DIFFERENT inputs and the relation would compare populations, not
-    ///     mappings. (3) <b>I7</b> — null across nested pairs is the pinned undocumented-throw family;
-    ///     its coverage lives in the I7 pins and K1's sampling, not here. Scalar nullability stays: a
+    ///     mappings. (3) <b>I7 — RETIRED 2026-08-23 (round 23 N1/N2).</b> Null across nested pairs used to
+    ///     be the undocumented-throw family; all six kind-pairs lift now and their coverage lives in the I7
+    ///     pins and K1's sampling, not here. Scalar nullability stays: a
     ///     <c>Nullable&lt;int&gt;</c> populates identically under every kind. The nullable-NESTED axis is
     ///     therefore a DECLARED exclusion of this relation (this remark is the declaration), not a silent
-    ///     one — it dies with the I5/I7 pins.
+    ///     one. With reasons (1) and (3) retired it rests on (2) ALONE — which is enough, and is the
+    ///     durable one: reason (2) is a property of the ORACLE's population bias, not of the product, so no
+    ///     product fix can retire it. If the populator ever nulls reference members, re-derive this
+    ///     normalizer from scratch rather than assuming it is still needed.
     /// </summary>
     private static GraphSpec ClearNestedNullability(GraphSpec graph)
     {

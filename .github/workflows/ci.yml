@@ -1,6 +1,6 @@
 # Actions are pinned to full commit SHAs (CRA/SLSA supply-chain hardening); the trailing `# vN` is the
 # human-readable version. When bumping a version, update BOTH the SHA and the comment.
-name: ci
+name: CI
 on:
   push:
     branches: [ main, master ]
@@ -291,6 +291,17 @@ jobs:
       # this step makes that contract a checked CI invariant for every leg instead of a ledger sentence.
       - name: Assert the tracked tree survived the leg
         run: git diff --exit-code
+      # ...and the UNTRACKED half of the same contract (I4). bin/ is git-ignored, so the step above is
+      # blind to the mutated DwarfMapper.Generator.dll copies Stryker plants in analyzer-referencing test
+      # bins — it backs up only files it OVERWRITES, and those bins hold no pre-run copy (analyzer-only
+      # reference, no CopyLocal), so no *.stryker-unchanged marker is written and restore never touches
+      # them. The next incremental build keeps the mutant. Runs the SAME function housekeeping's three
+      # legs call, dot-sourced rather than re-implemented, so the two cannot drift.
+      - name: Assert no mutated product binary survived the leg
+        shell: pwsh
+        run: |
+          . ./scripts/gate-checks.ps1
+          Assert-NoMutatedProductBinaries -Leg '${{ matrix.leg }}' -Root (Get-Location).Path
       # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
       # only thing that distinguishes a real regression from a re-classification.
       - if: always()
@@ -501,3 +512,407 @@ jobs:
         with:
           name: sbom
           path: ./sbom
+
+  # ── Reproducible-build verification (round-23 S4) ─────────────────────────────────────────────────────
+  # Packs the SHIPPED packages twice from the same commit, wiping every build output in between, and
+  # compares them ENTRY BY ENTRY. The repo already claims a CRA-defensive supply chain — CycloneDX SBOM,
+  # SLSA build-provenance attestation, SHA256SUMS on every release — and an attestation over bytes nobody
+  # can regenerate is a claim without a check. This leg is that check.
+  #
+  # WHAT IT ACTUALLY FOUND, measured 2026-08-22 on Windows at 81c4ace before this job existed (the same
+  # two-pack protocol this job runs): the whole-file SHA-256 of every .nupkg/.snupkg DIFFERS on every
+  # pack, and every build-produced entry inside them is BYTE-IDENTICAL. The difference is entirely
+  # NuGet.Packaging's OPC envelope — the `<32 hex>.psmdcp` core-properties part is named after a fresh
+  # GUID each pack, and `_rels/.rels` names it back. DwarfMapper's own bytes reproduce; NuGet's envelope
+  # does not. scripts/repro-pack-check.py's header carries the full measurement and normalises exactly
+  # those two parts BY NAME, comparing their content — it is not a tolerance and it does not skip them.
+  #
+  # Deterministic-build inputs are already set repo-wide and were NOT added for this leg: Directory.Build
+  # .props sets Deterministic, ContinuousIntegrationBuild on '$(CI)' == 'true' (GitHub sets CI for every
+  # job, which also flips DeterministicSourcePaths and RestoreLockedMode), and EmbedUntrackedSources;
+  # Directory.Build.targets turns on the SDK's built-in SourceLink with snupkg symbols. The two packs run
+  # in the same directory, so PathMap/DeterministicSourcePaths differences cannot mask a real one either
+  # way — this leg asks "same inputs, same bytes?", not "same bytes from two different paths?", which is
+  # a strictly harder question nobody has asked yet and which is NOT claimed here.
+  #
+  # -p:EnablePackageValidation=false, with the reason: ApiCompat package validation is a SEPARATE existing
+  # gate that runs AfterTargets="Pack", it downloads the 1.0.2-rc.1 baseline from nuget.org (an external
+  # input a reproducibility leg should not depend on), and its red would mean "the API changed", not "the
+  # bytes moved" — the two must not be able to masquerade as each other. Those two reasons stand on their
+  # own and are why the flag stays. What is NO LONGER a reason: validation was also BROKEN when this job
+  # was written (I15 — `dotnet pack` exited 1 on an intentional suppression wired through a property the
+  # SDK never reads). I15 is fixed as of round 23 and `dotnet pack` is green on both packages, so this
+  # flag now hides nothing. Running validation somewhere nightly — rather than only at a version tag in
+  # release.yml — remains open; see I15's DONE row for why it was not folded into this job.
+  reproducible-build:
+    runs-on: ubuntu-latest
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ESTIMATE, not a measurement — this job has never run on a hosted runner (see the note at the top of
+    # this file about the nightly tier being dormant until master carries it). Local Windows 12-core at
+    # 81c4ace: one round of `git clean -xdf` + locked restore + pack of both packages = 22.0 s and 20.0 s
+    # (measured twice), so ~45 s for both rounds with a warm NuGet cache. A ~4-core hosted runner with a
+    # COLD package cache is the dominant cost: reckon ~2 min restore + ~2 min build/pack per round, ~9 min
+    # with SDK setup. Doubled -> 25. Replace this paragraph with the first real run's wall-clock.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      # ONE step for both rounds on purpose: if the two rounds' command lines could drift apart, the
+      # comparison would be measuring two different builds and calling the difference non-determinism.
+      # The output directories live under RUNNER_TEMP because `git clean -xdf` is what separates the
+      # rounds, and it would otherwise delete round A's packages along with the build outputs.
+      - name: Pack twice from the same commit, wiping every build output in between
+        run: |
+          set -euo pipefail
+          pack_round() {
+            local out="$1"
+            rm -rf "$out"
+            dotnet restore DwarfMapper.NET.sln --locked-mode
+            for proj in src/DwarfMapper/DwarfMapper.csproj src/DwarfMapper.Testing/DwarfMapper.Testing.csproj; do
+              dotnet pack "$proj" -c Release -o "$out" -p:EnablePackageValidation=false
+            done
+          }
+          pack_round "$RUNNER_TEMP/pack-a"
+          # -x removes ignored files (bin/, obj/, the lot); -d recurses into untracked directories. The
+          # tree must be exactly as checked out before round B, or round B is an incremental build and
+          # the comparison proves nothing about a clean one.
+          git clean -xdf
+          git status --porcelain
+          pack_round "$RUNNER_TEMP/pack-b"
+      - name: Compare the two packs entry by entry
+        run: python3 scripts/repro-pack-check.py "$RUNNER_TEMP/pack-a" "$RUNNER_TEMP/pack-b"
+      # Kept on failure only, same idiom as the mutation reports and the coverage report: a red here is a
+      # claim about specific bytes, and the reader needs the bytes.
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: repro-pack-packages
+          path: |
+            ${{ runner.temp }}/pack-a
+            ${{ runner.temp }}/pack-b
+
+  # ── Package-size ceiling (round-23 S6) ────────────────────────────────────────────────────────────────
+  # `dotnet pack` the two SHIPPED packages and fail if either is over its measured KB ceiling. The check
+  # itself, its measurement provenance and its failure message live in scripts/gate-checks.ps1
+  # (Assert-PackageSizeWithinCeiling) — dot-sourced here rather than re-implemented, the same reason the
+  # mutation matrix dot-sources Assert-NoMutatedProductBinaries: a CI copy of a gate is a gate that can
+  # drift from the one a maintainer runs locally.
+  #
+  # Ceiling = the measurement truncated to whole KB, raise-only-with-re-measure (invariant R1). It is a
+  # SECONDARY signal on purpose: ApiCompat package validation and PublicAPI.Shipped/Unshipped already
+  # guard the public surface, and size catches the class they structurally cannot — an embedded resource
+  # nobody meant to ship, a dependency that started landing in lib/, a duplicated analyzer.
+  #
+  # Its own job rather than a step inside `reproducible-build`, which already packs: a size red and a
+  # reproducibility red mean completely different things, and one job cannot report two verdicts. The
+  # cost of that choice is one extra nightly runner and one extra pack (~5 min estimated).
+  #
+  # -p:EnablePackageValidation=false for the same reasons spelled out on the reproducible-build job:
+  # validation is a separate gate with an external nuget.org input, and one job cannot report two
+  # verdicts. (It was ALSO broken when this job was written; I15 fixed that in round 23, so the flag no
+  # longer masks anything.)
+  package-size:
+    runs-on: ubuntu-latest
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ESTIMATE, not a measurement — never run on a hosted runner. Local Windows 12-core at 81c4ace: locked
+    # restore + pack of both packages = ~20 s with a warm NuGet cache. A ~4-core hosted runner with a cold
+    # cache is dominated by restore (~2 min) and the analyzer-heavy Release build (~2 min), ~5 min with SDK
+    # setup. Trebled -> 15. Replace this paragraph with the first real run's wall-clock.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - name: Pack the shipped packages
+        run: |
+          set -euo pipefail
+          for proj in src/DwarfMapper/DwarfMapper.csproj src/DwarfMapper.Testing/DwarfMapper.Testing.csproj; do
+            dotnet pack "$proj" -c Release -o "$RUNNER_TEMP/pack" -p:EnablePackageValidation=false
+          done
+      - name: Check the package-size ceilings
+        shell: pwsh
+        run: |
+          . ./scripts/gate-checks.ps1
+          Assert-PackageSizeWithinCeiling -PackageDir "$env:RUNNER_TEMP/pack"
+      # Kept on failure only: a ceiling red is a claim about a specific package's bytes, and diagnosing it
+      # means opening that package and finding what started shipping.
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-size-packages
+          path: ${{ runner.temp }}/pack
+
+  # ── Cross-platform nightly legs: windows-latest and macos-latest (round-23 S5) ────────────────────────
+  # Every ordinary leg of this workflow runs on ubuntu, and the only cross-OS coverage the repo has is
+  # aot-trim-gate's linux-x64/win-x64 publish matrix — which proves the AOT sample compiles and runs, not
+  # that the SUITE passes. Correctness is de-facto dual-platform (the maintainer develops on Windows, CI
+  # runs ubuntu), so this is cheap insurance rather than an expected discovery; macOS in particular buys
+  # little for a Roslyn source generator and is here because "little" is not "nothing" and the leg is
+  # nightly.
+  #
+  # NOT per-push, deliberately: runner cost and wall-clock. The plan's budget puts these at ~10 min each.
+  #
+  # NO `Category!=SurfaceMatrix` filter, unlike build-test and following deep-test's precedent instead:
+  # the nightly tier wants the whole population, the matrix is green and blocking now, and splitting it
+  # into a second cross-OS job to preserve the isolation argument would double the runner cost for a leg
+  # whose whole purpose is breadth.
+  #
+  # NO coverage gate here either: the floors are measured on one platform and enforced by deep-test. A
+  # second, differently-measured coverage number would be a second thing to keep in sync, and R1's
+  # "the floor equals the measurement" cannot mean two measurements at once.
+  #
+  # Locked-mode restore (via RestoreLockedMode on CI=true) is RID-agnostic and is EXPECTED to hold on both
+  # runners. If macOS ever reds with NU1004 while ubuntu stays green, that IS the finding — a platform-
+  # dependent resolved graph in a repo that commits its graphs — and it belongs in a ledger, not in an
+  # exemption.
+  cross-platform:
+    strategy:
+      # fail-fast off: "does it pass on Windows" and "does it pass on macOS" are two independent
+      # questions, and cancelling one because the other failed throws away half the answer.
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ESTIMATE, not a measurement — neither runner has ever run this. The local basis, measured 2026-08-22
+    # on Windows (12 cores) at 81c4ace: whole-solution Release build 13 s warm, suite 56 s for 6,987 tests
+    # with Category!=SurfaceMatrix (the matrix adds ~25 s, so ~81 s for the unfiltered run this leg does).
+    # A ~4-core hosted runner is ~3x on the build/test parts and pays a cold NuGet restore on top:
+    # reckon ~1 min SDK setup + ~2 min restore + ~3 min build + ~4 min test ≈ 10 min, which is also the
+    # plan's own budget figure. Doubled -> 20. Replace with the first real per-OS wall-clocks.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      # The ISSUE-038 drift assertion, per-runner. build-test proves the pin holds on ubuntu and says
+      # nothing about the other two images, which is precisely the gap this job exists to close.
+      # `shell: bash` is mandatory here: on windows-latest the default shell is pwsh and this is sh.
+      - name: Verify the installed SDK matches global.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' global.json)
+          actual=$(dotnet --version)
+          echo "global.json pins: $pinned"
+          echo "dotnet resolves:  $actual"
+          if [ "$pinned" != "$actual" ]; then
+            echo "::error::SDK drift on ${{ matrix.os }} — global.json pins $pinned but the runner" \
+                 "resolved $actual. Update global.json AND the dotnet-version in every setup-dotnet step" \
+                 "together."
+            exit 1
+          fi
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - run: dotnet build DwarfMapper.NET.sln -c Release --no-restore
+      # --blame-hang: the H7-f runner-level backstop, same rationale as in build-test. It matters more
+      # here, not less: a hang that only happens on one OS is exactly the kind of finding this leg is for,
+      # and without the dump it would present as an anonymous 20-minute timeout.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --blame-hang --blame-hang-timeout 5m
+
+  # ── .NET preview-SDK canary (round-23 S5) ─────────────────────────────────────────────────────────────
+  # A source generator's worst consumer-facing failure is "the new SDK refuses to load it". roslyn-forward-
+  # compat asks that question one 10.0.x patch ahead; this asks it one MAJOR ahead, on the .NET 11 preview
+  # channel (11.0.100-preview.7 was the published preview SDK when this leg was written).
+  #
+  # NON-BLOCKING ON PURPOSE, FOR NOW — a deliberate clone of roslyn-forward-compat's shape and of the
+  # discipline stated in its own comment. FLIP `continue-on-error` TO FALSE once this leg has been seen
+  # GREEN on pushed master, citing that run id in the flip commit; that is the Z3 precedent and it is the
+  # same obligation. A gate that cannot fail is decoration. Until then, understand what a red here means:
+  # it is INFORMATION about a future SDK, not a regression in this commit.
+  #
+  # It is expected to be red at first, and for a reason worth naming so nobody "fixes" it wrongly:
+  # Directory.Build.props sets TreatWarningsAsErrors with AnalysisLevel=latest-all and AnalysisMode=All,
+  # so every analyzer rule a new SDK ADDS arrives as a build error. That is a real forward-compat signal
+  # (a consumer on the preview SDK compiling our analyzers sees the same thing), but it is a different
+  # finding from "the generator will not load", and the diagnosis has to say which one it saw.
+  #
+  # NIGHTLY, not per-push: the preview channel moves under us continuously, so a per-push leg would turn
+  # its own churn into log noise on every PR while never being able to fail anything.
+  preview-sdk-canary:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    # ESTIMATE, not a measurement. Same local basis as the cross-platform leg (build 13 s, suite ~81 s
+    # unfiltered on a 12-core Windows box at 81c4ace) plus a preview-SDK download and a fully cold,
+    # UNPINNED restore. The plan budgets ~5 min; reckon ~12 min on a hosted runner and take 20 so the leg
+    # cannot die of its own download. Replace with the first real wall-clock.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: preview   # the point of the leg: the newest preview of the next major
+      - name: Drop the SDK pin for this job only, and PROVE a preview SDK is what we got
+        run: |
+          set -euo pipefail
+          rm -f global.json     # the working copy only; the committed pin is untouched
+          actual=$(dotnet --version)
+          echo "preview SDK resolved: $actual"
+          # The vacuity guard, and it is the whole reason this step exists rather than a bare
+          # `dotnet --version`: if setup-dotnet ever falls back to an installed 10.0.x, every step below
+          # still passes and the leg becomes a slow, green duplicate of build-test that proves nothing
+          # about the next major. Same failure genre as Assert-MutantsWereTested.
+          major=${actual%%.*}
+          if [ "$major" -lt 11 ]; then
+            echo "::error::preview canary resolved SDK $actual, major $major < 11 — this is not a" \
+                 "next-major SDK, so the leg would be a duplicate of build-test rather than a canary." \
+                 "Check whether the 11.0 preview channel still publishes, or bump dotnet-version." >&2
+            exit 1
+          fi
+      # Locked-mode note, inherited from roslyn-forward-compat verbatim in spirit: this leg runs an
+      # UNPINNED, newer-MAJOR SDK, whose package-prune data can change the resolved graph. If it reds with
+      # NU1004 while build-test stays green, that IS the diagnosis — SDK-driven graph drift, not a
+      # lock-file defect — and it is information this leg exists to surface, not noise to exempt.
+      - name: Build the whole solution on the preview SDK
+        run: dotnet build DwarfMapper.NET.sln -c Release
+      # Same exclusion as build-test and roslyn-forward-compat: the question here is whether the generator
+      # still LOADS and EMITS under the next major, and the matrix has its own job.
+      # --blame-hang: the H7-f backstop, same rationale as in build-test.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
+
+  # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2) ────────────────────────────
+  # Tracks the smoke run's MEAN TIMES across nightly runs and surfaces a regression. It must never fail a
+  # build, and the reason is not squeamishness — it is invariant R4. Wall-clock on a shared runner is a
+  # nondeterministic oracle, and this repository's own measurements say so twice over:
+  #
+  #   * the Dict-vs-Mapperly throughput figure is PLATFORM-DEPENDENT — 2.13x on Windows, ~1.14x on Linux
+  #     for the same benchmark (benchmarks/results/2026-08-11-dict-windows-rerun.md). The numbers this leg
+  #     collects are LINUX numbers and must NEVER be quoted as the Windows figures, in the README, in a
+  #     release note, or anywhere else. The 3.29x ALLOCATION lead is the platform-independent claim.
+  #   * the smoke is a ShortRun (1 launch, 3 warmup, 3 measured iterations — SmokeConfig in
+  #     benchmarks/DwarfMapper.Benchmarks/Program.cs), chosen because the ONLY numbers the deep tier gates
+  #     on are MemoryDiagnoser's allocated bytes, which are deterministic per SDK. Its timing column is
+  #     noisy by construction. Round-21 T8 already gates the deterministic half EXACTLY
+  #     (allocation-baseline.json, byte-for-byte, both directions).
+  #
+  # So the deterministic half is exactly pinned and the nondeterministic half is observed. That is the
+  # whole design, and no part of it may migrate into a per-PR gate.
+  #
+  # HOW "ALERT WITHOUT FAILING" IS WIRED, because the obvious spelling does not work. Reading
+  # github-action-benchmark v1.22.1's own dist: handleAlert() returns EARLY when both `comment-on-alert`
+  # and `fail-on-alert` are false, so with neither set the `alert-threshold` input is dead decoration and
+  # nothing compares anything. `comment-on-alert` needs a github-token and `contents: write` — an
+  # automated repo write this workflow deliberately does not take. So: `fail-on-alert: true`, which makes
+  # the threshold real, with `continue-on-error: true` ON THE STEP, which keeps the JOB and the workflow
+  # GREEN while the alert table lands in the log as an ignored step failure plus a job summary. Verified
+  # from the same source that the data file is written and the summary emitted BEFORE the alert throws
+  # (writeBenchmark() calls writeBenchmarkToExternalJson -> handleSummary -> handleAlert), so a regression
+  # does not freeze the baseline: the next night still compares against last night.
+  #
+  # The cost of that trick, stated rather than hidden: `continue-on-error` also swallows a genuine action
+  # error (a parse break, an upstream change). That is why the step BEFORE it is a plain deterministic
+  # check of the input file which DOES fail the job — absence and malformation are not nondeterministic
+  # measurements, and "the alert leg could not find its subject" must not read as "no regression".
+  # conformance-gate.sh fails on absence for exactly this reason.
+  #
+  # STORAGE: `external-data-json-path` + actions/cache, the action's own documented tokenless mode. NOT
+  # `auto-push` to gh-pages — an automated push is the one thing this repository does not do. The cache
+  # key rotates per run with a prefix restore-key, because a fixed key is never re-saved by actions/cache
+  # and the history would freeze at the first run. GitHub evicts cache entries unused for 7 days, so a
+  # week-long gap in the nightly loses the baseline; the action then reports no previous benchmark and
+  # alerts nothing, which is visible in the log and is the honest behaviour.
+  #
+  # THIRD-PARTY ACTION, maintenance status recorded per the pinning rule: benchmark-action/github-action-
+  # benchmark, tag v1.22.1 = 52576c92bccf6ac60c8223ec7eb2565637cae9ba, dated 2026-05-06 — the newest tag
+  # at the time of writing, ~3.5 months old, actively released. It is the only third-party action in this
+  # workflow that is not from actions/ or github/, and it runs with `permissions: contents: read` and no
+  # token, so its blast radius is the runner and the cache.
+  #
+  # It consumes deep-test's EXISTING `bench-smoke-results` artifact rather than re-running the suite: the
+  # smoke already costs ~6:40 nightly and running it twice to alert on it would be absurd. `needs:
+  # deep-test` (plain, not `always()`) is deliberate — if deep-test failed, the nightly is already red and
+  # this leg's input is untrustworthy; making the alert conditional on a successful producer keeps a red
+  # here meaning "the artifact contract broke".
+  bench-wall-time-alert:
+    runs-on: ubuntu-latest
+    needs: deep-test
+    # Redundant with the needs-skip above (a skipped dependency skips its dependents) and kept for the
+    # reader: this is a nightly leg, exactly like the job it consumes.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ESTIMATE, not a measurement — never run. An artifact download of a few hundred KB plus a node action
+    # is ~1-2 min; 10 leaves room for a slow download without letting the leg idle.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: bench-smoke-results
+          path: bench-results
+      # Deterministic input check, and it DOES fail the job. Absence is not a measurement: a missing or
+      # unparseable report would otherwise sail past the alert step's continue-on-error and leave a green
+      # check that proved nothing — "skipped" indistinguishable from "no regression".
+      - name: Assert the smoke report is present and parseable
+        run: |
+          set -euo pipefail
+          report=bench-results/MapperBenchmarks-report-full.json
+          if [ ! -f "$report" ]; then
+            echo "::error::$report is missing from the bench-smoke-results artifact. deep-test uploads" \
+                 "BenchmarkDotNet.Artifacts/results/ after the smoke; either the exporter, the file name" \
+                 "or the upload path moved. Listing what did arrive:" >&2
+            ls -la bench-results >&2 || true
+            exit 1
+          fi
+          python3 - "$report" <<'PYEOF'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as fh:
+              report = json.load(fh)
+          benches = report.get("Benchmarks") or []
+          # The adapter reads FullName and Statistics.Mean off every entry. A report with none of those is
+          # a report the alert step would silently turn into an empty suite.
+          usable = [b for b in benches
+                    if b.get("FullName") and isinstance((b.get("Statistics") or {}).get("Mean"), (int, float))]
+          if not usable:
+              print(f"::error::{sys.argv[1]} carries {len(benches)} benchmark(s) and none has both a "
+                    f"FullName and a numeric Statistics.Mean - github-action-benchmark's benchmarkdotnet "
+                    f"adapter reads exactly those two fields, so the alert would compare an empty suite.")
+              sys.exit(1)
+          print(f"{len(usable)}/{len(benches)} benchmarks carry FullName + Statistics.Mean.")
+          PYEOF
+      # Restores the newest previous history file and saves a fresh entry in the post step. The rotating
+      # key is load-bearing: actions/cache never overwrites an existing key, so the documented
+      # fixed-key recipe would pin the baseline to the first night forever.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: bench-history
+          key: bench-wall-time-${{ github.run_id }}
+          restore-keys: |
+            bench-wall-time-
+      - run: mkdir -p bench-history
+      # ALERT ONLY. See the wiring note above for why fail-on-alert is TRUE here and why that does not
+      # make this a gate. Under no circumstances remove `continue-on-error` from this step: that single
+      # line is what keeps a nondeterministic wall-clock measurement out of the build's verdict (R4).
+      - name: Compare against the previous nightly and alert on a regression
+        continue-on-error: true
+        uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
+        with:
+          name: DwarfMapper smoke (ShortRun, ubuntu — LINUX numbers, see the job comment)
+          tool: benchmarkdotnet
+          output-file-path: bench-results/MapperBenchmarks-report-full.json
+          external-data-json-path: bench-history/benchmark-data.json
+          save-data-file: true
+          # 150%: a mean 1.5x worse than the previous night. Generous on purpose — a ShortRun mean on a
+          # shared 4-core runner moves far more than a tuned run would, and a threshold tight enough to
+          # catch a 10% regression here would alert on scheduler noise every other night.
+          alert-threshold: '150%'
+          fail-on-alert: true
+          # No github-token anywhere in this job: both of these need one, and both would write to the
+          # repository. The job summary carries the comparison table instead.
+          comment-always: false
+          comment-on-alert: false
+          summary-always: true
+      # The history file is the baseline every future night compares against, and the cache can evict it.
+      # Keeping a copy per run makes a lost baseline diagnosable instead of merely puzzling.
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bench-wall-time-history
+          path: bench-history/benchmark-data.json

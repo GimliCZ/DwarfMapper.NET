@@ -135,6 +135,14 @@ internal static partial class MapperExtractor
         ReportMemberFormDirectives(classSymbol, "mapper class",
             LocationInfo.From(classSyntax.Identifier.GetLocation()), diagnostics);
 
+        // B18: the third placement, and the one left silent. DWARF088 was raised off the class symbol and off
+        // each mapping method, never off a MEMBER of the mapper — so a [MapProperty] or [MapIgnore] written on
+        // the mapper's own property or field was read by nothing and said nothing. Not on the separate-emit
+        // path: there the annotated type IS a mapped type and ReadCoLocatedHostDirectives reads its members
+        // (A4), which is a different question with a different answer.
+        if (!separateEmit)
+            ReportDirectivesOnMapperMembers(classSymbol, diagnostics);
+
         // Assembly-wide default options ([assembly: DwarfMapperDefaults(...)]) layer UNDER the mapper's own
         // options. Every option reader returns the first matching named argument across the attribute list, so
         // appending the assembly-defaults attribute AFTER the class's [DwarfMapper] attribute gives exactly the
@@ -192,7 +200,8 @@ internal static partial class MapperExtractor
         // this list used to be consulted only by the [GenerateMap] and synthesized-pair paths, so the two
         // documented scopes of one option each reached about half the endpoints and said nothing at the other
         // half. ResolveNullSkip is the single reader; do not add a second one.
-        var pairNullSkips = ReadPairNullSkips(classSymbol);
+        var pairNullSkips = ReadPairNullSkips(classSymbol,
+            LocationInfo.From(classSyntax.Identifier.GetLocation()), diagnostics);
         var allowNonPublic = ReadAllowNonPublic(opts);
         var nullCollections = ReadNullCollections(opts);
         var maxDepth = ReadMaxDepth(opts);
@@ -264,6 +273,23 @@ internal static partial class MapperExtractor
         var (beforeHookDefs, afterHookDefs) = CollectHooks(classSymbol, diagnostics);
         var methods = new List<MapMethodModel>();
 
+        // I17: the index into `diagnostics` at which the method currently being resolved began reporting.
+        // Everything from here on belongs to ONE method, which is what makes a completeness refusal
+        // ATTRIBUTABLE to it rather than to the class — the same positional attribution I14 built for the
+        // projection endpoint (TryScopeMethodRefusal). Reset at the top of every iteration.
+        //
+        // Deliberately NOT a post-loop pass over recorded ranges, which would have been one insertion
+        // instead of six: `publicMethodLocs` below is keyed by INDEX INTO `methods`, so removing a model
+        // after the fact would silently re-point every later method's location. The method is never added
+        // instead.
+        var methodDiagStart = 0;
+
+        // I17's verdict for the method (or [GenerateMap] pair) being resolved: recorded on the model
+        // rather than acted on with a `continue`, so `methods` keeps every DECLARED mapping and only
+        // emission is affected. Declared once at this scope because the eight decision sites sit in
+        // sibling blocks and C# will not let the same name be introduced twice in one method.
+        var withheld = false;
+
         // Best-effort source location per public map method (by index into `methods`), used only by the
         // DWARF060 same-source/multi-target collision pass below. The model itself carries no location.
         var publicMethodLocs = new Dictionary<int, LocationInfo?>();
@@ -299,6 +325,7 @@ internal static partial class MapperExtractor
             }
 
             var methodLocation = LocationInfo.From(method.Locations.FirstOrDefault() ?? Location.None);
+            methodDiagStart = diagnostics.Count;
 
             // Before any endpoint-specific handling, because the mistake is the same one at all of them: this
             // loop is the single point every partial mapping method passes through, and a check placed inside
@@ -347,6 +374,13 @@ internal static partial class MapperExtractor
                     "", "", spanConv,
                     spanNull, spanNeedsCtx);
 
+                // I17: an unmapped destination member is a statement about THIS method's pair and THIS
+                // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
+                // model is still recorded, because the class-level analyses downstream ask what the mapper
+                // DECLARES (see MapMethodModel.Withheld).
+                withheld = TryScopeCompletenessRefusalToItsMethod(
+                    diagnostics, methodDiagStart, method.Name, methodLocation);
+
                 methods.Add(new MapMethodModel(
                     method.Name,
                     AccessibilityText(method.DeclaredAccessibility),
@@ -368,7 +402,8 @@ internal static partial class MapperExtractor
                     // (pinned in ElementWiseReferenceHandlingRuntimeTests). The MaxDepth OPTION divergence in
                     // DeclaredDivergences.Reasons["MaxDepth"] is still open for the non-ctx-tailed case — a
                     // non-recursive element pair creates no context, so the option changes nothing there.
-                    MaxDepth: maxDepth));
+                    MaxDepth: maxDepth,
+                    Withheld: withheld));
                 continue;
             }
 
@@ -513,6 +548,13 @@ internal static partial class MapperExtractor
                     updAfter.Add(new HookCall(h.Name, takesSource, h.TargetRefKind == RefKind.Ref));
                 }
 
+                // I17: an unmapped destination member is a statement about THIS method's pair and THIS
+                // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
+                // model is still recorded, because the class-level analyses downstream ask what the mapper
+                // DECLARES (see MapMethodModel.Withheld).
+                withheld = TryScopeCompletenessRefusalToItsMethod(
+                    diagnostics, methodDiagStart, method.Name, methodLocation);
+
                 methods.Add(new MapMethodModel(
                     method.Name,
                     AccessibilityText(method.DeclaredAccessibility),
@@ -533,7 +575,8 @@ internal static partial class MapperExtractor
                     // was invisible until update-into became ambient-registerable, at which point the
                     // registration gate rejected every merge method for types that are plainly public.
                     ParameterIsPublicType: IsEffectivelyPublic(updSrc),
-                    ReturnIsPublicType: IsEffectivelyPublic(updTgt)));
+                    ReturnIsPublicType: IsEffectivelyPublic(updTgt),
+                    Withheld: withheld));
                 continue;
             }
 
@@ -577,6 +620,13 @@ internal static partial class MapperExtractor
                     "", "", asConv,
                     asNull, asNeedsCtx);
 
+                // I17: an unmapped destination member is a statement about THIS method's pair and THIS
+                // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
+                // model is still recorded, because the class-level analyses downstream ask what the mapper
+                // DECLARES (see MapMethodModel.Withheld).
+                withheld = TryScopeCompletenessRefusalToItsMethod(
+                    diagnostics, methodDiagStart, method.Name, methodLocation);
+
                 methods.Add(new MapMethodModel(
                     method.Name,
                     AccessibilityText(method.DeclaredAccessibility),
@@ -593,7 +643,8 @@ internal static partial class MapperExtractor
                     AsyncCancellationParam: asCtParam,
                     ParameterIsPublicType: IsEffectivelyPublic(method.Parameters[0].Type),
                     ReturnIsPublicType: IsEffectivelyPublic(method.ReturnType),
-                    MaxDepth: maxDepth));
+                    MaxDepth: maxDepth,
+                    Withheld: withheld));
                 continue;
             }
 
@@ -611,9 +662,14 @@ internal static partial class MapperExtractor
                 && IsQueryable(method.Parameters[0].Type, out var projSource)
                 && projTarget is INamedTypeSymbol projTargetNamed)
             {
-                // Before the DWARF028 early exit below, which adds the method with empty projection members
-                // and continues: a directive dropped here is dropped whether or not reference handling also
-                // refuses the endpoint.
+                // Everything this projection method reports lands at or after this index, and that is what
+                // makes a refusal ATTRIBUTABLE to one method rather than to the class (TASKS.md I14 — see
+                // TryScopeProjectionRefusalToItsMethod).
+                var projDiagStart = diagnostics.Count;
+
+                // Before the DWARF028 early exit below, which used to add the method with empty projection
+                // members and continue: a directive dropped here is dropped whether or not reference
+                // handling also refuses the endpoint.
                 ReportDirectivesNotReadHere(method, ctx.SemanticModel.Compilation, projSource,
                     projTargetNamed, MapEndpointKind.Projection, methodLocation, diagnostics);
 
@@ -629,20 +685,13 @@ internal static partial class MapperExtractor
                 {
                     EmitDWARF028(diagnostics, methodLocation, method.Name,
                         "reference handling is not supported in projection (stateful identity map cannot live in an expression tree); use ReferenceHandling=None or map at runtime");
-                    // Still add the method with empty projection members so no further cascades.
-                    methods.Add(new MapMethodModel(
-                        method.Name,
-                        AccessibilityText(method.DeclaredAccessibility),
-                        method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        method.Parameters[0].Name,
-                        true,
-                        EquatableArray.From(Array.Empty<MemberMap>()),
-                        EquatableArray.From(Array.Empty<string>()),
-                        EquatableArray.From(Array.Empty<HookCall>()),
-                        true,
-                        projTargetNamed.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                        ProjectionMembers: EquatableArray.From(Array.Empty<ProjectionMemberMap>())));
+                    // The method used to be added with EMPTY projection members "so no further cascades" —
+                    // which only ever worked because the DWARF028 above suppressed the whole class, so the
+                    // empty model was never emitted. Now that a projection refusal is scoped to its own
+                    // method, emitting it would produce `Select(q, __s => new D { })`: a projection that
+                    // silently drops every member. Dropped, like every other refused projection.
+                    TryScopeProjectionRefusalToItsMethod(diagnostics, projDiagStart, method.Name,
+                        methodLocation);
                     continue;
                 }
 
@@ -701,6 +750,14 @@ internal static partial class MapperExtractor
                     // is fixed: a CS8795 behind a blocking DWARF error now reads Refused.
                     ResolveNullSkip(pairNullSkips, method, projSource, projTargetNamed, skipNullSrc),
                     allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
+                    // I19: the FIFTH reader of NullCollections, and the endpoint that never read it. Same
+                    // value, same shape as the four .Map call sites above — a null source collection now
+                    // materialises the documented AsEmpty default through .Project too.
+                    nullCollections == NullCollectionsBehavior.AsNull,
+                    // I20: the SIXTH reader of ImplicitConversions, and the endpoint that never read it.
+                    // Same value the five .Map call sites get — a lossy cross-category conversion now
+                    // reports at .Project too, and breaks the build at both endpoints or at neither.
+                    implicitConversions,
                     projConsumedSources,
                     // Both [Flatten] and [MapValue] are threaded now, and they arrive from opposite
                     // directions worth keeping distinct. A flattened leaf is `__s.Root.Leaf`, the navigation
@@ -723,6 +780,13 @@ internal static partial class MapperExtractor
                         projSource, projConsumedSources, classIgnoreSources, ReadIgnoreSources(method),
                         ignoreObsolete, ctx.SemanticModel.Compilation, allowNonPublic, methodLocation,
                         diagnostics);
+
+                // A refused projection member means this method has no honest body — half a projection is
+                // silently wrong data, which is worse than none. Drop the METHOD; the mapper's Map methods
+                // are untouched by anything a query provider cannot translate and are still emitted.
+                if (TryScopeProjectionRefusalToItsMethod(diagnostics, projDiagStart, method.Name,
+                        methodLocation))
+                    continue;
 
                 methods.Add(new MapMethodModel(
                     method.Name,
@@ -913,6 +977,13 @@ internal static partial class MapperExtractor
                     derivedAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
                 }
 
+                // I17: an unmapped destination member is a statement about THIS method's pair and THIS
+                // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
+                // model is still recorded, because the class-level analyses downstream ask what the mapper
+                // DECLARES (see MapMethodModel.Withheld).
+                withheld = TryScopeCompletenessRefusalToItsMethod(
+                    diagnostics, methodDiagStart, method.Name, methodLocation);
+
                 methods.Add(new MapMethodModel(
                     method.Name,
                     AccessibilityText(method.DeclaredAccessibility),
@@ -928,7 +999,8 @@ internal static partial class MapperExtractor
                     EquatableArray.From(Array.Empty<MemberMap>()),
                     true,
                     targetType.IsReferenceType,
-                    DerivedTypeArms: EquatableArray.From(armModels)));
+                    DerivedTypeArms: EquatableArray.From(armModels),
+                    Withheld: withheld));
                 // A dispatch method's arm resolution is not an unscoped-ignore consumer this walk can see,
                 // so the class-site DWARF095 verdict stands down for this class (see the flag's declaration).
                 classIgnoreLivenessBlinded = true;
@@ -985,6 +1057,13 @@ internal static partial class MapperExtractor
                     tlConverter,
                     ConverterNeedsDepthCtx: tlNeedsCtx);
 
+                // I17: an unmapped destination member is a statement about THIS method's pair and THIS
+                // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
+                // model is still recorded, because the class-level analyses downstream ask what the mapper
+                // DECLARES (see MapMethodModel.Withheld).
+                withheld = TryScopeCompletenessRefusalToItsMethod(
+                    diagnostics, methodDiagStart, method.Name, methodLocation);
+
                 methods.Add(new MapMethodModel(
                     method.Name,
                     AccessibilityText(method.DeclaredAccessibility),
@@ -1002,7 +1081,8 @@ internal static partial class MapperExtractor
                     ReturnIsReferenceType: targetType.IsReferenceType,
                     IsTopLevelCollectionConversion: true,
                     ParameterIsPublicType: IsEffectivelyPublic(sourceType),
-                    ReturnIsPublicType: IsEffectivelyPublic(targetType)));
+                    ReturnIsPublicType: IsEffectivelyPublic(targetType),
+                    Withheld: withheld));
                 // A top-level collection map's element pair is synthesized (pair-scoped config only), so
                 // this method consumes no unscoped ignore this walk can see — class-site DWARF095 stands
                 // down for the class rather than guess (see the flag's declaration).
@@ -1215,6 +1295,13 @@ internal static partial class MapperExtractor
                 applicableAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
             }
 
+            // I17: an unmapped destination member is a statement about THIS method's pair and THIS
+            // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
+            // model is still recorded, because the class-level analyses downstream ask what the mapper
+            // DECLARES (see MapMethodModel.Withheld).
+            withheld = TryScopeCompletenessRefusalToItsMethod(
+                diagnostics, methodDiagStart, method.Name, methodLocation);
+
             methods.Add(new MapMethodModel(
                 method.Name,
                 AccessibilityText(method.DeclaredAccessibility),
@@ -1231,7 +1318,8 @@ internal static partial class MapperExtractor
                 FlattenGraphDirectives: EquatableArray.From(resolvedFgDirectives.ToArray()),
                 ExtraParameters: EquatableArray.From(extraParamSig.ToArray()),
                 ParameterIsPublicType: IsEffectivelyPublic(sourceType),
-                ReturnIsPublicType: IsEffectivelyPublic(targetType)));
+                ReturnIsPublicType: IsEffectivelyPublic(targetType),
+                Withheld: withheld));
             publicMethodLocs[methods.Count - 1] = methodLocation;
         }
 
@@ -1318,6 +1406,17 @@ internal static partial class MapperExtractor
                     ConverterMethod: gConv,
                     ConverterNeedsDepthCtx: gNeedsCtx);
 
+                // I17 STOPS HERE, and the boundary is a measurement rather than a preference. Withholding a
+                // method is only safe while its DECLARATION survives: a partial method is declared by the
+                // CONSUMER, so a sibling that maps a nested member through it still BINDS and the single
+                // CS8795 is the whole cost. A [GenerateMap] pair has no declaration — the generator is the
+                // only source of the symbol — so withholding it made a sibling's `N = Map(o.N)` emit
+                // **CS0103, 'the name Map does not exist'**, in a file the consumer cannot edit: the
+                // EmittedInvalidCode genre, whose ceiling is exactly zero. Measured on a two-pair probe
+                // before this line was written. So the pair keeps the whole-class kill, and the CS8795 it
+                // costs a sibling stays: loud collateral beats generated code that does not compile.
+                withheld = false;
+
                 methods.Add(new MapMethodModel(
                     "Map",
                     "public",
@@ -1336,7 +1435,8 @@ internal static partial class MapperExtractor
                     IsTopLevelCollectionConversion: true,
                     EmitAsNonPartial: true,
                     ParameterIsPublicType: IsEffectivelyPublic(genSrc),
-                    ReturnIsPublicType: IsEffectivelyPublic(genTgt)));
+                    ReturnIsPublicType: IsEffectivelyPublic(genTgt),
+                    Withheld: withheld));
                 publicMethodLocs[methods.Count - 1] = genLoc;
                 continue;
             }
@@ -1455,6 +1555,17 @@ internal static partial class MapperExtractor
                 genAfter.Add(new HookCall(h.Name, takesSource, tIsRef));
             }
 
+            // I17 STOPS HERE, and the boundary is a measurement rather than a preference. Withholding a
+            // method is only safe while its DECLARATION survives: a partial method is declared by the
+            // CONSUMER, so a sibling that maps a nested member through it still BINDS and the single
+            // CS8795 is the whole cost. A [GenerateMap] pair has no declaration — the generator is the
+            // only source of the symbol — so withholding it made a sibling's `N = Map(o.N)` emit
+            // **CS0103, 'the name Map does not exist'**, in a file the consumer cannot edit: the
+            // EmittedInvalidCode genre, whose ceiling is exactly zero. Measured on a two-pair probe
+            // before this line was written. So the pair keeps the whole-class kill, and the CS8795 it
+            // costs a sibling stays: loud collateral beats generated code that does not compile.
+            withheld = false;
+
             methods.Add(new MapMethodModel(
                 "Map",
                 "public",
@@ -1473,7 +1584,8 @@ internal static partial class MapperExtractor
                 EmitAsNonPartial: true,
                 ParameterIsPublicType: IsEffectivelyPublic(genSrc),
                 ReturnIsPublicType: IsEffectivelyPublic(genTgt),
-                FactoryMethod: genFactory));
+                FactoryMethod: genFactory,
+                Withheld: withheld));
             publicMethodLocs[methods.Count - 1] = genLoc;
         }
 
@@ -3454,6 +3566,71 @@ internal static partial class MapperExtractor
         }
     }
 
+    /// <summary>
+    ///     <c>DWARF088</c> for a <c>[MapProperty]</c> or <c>[MapIgnore]</c> written on a MEMBER of a
+    ///     <c>[DwarfMapper]</c> class (TASKS.md <c>B18</c>). Every form is reported, not just the
+    ///     member-placement overloads, because at this placement every form is inert: the mapper's own
+    ///     property or field belongs to neither type of any mapped pair, so there is nothing for the directive
+    ///     to bind to and nothing downstream ever asks.
+    ///     <para>
+    ///         The remedy DIFFERS by form and is stated per form. A member-placement overload was aimed at the
+    ///         wrong KIND of type — it belongs on a member of a <c>[MapTo]</c> source or a <c>[GenerateMap]</c>
+    ///         host, where the annotated type declares its own mapping. A class- or method-placement overload
+    ///         was aimed at the right kind of type and the wrong SYMBOL — it belongs on the mapper class or on
+    ///         one of its mapping methods, both of which read it.
+    ///     </para>
+    ///     <para>
+    ///         Not called on the separate-emit path. There the annotated type is a mapped type, its members
+    ///         ARE read (<c>ReadCoLocatedHostDirectives</c>, A4), and misplacement there is <c>DWARF089</c>'s
+    ///         question rather than this one. Reporting both would name one mistake twice.
+    ///     </para>
+    /// </summary>
+    private static void ReportDirectivesOnMapperMembers(
+        INamedTypeSymbol classSymbol, List<DiagnosticInfo> diagnostics)
+    {
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IPropertySymbol { IsIndexer: false }
+                && member is not IFieldSymbol { IsImplicitlyDeclared: false })
+                continue;
+
+            foreach (var attr in member.GetAttributes())
+            {
+                var cls = attr.AttributeClass?.ToDisplayString();
+                var isProperty = cls == KnownNames.MapPropertyFqn;
+                var isIgnore = cls == KnownNames.MapIgnoreFqn;
+                if (!isProperty && !isIgnore) continue;
+
+                // The member-placement overloads are [MapProperty("source")] (arity 1) and [MapIgnore] (arity
+                // 0); everything else on these two attributes is a class/method form.
+                var memberForm = isProperty
+                    ? attr.ConstructorArguments.Length == 1
+                    : attr.ConstructorArguments.Length == 0;
+                var written = isProperty ? "[MapProperty]" : "[MapIgnore]";
+
+                var message =
+                    $"{written} on '{classSymbol.Name}.{member.Name}' is read by nothing. This member belongs "
+                    + "to the MAPPER, not to either type of any pair it maps, so no resolution step ever looks "
+                    + "at it — the directive is inert and the mapping is exactly what it would be without it. "
+                    + (memberForm
+                        ? "This is the MEMBER-placement overload, where THE ANNOTATED MEMBER is the thing "
+                          + "named: it belongs on a member of a [MapTo] source or a [GenerateMap] host, where "
+                          + "the annotated type declares its own mapping. To say it here, name the "
+                          + "destination and move it to the mapper class or to a mapping method: "
+                          + (isProperty
+                              ? "[MapProperty(\"<source>\", \"<destination>\")]."
+                              : "[MapIgnore(\"<destination>\")].")
+                        : "This overload IS the one the mapper reads — but only from the mapper CLASS or from "
+                          + "one of its mapping METHODS. Move it to either.");
+
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.MemberFormDirectiveOnMapper,
+                    member.Locations.FirstOrDefault() is { } loc ? LocationInfo.From(loc) : null,
+                    message));
+            }
+        }
+    }
+
     private static List<(string Source, string Target, string? Use)> ReadExplicitMaps(ISymbol method)
     {
         var maps = new List<(string Source, string Target, string? Use)>();
@@ -3598,6 +3775,100 @@ internal static partial class MapperExtractor
     ///         nothing through .Update on the same mapper — the option was accepted and discarded.
     ///     </para>
     /// </summary>
+    /// <summary>
+    ///     Decide whether the method (or <c>[GenerateMap]</c> pair) that has just been resolved must be
+    ///     WITHHELD, and confine its refusal to itself when it can be confined. The Map-endpoint twin of
+    ///     <c>TryScopeProjectionRefusalToItsMethod</c>, sharing its machinery.
+    /// </summary>
+    /// <returns>True when the caller must NOT add this method's model.</returns>
+    /// <remarks>
+    ///     <para>
+    ///         <b>Ruling (TASKS.md I17): DWARF001 is PER-METHOD.</b> Completeness is evaluated over one
+    ///         (source, target) pair and one method-level <c>[MapIgnore]</c> set, and the diagnostic's own
+    ///         remedy names the method — <i>"annotate the method with [MapIgnore(…)]"</i>. Its unit of
+    ///         evaluation and its unit of remedy are both the method, so an unmapped destination member on
+    ///         <c>MapBad</c> is not a statement about <c>MapGood</c> beside it. That is exactly the test I14
+    ///         used the other way round to keep DWARF010 and DWARF008 class-level: those describe the SOURCE
+    ///         MODEL and are equally true of every method over the same pair.
+    ///     </para>
+    ///     <para>
+    ///         Only DWARF001 is scoped here, and only when it is the <em>sole</em> kind of error the method
+    ///         raised — a range that also holds a DWARF010 keeps the whole-class kill it has always had.
+    ///     </para>
+    ///     <para>
+    ///         <b>A synthesized pair's incompleteness stays class-level, and not by accident of indices.</b>
+    ///         Nested and element pairs are resolved in the drain AFTER this loop, so their DWARF001 falls
+    ///         outside every method range and is never scoped. That is also the right answer on the merits,
+    ///         for the reason DWARF090 already records: a synthesized mapper is SHARED by every route that
+    ///         reaches the pair, so its incompleteness is true of each of them and attributing it to one
+    ///         method would be wrong rather than merely difficult. A span map and an async-stream map map
+    ///         their element pair that way, which is why an incomplete element pair kills their class.
+    ///     </para>
+    /// </remarks>
+    private static bool TryScopeCompletenessRefusalToItsMethod(
+        List<DiagnosticInfo> diagnostics, int start, string methodName, LocationInfo? location)
+    {
+        return TryScopeMethodRefusal(
+            diagnostics, start, methodName, location,
+            DiagnosticDescriptors.MappingMethodNotGenerated,
+            DiagnosticDescriptors.UnmappedMember);
+    }
+
+    /// <summary>
+    ///     The machinery both scopers share: confine one method's errors to that method when every error it
+    ///     raised is of a kind that describes the METHOD rather than the mapper, and signpost the single
+    ///     <c>CS8795</c> that follows.
+    /// </summary>
+    /// <param name="diagnostics">The class's diagnostic list; entries from <paramref name="start" /> on
+    ///     belong to this one method.</param>
+    /// <param name="start">The list's length when this method's resolution began.</param>
+    /// <param name="signpost">The per-method twin of DWARF078 to report (a Warning).</param>
+    /// <param name="scopable">The error kinds that may be confined. Every error in the range must be one
+    ///     of them, or the range is left alone and the class dies as before.</param>
+    /// <returns>True when the caller must NOT add this method's model.</returns>
+    /// <remarks>
+    ///     The method is withheld either way. A method whose members did not all resolve has no honest
+    ///     body: emitting it with the members that DID resolve would silently drop the rest, which is the
+    ///     failure mode the completeness gate exists to refuse.
+    /// </remarks>
+    private static bool TryScopeMethodRefusal(
+        List<DiagnosticInfo> diagnostics, int start, string methodName, LocationInfo? location,
+        DiagnosticDescriptor signpost, params DiagnosticDescriptor[] scopable)
+    {
+        var sawError = false;
+        var allAreScopable = true;
+
+        for (var i = start; i < diagnostics.Count; i++)
+        {
+            var d = diagnostics[i];
+            if (!d.IsError || d.ScopedToMethod) continue;
+            sawError = true;
+
+            var isScopable = false;
+            foreach (var s in scopable)
+                if (ReferenceEquals(d.Descriptor, s))
+                {
+                    isScopable = true;
+                    break;
+                }
+
+            if (!isScopable) allAreScopable = false;
+        }
+
+        if (!sawError) return false;
+        if (!allAreScopable) return true; // withheld, but the class still dies on the other error
+
+        for (var i = start; i < diagnostics.Count; i++)
+            if (diagnostics[i].IsError)
+                diagnostics[i] = diagnostics[i] with { ScopedToMethod = true };
+
+        // The per-method twin of DWARF078, at the method's own location: exactly one CS8795 follows, and it
+        // needs the same "this is a cascade, not a missing analyzer reference" signpost the class-wide wall
+        // has always had.
+        diagnostics.Add(new DiagnosticInfo(signpost, location, methodName));
+        return true;
+    }
+
     private static void EmitSourceCoverage(
         ITypeSymbol sourceType,
         IEnumerable<MemberMap> members,

@@ -96,5 +96,16 @@ public sealed record MapperClassModel(
         return parts[parts.Length - 1];
     }
 
-    public bool HasBlockingError => Diagnostics.Any(d => d.IsError);
+    /// <summary>
+    ///     Whether an error on this class suppresses the WHOLE class's emission.
+    ///     <para>
+    ///         Method-scoped errors are excluded. A projection member that cannot be translated is a fact
+    ///         about one <c>Project</c> method, and MapperExtractor has already dropped that method from
+    ///         <see cref="Methods" /> — taking the class's <c>Map</c> methods down with it left the consumer
+    ///         with nothing generated at all and a pile of CS8795 on methods that were perfectly fine
+    ///         (TASKS.md I14). Class-level errors — an ambiguous member, an unknown destination, a bad hook
+    ///         signature — still suppress everything: those describe a model the emitter cannot trust.
+    ///     </para>
+    /// </summary>
+    public bool HasBlockingError => Diagnostics.Any(d => d.IsError && !d.ScopedToMethod);
 }

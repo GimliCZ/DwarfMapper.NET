@@ -321,12 +321,41 @@ try {
     if (-not $SkipAot) {
         Write-Host "== 3/4 AOT publish + EXECUTE (codegen correctness/determinism) ==" -ForegroundColor Cyan
         $rid = if ($IsWindows) { 'win-x64' } else { 'linux-x64' }
-        dotnet publish samples/DwarfMapper.AotBench/DwarfMapper.AotBench.csproj -c Release -r $rid -p:PublishAot=true --nologo
+        # PublishAot is deliberately NOT passed on the command line, for the reason ci.yml's aot-trim-gate
+        # states verbatim and this stage did not inherit (I6): `-p:` sets a GLOBAL property, which MSBuild
+        # flows down the whole project graph - including src/DwarfMapper.Generator and
+        # src/DwarfMapper.CodeFixes, which target netstandard2.0 and can never be AOT-compiled. Under the
+        # pinned SDK 10.0.101 that is NETSDK1207 on both of them and the stage dies before compiling
+        # anything: a gate failing to START, not a gate catching a regression. AotBench's own csproj carries
+        # <PublishAot>true</PublishAot>, and a project-level property applies to that project alone.
+        dotnet publish samples/DwarfMapper.AotBench/DwarfMapper.AotBench.csproj -c Release -r $rid --nologo
         if ($LASTEXITCODE) { throw "AOT publish failed" }
-        $bin = Get-ChildItem -Recurse -Path samples/DwarfMapper.AotBench/bin/Release -Filter "DwarfMapper.AotBench*" |
-               Where-Object { $_.FullName -match 'publish' -and ($_.Extension -eq '' -or $_.Extension -eq '.exe') } |
+        # Resolved through the RID, not by a bare -Recurse over bin/Release: that would happily pick up a
+        # publish/ left by an earlier run under a different RID or TFM and gate on a stale binary.
+        $publishGlob = Join-Path $root "samples/DwarfMapper.AotBench/bin/Release/*/$rid/publish"
+        $publishDir = @(Resolve-Path -Path $publishGlob -ErrorAction SilentlyContinue)
+        if ($publishDir.Count -ne 1) {
+            throw ("AOT publish: expected exactly one publish/ directory matching '$publishGlob', found " +
+                   "$($publishDir.Count). The stage cannot say which binary it would be gating on.")
+        }
+        $publishDir = $publishDir[0].Path
+        # With nothing on the command line asserting AOT-ness, a framework-dependent publish would still
+        # drop a runnable apphost here and sail through the behavioural gate below, leaving it green while
+        # proving nothing. NativeAOT emits a native image with NO managed assembly and NO runtimeconfig.json,
+        # so assert their ABSENCE before trusting the run. Mirrors ci.yml's "Assert the publish really was
+        # NativeAOT" step; the two must stay in step.
+        $managed = @(Get-ChildItem -LiteralPath $publishDir -File |
+                     Where-Object { $_.Name -eq 'DwarfMapper.AotBench.dll' -or $_.Name -like '*.runtimeconfig.json' })
+        if ($managed) {
+            throw ("AOT publish: $publishDir holds a managed assembly or runtimeconfig.json (" +
+                   ($managed.Name -join ', ') + "), so this was NOT a NativeAOT publish - the behavioural " +
+                   "gate below would pass without proving anything. Check AotBench's <PublishAot>true</PublishAot>.")
+        }
+        $bin = Get-ChildItem -LiteralPath $publishDir -File -Filter "DwarfMapper.AotBench*" |
+               Where-Object { $_.Extension -eq '' -or $_.Extension -eq '.exe' } |
                Select-Object -First 1
-        if (-not $bin) { throw "AotBench native binary not found under publish/" }
+        if (-not $bin) { throw "AotBench native binary not found under $publishDir" }
+        Write-Host "   NativeAOT confirmed: no managed assembly, no runtimeconfig.json in publish/" -ForegroundColor DarkGray
         Write-Host "Running native AOT binary: $($bin.FullName)"
         & $bin.FullName
         if ($LASTEXITCODE) { throw "AotBench reported AOT instability (exit $LASTEXITCODE)" }
@@ -437,6 +466,7 @@ try {
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
+        Assert-NoMutatedProductBinaries -Leg 'generator' -Root $root
 
         # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
         # this leg the doc tests are trusted on the strength of being green — the evidence a vacuous test
@@ -448,6 +478,7 @@ try {
         Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
+        Assert-NoMutatedProductBinaries -Leg 'doc tooling' -Root $root
 
         # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
         # facade and the exception types have no derivable case-space — no AttributeUsage to decompose, no
@@ -460,6 +491,7 @@ try {
         Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
+        Assert-NoMutatedProductBinaries -Leg 'runtime' -Root $root
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

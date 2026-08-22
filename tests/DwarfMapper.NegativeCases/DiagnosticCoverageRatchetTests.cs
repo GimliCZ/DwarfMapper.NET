@@ -54,7 +54,9 @@ public class DiagnosticCoverageRatchetTests
         "DWARF013", "DWARF015", "DWARF016", "DWARF017",
         "DWARF018", "DWARF020", "DWARF021", "DWARF022",
         "DWARF023", "DWARF024", "DWARF025", "DWARF026",
-        "DWARF027", "DWARF028", "DWARF030", "DWARF031",
+        // DWARF028 removed 2026-08-23 (round 23, I14): the projection refusal now has
+        // Cases/DWARF096_ProjectionMethodNotGenerated.cs, which triggers it directly.
+        "DWARF027", "DWARF030", "DWARF031",
         "DWARF032", "DWARF033", "DWARF034", "DWARF035",
         // DWARF038 removed 2026-08-16: [DwarfMapper(ImplicitConversions = false)] has no observable effect
         // OTHER than escalating this suggestion to a refusal, so the option's own proof obligation is this
@@ -77,12 +79,13 @@ public class DiagnosticCoverageRatchetTests
     ];
 
     /// <summary>
-    ///     The exact size of <see cref="PredatesThisProject" />. Measured 2026-08-22 (66 entries: the 78 ids
-    ///     of 2026-08-12 minus the twelve retired by gained cases and deletions since). Shrink-only: lower it
-    ///     in the same commit as the entry it loses, and never raise it — a raise would be the hatch this pin
+    ///     The exact size of <see cref="PredatesThisProject" />. Measured 2026-08-23 (65 entries: the 78 ids
+    ///     of 2026-08-12 minus the thirteen retired by gained cases and deletions since — the latest being
+    ///     DWARF028, which gained Cases/DWARF096_ProjectionMethodNotGenerated.cs). Shrink-only: lower it in
+    ///     the same commit as the entry it loses, and never raise it — a raise would be the hatch this pin
     ///     exists to close.
     /// </summary>
-    private const int PredatesThisProjectPin = 66;
+    private const int PredatesThisProjectPin = 65;
 
     /// <summary>
     ///     The highest DWARF id that existed on 2026-08-12, compared ordinally (the ids are fixed-width, and

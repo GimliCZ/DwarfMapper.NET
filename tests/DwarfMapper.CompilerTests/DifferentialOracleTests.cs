@@ -174,21 +174,200 @@ public class DifferentialOracleTests
     }
 
     /// <summary>
-    ///     The I7 runtime-divergence pin (TASKS.md I7; found by this leg's FIRST 1,000-sample deep run,
-    ///     seed 0vihQF5Vee7b, minimized by a 6-cell kind-pair probe): a plain nullable nested member
-    ///     across a RE-KINDED pair throws on a null value instead of lifting null → null, in BOTH
-    ///     directions, although the destination member is nullable-capable in both. The same-kind
-    ///     diagonals lift correctly and stay covered by sampling. These assertions pin the CURRENT
-    ///     behaviour exactly — they go red the moment the product lifts (or refuses) instead, and that red
-    ///     is the signal to delete the matching I7 sampled-space exclusion in TypeGraphGen, flip these
-    ///     expectations, and close the I-row in the same commit. Never a blanket skip; the oracle is NOT
-    ///     taught this semantics because no documented sentence states it.
+    ///     I5's runtime pin (TASKS.md I5, FIXED in round 23 N1): a null element crossing a synthesized
+    ///     element map yields a NULL ELEMENT, in every wrapper the descriptor can express and for both
+    ///     destination element kinds. Emission alone is not the proof — the CS1503 that started this was an
+    ///     emission fact, but "it compiles now" would be satisfied by a helper that threw, or by one that
+    ///     dropped the element. So this executes: the source collection holds <c>[null, value]</c> and the
+    ///     destination must hold <c>[null, mapped-value]</c> — the null lifted AND the non-null still
+    ///     mapped, cardinality preserved (a silent drop would leave a one-element result).
+    ///     <para>
+    ///     The emission shape is asserted too, and deliberately at the seam that broke: the element call
+    ///     must be guarded by a <c>HasValue</c> test and typed by an explicit cast to the destination
+    ///     element type, rather than being handed the <c>S?</c> raw. Matching on
+    ///     that fragment rather than on a whole emitted line keeps the pin stable across helper-name hashes
+    ///     and across the per-wrapper element accessor (<c>__item</c> / <c>src[__i]</c> / <c>__kv.Value</c>).
+    ///     </para>
     /// </summary>
     [Theory]
-    [InlineData("I7-nullable-rekind-value-to-reference", "Source member 'M0_0' was null")]
-    [InlineData("I7-nullable-rekind-reference-to-value",
-        "Cannot map a null 'global::T.S1' to value-type 'global::T.D1'.")]
-    public void I7_pinned_runtime_divergence_null_across_rekinded_pair_throws(string id, string expectedMessage)
+    [InlineData(CollShape.List, TypeKind.Struct, TypeKind.Struct)]
+    [InlineData(CollShape.List, TypeKind.Struct, TypeKind.Class)]
+    [InlineData(CollShape.List, TypeKind.RecordStruct, TypeKind.Record)]
+    [InlineData(CollShape.Array, TypeKind.Struct, TypeKind.Struct)]
+    [InlineData(CollShape.Array, TypeKind.Struct, TypeKind.Class)]
+    [InlineData(CollShape.IReadOnlyList, TypeKind.Struct, TypeKind.Struct)]
+    [InlineData(CollShape.IReadOnlyList, TypeKind.RecordStruct, TypeKind.Class)]
+    [InlineData(CollShape.HashSet, TypeKind.Struct, TypeKind.Struct)]
+    [InlineData(CollShape.HashSet, TypeKind.Struct, TypeKind.Class)]
+    [InlineData(CollShape.Dictionary, TypeKind.Struct, TypeKind.Struct)]
+    [InlineData(CollShape.Dictionary, TypeKind.RecordStruct, TypeKind.Class)]
+    public void I5_nullable_struct_element_lifts_null_to_null_in_every_wrapper(
+        CollShape wrapper, TypeKind sourceElement, TypeKind destElement)
+    {
+        var graph = new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, wrapper, 1)],
+                    BaseRef: null),
+                new NodeSpec("S1", sourceElement,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, wrapper, 3)],
+                    BaseRef: null),
+                new NodeSpec("D1", destElement,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null)
+            ],
+            "S0", "D0");
+
+        var (result, assembly) = CompilerTestHarness.RunAndEmit(TypeGraphRenderer.Render(graph));
+        Assert.False(result.RefusedLoudly, "I5's shapes must map, not refuse — the ruling was LIFT");
+        Assert.True(result.CompilationErrors.Length == 0,
+            "I5 regression — the element loop emitted code that does not compile: ["
+            + string.Join(",", result.CompilationErrors.Select(e => e.Id).Distinct()) + "]");
+        Assert.NotNull(assembly);
+        Assert.Contains(".HasValue ? (global::T.D1?)__DwarfMap_Obj_", result.GeneratedSource,
+            StringComparison.Ordinal);
+
+        var sourceType = assembly.GetType("T.S0")!;
+        var source = Activator.CreateInstance(sourceType)!;
+        var member = sourceType.GetProperty("M0_0")!;
+        var elementType = assembly.GetType("T.S1")!;
+        var nonNull = Activator.CreateInstance(elementType)!;
+        member.SetValue(source, TwoElementPayload(member.PropertyType, nonNull));
+
+        var mapped = CompilerTestHarness.InvokeMap(assembly, source);
+        var values = DestinationElements(assembly.GetType("T.D0")!.GetProperty("M0_0")!.GetValue(mapped));
+
+        Assert.Equal(2, values.Count);
+        Assert.Single(values, v => v is null);
+        Assert.Single(values, v => v is not null);
+    }
+
+    /// <summary>
+    ///     Builds a two-entry collection of <paramref name="collectionType" /> holding <c>null</c> and
+    ///     <paramref name="nonNull" />. Reflection is test-side only (the house no-reflection stance governs
+    ///     the shipped product, not the oracles) and every branch corresponds to one <see cref="CollShape" />
+    ///     the renderer can emit — an unhandled shape throws rather than silently testing a weaker payload.
+    /// </summary>
+    private static object TwoElementPayload(Type collectionType, object nonNull)
+    {
+        if (collectionType.IsArray)
+        {
+            var array = Array.CreateInstance(collectionType.GetElementType()!, 2);
+            array.SetValue(nonNull, 1);
+            return array;
+        }
+
+        // IReadOnlyList<T> is an interface — instantiate the List<T> the mapper will enumerate.
+        var concrete = collectionType.IsInterface
+            ? typeof(List<>).MakeGenericType(collectionType.GetGenericArguments()[0])
+            : collectionType;
+        var instance = Activator.CreateInstance(concrete)!;
+
+        if (typeof(IDictionary).IsAssignableFrom(concrete))
+        {
+            var dictionary = (IDictionary)instance;
+            dictionary["a"] = null;
+            dictionary["b"] = nonNull;
+            return dictionary;
+        }
+
+        var add = concrete.GetMethod("Add")
+                  ?? throw new InvalidOperationException($"no Add on payload type {concrete}");
+        add.Invoke(instance, [null]);
+        add.Invoke(instance, [nonNull]);
+        return instance;
+    }
+
+    /// <summary>The destination collection's elements (a dictionary's VALUES), as a flat list.</summary>
+    private static List<object?> DestinationElements(object? destinationMember)
+    {
+        return destinationMember switch
+        {
+            IDictionary dictionary => dictionary.Values.Cast<object?>().ToList(),
+            IEnumerable enumerable => enumerable.Cast<object?>().ToList(),
+            _ => throw new InvalidOperationException("destination member is not a collection")
+        };
+    }
+
+    /// <summary>
+    ///     I7's pin (TASKS.md I7; found by this leg's FIRST 1,000-sample deep run, seed 0vihQF5Vee7b,
+    ///     minimized by a 6-cell kind-pair probe, FIXED across N1/N2): a plain nullable nested member across
+    ///     a re-kinded pair lifts <c>null → null</c> for <b>every</b> kind pair, because the destination
+    ///     member is nullable-capable in every one of them. Before the fix the same member's behaviour was
+    ///     decided by the mirrored type's KIND: the two diagonals lifted, four cells threw
+    ///     <c>"Source member 'M0_0' was null"</c>, and the reverse genre threw a different message again,
+    ///     <c>"Cannot map a null 'global::T.S1' to value-type 'global::T.D1'."</c>.
+    ///     <para>
+    ///     The table is run in FULL rather than only over the cells that used to throw: the diagonals are
+    ///     the control, and a fix that lifted the broken cells by breaking the working ones would pass a
+    ///     four-cell version of this test. The two pinned corpus rows (<c>I7-nullable-rekind-*</c>) are the
+    ///     two ends of it and are asserted to be present in the table, so the corpus and the executor cannot
+    ///     drift apart.
+    ///     </para>
+    ///     <para>
+    ///     This must stay a DETERMINISTIC executor even now that the I7 sampled-space exclusion is gone:
+    ///     the reference-source half is unreachable by sampling for a reason that has nothing to do with the
+    ///     product — the oracle's population never nulls reference members, a declared bias in the
+    ///     <c>ReflectionOracle</c> header. Sampling does not cover it; this does.
+    ///     </para>
+    /// </summary>
+    [Theory]
+    [InlineData(TypeKind.Struct, TypeKind.Struct)] // control — always lifted
+    [InlineData(TypeKind.Class, TypeKind.Class)] // control — always propagated
+    [InlineData(TypeKind.Struct, TypeKind.Class)] // was: "Source member 'M0_0' was null"
+    [InlineData(TypeKind.Struct, TypeKind.Record)] // was: the same throw
+    [InlineData(TypeKind.RecordStruct, TypeKind.Class)] // was: the same throw
+    [InlineData(TypeKind.Class, TypeKind.Struct)] // was: "Cannot map a null … to value-type …"
+    public void I7_null_across_a_rekinded_pair_lifts_for_every_kind_pair(TypeKind sourceKind, TypeKind destKind)
+    {
+        var graph = new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.None, 1)],
+                    BaseRef: null),
+                new NodeSpec("S1", sourceKind,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.None, 3)],
+                    BaseRef: null),
+                new NodeSpec("D1", destKind,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null)
+            ],
+            "S0", "D0");
+
+        var (result, assembly) = CompilerTestHarness.RunAndEmit(TypeGraphRenderer.Render(graph));
+        Assert.False(result.RefusedLoudly, "I7's shapes must map, not refuse — the ruling was LIFT");
+        Assert.True(result.CompilationErrors.Length == 0, "I7 regression — the re-kinded pair no longer compiles");
+        Assert.NotNull(assembly);
+
+        var sourceType = assembly.GetType("T.S0")!;
+        var destMember = assembly.GetType("T.D0")!.GetProperty("M0_0")!;
+
+        // Null in → null out. Not "it does not throw": the destination member must actually BE null,
+        // which a default-constructed D1 (the other way to make the exception disappear) would fail.
+        var nullSource = Activator.CreateInstance(sourceType)!; // M0_0 stays null — the pinned case
+        Assert.Null(destMember.GetValue(CompilerTestHarness.InvokeMap(assembly, nullSource)));
+
+        // …and a non-null still maps, so the lift is not a blanket "write null and move on".
+        var valueSource = Activator.CreateInstance(sourceType)!;
+        sourceType.GetProperty("M0_0")!.SetValue(valueSource, Activator.CreateInstance(assembly.GetType("T.S1")!));
+        Assert.NotNull(destMember.GetValue(CompilerTestHarness.InvokeMap(assembly, valueSource)));
+    }
+
+    /// <summary>
+    ///     The two pinned I7 corpus rows are exactly the two ends of the kind-pair table above — asserted
+    ///     rather than assumed, so renaming or re-shaping a row cannot quietly remove a cell from the
+    ///     executor while both still look green.
+    /// </summary>
+    [Theory]
+    [InlineData("I7-nullable-rekind-value-to-reference")]
+    [InlineData("I7-nullable-rekind-reference-to-value")]
+    public void I7_pinned_corpus_rows_lift_null_to_null(string id)
     {
         var row = PinnedCorpus.Rows.Single(r => r.Id == id);
         var (result, assembly) = CompilerTestHarness.RunAndEmit(TypeGraphRenderer.Render(row.Graph));
@@ -197,8 +376,8 @@ public class DifferentialOracleTests
         Assert.NotNull(assembly);
 
         var source = Activator.CreateInstance(assembly.GetType("T.S0")!)!; // M0_0 stays null — the pinned case
-        var thrown = Assert.Throws<InvalidOperationException>(() => CompilerTestHarness.InvokeMap(assembly, source));
-        Assert.Equal(expectedMessage, thrown.Message);
+        var mapped = CompilerTestHarness.InvokeMap(assembly, source);
+        Assert.Null(assembly.GetType("T.D0")!.GetProperty("M0_0")!.GetValue(mapped));
     }
 
     private static void RunOracleLeg(

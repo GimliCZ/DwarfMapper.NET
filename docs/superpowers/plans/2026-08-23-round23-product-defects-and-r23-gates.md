@@ -522,6 +522,22 @@ every cost below is an **expectation to be replaced by a measurement**, never a 
 
 ### S2 — wall-time regression: alert-only, never a per-PR gate
 
+> **DONE (2026-08-23, `aed031e`).** `bench-wall-time-alert`, nightly, `needs: deep-test` — it consumes the
+> existing `bench-smoke-results` artifact rather than re-running the ~6:40 smoke. The platform caveat
+> (2.13× Windows / ~1.14× Linux; these are **Linux** numbers) is in the job's own comment, as the exit
+> criterion required. **The wiring is not the obvious one, and the reason is measured from the action's
+> own `dist`:** `handleAlert()` returns early when both `comment-on-alert` and `fail-on-alert` are false,
+> so `alert-threshold` alone is dead decoration; `comment-on-alert` needs a token and `contents: write`.
+> So `fail-on-alert: true` with **`continue-on-error: true` on the step** — the threshold bites, the job
+> and the workflow stay green, the alert table lands as an ignored step failure plus a job summary. The
+> data file is written *before* the alert throws (verified in `write.js`), so a regression does not freeze
+> the baseline. A deterministic input guard runs *before* it and DOES fail the job, because absence is not
+> a nondeterministic measurement; that guard was executed locally five ways. Pinned:
+> `benchmark-action/github-action-benchmark@52576c92…` (v1.22.1, 2026-05-06, newest tag),
+> `actions/cache@0057852b…` (v4.3.0), `actions/download-artifact@d3f86a10…` (v4.3.0). Storage is
+> `external-data-json-path` + `actions/cache` with a **rotating** key (a fixed key is never re-saved and
+> would freeze the baseline at night one). **Unexercised until it runs on master.**
+
 **What:** `github-action-benchmark`'s BenchmarkDotNet adapter, `alert-threshold` ~150 %, **comment-only** —
 never `fail-on-alert` per-PR. **Why:** wall-clock is R4-nondeterministic on shared runners; industry practice
 is baseline-plus-generous-threshold, not exact. **The caveat that must be written into the job:** the
@@ -532,6 +548,29 @@ gated exactly by T8.
 job's own comment.
 
 ### S3 — generator compile-time cost: time-to-first-emit, per-1000-mappers scaling
+
+> **DONE (2026-08-23, `63e7248`), and NOT with the gate this row asked for — read why.** The row wanted a
+> wall-clock ratio gate (fail above ~1.5× a pinned baseline) in the deep tier. That contradicts the
+> repository's own rules — **R4** forbids a gate whose oracle is nondeterministic, H7's discipline is that
+> no gate reads a clock — so the split S2 already established is applied here: the **time is recorded**,
+> the **deterministic property is gated**. Judged deviation, stated for a reviewer to overrule.
+> **Recorded** (`benchmarks/results/2026-08-23-generator-compile-cost.md`, Windows, SDK 10.0.101, 12 cores,
+> three runs): 1,000 mappers in ONE compilation — parse+compilation 366/374/398 ms, **time to first emit
+> 3,637/3,502/3,762 ms ≈ 3.6 s per 1,000 mappers**, 1,002 generated files, 116 diagnostics. **Gated**: a
+> generator's real consumer cost is every keystroke after the cold build, so editing ONE mapper must
+> re-extract ONE and re-emit TWO files (its own plus the single aggregate facade) — **measured identical at
+> 40 and at 1,000 mappers** (1/40 = 1/1000, 2/44 = 2/1004), which is what makes the constant pinnable as a
+> constant rather than as a fraction. Corpus is K0's `TypeGraphRenderer` over `PinnedSampling`'s
+> deterministic draws, one mapper per namespace; the renderer gained an optional `namespaceName` (default
+> `"T"`) and every existing population stays byte-identical. **Three measurement traps, all found by
+> measuring:** `Remove+Add` is not an edit (it reorders every later tree and recomputes all N — use
+> `ReplaceSyntaxTree`); *"did the step RUN"* is **red on a healthy tree** (FAWMN's transform takes a
+> semantic model, so Roslyn re-executes it for every attributed class on any compilation change — the
+> strict metric measures the host, so the gate counts changed VALUES, the existing `GeneratorCacheAssert`
+> idiom); and Roslyn's own steps always re-run, so the assertions are scoped to `DwarfMapper*` +
+> `SourceOutput` behind a five-step floor. **Sabotage-demoed against the PRODUCT**: `MapperClassModel` given
+> an `object SabotageTag` — two facts red naming the counts ("re-extracted 40 of 40 … expected exactly 1");
+> reverted, green. New deep-tier population `CompilerCostCorpusMappers` (fast 40, deep 1,000).
 
 **What:** a `GeneratorDriver`-based benchmark in the benchmark project; gate = **ratio against a pinned
 baseline** (e.g. fail above 1.5×), deep tier; and assert the incremental re-run is **cached** (R22-03 already
@@ -544,6 +583,22 @@ per R1.
 
 ### S4 — reproducible-build verification
 
+> **DONE (2026-08-23, `de5f696`), and the answer is not the one this row assumed — read it.** Measured on
+> Windows, SDK 10.0.101, at `81c4ace`, two packs from a `git clean -xdf` tree with `CI=true`: **the
+> whole-file SHA-256 of every `.nupkg`/`.snupkg` DIFFERS on every pack, and every build-produced entry
+> inside them is BYTE-IDENTICAL.** `DwarfMapper.1.0.2-rc.1.nupkg` even differed in *length*, by one byte.
+> The entire difference is NuGet.Packaging's OPC envelope: the `<32 hex>.psmdcp` core-properties part is
+> named after a GUID drawn fresh per pack, and `_rels/.rels` names it back. So: **DwarfMapper's bytes
+> reproduce; NuGet's envelope does not** — and recording that as "not reproducible" would be as wrong as
+> recording it as "reproducible" on a hash that never matches. `scripts/repro-pack-check.py` gates the
+> deterministic layer and *normalises* the two OPC parts by name rather than skipping them (the `.psmdcp`
+> is compared by content under a canonical name; `.rels` byte-for-byte after replacing only the
+> relationship that targets it). Sabotage-demoed four ways. `ContinuousIntegrationBuild`, `Deterministic`,
+> `EmbedUntrackedSources` and SourceLink were **already** set repo-wide; nothing was added for this leg.
+> **One finding filed rather than fixed: `I15`** — `dotnet pack` exits 1 today on an ApiCompat break that
+> IS already suppressed, because the csproj wires the suppression through a *property* the SDK reads as an
+> *item*; the next release tag would have failed at the pack step. **Unexercised until it runs on master.**
+
 **What:** `ContinuousIntegrationBuild=true` plus a build-twice-compare-hashes leg (or `dotnet-validate`),
 nightly. **Why:** it fits the CRA-defensive posture this repository has taken deliberately — an SBOM plus SLSA
 attestation without bit-reproducibility is a claim without a check.
@@ -551,6 +606,20 @@ attestation without bit-reproducibility is a claim without a check.
 non-determinism is named and recorded.
 
 ### S5 — cross-platform nightly legs (windows-latest, macos-latest) and the preview-SDK canary
+
+> **DONE (2026-08-23, `3405353`).** `cross-platform` (matrix `windows-latest`/`macos-latest`, `fail-fast:
+> false`, nightly) runs the sln **without** the `Category!=SurfaceMatrix` filter — deep-test's precedent,
+> not build-test's, because the nightly tier wants the whole population — and carries the ISSUE-038 SDK
+> drift assertion per-runner with `shell: bash` (windows-latest defaults to pwsh). No coverage gate: the
+> floors are measured on one platform and R1 cannot mean two measurements at once. `preview-sdk-canary`
+> targets **.NET 11 preview**, verified live before writing the leg (release index: channel 11.0,
+> support-phase `preview`, SDK `11.0.100-preview.7.26381.103`), `continue-on-error: true` with the flip
+> condition written into the job exactly as `roslyn-forward-compat` states it and Z3 precedents. Its
+> vacuity guard is the part that earns its keep: it asserts the resolved SDK's **major ≥ 11**, because a
+> setup-dotnet fallback to 10.0.x would leave the canary green and make it a slow duplicate of build-test.
+> Expected red at first, for a reason the comment names so it is not misdiagnosed: `TreatWarningsAsErrors`
+> + `AnalysisLevel=latest-all` turns every analyzer rule a new SDK *adds* into a build error.
+> **Both timeouts are stated estimates, not measurements; both jobs are unexercised until master.**
 
 **What:** two rows, one task because they are the same CI shape. (1) nightly full-suite legs on
 `windows-latest` and `macos-latest` — not per-push (runner cost and wall-clock). Correctness is de-facto
@@ -564,6 +633,22 @@ hosted-runner wall-clocks; the canary's flip obligation written into its own com
 
 ### S6 — package/binary size ratchet
 
+> **DONE (2026-08-23, `e9d2a77`).** `Assert-PackageSizeWithinCeiling`, appended as a self-contained
+> function at the END of `scripts/gate-checks.ps1` (so a concurrent edit to the R2 band checks above it
+> cannot collide), plus its own nightly `package-size` job that dot-sources it rather than re-implementing
+> it. **Measured** 2026-08-22, Windows, SDK 10.0.101, `81c4ace`, two packs each: `DwarfMapper` 253,420 /
+> 253,421 B → **ceiling 247 KB**; `DwarfMapper.Testing` 48,508 B → **ceiling 47 KB**. Note the tightness
+> that R1 buys: **~530 bytes of headroom** on DwarfMapper, so any change adding half a kilobyte of IL
+> re-measures in its own commit — the same bargain the one-decimal coverage floors and the byte-exact
+> allocation pins already make. Deliberately **one-sided** (this row's own "raise-only-with-re-measure"):
+> a shrinking package is not a finding the way a smaller allocation is, since size has no correctness
+> meaning; `Test-CoverageWithinBand` is the template if the forcing direction is ever wanted. Three
+> vacuity guards — a ceilinged package that was not produced fails, an empty/absent directory fails, and
+> a packed `.nupkg` with **no** ceiling fails. Sabotage-demoed six ways through the real pwsh function.
+> Its own job rather than a step in `reproducible-build`, because a size red and a reproducibility red
+> mean different things. **Ubuntu re-validation is a first-run obligation — the ceiling is
+> Windows-measured, and a per-OS difference is a re-measurement, never a tolerance band (the Z2 rule).**
+
 **What:** `dotnet pack` in the deep tier; ceiling = the measured KB truncated, raise-only-with-re-measure.
 **Why:** pre-1.0, and ApiCompat plus the `PublicAPI.Shipped/Unshipped` files already guard *surface* growth;
 size is a cheap secondary signal that catches what surface checks cannot (an accidentally embedded resource, a
@@ -571,6 +656,26 @@ dependency that started shipping).
 **Expected cost:** seconds. **Exit:** the ceiling pinned with its measurement annotation.
 
 ### S7 — generated quality badges, byte-compared *(maintainer-requested)*
+
+> **DONE (2026-08-23, `1a7bf3e`).** Eight badges — five coverage floors, three mutation raw scores — plus a
+> generated note carrying each leg's `break`, rendered into a `<!-- table: quality-badges -->` region of
+> `README.md` through the SAME `DocTableInjector` the options and gallery tables use, and byte-compared by
+> `DocsAreSnippetCurrentTests` (heal-or-fail). Numbers are read from `scripts/housekeeping.ps1`'s
+> `$coverageFloors`, the ledger's per-leg summary, and the `stryker-config*.json` **that ledger row names** —
+> the join is the ledger's own config column, so the two files are cross-checked at render time rather than
+> trusted to agree. **Colour is derived, in one function**: `BandColour(measured, gate, step)` IS
+> `gate-checks.ps1`'s two band checks — below the gate red, inside `[gate, gate+1)` brightgreen, at or above
+> `gate+1` yellow (R2 broken, re-measure due) — with `step` the granularity the matching check truncates to
+> (tenths for coverage, whole points for mutation), so the badge cannot reach a different verdict from the
+> check. **Placement is under `## Status`, not the top badge block**, because the maintainer had just pruned
+> that block (`8328c81`) and eight more badges would run against that signal. The renderer is TEST-PROJECT
+> code beside `GeneratedDocsAreCurrentTests`' two renderers, deliberately: DocTooling is coverage-floored and
+> a mutation target, and the measured numbers must not move because the thing that renders them was added.
+> Every reader refuses loudly on a shape change and asserts its own count (5 floors, 3 legs) — a reader that
+> silently matched nothing would render an EMPTY region and the README would be healed to match it.
+> **Sabotage-demoed both ways:** hand-edited `91.2` → `99.9` and two tests red naming `README.md`; moved the
+> floor 91.2 → 92.0 in `housekeeping.ps1` and the regenerated README carried 92.0 in the same tree. Both
+> reverted. (B23/W4 had already landed on master, so constraint 1 was satisfied before this started.)
 
 **What:** render the coverage floors (from `scripts/housekeeping.ps1`'s `$coverageFloors`) and the three
 mutation `break` values and raw scores (from `stryker-config*.json` plus
@@ -615,71 +720,101 @@ DEFER = round 24+ with the reason stated; MAINT = maintainer-only, listed in the
 
 | Row | Disposition | Where / why |
 |---|---|---|
-| B4 | FOLD → V1 | round-22 W5's batch; not landed at the time of writing — reconcile |
-| B5 | FOLD → V1 | W5's batch; also the third of the excused-row family (B5/B7/B32) the final review named |
+| B4 | **CLOSED — r22 W5** | reconciled 2026-08-23: `DONE` in `TASKS.md`. V1 never had work to do |
+| B5 | **CLOSED — r22 W5** | reconciled: `DONE` (`Contracts/SurfaceFixtureBaselineTests.cs`). The excused-row family's other two, B7 and B32, are still open and are M1's |
 | B7 | FOLD → M1 | the research's own R23 staging: obligation completeness |
-| B8 | FOLD → V1 | W5's batch |
-| B10 | FOLD → V1 | W5's batch |
-| B12 | FOLD → V1 | W5's batch |
-| B13 | FOLD → V1 | W5's batch |
-| B14 | FOLD → V1 | W5's batch |
+| B8 | **CLOSED — r22 W5** | reconciled: `DONE` |
+| B10 | **CLOSED — r22 W5** | reconciled: `DONE` |
+| B12 | **CLOSED — r22 W5** | reconciled: `DONE` |
+| B13 | **CLOSED — r22 W5** | reconciled: `DONE` |
+| B14 | **CLOSED — r22 W5** | reconciled: `DONE` |
 | B16 | FOLD → M5 | wording; rides on B22's family decision, which is now a task rather than a deferral |
 | B17 | FOLD → V2 | cosmetic dead helper in generated output — one-line tidy-up, no behaviour effect; folded rather than deferred a third time |
 | B18 | FOLD → V3 | member-form directive on a `[DwarfMapper]` class member is swallowed; needs its own diagnostic decision + five-file sync — a real product silence, of the same genre W1 closed for `[MapIgnore]` |
-| B19 | FOLD → V2 (doc half) | round-22 W6 owed the written limitation; if W6 landed it, this row closes there — reconcile. The systemic remedy IS K1/K2, now live |
+| B19 | **CLOSED — r22 W6** | reconciled: W6 DID land the written limitation (the block in `SurfaceParityTests`' class doc), which is all the row asked for. The systemic remedy IS K1/K2, now live |
 | B22 | FOLD → M5 | round 22 called it "an r23 arc of its own"; it is now that arc |
-| B23 | FOLD → W4 (r22) | **round-22 work, may already be done** — reconcile; S7 is blocked behind it |
+| B23 | **CLOSED — r22 W4, `072c7ca`** | reconciled: `LoadOptions.PreserveWhitespace`, applied and regenerated. S7 was unblocked by it and has since landed (`1a7bf3e`) |
 | B24 | FOLD → V3 | contradicting `[MapNullSkip<S,T>]` silently discards the second; new diagnostic + five-file sync; unreachable by the matrix (its ×2 axis renders identical applications — which is **B37/N6**'s subject, so N6 must land first or the row stays unmeasurable) |
-| B28 | FOLD → **N3** | **NEVER DISPOSITIONED — omitted from the round-22 Layer 4 table.** A product defect of N1's genre; Layer 1 is its home |
+| B28 | **CLOSED — r23 N3, `9589e5a`** | was never dispositioned by round 22; N3 closed it, and found a third failure mode nobody had measured |
 | B29 | DEFER | changes WHICH constructor existing projections call; the honest fix is teaching `ConstructorSelector` that object-initializer construction is unavailable for the target, not a second filter — needs its own before/after measurement round |
 | B31 | FOLD → V3 | `[DwarfMapperConstructor]` on an unusable constructor is silently ignored; new id + the two-messages design question (is *unusable* a different message from *absent*?). Batched with B18/B24 because all three are "a new id for a silent discard" and one design session answers the shape for all |
 | B32 | FOLD → M1 | with B7, per the research staging |
 | B35 | FOLD → M5 | no viable remedy proposed yet; the family decision is where a new one comes from |
 | B36 | FOLD → M5 | prose-only; rides on B22 |
-| B37 | FOLD → **N6** | needs its own re-measurement commit |
-| C5 | FOLD → V2 | the open-coded `AssertRatchet` + the private repo-root walk `RepoPaths` exists to replace; round-22 W6's remainder — reconcile |
+| B37 | **CLOSED — r23 N6, `1decd32`** | landed with its own re-measurement. **This unblocks B24**, which was unmeasurable until the ×2 axis stopped rendering identical applications |
+| C5 | **CLOSED — r22 W6** | reconciled: both remainders routed to the shared helpers |
 | D-a | MAINT | ruled (keep + document); the `docs/options.md` write awaits the word |
 | D-c | MAINT | edits the agent's own instructions (`CLAUDE.md`) — called out, never done quietly |
 | D-f | MAINT | a design ruling: does `[MapTo]` participate in ambient registration at all |
-| F1 | FOLD → V2 | reality closed it (merged `dc385d4` / `d131c76`); flip with evidence — round-22 W6's job, reconcile |
-| F2 | FOLD → V2 | the round-21 ledger was captured at `96e62f9`; **the round-22 SDD progress log is the same hazard and is still git-ignored — capture it before that worktree is removed** |
+| F1 | **CLOSED — r22 W6** | reconciled: flipped with the merge commits cited |
+| F2 | **CLOSED — r22 W6 + `52fdc26`** | reconciled: the round-22 log WAS captured before the worktree went (`Issues/ledgers/round22-sdd-ledger.md`); `git worktree list` now shows only master and this one |
 | F3 | MAINT | where plan documents live is a repository-layout preference |
-| H3 | FOLD → W7 (r22) | Meziantou phase 2 — round-22 work, reconcile |
+| H3 | **CLOSED — r22 W7, `7b2ee1d` + `d57ac03`** | reconciled: Meziantou.Analyzer in all 17 remaining projects |
 | H8 | MAINT | the durable-form decision (document the pwsh / reportgenerator / ilverify prerequisites, and/or add a BOM); once ruled the edit is one small task |
 | I1 | MAINT → M3a | ruling first, then the pre-specced task |
 | I2 | MAINT → M3b | ruling first (a product-shape decision), then the pre-specced seam |
 | I3 | MAINT → M3c | ruling first (research Q3's category), then the pre-specced exclusion or deletion |
-| I4 | FOLD → **N5** | agent task with an in-task default ruling |
-| I5 | FOLD → **N1** | the round's core |
-| I6 | FOLD → **N4** | one line, blessed |
-| I7 | FOLD → **N2** | the round's core |
+| I4 | **CLOSED — r23 N5, `86f68f4`** | |
+| I5 | **CLOSED — r23 N1, `603047a`** | |
+| I6 | **CLOSED — r23 N4, `ff744ea`** | the one line alone would have been a regression in disguise |
+| I7 | **CLOSED — r23 N2, `4b7caa4`** | |
 | I8 | MAINT (record-only) | no license-compatible fix exists; the standing reasoned suppressions ARE the disposition. **No action** unless the maintainer revisits the benchmark competitor set |
 | I9 | MAINT → M4 | ruling first, then the pre-specced change |
 | K3 | DEFER (open research) | round-22's static-mutant attribution research **did not run** — no entry in the round-22 progress log. Per ruling (c) it is a wall-time optimization, no longer an enabling constraint: 85 of the generator leg's 201 mutants are `static`, ~14 min of the leg. Carry it as a low-priority research row |
 
-### V1 — the small-guards batch remainder *(reconcile first)*
+### V1 — the small-guards batch remainder — **NO WORK REMAINED. Closed by the reconciliation, 2026-08-23.**
 
-**What:** whichever of B4, B5, B8, B10, B12, B13, B14 round-22 W5 did not land: the legal same-source
-`[FlattenGraph]` shape pinned (B4); the fixture-baseline gate with its four `DWARF001`-by-design exceptions
-named (B5); one shrink-only guard over `DiagnosticTestAllowlist` (B8 — note `PredatesTheChangelog` is **gone**,
-drained by D-e and deleted at `73c58c3`, so B8's scope has halved and the row's own text is stale); the
-`CorpusFor` throwing default arm reached (B10); the Reasons/`StructurallyInapplicable` double-count forbidden
-(B12); evidence links **resolved**, not shape-checked (B13); the `IsGeneratorAuthored` `*.g.cs`-collision
-remarks completed (B14).
-**Verification:** every new guard sabotage-demoed red once. **Exit:** all remaining rows DONE.
+**Reconciled result:** round-22 W5 landed **all seven** — B4, B5, B8, B10, B12, B13, B14 — and every one reads
+`DONE` in `Issues/round20/TASKS.md` with its closing note. The plan's own hedge ("whichever ... W5 did not
+land") resolves to *none*. V1 therefore had an empty body, and re-deriving those seven guards would have been
+a second implementation of work already in the tree.
 
-### V2 — records hygiene and the stale-status sweep *(reconcile first)*
+**This is the reconciliation obligation paying for itself.** Had round 23 worked the plan's stale list instead
+of re-reading the task file, V1 would have been a full task's worth of duplicated effort producing merge
+conflicts against W5's own guards. **Exit: satisfied, with no commit of its own beyond this flip.**
 
-**What:** whatever of round-22 W6 remains — C5's two items (the open-coded `AssertRatchet`, the private
-repo-root walk), B19's written limitation *where the ceilings are read*, and the truth-sweep of
-`Issues/round20/TASKS.md`. **The sweep has grown since W6 was written:** the NOW section still describes the
-pre-merge branch and quotes `EmittedInvalidCode` **10** when it is **0**; the ratchet table still lists
-`PredatesTheChangelog` **76** when the baseline is **deleted**; F1/F2 still read TODO; the "Machines" table's
-`PredatesTheChangelog` and mutation-survivor rows are stale; the F1 merge-handoff section describes a merge
-that happened. **Statuses only — no history rewritten.** Plus B17's one-line dead-helper tidy-up.
-**Exit:** the task list tells the truth at a glance; C5, B19, B17, F1, F2 DONE.
+### V2 — records hygiene and the stale-status sweep — **narrowed by the reconciliation, 2026-08-23**
 
-### V3 — the three "new id for a silent discard" rows, decided as one shape
+**Reconciled result: C5, B19, F1 and F2 all landed at round-22 W6 and read `DONE`.** Four of the plan's six
+items were already paid. What genuinely survives is **B17** (still `TODO`) and **a truth-sweep whose contents
+are not the ones this plan predicted** — W6 already corrected the items it named, and a *new* layer of
+staleness has accumulated on top of W6's own corrections, most of it created by round 23 itself.
+
+**What the plan predicted, checked one by one against the file:**
+
+| Plan's sweep item | Actual state at round-23 start |
+|---|---|
+| NOW quotes `EmittedInvalidCode` **10** | **already corrected by W6** — the paragraph reads 0 and explains the 10 |
+| ratchet table lists `PredatesTheChangelog` **76** | **still there.** W6 fixed the *Machines* row, not the ratchet table |
+| F1 / F2 read TODO | **already `DONE`** |
+| "Machines" table's `PredatesTheChangelog` + mutation-survivor rows | **already corrected by W6** |
+| F1 merge-handoff section describes a merge that happened | **already corrected by W6** |
+
+**What the plan could NOT have predicted, and is the sweep's real content:** the NOW block names branch
+`feat/round22-gates` and worktree `DwarfMapper-r22`, both gone; "In flight" says round 22 and "Next" says
+nothing queued, when round 22 is **merged to master at `d0e5bca`** and round 23 is in flight; the live-ceiling
+line and the ratchet table quote `DivergenceFinding` **2** and `DivergentCell` **4** when I19 took them to
+**1** and **2**; the same table quotes `DirectCompileErrorCallBaseline` **53** (live **55**) and
+`MapMethodModelBoolFlagBaseline` **15** (live **16**), each raised deliberately with a reason at the call
+site; the two-remaining-findings sentence still names `NullCollections`@`Projection`, which **I19 closed**;
+and **D-a is superseded** — it asked to keep that divergence and document the keeping, and I19 ruled the
+opposite way and wrote the residual into `docs/options.md` instead.
+
+**Statuses only — no history rewritten.** B17 gets its own commit (it is an emission change, not a record).
+**Exit:** the task list tells the truth at a glance; B17 DONE.
+
+**DONE 2026-08-23.** Sweep at `2eb0520`; **B17** at `230099c`. B17 was reproduced before it was fixed (a
+`StringFormat` member shipped `__DwarfMap_FmtStrF_*` beside an uncalled `__DwarfMap_FmtToStr_*`), fixed at the
+one site in the pipeline where a resolved converter is replaced, and sabotage-demoed **in both directions** —
+disabling the removal reds the orphan test, making it over-eager reds the sibling control with a real compile
+error. A ten-shape orphan sweep found no other unreferenced helper. `D-a` was flipped `DONE`/superseded in the
+same sweep: it asked to KEEP the `NullCollections`@`Projection` divergence and document the keeping, and I19
+ruled the other way, so it was waiting on a word that can no longer be given.
+
+### V3 — the three "new id for a silent discard" rows, decided as one shape *(survives the reconciliation whole)*
+
+**Reconciled result:** B18, B24 and B31 are all still `TODO`. **B24 is now measurable** — the plan noted it
+was unreachable by the matrix until B37/N6 landed, and N6 landed at `1decd32`, so the blocker is gone.
 
 **What:** B18, B24 and B31 are the same question three times — *the caller wrote something, the generator
 declined to act on it, and the build said nothing* — and each was deferred separately for the same reason (a
@@ -694,6 +829,30 @@ whose remarks say it does **not** bless the behaviour — so the pin already exi
 detector); matrix re-measured. **Exit:** no directive form in these three shapes is silently inert; B18, B24,
 B31 DONE.
 
+**DONE 2026-08-23, one commit each, in the order that exercised the new-id plumbing before the pin inversion.**
+
+**The shape, answered once:** *a directive the generator reads and declines to act on is reported at its own
+site, with the reason and the remedy; it is an **Error** only where no defensible behaviour exists to keep,
+otherwise the documented behaviour is kept and the report is a **Warning**.* One policy, three different
+mechanics — which is what W1 did too (`DWARF095` + `DWARFR12` for its three).
+
+- **B31 → the new `DWARF098`, a Warning** (`cb868be`). The fallback construction is safe and documented, so
+  the behaviour is kept and only the report was missing. Answers the row's two-messages question by that
+  choice: an ABSENT annotation stays silent, because nothing written is nothing discarded.
+- **B24 → the new `DWARF099`, an Error** (`9d4371c`). Nothing to rank: identical scope, separated only by
+  source order. Identical duplicates stay accepted. **N6 is what made this measurable**, and the matrix now
+  poses it directly.
+- **B18 → no new id: `DWARF088` reaches its third placement** (`f453521`). Minting a fourth would have been an
+  id saying a sentence `DWARF088`'s own title already says. The row understated the defect — EVERY form is
+  inert on a mapper's own member, the legal class/method form included.
+
+**Ids allocated this round:** `DWARF096` (I14), `DWARF097` (I17), `DWARF098` (B31), `DWARF099` (B24). The
+plan's own "next free `DWARF097`" was stale before Layer 4 opened; **next free is `DWARF100` / `DWARFR13`.**
+
+**Measured at the Layer-4 tip (`f453521`), foreground:** whole solution **0 W / 0 E** with samples; suite
+**8,008 / 0** (from 7,952 at round start); census **866 / 866**; `EmittedInvalidCodeCellCeiling` exactly **0**;
+scans **15 / 15**; `src/` analyzers clean; no new allowlists; nothing pushed.
+
 ### The reconciliation obligation — read this at round-23 start
 
 **This plan was written before round 22's W4–W7 completed and before the round-22 branch merged.** W1
@@ -706,6 +865,14 @@ round-22 progress log at the merged tip, and **reconcile Layer 4 against reality
 "reconcile" either closes (delete it from V1/V2, cite the commit) or survives (keep it, with the reason it
 survived). Re-verify the state-at-round-start numbers at the same time — the suite count, the census, and any
 floor W4–W7 moved. Then, and only then, start N0.
+
+**DISCHARGED 2026-08-23.** W4, W5, W6 and W7 **all landed**, and round 22 merged to master at `d0e5bca`.
+Every "reconcile" row above is flipped with its commit. The score: **V1 closed entirely with no work**
+(all seven of W5's rows `DONE`); **V2 narrowed to B17 plus a sweep whose contents differ from the ones
+predicted** (W6 fixed four of the six named items, and round 23's own I19/I17 work created new staleness the
+plan could not have known about); **V3 survives whole**, with B24 unblocked by N6. Measured at the same time
+and carried into the state header: suite **7,952 / 0**, census **866 / 866**, whole solution
+**0 W / 0 E** with samples. The full table is in the round-23 ledger.
 
 ---
 

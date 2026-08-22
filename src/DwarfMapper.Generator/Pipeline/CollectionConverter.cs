@@ -287,7 +287,7 @@ internal static class CollectionConverter
         var identity = SymbolEqualityComparer.Default.Equals(srcElem, tgtElem)
                        && elemConverter is null
                        && elemNull == NullHandling.None;
-        var item = ElementExpr("__item", elemConverter, elemNull, elemNeedsCtx);
+        var item = ElementExpr("__item", elemConverter, elemNull, elemFq, elemNeedsCtx);
 
         // Effective preserve: are we emitting register-before-fill for THIS collection? (Preserve only.)
         var registerBeforeFill = isPreserve && IsMutableReferenceCollection(shape.Target);
@@ -324,7 +324,7 @@ internal static class CollectionConverter
         var srcFq = Fq(srcType);
         var srcParamType = FqNullableParam(srcType);
         // Recursion-capable element → identity fast-path is never applicable; element call threads ctx.
-        var item = ElementExpr("__item", ctxElementConverter, elemNull, true);
+        var item = ElementExpr("__item", ctxElementConverter, elemNull, elemFq, true);
 
         var w = new CodeWriter(1);
         EmitBody(w, existingName, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape,
@@ -863,21 +863,47 @@ internal static class CollectionConverter
         return "new " + elem + "[" + sizeExpr + "]";
     }
 
-    private static string ElementExpr(string item, string? conv, NullHandling nh, bool needsCtx = false)
+    /// <summary>
+    ///     The per-element expression: the element's null handling COMPOSED with its converter.
+    ///     <para>
+    ///     The converter branch used to ignore <paramref name="nh" /> entirely and emit <c>Conv(__item)</c>,
+    ///     which handed a <c>S?</c> to a helper taking <c>S</c> — CS1503 in generated code the consumer cannot
+    ///     edit, with the generator silent (TASKS.md I5 / round 23 N1). Every value of the enum now reaches
+    ///     the emitted element: a null element whose destination element can hold null is LIFTED to a null
+    ///     element (<paramref name="elemFq" /> is cast onto the non-null arm so the conditional's type never
+    ///     depends on target-typing), and one whose destination cannot is unwrapped by the documented
+    ///     NullStrategy rule.
+    ///     </para>
+    /// </summary>
+    private static string ElementExpr(string item, string? conv, NullHandling nh, string elemFq,
+        bool needsCtx = false)
     {
-        if (conv is not null)
+        if (conv is null)
+            return nh switch
+            {
+                NullHandling.ThrowIfNull => item +
+                                            " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")",
+                NullHandling.ValueOrDefault => item + ".GetValueOrDefault()",
+                _ => item
+            };
+
+        // When the element converter is recursion-capable (under Preserve mode), thread ctx and depth+1.
+        var extra = needsCtx ? ", ctx, depth + 1" : "";
+        string Call(string arg)
         {
-            // When the element converter is recursion-capable (under Preserve mode), thread ctx and depth+1.
-            var args = needsCtx ? item + ", ctx, depth + 1" : item;
-            return conv + "(" + args + ")";
+            return conv + "(" + arg + extra + ")";
         }
 
         return nh switch
         {
-            NullHandling.ThrowIfNull => item +
-                                        " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")",
-            NullHandling.ValueOrDefault => item + ".GetValueOrDefault()",
-            _ => item
+            NullHandling.NullableProject =>
+                "(" + item + ".HasValue ? (" + elemFq + ")" + Call(item + ".Value") + " : null)",
+            NullHandling.NullableProjectRef =>
+                "(" + item + " is null ? null : (" + elemFq + ")" + Call(item) + ")",
+            NullHandling.ThrowIfNull => Call(item +
+                                             " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")"),
+            NullHandling.ValueOrDefault => Call(item + ".GetValueOrDefault()"),
+            _ => Call(item)
         };
     }
 
@@ -957,17 +983,94 @@ internal static class CollectionConverter
 
         element = enumerable.TypeArguments[0];
 
-        foreach (var candidate in Self(src))
-            if (candidate is INamedTypeSymbol named
-                && (named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_ICollection_T
-                    || named.OriginalDefinition.SpecialType ==
-                    SpecialType.System_Collections_Generic_IReadOnlyCollection_T))
-            {
-                count = CountKind.Count;
-                break;
-            }
-
+        count = CountOf(src);
         return true;
+    }
+
+    /// <summary>
+    ///     The cheap-count member the emitters may write on a value of this static type, resolved by MEMBER
+    ///     LOOKUP rather than by an interface test (B28).
+    ///     <para>
+    ///         Implementing an interface is not the same as exposing a member. <c>ImmutableArray&lt;T&gt;</c>
+    ///         implements both <c>ICollection&lt;T&gt;</c> and <c>IReadOnlyCollection&lt;T&gt;</c>
+    ///         EXPLICITLY, and so can any user type: <c>s.Count</c> then does not bind and the emitted helper
+    ///         does not compile. Two failure modes, and the second is the worse one — in the generated file
+    ///         as written (no usings) it is <c>CS1061</c>, a clean break; in a consumer project with implicit
+    ///         usings on, <c>System.Linq</c> is in scope, <c>s.Count</c> binds to the extension METHOD GROUP,
+    ///         the capacity overload stops matching and overload selection quietly moves to a different
+    ///         <c>List&lt;T&gt;</c> constructor (<c>CS1503</c>).
+    ///     </para>
+    ///     <para>
+    ///         Interfaces and type parameters keep the interface reading, and that distinction is the whole
+    ///         correctness argument: ordinary member lookup on an interface-typed value DOES see the members
+    ///         of its base interfaces, and on a type parameter it DOES see the members of its constraints, so
+    ///         a source member declared <c>IReadOnlyCollection&lt;T&gt;</c> must keep pre-sizing. Only for a
+    ///         class or a struct is "implements" different from "exposes".
+    ///     </para>
+    ///     <para>
+    ///         <c>Count</c> is preferred over <c>Length</c> where both are exposed. That is the
+    ///         churn-minimising choice, stated so it is a decision and not an accident: every pre-sizing
+    ///         source reaching this predicate today (<c>List&lt;T&gt;</c>, <c>HashSet&lt;T&gt;</c>, the
+    ///         collection interfaces) exposes <c>Count</c>, so preferring it leaves every existing emission
+    ///         byte-identical, and arrays never reach here at all — they return
+    ///         <see cref="CountKind.Length" /> from the <c>IArrayTypeSymbol</c> branch above.
+    ///         <c>Length</c> is the fallback for the array-shaped types (<c>ImmutableArray&lt;T&gt;</c>,
+    ///         <c>string</c>) that expose it instead.
+    ///     </para>
+    /// </summary>
+    internal static CountKind CountOf(ITypeSymbol src)
+    {
+        if (src.TypeKind is TypeKind.Interface or TypeKind.TypeParameter)
+        {
+            foreach (var candidate in Self(src))
+                if (candidate is INamedTypeSymbol named
+                    && (named.OriginalDefinition.SpecialType ==
+                        SpecialType.System_Collections_Generic_ICollection_T
+                        || named.OriginalDefinition.SpecialType ==
+                        SpecialType.System_Collections_Generic_IReadOnlyCollection_T))
+                    return CountKind.Count;
+
+            return CountKind.None;
+        }
+
+        if (HasPublicInstanceInt32(src, "Count")) return CountKind.Count;
+        if (HasPublicInstanceInt32(src, "Length")) return CountKind.Length;
+        return CountKind.None;
+    }
+
+    /// <summary>
+    ///     True when <c>value.<paramref name="name" /></c> binds to a public, readable, non-static,
+    ///     non-indexed <c>int</c> property on <paramref name="type" /> or one of its base types.
+    ///     <para>
+    ///         The walk stops at the FIRST type declaring the name, which is what C# member lookup does: a
+    ///         derived <c>public new string Count</c> HIDES a base <c>int Count</c>, and treating the hidden
+    ///         one as visible would emit a capacity argument of the wrong type. Public only — an
+    ///         <c>internal</c> member binds solely with an <c>InternalsVisibleTo</c> this generator cannot
+    ///         see from here, and a missed pre-size costs one reallocation while a wrong one costs the build.
+    ///     </para>
+    /// </summary>
+    private static bool HasPublicInstanceInt32(ITypeSymbol type, string name)
+    {
+        for (ITypeSymbol? t = type; t is not null; t = t.BaseType)
+        {
+            var declared = t.GetMembers(name);
+            if (declared.Length == 0) continue;
+
+            foreach (var member in declared)
+                if (member is IPropertySymbol
+                    {
+                        IsStatic: false,
+                        DeclaredAccessibility: Accessibility.Public,
+                        Parameters.IsEmpty: true,
+                        Type.SpecialType: SpecialType.System_Int32
+                    } property
+                    && property.GetMethod is { DeclaredAccessibility: Accessibility.Public })
+                    return true;
+
+            return false;
+        }
+
+        return false;
     }
 
     private static IEnumerable<ITypeSymbol> Self(ITypeSymbol t)

@@ -1401,4 +1401,137 @@ public static class DiagnosticDescriptors
         "{0}",
         Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
         helpLinkUri: HelpBase + "dwarf095");
+
+    /// <summary>
+    ///     The per-METHOD twin of <see cref="NoCodeGenerated" /> (DWARF078): one projection method was not
+    ///     generated because a member of it cannot be translated, and the rest of the mapper WAS.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         DWARF028 is an error, and an error used to suppress the whole class — so a mapper declaring a
+    ///         <c>Map</c> and a <c>Project</c> over the same pair generated NOTHING the moment one projected
+    ///         member was untranslatable, and every method on it reported CS8795. The <c>Map</c> methods were
+    ///         collateral: nothing about them was untranslatable, because nothing about them is translated
+    ///         (TASKS.md I14). A refusal is now proportional to what was refused — the projection method is
+    ///         dropped, the class is emitted, and this signpost explains the ONE CS8795 that follows.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, exactly like DWARF078, and for the same reason: it is a signpost, not the
+    ///         defect. The DWARF028 above it is the error, and it is the one to fix.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor ProjectionMethodNotGenerated = new(
+        "DWARF096",
+        "Projection method was not generated",
+        "Projection method '{0}' was not generated because of the error(s) above; it will ALSO "
+        + "report CS8795 (\"must have an implementing part\") — that is a cascade of this, not a separate "
+        + "problem, and it is not caused by a missing analyzer reference. The rest of this mapper WAS "
+        + "generated: only this method is missing. Fix the error(s) above, or drop the Project method and "
+        + "map those members with a runtime Map method instead.",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        "A projection becomes an expression tree that a database provider translates. When one member of it "
+        + "has no translatable form — or has no source at all — the projection method cannot be generated, "
+        + "but the ordinary Map methods on the same mapper are unaffected and are still generated. This "
+        + "warning marks the one method that is missing so its CS8795 is not mistaken for a broken analyzer "
+        + "reference.",
+        HelpBase + "dwarf096");
+
+    /// <summary>
+    ///     The per-METHOD twin of <see cref="NoCodeGenerated" /> (DWARF078) for the <c>Map</c> endpoints:
+    ///     one mapping method was not generated because a destination member of it is unmapped, and the
+    ///     rest of the mapper WAS.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         DWARF001 is an error, and an error used to suppress the whole class — so one incomplete
+    ///         method cost the consumer every OTHER method on the mapper, each reporting its own CS8795
+    ///         (TASKS.md I17). Those siblings were collateral: completeness is evaluated over one
+    ///         (source, target) pair and one method-level <c>[MapIgnore]</c> set, so an unmapped member on
+    ///         one method says nothing about the next. A refusal is now proportional to what was refused —
+    ///         the incomplete method is withheld, the class is emitted, and this signpost explains the ONE
+    ///         CS8795 that follows.
+    ///     </para>
+    ///     <para>
+    ///         Distinct from <see cref="ProjectionMethodNotGenerated" /> (DWARF096) rather than folded into
+    ///         it, because the two prescribe different remedies: DWARF096 can suggest dropping the
+    ///         <c>Project</c> method and mapping at runtime, which is nonsense advice for a <c>Map</c>
+    ///         method whose destination simply has a member nobody mapped.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, exactly like DWARF078 and DWARF096, and for the same reason: it is a
+    ///         signpost, not the defect. The DWARF001 above it is the error, and it is the one to fix.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MappingMethodNotGenerated = new(
+        "DWARF097",
+        "Mapping method was not generated",
+        "Mapping method '{0}' was not generated because of the completeness error(s) above; if it is "
+        + "declared with accessibility modifiers it will ALSO report CS8795 (\"must have an implementing "
+        + "part\") — that is a cascade of this, not a separate problem, and it is not caused by a missing "
+        + "analyzer reference. "
+        + "The rest of this mapper WAS generated: only this method is missing. Map the destination "
+        + "member(s) named above, or annotate this method with [MapIgnore(\"…\")].",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        "Completeness is a promise about ONE mapping method: it is evaluated over that method's source and "
+        + "target pair and honours that method's own [MapIgnore] set. An unmapped destination member "
+        + "therefore withholds the method it belongs to and leaves the mapper's other methods generated. "
+        + "This warning marks the one method that is missing so its CS8795 is not mistaken for a broken "
+        + "analyzer reference.",
+        HelpBase + "dwarf097");
+
+    /// <summary>
+    ///     <c>DWARF098</c> — <c>[DwarfMapperConstructor]</c> names a constructor the selector cannot use.
+    ///     <para>
+    ///         The EMISSION is not the defect and is deliberately unchanged: an unusable annotated
+    ///         constructor falls back to the safe default policy (the parameterless object-initializer path
+    ///         where one exists) rather than emitting a call the compiler would reject. What was missing is
+    ///         the REPORT. The caller named one specific constructor, the selector declined it for a reason
+    ///         it knows exactly, and the build said nothing — a caller who marks a <c>private</c> constructor
+    ///         and gets object-initializer mapping has no way to learn why. TASKS.md <c>B31</c>.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, not an Error, and the row's own two-messages question is answered by that
+    ///         choice: the behaviour is defensible and is KEPT, so this reports rather than refuses. An
+    ///         ABSENT annotation stays silent — nothing was written, so nothing was discarded. Only the
+    ///         written-and-declined case is a caller mistake, and only it is reported.
+    ///     </para>
+    /// </summary>
+    public static readonly DiagnosticDescriptor AnnotatedConstructorUnusable = new(
+        "DWARF098",
+        "[DwarfMapperConstructor] names a constructor the mapper cannot use",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        "A constructor carrying [DwarfMapperConstructor] was filtered out of the candidate set before "
+        + "selection ran, so the annotation had no effect and the destination was built exactly as it would "
+        + "have been without it. The construction that results is safe — that is why it is a warning and not "
+        + "an error — but the directive the caller wrote was discarded in silence.",
+        HelpBase + "dwarf098");
+
+    /// <summary>
+    ///     <c>DWARF099</c> — one pair carries two <c>[MapNullSkip&lt;TSource, TTarget&gt;]</c> declarations
+    ///     with OPPOSITE values.
+    ///     <para>
+    ///         An <b>Error</b>, and the reason is that there is nothing to rank. The generic form is
+    ///         <c>AllowMultiple</c>, so two applications over one pair compile; the reader returned the first
+    ///         by declaration order and dropped the second without a word, which made SOURCE ORDER decide
+    ///         whether a patch-merge mapper skips nulls. That is an accidental rank, not a policy — unlike the
+    ///         method-versus-pair contradiction, which A6 settled as most-specific-wins because those two
+    ///         forms have different scopes and a defensible ordering. These have IDENTICAL scope.
+    ///     </para>
+    ///     <para>
+    ///         IDENTICAL duplicates are accepted in silence, deliberately: a repeated declaration that says
+    ///         the same thing discards nothing, so there is nothing to report. Only the contradiction is
+    ///         refused. TASKS.md <c>B24</c>.
+    ///     </para>
+    /// </summary>
+    public static readonly DiagnosticDescriptor ContradictingPairNullSkip = new(
+        "DWARF099",
+        "One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations",
+        "{0}",
+        Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
+        "[MapNullSkip<TSource, TTarget>] is AllowMultiple, so a pair can be named twice. When the two "
+        + "declarations disagree the generator has no defensible way to choose between them — they have the "
+        + "same scope, and only source order separates them — so the mapper is refused rather than resolved "
+        + "by an accident of ordering. Two declarations that AGREE are accepted.",
+        HelpBase + "dwarf099");
 }

@@ -297,6 +297,15 @@ internal static partial class MapperExtractor
                 continue;
             }
 
+            // B17: the synthesized-helper table AS IT STOOD before this member's conversion was resolved.
+            // A valid StringFormat REPLACES whatever the resolution below produces, and the replaced helper
+            // used to stay in the table and be emitted as a `private static` nothing calls. Snapshotted here
+            // rather than inside the branch because TryResolveConversion is what adds it, and taken only when
+            // this member actually carries a format — no allocation on the ordinary path.
+            var synthBeforeConversion = stringFormats is not null && stringFormats.ContainsKey(tgtName)
+                ? new HashSet<string>(synthesized.Keys, StringComparer.Ordinal)
+                : null;
+
             if (TryResolveConversion(compilation, srcMatch, tgtType, useMethod, allMethods, autoCandidates,
                     enumPolicy, synthesized, nullStrategy, location, tgtName, diagnostics, out var conv,
                     out var nullH, out var convNeedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
@@ -320,7 +329,24 @@ internal static partial class MapperExtractor
                         diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StringFormatInvalid, location,
                             $"[MapProperty(StringFormat=…)] for '{tgtName}' needs a source implementing IFormattable; '{srcMatch.ToDisplayString()}' does not"));
                     else
+                    {
                         conv = ParsableConverter.AddFormattedToString(synthesized, srcMatch, fmt);
+                        // B17: drop what the resolution above synthesized for THIS member — the format-aware
+                        // converter has replaced it, so nothing references it and it was being emitted as an
+                        // unused `private static` beside every formatted one. Only keys this call ADDED are
+                        // removed: a helper an earlier member already needed is in the snapshot and survives,
+                        // and a LATER member needing the same conversion re-adds it, because every
+                        // synthesizer is add-if-absent and returns the name either way. The formatted helper
+                        // itself is admitted to the snapshot first so a format whose name collides with a
+                        // just-added key cannot delete itself.
+                        if (synthBeforeConversion is not null)
+                        {
+                            synthBeforeConversion.Add(conv);
+                            foreach (var orphan in synthesized.Keys
+                                         .Where(k => !synthBeforeConversion.Contains(k)).ToList())
+                                synthesized.Remove(orphan);
+                        }
+                    }
                 }
 
                 // Phase 8: NullSubstitute (direct-assignable only) and When (guarded assignment).

@@ -125,35 +125,25 @@ internal static class DeclaredDivergences
                 SurfaceEndpoints.SpanMap | SurfaceEndpoints.AsyncStream)],
             OptionName: "MaxDepth"),
 
-        ["NullCollections"] = new(
-            "honoured everywhere except Projection, which reads the option nowhere and always emits "
-            + "`src.Items == null ? null : ...` — i.e. AsNull. Under the DEFAULT (AsEmpty) the runtime "
-            + "produces an EMPTY collection, so .Map and .Project answer the same input differently and a "
-            + "caller doing dto.Items.Length gets an NRE on the projection path only.\n\n"
-            + "NOT fixed, and deliberately so — this one is a DESIGN DECISION, not a threading oversight "
-            + "like the other ten. A refusal was implemented and reverted: it broke seven existing tests, "
-            + "including ProjectionDeepTests.Projection_nullable_collection_member_gets_source_null_guard, "
-            + "which asserts that ternary ON PURPOSE because Enumerable.Select(null!, ...) throws at query "
-            + "evaluation time, and the ProjectionMatrixSafeTests capability tests. Refusing would mean "
-            + "'you cannot project a nullable collection under default options', a capability regression "
-            + "far larger than the divergence it closes.\n\n"
-            + "Three candidate resolutions, for a maintainer to choose:\n"
-            + "  (a) honour AsEmpty by emitting `== null ? new List<T>() : ...` — fixes it properly, but "
-            + "needs someone to confirm the provider translates a constructed empty collection inside an "
-            + "expression tree; failing inside a query at runtime is worse than the current divergence;\n"
-            + "  (b) refuse with DWARF028 unless NullCollections = AsNull — loud and correct, but breaks the "
-            + "default path for every nullable source collection;\n"
-            + "  (c) declare projection's collection null-semantics to be AsNull by nature and document it, "
-            + "leaving the code alone.\n\n"
-            + "Pinned by the generated matrix rendering this cell SILENT, so it cannot be forgotten",
-            Findings + "#NullCollections",
-            [
-                new DivergentCell("DwarfMapper", 0, "NullCollections=NullCollectionStrategy.AsNull",
-                    AttributeTargets.Class, SurfaceEndpoints.Projection),
-                new DivergentCell("DwarfMapperDefaults", 0, "NullCollections=NullCollectionStrategy.AsNull",
-                    AttributeTargets.Assembly, SurfaceEndpoints.Projection)
-            ],
-            OptionName: "NullCollections"),
+        // The NullCollections row lived here and is FIXED, not deleted for convenience — and it is the one
+        // entry on this list that was closed by the resolution IT ITSELF named. Projection read the option
+        // nowhere and always emitted `src.Items == null ? null : ...`, i.e. AsNull, so under the documented
+        // AsEmpty default .Map produced an empty collection and .Project produced null for the same input.
+        // Recorded as a DESIGN DECISION with three candidate resolutions; (a) was taken — honour AsEmpty by
+        // emitting `== null ? new List<T>() : ...`, with the effective AsNull computed by the SAME predicate
+        // the runtime endpoint uses, so the documented degrade over a null-incapable target holds at both
+        // ends. (b) was rejected for the reason the row already gave (refusing would be a capability
+        // regression: you could not project a nullable collection under default options); (c) was rejected
+        // because the documentation states one behaviour for the option with no endpoint qualifier, and the
+        // whole point of this matrix is that the code and the documented default may not disagree in
+        // private. The row's worry about (a) — "someone needs to confirm the provider translates a
+        // constructed empty collection inside an expression tree" — is answered as far as it can be here and
+        // no further: no provider runs in this repository, the empty arm adds no ternary where none existed
+        // (the guard was always emitted for a source member that may be null), and the bound is stated in
+        // docs/options.md. Two cells went Silent → Honoured, which is why both ceilings below dropped.
+        // ProjectionDeepTests.Projection_nullable_collection_member_gets_source_null_guard, named in the row
+        // as the test that pinned the old ternary on purpose, is now a two-cell theory pinning BOTH settings.
+        // See Issues/round20/TASKS.md I19.
 
         // D1 and D2 lived here and are FIXED, not deleted for convenience. They were one shape — an UNSCOPED
         // member directive ([MapIgnore("X")], [MapProperty("X", "Y")]) written on a mapping method or its
@@ -240,6 +230,16 @@ internal static class DeclaredDivergences
         //   Use="probe" => DWARF028, DWARF064 (behind CS8795)
         //   ×2          => DWARF042, DWARF064 (behind CS8795)
         //
+        // RE-MEASURED 2026-08-23 (round 23 N6/B37). The ×2 axis used to render two BYTE-IDENTICAL
+        // applications for every element with a declared argument list, so the ×2 readings quoted
+        // above were measured against "the same directive stated twice". The axis now rotates the
+        // declared {Member} placeholders by variant, so it renders two DIFFERENT applications and
+        // those cells ask a different question. The finding itself is untouched - what follows is
+        // the ×2 reading as it stands today, so the history above stays readable as history:
+        //   ×2 (now `[MapValue("Name", "probe")] + [MapValue("Tag", "probe")]`, two DIFFERENT
+        //   targets rather than a duplicate) => Refused, DWARF064 (Info) at Projection. No longer
+        //   DWARF042: two distinct targets are not a duplicate-target collision.
+        //
         // Use= is the one part a query provider cannot take — it would have to call back into managed code
         // from inside an expression tree — so it is refused as DWARF028 rather than emitted, which is the
         // treatment [MapProperty(Use=)] already gets at this endpoint. Everything else about the directive is
@@ -263,6 +263,11 @@ internal static class DeclaredDivergences
         // The entry's evidence held exactly as filed; it is the one of A9a's three that did. Its own note
         // about the ×2 CreateMap cell being N4 rather than a silence is also still true: that cell reads
         // NotCompilable (CS8795 behind DWARF087) and is untouched by this commit.
+        //
+        // RE-MEASURED 2026-08-23 (round 23 N6/B37): the ×2 rendering is now
+        // `[FlattenGraph("Root", "Flat")] + [FlattenGraph("Children", "Id")]` rather than the same
+        // application twice, and that CreateMap cell reads Refused, DWARF034 (behind CS8795). Still not
+        // a silence, which is what the note above claims; the id it reads under moved.
 
         // D12 closed 2026-08-17 (task A9b). [Reinterpret("Data")] forces a blit the automatic layout proof
         // declines to make on its own, and both element-wise cells now read Refused (DWARF090) — the gate for
@@ -402,6 +407,11 @@ internal static class DeclaredDivergences
         // measured Honoured there first. Final reading: Honoured / Honoured / Honoured / Refused / Refused
         // for ctor(1), and Refused (DWARF017, ambiguous flatten) / DWARF090 for ×2. No cell silent, none
         // moved into a population judged by nothing.
+        //
+        // RE-MEASURED 2026-08-23 (round 23 N6/B37): the ×2 rendering is now
+        // `[Flatten("Child")] + [Flatten("Id")]` - two DIFFERENT roots, so it is no longer the
+        // ambiguous-duplicate question DWARF017 answered. It reads Refused, DWARF016 at CreateMap /
+        // UpdateInto / Projection and DWARF090 at the two element-wise endpoints. Still no cell silent.
         //
         // D20 was here — the co-located host read no member-level directive, twenty cells across the
         // Property and Field sites. Closed by teaching MapperExtractor's co-located path to read those

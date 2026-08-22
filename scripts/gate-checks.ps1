@@ -135,3 +135,226 @@ function Assert-LegScoreWithinBand {
     $configBreak = (Get-Content -Raw -LiteralPath $ConfigPath | ConvertFrom-Json).'stryker-config'.thresholds.break
     Assert-MutationScoreWithinBand -Leg $Leg -ReportPath $report.FullName -Break ([int]$configBreak)
 }
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# I4 — the DECONTAMINATION sweep, widened from "the leg's own target DLL" to every product assembly in
+# every test bin.
+#
+# Stryker has no test sandbox and backs up only the files it OVERWRITES. The analyzer-referencing test
+# projects reference DwarfMapper.Generator with ReferenceOutputAssembly="false", so their bins hold no
+# pre-run copy of it — Stryker plants a MUTATED DwarfMapper.Generator.dll there during the mutate/compile
+# phase, no `*.stryker-unchanged` marker is written beside it, restore never touches it, and
+# RepoWriteGuard's leftover-backup signal structurally cannot fire. P5 found six such bins after a run
+# that was otherwise clean (ConsumerTests/CleanCorpus, ConsumerTests/Host, CorpusTests, DifferentialTests,
+# IntegrationTests, Testing.Tests). The hazard is not the leftover file: it is the NEXT incremental build,
+# which keeps the newer mutant, after which those suites exercise a mutated generator and go silently
+# green.
+#
+# `git diff --exit-code` cannot see this (bin/ is git-ignored) and neither can the leg's score. So the
+# sweep is a content scan: the reference set of product assembly NAMES comes from what src/ actually
+# builds, and every file of one of those names under tests/**/bin must not carry Stryker's marker.
+#
+# WHY THIS AND NOT RepoWriteGuard (the in-task ruling, recorded with its alternative): RepoWriteGuard is a
+# WRITE-time guard inside the test process — it can refuse a write the tests themselves perform, which is
+# how H1's doc-overwrite was closed. It is structurally the wrong instrument here: Stryker plants these
+# DLLs from OUTSIDE any test process, before the tests run, so there is no write for the guard to
+# intercept. The sweep belongs where the other post-leg proofs live (Assert-MutantsWereTested,
+# Assert-LegScoreWithinBand) — after the leg, reading the tree. T3-H1 NOTE 3 is that precedent.
+#
+# It FAILS rather than deletes, deliberately: silently deleting the evidence would turn a Stryker
+# behaviour change into a no-op and leave the next reader with nothing to read. The message names every
+# offending file and the remedy.
+#
+# R4/H7 clean: the oracle is file CONTENT, never a timestamp and never a clock. P5's original detection
+# used "timestamped inside the run's mutate/compile phase", which is exactly the wall-clock oracle H7
+# forbids — a slow run, a clock skew or a re-run would both miss mutants and invent them.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-NoMutatedProductBinaries {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [Parameter(Mandatory)][string]$Root
+    )
+    $marker = 'Stryker'
+
+    # Latin1 is byte-preserving, so this is a byte scan written as a string search: metadata strings in a
+    # managed assembly are UTF-8 in the #Strings heap, and Stryker's injected MutantControl names land
+    # there verbatim. Never Get-Content's default decoding, which would mangle bytes it cannot decode.
+    $carriesMarker = {
+        param([string]$Path)
+        [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($Path)).Contains(
+            $marker, [System.StringComparison]::Ordinal)
+    }
+
+    $binSegment = [System.IO.Path]::DirectorySeparatorChar + 'bin' + [System.IO.Path]::DirectorySeparatorChar
+
+    # 1. The reference set: the assemblies src/ actually produces. Taking the names from the tree rather
+    #    than hard-coding them means a new product project is swept the day it first builds.
+    $originals = @(Get-ChildItem -Path (Join-Path $Root 'src') -Recurse -File -Filter 'DwarfMapper*.dll' `
+                                 -ErrorAction SilentlyContinue |
+                   Where-Object { $_.FullName.Contains($binSegment, [System.StringComparison]::Ordinal) })
+    if ($originals.Count -eq 0) {
+        throw ("decontamination ($Leg): no product assembly found under src/**/bin - the sweep has no " +
+               "reference set and would pass by looking at nothing. Build the solution before the leg.")
+    }
+
+    # 2. The scanner's own premise, checked rather than assumed (the Assert-MutantsWereTested lesson): if a
+    #    clean src build already carries the marker it stops discriminating, and every later green is
+    #    meaningless. Note this is also why the scan is restricted to PRODUCT assembly names - the test
+    #    assemblies legitimately contain the literal "Stryker" in their own source and always match.
+    $dirtyOriginals = @($originals | Where-Object { & $carriesMarker $_.FullName })
+    if ($dirtyOriginals.Count -gt 0) {
+        throw ("decontamination ($Leg): the src-built ORIGINALS already match '$marker' (" +
+               (($dirtyOriginals | ForEach-Object { $_.FullName }) -join ', ') + "). The marker no longer " +
+               "discriminates a mutant from a clean build, so this sweep cannot prove anything - either " +
+               "src/ is itself contaminated (rebuild it) or the marker needs replacing.")
+    }
+
+    $productNames = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]@($originals | ForEach-Object { $_.Name }), [System.StringComparer]::OrdinalIgnoreCase)
+
+    # 3. Every copy of one of those assemblies anywhere under tests/**/bin - not just beside a
+    #    *.stryker-unchanged backup, which is precisely the set Stryker never wrote a backup for.
+    $planted = @(Get-ChildItem -Path (Join-Path $Root 'tests') -Recurse -File -Filter 'DwarfMapper*.dll' `
+                               -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName.Contains($binSegment, [System.StringComparison]::Ordinal) -and
+                                $productNames.Contains($_.Name) })
+    if ($planted.Count -eq 0) {
+        throw ("decontamination ($Leg): not one product assembly was found under tests/**/bin. The test " +
+               "projects reference the product, so an empty scan means the layout moved and the sweep is " +
+               "looking at nothing - a vacuous pass, which is the failure mode this check exists to deny.")
+    }
+
+    $offenders = @($planted | Where-Object { & $carriesMarker $_.FullName })
+    if ($offenders.Count -gt 0) {
+        throw ("decontamination ($Leg): " + $offenders.Count + " MUTATED product assembly/assemblies " +
+               "survived the leg under tests/**/bin:" + [Environment]::NewLine +
+               (($offenders | ForEach-Object { '  ' + $_.FullName }) -join [Environment]::NewLine) +
+               [Environment]::NewLine +
+               "Stryker backs up only files it OVERWRITES, so an analyzer-only reference (no CopyLocal, no " +
+               "pre-run copy) gets a mutant planted with NO *.stryker-unchanged marker and restore never " +
+               "touches it. The next incremental build keeps the newer mutant and those suites then " +
+               "exercise a mutated product, silently green. Delete the listed files and rebuild.")
+    }
+
+    Write-Host "   ${Leg}: $($planted.Count) product assemblies under tests/**/bin, none mutated" -ForegroundColor DarkGray
+}
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Package-size ceiling (round-23 S6; the RESEARCH-97-PERCENT-GATES "package/binary size ratchet" row).
+#
+# The shipped .nupkg has a MEASURED ceiling in whole KB, and the ceiling equals the measurement truncated
+# (invariant R1: the gate's stated precision is the KB, and no cushion is added on top). A package over
+# its ceiling fails; the only fix is a commit that re-measures and moves the number WITH the reason,
+# exactly as $coverageFloors and allocation-baseline.json are moved.
+#
+# WHY A SIZE GATE AT ALL, given ApiCompat and PublicAPI.Shipped/Unshipped already guard the SURFACE:
+# because a surface check cannot see what is not surface. An accidentally embedded resource, a dependency
+# that started shipping into lib/, a second copy of an analyzer - all of those leave the public API
+# identical and the package fatter. Size is the cheap secondary signal for exactly that class.
+#
+# DELIBERATELY ONE-SIDED, unlike the R2 coverage/mutation band and unlike the two-directional allocation
+# pins. A package that SHRINKS is not a finding the way a smaller allocation is: allocated bytes are a
+# behavioural fact whose unexplained movement means the code changed, while package size has no
+# correctness meaning at all. The round-23 plan's S6 row says "raise-only-with-re-measure" and this
+# follows it. If the maintainer later wants the forcing direction too, the band shape is one line away -
+# Test-CoverageWithinBand above is the template.
+#
+# NOTE THE TIGHTNESS, so nobody is surprised by the first red: at the measured 247 KB the headroom to the
+# ceiling is ~530 bytes. That is what "the ceiling equals the measurement at the gate's stated precision"
+# costs, and it is the same bargain the one-decimal coverage floors and the exact allocation pins make.
+# Any generator or runtime change that adds half a kilobyte of IL is expected to re-measure this number
+# in its own commit; the failure message says so.
+#
+# R4 clean: the oracle is a file's length in bytes. No clock, no percentage, no sampling.
+#
+# MEASURED 2026-08-22, Windows, SDK 10.0.101, at commit 81c4ace (the round-23 branch tip when S4 and S6
+# were written), CI=true, from a `git clean -xdf` tree, two independent packs each:
+#   DwarfMapper.1.0.2-rc.1.nupkg          253,420 B and 253,421 B  -> floor(253421/1024) = 247 KB
+#   DwarfMapper.Testing.1.0.2-rc.1.nupkg   48,508 B and  48,508 B  -> floor( 48508/1024) =  47 KB
+# (The one-byte wobble is NuGet's random .psmdcp part name, not build output - scripts/repro-pack-check.py
+# measured exactly that and its header records it.)
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+$script:PackageSizeCeilingsKb = [ordered]@{
+    'DwarfMapper'         = 247
+    'DwarfMapper.Testing' = 47
+}
+
+function Assert-PackageSizeWithinCeiling {
+    param(
+        [Parameter(Mandatory)][string]$PackageDir
+    )
+    if (-not (Test-Path -LiteralPath $PackageDir)) {
+        throw "package size: no package directory at $PackageDir - the ceiling gate has nothing to measure"
+    }
+
+    # .snupkg is deliberately NOT ceilinged: symbols are not the shipped consumer payload, and their size
+    # tracks debug-info settings rather than what a consumer downloads. They are printed, not gated.
+    $packages = @(Get-ChildItem -LiteralPath $PackageDir -File -Filter '*.nupkg')
+    if ($packages.Count -eq 0) {
+        throw ("package size: not one .nupkg under $PackageDir. A ceiling check over an empty set passes " +
+               "by looking at nothing, which is the failure mode this guard exists to deny - run " +
+               "dotnet pack into this directory first.")
+    }
+
+    $failures = @()
+    $matched = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($id in $script:PackageSizeCeilingsKb.Keys) {
+        # <id>.<version>.nupkg, where the version starts with a digit - so DwarfMapper's pattern cannot
+        # also swallow DwarfMapper.Testing's package and report the wrong file's size against the wrong
+        # ceiling. The version itself is not pinned here; Directory.Build.props owns it, CI overrides it.
+        $hits = @($packages | Where-Object {
+            $_.Name -like "$id.*.nupkg" -and
+            $_.Name.Substring($id.Length + 1, 1) -match '^[0-9]$'
+        })
+        if ($hits.Count -eq 0) {
+            # The vacuity guard the allocation pins taught: a renamed or no-longer-produced package must
+            # FAIL the gate, never silently fall out of it.
+            $failures += ("package size: '$id' has a ceiling of $($script:PackageSizeCeilingsKb[$id]) KB " +
+                          "but no $id.<version>.nupkg was produced into $PackageDir - the gate cannot see " +
+                          "it. Either the package stopped shipping (delete the ceiling in the same commit, " +
+                          "with the reason) or the pack step is broken.")
+            continue
+        }
+        if ($hits.Count -gt 1) {
+            $failures += ("package size: $($hits.Count) packages match $id.<version>.nupkg in " +
+                          "$PackageDir (" + (($hits | ForEach-Object { $_.Name }) -join ', ') + "). Pack " +
+                          "into a clean directory - the gate must not have to guess which one ships.")
+            continue
+        }
+
+        $file = $hits[0]
+        [void]$matched.Add($file.Name)
+        $ceiling = [int]$script:PackageSizeCeilingsKb[$id]
+        $kb = [int][math]::Floor($file.Length / 1024)
+        if ($kb -gt $ceiling) {
+            $failures += ("package size: $($file.Name) is $kb KB ($($file.Length) bytes), above the " +
+                          "measured ceiling $ceiling KB. Exact-ceiling protocol (invariant R1): if the " +
+                          "growth is intended, re-measure and raise PackageSizeCeilingsKb in " +
+                          "scripts/gate-checks.ps1 IN THIS COMMIT, with the new measurement's date, SDK " +
+                          "and commit in the comment above it. If it is NOT intended, something started " +
+                          "shipping that should not - list the package with unzip -l and find it.")
+        }
+        else {
+            Write-Host "   package size: $($file.Name) $kb KB <= ceiling $ceiling KB ($($file.Length) bytes)" -ForegroundColor DarkGray
+        }
+    }
+
+    # A newly shipped package must not slip in unceilinged. Populations of ten or fewer stay exactly
+    # pinned (the house rule), and the shipped-package population is two.
+    $unpinned = @($packages | Where-Object { -not $matched.Contains($_.Name) })
+    if ($unpinned.Count -gt 0) {
+        $failures += ("package size: " + $unpinned.Count + " packed .nupkg(s) have no ceiling (" +
+                      (($unpinned | ForEach-Object { $_.Name }) -join ', ') + "). A newly shipped package " +
+                      "must arrive WITH its measured ceiling in the same commit, or the ratchet covers a " +
+                      "shrinking fraction of what ships while staying green.")
+    }
+
+    foreach ($sym in @(Get-ChildItem -LiteralPath $PackageDir -File -Filter '*.snupkg')) {
+        Write-Host "   package size: $($sym.Name) $([int][math]::Floor($sym.Length / 1024)) KB (symbols - informational, not gated)" -ForegroundColor DarkGray
+    }
+
+    if ($failures.Count -gt 0) {
+        throw ($failures -join [Environment]::NewLine)
+    }
+}

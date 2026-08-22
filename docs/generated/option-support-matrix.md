@@ -34,16 +34,16 @@ neither has a mapper class to carry a class-level option.
 | `EnumStringSource` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `GenerateExtensions` | honoured | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) |
 | `IgnoreObsoleteMembers` | honoured | honoured | honoured | honoured | honoured |
-| `ImplicitConversions` | `DWARF038` | `DWARF038` | n/a (loud) | `DWARF038` | `DWARF038` |
+| `ImplicitConversions` | `DWARF038` | `DWARF038` | `DWARF038` | `DWARF038` | `DWARF038` |
 | `MaxDepth` | honoured | honoured | n/a (loud) | **SILENT** | **SILENT** |
 | `NameConvention` | honoured | honoured | honoured | n/a (loud) | n/a (loud) |
-| `NullCollections` | honoured | honoured | **SILENT** | honoured | honoured |
+| `NullCollections` | honoured | honoured | honoured | honoured | honoured |
 | `NullStrategy` | honoured | honoured | n/a (loud) | honoured | honoured |
 | `OnCycle` | honoured | honoured | n/a (loud) | honoured | honoured |
-| `ReferenceHandling` | honoured | honoured | `DWARF028` | honoured | honoured |
+| `ReferenceHandling` | honoured | honoured | `DWARF028,DWARF096 (Warning)` | honoured | honoured |
 | `RegisterCollectionShapes` | honoured | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) | n/a (no such surface) |
 | `RequiredMapping` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` | `DWARF039 (Info)` |
-| `SkipNullSourceMembers` | honoured | honoured | `DWARF028` | honoured | honoured |
+| `SkipNullSourceMembers` | honoured | honoured | `DWARF028,DWARF096 (Warning)` | honoured | honoured |
 
 Option list and defaults scanned from `DwarfMapperAttribute`; each probe value derived
 from its default (invert a bool, pick another enum member, step an int), so a new option

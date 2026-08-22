@@ -126,12 +126,23 @@ internal static class SurfaceFixtures
         public sealed class Dst { public int Id { get; set; } public NodeDto? Root { get; set; } }
         """;
 
-    // A NARROWING pair. Widening (int->long) is allowed regardless, so it cannot distinguish the option;
-    // narrowing is what ImplicitConversions actually gates, by escalating DWARF038 to an error.
+    // A NARROWING pair AND a CROSS-CATEGORY one, because the option gates both and the two are not
+    // interchangeable at every endpoint. Widening (int->long) is allowed regardless, so it cannot distinguish
+    // the option at all; narrowing (long->int) is gated by escalating DWARF038 to an error, but it has NO
+    // implicit C# conversion, so the projection endpoint refuses the member with DWARF028 before any
+    // conversion policy is consulted.
+    //
+    // With narrowing alone, this fixture could not ask the option a question the projection endpoint was
+    // able to answer, and the NotApplicable excuse standing on that reading — "there is no fixture in which
+    // projection observes this option" — passed its own LIVE re-measurement while being wrong (TASKS.md I20).
+    // long->double is the shape that closes the gap: it IS a C# implicit conversion, so it takes the
+    // direct-assign path at both endpoints, and it IS lossy, so the product has an opinion about it. An
+    // excuse that passes its liveness check while being wrong is the failure this store exists to end, and
+    // the remedy is always the fixture.
     [SurfaceProbe("narrowing-conversion")]
     private static readonly string NarrowingConversion = """
-        public sealed class Src { public int Id { get; set; } public long Val { get; set; } }
-        public sealed class Dst { public int Id { get; set; } public int Val { get; set; } }
+        public sealed class Src { public int Id { get; set; } public long Val { get; set; } public long Precision { get; set; } }
+        public sealed class Dst { public int Id { get; set; } public int Val { get; set; } public double Precision { get; set; } }
         """;
 
     [SurfaceProbe("shared-reference-graph")]

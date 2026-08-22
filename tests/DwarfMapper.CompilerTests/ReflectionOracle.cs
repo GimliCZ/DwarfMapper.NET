@@ -79,6 +79,8 @@ internal static class ReflectionOracle
     ///     re-kinded — populates identically, which K2's MR relations will rely on. The seed comes from the
     ///     CsCheck sample, so a shrunk failure replays exactly.
     /// </summary>
+    /// <param name="type">The type to build.</param>
+    /// <param name="seed">The CsCheck-sampled population seed.</param>
     public static object Populate(Type type, int seed)
     {
         return BuildValue(type, seed, 0)

@@ -16,16 +16,46 @@ namespace DwarfMapper.CompilerTests.TypeGraphs;
 public static class TypeGraphRenderer
 {
     /// <summary>Render every compilation unit. Unit 0 carries the graph and the mapper declaration.</summary>
-    public static IReadOnlyList<string> Render(GraphSpec graph)
+    /// <param name="graph">The spec to render.</param>
+    /// <param name="withProjection">
+    ///     When true the mapper ALSO declares
+    ///     <c>public partial IQueryable&lt;RootDest&gt; Project(IQueryable&lt;RootSource&gt;)</c> beside
+    ///     <c>Map</c> — the <c>IQueryable</c> projection endpoint (round 23, I18).
+    ///     <para>
+    ///         <b>Opt-in, and it must stay opt-in.</b> Emitting <c>Project</c> unconditionally would
+    ///         silently re-cut the sampled space of every population that already exists
+    ///         (<c>CompilerGraphSmokeSeeds</c>, <c>CompilerOracleSeeds</c> and all three MR entries): the
+    ///         projection refuses a strictly wider grammar than <c>Map</c> does — a HashSet member, a
+    ///         converter, a hook, reference handling — and an error-severity DWARF028 on the projection
+    ///         makes the WHOLE run <c>RefusedLoudly</c>. Cases those populations sample today as ACCEPTED
+    ///         (and therefore compile-checked, oracle-compared, metamorphically related) would flip to
+    ///         "refused" and stop being checked at all, with every digest moving and nothing saying why.
+    ///         A separate flag and a separate <c>DeepPopulation</c> keeps the existing case sets
+    ///         byte-identical and makes the projection's own accept/refuse split measurable on its own.
+    ///     </para>
+    /// </param>
+    /// <param name="namespaceName">
+    ///     The namespace every rendered type and the mapper class <c>M</c> are declared in. Defaults to
+    ///     <c>T</c>, which every existing population renders with and which
+    ///     <see cref="CompilerTestHarness.InvokeMap" /> resolves <c>T.M</c> through — so the default keeps
+    ///     every existing digest byte-identical. It is a parameter at all for one reason: a corpus holding
+    ///     MANY graphs in ONE compilation (round 23, S3's per-1000-mappers cost measurement) would otherwise
+    ///     declare a thousand colliding <c>T.M</c>/<c>T.S0</c> types. Renaming the namespace is the smallest
+    ///     change that separates them; the alternative — rewriting the rendered text after the fact — would
+    ///     make the corpus a function of a string replacement rather than of the renderer.
+    /// </param>
+    public static IReadOnlyList<string> Render(
+        GraphSpec graph, bool withProjection = false, string namespaceName = "T")
     {
         ArgumentNullException.ThrowIfNull(graph);
+        ArgumentException.ThrowIfNullOrWhiteSpace(namespaceName);
         graph.Validate();
 
         var units = new List<string>();
         var main = new StringBuilder();
         main.AppendLine("using DwarfMapper;");
         main.AppendLine();
-        main.AppendLine("namespace T;");
+        main.Append("namespace ").Append(namespaceName).AppendLine(";");
 
         // Bounded by Nodes.Count and each node's member count — the H7 variant is the loop counter itself;
         // NestedRef/BaseRef lookups never recurse (names are resolved by index, not by walking the graph).
@@ -37,7 +67,7 @@ public static class TypeGraphRenderer
                 var half = (node.Members.Count + 1) / 2;
                 RenderNode(main, graph, node, node.Members.Take(half).ToList(), partial: true, withCtor: true);
                 var rest = new StringBuilder();
-                rest.AppendLine("namespace T;");
+                rest.Append("namespace ").Append(namespaceName).AppendLine(";");
                 rest.AppendLine();
                 RenderNode(rest, graph, node, node.Members.Skip(half).ToList(), partial: true, withCtor: false);
                 units.Add(rest.ToString());
@@ -54,6 +84,14 @@ public static class TypeGraphRenderer
         main.AppendLine("{");
         main.AppendLine(FormattableString.Invariant(
             $"    public partial {graph.RootDest} Map({graph.RootSource} s);"));
+        if (withProjection)
+        {
+            // Fully qualified: the rendered unit has no `using System.Linq;`, and adding one would change
+            // the non-projection units too (an extra using is harmless but the two shapes must not drift).
+            main.AppendLine(FormattableString.Invariant(
+                $"    public partial System.Linq.IQueryable<{graph.RootDest}> Project(System.Linq.IQueryable<{graph.RootSource}> q);"));
+        }
+
         main.AppendLine("}");
 
         units.Insert(0, main.ToString());

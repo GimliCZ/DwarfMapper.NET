@@ -40,6 +40,14 @@ internal static class ConstructorSelector
     {
         useObjectInitializerOnly = false;
 
+        // B31: report every [DwarfMapperConstructor] the candidate filter is about to drop, BEFORE any
+        // branch below runs. Placed here rather than at the return points because the question — "was an
+        // annotated constructor filtered out?" — has the same answer down every path, and answering it once
+        // is what stops the report existing on some paths and not others (the shape A9a's DWARF092 was
+        // generalized to fix). Nothing here changes what is selected.
+        ReportUnusableAnnotatedConstructors(target, compilation, allowNonPublicConstructors, location,
+            diagnostics);
+
         // ── Policy 0 (pre-filter): accessible parameterless ctor exists → object-initializer path.
         // We include implicitly-declared parameterless ctors here so that plain classes (which have
         // an implicit public parameterless ctor) continue to use the existing object-initializer path.
@@ -287,6 +295,109 @@ internal static class ConstructorSelector
         // ref / out parameters cannot be emitted as plain named args (CS1620). `in` (RefKind.In) is fine.
         if (ctor.Parameters.Any(p => p.RefKind == RefKind.Ref || p.RefKind == RefKind.Out)) return false;
         return true;
+    }
+
+    /// <summary>
+    ///     <c>DWARF098</c> (B31). Every constructor that CARRIES <c>[DwarfMapperConstructor]</c> and is not a
+    ///     usable candidate is reported, with the specific filter that rejected it and the remedy for that
+    ///     filter — the reasons are read off <see cref="IsUsableCandidate" />'s own tests, in its own order,
+    ///     so the message cannot describe a rule the selector does not apply.
+    ///     <para>
+    ///         An implicitly-declared constructor is skipped without a word: it cannot carry an attribute, so
+    ///         it can never be the annotated one, and naming it would be a report about source the caller did
+    ///         not write. An ABSENT annotation is likewise silent — that is the row's two-messages question,
+    ///         answered: only a directive that was WRITTEN can be discarded.
+    ///     </para>
+    /// </summary>
+    private static void ReportUnusableAnnotatedConstructors(
+        INamedTypeSymbol target, Compilation compilation, bool allowNonPublic,
+        LocationInfo? location, List<DiagnosticInfo> diagnostics)
+    {
+        foreach (var ctor in target.InstanceConstructors)
+        {
+            if (ctor.IsImplicitlyDeclared || !IsAnnotated(ctor)) continue;
+            if (IsUsableCandidate(ctor, target, compilation, allowNonPublic)) continue;
+
+            var reason = UnusableReason(ctor, target, compilation, allowNonPublic);
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.AnnotatedConstructorUnusable, location,
+                $"[DwarfMapperConstructor] on '{target.Name}({Signature(ctor)})' is ignored: {reason} "
+                + "The destination is constructed exactly as it would be with no annotation at all — the "
+                + "fallback is deliberate (selecting this constructor would emit code the compiler rejects), "
+                + "so the mapping is safe; the directive is not."));
+        }
+    }
+
+    /// <summary>
+    ///     The FIRST test in <see cref="IsUsableCandidate" /> that this constructor fails, phrased with its
+    ///     remedy. Order matches the predicate's, so the reason given is the reason applied.
+    /// </summary>
+    private static string UnusableReason(IMethodSymbol ctor, INamedTypeSymbol target, Compilation compilation,
+        bool allowNonPublic)
+    {
+        if (!IsAccessible(ctor, compilation, allowNonPublic))
+        {
+            // Two different remedies, and giving the wrong one is worse than giving none. AllowNonPublic
+            // widens the filter to what the CONSUMER'S ASSEMBLY can reach — so it rescues an `internal`
+            // constructor and cannot rescue a `private` one, which no option can make callable from another
+            // type. Measured before it was written: with AllowNonPublic = true a private ctor is STILL
+            // filtered, so a message telling the caller to set the option would have sent them in a circle.
+            var assemblyCanReachIt = compilation.IsSymbolAccessibleWithin(ctor, compilation.Assembly);
+            return $"it is {AccessibilityWord(ctor.DeclaredAccessibility)}, "
+                   + (assemblyCanReachIt
+                       ? "and this mapper does not set [DwarfMapper(AllowNonPublic = true)]. Set that "
+                         + "option, or make the constructor public."
+                       : "which no mapper option can reach from another type — [DwarfMapper(AllowNonPublic "
+                         + "= true)] widens the filter only as far as this assembly can see. Make the "
+                         + "constructor internal (with that option set) or public.");
+        }
+
+        if (ctor.IsStatic)
+            return "it is a STATIC constructor, which never constructs the destination — the directive "
+                   + "belongs on an instance constructor.";
+
+        if (ctor.Parameters.Length == 1
+            && SymbolEqualityComparer.Default.Equals(ctor.Parameters[0].Type, target))
+            return "it is a COPY constructor (its single parameter is the destination type itself), so it "
+                   + "cannot build the destination from the source. Annotate a constructor whose parameters "
+                   + "come from the source type.";
+
+        if (IsObsolete(ctor))
+            return "it is marked [Obsolete], and the mapper does not generate calls to obsolete members. "
+                   + "Drop the [Obsolete], or annotate a supported constructor.";
+
+        var byRef = ctor.Parameters
+            .FirstOrDefault(p => p.RefKind == RefKind.Ref || p.RefKind == RefKind.Out);
+        if (byRef is not null)
+            return $"parameter '{byRef.Name}' is passed by "
+                   + $"{(byRef.RefKind == RefKind.Ref ? "ref" : "out")}, which cannot be written as a named "
+                   + "argument (CS1620). Take it by value or by 'in', or annotate a different constructor.";
+
+        // Unreachable unless IsUsableCandidate grows a test this function was not taught. Saying so is
+        // better than a message that confidently names the wrong rule.
+        return "the selector does not accept it (no specific reason could be determined — this is a gap "
+               + "between the candidate filter and this message, please report it).";
+    }
+
+    /// <summary>The C# keyword for an accessibility, spelled out rather than lower-cased at runtime.</summary>
+    private static string AccessibilityWord(Accessibility a)
+    {
+        return a switch
+        {
+            Accessibility.Private => "private",
+            Accessibility.ProtectedAndInternal => "private protected",
+            Accessibility.Protected => "protected",
+            Accessibility.Internal => "internal",
+            Accessibility.ProtectedOrInternal => "protected internal",
+            Accessibility.Public => "public",
+            _ => "not accessible from the mapper"
+        };
+    }
+
+    private static string Signature(IMethodSymbol ctor)
+    {
+        return string.Join(", ", ctor.Parameters.Select(p =>
+            p.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
     }
 
     private static bool IsObsolete(IMethodSymbol method)

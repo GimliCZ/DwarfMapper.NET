@@ -88,6 +88,16 @@ public class OptionContractTests
             "source-side completeness: an unconsumed source member is reported here exactly as it is at the "
             + "create and update endpoints"),
 
+        new("NullCollections", CellStatus.Honoured, null,
+            "the projection resolver reads the option and computes its effective answer with the SAME "
+            + "predicate the runtime endpoint uses: AsNull propagates the null only when the destination "
+            + "member can hold it and degrades to AsEmpty when it cannot. This row was declared "
+            + "NotApplicable — 'collection rebuilds are untranslatable outright, so the null policy for them "
+            + "is unreachable' — and the excuse was FALSE twice over: List/array/IEnumerable rebuilds are "
+            + "translatable and always were (only HashSet/dictionary/immutable ones are refused), and the "
+            + "endpoint answered the null policy anyway, always with `null`, whatever the mapper had "
+            + "configured. That is I19: the same member answering differently through .Map and .Project"),
+
         new("EnumStrategy", CellStatus.Honoured, null,
             "the projection resolver consults the strategy directly: ByValue emits a plain enum cast in the "
             + "SELECT (translatable), where the ByName default is refused as DWARF028 whose own remedy text "
@@ -103,23 +113,31 @@ public class OptionContractTests
         // with OptionProbe and fails if the option has become observable, and the class is exactly counted
         // by The_NotApplicable_excuse_class_is_a_counted_population. The first run of that check retired
         // EnumStrategy from this section (its excuse had gone stale; see its row above).
-        new("ImplicitConversions", CellStatus.NotApplicable, null,
-            "verified against both endpoints rather than assumed: for a WIDENING pair (int->long) neither "
-            + "endpoint reacts to the option at all, and for a NARROWING pair projection refuses the member "
-            + "with DWARF028 before any conversion policy is consulted (CreateMap reports DWARF038). There is "
-            + "no fixture in which projection observes this option, so there is nothing to diverge"),
-
         new("GenerateExtensions", CellStatus.NotApplicable, null,
             "projection emits no convenience extension in the first place (verified: no static class appears "
             + "in the output with or without the option), so there is nothing for it to suppress"),
+
+        // Was declared NotApplicable until 2026-08-23 (I20), on an excuse BOTH OF WHOSE HALVES WERE TRUE and
+        // whose conclusion was false: a widening pair really does leave both endpoints indifferent, and a
+        // narrowing pair really is refused with DWARF028 before any conversion policy is read. The pair it
+        // did not consider is CROSS-CATEGORY (long->double) — a C# IMPLICIT conversion the product classifies
+        // as lossy — which takes the direct-assign path at BOTH endpoints, so projection observes the option
+        // there and used to say nothing at all about it. The B3 live re-measurement could not catch that,
+        // because the fixture behind this row carried no cross-category pair; it caught it on the first run
+        // AFTER the fixture was widened, and the message it printed is quoted in the commit. Refused rather
+        // than Honoured because the option's whole content is that the build STOPS: DWARF038 escalates to an
+        // Error here exactly as it does at CreateMap, so the endpoints agree on whether the build breaks.
+        new("ImplicitConversions", CellStatus.Refused, "DWARF038",
+            "measured, not assumed, at a fixture that can pose the question: a cross-category numeric pair "
+            + "(long->double) is implicit in C# and lossy in this product, so it reaches the direct-assign "
+            + "path at both endpoints. ImplicitConversions = false escalates DWARF038 to an Error at "
+            + "projection just as it does at CreateMap, and the mapper is refused — the same answer at both "
+            + "endpoints, which is the whole promise of a strictness setting"),
 
         new("EnumStringSource", CellStatus.Refused, "DWARF028",
             "measured, not assumed: enum<->string mapping is a generated switch, which projection refuses "
             + "outright with DWARF028 before any string-source policy is consulted. The member is rejected, "
             + "so the option cannot be silently dropped here — the failure mode this matrix exists for"),
-
-        new("NullCollections", CellStatus.NotApplicable, null,
-            "collection rebuilds are untranslatable outright, so the null policy for them is unreachable"),
 
         new("OnCycle", CellStatus.NotApplicable, null,
             "cycles require reference tracking, which is refused at this endpoint for the same reason"),
@@ -228,14 +246,22 @@ public class OptionContractTests
 
     /// <summary>
     ///     The exact size of the <see cref="CellStatus.NotApplicable" /> class in
-    ///     <see cref="ProjectionCells" />. Measured 2026-08-22 at 7 of 18 rows — it was 8 when B3 was
-    ///     picked up, and the FIRST run of the live re-measurement below retired one: EnumStrategy's excuse
-    ///     was stale (see its row). Shrink-only: a row leaving
+    ///     <see cref="ProjectionCells" />. Measured 2026-08-23 at 5 of 18 rows — 8 when B3 was picked up,
+    ///     7 after the FIRST run of the live re-measurement below retired EnumStrategy's stale excuse, 6
+    ///     since I19 retired NullCollections' and I20 retired ImplicitConversions': the first was not merely
+    ///     stale but wrong when written (List/array/IEnumerable rebuilds ARE translatable), and the second was
+    ///     wrong in a subtler way worth naming — both halves of its reasoning were TRUE and its conclusion was
+    ///     false, because the pair it did not consider was neither widening nor narrowing but cross-category.
+    ///     It passed its own live re-measurement for a year of rounds because the FIXTURE behind it could not
+    ///     pose the question, which is the one way a live check can still be an allowlist. That one was not
+    ///     merely stale but wrong when written
+    ///     (List/array/IEnumerable rebuilds ARE translatable), and the endpoint was answering the null
+    ///     policy on its own the whole time. Shrink-only: a row leaving
     ///     the class (measured into Honoured or Refused) lowers the pin in the same commit, and a new
     ///     NotApplicable row is a deliberate act with a number attached — the same rule every excuse
     ///     population in the surface matrix already lives under.
     /// </summary>
-    private const int NotApplicablePin = 7;
+    private const int NotApplicablePin = 5;
 
     /// <summary>
     ///     B3's counting half. The theory above makes each NotApplicable row LIVE (re-measured every run);

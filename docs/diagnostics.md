@@ -281,6 +281,17 @@ provider, collection kind, hook, reference handling, …). **Fix:** map those me
 ordinary `Map` method) rather than `Project`. A `[MapValue]` **constant** does translate — it becomes a literal
 in the query — so only the `Use =` form is refused.
 
+**Nullable members are not among the reasons.** A nullable source mapped to a target that **can hold the null**
+projects as a null-preserving conditional (`s.M == null ? null : new D { … }`, or the `HasValue` form for a
+`Nullable<T>` source), for **every** combination of source and destination kind — struct, record struct, class,
+record — exactly as `Map` lifts it. Only a target that **cannot** hold the null is refused, and the message says
+so: that link needs a null decision, and `NullStrategy` — the option that makes it — has no expression-tree
+form. A nullable-*annotated* reference target can hold the null; an un-annotated one is a promise that it holds
+none, and keeps the refusal. See [`NullStrategy`](options.md).
+
+Only the **projection method** is refused, never the whole mapper: the `Map` methods beside it are still
+generated, and the one `CS8795` that follows is signposted by [`DWARF096`](#dwarf096).
+
 ## dwarf030
 **Constructor parameter is part of a reference cycle** · Error
 
@@ -341,8 +352,10 @@ you wanted cycle-breaking.
 A non-lossless conversion is being applied. It's visible, not silent. **Lossy** sub-cases — numeric
 narrowing/sign-change, parse/format (`string ↔ T`, which can throw `FormatException` / `OverflowException` at
 runtime), and cross-category numeric (precision loss) — are **Warnings**. A user-defined explicit conversion
-operator stays **Info** (you defined it deliberately). **Fix (optional):** make it explicit with
-`[MapProperty(Use = nameof(...))]`. Set `[DwarfMapper(ImplicitConversions = false)]` to turn all such
+operator stays **Info** (you defined it deliberately). It is reported from **every endpoint that applies the
+conversion, including `Project`** — a lossy conversion that C# nonetheless performs implicitly (`long → double`)
+is not translatability-refused there, it is reported here, at the same severity `Map` reports it. **Fix
+(optional):** make it explicit with `[MapProperty(Use = nameof(...))]`. Set `[DwarfMapper(ImplicitConversions = false)]` to turn all such
 conversions into build errors. To silence a specific instance, downgrade in `.editorconfig`:
 `dotnet_diagnostic.DWARF038.severity = suggestion` (a `-warnaserror` build treats the Warning as an error
 until downgraded). A conversion on a nested/collection element may be reported without a file location; for a
@@ -800,10 +813,19 @@ mapper that does cross one — see [`SECURITY.md`](SECURITY.md#over-posting--mas
 Reported once per mapper class that had at least one DwarfMapper **error**. It is not a problem in its own
 right — it is a **signpost for the wall of `CS8795` that is about to appear**.
 
-When any diagnostic on a class is an error, the generator emits **nothing at all** for that class. That is the
-right call (half-generated code produces worse errors than none), but it means every `partial` mapping method
-on the class loses its implementing part simultaneously, and the build fills with
+When any **class-level** diagnostic on a class is an error, the generator emits **nothing at all** for that
+class. That is the right call (half-generated code produces worse errors than none), but it means every
+`partial` mapping method on the class loses its implementing part simultaneously, and the build fills with
 `CS8795: … must have an implementing part`.
+
+Two errors are **not** class-level. [`DWARF028`](#dwarf028), an untranslatable projection member, is a fact
+about one `Project` method and says nothing about the `Map` methods beside it. [`DWARF001`](#dwarf001), an
+unmapped destination member, is a fact about one method's pair and one method's `[MapIgnore]` set — its own
+remedy names the method — and says nothing about the method beside it. Either way that one method is withheld,
+the rest of the mapper is generated as usual, and [`DWARF096`](#dwarf096) or [`DWARF097`](#dwarf097) — not this
+diagnostic — signposts the single `CS8795` that follows. A method raising `DWARF001` **together with** a
+class-level error keeps the whole-class kill, and so does an incomplete *synthesized* pair, which is shared by
+every route that reaches it.
 
 That wall is ambiguous, and both readings are common:
 
@@ -1205,6 +1227,22 @@ The `[MapProperty]` half is the sharper of the two, because the named arguments 
 one-argument constructor: `[MapProperty("Name", Use = "F")]` is `ctor(1)` plus a property initializer, so the
 converter, the `When` predicate, the `NullSubstitute` and the `StringFormat` were discarded along with the
 binding. A caller named a conversion method and got auto-matching.
+
+**Three placements, not two.** The same id also covers a `[MapProperty]` or `[MapIgnore]` written on a
+**member of the mapper class itself** — a property or field of your `[DwarfMapper]` type. That member belongs
+to the mapper, not to either type of any pair it maps, so no resolution step ever looks at it and **every**
+form is inert there, the class/method form included. The two remedies differ and the message says which
+applies:
+
+| Where you wrote it | What was wrong | Remedy in the message |
+|---|---|---|
+| Member form, on the mapper class or a mapping method | The wrong **overload** | Supply the missing argument (the table above) |
+| Member form, on a member of the mapper class | The wrong **kind of type** — the member form belongs on a `[MapTo]` source or a `[GenerateMap]` host | Name the destination and move it to the class or the method |
+| Class/method form, on a member of the mapper class | The wrong **symbol** — this overload *is* the one the mapper reads, just not from there | Move it to the mapper class or to a mapping method |
+
+A directive on a member of a real `[GenerateMap]` **host** is a different question and is *not* reported here:
+there the annotated type is a mapped type and its members are read as intended. A host directive that cannot
+be placed is [`DWARF089`](#dwarf089).
 
 > **Refused whichever way you read it.** Honouring `[MapProperty("Name")]` at a method would bind `Name` to
 > itself — the identity binding auto-matching already produces, so it is a no-op by construction and cannot be
@@ -1641,6 +1679,146 @@ not this one.
 **Fix:** fix the name (the message quotes it as written), or remove the attribute. To ignore a member of a
 specific pair from the class, prefer the pair-scoped `[MapIgnore<TTarget>("Name")]`, which
 [`DWARF056`](#dwarf056) guards against typos in the type argument the same way.
+
+## dwarf096
+**Projection method was not generated** · Warning
+
+The per-method twin of [`DWARF078`](#dwarf078). One `Project` method carried an error that belongs to it
+alone — [`DWARF028`](#dwarf028), a member with no expression-tree form, or [`DWARF001`](#dwarf001), a
+destination member nothing maps — so **that method** was not generated. The rest of the mapper was: every
+`Map` method on the same class is emitted normally, and so are the facade extensions, the DI registration and
+the ambient registry entries built from them. ([`DWARF097`](#dwarf097) is the same signpost for a `Map`
+method; the two exist separately because they prescribe different remedies.)
+
+Exactly one `CS8795: … must have an implementing part` follows, on the `Project` method, and this warning marks
+it so it is not mistaken for the other cause of that message (a project missing the analyzer reference — see
+[`DWARF078`](#dwarf078)'s table).
+
+Refusing the method rather than emitting a partial one is deliberate: a projection missing the members that did
+not resolve would return objects with those members silently unset, which is the failure this endpoint reports
+`DWARF028` to prevent.
+
+Only those two errors are scoped, and only when **every** error the method raised is one of them. Anything
+else a projection can collect — an ambiguous member name ([`DWARF010`](#dwarf010)), an unknown destination
+([`DWARF008`](#dwarf008)) — describes the source model, is equally true of the `Map` methods over the same
+pair, and still suppresses the whole class.
+
+You will never see this **and** [`DWARF078`](#dwarf078) on one mapper. If some other method on the class also
+has an error, nothing is generated after all — this warning's claim would be false, so it stands down and
+`DWARF078` reports the wider scope. The `DWARF028` itself is reported either way.
+
+**Fix:** fix the error(s) above it. For a `DWARF028` that usually means making the destination member
+nullable, widening a narrowing numeric target, or choosing a translatable collection target — or dropping the
+`Project` method and mapping those members with a runtime `Map` method, which has none of these restrictions.
+For a `DWARF001` it means mapping the destination member named, or annotating the method with
+`[MapIgnore("Name")]`.
+
+## dwarf097
+**Mapping method was not generated** · Warning
+
+The per-method twin of [`DWARF078`](#dwarf078) for the `Map` endpoints. One mapping method carried a
+[`DWARF001`](#dwarf001) — a destination member with no source — so **that method** was not generated. The rest
+of the mapper was: every other method on the same class is emitted normally, and so are the facade extensions,
+the DI registration and the ambient registry entries built from them.
+
+Exactly one `CS8795: … must have an implementing part` follows, on that method, and this warning marks it so it
+is not mistaken for the other cause of that message (a project missing the analyzer reference — see
+[`DWARF078`](#dwarf078)'s table). A method declared without accessibility modifiers — a plain
+`partial void Map(S src, D dest);` — is allowed by C# to have no implementing part at all, so there it simply
+disappears and this warning is the only thing you see.
+
+**Why completeness is per-method.** It is evaluated over one `(source, target)` pair and honours that method's
+own `[MapIgnore]` set — which is why `DWARF001`'s own text tells you to annotate *the method*. Its unit of
+evaluation and its unit of remedy are both the method, so an unmapped member on one method says nothing about
+the method beside it. Two errors that look similar are deliberately **not** treated this way, because they
+describe the source model rather than one mapping: an ambiguous member name ([`DWARF010`](#dwarf010)) and an
+unknown destination ([`DWARF008`](#dwarf008)) are equally true of every method over the same pair, so they still
+suppress the whole class. A method that raises `DWARF001` *and* one of those keeps the whole-class kill too.
+
+**A `[GenerateMap]` pair keeps the whole-class kill**, and the reason is the boundary of the whole rule:
+withholding a method is only safe while its *declaration* survives. A `partial` method is declared by you, so
+another method mapping a nested member through it still binds and the single `CS8795` is the whole cost. A
+`[GenerateMap]` pair has no declaration — the generator is the only source of that symbol — so withholding it
+would leave a sibling calling a method that does not exist (`CS0103`) in a file you cannot edit. Loud collateral
+beats generated code that does not compile.
+
+**An incomplete *synthesized* pair also keeps the whole-class kill**, and for a reason rather than an
+exception: a nested or element pair is mapped through a helper **shared by every route that reaches it**, so
+its incompleteness is true of each of them and pinning it on one method would be wrong. That is why an
+incomplete element pair behind a span map or an async-stream map reports [`DWARF078`](#dwarf078), not this.
+
+Refusing the method rather than emitting a partial one is deliberate: a mapping method missing the members that
+did not resolve would return objects with those members silently unset, which is the failure the completeness
+gate exists to prevent.
+
+You will never see this **and** [`DWARF078`](#dwarf078) on one mapper. If some other method on the class also
+has a class-level error, nothing is generated after all — this warning's claim would be false, so it stands
+down and `DWARF078` reports the wider scope. The `DWARF001` itself is reported either way.
+
+**Fix:** map the destination member(s) named in the `DWARF001` above (`[MapProperty]`, `[MapValue]`, a matching
+source name), or annotate the method with `[MapIgnore("Name")]` if leaving it at its default is intended.
+
+
+---
+
+## dwarf098
+**[DwarfMapperConstructor] names a constructor the mapper cannot use** · Warning
+
+You annotated a constructor and the selector declined it, so the destination was built exactly as it would have
+been with no annotation at all. The **construction is safe** — that is why this is a warning and not an error:
+selecting the constructor would have emitted a call the compiler rejects, so the selector falls back to its
+default policy (the parameterless object-initializer path where one exists) rather than producing broken output.
+What was wrong before this diagnostic existed is that the fallback was **silent**: a caller who marked a
+`private` constructor got object-initializer mapping with no way to learn why.
+
+The message names the constructor and the **specific** filter that rejected it, because the remedies differ:
+
+| Why it was declined | Remedy |
+|---|---|
+| Not accessible, and the assembly *can* see it (`internal`, `protected internal`) | Set `[DwarfMapper(AllowNonPublic = true)]`, or make it `public` |
+| Not accessible, and the assembly *cannot* see it (`private`, `protected`) | Make it `internal` (with that option set) or `public`. **`AllowNonPublic` does not help here** — it widens the filter only as far as your own assembly can see, and a private member of another type never is |
+| Marked `[Obsolete]` | Drop the `[Obsolete]`, or annotate a supported constructor |
+| A copy constructor (its single parameter is the destination type) | Annotate a constructor whose parameters come from the source type |
+| A `ref` / `out` parameter | Take it by value or by `in` (CS1620 — `ref`/`out` cannot be written as a named argument), or annotate a different constructor |
+
+**An absent annotation is silent, and that is the rule rather than an oversight.** This reports a directive that
+was *written and discarded*; where nothing was written, nothing was discarded. It is raised once per mapping
+method that selects the destination, so a mapper with both a `Map` and a `Project` over the same pair reports
+it twice — both methods really did ignore the directive.
+
+The `[MapTo]` registry answers the same mistake with its own id, [`DWARFR11`](#dwarfr11): it does not read
+`[DwarfMapperConstructor]` at all, which is a different statement from reading it and declining it.
+
+---
+
+## dwarf099
+**One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations** · Error
+
+`MapNullSkipAttribute<TSource, TTarget>` is `AllowMultiple`, so naming one pair twice compiles. When the two
+declarations **disagree**, the effective policy used to be decided by declaration order — the first match won
+and the second was discarded without a word, so swapping two lines silently produced a different mapper. That
+is refused now.
+
+<!-- fence-exempt: the sample must FAIL the build to show the rule — a compiling snippet would be the shape this diagnostic exists to reject -->
+```csharp
+[DwarfMapper]
+[MapNullSkip<Dto, Entity>(true)]
+[MapNullSkip<Dto, Entity>(false)]   // DWARF099 — identical scope, opposite answers
+public partial class Mappers { ... }
+```
+
+**Fix:** delete one of them. To vary the policy per method, use the method-scoped `[MapNullSkip(bool)]`, which
+wins over the pair-scoped form by design.
+
+**Why an error and not a warning.** There is nothing to rank. The two declarations have the *same* scope, and
+only source order separates them, so any choice the generator made would be an accident rather than a policy.
+Contrast the method-versus-pair contradiction, which is **not** an error: those forms have different scopes,
+so most-specific-wins is a defensible rule and it is the documented one.
+
+**Two declarations that AGREE are accepted, in silence.** A repeated declaration saying the same thing
+discards nothing, so there is nothing to report. Opposite values over *different* pairs are likewise fine —
+that is one policy per pair, which is what the attribute is for.
+---
 
 ---
 

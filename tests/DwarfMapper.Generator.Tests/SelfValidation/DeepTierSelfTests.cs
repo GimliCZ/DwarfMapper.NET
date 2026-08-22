@@ -51,10 +51,22 @@ public class DeepTierSelfTests
         [DeepPopulation.ObjectFactoryDistributionSeeds] = 400,
         [DeepPopulation.RegistryPropertyIters] = 200,
         [DeepPopulation.CompilerGraphSmokeSeeds] = 25,
+        // Round-23 I18: new population, so "the historical count" is the count it was MEASURED at and
+        // entered the catalog with, not a pre-knob count. Pinned here for the same reason as every other
+        // row — raising it later is a decision about every routine `dotnet test`, made in this file.
+        [DeepPopulation.CompilerProjectionSmokeSeeds] = 100,
         [DeepPopulation.CompilerOracleSeeds] = 20,
+        // Round-23 I18, same note as the projection smoke entry above: a new population's "historical"
+        // count is the one it was measured at and entered the catalog with.
+        [DeepPopulation.CompilerProjectionAgreementSeeds] = 100,
         [DeepPopulation.CompilerMrMemberOrderSeeds] = 10,
         [DeepPopulation.CompilerMrUnmappedMemberSeeds] = 10,
-        [DeepPopulation.CompilerMrRekindSeeds] = 8
+        [DeepPopulation.CompilerMrRekindSeeds] = 8,
+        // Round-23 S3: a new population, so its "historical" fast count is the one it was measured at and
+        // entered the catalog with. It scales the SIZE of a single compilation rather than a case count,
+        // which makes pinning it here matter more than usual — raising it lengthens every routine
+        // `dotnet test` by a whole extra compile, not by one more cheap sample.
+        [DeepPopulation.CompilerCostCorpusMappers] = 40
     };
 
     [Fact]

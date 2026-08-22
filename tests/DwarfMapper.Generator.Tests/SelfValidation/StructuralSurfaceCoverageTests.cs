@@ -36,7 +36,12 @@ public sealed class StructuralSurfaceCoverageTests
     // signature, like IsSpanMap), add it to SignatureTriggeredModes with anchor tests; if it is an internal
     // codegen flag, just bump this baseline. Either way the change forces a conscious coverage decision — a new
     // user-facing map mode can no longer ship dark. Same spirit as the T4 allowlist-size gates.
-    private const int MapMethodModelBoolFlagBaseline = 15;
+    // 15 -> 16: `Withheld` (I17). An INTERNAL CODEGEN FLAG, not a map mode — nothing in a method's
+    // SIGNATURE turns it on. It records that the method's own completeness gate refused it, so the
+    // emitter and the three aggregate gates skip it while every class-level analysis still sees the
+    // declaration. No new user-facing shape, so no anchor tests are owed; the behaviour it governs is
+    // pinned by CompletenessScopedRefusalTests.
+    private const int MapMethodModelBoolFlagBaseline = 16;
 
     private static PropertyInfo[] MapMethodModelBoolFlags()
     {

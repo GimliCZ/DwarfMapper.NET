@@ -27,6 +27,54 @@ internal static partial class MapperExtractor
     /// </summary>
     private const bool ProjectionPublicOnly = false;
 
+    /// <summary>
+    ///     Decide whether the projection method that has just been resolved must be DROPPED, and confine its
+    ///     refusal to itself when it can be confined.
+    /// </summary>
+    /// <param name="diagnostics">The class's diagnostic list; entries from <paramref name="start" /> on
+    ///     belong to this one method.</param>
+    /// <param name="start">The list's length when this method's resolution began.</param>
+    /// <returns>True when the caller must NOT add this method's model.</returns>
+    /// <remarks>
+    ///     <para>
+    ///         DWARF028 is an Error and an error suppressed the entire class, so a mapper declaring a
+    ///         <c>Map</c> and a <c>Project</c> over the same pair generated <b>nothing at all</b> the moment
+    ///         one projected member was untranslatable — and DWARF078 said so, accurately and unhelpfully.
+    ///         The <c>Map</c> methods were collateral: nothing about them is translated, so nothing about
+    ///         them can fail to translate (TASKS.md I14). This scopes the refusal to what was actually
+    ///         refused.
+    ///     </para>
+    ///     <para>
+    ///         Two errors are scopable here, and only when EVERY error this method raised is one of them:
+    ///         DWARF028 (untranslatable — a property of the endpoint, not of the mapping) and, since I17,
+    ///         DWARF001 (an unmapped destination member — a property of THIS method's pair and THIS
+    ///         method's <c>[MapIgnore]</c> set). Every other error a projection method can collect — an
+    ///         ambiguous member name (DWARF010), an unknown destination (DWARF008), a duplicate
+    ///         <c>[MapProperty]</c> — describes the SOURCE MODEL, is equally true of the <c>Map</c> methods
+    ///         over the same pair, and keeps the whole-class suppression it has always had.
+    ///     </para>
+    ///     <para>
+    ///         The method is dropped either way. A projection whose members did not all resolve has no
+    ///         honest body: emitting it with the members that DID resolve would silently drop the rest,
+    ///         which is the failure mode this whole endpoint is written to refuse.
+    ///     </para>
+    /// </remarks>
+    private static bool TryScopeProjectionRefusalToItsMethod(
+        List<DiagnosticInfo> diagnostics, int start, string methodName, LocationInfo? location)
+    {
+        return TryScopeMethodRefusal(
+            diagnostics, start, methodName, location,
+            DiagnosticDescriptors.ProjectionMethodNotGenerated,
+            DiagnosticDescriptors.ProjectionNotTranslatable,
+            // I17: completeness is per METHOD at every endpoint, this one included. A projection resolves
+            // its own members (MapperExtractor.Projection emits UnmappedMember at two sites, both inside
+            // this method's diagnostic range), and its method-level [MapIgnore] set is its own — so a
+            // destination member this projection does not map says nothing about the Map methods beside it.
+            // Reading it as class-level here and per-method everywhere else would make the SAME error
+            // proportional at four endpoints and not at the fifth.
+            DiagnosticDescriptors.UnmappedMember);
+    }
+
     private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)
     {
         element = type;
@@ -154,6 +202,17 @@ internal static partial class MapperExtractor
             mapPropertyExtras = null,
         bool skipNullSourceMembers = false, bool allowNonPublic = false,
         bool explicitOnly = false, bool ignoreObsolete = false, bool autoNest = true,
+        // I19: the projection endpoint reads NullCollections like every other endpoint. It used to read it
+        // nowhere at all, so a null source collection came back EMPTY through .Map (the documented AsEmpty
+        // default) and NULL through .Project — the same member answering differently depending on which
+        // method the caller reached for. The one call site passes the mapper's real setting.
+        bool nullAsNull = false,
+        // I20: the projection endpoint reads ImplicitConversions, and it used to read it NOWHERE. The option
+        // reached ResolveMembers at five call sites and this resolver at none, so under
+        // [DwarfMapper(ImplicitConversions = false)] a lossy-but-C#-implicit conversion (long -> double) was
+        // an Error at .Map and produced no diagnostic at all at .Project — the strict TRUST setting silently
+        // off at one endpoint. The one call site passes the mapper's real setting.
+        bool implicitConversions = true,
         HashSet<string>? consumedSources = null, IReadOnlyList<string>? flattenRoots = null,
         IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
             mapValues = null)
@@ -341,7 +400,7 @@ internal static partial class MapperExtractor
             var srcExprForExplicit = paramExpr + "." + Identifiers.EscapePath(srcName);
             var inlineExpr = ResolveProjectionExpr(
                 sm, tgtType, srcExprForExplicit, 0, compilation, location,
-                diagnostics, tgtName, enumPolicy, comparer, autoNest);
+                diagnostics, tgtName, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
             if (inlineExpr is null)
                 continue;
 
@@ -419,8 +478,8 @@ internal static partial class MapperExtractor
             // C4: pass comparer (carries CaseInsensitive setting) to ctor projection resolver.
             var ctorExpr = ResolveProjectionCtorExpr(
                 projectionCtor, sourceType, paramExpr, 0,
-                compilation, location, diagnostics, targetType, enumPolicy, comparer, autoNest,
-                ctorArgExprs, ctorArgTargets);
+                compilation, location, diagnostics, targetType, enumPolicy, comparer, autoNest, nullAsNull,
+                implicitConversions, ctorArgExprs, ctorArgTargets);
             if (ctorExpr is null)
                 return result;
 
@@ -485,7 +544,7 @@ internal static partial class MapperExtractor
                     var flatExpr = ResolveProjectionExpr(
                         fm.LeafType, target.Type,
                         paramExpr + "." + Identifiers.EscapePath(fm.Root + "." + fm.Leaf), 0, compilation,
-                        location, diagnostics, target.Name, enumPolicy, comparer, autoNest);
+                        location, diagnostics, target.Name, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
                     if (flatExpr is not null) result.Add(new ProjectionMemberMap(target.Name, flatExpr));
                     continue;
                 }
@@ -530,7 +589,7 @@ internal static partial class MapperExtractor
             // C4: pass comparer so nested objects respect CaseInsensitive setting.
             var inlineExpr = ResolveProjectionExpr(
                 src.Type, target.Type, srcAccessExpr, 0,
-                compilation, location, diagnostics, target.Name, enumPolicy, comparer, autoNest);
+                compilation, location, diagnostics, target.Name, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
             if (inlineExpr is not null)
                 result.Add(new ProjectionMemberMap(target.Name, inlineExpr));
         }
@@ -569,7 +628,9 @@ internal static partial class MapperExtractor
         string targetMemberName,
         EnumPolicy enumPolicy,
         StringComparer? comparer,
-        bool autoNest)
+        bool autoNest,
+        bool nullAsNull,
+        bool implicitConversions)
     {
         comparer ??= StringComparer.Ordinal;
 
@@ -601,7 +662,7 @@ internal static partial class MapperExtractor
             // C4: propagate comparer into element expression resolver.
             var elemExpr = ResolveProjectionExpr(
                 srcElem, tgtElem, elemParam, depth + 1,
-                compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
+                compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
             if (elemExpr is null) return null; // DWARF028 already emitted
 
             // Use fully-qualified Enumerable.Select to avoid needing 'using System.Linq' in generated code.
@@ -621,8 +682,33 @@ internal static partial class MapperExtractor
             // Guard the source collection with a null-conditional ternary ONLY when it may actually be
             // null (nullable-annotated or nullable-oblivious). A non-nullable source needs no guard —
             // guarding it would assign null to a non-nullable target (CS8601). EF translates the ternary.
-            if (ProjectionSourceMayBeNull(srcType)) return $"{srcExpr} == null ? null : {collectionExpr}";
-            return collectionExpr;
+            if (!ProjectionSourceMayBeNull(srcType)) return collectionExpr;
+
+            // I19: WHICH VALUE the guard's null arm yields is NullCollections, and this endpoint used to
+            // answer it without asking — always `null`, whatever the mapper had configured. The effective
+            // rule is the SAME LINE the runtime endpoint computes (MapperExtractor.Conversions, the
+            // `nullAsNull && IsNullableReferenceType(tgtType)` gate): AsNull propagates the null only when
+            // the target member can HOLD it, and degrades to AsEmpty when it cannot. Reading the option
+            // here is what makes the two endpoints agree; computing it the same way is what keeps them
+            // agreeing in an oblivious (`#nullable disable`) context, where BOTH degrade.
+            if (nullAsNull && IsNullableReferenceType(tgtType))
+                return $"{srcExpr} == null ? null : {collectionExpr}";
+
+            // AsEmpty — the documented default (docs/options.md, `NullCollections`: "Null source collection
+            // → AsEmpty (never throws)"). The empty arm is chosen per target kind so the two arms have the
+            // SAME static type and the conditional needs no cast: `List<T>` both sides, `T[]` both sides,
+            // `IEnumerable<T>` both sides. No new construct class enters the tree beyond an empty
+            // materialisation — the ternary itself is the one this endpoint already emitted here.
+            var emptyExpr = shape.Target switch
+            {
+                CollectionConverter.TargetKind.Array =>
+                    $"global::System.Array.Empty<{tgtElemFqn}>()",
+                CollectionConverter.TargetKind.IEnumerable =>
+                    $"global::System.Linq.Enumerable.Empty<{tgtElemFqn}>()",
+                _ =>
+                    $"new global::System.Collections.Generic.List<{tgtElemFqn}>()"
+            };
+            return $"{srcExpr} == null ? {emptyExpr} : {collectionExpr}";
         }
 
         // ── Pre-check: Dictionary targets (always non-translatable in projection) ──
@@ -636,7 +722,32 @@ internal static partial class MapperExtractor
         }
 
         // ── 1. Direct-assignable (implicit — covers widening numeric, same-type, etc.) ──
-        if (HasImplicitConversion(compilation, srcType, tgtType)) return srcExpr;
+        if (HasImplicitConversion(compilation, srcType, tgtType))
+        {
+            // ...but "C# will assign it" is not "the product has no opinion about it". Cross-category numeric
+            // (long → double, int → float) is implicit in C# and LOSSY, and it is the one lossy kind that
+            // reaches this line: narrowing and parse/format have no implicit conversion, so they fall through
+            // to the DWARF028 refusals below. The .Map endpoint has always reported it here — a Warning by
+            // default, an Error under ImplicitConversions = false — and this endpoint reported nothing at
+            // either severity (TASKS.md I20).
+            //
+            // The remedy is the SAME emitter the runtime endpoint calls, not a projection-flavoured one:
+            // the endpoints have to agree on WHETHER THE BUILD BREAKS, which is the whole content of the
+            // option, and two emitters are two things that can disagree. Deliberately NOT a DWARF028: that
+            // id means "a query provider cannot translate this", which is FALSE here — a widening cast is
+            // the most translatable thing there is — and refusing under the permissive default would be a
+            // capability regression at one endpoint, which is the branch I19 rejected for NullCollections.
+            //
+            // Deliberately NOT scoped to the method either (no DiagnosticInfo.ScopedToMethod, no DWARF096).
+            // I14's rule: a DWARF028 describes THIS endpoint's translatability and is confined to the
+            // projection, while every other error describes the SOURCE MODEL and is equally true of the .Map
+            // methods over the same pair. A lossy type pair is the second kind — the class dies, exactly as
+            // it already does when a .Map method sits beside the projection over that pair.
+            if (NumericConverter.IsCrossCategoryLossy(srcType, tgtType))
+                EmitImplicitConversionDiag(diagnostics, location, targetMemberName, srcType, tgtType,
+                    "cross-category numeric", implicitConversions, lossy: true);
+            return srcExpr;
+        }
 
         // ── 2. Enum by-value cast (enum→enum) ─────────────────────────────────
         if (srcType.TypeKind == TypeKind.Enum && tgtType.TypeKind == TypeKind.Enum
@@ -735,23 +846,39 @@ internal static partial class MapperExtractor
             // C4: pass comparer into nested object resolver.
             return ResolveProjectionNestedObjectExpr(
                 namedSrc, namedTgt, srcExpr, depth, compilation, location, diagnostics,
-                targetMemberName, enumPolicy, comparer, autoNest);
+                targetMemberName, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
         }
 
-        // ── Nullable T? → nullable U? or non-nullable U ───────────────────────
-        // C5: when source is Nullable<T> and target is also Nullable<U>, emit a null-preserving
-        // HasValue ternary (SQL-translatable) instead of .Value (throws on null).
+        // ── Nullable-value source T? → a target that CAN hold null, or one that cannot ───────────────────────
+        // C5: emit a null-preserving HasValue ternary (SQL-translatable) instead of .Value, which
+        // throws on null.
+        //
+        // The gate asks TryGetNullableCapableTarget — CAN the destination store the null? — not
+        // IsNullableValue, which asks the destination's KIND. Asking the kind is what made `S1? M` →
+        // `D1? M` project when D1 happened to be a struct and be REFUSED with DWARF028 when D1 was a class
+        // or a record, while .Map on the same mapper lifted all of them (TASKS.md I14; the runtime half of
+        // the same confusion is I7). One question, one answer, at both endpoints.
         if (IsNullableValue(srcType, out var srcUnderlying))
         {
-            if (IsNullableValue(tgtType, out var tgtUnderlying))
+            if (TryGetNullableCapableTarget(tgtType, out var tgtUnderlying))
             {
                 // int?→long?: null-preserving ternary: __s.X.HasValue ? (long?)__s.X.Value : null
                 var innerExpr = ResolveProjectionExpr(
                     srcUnderlying, tgtUnderlying, srcExpr + ".Value", depth,
-                    compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
+                    compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
                 if (innerExpr is null) return null;
-                var tgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                return $"{srcExpr}.HasValue ? ({tgtNullableFqn}){innerExpr} : null";
+                // The cast is carried ONLY for a Nullable<U> target, where the two arms (U and the null
+                // literal) have no best common type and CS0173 would follow. For a nullable-ANNOTATED
+                // REFERENCE target the inner expression already has the target's own type and the null
+                // literal converts to it, so the conditional's natural type IS the target — the same shape
+                // ResolveProjectionNestedObjectExpr has always emitted for a nullable reference source.
+                if (IsNullableValue(tgtType, out _))
+                {
+                    var tgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    return $"{srcExpr}.HasValue ? ({tgtNullableFqn}){innerExpr} : null";
+                }
+
+                return $"{srcExpr}.HasValue ? {innerExpr} : null";
             }
             // int?→long (non-nullable target): REFUSED. This link needs a null decision, and NullStrategy —
             // the option that makes it — never reaches the projection engine, so the emitted `.Value` ignored
@@ -759,10 +886,41 @@ internal static partial class MapperExtractor
             // InvalidOperationException from .Project for the same input. Emitting `.Value` also pushes the
             // failure to runtime inside a provider-translated query, where NULL semantics are the provider's,
             // not ours. Refusing at build time keeps the null decision explicit and the two paths honest.
+            // Deliberately annotation-strict on the reference side, exactly as TryGetNullableCapableTarget
+            // is for .Map: an un-annotated (or oblivious) reference target is a promise that it holds no
+            // null, so the documented NullStrategy contract keeps governing it — and NullStrategy is the
+            // one thing this endpoint cannot express.
             EmitDWARF028(diagnostics, location, targetMemberName,
-                "a nullable source mapped to a non-nullable target needs a null decision, and NullStrategy is "
-                + "not translatable in projection; make the target nullable, or map this member at runtime");
+                "a nullable source mapped to a target that cannot hold null needs a null decision, and "
+                + "NullStrategy is not translatable in projection; make the target nullable, or map this "
+                + "member at runtime");
             return null;
+        }
+
+        // Reference source into a Nullable<U> target — the re-kinded pair, the other way round.
+        // `S1? M` → `D1? M` where S1 is a class and D1 a struct. Nothing above catches it: Nullable<D1> is
+        // excluded from IsMappableObjectPair by name, so the nested-object branch declines and the pair fell
+        // through to "no translatable conversion found" — while .Map lifts it (I7's reverse genre, the
+        // NullableProjectRef handling). The lift is a CALL-SITE question at both endpoints, because a
+        // value-typed inner expression has no way to answer null; here the call site is this ternary.
+        if (srcType.IsReferenceType && IsNullableValue(tgtType, out var refTgtUnderlying))
+        {
+            // The annotation is STRIPPED for the recursion on purpose. The inner question is only "how does
+            // an S1 become a D1", and the nested-object resolver adds its OWN null guard for a nullable
+            // reference source — which, with a VALUE-type target below it, would produce
+            // `x == null ? null : new D1 { … }`: two arms with no best common type (CS0173), nested inside
+            // the guard this branch is about to add anyway. One guard, and it is this one.
+            var refInnerExpr = ResolveProjectionExpr(
+                srcType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), refTgtUnderlying, srcExpr,
+                depth, compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
+            if (refInnerExpr is null) return null;
+            // A non-nullable-annotated source cannot be null, so it needs no guard — only the widening to
+            // Nullable<U>, which is implicit. Guarding it would be the false-CS8601 shape
+            // ProjectionSourceMayBeNull exists to avoid.
+            if (!ProjectionSourceMayBeNull(srcType)) return refInnerExpr;
+            // The cast is required here: null and U have no best common type (CS0173).
+            var refTgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return $"{srcExpr} == null ? null : ({refTgtNullableFqn})({refInnerExpr})";
         }
 
         // ── Fallback: no translatable conversion found ────────────────────────
@@ -968,7 +1126,9 @@ internal static partial class MapperExtractor
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         string targetMemberName, EnumPolicy enumPolicy,
         StringComparer? comparer,
-        bool autoNest)
+        bool autoNest,
+        bool nullAsNull,
+        bool implicitConversions)
     {
         comparer ??= StringComparer.Ordinal;
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -1018,7 +1178,7 @@ internal static partial class MapperExtractor
                 var memberInlineExpr = ResolveProjectionExpr(
                     srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
                     compilation, location, diagnostics,
-                    targetMemberName + "." + tgtMember.Name, enumPolicy, comparer, autoNest);
+                    targetMemberName + "." + tgtMember.Name, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
 
                 if (memberInlineExpr is null)
                 {
@@ -1053,7 +1213,7 @@ internal static partial class MapperExtractor
             var ctorExpr = ResolveProjectionCtorExpr(
                 bestCtor, srcType, srcExpr, depth,
                 compilation, location, diagnostics, tgtType, enumPolicy,
-                comparer, autoNest);
+                comparer, autoNest, nullAsNull, implicitConversions);
             if (ctorExpr is null) return null;
 
             // R18-32, nested half: a member the constructor did not take used to be dropped here in silence,
@@ -1078,7 +1238,30 @@ internal static partial class MapperExtractor
         // Wrap with a null-navigation ternary ONLY when the source may actually be null (nullable-
         // annotated or nullable-oblivious). A non-nullable source needs no guard (guarding it would
         // assign null to a non-nullable target — CS8603).
-        if (ProjectionSourceMayBeNull(srcType)) return $"{srcExpr} == null ? null : {innerBodyExpr}";
+        if (ProjectionSourceMayBeNull(srcType))
+        {
+            // ... and only when the TARGET slot can hold the null. A VALUE-type target cannot: the two arms
+            // would be `null` and a struct, which has no best common type, and the generated file failed to
+            // compile with CS0037 — silently, because the resolver reported nothing. The same
+            // kind-instead-of-capability confusion I14/I7 name, one function further down. Found by the I14
+            // sibling hunt (round 23), not by sampling: this cell is `class Src { Nested? N }` →
+            // `class Dst { NestedStruct N }`, which the type-graph generators mirror kinds across and so
+            // never build. The honest answer is the refusal a nullable-VALUE source into a null-incapable
+            // target already gets: .Map answers it by throwing per NullStrategy from inside the synthesized
+            // helper, and NullStrategy is precisely what a provider-translated expression cannot express.
+            // A nullable-ANNOTATED REFERENCE target keeps the long-standing ternary — it can hold the null.
+            if (tgtType.IsValueType)
+            {
+                EmitDWARF028(diagnostics, location, targetMemberName,
+                    $"a nullable source mapped to the value-type target '{tgtFqn}' needs a null decision, and "
+                    + "NullStrategy is not translatable in projection; make the target nullable, or map this "
+                    + "member at runtime");
+                return null;
+            }
+
+            return $"{srcExpr} == null ? null : {innerBodyExpr}";
+        }
+
         return innerBodyExpr;
     }
 
@@ -1108,6 +1291,8 @@ internal static partial class MapperExtractor
         EnumPolicy enumPolicy,
         StringComparer comparer,
         bool autoNest,
+        bool nullAsNull,
+        bool implicitConversions,
         Dictionary<string, string>? explicitArgExprs = null,
         HashSet<string>? explicitArgTargets = null)
     {
@@ -1145,7 +1330,7 @@ internal static partial class MapperExtractor
             // C4: propagate comparer into ctor param expression resolver.
             var paramInlineExpr = ResolveProjectionExpr(
                 srcMember.Type, param.Type, paramSrcExpr, depth + 1,
-                compilation, location, diagnostics, param.Name, enumPolicy, comparer, autoNest);
+                compilation, location, diagnostics, param.Name, enumPolicy, comparer, autoNest, nullAsNull, implicitConversions);
 
             if (paramInlineExpr is null)
             {

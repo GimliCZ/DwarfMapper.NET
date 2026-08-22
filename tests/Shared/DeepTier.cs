@@ -125,6 +125,28 @@ public enum DeepPopulation
     CompilerGraphSmokeSeeds,
 
     /// <summary>
+    ///     CompilerTests/TypeGraphSmokeTests' PROJECTION leg (round-23 I18): the same K0 must-compile-or-
+    ///     refuse smoke over graphs whose mapper declares
+    ///     <c>IQueryable&lt;D0&gt; Project(IQueryable&lt;S0&gt;)</c> beside <c>Map</c>. Its own entry rather
+    ///     than a wider <see cref="CompilerGraphSmokeSeeds" /> because emitting <c>Project</c> into the
+    ///     existing population would re-cut its case set (the projection refuses a strictly wider grammar,
+    ///     and one error-severity refusal makes the whole run "refused" — accepted cases would silently
+    ///     stop being compile-checked); see <c>TypeGraphRenderer.Render</c>'s <c>withProjection</c> remarks.
+    ///     Same per-sample cost class as <see cref="CompilerGraphSmokeSeeds" /> — one render, both
+    ///     generators, one full in-memory compile — but a HIGHER fast count than its 25, and the reason is
+    ///     the measured accept/refuse split rather than the cost. MEASURED before entering the catalog per
+    ///     the round-21 rule (2026-08-23, 12-core reference machine), 25 / 50 / 100 / 200 / deep 1000:
+    ///     <b>2</b>/23, <b>7</b>/43, <b>21</b>/79, <b>48</b>/152 and <b>233</b>/767 accepted/refused, at
+    ///     ≈1 s, ≈1 s, ≈1 s, ≈2 s and ≈7 s in-class. The projection refuses a much wider grammar than
+    ///     <c>Map</c> (a HashSet member, a converter, a hook, reference handling — DWARF028's whole reason
+    ///     list), so at 25 the leg would have carried its compile-clean invariant on TWO accepted cases,
+    ///     one grammar tightening away from tripping its own vacuity floor. Fast <b>100</b> buys 21
+    ///     accepts for the same ≈1 s — the count is chosen off the accept column, not the wall column.
+    ///     Deep ×10 = 1000, ≈7 s in-class, 233 accepts.
+    /// </summary>
+    CompilerProjectionSmokeSeeds,
+
+    /// <summary>
     ///     CompilerTests/DifferentialOracleTests CsCheck <c>iter</c> (round-22 K1). Each iteration is a
     ///     K0 smoke sample PLUS an in-memory emit, an assembly load, a name-keyed population, the generated
     ///     map's execution and the naive-oracle comparison — the heaviest per-sample cost class in this
@@ -135,6 +157,30 @@ public enum DeepPopulation
     ///     unmeasured and therefore unused.
     /// </summary>
     CompilerOracleSeeds,
+
+    /// <summary>
+    ///     CompilerTests/ProjectionAgreementTests (round-23 I18): the ENDPOINT-AGREEMENT relation —
+    ///     <c>Project</c> over a one-element <c>AsQueryable()</c> must produce what <c>Map</c> produces from
+    ///     the same source instance. K1's cost class (render + both generators + compile + emit + load +
+    ///     populate + map + projection + structural diff), which is why its fast count is small.
+    ///     <para>
+    ///         The relation the smoke leg cannot express: K0 proves a projection COMPILES, this proves it
+    ///         is RIGHT. Stated limit (B19): the tree is executed by LINQ-to-Objects, so this proves it
+    ///         compiles and evaluates, never that an ORM provider translates it.
+    ///     </para>
+    ///     MEASURED before entering the catalog per the round-21 rule (2026-08-23, 12-core reference
+    ///     machine). Measured on ITS OWN generator, which draws graph+population-seed PAIRS where the smoke
+    ///     leg draws graphs only — and the execution counts came out IDENTICAL to the smoke leg's accept
+    ///     counts (25 → 2, 50 → 7, 100 → 21, deep 1000 → 233), because the pair generator draws the graph
+    ///     from the same stream first and the extra seed does not perturb it. Worth recording precisely
+    ///     because it is a coincidence of the generator's shape, not a guarantee: a future generator edit
+    ///     can decouple them, so re-measure rather than assuming the two entries move together.
+    ///     Fast <b>100</b> (21 executions, ≈2 s in-class) for the same reason as the smoke leg — at 25 the
+    ///     relation ran on TWO cases. Deep ×10 = 1000, 233 executions, ≈14 s in-class. The two deterministic
+    ///     anchors (the accepted <c>PinnedCorpus</c> rows) execute regardless of where the sampled split
+    ///     falls, so the relation is never entirely at the mercy of this count.
+    /// </summary>
+    CompilerProjectionAgreementSeeds,
 
     /// <summary>
     ///     CompilerTests/MetamorphicTests MR-1 CsCheck <c>iter</c> (round-22 K2). Each iteration is TWO
@@ -160,7 +206,16 @@ public enum DeepPopulation
     ///     graph uses inheritance), so deep 150 prices out near MR-1's 250 pairs in run count. Measured
     ///     2026-08-22 with MR-1: fast 8 ≈ 0.25 s in-class; deep 150 ≈ 4 s in-class.
     /// </summary>
-    CompilerMrRekindSeeds
+    CompilerMrRekindSeeds,
+
+    /// <summary>
+    ///     CompilerTests/GeneratorCompileCostTests (round 23, S3): how many MAPPERS the cost corpus puts in
+    ///     ONE compilation. Not a seed count — the whole population is a single compilation, so this entry
+    ///     scales the SIZE of one case rather than the number of cases. Fast 40 keeps routine
+    ///     <c>dotnet test</c> cheap while still being large enough for the incremental claims to mean
+    ///     something; deep 1000 is the per-1000-mappers figure the row exists to measure.
+    /// </summary>
+    CompilerCostCorpusMappers
 }
 
 /// <summary>
@@ -213,10 +268,13 @@ public static class DeepTier
         [DeepPopulation.ObjectFactoryDistributionSeeds] = (400, 4000),
         [DeepPopulation.RegistryPropertyIters] = (200, 2000),
         [DeepPopulation.CompilerGraphSmokeSeeds] = (25, 250),
+        [DeepPopulation.CompilerProjectionSmokeSeeds] = (100, 1000),
         [DeepPopulation.CompilerOracleSeeds] = (20, 1000),
+        [DeepPopulation.CompilerProjectionAgreementSeeds] = (100, 1000),
         [DeepPopulation.CompilerMrMemberOrderSeeds] = (10, 250),
         [DeepPopulation.CompilerMrUnmappedMemberSeeds] = (10, 250),
-        [DeepPopulation.CompilerMrRekindSeeds] = (8, 150)
+        [DeepPopulation.CompilerMrRekindSeeds] = (8, 150),
+        [DeepPopulation.CompilerCostCorpusMappers] = (40, 1000)
     };
 
     /// <summary>The count a call site should run with right now (fast unless <see cref="Enabled" />).</summary>

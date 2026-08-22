@@ -12,7 +12,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 /// <list type="bullet">
 ///   <item><description><c>CollectionConverter.CountKind</c> (None/Length/Count) — drives capacity pre-sizing;</description></item>
 ///   <item><description><c>DictionaryConverter.DictTargetKind</c> — the dictionary target taxonomy;</description></item>
-///   <item><description><c>DwarfMapper.Generator.Model.NullHandling</c> (None/ThrowIfNull/ValueOrDefault/NullableProject)
+///   <item><description><c>DwarfMapper.Generator.Model.NullHandling</c> (None/ThrowIfNull/ValueOrDefault/NullableProject/NullableProjectRef)
 ///   — each value emits distinct null-handling code.</description></item>
 /// </list>
 /// Each of these is reflected by metadata name (robust against accessibility) and every value must be

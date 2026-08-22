@@ -1,12 +1,12 @@
 # DwarfMapper.NET
 
-[![ci](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml/badge.svg)](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml)
-[![NuGet](https://img.shields.io/nuget/vpre/DwarfMapper?logo=nuget&label=NuGet)](https://www.nuget.org/packages/DwarfMapper)
+[![CI](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml)
+[![NuGet prerelease](https://img.shields.io/nuget/vpre/DwarfMapper?logo=nuget&label=NuGet%20prerelease)](https://www.nuget.org/packages/DwarfMapper)
 [![downloads](https://img.shields.io/nuget/dt/DwarfMapper?label=downloads)](https://www.nuget.org/packages/DwarfMapper)
-[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![license](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 
-[![last commit](https://img.shields.io/github/last-commit/GimliCZ/DwarfMapper.NET?label=last%20commit)](https://github.com/GimliCZ/DwarfMapper.NET/commits)
+[![last commit](https://img.shields.io/github/last-commit/GimliCZ/DwarfMapper.NET)](https://github.com/GimliCZ/DwarfMapper.NET/commits)
 
 > A compile-time object mapper for .NET where **an unmapped member is a build error**, maps are **round-trip-verifiable
 with one attribute**, and blittable data (unmanaged, fixed-layout structs) falls back to **SIMD/blittable bulk copy**
@@ -1029,6 +1029,24 @@ are built and covered by tests; APIs are stabilising. Packages build, keyless-si
 tag-triggered pipeline that cuts a signed GitHub Release ([`docs/RELEASING.md`](docs/RELEASING.md)); nuget.org
 publishing is manual. Being a release candidate, install it with the `--prerelease` flag. Feedback on rough edges
 welcome.
+
+### Quality gates
+
+Generated from the gates' own files, never hand-typed — see `QualityBadgeRenderer`.
+
+<!-- table: quality-badges -->
+[![coverage DwarfMapper](https://img.shields.io/badge/coverage%20DwarfMapper-91.2%25-brightgreen)](scripts/housekeeping.ps1)
+[![coverage DwarfMapper.Generator](https://img.shields.io/badge/coverage%20DwarfMapper.Generator-93.7%25-brightgreen)](scripts/housekeeping.ps1)
+[![coverage DwarfMapper.DocTooling](https://img.shields.io/badge/coverage%20DwarfMapper.DocTooling-95.7%25-brightgreen)](scripts/housekeeping.ps1)
+[![coverage DwarfMapper.CodeFixes](https://img.shields.io/badge/coverage%20DwarfMapper.CodeFixes-92.4%25-brightgreen)](scripts/housekeeping.ps1)
+[![coverage DwarfMapper.Testing](https://img.shields.io/badge/coverage%20DwarfMapper.Testing-83.2%25-brightgreen)](scripts/housekeeping.ps1)
+
+[![mutation generator](https://img.shields.io/badge/mutation%20generator-81.59%25-brightgreen)](stryker-config.json)
+[![mutation doctooling](https://img.shields.io/badge/mutation%20doctooling-95.42%25-brightgreen)](stryker-config.doctooling.json)
+[![mutation runtime](https://img.shields.io/badge/mutation%20runtime-96.46%25-brightgreen)](stryker-config.runtime.json)
+
+<sub>Coverage figures are the enforced per-assembly line-coverage floors from [`scripts/housekeeping.ps1`](scripts/housekeeping.ps1); mutation figures are the RAW measured scores from [`Issues/ledgers/equivalent-mutants.md`](Issues/ledgers/equivalent-mutants.md), gated at break 81 (generator), break 95 (doctooling), break 96 (runtime). Every number here is read from those files and byte-compared by the doc suite, so a stale badge is a failing build rather than a quiet lie.</sub>
+<!-- endtable -->
 
 ## Name
 

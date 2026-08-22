@@ -321,7 +321,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         foreach (var model in models)
         foreach (var method in model.Methods)
         {
-            if (method.IsPartial || !GeneratedNames.IsObjectMap(method.MethodName)) continue;
+            if (method.Withheld || method.IsPartial || !GeneratedNames.IsObjectMap(method.MethodName)) continue;
 
             if (!byName.TryGetValue(method.MethodName, out var variants))
             {
@@ -437,7 +437,28 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
     private static void Execute(SourceProductionContext spc, MapperClassModel model)
     {
-        foreach (var diagnostic in model.Diagnostics) spc.ReportDiagnostic(diagnostic.ToDiagnostic());
+        // DWARF096 and DWARF097 say "the rest of this mapper WAS generated", and when a CLASS-level error
+        // is also present that is false: DWARF078 is about to say nothing was. Both would be reported, and
+        // one of them would be lying to the reader. Reachable without contriving — a refused-clean
+        // projection beside a Map method with an ambiguous member is enough — so a scoped signpost stands
+        // down and lets the class-wide one speak. The error underneath it is still reported either way;
+        // only the signpost, which exists solely to describe the SCOPE of the damage, is suppressed when
+        // the scope is no longer what it claims.
+        //
+        // Both ids, and the list is the whole guard: DWARF097 (I17) arrived after this check was written
+        // for DWARF096 alone, and a per-method signpost added without being named here would repeat, word
+        // for word, the defect the check exists to prevent.
+        var suppressScopedSignpost = model.HasBlockingError;
+
+        foreach (var diagnostic in model.Diagnostics)
+        {
+            if (suppressScopedSignpost
+                && (ReferenceEquals(diagnostic.Descriptor, DiagnosticDescriptors.ProjectionMethodNotGenerated)
+                    || ReferenceEquals(diagnostic.Descriptor, DiagnosticDescriptors.MappingMethodNotGenerated)))
+                continue;
+
+            spc.ReportDiagnostic(diagnostic.ToDiagnostic());
+        }
 
         if (model.HasBlockingError)
         {
@@ -453,10 +474,21 @@ public sealed class DwarfGenerator : IIncrementalGenerator
     ///     Explains the <c>CS8795</c> wall that is about to appear, because nothing else can.
     /// </summary>
     /// <remarks>
-    ///     Suppressing emission for the whole class is the right call — half-generated code would produce worse
-    ///     errors than none. But it means every partial mapping method loses its implementing part at once, and
-    ///     the resulting pile of <c>CS8795</c> looks identical to the OTHER cause of that wall: a project that
-    ///     never wired the analyzer at all. One signpost, at the first real error's location, separates them.
+    ///     <para>
+    ///         Suppressing emission for the whole class is the right call for a CLASS-level error —
+    ///         half-generated code would produce worse errors than none. But it means every partial mapping
+    ///         method loses its implementing part at once, and the resulting pile of <c>CS8795</c> looks
+    ///         identical to the OTHER cause of that wall: a project that never wired the analyzer at all. One
+    ///         signpost, at the first real error's location, separates them.
+    ///     </para>
+    ///     <para>
+    ///         What no longer reaches here is a PROJECTION-METHOD error. An untranslatable projected member
+    ///         says nothing about the <c>Map</c> methods beside it, and used to take them down anyway
+    ///         (TASKS.md I14); <c>MapperExtractor.TryScopeProjectionRefusalToItsMethod</c> now drops that one
+    ///         method, marks its DWARF028 method-scoped so <c>HasBlockingError</c> ignores it, and signposts
+    ///         the single CS8795 that follows with DWARF096. The ids listed below therefore exclude scoped
+    ///         errors: DWARF096 has already named them, at the method they belong to.
+    ///     </para>
     /// </remarks>
     private static void ReportCascadeSignpost(SourceProductionContext spc, MapperClassModel model)
     {
@@ -467,7 +499,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
         foreach (var d in model.Diagnostics)
         {
-            if (!d.IsError) continue;
+            if (!d.IsError || d.ScopedToMethod) continue;
 
             first ??= d.Location;
             var id = d.Descriptor.Id;

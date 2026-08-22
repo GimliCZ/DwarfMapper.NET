@@ -32,7 +32,15 @@ public sealed record DiagnosticInfo(
     // the base (nearest declared pair up the class chain, ties refused), and a CodeFixProvider working that
     // out again from syntax would be a second implementation of the same rule — free to disagree with the
     // first, silently, which is a defect shape this project has already been bitten by twice.
-    string? SourcePair = null)
+    string? SourcePair = null,
+    // True when this error is confined to ONE mapping method and must NOT suppress the whole mapper class.
+    // Only DWARF028 (ProjectionNotTranslatable) sets it, and only after MapperExtractor has dropped the
+    // projection method it belongs to: the member cannot be translated, so that ONE method cannot be
+    // generated, but the .Map methods sitting beside it on the same class are unaffected and used to be
+    // taken down with it (TASKS.md I14). Read by MapperClassModel.HasBlockingError, which decides emission;
+    // the diagnostic is still REPORTED either way. Part of value equality, like SeverityOverride, so the
+    // incremental cache tells a scoped refusal from a class-killing one.
+    bool ScopedToMethod = false)
 {
     /// <summary>Property bag key under which <see cref="MemberName" /> reaches a CodeFixProvider.</summary>
     public const string MemberPropertyKey = "Member";
