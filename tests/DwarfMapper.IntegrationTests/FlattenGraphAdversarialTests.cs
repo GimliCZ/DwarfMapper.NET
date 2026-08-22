@@ -302,7 +302,7 @@ public class FlattenGraphEdgeKindMatrixTests
         var a = new EkNode { Name = "A", SingleRef = b };
         var result = _m.Map(new EkRoot { Entry = a });
         Assert.Equal(2, result.Nodes.Count);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "A", "B" }, names);
         Assert.All(result.Nodes, n => Assert.Null(n.SingleRef)); // edges degraded
     }
@@ -364,7 +364,7 @@ public class FlattenGraphEdgeKindMatrixTests
         };
         var result = _m.Map(new EkRoot { Entry = a });
         Assert.Equal(3, result.Nodes.Count);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "A", "F1", "F2" }, names);
     }
 
@@ -378,7 +378,7 @@ public class FlattenGraphEdgeKindMatrixTests
         child.Parent = parent;
         var result = _im.Map(new IEkRoot { Entry = child });
         Assert.Equal(2, result.Nodes.Count);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "Child", "Parent" }, names);
         Assert.All(result.Nodes, n => Assert.Null(n.Parent)); // edges degraded
     }

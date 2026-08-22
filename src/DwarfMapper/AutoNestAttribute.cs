@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace DwarfMapper;
 
 /// <summary>
@@ -13,6 +15,9 @@ namespace DwarfMapper;
 // reason that had nothing to do with the generator. Which bool bites is not derivable: [MapNullSkip(true)] is
 // the biting value of the same-shaped constructor next door, so it is stated here rather than guessed.
 [DwarfSurfaceProbe(constructorArity: 1, Arguments = "false")]
+[ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
+    + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
+    + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class AutoNestAttribute : Attribute
 {

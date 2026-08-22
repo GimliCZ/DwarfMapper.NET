@@ -173,5 +173,13 @@ public sealed class RegistryInterfaceLookupTests
 
         Assert.Contains(".ToList()", ex.Message, StringComparison.Ordinal);
         Assert.Contains("IEnumerable<T>", ex.Message, StringComparison.Ordinal);
+        // The remedy's DIAGNOSIS half: the message must say WHY the generic declare advice does not apply
+        // here — the reader is holding a type no attribute can name, and the sentence saying so is the only
+        // thing that stops them trying. (E3-E1 hole 11 remainder: this fragment could be blanked unnoticed.)
+        Assert.Contains("is a compiler-generated LINQ iterator — no [GenerateMap] attribute can name it.",
+            ex.Message, StringComparison.Ordinal);
+        // And the interface-declaration alternative must be a COMPLETE, pasteable attribute — through the
+        // closing ">]." — not a fragment that trails off mid-generic-argument.
+        Assert.Contains("[GenerateMap<IEnumerable<T>, IfDstG>].", ex.Message, StringComparison.Ordinal);
     }
 }

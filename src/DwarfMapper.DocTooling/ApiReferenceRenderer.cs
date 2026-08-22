@@ -185,8 +185,29 @@ public static class ApiReferenceRenderer
                 + "rendered from it, so an empty page would misrepresent documented code as undocumented. "
                 + "Check GenerateDocumentationFile is still true for that project.");
 
+        return ParseSummaries(xmlPath);
+    }
+
+    /// <summary>
+    ///     Reads the member summaries out of a doc-XML file at <paramref name="xmlPath" />.
+    ///     <para>
+    ///         <see cref="LoadOptions.PreserveWhitespace" /> is load-bearing, not tidiness (B23). The default
+    ///         <see cref="LoadOptions.None" /> discards whitespace-ONLY text nodes, so a doc comment that
+    ///         separates two inline elements by nothing but a space — <c>&lt;/b&gt; &lt;c&gt;</c>,
+    ///         <c>&lt;/c&gt; &lt;see/&gt;</c> — lost that space before <see cref="Flatten" /> ever ran, and the
+    ///         rendered page welded the two words together. <see cref="Flatten" />'s own whitespace collapse
+    ///         cannot restore what the loader already dropped, so the repair has to happen here.
+    ///     </para>
+    ///     <para>
+    ///         Internal rather than private so the spacing can be pinned against a real file on the real load
+    ///         path. A test that hand-built an <see cref="XElement" /> and called <see cref="Flatten" /> would
+    ///         have passed before the fix as well: the defect lived in the LOAD, not in the flattening.
+    ///     </para>
+    /// </summary>
+    internal static Dictionary<string, string> ParseSummaries(string xmlPath)
+    {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var member in XDocument.Load(xmlPath).Descendants("member"))
+        foreach (var member in XDocument.Load(xmlPath, LoadOptions.PreserveWhitespace).Descendants("member"))
         {
             var name = member.Attribute("name")?.Value;
             var summary = member.Element("summary");

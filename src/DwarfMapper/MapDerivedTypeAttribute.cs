@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace DwarfMapper;
 
 /// <summary>
@@ -34,6 +36,9 @@ public sealed class MapDerivedTypeAttribute<TSource, TTarget> : Attribute
 // read NotCompilable (CS8795) and the finding that claimed this form "acts at CreateMap" was measuring a
 // refusal of nonsense. Naming the fixture's derived types asks the question the directive exists for.
 [DwarfSurfaceProbe(constructorArity: 2, Arguments = "typeof(SrcDerived), typeof(DstDerived)")]
+[ExcludeFromCodeCoverage(Justification = "compile-time-only attribute, consumed by the generator (round-22 P4's one "
+    + "sanctioned category): read from the semantic model at build time; no runtime code path constructs or "
+    + "executes it. Issues/round22/RESEARCH-97-PERCENT-GATES.md §2.2.")]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class MapDerivedTypeAttribute : Attribute
 {

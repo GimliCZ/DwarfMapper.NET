@@ -18,6 +18,27 @@
         <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
+        <!-- Supply-chain gate (round-22 S1): vulnerability audit + repeatable restores.
+             NuGetAudit checks every restore against the advisory database; mode `all` audits TRANSITIVE
+             packages too, level `low` audits every severity. The pinned SDK already defaults the mode to
+             `all` via SdkAnalysisLevel — stating all three pins the gate against SDK-default drift, the
+             same reason the SDK itself is pinned. Restore honors TreatWarningsAsErrors above, so every
+             NU1901–NU1904 advisory FAILS the restore; NU1900/NU1905 (audit could not run / no source
+             provides vulnerability data) stay errors too on purpose — an audit that silently could not
+             fetch its database is a vacuous green, the exact genre Assert-MutantsWereTested exists for. -->
+        <NuGetAudit>true</NuGetAudit>
+        <NuGetAuditMode>all</NuGetAuditMode>
+        <NuGetAuditLevel>low</NuGetAuditLevel>
+
+        <!-- Lock files make the resolved package graph a COMMITTED, diffable artifact per project; CI and
+             housekeeping restore in locked mode (RestoreLockedMode below fires on CI's env var), so a
+             restore that would resolve anything other than the committed graph fails NU1004 loudly instead
+             of silently compiling against different bytes. Central package management pins the versions;
+             the lock files pin the resolved GRAPH + content hashes — reproducibility proof, not redundancy.
+             After an intentional dependency change, regenerate with `dotnet restore` + force-evaluate. -->
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+        <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+
         <!-- Package metadata (license is unambiguous in every artifact) -->
         <Authors>DwarfMapper contributors</Authors>
         <Company>DwarfMapper contributors</Company>

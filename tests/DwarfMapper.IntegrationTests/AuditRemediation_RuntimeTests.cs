@@ -112,7 +112,7 @@ public class AuditRemediation_RuntimeTests
         var result = mapper.Map(new DRoot { Entries = new Dictionary<string, DNode> { ["a"] = a } });
 
         // Expect both a and b collected
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "a", "b" }, names);
     }
 
@@ -169,7 +169,7 @@ public class AuditRemediation_RuntimeTests
         var result = mapper.Map(new FGIfaceRoot { Entry = a });
 
         Assert.Equal(2, result.Nodes.Count);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "a", "b" }, names);
     }
 

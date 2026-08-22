@@ -33,19 +33,33 @@ internal static partial class MapperExtractor
     ///     the mapper's value here would resolve a leaf the provider cannot translate.
     /// </param>
     /// <param name="warnNullableHop">
-    ///     Whether a nullable-reference root earns <c>DWARF044</c>. True for the runtime path, where the emitted
-    ///     <c>src.Root.Leaf</c> throws on a null root; FALSE for projection, where the provider translates the
-    ///     path to a join that yields null — the same choice the dotted <c>[MapProperty]</c> source path already
-    ///     makes at that endpoint, and stating it as a parameter keeps the two from drifting apart.
+    ///     Whether a nullable-reference root is ELIGIBLE for <c>DWARF044</c>. True for the runtime path, where
+    ///     the emitted <c>src.Root.Leaf</c> throws on a null root; FALSE for projection, where the provider
+    ///     translates the path to a join that yields null — the same choice the dotted <c>[MapProperty]</c>
+    ///     source path already makes at that endpoint, and stating it as a parameter keeps the two from
+    ///     drifting apart. Eligibility is not the report: see <c>NullableHop</c> on the returned tuple.
     /// </param>
     /// <param name="location">Where to report.</param>
     /// <param name="diagnostics">The collector.</param>
-    private static List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)> ResolveFlattenInfos(
-        IReadOnlyList<string> flattenRoots, ITypeSymbol sourceType, StringComparer comparer,
-        Compilation compilation, bool allowNonPublic, bool warnNullableHop, LocationInfo? location,
-        List<DiagnosticInfo> diagnostics)
+    /// <returns>
+    ///     One entry per resolved root: its name, its readable leaves, and whether a leaf actually pulled up
+    ///     from it would dereference a nullable reference — <b>the caller reports <c>DWARF044</c>, and only for
+    ///     a root some destination member really consumed</b> (B26, round 22 W2). This walk used to report it
+    ///     the moment the root resolved, so a <c>[Flatten]</c> whose leaves landed nowhere still warned that
+    ///     "a null value throws at runtime when its flattened members are read" — about members nobody reads.
+    ///     Harmless as advice, corrosive as evidence: it is exactly what made <c>D10</c> read <c>Refused</c> at
+    ///     CreateMap and UpdateInto for four rounds while the emitted output was byte-identical, letting the
+    ///     finding claim the directive was honoured there. A diagnostic that fires on a directive with no
+    ///     effect is a cell that looks measured and is not.
+    /// </returns>
+    private static List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves, bool NullableHop)>
+        ResolveFlattenInfos(
+            IReadOnlyList<string> flattenRoots, ITypeSymbol sourceType, StringComparer comparer,
+            Compilation compilation, bool allowNonPublic, bool warnNullableHop, LocationInfo? location,
+            List<DiagnosticInfo> diagnostics)
     {
-        var flattenInfos = new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves)>();
+        var flattenInfos =
+            new List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves, bool NullableHop)>();
         foreach (var root in flattenRoots)
         {
             var match = ReadableMembers(sourceType, compilation, allowNonPublic)
@@ -76,14 +90,40 @@ internal static partial class MapperExtractor
 
             // A [Flatten] over a nullable-reference root emits unguarded `src.Root.Leaf` accesses that NRE
             // at runtime if the root is null. The dotted [MapProperty] path warns DWARF044 for the same
-            // hazard; the [Flatten] path must be consistent (loud, never silent).
-            if (warnNullableHop && SourceMayBeNullRef(rootType))
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
-                    $"[Flatten] source '{root}' is a nullable reference; a null value throws at runtime when its flattened members are read"));
-            flattenInfos.Add((match.Value.Name, leaves));
+            // hazard; the [Flatten] path must be consistent (loud, never silent) — but only once an access
+            // actually exists to be unguarded. The verdict is carried out; the report is the caller's
+            // (ReportUnguardedFlattenHops), which knows which roots a destination member consumed.
+            flattenInfos.Add((match.Value.Name, leaves, warnNullableHop && SourceMayBeNullRef(rootType)));
         }
 
         return flattenInfos;
+    }
+
+    /// <summary>
+    ///     Reports <c>DWARF044</c> for every <c>[Flatten]</c> root that is a nullable reference AND that some
+    ///     destination member actually pulled a leaf up from — the unguarded <c>src.Root.Leaf</c> the warning
+    ///     is about (B26, round 22 W2).
+    ///     <para>
+    ///         Deliberately a separate step, called once at the end of the resolver's walk, for the reason
+    ///         <c>DWARF070</c> is: the answer is only knowable after every pass has had its chance to consume —
+    ///         or refuse — a leaf. Reporting it at resolution time made the warning fire on a directive with no
+    ///         effect, which is a cell that looks measured and is not.
+    ///     </para>
+    ///     <para>
+    ///         Ordered by root name so generator output stays deterministic, and reported once per root even
+    ///         when several destination members read leaves from it: the hazard is the one null dereference,
+    ///         not one per member.
+    ///     </para>
+    /// </summary>
+    private static void ReportUnguardedFlattenHops(
+        List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves, bool NullableHop)> flattenInfos,
+        HashSet<string> consumedRoots, LocationInfo? location, List<DiagnosticInfo> diagnostics)
+    {
+        foreach (var fi in flattenInfos
+                     .Where(fi => fi.NullableHop && consumedRoots.Contains(fi.Root))
+                     .OrderBy(fi => fi.Root, StringComparer.Ordinal))
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop, location,
+                $"[Flatten] source '{fi.Root}' is a nullable reference; a null value throws at runtime when its flattened members are read"));
     }
 
     /// <summary>

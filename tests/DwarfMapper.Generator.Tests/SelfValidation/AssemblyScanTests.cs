@@ -109,51 +109,23 @@ public sealed class AssemblyScanTests
     /// <summary>This file's own name — excluded from every corpus it would otherwise pollute.</summary>
     private const string ThisFile = "AssemblyScanTests.cs";
 
-    private static string RepoRoot { get; } = FindRepoRoot();
-
-    /// <summary>
-    ///     Walk upward from the test assembly location to find the repository root
-    ///     (identified by the presence of "DwarfMapper.NET.sln").
-    /// </summary>
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(
-            Path.GetDirectoryName(typeof(AssemblyScanTests).Assembly.Location)!);
-
-        while (dir != null)
-        {
-            if (dir.GetFiles("DwarfMapper.NET.sln").Length > 0)
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException(
-            "Cannot locate repository root: no DwarfMapper.NET.sln found walking upward from " +
-            typeof(AssemblyScanTests).Assembly.Location);
-    }
-
     // ── Shared helpers ────────────────────────────────────────────────────────
-
-    /// <summary>Enumerate all .cs source files under a relative sub-path of the repo.</summary>
-    private static IEnumerable<string> EnumerateSources(string subPath)
-    {
-        return Directory.EnumerateFiles(
-                Path.Combine(RepoRoot, subPath), "*.cs",
-                SearchOption.AllDirectories)
-            // Exclude generated obj/ artefacts
-            .Where(f => !f.Contains(
-                Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
-                StringComparison.Ordinal));
-    }
+    //
+    // C5: a private repo-root walk and a private source enumerator used to live here, doing what RepoPaths
+    // was extracted to do for everyone. RepoPaths finds the root the same way (upward for
+    // DwarfMapper.NET.sln — a marker that is a real file in a git WORKTREE as well as in a plain clone,
+    // which is why it, and not ".git", is what the walk looks for) and its SourceFiles additionally drops
+    // bin/. Re-measured when the switch went in: 56 generator sources and 443 test sources either way, so
+    // the corpora this file scans are byte-for-byte the ones they were.
 
     private static IEnumerable<string> GeneratorSources()
     {
-        return EnumerateSources(Path.Combine("src", "DwarfMapper.Generator"));
+        return RepoPaths.SourceFiles(RepoPaths.GeneratorSrcDir);
     }
 
     private static IEnumerable<string> TestSources()
     {
-        return EnumerateSources("tests");
+        return RepoPaths.SourceFiles(RepoPaths.Tests);
     }
 
     // ── Self-validation: every [DwarfMapper] option must be exercised by a test ──
@@ -192,7 +164,7 @@ public sealed class AssemblyScanTests
 
         const string suffix = ".verified.txt";
         var orphans = Directory
-            .EnumerateFiles(Path.Combine(RepoRoot, "tests"), "*" + suffix, SearchOption.AllDirectories)
+            .EnumerateFiles(Path.Combine(RepoPaths.Root, "tests"), "*" + suffix, SearchOption.AllDirectories)
             .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
                 StringComparison.Ordinal))
             .Select(f => Path.GetFileName(f)!)
@@ -215,7 +187,7 @@ public sealed class AssemblyScanTests
     [Fact]
     public void SelfHeal_AnalyzerReleases_rows_are_in_sync()
     {
-        var path = Path.Combine(RepoRoot, "src", "DwarfMapper.Generator", "AnalyzerReleases.Unshipped.md");
+        var path = Path.Combine(RepoPaths.Root, "src", "DwarfMapper.Generator", "AnalyzerReleases.Unshipped.md");
         var existing = ParseAnalyzerReleases();
 
         var missing = GetAllDescriptors()
@@ -430,6 +402,31 @@ public sealed class AssemblyScanTests
     // paperwork instead of with the tests. Both files are excluded here. Re-measured when the exclusion went
     // in: all 84 live ids still appear in at least one other test file (min 1, median 2), so the scan still
     // passes, now for a reason. No allowlist entry was needed and DiagnosticTestAllowlist stays empty.
+    /// <summary>
+    ///     "This list must only SHRINK" was prose on two id stores and a gate on neither (B8), so appending
+    ///     an id instead of writing the test — or instead of writing the CHANGELOG entry — was a one-line
+    ///     edit nothing failed on.
+    ///     <para>
+    ///         One guard covered both stores when the row was filed. The second, <c>PredatesTheChangelog</c>,
+    ///         shrank to empty and was DELETED on 2026-08-21 by task D-e (see the banner above), so the
+    ///         obligation now has one store to hold — and it holds it as an EXACT PIN at zero, not as a
+    ///         shrink-only ratchet. A tolerance band over a population of zero passes every value it could
+    ///         ever take; below eleven the house rule is exactness, which is why
+    ///         <c>SurfaceParityTests.AssertRatchet</c> refuses a ceiling of ten or less outright.
+    ///     </para>
+    ///     <para>
+    ///         Deliberately NOT phrased as "the count did not grow": the whole point is that
+    ///         <see cref="Scan3_Every_diagnostic_id_has_a_test_reference" /> subtracts this set from its
+    ///         corpus, so every id put here is an id nothing tests. Zero is the only honest value, and
+    ///         raising it has to be a visible edit to this assertion with its justification beside it.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Scan3s_allowlist_is_exactly_empty_and_may_not_grow()
+    {
+        Assert.Empty(DiagnosticTestAllowlist.Ids);
+    }
+
     [Fact]
     public void Scan3_Every_diagnostic_id_has_a_test_reference()
     {
@@ -621,7 +618,7 @@ public sealed class AssemblyScanTests
         // not: a new diagnostic can ship with a helpLinkUri pointing at a "#dwarfNNN" anchor that does not
         // exist. Every id the IDE "learn more" link targets must resolve to a real section. Reserved/retired
         // ids have no descriptor and need no section.
-        var docPath = Path.Combine(RepoRoot, "docs", "diagnostics.md");
+        var docPath = Path.Combine(RepoPaths.Root, "docs", "diagnostics.md");
         Assert.True(File.Exists(docPath), $"docs/diagnostics.md not found at {docPath}");
         var docText = File.ReadAllText(docPath);
 
@@ -660,7 +657,7 @@ public sealed class AssemblyScanTests
         //
         // Warnings and Info may use "**Fix (optional):**" or omit a fix entirely — DWARF038 describes a
         // conversion that is working as intended, and there is nothing to repair. Errors may not.
-        var docPath = Path.Combine(RepoRoot, "docs", "diagnostics.md");
+        var docPath = Path.Combine(RepoPaths.Root, "docs", "diagnostics.md");
         var docText = File.ReadAllText(docPath);
 
         // Sections run from one "## dwarfNNN" heading to the next.
@@ -724,7 +721,7 @@ public sealed class AssemblyScanTests
         Assert.True(errorIds.Count >= 60,
             $"Expected Scan8 to inspect a substantial number of error diagnostics, saw {errorIds.Count}.");
 
-        var docText = File.ReadAllText(Path.Combine(RepoRoot, "docs", "diagnostics.md"));
+        var docText = File.ReadAllText(Path.Combine(RepoPaths.Root, "docs", "diagnostics.md"));
         var headings = Regex.Count(docText, @"(?im)^##\s+dwarf\d{3}\b");
         Assert.True(headings >= 84, $"Expected to parse many doc sections, parsed {headings}.");
 
@@ -913,9 +910,9 @@ public sealed class AssemblyScanTests
         var result = new Dictionary<string, ReleaseRow>(StringComparer.Ordinal);
 
         var unshipped = Path.Combine(
-            RepoRoot, "src", "DwarfMapper.Generator", "AnalyzerReleases.Unshipped.md");
+            RepoPaths.Root, "src", "DwarfMapper.Generator", "AnalyzerReleases.Unshipped.md");
         var shipped = Path.Combine(
-            RepoRoot, "src", "DwarfMapper.Generator", "AnalyzerReleases.Shipped.md");
+            RepoPaths.Root, "src", "DwarfMapper.Generator", "AnalyzerReleases.Shipped.md");
 
         foreach (var filePath in new[] { unshipped, shipped })
         {

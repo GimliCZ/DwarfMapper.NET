@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Sample-scoped global analyzer config (round-22 W7, Meziantou phase 2). Additive to the repo-root
+# .globalconfig (the SDK discovers every .globalconfig above a compiled file); applies only to samples/.
+# Never repeat a key the root file sets — equal global_level conflicts DROP the key from both files.
+# A sample exists to be read: a rule that makes an example less clear loses, and says so here.
+is_global = true
+
+# MA0047 (declare type in a namespace): 91 sites. All four samples are top-level-statement programs whose
+# DTOs sit in the global namespace so the example reads the way a consumer would write it in a scratch file.
+# This is the Meziantou twin of CA1050, which all four sample csprojs already NoWarn for exactly that reason
+# ("top-level-statement file has types not in a namespace") — one ruling, stated once.
+dotnet_diagnostic.MA0047.severity = none
+
+# MA0008 (add StructLayoutAttribute): 8 sites — the blittable/reinterpret demo structs (Gallery 21 and 22,
+# Conformance Px/Qx, AotBench Vec3). src/DwarfMapper.Generator/Pipeline/BlittableProof.cs refuses the
+# auto-blit path for ANY struct carrying [StructLayout] ("an absent [StructLayout] reliably means the C#
+# default (Sequential)"), so annotating these would silently switch off the very fast path the example is
+# there to demonstrate.
+dotnet_diagnostic.MA0008.severity = none

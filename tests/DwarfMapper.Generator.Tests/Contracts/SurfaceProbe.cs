@@ -8,7 +8,17 @@ namespace DwarfMapper.Generator.Tests.Contracts;
 /// <summary>What a surface element DOES at one endpoint, observed rather than declared.</summary>
 internal enum SurfaceEffect
 {
-    /// <summary>The element changed the emitted output.</summary>
+    /// <summary>
+    ///     The element changed the emitted output.
+    ///     <para>
+    ///         <b>Difference, not correctness (B19).</b> This verdict is reached by comparing the emitted
+    ///         text with and without the element and finding it DIFFERENT. Nothing here inspects what it
+    ///         differs into, so <c>Honoured</c> is compatible with the generator having emitted something
+    ///         broken — round 20's A7 scored an unconditionally self-recursive <c>Update</c> as
+    ///         <c>Honoured</c>. The full statement of the limitation, and the round-22 work aimed at it,
+    ///         is on <c>SurfaceParityTests</c>, where the ceilings this verdict feeds are read.
+    ///     </para>
+    /// </summary>
     Honoured,
 
     /// <summary>
@@ -279,7 +289,17 @@ internal static class SurfaceProbe
                || (c.Unmeasured is not null && effect is SurfaceEffect.Silent);
     }
 
-    private static (string[] DwarfKeys, IReadOnlyDictionary<string, int> CompilerErrorCounts, string Generated)
+    /// <summary>
+    ///     The element-free compile of one fixture at one endpoint — what every case sharing that fixture is
+    ///     measured AGAINST.
+    ///     <para>
+    ///         Internal rather than private so the fixture-baseline rule can be gated on it (B5) instead of
+    ///         restated as a comment. Reading it through this method rather than rebuilding the compile is
+    ///         what keeps the gate nearly free: the memo is process-wide, so the gate and the matrix share
+    ///         one compile per (endpoint, fixture, options) however the runner orders them.
+    ///     </para>
+    /// </summary>
+    internal static (string[] DwarfKeys, IReadOnlyDictionary<string, int> CompilerErrorCounts, string Generated)
         Baseline(Endpoint endpoint, string? probeKey, string? types, string? options)
     {
         var cacheKey = $"{endpoint}|{probeKey ?? "<flat>"}|{options ?? "<none>"}";

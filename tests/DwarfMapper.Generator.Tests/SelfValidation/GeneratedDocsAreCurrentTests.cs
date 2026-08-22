@@ -199,12 +199,19 @@ public class GeneratedDocsAreCurrentTests
         return sb.ToString();
     }
 
+    /// <summary>
+    ///     The rendered matrix's endpoint columns, in column order. A field rather than a local so the two
+    ///     ratchets below parse cells back to endpoints against the SAME list the renderer wrote them from —
+    ///     a second copy of the order would let a reordered column silently re-key every parsed cell.
+    /// </summary>
+    private static readonly Endpoint[] MatrixEndpoints =
+    [
+        Endpoint.CreateMap, Endpoint.UpdateInto, Endpoint.Projection, Endpoint.SpanMap, Endpoint.AsyncStream
+    ];
+
     private static string RenderOptionMatrix()
     {
-        var endpoints = new[]
-        {
-            Endpoint.CreateMap, Endpoint.UpdateInto, Endpoint.Projection, Endpoint.SpanMap, Endpoint.AsyncStream
-        };
+        var endpoints = MatrixEndpoints;
 
         var sb = new StringBuilder();
         sb.Append("<!-- SPDX-License-Identifier: GPL-2.0-only -->\n");
@@ -296,43 +303,67 @@ public class GeneratedDocsAreCurrentTests
         _ => throw new InvalidOperationException($"Unhandled effect {effect}")
     };
 
+    /// <summary>
+    ///     Every (option, endpoint) cell the rendered matrix marks <c>**SILENT**</c>, parsed back against
+    ///     <see cref="MatrixEndpoints" />. Cell-level rather than row-level (B3): a row collapses five
+    ///     verdicts to one name, and the two ratchets below both need the endpoint half of the key — one to
+    ///     match an excuse to the cells it was measured at, the other to notice a single cell recovering.
+    /// </summary>
+    private static List<(string Option, Endpoint Endpoint)> SilentCells()
+    {
+        var silent = new List<(string, Endpoint)>();
+        foreach (var line in RenderOptionMatrix().Split('\n'))
+        {
+            if (!line.StartsWith("| `", StringComparison.Ordinal)) continue;
+
+            // "| label | c0 | c1 | c2 | c3 | c4 |" splits to ["", " label ", c0..c4, ""]. The legend's
+            // "| `DWARFnnn` | ... |" row shares the prefix but not the column count — skip anything that
+            // is not a data row rather than indexing into it.
+            var cells = line.Split('|');
+            if (cells.Length != MatrixEndpoints.Length + 3) continue;
+
+            var option = line.Split('`')[1];
+            for (var i = 0; i < MatrixEndpoints.Length; i++)
+                if (cells[i + 2].Contains("**SILENT**", StringComparison.Ordinal))
+                    silent.Add((option, MatrixEndpoints[i]));
+        }
+
+        return silent;
+    }
+
     [Fact]
     public void No_new_silent_cell_appears_in_the_option_matrix()
     {
-        var rows = RenderOptionMatrix().Split('\n')
-            .Where(l => l.StartsWith("| `", StringComparison.Ordinal))
-            .ToList();
-
-        var offenders = rows
-            .Where(l => l.Contains("**SILENT**", StringComparison.Ordinal))
-            .Select(l => l.Split('`')[1])
-            .Where(opt => !DeclaredDivergences.CoversOption(opt))
+        var offenders = SilentCells()
+            .Where(cell => !DeclaredDivergences.CoversOption(cell.Option, cell.Endpoint))
+            .Select(cell => $"{cell.Option} @ {cell.Endpoint}")
             .ToList();
 
         Assert.True(offenders.Count == 0,
-            "Option(s) newly SILENT at some endpoint — accepted, no effect, and the code still compiles:\n"
+            "Option cell(s) newly SILENT — accepted, no effect, and the code still compiles:\n"
             + string.Join("\n", offenders)
             + "\n\nHonour it there, refuse it with a diagnostic, or record it in DeclaredDivergences.Reasons "
-            + "with the reason and the cells it covers.");
+            + "with the reason and the cells it covers. A finding about the same option at a DIFFERENT "
+            + "endpoint does not excuse this one: the excuse is per measured cell (B3).");
     }
 
     [Fact]
     public void Every_known_gap_is_still_a_real_gap()
     {
-        // A fixed gap left in the list would quietly re-permit the divergence if it ever came back.
-        var rows = RenderOptionMatrix().Split('\n')
-            .Where(l => l.StartsWith("| `", StringComparison.Ordinal))
+        // A fixed gap left in the list would quietly re-permit the divergence if it ever came back. Held
+        // per (option, endpoint) pair rather than per option (B3): an entry over two endpoints whose
+        // divergence healed at one of them used to stay green as long as the OTHER was still silent.
+        // Endpoints outside the rendered matrix's columns are not this test's to judge — the surface
+        // matrix re-measures every declared cell in Every_declared_divergence_is_still_a_divergence.
+        var stillSilent = SilentCells().ToHashSet();
+
+        var fixedOnes = DeclaredDivergences.DeclaredOptionCells
+            .Where(pair => MatrixEndpoints.Contains(pair.Endpoint) && !stillSilent.Contains(pair))
+            .Select(pair => $"{pair.Option} @ {pair.Endpoint}")
             .ToList();
-
-        var stillSilent = rows
-            .Where(l => l.Contains("**SILENT**", StringComparison.Ordinal))
-            .Select(l => l.Split('`')[1])
-            .ToHashSet(StringComparer.Ordinal);
-
-        var fixedOnes = DeclaredDivergences.DeclaredOptions.Where(k => !stillSilent.Contains(k)).ToList();
         Assert.True(fixedOnes.Count == 0,
-            "DeclaredDivergences.Reasons names option(s) that are no longer silent — remove them so the "
-            + "ratchet tightens: " + string.Join(", ", fixedOnes));
+            "DeclaredDivergences.Reasons names option cell(s) that are no longer silent — remove them so "
+            + "the ratchet tightens: " + string.Join(", ", fixedOnes));
     }
 
     [Fact]

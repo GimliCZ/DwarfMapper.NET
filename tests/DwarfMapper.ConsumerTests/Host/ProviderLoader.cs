@@ -23,7 +23,7 @@ namespace ConsumerTests.Host;
 /// </remarks>
 internal static class ProviderLoader
 {
-    private static readonly object Gate = new();
+    private static readonly Lock Gate = new();
     private static bool _loaded;
 
     /// <summary>Idempotent: the registry is process-wide and re-registering would read as ambiguity.</summary>

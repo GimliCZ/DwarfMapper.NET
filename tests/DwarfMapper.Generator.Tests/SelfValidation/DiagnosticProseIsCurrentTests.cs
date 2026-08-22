@@ -27,7 +27,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation;
 public class DiagnosticProseIsCurrentTests
 {
     private static readonly Regex SectionHeader =
-        new(@"^## (dwarf\d{3})$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        new(@"^## (?<id>dwarf\d{3})$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>
     ///     Ids whose prose deliberately says MORE about severity than <c>DefaultSeverity</c> can. For these the
@@ -63,7 +63,7 @@ public class DiagnosticProseIsCurrentTests
             var match = SectionHeader.Match(lines[i].Trim());
             if (!match.Success) continue;
 
-            var id = match.Groups[1].Value.ToUpperInvariant();
+            var id = match.Groups["id"].Value.ToUpperInvariant();
             if (!byId.TryGetValue(id, out var descriptor))
             {
                 wrong.Add($"{id}: has a prose section but no descriptor — retired or renamed?");
@@ -141,7 +141,7 @@ public class DiagnosticProseIsCurrentTests
         var documented = Prose()
             .Select(l => SectionHeader.Match(l.Trim()))
             .Where(m => m.Success)
-            .Select(m => m.Groups[1].Value.ToUpperInvariant())
+            .Select(m => m.Groups["id"].Value.ToUpperInvariant())
             .ToHashSet(StringComparer.Ordinal);
 
         var undocumented = Descriptors()

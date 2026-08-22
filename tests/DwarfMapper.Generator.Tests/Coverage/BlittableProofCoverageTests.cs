@@ -623,4 +623,156 @@ public class BlittableProofCoverageTests
         // Both are Sequential pack-0 with matching fields → should blit.
         Assert.True(BlittableProof.CanReinterpret(types["SrcSeq"], types["DstSeq"]));
     }
+
+    // ─── Round-22 P5 mutation kills ───────────────────────────────────────────
+
+    /// <summary>
+    ///     The auto-blit safety gate (T3 kill-first #1): a metadata (BCL) struct carries no guarantee that
+    ///     an absent <c>[StructLayout]</c> means the C# default, so <c>IsSourceSequential</c> demands a
+    ///     SOURCE declaration. The pre-existing BCL test used a pair that ALSO differed in field names, so
+    ///     mutating <c>l.IsInSource</c> to <c>true</c> survived — this pair is deliberately FIELD-COMPATIBLE
+    ///     with <c>System.Numerics.Vector2</c> (public float X, Y; no [StructLayout] in metadata), the exact
+    ///     shape where that mutant returns an unsafe ACCEPT.
+    /// </summary>
+    [Fact]
+    public void CanReinterpret_field_compatible_bcl_struct_is_still_refused()
+    {
+        // A dedicated two-reference compilation so GetTypeByMetadataName cannot go null-on-ambiguity
+        // the way it can against the whole AppDomain reference sweep.
+        var tree = CSharpSyntaxTree.ParseText(
+            "namespace T { public struct Vec2User { public float X; public float Y; } }");
+        var compilation = CSharpCompilation.Create(
+            "BlitBclTestAsm_" + Guid.NewGuid().ToString("N"),
+            new[] { tree },
+            new MetadataReference[]
+            {
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Numerics.Vector2).Assembly.Location)
+            },
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var model = compilation.GetSemanticModel(tree);
+        var decl = tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().Single();
+        var user = (INamedTypeSymbol)model.GetDeclaredSymbol(decl)!;
+        var vector2 = compilation.GetTypeByMetadataName("System.Numerics.Vector2");
+
+        Assert.NotNull(vector2); // a null here would make the refusal assertions vacuous
+        Assert.Equal(TypeKind.Struct, vector2!.TypeKind);
+        // Precondition of the kill: the pair really is field-compatible (names + primitive types align),
+        // so the ONLY thing standing between it and a blit verdict is the source-declaration gate.
+        Assert.Equal(
+            user.GetMembers().OfType<IFieldSymbol>().Select(f => f.Name),
+            vector2.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic && !f.IsConst).Select(f => f.Name));
+
+        Assert.False(BlittableProof.CanReinterpret(user, vector2));
+        Assert.False(BlittableProof.CanReinterpret(vector2, user));
+    }
+
+    // K0 CROSS-REFERENCE (round-22, P5 → K0, landed): this partial-file fixture was deliberately written
+    // as a K0 corpus row in waiting — the same struct pair split across two files, compiled in BOTH file
+    // orders, same CanReinterpret verdict. K0 lifted the shape rather than re-inventing it: the descriptor
+    // expresses it via NodeSpec.SplitAcrossFiles, and it is pinned END-TO-END (same accept/refuse outcome
+    // AND byte-identical generated source in both file orders) as PinnedCorpus row
+    // 'P5-K0-partial-split-struct-pair' in tests/DwarfMapper.CompilerTests (PinnedCorpusTests). This test
+    // remains the seam-level kill (the comparator-mutant geometry below needs BlittableProof directly);
+    // the corpus row is the emission-level restatement, not a replacement.
+    //
+    // The geometry is engineered so every comparator mutant diverges:
+    //  - "Alpha.cs" < "Beta.cs" ordinally, and the field declared in Alpha.cs is the one that must sort
+    //    FIRST, so deleting the sort (or neutering the file-path key) breaks the reversed compile order;
+    //  - the Alpha.cs field sits at a HIGHER source offset than the Beta.cs field (the padding comment
+    //    below), so a mutant that compares POSITIONS across files ('byFile != 0' → '== 0') inverts the
+    //    order even in the forward compile order.
+    private const string PartialAlphaFile =
+        "// Padding so that the field declared in this file sits at a HIGHER SourceSpan.Start than the\n" +
+        "// field declared in Beta.cs — see the comparator-mutant geometry note above the fixture.\n" +
+        "namespace T { public partial struct SplitSrc { public int First; } }";
+
+    private const string PartialBetaFile =
+        "namespace T { public partial struct SplitSrc { public int Second; } }";
+
+    private const string WholeDstFile =
+        "namespace T { public struct WholeDst { public int First; public int Second; } }";
+
+    /// <summary>
+    ///     The determinism guarantee of <c>InstanceFields</c> (T3 kill-first #2): <c>GetMembers()</c> order
+    ///     for a struct split across partial files depends on the order the compiler saw the files, and the
+    ///     blit proof compares fields positionally — the sort by (file path, position) is the only thing
+    ///     making the verdict build-order-independent. Deleting that sort outright survived the whole suite
+    ///     until this fixture: same struct pair, both compile orders, same verdict, both directions.
+    /// </summary>
+    [Fact]
+    public void CanReinterpret_partial_file_struct_verdict_is_file_order_independent()
+    {
+        foreach (var files in new[]
+                 {
+                     new[] { ("Alpha.cs", PartialAlphaFile), ("Beta.cs", PartialBetaFile), ("Dst.cs", WholeDstFile) },
+                     new[] { ("Beta.cs", PartialBetaFile), ("Alpha.cs", PartialAlphaFile), ("Dst.cs", WholeDstFile) }
+                 })
+        {
+            var (_, types) = CompileFiles(files);
+            var order = string.Join(", ", files.Select(f => f.Item1));
+
+            // Precondition of the L83 kill: the cross-file source positions really are inverted relative
+            // to the sorted field order (First@Alpha.cs starts AFTER Second@Beta.cs).
+            var split = types["SplitSrc"];
+            var first = (IFieldSymbol)split.GetMembers("First").Single();
+            var second = (IFieldSymbol)split.GetMembers("Second").Single();
+            Assert.True(first.Locations[0].SourceSpan.Start > second.Locations[0].SourceSpan.Start,
+                "fixture geometry broken: First must sit at a higher offset than Second");
+
+            Assert.True(BlittableProof.CanReinterpret(split, types["WholeDst"]),
+                $"SplitSrc → WholeDst must blit under compile order [{order}]");
+            Assert.True(BlittableProof.CanReinterpret(types["WholeDst"], split),
+                $"WholeDst → SplitSrc must blit under compile order [{order}]");
+        }
+    }
+
+    // ─── Symmetric enum coverage: the na-side TypeKind check (P5 NoCoverage sweep) ───
+
+    [Fact]
+    public void CanReinterpret_enum_vs_struct_returns_false()
+    {
+        // The mirror of CanReinterpret_struct_vs_enum_returns_false: na=Enum drives the FIRST TypeKind
+        // check's refusal branch, which no test reached (only the nb-side one was covered).
+        var src = """
+                  namespace T {
+                      public struct MyStruct { public int X; }
+                      public enum MyEnum { A, B, C }
+                  }
+                  """;
+        var (_, types) = Compile(src);
+        Assert.False(BlittableProof.CanReinterpret(types["MyEnum"], types["MyStruct"]));
+    }
+
+    /// <summary>Multi-file variant of <see cref="Compile" />: each source gets its own tree with an explicit file path.</summary>
+    private static (Compilation Compilation, IReadOnlyDictionary<string, INamedTypeSymbol> Types)
+        CompileFiles(IReadOnlyList<(string Path, string Source)> files)
+    {
+        var trees = files
+            .Select(f => CSharpSyntaxTree.ParseText(f.Source, path: f.Path))
+            .ToArray();
+        var refs = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+            .Select(a => MetadataReference.CreateFromFile(a.Location))
+            .Cast<MetadataReference>()
+            .Append(MetadataReference.CreateFromFile(typeof(DwarfMapperAttribute).Assembly.Location));
+
+        var compilation = CSharpCompilation.Create(
+            "BlitPartialTestAsm_" + Guid.NewGuid().ToString("N"),
+            trees,
+            refs,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var types = new Dictionary<string, INamedTypeSymbol>(StringComparer.Ordinal);
+        foreach (var tree in trees)
+        {
+            var model = compilation.GetSemanticModel(tree);
+            foreach (var decl in tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>())
+                if (model.GetDeclaredSymbol(decl) is INamedTypeSymbol named)
+                    types[named.Name] = named;
+        }
+
+        return (compilation, types);
+    }
 }

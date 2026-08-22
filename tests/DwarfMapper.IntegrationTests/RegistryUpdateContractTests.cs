@@ -42,6 +42,39 @@ public sealed class RegistryUpdateContractTests
 
     private sealed class USoloDst { public int Id { get; set; } }
 
+    private sealed class UNullSrc { public int Id { get; set; } }
+
+    private sealed class UNullDst { public int Id { get; set; } }
+
+    /// <summary>
+    ///     The update entry point must refuse each null argument AS ArgumentNullException, naming the
+    ///     offending parameter — not fall through to a missing-map throw (for a null value argument) or an
+    ///     NRE out of the key's hash (for a null type argument). E3-E1 hole 2: all four guard statements on
+    ///     <see cref="DwarfMapperRegistry.Update" /> could be deleted with no test noticing — the update
+    ///     entry point had no null-argument test at all, the exact asymmetry with the create table this file
+    ///     exists to close. The pair is deliberately NEVER registered, so a deleted guard cannot stumble
+    ///     into a registered delegate and pass by accident.
+    /// </summary>
+    [Fact]
+    public void Update_null_arguments_throw_with_the_offending_parameter_named()
+    {
+        var forSource = Assert.Throws<ArgumentNullException>(
+            () => DwarfMapperRegistry.Update(null!, new UNullDst(), typeof(UNullSrc), typeof(UNullDst)));
+        Assert.Equal("source", forSource.ParamName);
+
+        var forDestination = Assert.Throws<ArgumentNullException>(
+            () => DwarfMapperRegistry.Update(new UNullSrc(), null!, typeof(UNullSrc), typeof(UNullDst)));
+        Assert.Equal("destination", forDestination.ParamName);
+
+        var forSourceType = Assert.Throws<ArgumentNullException>(
+            () => DwarfMapperRegistry.Update(new UNullSrc(), new UNullDst(), null!, typeof(UNullDst)));
+        Assert.Equal("sourceType", forSourceType.ParamName);
+
+        var forDestinationType = Assert.Throws<ArgumentNullException>(
+            () => DwarfMapperRegistry.Update(new UNullSrc(), new UNullDst(), typeof(UNullSrc), null!));
+        Assert.Equal("destinationType", forDestinationType.ParamName);
+    }
+
     /// <summary>
     ///     A duplicate keeps the FIRST delegate, exactly as <c>Register</c> does. Last-wins would let the
     ///     behaviour of a pair depend on assembly load order, which is not something a consumer controls.

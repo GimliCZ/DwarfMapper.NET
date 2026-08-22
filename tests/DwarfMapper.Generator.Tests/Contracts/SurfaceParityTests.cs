@@ -24,6 +24,42 @@ namespace DwarfMapper.Generator.Tests.Contracts;
 ///     <para>
 ///         Traited so it can run as its own CI leg: this is roughly seven times the work of the option matrix.
 ///     </para>
+///     <para>
+///         <b>THE LIMITATION OF EVERY CEILING IN THIS FILE, stated where they are read (B19).
+///         <c>Honoured</c> proves an element had an EFFECT, not that the effect is RIGHT. A green matrix is
+///         not a correct generator.</b> <c>SurfaceProbe.Classify</c> returns <c>Honoured</c> when the emitted
+///         text merely DIFFERS between the with-and-without compilations. Nothing inspects what it differs
+///         INTO — so a cell can be green while the code it graded is broken, and none of the counts below
+///         will move.
+///     </para>
+///     <para>
+///         Not hypothetical. Round 20's A7: <c>[AfterMap]</c> on
+///         <c>public partial void Update(Src s, Dst d)</c> made the generator emit <c>Update(s, d);</c> as
+///         the last statement OF <c>Update</c> — unconditional infinite recursion, shipped, compiling. This
+///         matrix scored that cell <c>Honoured</c>, and the claim-parity theory passed it at the claimed
+///         reading AND at the honest unclaimed one. It was found only because the NEIGHBOURING cell at
+///         <c>SpanMap</c> read <c>Silent</c> and someone dumped the generated body while chasing that.
+///         Every other finding in this repository was the matrix failing to MEASURE something, and was
+///         therefore visible as a red or unaccounted cell; this one graded broken behaviour as working and
+///         left no trace in any count.
+///     </para>
+///     <para>
+///         <c>Refused</c> carries the same blind spot in weaker form: it proves a diagnostic was reported,
+///         not that it was the RIGHT diagnostic. D2 is the worked example — a <c>DWARF038</c> about an
+///         <c>int → string</c> conversion was filed for four rounds as a refusal of <c>[MapProperty]</c>'s
+///         PLACEMENT, which it never was.
+///     </para>
+///     <para>
+///         <b>No remedy is scoped here, deliberately.</b> "How does a cross-product of this size assert
+///         correctness rather than difference" is a design question, and the cheap answers — a golden output
+///         per cell, a runtime execution leg, a self-call check over generated bodies — differ enormously in
+///         cost and in what they actually catch. The systemic pressure on this class of failure is the
+///         round-22 compiler-testing arc: <b>R22-01</b>, a differential oracle that RUNS generated maps over
+///         generated type graphs and compares against a reference interpretation, and <b>R22-02</b>,
+///         metamorphic relations that assert properties of the result rather than of the diff. Until one of
+///         them lands, read these ceilings as "no element silently stopped acting" — never as "the generator
+///         is right".
+///     </para>
 /// </summary>
 [Trait("Category", "SurfaceMatrix")]
 public sealed class SurfaceParityTests
@@ -56,7 +92,7 @@ public sealed class SurfaceParityTests
         string usageName, int arity, string axis, string site, Endpoint endpoint)
     {
         var (element, c) = Resolve(usageName, arity, axis, site);
-        var claimed = (SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) != 0;
+        var claimed = (SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) != SurfaceEndpoints.None;
         var (effect, detail) = SurfaceProbe.Classify(c, endpoint);
 
         // No cell to judge: the endpoint has no such site, or AttributeUsage forbids it and the compiler
@@ -460,8 +496,26 @@ public sealed class SurfaceParityTests
             + "difference between the two compilations and its verdict is legible again.");
     }
 
-    /// <summary>The ceiling on cells with no declaration site. Shrink-only, like the others.</summary>
-    private const int NoSuchSiteCellCeiling = 116;
+    /// <summary>
+    ///     The cells with no declaration site, pinned EXACTLY and PER CAUSE. Shrink-only, per cause.
+    ///     <para>
+    ///         This replaces a single total ceiling of 116 with a ten-wide shrink band (B6). The total was
+    ///         blind twice over: offsetting drift between the causes summed to the same number — a slot
+    ///         going missing at one endpoint funded by a structural cell leaving at another read as "no
+    ///         change" — and the band under it meant even the total could wander by ten with nothing
+    ///         registering. Both causes here are STRUCTURAL and cannot move (the registry front door
+    ///         genuinely has no mapper class; neither it nor the co-located host declares a mapping method),
+    ///         which is exactly why exact pins are honest: any movement at all is a template or catalogue
+    ///         change someone must look at, and a NEW cause is a slot that went missing wearing a verdict
+    ///         that says nothing can be done about it.
+    ///     </para>
+    ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
+    /// </summary>
+    private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
+    {
+        ["registry-has-no-mapper-class"] = 48,
+        ["no-mapping-method"] = 68
+    };
 
     /// <summary>
     ///     The cells with no declaration site, counted AND broken down by cause.
@@ -492,23 +546,56 @@ public sealed class SurfaceParityTests
     [Fact]
     public void The_cells_with_no_declaration_site_are_counted_by_cause()
     {
+        // The cause key is everything before the first ':' — the machine-readable half of the reason
+        // Endpoints.SiteAbsenceReason states, which is the single source every NoSuchSite verdict flows
+        // from, so this grouping cannot disagree with the classifier about what a cause IS.
         var siteless = AllCells().Where(x => x.Effect is SurfaceEffect.NoSuchSite).ToList();
-        var byCause = string.Join("\n", siteless
-            .GroupBy(x => x.Detail, StringComparer.Ordinal)
-            .OrderByDescending(g => g.Count())
-            .Select(g => $"  {g.Count(),4}  {g.Key}"));
+        var byCause = siteless
+            .GroupBy(x => CauseOf(x.Detail), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        var breakdown = string.Join("\n", byCause
+            .OrderByDescending(kvp => kvp.Value)
+            .Select(kvp => $"  {kvp.Value,4}  {kvp.Key}"));
 
-        Assert.True(siteless.Count <= NoSuchSiteCellCeiling,
-            $"{siteless.Count} cells have no declaration site and are therefore judged by nothing, above the "
-            + $"stated ceiling of {NoSuchSiteCellCeiling}:\n{byCause}\n\nThis number may only shrink. Both "
-            + "remaining causes (registry-has-no-mapper-class, no-mapping-method) are STRUCTURAL and cannot "
-            + "move, because there is nothing at those endpoints for a template to annotate — so a cell "
-            + "arriving here under any OTHER cause is a slot that went missing. Give the endpoint template "
-            + "or the fixture in play the marker that site splices at, rather than accepting the absence.");
+        var unpinned = byCause.Keys
+            .Where(cause => !NoSuchSiteCausePins.ContainsKey(cause))
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+        Assert.True(unpinned.Count == 0,
+            "Cells with no declaration site under cause(s) this test does not pin:\n  "
+            + string.Join("\n  ", unpinned) + $"\n\nFull breakdown:\n{breakdown}\n\nBoth pinned causes are "
+            + "STRUCTURAL — there is genuinely nothing at those endpoints for a template to annotate. A "
+            + "cell arriving under any OTHER cause is a slot that went missing wearing a verdict that says "
+            + "nothing can be done: give the endpoint template or the fixture in play the marker that site "
+            + "splices at, rather than pinning the absence.");
 
-        Assert.True(siteless.Count >= NoSuchSiteCellCeiling - 10,
-            $"Only {siteless.Count} cells have no declaration site, well under the ceiling of "
-            + $"{NoSuchSiteCellCeiling}:\n{byCause}\n\nLower the ceiling to lock the improvement in.");
+        // C5: this loop used to open-code AssertExactPin's two asserts. Every other pinned population in
+        // this file goes through the shared helper, and a hand-rolled copy is how one pin ends up with a
+        // different meaning from its neighbours after somebody improves the helper — the very drift the
+        // helper was extracted to stop. The per-cause reasoning that made the copy look necessary rides in
+        // as howToClose, and the full breakdown with it, so nothing the messages used to say is lost.
+        foreach (var (cause, pinned) in NoSuchSiteCausePins)
+        {
+            var cells = siteless
+                .Where(x => string.Equals(CauseOf(x.Detail), cause, StringComparison.Ordinal))
+                .Select(x => $"  {x.Rendered} on a {x.Case.Site} @ {x.Endpoint}")
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToList();
+
+            AssertExactPin(cells, pinned, $"cells have no declaration site under '{cause}'",
+                $"Full breakdown:\n{breakdown}\n\nPer-cause and exact on purpose (B6): the old total-only "
+                + "ceiling let a slot go missing at one endpoint as long as a structural cell left at "
+                + "another — offsetting drift summing to green. Both pinned causes are STRUCTURAL and "
+                + "cannot grow, so a growth here is a catalogue or template change someone must look at; a "
+                + "shrink means the endpoint gained the surface (lower the pin in the same commit) or the "
+                + "catalogue lost cases that should still exist.");
+        }
+    }
+
+    private static string CauseOf(string detail)
+    {
+        var colon = detail.IndexOf(':', StringComparison.Ordinal);
+        return colon <= 0 ? detail : detail[..colon];
     }
 
     /// <summary>
@@ -573,7 +660,7 @@ public sealed class SurfaceParityTests
         foreach (var c in SurfaceCatalog.CasesFor(element))
         foreach (var endpoint in EndpointSources.All)
         {
-            if ((SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) == 0) continue;
+            if ((SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) == SurfaceEndpoints.None) continue;
             if (SurfaceProbe.Classify(c, endpoint).Effect is not SurfaceEffect.Silent) continue;
             if (StructurallyInapplicableOption(c.Axis, endpoint) is not { } why) continue;
             excused.Add($"  {element.UsageName}({c.Axis}) on a {c.Site} @ {endpoint} — {why}");
@@ -913,7 +1000,7 @@ public sealed class SurfaceParityTests
             }
 
             var endpoint = Enum.Parse<Endpoint>(endpointFlag.ToString());
-            if ((SurfaceCatalog.ClaimFor(element!, probed.Site) & endpointFlag) == 0)
+            if ((SurfaceCatalog.ClaimFor(element!, probed.Site) & endpointFlag) == SurfaceEndpoints.None)
             {
                 stale.Add($"{where} — the element no longer CLAIMS this endpoint, so the cell is not judged "
                           + "here any more. The divergence was declared away rather than fixed; delete the "
@@ -975,12 +1062,79 @@ public sealed class SurfaceParityTests
                 $"{id} states no reason. The reason is the whole difference between a recorded defect and an "
                 + "exemption: it must say what a caller who wrote this reasonably expects.");
 
-            Assert.True(divergence.Section.StartsWith("Issues/", StringComparison.Ordinal)
-                        && divergence.Section.Contains('#', StringComparison.Ordinal),
-                $"{id} does not link to a section of the findings write-up ('{divergence.Section}'). The "
-                + "reason field states what a caller expects; the write-up carries the evidence, and a "
-                + "record with nowhere to read the evidence is an assertion.");
+            AssertEvidenceLinkResolves(id, divergence.Section);
         }
+    }
+
+    /// <summary>
+    ///     The evidence link must RESOLVE — file and anchor — not merely look like a link (B13).
+    ///     <para>
+    ///         The predecessor asserted <c>StartsWith("Issues/")</c> and <c>Contains('#')</c>, which is
+    ///         satisfied by <c>Issues/#</c>. Every one of these entries is a defect record whose whole
+    ///         warrant is "the evidence is written up over there"; a link that no longer lands is that
+    ///         warrant silently withdrawn, and renaming a findings document or re-titling one of its
+    ///         sections is exactly the ordinary edit that does it. All 26 anchors resolved when this went
+    ///         in, so it is a latent hole being closed rather than a break being found.
+    ///     </para>
+    ///     <para>
+    ///         Anchors are matched as an explicit <c>&lt;a id="…"&gt;</c>, which is the form these documents
+    ///         use throughout, OR as a GitHub heading slug — lower-cased, non-alphanumerics dropped, spaces
+    ///         hyphenated — so a link written the ordinary markdown way is accepted too rather than forcing
+    ///         the explicit-anchor convention on a future document.
+    ///     </para>
+    /// </summary>
+    private static void AssertEvidenceLinkResolves(string id, string section)
+    {
+        var hash = section.IndexOf('#', StringComparison.Ordinal);
+        Assert.True(section.StartsWith("Issues/", StringComparison.Ordinal) && hash > "Issues/".Length,
+            $"{id} does not link to a section of the findings write-up ('{section}'). The reason field "
+            + "states what a caller expects; the write-up carries the evidence, and a record with nowhere "
+            + "to read the evidence is an assertion.");
+
+        var relative = section[..hash];
+        var anchor = section[(hash + 1)..];
+        Assert.False(string.IsNullOrWhiteSpace(anchor), $"{id}'s evidence link '{section}' names no anchor.");
+
+        var path = Path.Combine(RepoPaths.Root, relative.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(path),
+            $"{id}'s evidence link points at '{relative}', which does not exist. The write-up was moved or "
+            + "renamed and the record now cites nothing.");
+
+        var text = File.ReadAllText(path);
+        var resolved = text.Contains($"<a id=\"{anchor}\"", StringComparison.Ordinal)
+                       || HeadingSlugs(text).Contains(anchor);
+
+        Assert.True(resolved,
+            $"{id}'s evidence link '{section}' names an anchor that '{relative}' does not define. Neither "
+            + $"an <a id=\"{anchor}\"> nor a heading slugging to '{anchor}' is in the file, so the link "
+            + "lands at the top of the document and the reader has to hunt for the evidence the record "
+            + "claims is written up.");
+    }
+
+    /// <summary>
+    ///     GitHub's heading-to-anchor rule: drop all but word characters, spaces and hyphens, then hyphenate
+    ///     the spaces. The real rule also lower-cases; the set is held under
+    ///     <see cref="StringComparer.OrdinalIgnoreCase" /> instead, which answers the same question without
+    ///     a culture-lowering call (CA1308) and costs only the ability to distinguish two headings that
+    ///     differ in case alone — a distinction GitHub itself does not make either.
+    /// </summary>
+    private static HashSet<string> HeadingSlugs(string markdown)
+    {
+        var slugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in markdown.Split('\n'))
+        {
+            var trimmed = line.TrimStart();
+            if (!trimmed.StartsWith('#')) continue;
+
+            var title = trimmed.TrimStart('#').Trim();
+            var slug = new string(title
+                .Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or ' ' or '_')
+                .Select(ch => ch == ' ' ? '-' : ch)
+                .ToArray());
+            if (slug.Length > 0) slugs.Add(slug);
+        }
+
+        return slugs;
     }
 
     /// <summary>Every cell, classified once, for the ratchets that count a whole population.</summary>

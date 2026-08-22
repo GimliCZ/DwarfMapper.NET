@@ -23,7 +23,7 @@ public partial class SnapshotSuite
             diagnostics
                 .Where(d => d.Id == "DWARF001")
                 .Select(d => $"{d.Id}|{d.Severity}|{d.GetMessage(CultureInfo.InvariantCulture)}")
-                .OrderBy(s => s));
+                .OrderBy(s => s, StringComparer.Ordinal));
         return Verify(snapshot);
     }
 
@@ -45,7 +45,7 @@ public partial class SnapshotSuite
             diagnostics
                 .Where(d => d.Id == "DWARF005")
                 .Select(d => $"{d.Id}|{d.Severity}|{d.GetMessage(CultureInfo.InvariantCulture)}")
-                .OrderBy(s => s));
+                .OrderBy(s => s, StringComparer.Ordinal));
         return Verify(snapshot);
     }
 
@@ -66,7 +66,7 @@ public partial class SnapshotSuite
             diagnostics
                 .Where(d => d.Id == "DWARF024")
                 .Select(d => $"{d.Id}|{d.Severity}|{d.GetMessage(CultureInfo.InvariantCulture)}")
-                .OrderBy(s => s));
+                .OrderBy(s => s, StringComparer.Ordinal));
         return Verify(snapshot);
     }
 
@@ -94,7 +94,7 @@ public partial class SnapshotSuite
             diagnostics
                 .Where(d => d.Id == "DWARF028")
                 .Select(d => $"{d.Id}|{d.Severity}|{d.GetMessage(CultureInfo.InvariantCulture)}")
-                .OrderBy(s => s));
+                .OrderBy(s => s, StringComparer.Ordinal));
         return Verify(snapshot);
     }
 }

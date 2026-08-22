@@ -185,6 +185,9 @@ internal static partial class MapperExtractor
         // their own copy of this walk.
         var flattenInfos = ResolveFlattenInfos(flattenRoots, sourceType, comparer, compilation, allowNonPublic,
             warnNullableHop: true, location, diagnostics);
+        // B26: which roots a destination member actually pulled a leaf up from. DWARF044 is reported off this
+        // set at the end of the walk, never off the root merely resolving — see ResolveFlattenInfos' returns.
+        var consumedFlattenRoots = new HashSet<string>(StringComparer.Ordinal);
 
         // EXPLICIT: [MapProperty] pairs take precedence and are matched by exact name.
         // Methods dedicated to one member by [MapProperty(Use = …)] / [MapValue(Use = …)]. They are
@@ -543,6 +546,7 @@ internal static partial class MapperExtractor
                             out var fnull, out var fneedsCtx, autoNest, nestedRegistry, nullAsNull, isPreserve,
                             isSetNull: isSetNull, implicitConversions: implicitConversions,
                     reservedConverters: reservedConverters))
+                    {
                         result.Add(new MemberMap(target.Name, fm.Root + "." + fm.Leaf, fconv, fnull, fneedsCtx,
                             SourceMayBeNullRef(fm.LeafType),
                             NullRefIntoNonNullable:
@@ -550,6 +554,10 @@ internal static partial class MapperExtractor
                             ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(fconv, fm.LeafType,
                                 target.Type, autoCandidates, allMethods, fm.Root + "." + fm.Leaf, location,
                                 diagnostics)));
+                        // B26: an unguarded `src.Root.Leaf` now exists — this is what DWARF044 warns about.
+                        consumedFlattenRoots.Add(fm.Root);
+                    }
+
                     continue;
                 }
 
@@ -709,6 +717,8 @@ internal static partial class MapperExtractor
                      .OrderBy(m => m.TargetName, StringComparer.Ordinal))
             diagnostics.Add(new DiagnosticInfo(
                 DiagnosticDescriptors.NullableRefSourceToNonNullableTarget, location, m.SourceName));
+
+        ReportUnguardedFlattenHops(flattenInfos, consumedFlattenRoots, location, diagnostics);
 
         return result;
     }

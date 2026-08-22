@@ -1361,4 +1361,44 @@ public static class DiagnosticDescriptors
         Category, DiagnosticSeverity.Error, isEnabledByDefault: true,
         "DwarfMapper names every [GenerateMap]-synthesized mapping method `Map` and overloads it by the SOURCE (parameter) type, so a pair declared twice — or declared beside a partial mapping method over the same pair — would emit two members with an identical signature and return type: CS0111 in a generated file the caller never wrote. The collision is reported here instead, before anything is emitted. Declare each pair exactly once: keep one [GenerateMap] per pair, and where a partial method already maps the pair, either remove the [GenerateMap] or give the partial method a different name.",
         HelpBase + "dwarf094");
+
+    /// <summary>
+    ///     An unscoped <c>[MapIgnore("Name")]</c> whose name matches no destination member anywhere it is
+    ///     read — it excludes nothing, and until this id it did so in silence.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Surface-matrix finding <b>B20</b>: the destination-name set is matched with
+    ///         <c>IgnoreNameComparer</c> (ordinal), so <c>[MapIgnore("id")]</c> against a property <c>Id</c>
+    ///         — or <c>[MapIgnore("Typo")]</c> against nothing at all — was accepted, excluded nothing, and
+    ///         produced no diagnostic at any endpoint. The caller believed they excluded a member; the
+    ///         completeness gate went on demanding it, and <c>DWARF001</c>, if it fired at all, named the
+    ///         member rather than the dead directive. The pair-scoped forms already had this guard
+    ///         (<c>DWARF056</c>, "matches no mapped pair"), so the unscoped form being exempt was an
+    ///         asymmetry, not a policy.
+    ///     </para>
+    ///     <para>
+    ///         What counts as "matching" is derived from resolution's own consumers, not re-guessed here: an
+    ///         ignore name is live when it names a WRITABLE destination member (excluded from mapping) or a
+    ///         READ-ONLY one (suppressing the silent-loss warning) of a pair the set reaches. A METHOD-site
+    ///         name is judged against that method's own destination; a CLASS-site name is class-WIDE and
+    ///         judged against every pair the class maps — including span/async ELEMENT pairs, where a
+    ///         matching name is <c>DWARF090</c>'s to report (dropped, with the pair-scoped remedy), so the
+    ///         two ids never fire together. Where a class carries an endpoint whose unscoped-ignore
+    ///         consumption this walk cannot see (a <c>[MapDerivedType]</c> dispatch, a top-level
+    ///         collection-returning method), the class-site check stands down entirely rather than guess —
+    ///         a false "names nothing" that breaks a working suppression is B19's exact genre.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, like <c>DWARF056</c>: the configuration compiles and the mapper works; what
+    ///         is wrong is that a written directive does nothing. The message is composed at the call site
+    ///         (<c>{0}</c>) because the method-site and class-site statements name different scopes.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor UnscopedIgnoreNoMatch = new(
+        "DWARF095",
+        "[MapIgnore] names no destination member",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        helpLinkUri: HelpBase + "dwarf095");
 }

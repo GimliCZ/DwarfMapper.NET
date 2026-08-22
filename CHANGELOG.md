@@ -15,6 +15,41 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A constructor-only NESTED type reached the compiler as `CS1729` out of a generated `[MapTo]` file.**
+  `DWARFR09` guarded the `[MapTo]` target and nothing else, but the registry constructs a second kind of
+  type with `new T { … }`: every nested object — and, through the collection path, every element type. A
+  positional record (or any other ctor-only type) in either position emitted an object initializer that
+  does not compile, with no diagnostic at all: exactly the failure `DWARFR09` exists to replace, one level
+  down. Both construction sites now ask the question, under the same id — its title changed from
+  *"[MapTo] target has no accessible parameterless constructor"* to **"A type the `[MapTo]` registry
+  constructs has no accessible parameterless constructor"**, and the message now names the type at fault
+  and, for a nested one, the member it was reached through. A nested type that *can* be built with an
+  object initializer still is. Alongside it, a loud nested refusal no longer also reports `DWARFR05`
+  *"the source and destination member types are incompatible"* — they are not incompatible, and the
+  recursive-nesting refusal (`DWARFR06`) drew one such false companion per nesting level. (round 22, W3/B30)
+- **`DWARF044` warned about a `[Flatten]` that pulled nothing up.** The nullable-reference-root warning —
+  *"a null value throws at runtime when its flattened members are read"* — was reported the moment the root
+  resolved, before anything asked whether a single leaf landed on a destination member. A flatten that maps
+  nothing at all still warned, about members nobody reads. It now fires only for a root some destination
+  member really pulled a leaf up from, which is the unguarded `src.Root.Leaf` the warning is about; where
+  two nullable roots are declared and one lands a leaf, exactly that one is reported. No other trigger
+  changed: a consumed nullable root still warns, and a non-nullable root still does not. (round 22, W2/B26)
+- **A `[MapIgnore]` that named nothing was silently inert at every endpoint — and the `[MapTo]` registry
+  silently discarded its argument.** Two halves of one silence (B20 and B15), decided one way. Class model:
+  an unscoped `[MapIgnore("Name")]` whose name matches no destination member anywhere it is read — a typo,
+  or `[MapIgnore("id")]` against a property `Id`, even under `CaseInsensitive = true` — excluded nothing and
+  said nothing; the caller believed a member was excluded while the completeness gate went on demanding it.
+  It now reports the new **`DWARF095`**, a Warning like its pair-scoped sibling `DWARF056`: a method-site
+  name is judged against that method's own destination, a class-site name against *every* pair the class
+  maps (a class-wide ignore that is about one of two pairs stays legitimately silent on the other), and a
+  name matching only a span/async *element* pair remains `DWARF090`'s report. The comparer question the
+  silence had left open (B21) is settled with it: **directive names bind ordinally under every option** —
+  `CaseInsensitive` fuzzes auto-matching, never the binding of a name the caller wrote — and the mismatch is
+  now loud instead of silently inert. Registry: `[MapIgnore("x")]` on a `[MapTo]` source member has always
+  meant "ignore the annotated member", with the argument accepted and *discarded* — while the identical text
+  on a co-located host member is refused as `DWARF089`. The discard now reports the new **`DWARFR12`**, a
+  Warning that keeps the behaviour: the member is still ignored, the argument the caller wrote is just no
+  longer dropped without a word. (round 22, W1/B15+B20+B21)
 - **The span map and the async-stream map emitted code that did not compile when the element converter
   carried the reference-tracking tail.** Under `ReferenceHandling = Preserve` every auto-nested element
   mapper takes a `(DwarfRefContext, int)` tail, and the element-wise emissions called it without one —

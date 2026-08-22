@@ -47,7 +47,7 @@ public class AsyncStreamCancellationRuntimeTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var _ in mapper.Map(Infinite(cts.Token), cts.Token).WithCancellation(cts.Token))
+            await foreach (var _ in mapper.Map(Infinite(cts.Token), cts.Token).WithCancellation(cts.Token).ConfigureAwait(false))
             {
                 seen++;
                 if (seen == 3) await cts.CancelAsync().ConfigureAwait(false);

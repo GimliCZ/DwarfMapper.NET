@@ -59,6 +59,11 @@ public sealed class DwarfExceptionContractTests
         Assert.Contains("No DwarfMapper map is registered for", ex.Message, StringComparison.Ordinal);
         Assert.Contains("Declare [GenerateMap<ExcPlainSrc, ExcPlainDst>]", ex.Message, StringComparison.Ordinal);
         Assert.Contains("module initializer self-registers", ex.Message, StringComparison.Ordinal);
+        // The remedy's SECOND option through its final word: injecting the declaring assembly's concrete
+        // mapper is the alternative for a caller who cannot add the attribute, and "directly." is the word
+        // that distinguishes it from injecting the facade. (E3-E1 hole 11 remainder: this tail literal
+        // could be blanked with no test noticing.)
+        Assert.Contains("or inject that assembly's concrete mapper directly.", ex.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("LINQ iterator", ex.Message, StringComparison.Ordinal);
     }
 

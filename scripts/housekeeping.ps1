@@ -30,6 +30,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
+# The R2 mandatory-raise band checks (invariant R2, Issues/round22/RESEARCH-97-PERCENT-GATES.md §3) live
+# in their own function-only file so GateBandLogicTests can drive them against fake inputs in both
+# failure directions without executing this script's stages.
+. (Join-Path $PSScriptRoot 'gate-checks.ps1')
+
 # -Nightly is an AGGREGATE, not a new stage: it pins the exact switch set the CI deep-test job runs
 # (.github/workflows/ci.yml), so a maintainer reproduces the nightly locally with one switch and the two
 # cannot drift apart. It skips exhaustion and AOT (exhaustion is a default local stage, AOT has its own
@@ -52,19 +57,21 @@ if ($Nightly) {
 # informational only. Raising a floor to a new measured value is the normal move; lowering one demands a
 # written reason in the commit that lowers it.
 #
-# Re-measured 2026-08-21 (round-21 T5, fast tier, Release) at the commit that wires the nightly — line / branch:
-#   DwarfMapper 78.3/76.1 · Generator 93.7/87.4 · DocTooling 90.7/84.2 · CodeFixes 92.4/68.4 · Testing 83.2/81.9
-# DwarfMapper rose 77.7 -> 78.3: raised, the normal move. Generator moved 93.8 -> 93.7 (raw 93.781,
-# 8,384/8,940) — NOT a lost test: T6 (B27's DWARF094 refusal, B33's span/async-stream context threading)
-# grew the coverable-line DENOMINATOR after the floor's measuring commit (cedad48), and a measured floor
-# tracks the measurement at HEAD; the written reason this lowering demands is this comment plus the commit
-# that carries it. The deep tier (-Nightly, same day) measures the same five line values to this decimal,
-# so the floors hold for both tiers — deep coverage is a superset of fast on the same tree.
+# Re-measured 2026-08-22 (round-22 P4, fast tier, Release) at the commit that carries the raise — line / branch:
+#   DwarfMapper 91.2/77.2 · Generator 93.7/87.4 · DocTooling 95.7/91.7 · CodeFixes 92.4/68.4 · Testing 83.2/82.2
+# DwarfMapper rose 78.3 -> 91.2 by DENOMINATOR HONESTY, not new tests: P4 excluded the nine 0%-covered
+# compile-time-only attribute classes (the one sanctioned [ExcludeFromCodeCoverage] category, 51 by-design-
+# dead lines; 282/360 -> 282/309), each justified on the attribute and exactly pinned by
+# RatchetInvariantScanTests. MapToAttribute (0/4) deliberately STAYS in the denominator — its ctor's
+# defensive `?? Array.Empty` arm is research Q3's unruled category. DocTooling rose 90.7 -> 95.7 from P3's
+# kill-list tests (34 NoCoverage mutants killed = covered lines grew) — the co-movement the plan predicted.
+# Generator, CodeFixes and Testing line values measured unchanged to this decimal (Testing's branch moved
+# 81.9 -> 82.2 with no code change — the R4 wobble exhibit; branch stays informational).
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
-    'DwarfMapper'            = 78.3
+    'DwarfMapper'            = 91.2
     'DwarfMapper.Generator'  = 93.7
-    'DwarfMapper.DocTooling' = 90.7
+    'DwarfMapper.DocTooling' = 95.7
     'DwarfMapper.CodeFixes'  = 92.4
     'DwarfMapper.Testing'    = 83.2
 }
@@ -222,6 +229,18 @@ function Assert-BenchAllocationsPinned {
 
 Push-Location $root
 try {
+    # ── Stage 0: locked-mode restore (round-22 S1) ───────────────────────────────────────────────────
+    # The same repeatable-restore proof CI runs (Directory.Build.props flips RestoreLockedMode on CI=true;
+    # ci.yml's explicit restores pass --locked-mode): every project must resolve EXACTLY its committed
+    # packages.lock.json or this fails NU1004 — local housekeeping and CI cannot drift apart on what a
+    # restore means. The ordinary local inner loop stays unlocked on purpose; after an INTENDED dependency
+    # change, regenerate with `dotnet restore DwarfMapper.NET.sln --force-evaluate` and commit the lock
+    # files with the change. NuGetAudit (level low, mode all) runs inside this restore, so a new advisory
+    # against the pinned graph also fails here first, loudly, before any stage builds.
+    Write-Host "== 0 Locked-mode restore (lock-file reproducibility + NuGet audit) ==" -ForegroundColor Cyan
+    dotnet restore DwarfMapper.NET.sln --locked-mode --nologo
+    if ($LASTEXITCODE) { throw "locked-mode restore failed - the resolved graph differs from the committed packages.lock.json files (or a NuGet audit advisory fired); see NU1004/NU19xx output above" }
+
     if ($Heal) {
         Write-Host "== self-heal: regenerate AnalyzerReleases rows ==" -ForegroundColor Cyan
         $env:DWARF_SELF_HEAL = '1'
@@ -282,9 +301,10 @@ try {
             $measured = [math]::Floor($asm[0].coveredlines / $asm[0].coverablelines * 1000) / 10
             Write-Host ("   {0}: line {1}% (floor {2}%), branch {3}% (informational)" -f `
                 $name, $measured, $coverageFloors[$name], $asm[0].branchcoverage) -ForegroundColor DarkGray
-            if ($measured -lt $coverageFloors[$name]) {
-                $failures += "coverage: $name line coverage $measured% fell below the measured floor $($coverageFloors[$name])%"
-            }
+            # Both directions gate (invariant R2): below the floor is a regression, >= 1.0 pp above it is
+            # a floor that stopped equalling the measurement - raise it in this commit.
+            $bandFailure = Test-CoverageWithinBand -AssemblyName $name -Measured $measured -Floor $coverageFloors[$name]
+            if ($bandFailure) { $failures += $bandFailure }
         }
         if ($failures) { throw ($failures -join [Environment]::NewLine) }
     }
@@ -415,6 +435,8 @@ try {
         dotnet stryker
         if ($LASTEXITCODE) { throw "mutation score below break threshold (generator)" }
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
 
         # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
         # this leg the doc tests are trusted on the strength of being green — the evidence a vacuous test
@@ -424,6 +446,8 @@ try {
         dotnet stryker --config-file stryker-config.doctooling.json
         if ($LASTEXITCODE) { throw "mutation score below break threshold (doc tooling)" }
         Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
 
         # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
         # facade and the exception types have no derivable case-space — no AttributeUsage to decompose, no
@@ -434,6 +458,8 @@ try {
         dotnet stryker --config-file stryker-config.runtime.json
         if ($LASTEXITCODE) { throw "mutation score below break threshold (runtime)" }
         Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

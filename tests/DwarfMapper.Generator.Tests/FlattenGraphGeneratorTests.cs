@@ -446,6 +446,48 @@ public class FlattenGraphGeneratorTests
         Assert.DoesNotContain(compileErrors, e => string.Equals(e.Id, "CS1912", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    ///     The one legal shape a SOURCE-keyed duplicate check would wrongly reject (B4): one navigation
+    ///     root walked into two different destination collections.
+    ///     <para>
+    ///         <c>DWARF087</c> is keyed on the DESTINATION because that is where the duplicate initializer
+    ///         came from — <c>new Dst { Nodes = …, Nodes = … }</c>, CS1912. Keying it on the source instead
+    ///         would look equally plausible from the defect report and would turn this shape, which emits
+    ///         two perfectly distinct initializers, into a brand-new build-breaking Error in consumer code
+    ///         that compiles today. The existing control next door (<c>EntryA→NodesA</c> beside
+    ///         <c>EntryB→NodesB</c>) does not catch that mistake: both its source and its destination
+    ///         differ, so it passes under either keying.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void FlattenGraph_one_source_into_two_different_collections_is_accepted()
+    {
+        const string src = """
+                           using DwarfMapper;
+                           using System.Collections.Generic;
+                           namespace Demo;
+                           public class Node    { public string Name { get; set; } = ""; public Node? Next { get; set; } }
+                           public class NodeDto { public string Name { get; set; } = ""; public NodeDto? Next { get; set; } }
+                           public class Root    { public Node? Entry { get; set; } }
+                           public class RootDto { public List<NodeDto> NodesA { get; set; } = new(); public List<NodeDto> NodesB { get; set; } = new(); }
+                           [DwarfMapper]
+                           public partial class M
+                           {
+                               [FlattenGraph("Entry", "NodesA")]
+                               [FlattenGraph("Entry", "NodesB")]
+                               public partial RootDto Map(Root r);
+                           }
+                           """;
+        GeneratorAssert.DoesNotReport(src, "DWARF087");
+        GeneratorAssert.CompilesClean(src);
+
+        // Both collections are actually filled — an "accepted" that emitted one initializer and dropped the
+        // other would pass the two assertions above while losing half the directive.
+        var (_, generated) = GeneratorTestHarness.Run(src);
+        Assert.Contains("NodesA", generated, StringComparison.Ordinal);
+        Assert.Contains("NodesB", generated, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void FlattenGraph_single_directive_is_not_refused()
     {

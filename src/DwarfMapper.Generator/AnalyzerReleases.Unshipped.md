@@ -100,6 +100,7 @@ DWARF091 | DwarfMapper | Warning | Mapping hook on a partial method with no body
 DWARF092 | DwarfMapper | Warning | Directive is not read at this mapping endpoint
 DWARF093 | DwarfMapper | Warning | [GenerateWrapperMap] has no declared pair to expand
 DWARF094 | DwarfMapper | Error | [GenerateMap] duplicates an existing map method
+DWARF095 | DwarfMapper | Warning | [MapIgnore] names no destination member
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a
@@ -114,6 +115,7 @@ DWARFR05 | DwarfMapper.Registry | Error | No conversion between mapped members
 DWARFR06 | DwarfMapper.Registry | Error | Recursive nested mapping is not supported by the registry
 DWARFR07 | DwarfMapper.Registry | Info | Lossy implicit numeric conversion
 DWARFR08 | DwarfMapper.Registry | Error | Two [MapTo] targets generate the same method name
-DWARFR09 | DwarfMapper.Registry | Error | [MapTo] target has no accessible parameterless constructor
+DWARFR09 | DwarfMapper.Registry | Error | A type the [MapTo] registry constructs has no accessible parameterless constructor
 DWARFR10 | DwarfMapper.Registry | Error | Member has a source match but auto-matching is disabled
 DWARFR11 | DwarfMapper.Registry | Warning | [DwarfMapperConstructor] is not read by the [MapTo] registry
+DWARFR12 | DwarfMapper.Registry | Warning | [MapIgnore] argument is not read by the [MapTo] registry

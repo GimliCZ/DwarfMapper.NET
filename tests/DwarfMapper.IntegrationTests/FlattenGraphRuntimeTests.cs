@@ -133,7 +133,7 @@ public class FlattenGraphRuntimeTests
         var root = new FGRoot { Entry = a };
         var result = _mapper.Map(root);
         Assert.Equal(2, result.Nodes.Count);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "A", "B" }, names);
     }
 
@@ -151,7 +151,7 @@ public class FlattenGraphRuntimeTests
         var root = new FGRoot { Entry = a };
         var result = _mapper.Map(root);
         Assert.Equal(3, result.Nodes.Count);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "A", "B", "C" }, names);
         // All edge members must be null (topology degraded)
         Assert.All(result.Nodes, n => Assert.Null(n.X));
@@ -200,7 +200,7 @@ public class FlattenGraphRuntimeTests
         var root = new FGCollRoot { Entry = rootNode };
         var result = _mapper.MapColl(root);
         Assert.Equal(3, result.Nodes.Count);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "C1", "C2", "Root" }, names);
         Assert.All(result.Nodes, n => Assert.Null(n.Children));
     }
@@ -237,7 +237,7 @@ public class FlattenGraphRuntimeTests
         var root = new FGRootArr { Entry = a };
         var result = _mapper.MapArr(root);
         Assert.Equal(2, result.Nodes.Length);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToArray();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         Assert.Equal(new[] { "A", "B" }, names);
     }
 

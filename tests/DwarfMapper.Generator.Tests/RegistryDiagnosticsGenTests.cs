@@ -270,6 +270,139 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR09");
     }
 
+    // ── B30 (round 22 W3) — the SECOND type this front door constructs ───────────────────────────────
+    // DWARFR09 guarded the [MapTo] target and nothing else, while SynthNested writes `new T { … }` for every
+    // nested object — and for a collection's ELEMENT, which reaches it through TryCollection → Resolve. So a
+    // ctor-only nested type produced exactly the CS1729 the diagnostic was written to replace, out of a
+    // generated file, with no diagnostic at all. One id at both sites rather than a second: a separate id
+    // would restate the same refusal and re-open the asymmetry. The message says which type and how it was
+    // reached, which is why the id's title now names the registry instead of the target.
+
+    [Fact]
+    public void A_ctor_only_NESTED_type_reports_DWARFR09_naming_the_type_and_the_member()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Leaf { public int Id { get; set; } }
+                         public record LeafDto(int Id);
+                         [MapTo(typeof(Dto))] public class Src { public Leaf Child { get; set; } = new(); }
+                         public class Dto { public LeafDto? Child { get; set; } }
+                         """;
+        var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+        var d = Assert.Single(diagnostics, x => x.Id == "DWARFR09");
+        var message = d.GetMessage(CultureInfo.InvariantCulture);
+        Assert.Contains("'Demo.LeafDto'", message, StringComparison.Ordinal);
+        Assert.Contains("member 'Child'", message, StringComparison.Ordinal);
+        // The annotation belongs to the MEMBER, not to the type whose constructors are at fault.
+        Assert.DoesNotContain("LeafDto?", message, StringComparison.Ordinal);
+        // Nothing is emitted, so the CS1729 this replaces cannot reach the compiler.
+        Assert.DoesNotContain("new global::Demo.LeafDto", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_ctor_only_collection_ELEMENT_type_reports_DWARFR09_too()
+    {
+        const string s = """
+                         using System.Collections.Generic;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Leaf { public int Id { get; set; } }
+                         public record LeafDto(int Id);
+                         [MapTo(typeof(Dto))] public class Src { public List<Leaf> Items { get; set; } = new(); }
+                         public class Dto { public List<LeafDto> Items { get; set; } = new(); }
+                         """;
+        var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+        var d = Assert.Single(diagnostics, x => x.Id == "DWARFR09");
+        Assert.Contains("'Demo.LeafDto'", d.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.DoesNotContain("new global::Demo.LeafDto", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The legal neighbour, pinned so the guard cannot over-reach: a nested type that CAN be built with an
+    ///     object initializer still is, with no diagnostic — the same over-reach guard the struct target has.
+    /// </summary>
+    [Fact]
+    public void A_nested_type_with_a_parameterless_constructor_is_not_flagged_by_DWARFR09()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Leaf { public int Id { get; set; } }
+                         public class LeafDto { public int Id { get; set; } }
+                         [MapTo(typeof(Dto))] public class Src { public Leaf Child { get; set; } = new(); }
+                         public class Dto { public LeafDto? Child { get; set; } }
+                         """;
+        var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARFR09");
+        Assert.Contains("new global::Demo.LeafDto", generated, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The companion the refusal must NOT drag along. <c>Resolve</c> returning null makes the caller report
+    ///     <c>DWARFR05</c> — <i>"the source and destination member types are incompatible"</i> — which is false
+    ///     here: the types are perfectly compatible and the registry's construction strategy is what cannot
+    ///     express the map. Two diagnostics about one member, one of them a lie, is how a caller ends up
+    ///     reading the wrong one.
+    /// </summary>
+    [Fact]
+    public void A_loud_nested_refusal_does_not_also_claim_the_member_types_are_incompatible()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Leaf { public int Id { get; set; } }
+                         public record LeafDto(int Id);
+                         [MapTo(typeof(Dto))] public class Src { public Leaf Child { get; set; } = new(); }
+                         public class Dto { public LeafDto? Child { get; set; } }
+                         """;
+        Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR05");
+    }
+
+    /// <summary>
+    ///     The same rule at its OTHER loud refusal — the sibling that made the cascade visible. A recursive
+    ///     nesting drew one <c>DWARFR05</c> per level on the way back up, each of them false; only
+    ///     <c>DWARFR06</c> is true.
+    /// </summary>
+    [Fact]
+    public void A_recursive_nesting_refusal_does_not_also_claim_incompatible_member_types()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Node { public int Id { get; set; } public Node? Next { get; set; } }
+                         public class NodeDto { public int Id { get; set; } public NodeDto? Next { get; set; } }
+                         [MapTo(typeof(Dto))] public class Src { public Node Child { get; set; } = new(); }
+                         public class Dto { public NodeDto? Child { get; set; } }
+                         """;
+        var diagnostics = GeneratorTestHarness.RunMapTo(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARFR06");
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARFR05");
+    }
+
+    /// <summary>
+    ///     A genuine no-conversion still reports: the suppression is scoped to a refusal that already said why,
+    ///     cleared before every resolve, so it cannot swallow the next member's real failure.
+    /// </summary>
+    [Fact]
+    public void A_genuine_no_conversion_still_reports_DWARFR05_after_a_loud_refusal_on_another_member()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Leaf { public int Id { get; set; } }
+                         public record LeafDto(int Id);
+                         [MapTo(typeof(Dto))]
+                         public class Src { public Leaf Child { get; set; } = new(); public Leaf Blob { get; set; } = new(); }
+                         public class Dto { public LeafDto? Child { get; set; } public int Blob { get; set; } }
+                         """;
+        var diagnostics = GeneratorTestHarness.RunMapTo(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARFR09");
+        Assert.Contains(diagnostics, d => d.Id == "DWARFR05"
+                                          && d.GetMessage(CultureInfo.InvariantCulture)
+                                              .Contains("'Blob'", StringComparison.Ordinal));
+    }
+
     // DWARFR10 — the explicit-only trust boundary, asked of the front door that used to read no
     // assembly-level configuration at all. [assembly: DwarfMapperDefaults(AutoMatchMembers = false)] means
     // nothing is mapped unless the caller said so; the by-name wire here is exactly the mass-assignment
@@ -504,6 +637,50 @@ public sealed class RegistryDiagnosticsGenTests
         var generated = GeneratorAssert.CompilesClean(s);
         Assert.Contains("new global::Demo.Dto(", generated, StringComparison.Ordinal);
         Assert.Contains("id: s.Id", generated, StringComparison.Ordinal);
+    }
+
+    // ── DWARFR12 — the [MapIgnore] argument this front door has never read (B15, round 22 W1) ──────
+    // The registry's member form ignores the ANNOTATED source member; an argument on it was accepted and
+    // silently discarded, while the identical text on a co-located host member is DWARF089. A Warning that
+    // keeps the behaviour: the member is still ignored, the discard is just no longer silent.
+    [Fact]
+    public void A_registry_MapIgnore_with_an_argument_reports_DWARFR12_and_still_ignores_the_member()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))]
+                         public class Src
+                         {
+                             public int A { get; set; }
+                             [MapIgnore("x")] public int B { get; set; }
+                         }
+                         public class Dto { public int A { get; set; } }
+                         """;
+        var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARFR12"
+                                          && d.GetMessage(CultureInfo.InvariantCulture)
+                                              .Contains("'B'", StringComparison.Ordinal));
+        // The ignore still acts: B is skipped, the mapping emits, and no completeness error fires.
+        Assert.Contains("A = source.A", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARFR02");
+    }
+
+    [Fact]
+    public void A_bare_registry_MapIgnore_is_not_flagged_by_DWARFR12()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))]
+                         public class Src
+                         {
+                             public int A { get; set; }
+                             [MapIgnore] public int B { get; set; }
+                         }
+                         public class Dto { public int A { get; set; } }
+                         """;
+        Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR12");
     }
 
     // The MESSAGE, not just the id — and this one is the reason the gate two facts below exists. DWARFR11

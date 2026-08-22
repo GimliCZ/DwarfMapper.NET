@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using DwarfMapper.Generator.Diagnostics;
+using DwarfMapper.Generator.Pipeline;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+
 namespace DwarfMapper.Generator.Tests;
 
 /// <summary>
@@ -296,6 +302,198 @@ public class ConstructorSelectorHardeningTests
         Assert.DoesNotContain(diags, d => d.Id == "DWARF008");
         Assert.DoesNotContain(diags, d => d.Id == "DWARF024");
         Assert.Contains("code: s.Legacy.Code", gen, StringComparison.Ordinal);
+    }
+
+    // ── Round-22 P5 mutation kills ──────────────────────────────────────────────
+
+    /// <summary>
+    ///     T3 kill-first #3 — the stated CS1620 invariant: a constructor with ANY ref/out parameter cannot
+    ///     be emitted with named arguments. Every pre-existing ref/out test used a ctor whose parameters
+    ///     were ALL ref/out, where <c>Any</c> and <c>All</c> agree — this target's only ctor is the mixed
+    ///     shape <c>Dst(int a, ref int b)</c>, where the <c>Any → All</c> mutant admits it and the emitted
+    ///     call would not compile.
+    /// </summary>
+    [Fact]
+    public void Mixed_ref_and_value_param_ctor_is_unusable_and_reports_DWARF026()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int A { get; set; } public int B { get; set; } }
+                         public class Dst
+                         {
+                             public Dst(int a, ref int b) { A = a; B = b; }
+                             public int A { get; }
+                             public int B { get; }
+                         }
+                         [DwarfMapper]
+                         [GenerateMap<Src, Dst>]
+                         public partial class M { }
+                         """;
+
+        var (diags, _) = GeneratorTestHarness.Run(s);
+        Assert.Contains(diags, d => d.Id == "DWARF026");
+    }
+
+    /// <summary>
+    ///     The struct explicit-ctor predicate, inaccessibility leg (T3 catalog, ConstructorSelector L55):
+    ///     a PRIVATE parameterized ctor must not count as "has an explicit non-parameterless ctor", so the
+    ///     implicit zero-init parameterless ctor stays in play and the object-initializer path is used.
+    ///     Each <c>&amp;&amp; → ||</c> flip that drops the accessibility (or implicitness) conjunct makes the
+    ///     predicate true here, skips the implicit ctor, and lands on DWARF026 instead of clean output.
+    /// </summary>
+    [Fact]
+    public void Struct_with_only_a_private_param_ctor_uses_the_implicit_parameterless_path()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int X { get; set; } }
+                         public struct Dst
+                         {
+                             private Dst(int x) { X = x; }
+                             public int X { get; set; }
+                         }
+                         [DwarfMapper]
+                         [GenerateMap<Src, Dst>]
+                         public partial class M { }
+                         """;
+
+        var (diags, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF026");
+        GeneratorAssert.EmitsCompilableCode(s);
+        Assert.Contains("new global::Demo.Dst", gen, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The struct explicit-ctor predicate, obsolete leg (same L55 family): an [Obsolete] parameterized
+    ///     ctor must not suppress the implicit parameterless path either — the <c>&amp;&amp; → ||</c> flip that
+    ///     bypasses the <c>!IsObsolete</c> conjunct reports DWARF026 for a struct that maps cleanly today.
+    /// </summary>
+    [Fact]
+    public void Struct_with_only_an_obsolete_param_ctor_uses_the_implicit_parameterless_path()
+    {
+        const string s = """
+                         using System;
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int X { get; set; } }
+                         public struct Dst
+                         {
+                             [Obsolete] public Dst(int x) { X = x; }
+                             public int X { get; set; }
+                         }
+                         [DwarfMapper]
+                         [GenerateMap<Src, Dst>]
+                         public partial class M { }
+                         """;
+
+        var (diags, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF026");
+        Assert.Contains("new global::Demo.Dst", gen, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     The optional-parameter exemption in satisfiability scoring (T3 catalog, L230): an author-declared
+    ///     default satisfies a parameter the source cannot feed, so the WIDE ctor must stay in the
+    ///     satisfiable field and win. Both the <c>continue</c> deletion and the <c>|| → &amp;&amp;</c> flip
+    ///     score 'extra' unsatisfiable, silently preferring the narrow ctor — observable because only the
+    ///     wide ctor binds 'name'.
+    /// </summary>
+    [Fact]
+    public void Optional_param_with_no_source_keeps_the_wide_ctor_satisfiable()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         public class Src { public int Id { get; set; } public string Name { get; set; } = ""; }
+                         public class Dst
+                         {
+                             public Dst(int id) { Id = id; }
+                             public Dst(int id, string name, int extra = 5) { Id = id; Name = name; }
+                             public int Id { get; }
+                             public string Name { get; } = "";
+                         }
+                         [DwarfMapper]
+                         [GenerateMap<Src, Dst>]
+                         public partial class M { }
+                         """;
+
+        var (diags, gen) = GeneratorTestHarness.Run(s);
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF024");
+        Assert.DoesNotContain(diags, d => d.Id == "DWARF026");
+        Assert.Contains("name:", gen, StringComparison.Ordinal); // the WIDE ctor was selected
+    }
+
+    // ── Direct-call kills for the two selection-time refusals resolution never lets us reach:
+    //    an unresolvable [MapProperty] source is DWARF012 long before selection in the real pipeline,
+    //    so only a unit call can pin AllParametersHaveASource's own answer (T3 NoCoverage rows). ──
+
+    [Fact]
+    public void Unresolvable_dotted_explicit_map_scores_the_ctor_unsatisfiable()
+    {
+        var (compilation, target, source) = CompileSelectorScenario();
+
+        var diagnostics = new List<DiagnosticInfo>();
+        var selected = ConstructorSelector.Select(
+            compilation, target, diagnostics, null, out _,
+            sourceType: source,
+            explicitMaps: [("Legacy.Code", "code", null)]); // 'Legacy' is not a member of Src
+
+        Assert.NotNull(selected);
+        Assert.Empty(diagnostics);
+        // The wide ctor's 'code' param is fed by a dotted path that does NOT resolve → unsatisfiable →
+        // the narrow ctor wins. The mutant that returns true on a failed TryResolvePath flips this to
+        // the wide ctor.
+        Assert.Single(selected!.Parameters);
+    }
+
+    [Fact]
+    public void Explicit_map_naming_a_nonexistent_source_member_scores_the_ctor_unsatisfiable()
+    {
+        var (compilation, target, source) = CompileSelectorScenario();
+
+        var diagnostics = new List<DiagnosticInfo>();
+        var selected = ConstructorSelector.Select(
+            compilation, target, diagnostics, null, out _,
+            sourceType: source,
+            explicitMaps: [("Ghost", "code", null)]); // no member 'Ghost' on Src
+
+        Assert.NotNull(selected);
+        Assert.Empty(diagnostics);
+        Assert.Single(selected!.Parameters);
+    }
+
+    /// <summary>
+    ///     Two-ctor Policy-5 scenario for the direct <see cref="ConstructorSelector.Select" /> calls:
+    ///     Src{Id}, Dst(int id) / Dst(int id, int code) — no parameterless ctor, nothing annotated.
+    /// </summary>
+    private static (Compilation Compilation, INamedTypeSymbol Target, INamedTypeSymbol Source)
+        CompileSelectorScenario()
+    {
+        var tree = CSharpSyntaxTree.ParseText("""
+                                              namespace Demo;
+                                              public class Src { public int Id { get; set; } }
+                                              public class Dst
+                                              {
+                                                  public Dst(int id) { Id = id; }
+                                                  public Dst(int id, int code) { Id = id; Code = code; }
+                                                  public int Id { get; }
+                                                  public int Code { get; }
+                                              }
+                                              """);
+        var compilation = CSharpCompilation.Create(
+            "SelectorTestAsm_" + Guid.NewGuid().ToString("N"),
+            new[] { tree },
+            new MetadataReference[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var model = compilation.GetSemanticModel(tree);
+        var types = tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>()
+            .Select(d => (INamedTypeSymbol)model.GetDeclaredSymbol(d)!)
+            .ToDictionary(t => t.Name, StringComparer.Ordinal);
+
+        return (compilation, types["Dst"], types["Src"]);
     }
 
     private static string Internal(string ctorAccessibility, bool flag)

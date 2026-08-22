@@ -112,7 +112,55 @@ public enum DeepPopulation
     ///     pre-declared closed types, in-process and allocation-light, the same cost class as
     ///     <see cref="DocPipelineIters" />.
     /// </summary>
-    RegistryPropertyIters
+    RegistryPropertyIters,
+
+    /// <summary>
+    ///     CompilerTests/TypeGraphSmokeTests CsCheck <c>iter</c> (round-22 K0). Each iteration renders a
+    ///     sampled type graph and runs BOTH generators plus a full in-memory compile (~15–45 ms serial per
+    ///     sample, CsCheck-parallelized across cores). Deep ×10, measured before entering the catalog per
+    ///     the round-21 rule: fast 25 ≈ 1 s in-class, deep 250 ≈ 2 s in-class on the 12-core reference
+    ///     machine (2026-08-22) — cheap enough that ×10 is the right multiplier despite the per-sample cost
+    ///     class being <see cref="AllEmitPathsSeeds" />', because the base count is small.
+    /// </summary>
+    CompilerGraphSmokeSeeds,
+
+    /// <summary>
+    ///     CompilerTests/DifferentialOracleTests CsCheck <c>iter</c> (round-22 K1). Each iteration is a
+    ///     K0 smoke sample PLUS an in-memory emit, an assembly load, a name-keyed population, the generated
+    ///     map's execution and the naive-oracle comparison — the heaviest per-sample cost class in this
+    ///     registry. Fast 20 keeps the class ~2 s in the fast tier; deep 1000 is the plan's full-count
+    ///     target, measured before entering the catalog per the round-21 rule (2026-08-22, 12-core
+    ///     reference machine, 3 runs): the oracle theory runs 1000/1000 in ~10 s in-class, whole
+    ///     CompilerTests project deep wall 16.2–16.5 s. The 10,000 variant stays a knob value only,
+    ///     unmeasured and therefore unused.
+    /// </summary>
+    CompilerOracleSeeds,
+
+    /// <summary>
+    ///     CompilerTests/MetamorphicTests MR-1 CsCheck <c>iter</c> (round-22 K2). Each iteration is TWO
+    ///     full K1-style runs (render + both generators + compile + emit + load + populate + map +
+    ///     fingerprint) — base graph and its member-order-reversed variant. Measured before entering the
+    ///     catalog per the round-21 rule (2026-08-22, 12-core reference machine): fast 10 ≈ 2 s in-class
+    ///     (first metamorphic test in the class, so it pays the warmup); deep 250 ≈ 8 s in-class;
+    ///     CompilerTests project deep wall 30.4–31.7 s across 3 runs with all three MR entries live.
+    /// </summary>
+    CompilerMrMemberOrderSeeds,
+
+    /// <summary>
+    ///     CompilerTests/MetamorphicTests MR-2 CsCheck <c>iter</c> (round-22 K2). Two runs per iteration,
+    ///     same cost class as <see cref="CompilerMrMemberOrderSeeds" /> (the variant adds one scalar
+    ///     member per non-dest-reachable node). Measured 2026-08-22 with MR-1: fast 10 ≈ 0.3 s in-class;
+    ///     deep 250 ≈ 14 s in-class.
+    /// </summary>
+    CompilerMrUnmappedMemberSeeds,
+
+    /// <summary>
+    ///     CompilerTests/MetamorphicTests MR-3 CsCheck <c>iter</c> (round-22 K2). The heaviest relation:
+    ///     up to THREE full runs per iteration (Class/Record/RecordStruct uniform re-kinds; two when the
+    ///     graph uses inheritance), so deep 150 prices out near MR-1's 250 pairs in run count. Measured
+    ///     2026-08-22 with MR-1: fast 8 ≈ 0.25 s in-class; deep 150 ≈ 4 s in-class.
+    /// </summary>
+    CompilerMrRekindSeeds
 }
 
 /// <summary>
@@ -131,6 +179,15 @@ public static class DeepTier
 
     // (fast, deep) per population. Fast values are the exact counts the suite ran with before the knob
     // existed; the per-entry multiplier rationale lives on the DeepPopulation member.
+    //
+    // The five Compiler* entries changed MECHANISM in round 22 (finding I11) without changing a count:
+    // they are now PINNED CASE INDEXES (CompilerTests/PinnedSampling — one deterministic CsCheck draw per
+    // index, run in parallel) rather than CsCheck iterations of a single random sample, because a random
+    // draw in the fast tier is a gate on a nondeterministic oracle (invariant R4). The fast list is a
+    // prefix of the deep list, so raising a deep count only ADDS cases. Re-measured on the 12-core
+    // reference machine, 2026-08-22: CompilerTests project-alone deep wall 31.1 / 34.4 / 32.4 s across 3
+    // runs (K2-era mechanism: 30.4–31.7 s), fast-tier project wall 2–3 s. The per-entry in-class figures
+    // below are from the K2-era measurement and remain the right order of magnitude.
     private static readonly Dictionary<DeepPopulation, (int Fast, int Deep)> Catalog = new()
     {
         [DeepPopulation.FeatureCombinationSubsetOrder] = (2, 3),
@@ -154,7 +211,12 @@ public static class DeepTier
         [DeepPopulation.TortureUpdateRounds] = (240, 960),
         [DeepPopulation.PolymorphicGraphSeeds] = (5, 45),
         [DeepPopulation.ObjectFactoryDistributionSeeds] = (400, 4000),
-        [DeepPopulation.RegistryPropertyIters] = (200, 2000)
+        [DeepPopulation.RegistryPropertyIters] = (200, 2000),
+        [DeepPopulation.CompilerGraphSmokeSeeds] = (25, 250),
+        [DeepPopulation.CompilerOracleSeeds] = (20, 1000),
+        [DeepPopulation.CompilerMrMemberOrderSeeds] = (10, 250),
+        [DeepPopulation.CompilerMrUnmappedMemberSeeds] = (10, 250),
+        [DeepPopulation.CompilerMrRekindSeeds] = (8, 150)
     };
 
     /// <summary>The count a call site should run with right now (fast unless <see cref="Enabled" />).</summary>

@@ -132,6 +132,23 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 directives = new List<MemberDirective>();
             }
 
+            // The [MapIgnore] half of the arity question, decided with B15 (round 22 W1): an argument on the
+            // registry's member-form [MapIgnore] was accepted and DISCARDED — the annotated member was
+            // ignored, the argument named nothing, and nobody said so, while the identical text on a
+            // co-located host member is refused as DWARF089. A Warning that keeps the behaviour: the ignore
+            // still acts (so `continue` below is untouched), the discard is just no longer silent.
+            foreach (var d in directives)
+                if (d.Ignore && d.ArgumentCount != 0)
+                {
+                    var written = d.Name is null ? "[MapIgnore(…)]" : $"[MapIgnore(\"{d.Name}\")]";
+                    diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapIgnoreArgumentNotRead, d.Loc ?? location,
+                        $"{written} on '{srcSym.Name}' carries an argument the [MapTo] registry does not read: "
+                        + "the registry's member form ignores the ANNOTATED source member itself, so the "
+                        + "argument names nothing here (the member is still ignored). Write the bare "
+                        + "[MapIgnore], or map the pair with the [DwarfMapper] class model, where "
+                        + "[MapIgnore(\"Member\")] names a destination member to exclude."));
+                }
+
             members.Add((srcSym, srcType, directives));
         }
 
@@ -150,7 +167,9 @@ public sealed class MapToGenerator : IIncrementalGenerator
             if (!HasParameterlessCtor(target))
             {
                 diags.Add(new DiagnosticInfo(RegistryDiagnostics.NoParameterlessConstructor, location,
-                    target.ToDisplayString()));
+                    $"[MapTo] target '{target.ToDisplayString()}' has no public parameterless constructor; the "
+                    + "registry constructs the types it builds with an object initializer — add one, or map "
+                    + "the pair with the [DwarfMapper] class model, which supports constructor mapping"));
                 hasError = true;
                 continue;
             }
@@ -242,11 +261,15 @@ public sealed class MapToGenerator : IIncrementalGenerator
                     continue;
                 }
 
+                resolver.ClearRefusalReported();
                 var expr = resolver.Resolve(src.Type, w.Type, "source." + src.Sym.Name, w.Name);
                 if (expr is null)
                 {
-                    diags.Add(new DiagnosticInfo(RegistryDiagnostics.NoConversion, location,
-                        $"'{src.Sym.Name}' → '{w.Name}' on '{target.Name}'"));
+                    // Silent when the refusal already said why (see Resolver.RefusalReported): the types are
+                    // compatible, so "incompatible member types" would send the caller to fix the wrong thing.
+                    if (!resolver.RefusalReported)
+                        diags.Add(new DiagnosticInfo(RegistryDiagnostics.NoConversion, location,
+                            $"'{src.Sym.Name}' → '{w.Name}' on '{target.Name}'"));
                     hasError = true;
                 }
                 else
@@ -376,9 +399,9 @@ public sealed class MapToGenerator : IIncrementalGenerator
     ///     <para>
     ///         Asked of the PARSED directives rather than of the attribute list a second time, so the arity
     ///         this check judges is the one <see cref="MemberDirectives.Read" /> actually recorded. The
-    ///         <c>[MapIgnore]</c> half is deliberately not judged here: the registry has always accepted
-    ///         <c>[MapIgnore("x")]</c> as a plain ignore of the annotated member, discarding the argument, and
-    ///         changing that is a separate decision from this one.
+    ///         <c>[MapIgnore]</c> half is judged separately (<c>DWARFR12</c>, decided with B15): the registry
+    ///         still accepts <c>[MapIgnore("x")]</c> as a plain ignore of the annotated member, but the
+    ///         discarded argument is now reported instead of dropped in silence.
     ///     </para>
     /// </summary>
     private static bool HasNonMemberFormMapProperty(List<MemberDirective> directives) =>
@@ -477,6 +500,31 @@ public sealed class MapToGenerator : IIncrementalGenerator
         private readonly LocationInfo? _loc;
         public readonly Dictionary<string, SynthesizedMethod> Synth = new(StringComparer.Ordinal);
 
+        /// <summary>
+        ///     Set by a LOUD refusal inside <see cref="Resolve" /> (<c>DWARFR06</c> recursive nesting,
+        ///     <c>DWARFR09</c> unconstructible nested type) to tell the caller that the null it is about to
+        ///     receive is already explained.
+        ///     <para>
+        ///         Without it the caller adds <c>DWARFR05</c> — <i>"the source and destination member types are
+        ///         incompatible"</i> — on top, which is false: the types are perfectly compatible and the
+        ///         registry's own construction strategy is what cannot express the map. Two diagnostics about
+        ///         one member, one of them a lie, is how a caller ends up reading the wrong one — the same rule
+        ///         that already keeps <c>DWARFR02</c> off a destination the trust boundary refused.
+        ///     </para>
+        ///     <para>
+        ///         A field rather than an out parameter because the refusal propagates up through however many
+        ///         levels <see cref="Resolve" /> recursed; each caller clears it immediately before its own
+        ///         call, so a genuine no-conversion after an earlier member's refusal still reports.
+        ///     </para>
+        /// </summary>
+        public bool RefusalReported { get; private set; }
+
+        /// <summary>Clears <see cref="RefusalReported" />; call immediately before each <see cref="Resolve" />.</summary>
+        public void ClearRefusalReported()
+        {
+            RefusalReported = false;
+        }
+
         public Resolver(Compilation comp, List<DiagnosticInfo> diags, LocationInfo? loc)
         {
             _comp = comp;
@@ -535,12 +583,36 @@ public sealed class MapToGenerator : IIncrementalGenerator
             {
                 _diags.Add(new DiagnosticInfo(RegistryDiagnostics.RecursiveNesting, _loc,
                     $"'{src.Name}' → '{tgt.Name}'"));
+                RefusalReported = true;
                 return null;
             }
 
-            // The second — and last — type this front door constructs. Same object initializer, same silence
-            // about [DwarfMapperConstructor] if nobody says so here too.
+            // The second — and last — type this front door constructs. Same object initializer, so the SAME
+            // two questions the target is asked have to be asked here, or the answer only holds one level up.
             ReportUnreadConstructorDirective(tgt, _diags, _loc);
+
+            // B30: `new {fqTgt} { … }` below needs an accessible parameterless constructor exactly as the
+            // target's does. Without this check a nested member — or a collection ELEMENT, which reaches here
+            // through TryCollection → Resolve → SynthNested — whose type is a positional record or otherwise
+            // ctor-only emitted CS1729 out of a generated file with no diagnostic at all: DWARFR09's own
+            // reason for existing, one level down. Refused before the member walk, so the caller is told the
+            // one true thing rather than a list of members that cannot be assigned into a type that cannot be
+            // built.
+            if (!HasParameterlessCtor(tgt))
+            {
+                _diags.Add(new DiagnosticInfo(RegistryDiagnostics.NoParameterlessConstructor, _loc,
+                    // The annotation is dropped: `LeafDto?` names the MEMBER's nullability, not the type whose
+                    // constructors are at fault, and reads as though the '?' were the problem.
+                    $"nested type '{tgt.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString()}' "
+                    + $"(reached through member '{targetName}') has no "
+                    + "public parameterless constructor; the [MapTo] registry constructs every nested object "
+                    + "— and every collection element — with an object initializer, so it cannot build this "
+                    + "one. Add a public parameterless constructor, or map the pair with the [DwarfMapper] "
+                    + "class model, which supports constructor mapping"));
+                RefusalReported = true;
+                _inProgress.Remove(key);
+                return null;
+            }
 
             var members = new List<(string Name, string Expr)>();
             var ok = true;
@@ -556,11 +628,15 @@ public sealed class MapToGenerator : IIncrementalGenerator
                     continue;
                 }
 
+                ClearRefusalReported();
                 var expr = Resolve(sm.Type, w.Type, "s." + sm.Symbol.Name, w.Name);
                 if (expr is null)
                 {
-                    _diags.Add(new DiagnosticInfo(RegistryDiagnostics.NoConversion, _loc,
-                        $"'{sm.Symbol.Name}' → '{w.Name}' on '{tgt.Name}'"));
+                    // Same rule one level down — and the level that made the cascade visible: a recursive
+                    // nesting used to draw one DWARFR05 per level on the way back up.
+                    if (!RefusalReported)
+                        _diags.Add(new DiagnosticInfo(RegistryDiagnostics.NoConversion, _loc,
+                            $"'{sm.Symbol.Name}' → '{w.Name}' on '{tgt.Name}'"));
                     ok = false;
                 }
                 else

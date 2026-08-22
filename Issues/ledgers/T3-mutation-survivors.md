@@ -573,3 +573,207 @@ launching it; the run itself completed and the comparison was finished by the co
 
 **`break: 71` stands, unchanged — validated by re-measurement, not inherited.** Post-run `git status` clean:
 the guard held on the generator leg too (first time it ran under it).
+
+---
+
+## P3 — the DocTooling kill program: families A–D + ParseId, and the 43 dispositioned (2026-08-22)
+
+Round 22, task P3, branch `feat/round22-gates`. Baseline re-confirmed before any edit
+(`StrykerOutput/2026-08-21.23-32-50`, quiet machine, 4:56): **67.96 % = 193/284, 54 Survived,
+37 NoCoverage, 0 Timeout — byte-for-byte the H7 phase-2 figure**, so the kill work started from a
+verified floor, not an inherited one. Kill commit `1132586` (tests + the sanctioned `Build` seam);
+re-measure `StrykerOutput/2026-08-21.23-56-18` (quiet machine, **4:36**):
+
+**Score 95.42 % = 271 detected / 284 scoreable. Survived 13, NoCoverage 0, Timeout 0.**
+Per-mutant diff against baseline: **81 status flips — 44 Survived→Killed, 34 NoCoverage→Killed,
+3 NoCoverage→Survived (all three adjudicated below), zero Killed→anything regressions.**
+`break` 67 → **95** (95.42 floored), `low` with it, `high` 90 → 96, in the same commit as this record.
+
+### The five families, each killed by its named test
+
+| Family | Kill (representative `killedBy`, verified in the JSON) |
+|---|---|
+| **B** `DocTableInjector` refusals (5 NC) | `DocTableInjectorTests.A_document_without_the_marker_is_refused` / `An_unclosed_table_is_refused_not_truncated` — message + path pinned |
+| **C** `ExampleCatalogue.Build` refusals (14 NC) | `ExampleCatalogueTests.A_type_without_a_public_static_run_is_refused` / `An_example_whose_file_was_renamed_is_refused` / `An_example_matching_two_files_is_refused_naming_both`, via the private→internal `Build` seam (+`InternalsVisibleTo`) |
+| **A** message text + line numbers (~30) | the convention: every `Assert.Throws<DocToolingException>` in `SnippetScannerTests` / `DocSnippetInjectorTests` / `DocPipelinePropertyTests` now asserts a discriminating fragment AND the reported `file:line` (markers moved off line 1 so `i+1 → i-1` discriminates) |
+| **D** `OptionTableRenderer` formatting/fallbacks (11 NC) | `OptionTableRendererTests` — synthetic `string`/empty-`string`/`int?`/null-default/`bool`/enum option types, both em-dash fallbacks, ragged/five-cell rows, endtable stop, header-masquerade, CRLF |
+| **ParseId** malformed markers (7 NC) | `A_marker_missing_its_close_delimiter_is_a_loud_failure` in BOTH test classes + empty-id line pins |
+
+### The 43 write-back-exposed survivors — triaged row-by-row, and one mis-filing corrected
+
+All 43 were re-identified in the fresh baseline by expression (lines had drifted with H7 phase 2).
+**None carries any residue of the corrupted-corpus story: every one survived on a stable tree under the
+guard, i.e. an ordinary corpus hole, exactly as the T3-H1 record claimed.** One bookkeeping error in that
+record is corrected here: its per-file list gave DocSnippetInjector 9 rows including "L83" — but old-L83
+is the **family-E proven equivalent** (`run > longest`, already in the equivalents ledger), double-counted
+into the 43; the actual 43rd survivor is a **fourth** `OptionTableRenderer` L94 mutant (the list said
+"L94 (x3)"). Corrected split: **OptionTableRenderer 16, DocSnippetInjector 8, SnippetScanner 9,
+DocTableInjector 7, ExampleCatalogue 3.** Disposition of the 43: **38 killed** by the family tests above
+(CRLF normalization literals, the single-trailing-newline contract, the backtick-run reset, ThrowIfNull
+deletions, prose-reader boundary/ordering/stop conditions, `IsNotBuildOutput` or-vs-and via the internal
+seam, the `05_`-prefix underscore); **2 adjudicated** proven-equivalent (SnippetScanner close-branch
+`continue` and dedent `prefix.Length > 0`, proofs below); **3 left with a stated reason** (below).
+
+### Nine new proven-equivalent adjudications (ledger entries + pins moved in this commit)
+
+The bar is T3's: original and mutant agree on every reachable input. Ids from `23-56-18`; lines current.
+
+1. **`DocSnippetInjector.ParseId` L110, `end < 0` → `end <= 0`** (id263). `ParseId` is called only on a
+   line whose `TrimStart()` begins with `<!-- snippet:`, so characters 0–2 are `<!-` and
+   `IndexOf("-->")` can never return 0. The two comparisons differ only at `end == 0` — unreachable.
+2. **`SnippetScanner.ParseId` L121, `close < 0` → `close <= 0`** (id516). Same shape: the line begins
+   with `// <snippet:`, character 0 is `/`, so `IndexOf('>')` can never return 0.
+3. **`DocTableInjector` L31, `end < 0` → `end <= 0`** (id291). `end = Array.FindIndex(lines, start + 1, …)`
+   with `start >= 0` returns −1 or a value `>= start + 1 >= 1`; 0 is not in its range.
+4. **`ExampleCatalogue.Build` L74, `matches.Count > 1` → `>= 1`** (id340). The ternary sits inside the
+   `matches.Count != 1` throw's message, so it is evaluated only for counts {0, 2, 3, …}; `> 1` and
+   `>= 1` agree on every one of those. The only distinguishing count, 1, never reaches it.
+5. **`SnippetScanner.ScanFile` L105, close-branch `continue` → `;`** (id508). The only statement the
+   deleted `continue` would fall through to is `if (openId is not null) body.Add(lines[i]);`, and the
+   branch sets `openId = null` on its previous line — the fall-through is a guaranteed no-op.
+6. **`SnippetScanner.Dedent` L170, `prefix.Length > 0` → `>= 0`** (id558). The loop's other conjunct is
+   `!w.StartsWith(prefix)`; at `prefix == ""`, `StartsWith("")` is true for every string, so the
+   conjunction is false either way and the loop exits identically.
+7. **`OptionTableRenderer.ExistingProse` L94, `"---"` → `""`** (id421). The mutant stops skipping
+   separator-shaped rows, so `"---"` can enter the prose/order dictionaries. Both consumers key those
+   dictionaries by `PropertyInfo.Name` — a valid C# identifier, which `"---"` can never be — and the
+   order values of real keys keep their relative order (insertion order is preserved, values shift
+   uniformly), so `OrderBy` is unaffected. No observable difference. (The sibling `"Option"` arm is NOT
+   equivalent — a property CAN be named `Option` — and is killed by
+   `Header_and_separator_rows_never_masquerade_as_prose`.)
+8. **`OptionTableRenderer.TryCreate` L109, catch-block removal → `{}`** (id426). The removed block
+   contains exactly `return null;`. Stryker keeps block-removal mutants compilable by appending a
+   `return default` epilogue to the method, and `default` for `object?` IS null — the mutant returns
+   null on the same `TargetInvocationException` path. Behaviourally identical by the mutation tooling's
+   own mechanics; confirmed empirically by `A_throwing_constructor_falls_back_to_em_dashes` covering it
+   and passing.
+9. **`OptionTableRenderer.Format` L118, conditional-false on the empty-string arm** (id433). The
+   original is `s.Length == 0` choosing between a literal empty-quotes rendering and the interpolated
+   quoted rendering; the mutant always takes the interpolated arm — which, at `s == ""`, renders the
+   byte-identical text. The literal arm is a readability duplicate of the interpolated arm's empty case,
+   so the one input the conditional-false changes is the one input where the arms agree. (The sibling
+   conditional-true and `s.Length != 0` mutants DO diverge for non-empty strings and are Killed.)
+
+### Three survivors left, each with its reason — filed as TASKS.md I2
+
+`ScanAll`'s `OrderBy → OrderByDescending` (L27) and `"*.cs" → ""` (L28), and `ExampleCatalogue.Scan`'s
+`"*.cs" → ""` (L29). All three live in filesystem composition roots that enumerate the REAL
+`samples/` tree via `RepoLayout`. They are corpus holes, NOT equivalents: a marker-bearing non-`.cs` file
+would change `ScanAll` under the pattern mutants (empty pattern returns ALL files — measured: 105 vs 44
+under the Gallery), and a duplicate id split across two files would make scan order observable. But no
+honest test can reach them: killing them requires planting files in the real tree (banned — the
+RepoWriteGuard exists precisely to stop test-side repo writes) or redirecting `RepoLayout.Root` (banned —
+the doc pipeline must prove itself against the real repository; a redirect changes what the leg proves).
+The seam that would fix this honestly — the composition roots taking an injectable file list the way
+`Build` already does — is a product-shape decision, filed as **I2** in `Issues/round20/TASKS.md`.
+
+### Post-run state
+
+- Post-run `git status`: **byte-identical to pre-run** (tracked tree; the guard held). One
+  `DwarfMapper.DocTooling.dll.stryker-unchanged` backup deleted; every test-bin
+  `DwarfMapper.DocTooling.dll` string-scanned clean of Stryker markers.
+- Non-vacuity: 284 scoreable statuses in the JSON (271 Killed + 13 Survived), the five configured files
+  and no others; 7 progress-guard mutants Ignored (the pinned in-source disable, unchanged).
+- Full suite **7,747 / 0** foreground in 66 s (baseline 7,716 in 73 s — inside the fast-tier cap;
+  +31 tests are the new family tests).
+- The margin to `break` is now **two flips**: 270/284 = 95.07 % still passes at 95; 269/284 = 94.71 %
+  fails. Every one of the 13 undetected mutants is dispositioned, so any future flip below 95 is a real
+  regression or a mutant-population shift from a product edit — not an undispositioned leftover.
+
+---
+
+## P5 — the generator kill program: the three T3 families + the NoCoverage sweep (2026-08-22)
+
+Round 22, task P5, branch `feat/round22-gates`. Kill commit `6bf89c4` (test-side only, src untouched);
+re-measure `StrykerOutput/2026-08-22.01-14-14` (quiet machine, foreground-launched, **21:19** wall,
+5,897 tests discovered):
+
+**Score 81.59 % = 164 detected / 201 scoreable. Survived 30, NoCoverage 7, Timeout 0.**
+`break` 71 → **81** (81.59 floored), `low` 80 → 81 with it, `high` stays 90, in the same commit as this
+record.
+
+**Baseline discipline (a disclosed deviation from P3's baseline-first precedent):** no fresh pre-kill
+baseline run was made. Justification: all four mutated files are unchanged since well before T3
+(git log: `BlittableProof.cs` last touched `c30052e`, `ConstructorSelector.cs` `d394df4`,
+`EquatableArray.cs` `c476714`, `LocationInfo.cs` `9b09f76`), and the H5 record above re-validated the
+71.64 % figure on 2026-08-19 with **zero per-mutant flips** against the T3 run — so the T3/H5 catalog IS
+the per-mutant baseline, and a second 21-minute run would have re-measured a number two runs had already
+agreed on. The reconciliation held: the fresh report's scoreable population is exactly 201 in exactly the
+four configured files (non-vacuity), and every baseline Killed stayed Killed.
+
+### Flip census vs the 2026-08-19 `12-10-18` baseline
+
+**20 flips: 16 Survived→Killed + 4 NoCoverage→Killed. Zero Killed→anything regressions**
+(164 = 144 + 20 exactly; per-file kills 19/5/58/82 vs 19/5/46/74).
+
+| Family | Killed mutants | `killedBy` (verified in the JSON) |
+|---|---|---|
+| **1** `IsSourceSequential` L97 `l.IsInSource` → `true` | 1 | `BlittableProofCoverageTests.CanReinterpret_field_compatible_bcl_struct_is_still_refused` — user `{float X, Y}` vs `System.Numerics.Vector2`, the field-compatible pair the old name-mismatched BCL test could not discriminate |
+| **2** `InstanceFields` L78 sort deletion; L80/L81 cond→false, `< 0`, coalesce-remove-left; L83 `byFile != 0` → `== 0`; **plus L86 cond→false and `< 0` from the probably-equivalent rows** | 10 | `BlittableProofCoverageTests.CanReinterpret_partial_file_struct_verdict_is_file_order_independent` — the partial-file fixture, both compile orders, both directions, geometry engineered (path order vs source-offset inversion) |
+| **3a** `ConstructorSelector` L288 `Any` → `All` (the CS1620 invariant) | 1 | `ConstructorSelectorHardeningTests.Mixed_ref_and_value_param_ctor_is_unusable_and_reports_DWARF026` — the mixed `Dst(int a, ref int b)` shape |
+| **3b** L55 predicate `&&` → `\|\|` ×3 | 3 | `Struct_with_only_a_private_param_ctor_uses_the_implicit_parameterless_path` (×2, plus one incidental static kill by `TopologyOracleFuzzTests`); the obsolete-conjunct flip at L59 by `Struct_with_only_an_obsolete_param_ctor_uses_the_implicit_parameterless_path` |
+| **3c** L230 `\|\|` → `&&` (Survived) + `continue` deletion (NC) | 2 | `Optional_param_with_no_source_keeps_the_wide_ctor_satisfiable` — the wide ctor binds `name`, so a silently-preferred narrow ctor is observable |
+| **3d** L246 (NC) and L250 (NC) `return false` → `true` | 2 | `Unresolvable_dotted_explicit_map_scores_the_ctor_unsatisfiable` / `Explicit_map_naming_a_nonexistent_source_member_scores_the_ctor_unsatisfiable` — direct `Select` calls, because the real pipeline reports DWARF012 before selection ever sees an unresolvable `[MapProperty]` |
+| **NC sweep** BlittableProof L32 `na.TypeKind != Struct` → `true` | 1 | `CanReinterpret_enum_vs_struct_returns_false` — the na-side mirror of the existing struct-vs-enum test. **T3's "unreachable branch" judgement for this row was wrong**: the branch was merely uncovered (no test drove an enum as the FIRST argument), and one symmetric fixture both covered and killed it |
+
+### Two new proven-equivalent adjudications + one probably-equivalent correction (ledger + pins, this commit)
+
+The T3 bar: original and mutant agree on every reachable input. Precedent for reversing a T3 "real hole"
+judgement with a case analysis: the P2 facade-TryGet adjudication.
+
+1. **L80 file-path-key guard, 4 mutants (cond→true, `> 0` → `>= 0`, both `string.Empty` literals):
+   proven equivalent.** `InstanceFields` is reached only after `IsSourceSequential(na)` AND `(nb)` both
+   pass, which demands source-declared structs. Every field symbol of a source-declared struct —
+   explicit fields, fixed buffers, auto-property and record-primary-constructor backing fields (whose
+   `Locations` delegate to the property/parameter identifier in source) — has `Locations.Length >= 1`
+   with `Locations[0]` a source location whose `SourceTree` is non-null (and `SyntaxTree.FilePath` is
+   non-null by contract). So the guard is true on every reachable input and both `string.Empty`
+   positions are dead — which is also why the two String mutants were NoCoverage in every accepted run.
+   The proof discriminates: the SIBLING cond→false / `< 0` / coalesce-remove-left mutants on the same
+   expression are reachable-divergent and the fixture killed all three.
+2. **L81, the b-side mirror, 4 mutants: proven equivalent** by the same analysis; its killable siblings
+   died to the same fixture.
+3. **L86 probably-equivalent row SHRUNK 4 → 2.** T3's "the tie-break is a no-op within a single file"
+   claim is REFUTED for the b-side cond→false and `< 0` forms: both were killed by the fixture. The
+   mechanism T3 missed is the framework's `SwapIfGreater(keys[0], keys[1])` argument order — a zeroed
+   b-side position makes the single comparison on the destination's same-file pair return positive and
+   swaps a correctly-ordered pair. The a-side mirrors (L85) survive precisely because zeroing `posA`
+   biases the same comparison towards "already ordered"; they stay probably-equivalent (killable in
+   principle with a deliberately mis-ordered same-file pair), not do-not-attempt.
+
+Ledger counts: generator proven 16 → **24**, probably 8 → **6**; rows 21 → 23, occurrences 38 → 44;
+rawCeiling 92.03 → **88.05** = (201 − 24)/201. Scan pins moved in the same commit.
+
+### The NoCoverage 11, dispositioned
+
+| Mutants | Disposition |
+|---|---|
+| CS L230 `continue`, L246, L250 | **Killed** (3b/3d above) |
+| BP L32 | **Killed** (NC sweep above; the "unreachable branch" judgement corrected) |
+| BP L80/L81 `string.Empty` → `"Stryker was here!"` ×4 | **Adjudicated proven-equivalent** (dead arms per the L80/L81 proof; they remain NoCoverage in the report and in the denominator) |
+| BP L30 second-conjunct mutant | **Left with reason**: it sits in the `&&` right operand that only evaluates when two DISTINCT symbols share a `SpecialType` — the L29–L30 unreachable-true-return dead-code question, a maintainer denominator decision (research Q2), deliberately NOT an equivalence entry |
+| CS L281 (`IsStatic`), L285 (record copy-ctor) | **Left with reason**: dead-code questions per the same Q2 list — `InstanceConstructors` never contains a static ctor; the copy ctor is rejected as `IsImplicitlyDeclared` one line earlier |
+
+### The honest remainder — every undetected mutant dispositioned
+
+30 Survived = 22 proven-equivalent (L28, L29, L58×12, CS L58, CS L243, L80×2, L81×2) + 6
+probably-equivalent (L85×4, L86×2) + **2 real holes left deliberately** (`EquatableArray.GetHashCode`
+L53 ×2 — not in the plan's P5 fold-in; the `+ → −` mutant is an affine transform of the original within
+any fixed length, so only exact-value or cross-length collision pins kill it, a test shape worth deciding
+deliberately alongside the runtime leg's `Key.GetHashCode` hole) + **1 real hole low-consequence**
+(`IsSourceSequential` `Any → All`, divergent only for a zero-location or source/metadata-mixed struct
+symbol, which Roslyn's compilation model does not produce for reachable struct inputs) + **1 question**
+(CS L88 `useObjectInitializerOnly` — possibly a redundant out-parameter, T3's investigate-first note
+stands). 7 NoCoverage = 4 adjudicated + 3 dead-code questions. Nothing undetected is undispositioned.
+
+### Post-run state
+
+- Margin to `break`: one flip survivable (163/201 = 81.09 % passes at 81), two not (162/201 = 80.59 %).
+- Wall-clock 21:19 vs H5's 19:41 — the +1:38 is the P1 pwsh gate battery plus the 9 new P5 tests
+  absorbed by the 85 static whole-suite mutants (~493k test executions), the absorption P1's closeout
+  predicted; recorded, not a regression.
+- Non-vacuity: 201 scoreable statuses in exactly the four configured files; Ignored 204, in-scope
+  CompileError 66, Timeout 0.
+- Post-run tracked tree byte-identical except the intended ratchet edits; the
+  `DwarfMapper.Generator.dll.stryker-unchanged` backups deleted; test-bin generator DLLs string-scanned
+  clean of Stryker markers.
