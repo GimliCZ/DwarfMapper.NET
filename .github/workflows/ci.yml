@@ -1,6 +1,6 @@
 # Actions are pinned to full commit SHAs (CRA/SLSA supply-chain hardening); the trailing `# vN` is the
 # human-readable version. When bumping a version, update BOTH the SHA and the comment.
-name: ci
+name: CI
 on:
   push:
     branches: [ main, master ]
