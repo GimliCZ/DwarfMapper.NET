@@ -281,6 +281,14 @@ provider, collection kind, hook, reference handling, …). **Fix:** map those me
 ordinary `Map` method) rather than `Project`. A `[MapValue]` **constant** does translate — it becomes a literal
 in the query — so only the `Use =` form is refused.
 
+**Nullable members are not among the reasons.** A nullable source mapped to a target that **can hold the null**
+projects as a null-preserving conditional (`s.M == null ? null : new D { … }`, or the `HasValue` form for a
+`Nullable<T>` source), for **every** combination of source and destination kind — struct, record struct, class,
+record — exactly as `Map` lifts it. Only a target that **cannot** hold the null is refused, and the message says
+so: that link needs a null decision, and `NullStrategy` — the option that makes it — has no expression-tree
+form. A nullable-*annotated* reference target can hold the null; an un-annotated one is a promise that it holds
+none, and keeps the refusal. See [`NullStrategy`](options.md).
+
 ## dwarf030
 **Constructor parameter is part of a reference cycle** · Error
 

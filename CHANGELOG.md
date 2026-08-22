@@ -64,6 +64,29 @@ so a version with no section here ships with no notes.
   `NullStrategy` row had only half of: that option governs a nullable-value source into a **non-nullable**
   target; where the target can hold the null, the null is lifted regardless of the setting, across nested
   pairs and per element of a collection or dictionary. (round 23, N2/I7)
+- **The same nested member lifted through `.Map` and took the whole mapper down through `.Project`.** Completing
+  the two entries above at the *other* endpoint: `S1? M → D1? M` across a re-kinded pair projected only when
+  the two types were declared the same kind. `struct → class`, `struct → record` and
+  `record struct → class` were refused with `DWARF028` *"a nullable source mapped to a non-nullable target"* —
+  wrong on its own terms, since the target `D1?` **is** nullable, only not a `Nullable<U>` — and
+  `class → struct` with *"no translatable conversion found"*. Because `DWARF028` is an **error**, and an error
+  suppressed the whole class, a mapper declaring both a `Map` and a `Project` over such a pair generated
+  **nothing at all**: the consumer lost every method, not just the projection. The projection resolver now asks
+  the same question the runtime one does — can the destination **hold** the null? — and emits the lift it
+  already had the vocabulary for: `__s.M.HasValue ? new D1 { … } : null` for a value-typed source, and
+  `__s.M == null ? null : (D1?)(new D1 { … })` for a reference one. All six kind pairs now project, run and
+  agree with `.Map`, diagonals included; a collection of them (`List<S1?> → List<D1?>`) projects through the
+  same widening. What is still refused is a target that genuinely **cannot** hold the null, and the message says
+  that instead of naming the kind. (round 23, I14)
+- **A nullable object source projected into a value-type nested target emitted code that did not compile.**
+  Found by I14's sibling hunt, not by sampling. `class Src { Nested? N }` → `class Dst { NestedStruct N }`
+  through `Project` emitted `__s.N == null ? null : new NestedStruct { … }` — two arms with no common type,
+  which is **`CS0037`** in a file the consumer cannot edit, with no DwarfMapper word anywhere. The nested-object
+  resolver guarded on whether the *source* could be null without asking whether the *target* could hold the
+  result. It now asks, and refuses with `DWARF028` naming the value-type target: the link needs a null decision,
+  `.Map` answers it with `NullStrategy`, and `NullStrategy` is precisely what an expression tree cannot express.
+  A nullable-annotated **reference** target keeps the long-standing conditional — it can hold the null.
+  (round 23, I14)
 - **A constructor-only NESTED type reached the compiler as `CS1729` out of a generated `[MapTo]` file.**
   `DWARFR09` guarded the `[MapTo]` target and nothing else, but the registry constructs a second kind of
   type with `new T { … }`: every nested object — and, through the collection path, every element type. A

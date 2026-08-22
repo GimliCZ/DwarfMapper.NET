@@ -738,20 +738,36 @@ internal static partial class MapperExtractor
                 targetMemberName, enumPolicy, comparer, autoNest);
         }
 
-        // ── Nullable T? → nullable U? or non-nullable U ───────────────────────
-        // C5: when source is Nullable<T> and target is also Nullable<U>, emit a null-preserving
-        // HasValue ternary (SQL-translatable) instead of .Value (throws on null).
+        // ── Nullable-value source T? → a target that CAN hold null, or one that cannot ───────────────────────
+        // C5: emit a null-preserving HasValue ternary (SQL-translatable) instead of .Value, which
+        // throws on null.
+        //
+        // The gate asks TryGetNullableCapableTarget — CAN the destination store the null? — not
+        // IsNullableValue, which asks the destination's KIND. Asking the kind is what made `S1? M` →
+        // `D1? M` project when D1 happened to be a struct and be REFUSED with DWARF028 when D1 was a class
+        // or a record, while .Map on the same mapper lifted all of them (TASKS.md I14; the runtime half of
+        // the same confusion is I7). One question, one answer, at both endpoints.
         if (IsNullableValue(srcType, out var srcUnderlying))
         {
-            if (IsNullableValue(tgtType, out var tgtUnderlying))
+            if (TryGetNullableCapableTarget(tgtType, out var tgtUnderlying))
             {
                 // int?→long?: null-preserving ternary: __s.X.HasValue ? (long?)__s.X.Value : null
                 var innerExpr = ResolveProjectionExpr(
                     srcUnderlying, tgtUnderlying, srcExpr + ".Value", depth,
                     compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
                 if (innerExpr is null) return null;
-                var tgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                return $"{srcExpr}.HasValue ? ({tgtNullableFqn}){innerExpr} : null";
+                // The cast is carried ONLY for a Nullable<U> target, where the two arms (U and the null
+                // literal) have no best common type and CS0173 would follow. For a nullable-ANNOTATED
+                // REFERENCE target the inner expression already has the target's own type and the null
+                // literal converts to it, so the conditional's natural type IS the target — the same shape
+                // ResolveProjectionNestedObjectExpr has always emitted for a nullable reference source.
+                if (IsNullableValue(tgtType, out _))
+                {
+                    var tgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    return $"{srcExpr}.HasValue ? ({tgtNullableFqn}){innerExpr} : null";
+                }
+
+                return $"{srcExpr}.HasValue ? {innerExpr} : null";
             }
             // int?→long (non-nullable target): REFUSED. This link needs a null decision, and NullStrategy —
             // the option that makes it — never reaches the projection engine, so the emitted `.Value` ignored
@@ -759,10 +775,41 @@ internal static partial class MapperExtractor
             // InvalidOperationException from .Project for the same input. Emitting `.Value` also pushes the
             // failure to runtime inside a provider-translated query, where NULL semantics are the provider's,
             // not ours. Refusing at build time keeps the null decision explicit and the two paths honest.
+            // Deliberately annotation-strict on the reference side, exactly as TryGetNullableCapableTarget
+            // is for .Map: an un-annotated (or oblivious) reference target is a promise that it holds no
+            // null, so the documented NullStrategy contract keeps governing it — and NullStrategy is the
+            // one thing this endpoint cannot express.
             EmitDWARF028(diagnostics, location, targetMemberName,
-                "a nullable source mapped to a non-nullable target needs a null decision, and NullStrategy is "
-                + "not translatable in projection; make the target nullable, or map this member at runtime");
+                "a nullable source mapped to a target that cannot hold null needs a null decision, and "
+                + "NullStrategy is not translatable in projection; make the target nullable, or map this "
+                + "member at runtime");
             return null;
+        }
+
+        // Reference source into a Nullable<U> target — the re-kinded pair, the other way round.
+        // `S1? M` → `D1? M` where S1 is a class and D1 a struct. Nothing above catches it: Nullable<D1> is
+        // excluded from IsMappableObjectPair by name, so the nested-object branch declines and the pair fell
+        // through to "no translatable conversion found" — while .Map lifts it (I7's reverse genre, the
+        // NullableProjectRef handling). The lift is a CALL-SITE question at both endpoints, because a
+        // value-typed inner expression has no way to answer null; here the call site is this ternary.
+        if (srcType.IsReferenceType && IsNullableValue(tgtType, out var refTgtUnderlying))
+        {
+            // The annotation is STRIPPED for the recursion on purpose. The inner question is only "how does
+            // an S1 become a D1", and the nested-object resolver adds its OWN null guard for a nullable
+            // reference source — which, with a VALUE-type target below it, would produce
+            // `x == null ? null : new D1 { … }`: two arms with no best common type (CS0173), nested inside
+            // the guard this branch is about to add anyway. One guard, and it is this one.
+            var refInnerExpr = ResolveProjectionExpr(
+                srcType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), refTgtUnderlying, srcExpr,
+                depth, compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
+            if (refInnerExpr is null) return null;
+            // A non-nullable-annotated source cannot be null, so it needs no guard — only the widening to
+            // Nullable<U>, which is implicit. Guarding it would be the false-CS8601 shape
+            // ProjectionSourceMayBeNull exists to avoid.
+            if (!ProjectionSourceMayBeNull(srcType)) return refInnerExpr;
+            // The cast is required here: null and U have no best common type (CS0173).
+            var refTgtNullableFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return $"{srcExpr} == null ? null : ({refTgtNullableFqn})({refInnerExpr})";
         }
 
         // ── Fallback: no translatable conversion found ────────────────────────
@@ -1078,7 +1125,30 @@ internal static partial class MapperExtractor
         // Wrap with a null-navigation ternary ONLY when the source may actually be null (nullable-
         // annotated or nullable-oblivious). A non-nullable source needs no guard (guarding it would
         // assign null to a non-nullable target — CS8603).
-        if (ProjectionSourceMayBeNull(srcType)) return $"{srcExpr} == null ? null : {innerBodyExpr}";
+        if (ProjectionSourceMayBeNull(srcType))
+        {
+            // ... and only when the TARGET slot can hold the null. A VALUE-type target cannot: the two arms
+            // would be `null` and a struct, which has no best common type, and the generated file failed to
+            // compile with CS0037 — silently, because the resolver reported nothing. The same
+            // kind-instead-of-capability confusion I14/I7 name, one function further down. Found by the I14
+            // sibling hunt (round 23), not by sampling: this cell is `class Src { Nested? N }` →
+            // `class Dst { NestedStruct N }`, which the type-graph generators mirror kinds across and so
+            // never build. The honest answer is the refusal a nullable-VALUE source into a null-incapable
+            // target already gets: .Map answers it by throwing per NullStrategy from inside the synthesized
+            // helper, and NullStrategy is precisely what a provider-translated expression cannot express.
+            // A nullable-ANNOTATED REFERENCE target keeps the long-standing ternary — it can hold the null.
+            if (tgtType.IsValueType)
+            {
+                EmitDWARF028(diagnostics, location, targetMemberName,
+                    $"a nullable source mapped to the value-type target '{tgtFqn}' needs a null decision, and "
+                    + "NullStrategy is not translatable in projection; make the target nullable, or map this "
+                    + "member at runtime");
+                return null;
+            }
+
+            return $"{srcExpr} == null ? null : {innerBodyExpr}";
+        }
+
         return innerBodyExpr;
     }
 
