@@ -460,8 +460,26 @@ public sealed class SurfaceParityTests
             + "difference between the two compilations and its verdict is legible again.");
     }
 
-    /// <summary>The ceiling on cells with no declaration site. Shrink-only, like the others.</summary>
-    private const int NoSuchSiteCellCeiling = 116;
+    /// <summary>
+    ///     The cells with no declaration site, pinned EXACTLY and PER CAUSE. Shrink-only, per cause.
+    ///     <para>
+    ///         This replaces a single total ceiling of 116 with a ten-wide shrink band (B6). The total was
+    ///         blind twice over: offsetting drift between the causes summed to the same number — a slot
+    ///         going missing at one endpoint funded by a structural cell leaving at another read as "no
+    ///         change" — and the band under it meant even the total could wander by ten with nothing
+    ///         registering. Both causes here are STRUCTURAL and cannot move (the registry front door
+    ///         genuinely has no mapper class; neither it nor the co-located host declares a mapping method),
+    ///         which is exactly why exact pins are honest: any movement at all is a template or catalogue
+    ///         change someone must look at, and a NEW cause is a slot that went missing wearing a verdict
+    ///         that says nothing can be done about it.
+    ///     </para>
+    ///     <para>Measured 2026-08-22, in the commit that introduced the pins. Total 116, unchanged.</para>
+    /// </summary>
+    private static readonly Dictionary<string, int> NoSuchSiteCausePins = new(StringComparer.Ordinal)
+    {
+        ["registry-has-no-mapper-class"] = 48,
+        ["no-mapping-method"] = 68
+    };
 
     /// <summary>
     ///     The cells with no declaration site, counted AND broken down by cause.
@@ -492,23 +510,50 @@ public sealed class SurfaceParityTests
     [Fact]
     public void The_cells_with_no_declaration_site_are_counted_by_cause()
     {
+        // The cause key is everything before the first ':' — the machine-readable half of the reason
+        // Endpoints.SiteAbsenceReason states, which is the single source every NoSuchSite verdict flows
+        // from, so this grouping cannot disagree with the classifier about what a cause IS.
         var siteless = AllCells().Where(x => x.Effect is SurfaceEffect.NoSuchSite).ToList();
-        var byCause = string.Join("\n", siteless
-            .GroupBy(x => x.Detail, StringComparer.Ordinal)
-            .OrderByDescending(g => g.Count())
-            .Select(g => $"  {g.Count(),4}  {g.Key}"));
+        var byCause = siteless
+            .GroupBy(x => CauseOf(x.Detail), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        var breakdown = string.Join("\n", byCause
+            .OrderByDescending(kvp => kvp.Value)
+            .Select(kvp => $"  {kvp.Value,4}  {kvp.Key}"));
 
-        Assert.True(siteless.Count <= NoSuchSiteCellCeiling,
-            $"{siteless.Count} cells have no declaration site and are therefore judged by nothing, above the "
-            + $"stated ceiling of {NoSuchSiteCellCeiling}:\n{byCause}\n\nThis number may only shrink. Both "
-            + "remaining causes (registry-has-no-mapper-class, no-mapping-method) are STRUCTURAL and cannot "
-            + "move, because there is nothing at those endpoints for a template to annotate — so a cell "
-            + "arriving here under any OTHER cause is a slot that went missing. Give the endpoint template "
-            + "or the fixture in play the marker that site splices at, rather than accepting the absence.");
+        var unpinned = byCause.Keys
+            .Where(cause => !NoSuchSiteCausePins.ContainsKey(cause))
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+        Assert.True(unpinned.Count == 0,
+            "Cells with no declaration site under cause(s) this test does not pin:\n  "
+            + string.Join("\n  ", unpinned) + $"\n\nFull breakdown:\n{breakdown}\n\nBoth pinned causes are "
+            + "STRUCTURAL — there is genuinely nothing at those endpoints for a template to annotate. A "
+            + "cell arriving under any OTHER cause is a slot that went missing wearing a verdict that says "
+            + "nothing can be done: give the endpoint template or the fixture in play the marker that site "
+            + "splices at, rather than pinning the absence.");
 
-        Assert.True(siteless.Count >= NoSuchSiteCellCeiling - 10,
-            $"Only {siteless.Count} cells have no declaration site, well under the ceiling of "
-            + $"{NoSuchSiteCellCeiling}:\n{byCause}\n\nLower the ceiling to lock the improvement in.");
+        foreach (var (cause, pinned) in NoSuchSiteCausePins)
+        {
+            var actual = byCause.GetValueOrDefault(cause);
+            Assert.True(actual <= pinned,
+                $"{actual} cells have no declaration site under '{cause}', above its pin of {pinned}:\n"
+                + breakdown + "\n\nPer-cause and exact on purpose (B6): the old total-only ceiling let a "
+                + "slot go missing at one endpoint as long as a structural cell left at another — "
+                + "offsetting drift summing to green. This cause is structural and cannot grow; a growth "
+                + "here is a catalogue or template change someone must look at.");
+            Assert.True(actual >= pinned,
+                $"Only {actual} cells have no declaration site under '{cause}', under its pin of {pinned}:\n"
+                + breakdown + "\n\nCells left a structural population — either the endpoint gained the "
+                + "surface (lower the pin in the same commit to lock it in) or the catalogue lost cases "
+                + "that should still exist. Exact in both directions so neither reading passes unexamined.");
+        }
+    }
+
+    private static string CauseOf(string detail)
+    {
+        var colon = detail.IndexOf(':', StringComparison.Ordinal);
+        return colon <= 0 ? detail : detail[..colon];
     }
 
     /// <summary>
