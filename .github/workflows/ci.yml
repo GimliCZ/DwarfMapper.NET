@@ -512,3 +512,81 @@ jobs:
         with:
           name: sbom
           path: ./sbom
+
+  # ── Reproducible-build verification (round-23 S4) ─────────────────────────────────────────────────────
+  # Packs the SHIPPED packages twice from the same commit, wiping every build output in between, and
+  # compares them ENTRY BY ENTRY. The repo already claims a CRA-defensive supply chain — CycloneDX SBOM,
+  # SLSA build-provenance attestation, SHA256SUMS on every release — and an attestation over bytes nobody
+  # can regenerate is a claim without a check. This leg is that check.
+  #
+  # WHAT IT ACTUALLY FOUND, measured 2026-08-22 on Windows at 81c4ace before this job existed (the same
+  # two-pack protocol this job runs): the whole-file SHA-256 of every .nupkg/.snupkg DIFFERS on every
+  # pack, and every build-produced entry inside them is BYTE-IDENTICAL. The difference is entirely
+  # NuGet.Packaging's OPC envelope — the `<32 hex>.psmdcp` core-properties part is named after a fresh
+  # GUID each pack, and `_rels/.rels` names it back. DwarfMapper's own bytes reproduce; NuGet's envelope
+  # does not. scripts/repro-pack-check.py's header carries the full measurement and normalises exactly
+  # those two parts BY NAME, comparing their content — it is not a tolerance and it does not skip them.
+  #
+  # Deterministic-build inputs are already set repo-wide and were NOT added for this leg: Directory.Build
+  # .props sets Deterministic, ContinuousIntegrationBuild on '$(CI)' == 'true' (GitHub sets CI for every
+  # job, which also flips DeterministicSourcePaths and RestoreLockedMode), and EmbedUntrackedSources;
+  # Directory.Build.targets turns on the SDK's built-in SourceLink with snupkg symbols. The two packs run
+  # in the same directory, so PathMap/DeterministicSourcePaths differences cannot mask a real one either
+  # way — this leg asks "same inputs, same bytes?", not "same bytes from two different paths?", which is
+  # a strictly harder question nobody has asked yet and which is NOT claimed here.
+  #
+  # -p:EnablePackageValidation=false, with the reason: ApiCompat package validation is a SEPARATE existing
+  # gate that runs AfterTargets="Pack", it downloads the 1.0.2-rc.1 baseline from nuget.org (an external
+  # input a reproducibility leg should not depend on), and its red would mean "the API changed", not "the
+  # bytes moved" — the two must not be able to masquerade as each other. It is ALSO broken today: see
+  # I15 in Issues/round20/TASKS.md, where `dotnet pack` exits 1 on an intentional, already-written
+  # suppression the SDK never reads. Turning it off here neither hides nor fixes that; I15 records it.
+  reproducible-build:
+    runs-on: ubuntu-latest
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ESTIMATE, not a measurement — this job has never run on a hosted runner (see the note at the top of
+    # this file about the nightly tier being dormant until master carries it). Local Windows 12-core at
+    # 81c4ace: one round of `git clean -xdf` + locked restore + pack of both packages = 22.0 s and 20.0 s
+    # (measured twice), so ~45 s for both rounds with a warm NuGet cache. A ~4-core hosted runner with a
+    # COLD package cache is the dominant cost: reckon ~2 min restore + ~2 min build/pack per round, ~9 min
+    # with SDK setup. Doubled -> 25. Replace this paragraph with the first real run's wall-clock.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      # ONE step for both rounds on purpose: if the two rounds' command lines could drift apart, the
+      # comparison would be measuring two different builds and calling the difference non-determinism.
+      # The output directories live under RUNNER_TEMP because `git clean -xdf` is what separates the
+      # rounds, and it would otherwise delete round A's packages along with the build outputs.
+      - name: Pack twice from the same commit, wiping every build output in between
+        run: |
+          set -euo pipefail
+          pack_round() {
+            local out="$1"
+            rm -rf "$out"
+            dotnet restore DwarfMapper.NET.sln --locked-mode
+            for proj in src/DwarfMapper/DwarfMapper.csproj src/DwarfMapper.Testing/DwarfMapper.Testing.csproj; do
+              dotnet pack "$proj" -c Release -o "$out" -p:EnablePackageValidation=false
+            done
+          }
+          pack_round "$RUNNER_TEMP/pack-a"
+          # -x removes ignored files (bin/, obj/, the lot); -d recurses into untracked directories. The
+          # tree must be exactly as checked out before round B, or round B is an incremental build and
+          # the comparison proves nothing about a clean one.
+          git clean -xdf
+          git status --porcelain
+          pack_round "$RUNNER_TEMP/pack-b"
+      - name: Compare the two packs entry by entry
+        run: python3 scripts/repro-pack-check.py "$RUNNER_TEMP/pack-a" "$RUNNER_TEMP/pack-b"
+      # Kept on failure only, same idiom as the mutation reports and the coverage report: a red here is a
+      # claim about specific bytes, and the reader needs the bytes.
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: repro-pack-packages
+          path: |
+            ${{ runner.temp }}/pack-a
+            ${{ runner.temp }}/pack-b
