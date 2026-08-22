@@ -1188,18 +1188,26 @@ internal static class MapEmitter
             return;
         }
 
-        // NullableProject: both source and target are Nullable<T>. Emit null-preserving ternary:
+        // NullableProject: the source is Nullable<T> and the destination can hold null. Emit the
+        // null-preserving ternary rather than unwrapping — the lift, not the throw:
         //   src.X.HasValue ? Conv(src.X.Value) : null
-        // C# 9+ target-typed conditional unifies U (from Conv) and null into U?.
+        // C# 9+ target-typed conditional unifies U (from Conv) and null into the destination's U?.
         if (member.NullHandling == NullHandling.NullableProject)
         {
             var srcExpr = paramName + "." + member.EmitSourceName;
-            if (member.ConverterMethod is not null)
-                sb.Append(srcExpr).Append(".HasValue ? ")
-                    .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value) : null");
-            else
+            if (member.ConverterMethod is null)
+            {
                 // Defensive fallback: T?→U? where T→U is implicit (direct assignment).
                 sb.Append(srcExpr);
+                return;
+            }
+
+            // A recursion-capable converter takes (value, ctx, depth) — the ternary must thread them too,
+            // exactly as the non-lifting converter paths below do.
+            var extraArgs = member.ConverterNeedsDepthCtx ? ", " + ctxVarName + ", " + depthArg : "";
+            sb.Append(srcExpr).Append(".HasValue ? ")
+                .Append(member.ConverterMethod).Append('(').Append(srcExpr).Append(".Value")
+                .Append(extraArgs).Append(')').Append(" : null");
             return;
         }
 

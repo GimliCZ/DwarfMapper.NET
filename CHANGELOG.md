@@ -15,6 +15,25 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A nullable element over a value-type source emitted code that did not compile, and the generator said
+  nothing.** `List<S?> → List<D?>` — and `T[]`, `IReadOnlyList<T>`, `HashSet<T>`, a dictionary value, every
+  wrapper measured — where the element pair `S → D` needs a synthesized element map and `S` is a struct or
+  record struct: the emitted loop handed the element helper an `S?` where it takes an `S`, which is
+  **`CS1503`** in a file the consumer cannot edit, with no DwarfMapper word anywhere. The element loops (and
+  the dictionary key/value loop next to them) ignored the element's null handling entirely whenever a
+  converter was present, so *no* value of that decision reached the emitted element. They now compose the
+  two, and the composition follows the destination rather than the source's kind: **an element the
+  destination can hold a null in lifts — null element in, null element out** — and one it cannot keeps the
+  documented `NullStrategy` unwrap. The same widening settles a sibling the element loops share their
+  resolver with: a plain nested member `S? → D?` used to lift only when the *mirrored* type happened to be
+  a struct too, and threw `"Source member 'X' was null"` when the same member's destination was declared a
+  class or a record — a decision no caller could predict from the types, and one the documented
+  `NullStrategy` sentence never covered (it governs nullable-value source into a **non-nullable** target).
+  All four value-kind→reference-kind cells now lift like the diagonals always did. **This changes behaviour
+  for code that today receives an exception**: an `InvalidOperationException` caught or relied on as a guard
+  at one of these members stops arriving, and a null arrives at a destination whose declared type already
+  accepts one. The shapes on the collection side emitted nothing that compiled, so no consumer can depend on
+  those. (round 23, N1/I5)
 - **A constructor-only NESTED type reached the compiler as `CS1729` out of a generated `[MapTo]` file.**
   `DWARFR09` guarded the `[MapTo]` target and nothing else, but the registry constructs a second kind of
   type with `new T { … }`: every nested object — and, through the collection path, every element type. A

@@ -311,10 +311,18 @@ internal static partial class MapperExtractor
             return true; // direct assignment
         }
 
-        // Both nullable: T? → U? with a non-implicit inner T→U. Null-preserving (null → null).
-        // Must come before the source-nullable branch so that T?→U? with a synthesized inner
-        // conversion resolves to NullableProject rather than ThrowIfNull/ValueOrDefault.
-        if (IsNullableValue(srcType, out var bothSrcU) && IsNullableValue(tgtType, out var bothTgtU))
+        // Nullable-value source into a target that CAN HOLD NULL: T? → U? (both Nullable<>) or T? → U?
+        // (a nullable-annotated reference target) with a non-implicit inner T→U. Null-preserving
+        // (null → null). Must come before the source-nullable branch so that a nullable source with a
+        // synthesized inner conversion resolves to NullableProject rather than ThrowIfNull/ValueOrDefault.
+        //
+        // The gate used to demand BOTH sides be Nullable<T>, which made the lift depend on the DESTINATION'S
+        // KIND rather than on whether it can hold the null: `S1? → D1?` lifted when D1 was a struct and threw
+        // ("Source member 'X' was null") when D1 was a class or a record — an inconsistency no user can predict
+        // from the types, and undocumented (the NullStrategy contract governs nullable-value source →
+        // NON-nullable target). TASKS.md I7 / round 23 N2. Nullable-capable is deliberately annotation-strict
+        // for references: an unannotated or oblivious reference target keeps the documented throw.
+        if (IsNullableValue(srcType, out var bothSrcU) && TryGetNullableCapableTarget(tgtType, out var bothTgtU))
             if (TryResolveConversion(compilation, bothSrcU, bothTgtU, useMethod, allMethods, autoCandidates,
                     enumPolicy, synthesized, nullStrategy, location, targetName, diagnostics,
                     out var innerNN, out _, out _, autoNest, nestedRegistry, nullAsNull,
@@ -358,8 +366,8 @@ internal static partial class MapperExtractor
         // Target-nullable composition: non-nullable src → T? (nullable target).
         // When the source is NOT nullable but the target IS nullable, resolve src→underlying
         // and let the implicit T→T? lift do the rest (valid C# assignment).
-        // Scope: non-nullable source only. nullable-source + nullable-target (T?→U?) is a
-        // documented follow-up (complex null-semantics; left as DWARF005 for now).
+        // Scope: non-nullable source only. A nullable-value source is handled by the
+        // nullable-capable-target branch above.
         if (!IsNullableValue(srcType, out _) && IsNullableValue(tgtType, out var tgtUnderlying))
         {
             if (TryResolveConversion(compilation, srcType, tgtUnderlying, useMethod, allMethods, autoCandidates,
@@ -1091,6 +1099,39 @@ internal static partial class MapperExtractor
         if (type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
         {
             underlying = named.TypeArguments[0];
+            return true;
+        }
+
+        underlying = type;
+        return false;
+    }
+
+    /// <summary>
+    ///     Returns true when <paramref name="type" /> is a destination that CAN HOLD NULL — either a
+    ///     <c>Nullable&lt;U&gt;</c> or a nullable-annotated reference — and yields the type a converter must
+    ///     produce (<c>U</c> for <c>Nullable&lt;U&gt;</c>; the un-annotated reference type otherwise).
+    ///     <para>
+    ///     This is the predicate that decides whether a nullable source may be LIFTED (null → null) rather
+    ///     than unwrapped with <c>?? throw</c>. It asks the only question that matters — can the destination
+    ///     store the null? — instead of the destination's KIND, which is what made the same member throw or
+    ///     lift depending on whether the mirrored node happened to be a struct or a class (TASKS.md I7).
+    ///     </para>
+    ///     <para>
+    ///     Annotation-strict on the reference side on purpose: an un-annotated (or oblivious) reference target
+    ///     is a promise that it holds no null, and the documented <c>NullStrategy</c> contract — nullable
+    ///     source into a non-nullable target throws, or takes the default — continues to govern it.
+    ///     </para>
+    /// </summary>
+    private static bool TryGetNullableCapableTarget(ITypeSymbol type, out ITypeSymbol underlying)
+    {
+        if (IsNullableValue(type, out underlying)) return true;
+
+        if (IsNullableReferenceType(type))
+        {
+            // Hand the converter resolver the un-annotated form: the conversion S → D is the same question
+            // whether or not the destination slot is annotated, and stripping it keeps converter matching
+            // (which compares symbols) from depending on an annotation the resolver does not model.
+            underlying = type.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
             return true;
         }
 

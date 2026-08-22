@@ -122,21 +122,13 @@ public static class TypeGraphGen
                     ? i + 1 + rolls[i].NestedTargetRolls[k] % (n - 1 - i)
                     : null;
 
-                // KNOWN DIVERGENCE I5 (round 22, found by this generator's first smoke run), NOT a validity
-                // rule: a collection-wrapped NULLABLE element whose source element node is a VALUE kind is
-                // perfectly valid C#, but the product's synthesized element maps do not lift over
-                // Nullable<T> (the emitted call passes `S?` where the helper takes `S` — silent CS1503,
-                // measured for every CollShape wrapper; plain non-collection members and class elements are
-                // fine). Excluded from the SAMPLED space only, so the must-compile smoke stays a gate; the
-                // cell itself stays reachable and PINNED as PinnedCorpus row
-                // 'I5-nullable-struct-element-map' whose expected-CS1503 assertion goes red the moment the
-                // product is fixed — that red is the signal to delete this exclusion in the same commit.
+                // (The I5 exclusion that used to sit here — collection-wrapped nullable elements over a
+                // VALUE-kind source element node, held out of the sampled space because the synthesized
+                // element maps did not lift over Nullable<T> — was DELETED with the fix in round 23 N1.
+                // The sampled space is wider by exactly that cell family again; the shapes stay pinned as
+                // PinnedCorpus rows 'I5-nullable-struct-element-map' and
+                // 'I5-nullable-struct-element-rekinded-dest', now under the normal must-compile contract.)
                 var nullable = roll.Nullable;
-                if (nested is int target && roll.Coll != CollShape.None
-                    && sourceKinds[target] is TypeKind.Struct or TypeKind.RecordStruct)
-                {
-                    nullable = false;
-                }
 
                 // KNOWN DIVERGENCE I7 (round 22, found by K1's FIRST 1,000-sample oracle run), NOT a
                 // validity rule: a PLAIN nullable nested member whose source node is a VALUE kind and whose

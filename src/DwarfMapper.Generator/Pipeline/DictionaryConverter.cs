@@ -107,8 +107,8 @@ internal static class DictionaryConverter
         // then adds ? for the outer — avoids CS8620 when source has nullable value/element types.
         var srcParam = FqNullableParam(srcType);
         var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
-        var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyNeedsCtx);
-        var valExpr = Expr("__kv.Value", valConverter, valNull, valNeedsCtx);
+        var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
+        var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx);
         var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
         var ctxParams = threadCtx ? CtxDepthParams : "";
 
@@ -175,8 +175,8 @@ internal static class DictionaryConverter
 
         var srcParam = FqNullableParam(srcType);
         var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
-        var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyNeedsCtx);
-        var valExpr = Expr("__kv.Value", valConverter, valNull, valNeedsCtx);
+        var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
+        var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx);
 
         var w = new CodeWriter(1);
         using (w.Block("private " + retAnnot + " " + existingName + "(" + srcParam + " src" + CtxDepthParams + ")"))
@@ -214,20 +214,40 @@ internal static class DictionaryConverter
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private static string Expr(string access, string? conv, NullHandling nh, bool needsCtx = false)
+    /// <summary>
+    ///     The per-entry key/value expression: the entry's null handling COMPOSED with its converter — the
+    ///     dictionary twin of <c>CollectionConverter.ElementExpr</c>, and fixed for the same reason. The
+    ///     converter branch used to ignore <paramref name="nh" /> and emit <c>Conv(__kv.Value)</c>, handing a
+    ///     <c>S?</c> to a helper taking <c>S</c> (CS1503, generator silent — TASKS.md I5 / round 23 N1).
+    ///     A null entry whose destination side can hold null is now LIFTED (<paramref name="tgtFq" /> is cast
+    ///     onto the non-null arm so the conditional's type never depends on target-typing); one whose
+    ///     destination cannot is unwrapped by the documented NullStrategy rule.
+    /// </summary>
+    private static string Expr(string access, string? conv, NullHandling nh, string tgtFq, bool needsCtx = false)
     {
-        if (conv is not null)
+        if (conv is null)
+            return nh switch
+            {
+                NullHandling.ThrowIfNull => access +
+                                            " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")",
+                NullHandling.ValueOrDefault => access + ".GetValueOrDefault()",
+                _ => access
+            };
+
+        var extra = needsCtx ? ", ctx, depth + 1" : "";
+        string Call(string arg)
         {
-            var args = needsCtx ? access + ", ctx, depth + 1" : access;
-            return conv + "(" + args + ")";
+            return conv + "(" + arg + extra + ")";
         }
 
         return nh switch
         {
-            NullHandling.ThrowIfNull => access +
-                                        " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")",
-            NullHandling.ValueOrDefault => access + ".GetValueOrDefault()",
-            _ => access
+            NullHandling.NullableProject =>
+                "(" + access + ".HasValue ? (" + tgtFq + ")" + Call(access + ".Value") + " : null)",
+            NullHandling.ThrowIfNull => Call(access +
+                                             " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")"),
+            NullHandling.ValueOrDefault => Call(access + ".GetValueOrDefault()"),
+            _ => Call(access)
         };
     }
 

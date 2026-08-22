@@ -287,7 +287,7 @@ internal static class CollectionConverter
         var identity = SymbolEqualityComparer.Default.Equals(srcElem, tgtElem)
                        && elemConverter is null
                        && elemNull == NullHandling.None;
-        var item = ElementExpr("__item", elemConverter, elemNull, elemNeedsCtx);
+        var item = ElementExpr("__item", elemConverter, elemNull, elemFq, elemNeedsCtx);
 
         // Effective preserve: are we emitting register-before-fill for THIS collection? (Preserve only.)
         var registerBeforeFill = isPreserve && IsMutableReferenceCollection(shape.Target);
@@ -324,7 +324,7 @@ internal static class CollectionConverter
         var srcFq = Fq(srcType);
         var srcParamType = FqNullableParam(srcType);
         // Recursion-capable element → identity fast-path is never applicable; element call threads ctx.
-        var item = ElementExpr("__item", ctxElementConverter, elemNull, true);
+        var item = ElementExpr("__item", ctxElementConverter, elemNull, elemFq, true);
 
         var w = new CodeWriter(1);
         EmitBody(w, existingName, srcFq, srcParamType, srcType, srcElem, elemFq, item, shape,
@@ -863,21 +863,45 @@ internal static class CollectionConverter
         return "new " + elem + "[" + sizeExpr + "]";
     }
 
-    private static string ElementExpr(string item, string? conv, NullHandling nh, bool needsCtx = false)
+    /// <summary>
+    ///     The per-element expression: the element's null handling COMPOSED with its converter.
+    ///     <para>
+    ///     The converter branch used to ignore <paramref name="nh" /> entirely and emit <c>Conv(__item)</c>,
+    ///     which handed a <c>S?</c> to a helper taking <c>S</c> — CS1503 in generated code the consumer cannot
+    ///     edit, with the generator silent (TASKS.md I5 / round 23 N1). Every value of the enum now reaches
+    ///     the emitted element: a null element whose destination element can hold null is LIFTED to a null
+    ///     element (<paramref name="elemFq" /> is cast onto the non-null arm so the conditional's type never
+    ///     depends on target-typing), and one whose destination cannot is unwrapped by the documented
+    ///     NullStrategy rule.
+    ///     </para>
+    /// </summary>
+    private static string ElementExpr(string item, string? conv, NullHandling nh, string elemFq,
+        bool needsCtx = false)
     {
-        if (conv is not null)
+        if (conv is null)
+            return nh switch
+            {
+                NullHandling.ThrowIfNull => item +
+                                            " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")",
+                NullHandling.ValueOrDefault => item + ".GetValueOrDefault()",
+                _ => item
+            };
+
+        // When the element converter is recursion-capable (under Preserve mode), thread ctx and depth+1.
+        var extra = needsCtx ? ", ctx, depth + 1" : "";
+        string Call(string arg)
         {
-            // When the element converter is recursion-capable (under Preserve mode), thread ctx and depth+1.
-            var args = needsCtx ? item + ", ctx, depth + 1" : item;
-            return conv + "(" + args + ")";
+            return conv + "(" + arg + extra + ")";
         }
 
         return nh switch
         {
-            NullHandling.ThrowIfNull => item +
-                                        " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")",
-            NullHandling.ValueOrDefault => item + ".GetValueOrDefault()",
-            _ => item
+            NullHandling.NullableProject =>
+                "(" + item + ".HasValue ? (" + elemFq + ")" + Call(item + ".Value") + " : null)",
+            NullHandling.ThrowIfNull => Call(item +
+                                             " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")"),
+            NullHandling.ValueOrDefault => Call(item + ".GetValueOrDefault()"),
+            _ => Call(item)
         };
     }
 

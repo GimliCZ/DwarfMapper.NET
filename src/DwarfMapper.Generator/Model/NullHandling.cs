@@ -2,7 +2,7 @@
 
 namespace DwarfMapper.Generator.Model;
 
-/// <summary>How the emitter unwraps a nullable value-type source for a non-nullable destination.</summary>
+/// <summary>How the emitter handles a possibly-null source value on its way to the destination.</summary>
 public enum NullHandling
 {
     /// <summary>Assign directly.</summary>
@@ -15,8 +15,8 @@ public enum NullHandling
     ValueOrDefault = 2,
 
     /// <summary>
-    ///     Source and target are both <c>Nullable&lt;T&gt;</c>; emit
-    ///     <c>x.HasValue ? Conv(x.Value) : null</c> (null-preserving).
+    ///     Source is <c>Nullable&lt;T&gt;</c> and the target can hold null (it is <c>Nullable&lt;U&gt;</c> or a
+    ///     nullable-annotated reference); emit <c>x.HasValue ? Conv(x.Value) : null</c> (null-preserving).
     /// </summary>
     NullableProject = 3
 }

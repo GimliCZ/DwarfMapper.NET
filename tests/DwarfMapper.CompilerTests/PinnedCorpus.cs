@@ -96,17 +96,24 @@ public static class PinnedCorpus
     /// <summary>
     ///     The first smoke sample's REAL FINDING (2026-08-22, CsCheck-shrunk, then minimized by probe —
     ///     filed as TASKS.md I5): a collection-wrapped nullable element whose source element type is a user
-    ///     STRUCT needing an element map. The generator is silent and emits
+    ///     STRUCT needing an element map. The generator was silent and emitted
     ///     <c>__DwarfMap_Obj_S_D(__item)</c> with <c>__item</c> of type <c>S?</c> — CS1503 in code the
-    ///     consumer cannot edit. Measured: every CollShape wrapper diverges (List/Array/IReadOnlyList/
-    ///     HashSet/Dictionary); class elements, non-nullable struct elements and non-collection nullable
-    ///     struct members are all fine; the trigger is the SOURCE side (struct source × class dest still
-    ///     diverges, class source × struct dest does not). Expected-divergent until I5 is fixed; the
-    ///     matching sampled-space exclusion lives in TypeGraphGen and dies with this pin.
+    ///     consumer cannot edit, measured for every CollShape wrapper (List/Array/IReadOnlyList/HashSet/
+    ///     Dictionary).
+    ///     <para>
+    ///     <b>FIXED 2026-08-23 (round 23 N1), and the row stays</b> — it has flipped from pinning the
+    ///     divergence (<c>KnownSilentCsIds: ["CS1503"]</c>) to pinning the CORRECT behaviour under the
+    ///     normal must-compile contract, which is what the K0/K1 sweep now enforces on it. Its runtime
+    ///     counterpart — a null element in yields a null element out, across every wrapper and both
+    ///     destination element kinds — is
+    ///     <c>DifferentialOracleTests.I5_nullable_struct_element_lifts_null_to_null…</c>. The matching
+    ///     sampled-space exclusion in <c>TypeGraphGen</c> died in the fixing commit, so the shape is now
+    ///     reachable by sampling as well as by this pin.
+    ///     </para>
     /// </summary>
     public static CorpusRow NullableStructElementMap { get; } = new(
         "I5-nullable-struct-element-map",
-        "List<S?> -> List<D?> with struct S needing an element map: silent CS1503 (TASKS.md I5)",
+        "List<S?> -> List<D?> with struct S needing an element map: lifts null -> null (TASKS.md I5, fixed)",
         new GraphSpec(
             [
                 new NodeSpec("S0", TypeKind.Class,
@@ -122,8 +129,36 @@ public static class PinnedCorpus
                     [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
                     BaseRef: null)
             ],
-            "S0", "D0"),
-        KnownSilentCsIds: ["CS1503"]);
+            "S0", "D0"));
+
+    /// <summary>
+    ///     I5's RE-KINDED half, pinned separately because it is the cell the CS1503 pin above could not
+    ///     see: the same nullable struct element, but the mirrored destination element is a CLASS. Before
+    ///     the fix this cell resolved through the nullable-source branch instead — <c>?? throw</c> composed
+    ///     with the element map — so it would have started COMPILING and started THROWING the moment the
+    ///     element loop learned to honour its null handling. Pinning it keeps the two halves of the same
+    ///     fix from drifting apart: both must lift, and the destination element (<c>D1?</c>, a nullable
+    ///     reference) can hold the null in this one exactly as <c>Nullable&lt;D1&gt;</c> can in the other.
+    /// </summary>
+    public static CorpusRow NullableStructElementRekindedDest { get; } = new(
+        "I5-nullable-struct-element-rekinded-dest",
+        "List<S?> -> List<D?> with struct S and CLASS D: lifts null -> null (TASKS.md I5, fixed)",
+        new GraphSpec(
+            [
+                new NodeSpec("S0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.List, 1)],
+                    BaseRef: null),
+                new NodeSpec("S1", TypeKind.Struct,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null),
+                new NodeSpec("D0", TypeKind.Class,
+                    [new MemberSpec("M0_0", "int", Nullable: true, MemberShape.AutoProp, CollShape.List, 3)],
+                    BaseRef: null),
+                new NodeSpec("D1", TypeKind.Class,
+                    [new MemberSpec("M1_0", "int", Nullable: false, MemberShape.AutoProp, CollShape.None, null)],
+                    BaseRef: null)
+            ],
+            "S0", "D0"));
 
     /// <summary>
     ///     K1's mandated refusal pin: a destination member with NO source counterpart hits the product's
@@ -288,6 +323,7 @@ public static class PinnedCorpus
         PartialFileSplitStructPair,
         RepresentationMirrorClassToStruct,
         NullableStructElementMap,
+        NullableStructElementRekindedDest,
         UnmappedDestinationMemberRefusal,
         NullableRekindValueToReference,
         NullableRekindReferenceToValue,
