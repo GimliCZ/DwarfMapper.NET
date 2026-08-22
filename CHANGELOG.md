@@ -15,6 +15,22 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A `[MapIgnore]` that named nothing was silently inert at every endpoint — and the `[MapTo]` registry
+  silently discarded its argument.** Two halves of one silence (B20 and B15), decided one way. Class model:
+  an unscoped `[MapIgnore("Name")]` whose name matches no destination member anywhere it is read — a typo,
+  or `[MapIgnore("id")]` against a property `Id`, even under `CaseInsensitive = true` — excluded nothing and
+  said nothing; the caller believed a member was excluded while the completeness gate went on demanding it.
+  It now reports the new **`DWARF095`**, a Warning like its pair-scoped sibling `DWARF056`: a method-site
+  name is judged against that method's own destination, a class-site name against *every* pair the class
+  maps (a class-wide ignore that is about one of two pairs stays legitimately silent on the other), and a
+  name matching only a span/async *element* pair remains `DWARF090`'s report. The comparer question the
+  silence had left open (B21) is settled with it: **directive names bind ordinally under every option** —
+  `CaseInsensitive` fuzzes auto-matching, never the binding of a name the caller wrote — and the mismatch is
+  now loud instead of silently inert. Registry: `[MapIgnore("x")]` on a `[MapTo]` source member has always
+  meant "ignore the annotated member", with the argument accepted and *discarded* — while the identical text
+  on a co-located host member is refused as `DWARF089`. The discard now reports the new **`DWARFR12`**, a
+  Warning that keeps the behaviour: the member is still ignored, the argument the caller wrote is just no
+  longer dropped without a word. (round 22, W1/B15+B20+B21)
 - **The span map and the async-stream map emitted code that did not compile when the element converter
   carried the reference-tracking tail.** Under `ReferenceHandling = Preserve` every auto-nested element
   mapper takes a `(DwarfRefContext, int)` tail, and the element-wise emissions called it without one —

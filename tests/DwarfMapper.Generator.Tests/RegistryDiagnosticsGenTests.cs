@@ -506,6 +506,50 @@ public sealed class RegistryDiagnosticsGenTests
         Assert.Contains("id: s.Id", generated, StringComparison.Ordinal);
     }
 
+    // ── DWARFR12 — the [MapIgnore] argument this front door has never read (B15, round 22 W1) ──────
+    // The registry's member form ignores the ANNOTATED source member; an argument on it was accepted and
+    // silently discarded, while the identical text on a co-located host member is DWARF089. A Warning that
+    // keeps the behaviour: the member is still ignored, the discard is just no longer silent.
+    [Fact]
+    public void A_registry_MapIgnore_with_an_argument_reports_DWARFR12_and_still_ignores_the_member()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))]
+                         public class Src
+                         {
+                             public int A { get; set; }
+                             [MapIgnore("x")] public int B { get; set; }
+                         }
+                         public class Dto { public int A { get; set; } }
+                         """;
+        var (diagnostics, generated) = GeneratorTestHarness.RunMapToWithSource(s);
+        Assert.Contains(diagnostics, d => d.Id == "DWARFR12"
+                                          && d.GetMessage(CultureInfo.InvariantCulture)
+                                              .Contains("'B'", StringComparison.Ordinal));
+        // The ignore still acts: B is skipped, the mapping emits, and no completeness error fires.
+        Assert.Contains("A = source.A", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "DWARFR02");
+    }
+
+    [Fact]
+    public void A_bare_registry_MapIgnore_is_not_flagged_by_DWARFR12()
+    {
+        const string s = """
+                         using DwarfMapper;
+                         namespace Demo;
+                         [MapTo(typeof(Dto))]
+                         public class Src
+                         {
+                             public int A { get; set; }
+                             [MapIgnore] public int B { get; set; }
+                         }
+                         public class Dto { public int A { get; set; } }
+                         """;
+        Assert.DoesNotContain(GeneratorTestHarness.RunMapTo(s), d => d.Id == "DWARFR12");
+    }
+
     // The MESSAGE, not just the id — and this one is the reason the gate two facts below exists. DWARFR11
     // shipped with a literal `{ ... }` in its MessageFormat, which is an unescaped format-specifier brace:
     // string.Format throws FormatException, Roslyn catches it and hands back the UNFORMATTED string, and the

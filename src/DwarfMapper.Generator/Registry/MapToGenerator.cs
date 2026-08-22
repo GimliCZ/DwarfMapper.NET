@@ -132,6 +132,23 @@ public sealed class MapToGenerator : IIncrementalGenerator
                 directives = new List<MemberDirective>();
             }
 
+            // The [MapIgnore] half of the arity question, decided with B15 (round 22 W1): an argument on the
+            // registry's member-form [MapIgnore] was accepted and DISCARDED — the annotated member was
+            // ignored, the argument named nothing, and nobody said so, while the identical text on a
+            // co-located host member is refused as DWARF089. A Warning that keeps the behaviour: the ignore
+            // still acts (so `continue` below is untouched), the discard is just no longer silent.
+            foreach (var d in directives)
+                if (d.Ignore && d.ArgumentCount != 0)
+                {
+                    var written = d.Name is null ? "[MapIgnore(…)]" : $"[MapIgnore(\"{d.Name}\")]";
+                    diags.Add(new DiagnosticInfo(RegistryDiagnostics.MapIgnoreArgumentNotRead, d.Loc ?? location,
+                        $"{written} on '{srcSym.Name}' carries an argument the [MapTo] registry does not read: "
+                        + "the registry's member form ignores the ANNOTATED source member itself, so the "
+                        + "argument names nothing here (the member is still ignored). Write the bare "
+                        + "[MapIgnore], or map the pair with the [DwarfMapper] class model, where "
+                        + "[MapIgnore(\"Member\")] names a destination member to exclude."));
+                }
+
             members.Add((srcSym, srcType, directives));
         }
 
@@ -376,9 +393,9 @@ public sealed class MapToGenerator : IIncrementalGenerator
     ///     <para>
     ///         Asked of the PARSED directives rather than of the attribute list a second time, so the arity
     ///         this check judges is the one <see cref="MemberDirectives.Read" /> actually recorded. The
-    ///         <c>[MapIgnore]</c> half is deliberately not judged here: the registry has always accepted
-    ///         <c>[MapIgnore("x")]</c> as a plain ignore of the annotated member, discarding the argument, and
-    ///         changing that is a separate decision from this one.
+    ///         <c>[MapIgnore]</c> half is judged separately (<c>DWARFR12</c>, decided with B15): the registry
+    ///         still accepts <c>[MapIgnore("x")]</c> as a plain ignore of the annotated member, but the
+    ///         discarded argument is now reported instead of dropped in silence.
     ///     </para>
     /// </summary>
     private static bool HasNonMemberFormMapProperty(List<MemberDirective> directives) =>

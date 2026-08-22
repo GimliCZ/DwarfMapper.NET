@@ -8,7 +8,7 @@
 > `[DwarfMapper]` option actually does at each endpoint, measured by compiling with and
 > without it). Both fail the build if they drift from the code.
 
-Every DwarfMapper diagnostic (`DWARF001`–`DWARF094`) is listed here with what triggers it and how to
+Every DwarfMapper diagnostic (`DWARF001`–`DWARF095`) is listed here with what triggers it and how to
 fix it. The IDE "learn more" link on each build error points at the matching `#dwarfNNN` anchor below.
 These are **compile-time**; for what a generated mapper can throw **at runtime**, see
 [Runtime exceptions](#runtime-exceptions) at the bottom.
@@ -66,7 +66,7 @@ mostly have a better in-place answer already — `[MapIgnore]`, `[MapValue]`, `[
 
 `DWARF004`, `DWARF006`, `DWARF019`, and `DWARF029` are retired/reserved ids and are never emitted.
 
-The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR11` family — see
+The `[MapTo]` registry front door emits a **separate** `DWARFR01`–`DWARFR12` family — see
 [Registry diagnostics](#registry-diagnostics-mapto) just below.
 
 ### Adopting incrementally (the strictness valve)
@@ -112,6 +112,7 @@ DWARF0xx self-validation scans that the rest of this reference is held to.
 | `DWARFR10` | **Member has a source match but auto-matching is disabled** — the registry counterpart of `DWARF072`. Under `[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]` nothing is auto-wired by name, so a destination the names merely happen to line up with is refused rather than copied. The front door read no assembly-level configuration before, which meant an assembly that had switched auto-matching off still had every `[MapTo]` map auto-matching — half a trust boundary. **Fix:** name the destination deliberately with `[MapProperty("Dest")]` on the source member, or exclude the source member with `[MapIgnore]`. A member refused here does *not* also draw `DWARFR02`. |
 | `DWARFR08` | **Two `[MapTo]` targets generate the same method name** — targets whose *simple* names collide (`Foo.Order` and `Bar.Order`) would each emit `ToOrder(this Src)` into one static class (CS0111). Rename a target, or use the `[DwarfMapper]` class model where every method is named explicitly. |
 | `DWARFR09` | **`[MapTo]` target has no accessible parameterless constructor** — the registry constructs targets with `new T { … }`. Add a public parameterless constructor, or use the `[DwarfMapper]` class model, which supports constructor mapping. |
+| `DWARFR12` | **`[MapIgnore]` argument is not read by the `[MapTo]` registry** (Warning) — the registry's member-form `[MapIgnore]` ignores the **annotated source member itself**, so an argument written on it (`[MapIgnore("x")]`) is never read: the member is still ignored, and `"x"` names nothing. It used to be silently discarded — while the identical text on a co-located `[GenerateMap]` host member is refused as `DWARF089`. **Fix:** write the bare `[MapIgnore]`, or map the pair with the `[DwarfMapper]` class model, where `[MapIgnore("Member")]` names a destination member to exclude. |
 | `DWARFR11` | **`[DwarfMapperConstructor]` is not read by the `[MapTo]` registry** (Warning) — the directive names the constructor DwarfMapper must build a target with, and this front door selects no constructor at all: every type it constructs — the `[MapTo]` target and every nested object (including a collection's element type) — is built with `new T { … }` and its members assigned afterwards. The mapping is still generated and still complete; what it is not is the construction the caller asked for, and the *same* annotation on the *same* type is honoured through a `[DwarfMapper]` class-model map over that pair. **Fix:** map the pair with the class model — a `partial Dst Map(Src s)` on a `[DwarfMapper]` class, which selects the annotated constructor — or remove the attribute if the object-initializer mapping is what you want. |
 | `DWARFR07` | **Lossy implicit numeric conversion** (Info) — the conversion is implicit in C# but crosses numeric categories (`long`→`double`, `int`→`float`, `long`→`decimal`) and loses precision for large magnitudes. The `[DwarfMapper]` class model reports the same thing as `DWARF038`; map through an explicit member type if the precision matters. |
 
@@ -1617,6 +1618,29 @@ a class using `[GenerateWrapperMap]` needs the `[GenerateMap]` form, because the
 > **Why an Error.** Unlike [`DWARF090`](#dwarf090)–[`DWARF093`](#dwarf093), the build could not succeed either
 > way — emitting both members is `CS0111` — so suppressing emission costs nothing and makes this the single
 > actionable statement instead of a compiler error in generated code.
+
+## dwarf095
+**[MapIgnore] names no destination member** · Warning
+
+An unscoped `[MapIgnore("Name")]` — on a mapping method or on the mapper class — whose name matches no
+destination member anywhere it is read. It excludes nothing: the caller believes a member is excluded, the
+completeness gate goes on demanding it, and any `DWARF001` that follows names the member rather than the dead
+directive. The pair-scoped forms already had this guard ([`DWARF056`](#dwarf056), "matches no mapped pair");
+the unscoped form being exempt was an asymmetry, not a policy.
+
+Directive names match **exactly, including case** — under `[DwarfMapper(CaseInsensitive = true)]` only
+**auto-matching** between source and destination names is case-insensitive, never the binding of a name you
+wrote, so `[MapIgnore("id")]` against a property `Id` excludes nothing and reports this id.
+
+A **method-site** name is judged against that method's own destination type. A **class-site** name is
+class-wide and judged against **every** pair the class maps — a class-wide ignore that is about one of the
+class's pairs legitimately matches nothing on the others and is not reported. A name matching only a span or
+async-stream **element** pair is [`DWARF090`](#dwarf090)'s report (the directive is dropped element-wise),
+not this one.
+
+**Fix:** fix the name (the message quotes it as written), or remove the attribute. To ignore a member of a
+specific pair from the class, prefer the pair-scoped `[MapIgnore<TTarget>("Name")]`, which
+[`DWARF056`](#dwarf056) guards against typos in the type argument the same way.
 
 ---
 

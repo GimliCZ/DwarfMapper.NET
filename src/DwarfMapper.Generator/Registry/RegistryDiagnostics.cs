@@ -107,6 +107,19 @@ internal static class RegistryDiagnostics
         + "Remove the attribute if the object-initializer mapping is what you want.",
         Category, DiagnosticSeverity.Warning, true);
 
+    // The [MapIgnore] mirror of DWARFR04's member-form [MapProperty] check, and the registry half of the
+    // B15 decision (the co-located host refuses the identical text as DWARF089): the registry's member form
+    // ignores the ANNOTATED source member itself, so an argument written on it is discarded — a silent
+    // discard of exactly the shape this family exists to end. A Warning rather than an Error, for DWARF089's
+    // own reason: the directive's payload (ignore this member) is usable and honoured, so the mapping ships;
+    // what is wrong is that the argument the caller wrote names nothing here. Message composed at report
+    // time ("{0}") so it can quote the argument as written.
+    public static readonly DiagnosticDescriptor MapIgnoreArgumentNotRead = new(
+        "DWARFR12",
+        "[MapIgnore] argument is not read by the [MapTo] registry",
+        "{0}",
+        Category, DiagnosticSeverity.Warning, true);
+
     public static readonly DiagnosticDescriptor RecursiveNesting = new(
         "DWARFR06",
         "Recursive nested mapping is not supported by the registry",

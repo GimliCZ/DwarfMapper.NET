@@ -98,5 +98,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF092` | Warning | Directive is not read at this mapping endpoint |
 | `DWARF093` | Warning | [GenerateWrapperMap] has no declared pair to expand |
 | `DWARF094` | Error | [GenerateMap] duplicates an existing map method |
+| `DWARF095` | Warning | [MapIgnore] names no destination member |
 
-90 diagnostics.
+91 diagnostics.

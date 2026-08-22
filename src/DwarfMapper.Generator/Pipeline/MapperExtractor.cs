@@ -120,6 +120,13 @@ internal static partial class MapperExtractor
 
         var classIgnores = ReadIgnores(classSymbol).ToList();
         var classIgnoreSources = ReadIgnoreSources(classSymbol).ToList();
+        // DWARF095 (B20) bookkeeping: which CLASS-level unscoped ignore names matched a destination member of
+        // at least one pair this class maps (see JudgeUnscopedIgnores), and whether the class carries an
+        // endpoint whose consumption this walk cannot see — in which case the class-site verdict stands down
+        // rather than guess (a false "names nothing" would break a working suppression, B19's exact genre).
+        var liveClassIgnores = new HashSet<string>(IgnoreNameComparer);
+        var ignorableNamesMemo = new Dictionary<ITypeSymbol, HashSet<string>>(SymbolEqualityComparer.Default);
+        var classIgnoreLivenessBlinded = false;
 
         // ReadIgnores above accepts the one-argument [MapIgnore("Member")] and drops everything else. What it
         // drops is the no-argument MEMBER form, which named nothing here and left the caller believing they
@@ -315,6 +322,10 @@ internal static partial class MapperExtractor
                 // endpoint is reported whatever else this method turns out to be wrong about.
                 ReportDirectivesNotReadHere(method, spanComp, spanSrcElem, spanDstElem,
                     MapEndpointKind.SpanMap, methodLocation, diagnostics);
+                // Class-site liveness only (method: null): a class-wide ignore naming a member of the ELEMENT
+                // pair is DWARF090's to report, so it must not also read as dead at the class site.
+                JudgeUnscopedIgnores(classIgnores, liveClassIgnores, null, spanDstElem, spanComp,
+                    allowNonPublic, methodLocation, diagnostics, ignorableNamesMemo);
                 if (ReportElementWiseDirectiveGaps(method, classSymbol, spanSrcElem, spanDstElem, explicitOnly,
                         spanComp, allowNonPublic, methodLocation, diagnostics))
                     continue;
@@ -380,6 +391,8 @@ internal static partial class MapperExtractor
                     methodLocation, diagnostics);
                 var updIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var ig in ReadIgnores(method)) updIgnores.Add(ig);
+                JudgeUnscopedIgnores(classIgnores, liveClassIgnores, method, updTgt, comp,
+                    allowNonPublic, methodLocation, diagnostics, ignorableNamesMemo);
                 var updExplicit = ReadExplicitMaps(method);
                 var updMapValues = ReadMapValues(method);
                 var updMapPropExtras = ReadMapPropertyExtras(method);
@@ -541,6 +554,9 @@ internal static partial class MapperExtractor
             {
                 var asComp = ctx.SemanticModel.Compilation;
                 var asAutoNest = ReadMethodAutoNest(method, classAutoNest);
+                // Class-site liveness only, exactly as at the span map (DWARF090 owns the method site).
+                JudgeUnscopedIgnores(classIgnores, liveClassIgnores, null, asDstElem, asComp,
+                    allowNonPublic, methodLocation, diagnostics, ignorableNamesMemo);
                 ReportDirectivesNotReadHere(method, asComp, asSrcElem, asDstElem,
                     MapEndpointKind.AsyncStream, methodLocation, diagnostics);
                 if (ReportElementWiseDirectiveGaps(method, classSymbol, asSrcElem, asDstElem, explicitOnly,
@@ -603,6 +619,9 @@ internal static partial class MapperExtractor
 
                 var projIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
                 foreach (var i in ReadIgnores(method)) projIgnores.Add(i);
+                JudgeUnscopedIgnores(classIgnores, liveClassIgnores, method, projTargetNamed,
+                    ctx.SemanticModel.Compilation, allowNonPublic, methodLocation, diagnostics,
+                    ignorableNamesMemo);
 
                 // Plan 19D: DWARF028 — ReferenceHandling != None is incompatible with projection
                 // (a stateful identity map cannot live inside an expression tree).
@@ -910,6 +929,9 @@ internal static partial class MapperExtractor
                     true,
                     targetType.IsReferenceType,
                     DerivedTypeArms: EquatableArray.From(armModels)));
+                // A dispatch method's arm resolution is not an unscoped-ignore consumer this walk can see,
+                // so the class-site DWARF095 verdict stands down for this class (see the flag's declaration).
+                classIgnoreLivenessBlinded = true;
                 continue;
             }
             // ── End Plan 21 ──────────────────────────────────────────────────
@@ -981,6 +1003,10 @@ internal static partial class MapperExtractor
                     IsTopLevelCollectionConversion: true,
                     ParameterIsPublicType: IsEffectivelyPublic(sourceType),
                     ReturnIsPublicType: IsEffectivelyPublic(targetType)));
+                // A top-level collection map's element pair is synthesized (pair-scoped config only), so
+                // this method consumes no unscoped ignore this walk can see — class-site DWARF095 stands
+                // down for the class rather than guess (see the flag's declaration).
+                classIgnoreLivenessBlinded = true;
                 continue;
             }
             // ── End Fix 1 ────────────────────────────────────────────────────────────────
@@ -1006,6 +1032,12 @@ internal static partial class MapperExtractor
             foreach (var pe in pairExplicit)
                 if (methodExplicitTargets.Add(pe.Target))
                     explicitMaps.Add(pe);
+
+            // Before constructor selection, so the liveness marking (and a dead method-site name's report)
+            // happens even when selection refuses the target.
+            JudgeUnscopedIgnores(classIgnores, liveClassIgnores, method, targetType,
+                ctx.SemanticModel.Compilation, allowNonPublic, methodLocation, diagnostics,
+                ignorableNamesMemo);
 
             // Choose construction strategy for the target type, now with the full rename set visible.
             var ctor = ConstructorSelector.Select(ctx.SemanticModel.Compilation, targetType, diagnostics,
@@ -1222,6 +1254,9 @@ internal static partial class MapperExtractor
             var (genExplicit, genExtras) = MatchPairProps(pairProps, genSrc, genTgt);
             var genIgnores = new HashSet<string>(classIgnores, IgnoreNameComparer);
             foreach (var im in MatchPairIgnores(pairIgnores, genTgt)) genIgnores.Add(im);
+            // Class-site liveness against this pair's target ([GenerateMap] pairs have no method site).
+            JudgeUnscopedIgnores(classIgnores, liveClassIgnores, null, genTgt,
+                ctx.SemanticModel.Compilation, allowNonPublic, genLoc, diagnostics, ignorableNamesMemo);
 
             // Member-level [MapProperty("SourceMember")] / [MapIgnore] written on the co-located host itself.
             // Layered ON TOP of the pair-scoped config rather than instead of it: the two are different
@@ -2588,6 +2623,23 @@ internal static partial class MapperExtractor
                 $"(> {LargeMapperMemberThreshold}); a mapper this large can add IDE/compile latency — " +
                 "consider splitting it into smaller mappers"));
 
+        // DWARF095 (B20): the class-site verdict for unscoped [MapIgnore] names, delivered only after every
+        // endpoint has had its chance to mark a name live — a class-wide ignore is judged against every pair
+        // the class maps, exactly as its tolerance-where-it-matches-nothing contract says (see
+        // ReportElementWiseDirectiveGaps). Reported once per distinct dead name; stands down entirely when an
+        // endpoint this walk cannot see is present (see classIgnoreLivenessBlinded).
+        if (!classIgnoreLivenessBlinded)
+        {
+            var deadClassIgnores = new HashSet<string>(IgnoreNameComparer);
+            foreach (var n in classIgnores)
+                if (!liveClassIgnores.Contains(n) && deadClassIgnores.Add(n))
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnscopedIgnoreNoMatch,
+                        LocationInfo.From(classSyntax.Identifier.GetLocation()),
+                        $"[MapIgnore(\"{n}\")] on mapper '{classSymbol.Name}' names no destination member of "
+                        + "any pair this mapper maps — it excludes nothing (directive names match exactly, "
+                        + "including case); fix the name or remove the attribute"));
+        }
+
         // DWARF056: a pair-scoped attribute that matched no mapped pair (top-level or nested) silently does
         // nothing — surface it (usually a typo'd type argument or a missing [GenerateMap]).
         foreach (var pp in pairProps)
@@ -2786,13 +2838,70 @@ internal static partial class MapperExtractor
     ///         DROPPED has to ask the question with the same comparer the thing that drops it uses.
     ///     </para>
     ///     <para>
-    ///         That a name matching nothing is inert at every endpoint with no diagnostic at all is a separate
-    ///         gap, recorded as <c>B20</c>; whether <c>[DwarfMapper(CaseInsensitive = true)]</c> ought to make
-    ///         this comparer follow suit is <c>B21</c>. Neither is settled here — this member only ensures the
-    ///         answer is written in one place when it is.
+    ///         <c>B20</c> and <c>B21</c> are settled (round 22 W1). B20: a name matching nothing is no longer
+    ///         inert in silence — it reports <c>DWARF095</c> (see <see cref="JudgeUnscopedIgnores" />). B21:
+    ///         the comparer stays ORDINAL even under <c>[DwarfMapper(CaseInsensitive = true)]</c>, because a
+    ///         directive names a member exactly — the same rule every other directive name in the model
+    ///         follows (<c>[MapProperty]</c> source and target names are ordinal at resolution:
+    ///         <c>writableByName</c> and the explicit source lookup in <c>ResolveMembers</c> both are, under
+    ///         every option). <c>CaseInsensitive</c> fuzzes AUTO-MATCHING between source and destination
+    ///         names, never the binding of a name the caller wrote. What B20 changes is that the mismatch is
+    ///         now loud: <c>[MapIgnore("id")]</c> against a property <c>Id</c> reports <c>DWARF095</c>
+    ///         instead of silently excluding nothing — pinned in both directions in
+    ///         <c>UnscopedIgnoreNoMatchTests</c>.
     ///     </para>
     /// </remarks>
     private static readonly StringComparer IgnoreNameComparer = StringComparer.Ordinal;
+
+    /// <summary>
+    ///     The destination-member names an unscoped <c>[MapIgnore]</c> can legitimately name on a target:
+    ///     WRITABLE members (excluded from mapping) plus READ-ONLY members (an ignore there suppresses the
+    ///     silent-loss warning — see the read-only guard in <c>ResolveMembers</c>). Derived from the same two
+    ///     member walks resolution consults, with the set's own comparer, so the question asked is "could real
+    ///     resolution have read this name?" rather than a re-guess of what resolution does.
+    /// </summary>
+    private static HashSet<string> IgnorableMemberNames(
+        ITypeSymbol target, Compilation compilation, bool allowNonPublic,
+        Dictionary<ITypeSymbol, HashSet<string>> memo)
+    {
+        if (memo.TryGetValue(target, out var cached)) return cached;
+        var names = new HashSet<string>(IgnoreNameComparer);
+        foreach (var m in WritableMembers(target, compilation, allowNonPublic)) names.Add(m.Name);
+        foreach (var m in ReadOnlyMembers(target, compilation, allowNonPublic)) names.Add(m.Name);
+        memo[target] = names;
+        return names;
+    }
+
+    /// <summary>
+    ///     The per-endpoint half of the <c>DWARF095</c> "names no destination member" check (B20). Marks
+    ///     which CLASS-level unscoped ignore names are live against <paramref name="targetType" /> (the
+    ///     class-wide verdict is delivered once, after every endpoint has been seen), and — when
+    ///     <paramref name="method" /> is given — reports each METHOD-level name that matches nothing on that
+    ///     method's own destination. Span and async-stream methods pass <c>null</c>: every method-site
+    ///     directive there is already <c>DWARF090</c>'s to report, matched or not, and two ids about one
+    ///     attribute would send the caller in two directions.
+    /// </summary>
+    private static void JudgeUnscopedIgnores(
+        List<string> classIgnores, HashSet<string> liveClassIgnores,
+        IMethodSymbol? method, ITypeSymbol targetType,
+        Compilation compilation, bool allowNonPublic,
+        LocationInfo? methodLocation, List<DiagnosticInfo> diagnostics,
+        Dictionary<ITypeSymbol, HashSet<string>> memo)
+    {
+        var names = IgnorableMemberNames(targetType, compilation, allowNonPublic, memo);
+        foreach (var n in classIgnores)
+            if (names.Contains(n))
+                liveClassIgnores.Add(n);
+
+        if (method is null) return;
+        foreach (var n in ReadIgnores(method))
+            if (!names.Contains(n))
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnscopedIgnoreNoMatch, methodLocation,
+                    $"[MapIgnore(\"{n}\")] on '{method.Name}' names no destination member of "
+                    + $"'{targetType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' — it "
+                    + "excludes nothing (directive names match exactly, including case); fix the name or "
+                    + "remove the attribute"));
+    }
 
     private static IEnumerable<string> ReadIgnores(ISymbol symbol)
     {
