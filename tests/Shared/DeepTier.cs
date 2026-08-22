@@ -206,7 +206,16 @@ public enum DeepPopulation
     ///     graph uses inheritance), so deep 150 prices out near MR-1's 250 pairs in run count. Measured
     ///     2026-08-22 with MR-1: fast 8 ≈ 0.25 s in-class; deep 150 ≈ 4 s in-class.
     /// </summary>
-    CompilerMrRekindSeeds
+    CompilerMrRekindSeeds,
+
+    /// <summary>
+    ///     CompilerTests/GeneratorCompileCostTests (round 23, S3): how many MAPPERS the cost corpus puts in
+    ///     ONE compilation. Not a seed count — the whole population is a single compilation, so this entry
+    ///     scales the SIZE of one case rather than the number of cases. Fast 40 keeps routine
+    ///     <c>dotnet test</c> cheap while still being large enough for the incremental claims to mean
+    ///     something; deep 1000 is the per-1000-mappers figure the row exists to measure.
+    /// </summary>
+    CompilerCostCorpusMappers
 }
 
 /// <summary>
@@ -264,7 +273,8 @@ public static class DeepTier
         [DeepPopulation.CompilerProjectionAgreementSeeds] = (100, 1000),
         [DeepPopulation.CompilerMrMemberOrderSeeds] = (10, 250),
         [DeepPopulation.CompilerMrUnmappedMemberSeeds] = (10, 250),
-        [DeepPopulation.CompilerMrRekindSeeds] = (8, 150)
+        [DeepPopulation.CompilerMrRekindSeeds] = (8, 150),
+        [DeepPopulation.CompilerCostCorpusMappers] = (40, 1000)
     };
 
     /// <summary>The count a call site should run with right now (fast unless <see cref="Enabled" />).</summary>

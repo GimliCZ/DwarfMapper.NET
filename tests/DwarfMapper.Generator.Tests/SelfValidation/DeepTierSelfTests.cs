@@ -61,7 +61,12 @@ public class DeepTierSelfTests
         [DeepPopulation.CompilerProjectionAgreementSeeds] = 100,
         [DeepPopulation.CompilerMrMemberOrderSeeds] = 10,
         [DeepPopulation.CompilerMrUnmappedMemberSeeds] = 10,
-        [DeepPopulation.CompilerMrRekindSeeds] = 8
+        [DeepPopulation.CompilerMrRekindSeeds] = 8,
+        // Round-23 S3: a new population, so its "historical" fast count is the one it was measured at and
+        // entered the catalog with. It scales the SIZE of a single compilation rather than a case count,
+        // which makes pinning it here matter more than usual — raising it lengthens every routine
+        // `dotnet test` by a whole extra compile, not by one more cheap sample.
+        [DeepPopulation.CompilerCostCorpusMappers] = 40
     };
 
     [Fact]

@@ -34,16 +34,28 @@ public static class TypeGraphRenderer
     ///         byte-identical and makes the projection's own accept/refuse split measurable on its own.
     ///     </para>
     /// </param>
-    public static IReadOnlyList<string> Render(GraphSpec graph, bool withProjection = false)
+    /// <param name="namespaceName">
+    ///     The namespace every rendered type and the mapper class <c>M</c> are declared in. Defaults to
+    ///     <c>T</c>, which every existing population renders with and which
+    ///     <see cref="CompilerTestHarness.InvokeMap" /> resolves <c>T.M</c> through — so the default keeps
+    ///     every existing digest byte-identical. It is a parameter at all for one reason: a corpus holding
+    ///     MANY graphs in ONE compilation (round 23, S3's per-1000-mappers cost measurement) would otherwise
+    ///     declare a thousand colliding <c>T.M</c>/<c>T.S0</c> types. Renaming the namespace is the smallest
+    ///     change that separates them; the alternative — rewriting the rendered text after the fact — would
+    ///     make the corpus a function of a string replacement rather than of the renderer.
+    /// </param>
+    public static IReadOnlyList<string> Render(
+        GraphSpec graph, bool withProjection = false, string namespaceName = "T")
     {
         ArgumentNullException.ThrowIfNull(graph);
+        ArgumentException.ThrowIfNullOrWhiteSpace(namespaceName);
         graph.Validate();
 
         var units = new List<string>();
         var main = new StringBuilder();
         main.AppendLine("using DwarfMapper;");
         main.AppendLine();
-        main.AppendLine("namespace T;");
+        main.Append("namespace ").Append(namespaceName).AppendLine(";");
 
         // Bounded by Nodes.Count and each node's member count — the H7 variant is the loop counter itself;
         // NestedRef/BaseRef lookups never recurse (names are resolved by index, not by walking the graph).
@@ -55,7 +67,7 @@ public static class TypeGraphRenderer
                 var half = (node.Members.Count + 1) / 2;
                 RenderNode(main, graph, node, node.Members.Take(half).ToList(), partial: true, withCtor: true);
                 var rest = new StringBuilder();
-                rest.AppendLine("namespace T;");
+                rest.Append("namespace ").Append(namespaceName).AppendLine(";");
                 rest.AppendLine();
                 RenderNode(rest, graph, node, node.Members.Skip(half).ToList(), partial: true, withCtor: false);
                 units.Add(rest.ToString());

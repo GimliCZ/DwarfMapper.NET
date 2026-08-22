@@ -57,6 +57,14 @@ internal static class CompilerTestHarness
             .Append(MetadataReference.CreateFromFile(typeof(System.Linq.Queryable).Assembly.Location))
             .ToArray());
 
+    /// <summary>
+    ///     The same shared reference set the harness compiles against, for callers that build their own
+    ///     compilation. Exposed rather than duplicated: rebuilding ~50 MetadataReferences is the expensive
+    ///     part of a compile, and S3's cost measurement would be measuring reference construction as much
+    ///     as the generator if it made its own set.
+    /// </summary>
+    internal static MetadataReference[] MetadataReferences => References.Value;
+
     /// <summary>Runs both generators over the given compilation units (nullable disabled, house default).</summary>
     public static RunResult Run(IReadOnlyList<string> units)
     {
