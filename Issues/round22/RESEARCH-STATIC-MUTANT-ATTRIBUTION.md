@@ -93,7 +93,8 @@ So, before any model of concurrency, per-mutant overhead or bail position: **the
 scale with it. Add the 69 killed statics — each of which runs some prefix of all 5,897 tests rather than a
 14-test covering set — and the non-static population is arithmetic noise in this leg.
 
-The oft-quoted "~493,000 test executions" is the ceiling: 85 × 5,797 (the T3 run's suite) if none bailed. At
+The oft-quoted "~493,000 test executions" is the ceiling: 85 × 5,798 (the T3 run's suite) = 492,830, if none
+bailed. At
 the P5 suite size the ceiling is 85 × 5,897 = **501,245**. Neither number is what actually ran; 16 mutants ×
 5,897 = **94,352 executions is the part that provably ran to completion.** Prefer the second when quoting.
 
