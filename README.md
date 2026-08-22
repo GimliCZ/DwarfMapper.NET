@@ -6,6 +6,11 @@
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![license](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 
+[![last commit](https://img.shields.io/github/last-commit/GimliCZ/DwarfMapper.NET?label=last%20commit)](https://github.com/GimliCZ/DwarfMapper.NET/commits)
+[![commit activity](https://img.shields.io/github/commit-activity/m/GimliCZ/DwarfMapper.NET?label=commits%2Fmonth)](https://github.com/GimliCZ/DwarfMapper.NET/pulse)
+[![code size](https://img.shields.io/github/languages/code-size/GimliCZ/DwarfMapper.NET?label=code)](https://github.com/GimliCZ/DwarfMapper.NET)
+[![top language](https://img.shields.io/github/languages/top/GimliCZ/DwarfMapper.NET)](https://github.com/GimliCZ/DwarfMapper.NET)
+
 > A compile-time object mapper for .NET where **an unmapped member is a build error**, maps are **round-trip-verifiable
 with one attribute**, and blittable data (unmanaged, fixed-layout structs) falls back to **SIMD/blittable bulk copy**
 > where the hardware allows it.
