@@ -279,7 +279,17 @@ internal static class SurfaceProbe
                || (c.Unmeasured is not null && effect is SurfaceEffect.Silent);
     }
 
-    private static (string[] DwarfKeys, IReadOnlyDictionary<string, int> CompilerErrorCounts, string Generated)
+    /// <summary>
+    ///     The element-free compile of one fixture at one endpoint — what every case sharing that fixture is
+    ///     measured AGAINST.
+    ///     <para>
+    ///         Internal rather than private so the fixture-baseline rule can be gated on it (B5) instead of
+    ///         restated as a comment. Reading it through this method rather than rebuilding the compile is
+    ///         what keeps the gate nearly free: the memo is process-wide, so the gate and the matrix share
+    ///         one compile per (endpoint, fixture, options) however the runner orders them.
+    ///     </para>
+    /// </summary>
+    internal static (string[] DwarfKeys, IReadOnlyDictionary<string, int> CompilerErrorCounts, string Generated)
         Baseline(Endpoint endpoint, string? probeKey, string? types, string? options)
     {
         var cacheKey = $"{endpoint}|{probeKey ?? "<flat>"}|{options ?? "<none>"}";

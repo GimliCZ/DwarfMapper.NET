@@ -175,6 +175,30 @@ public sealed class SurfaceObligationTests
         }
     }
 
+    /// <summary>
+    ///     Reaches <see cref="CorpusFor" />'s throwing default arm (B10). Every one of
+    ///     <c>SurfaceCategory</c>'s six members has an explicit arm, so the guard that makes
+    ///     <see cref="Every_category_carries_an_obligation" /> load-bearing at the option level was itself
+    ///     untested code: nothing proved it throws rather than, say, having been quietly turned into a
+    ///     default that returns the generator-test corpus.
+    ///     <para>
+    ///         An undefined enum value is the only input that reaches it, and casting one is legal C#. The
+    ///         message is asserted too, not just the throw: the arm's value is that it TELLS the next person
+    ///         what to add, and a fail-fast whose message decayed to "unexpected value" would send them
+    ///         hunting for the corpus list this arm exists to point at.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void CorpusFor_refuses_a_category_it_cannot_resolve()
+    {
+        var unknown = (SurfaceCategory)9999;
+        Assert.DoesNotContain(unknown, Enum.GetValues<SurfaceCategory>());
+
+        var ex = Assert.Throws<InvalidOperationException>(() => CorpusFor(unknown));
+        Assert.Contains("no option-level obligation", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Add an arm", ex.Message, StringComparison.Ordinal);
+    }
+
     // ── The obligations, one per category ───────────────────────────────────────────────────────────
 
     public static TheoryData<string> ConsumerDirectives() => Of(SurfaceCategory.ConsumerDirective);

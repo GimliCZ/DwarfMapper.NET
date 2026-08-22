@@ -1020,12 +1020,79 @@ public sealed class SurfaceParityTests
                 $"{id} states no reason. The reason is the whole difference between a recorded defect and an "
                 + "exemption: it must say what a caller who wrote this reasonably expects.");
 
-            Assert.True(divergence.Section.StartsWith("Issues/", StringComparison.Ordinal)
-                        && divergence.Section.Contains('#', StringComparison.Ordinal),
-                $"{id} does not link to a section of the findings write-up ('{divergence.Section}'). The "
-                + "reason field states what a caller expects; the write-up carries the evidence, and a "
-                + "record with nowhere to read the evidence is an assertion.");
+            AssertEvidenceLinkResolves(id, divergence.Section);
         }
+    }
+
+    /// <summary>
+    ///     The evidence link must RESOLVE — file and anchor — not merely look like a link (B13).
+    ///     <para>
+    ///         The predecessor asserted <c>StartsWith("Issues/")</c> and <c>Contains('#')</c>, which is
+    ///         satisfied by <c>Issues/#</c>. Every one of these entries is a defect record whose whole
+    ///         warrant is "the evidence is written up over there"; a link that no longer lands is that
+    ///         warrant silently withdrawn, and renaming a findings document or re-titling one of its
+    ///         sections is exactly the ordinary edit that does it. All 26 anchors resolved when this went
+    ///         in, so it is a latent hole being closed rather than a break being found.
+    ///     </para>
+    ///     <para>
+    ///         Anchors are matched as an explicit <c>&lt;a id="…"&gt;</c>, which is the form these documents
+    ///         use throughout, OR as a GitHub heading slug — lower-cased, non-alphanumerics dropped, spaces
+    ///         hyphenated — so a link written the ordinary markdown way is accepted too rather than forcing
+    ///         the explicit-anchor convention on a future document.
+    ///     </para>
+    /// </summary>
+    private static void AssertEvidenceLinkResolves(string id, string section)
+    {
+        var hash = section.IndexOf('#', StringComparison.Ordinal);
+        Assert.True(section.StartsWith("Issues/", StringComparison.Ordinal) && hash > "Issues/".Length,
+            $"{id} does not link to a section of the findings write-up ('{section}'). The reason field "
+            + "states what a caller expects; the write-up carries the evidence, and a record with nowhere "
+            + "to read the evidence is an assertion.");
+
+        var relative = section[..hash];
+        var anchor = section[(hash + 1)..];
+        Assert.False(string.IsNullOrWhiteSpace(anchor), $"{id}'s evidence link '{section}' names no anchor.");
+
+        var path = Path.Combine(RepoPaths.Root, relative.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(path),
+            $"{id}'s evidence link points at '{relative}', which does not exist. The write-up was moved or "
+            + "renamed and the record now cites nothing.");
+
+        var text = File.ReadAllText(path);
+        var resolved = text.Contains($"<a id=\"{anchor}\"", StringComparison.Ordinal)
+                       || HeadingSlugs(text).Contains(anchor);
+
+        Assert.True(resolved,
+            $"{id}'s evidence link '{section}' names an anchor that '{relative}' does not define. Neither "
+            + $"an <a id=\"{anchor}\"> nor a heading slugging to '{anchor}' is in the file, so the link "
+            + "lands at the top of the document and the reader has to hunt for the evidence the record "
+            + "claims is written up.");
+    }
+
+    /// <summary>
+    ///     GitHub's heading-to-anchor rule: drop all but word characters, spaces and hyphens, then hyphenate
+    ///     the spaces. The real rule also lower-cases; the set is held under
+    ///     <see cref="StringComparer.OrdinalIgnoreCase" /> instead, which answers the same question without
+    ///     a culture-lowering call (CA1308) and costs only the ability to distinguish two headings that
+    ///     differ in case alone — a distinction GitHub itself does not make either.
+    /// </summary>
+    private static HashSet<string> HeadingSlugs(string markdown)
+    {
+        var slugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in markdown.Split('\n'))
+        {
+            var trimmed = line.TrimStart();
+            if (!trimmed.StartsWith('#')) continue;
+
+            var title = trimmed.TrimStart('#').Trim();
+            var slug = new string(title
+                .Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or ' ' or '_')
+                .Select(ch => ch == ' ' ? '-' : ch)
+                .ToArray());
+            if (slug.Length > 0) slugs.Add(slug);
+        }
+
+        return slugs;
     }
 
     /// <summary>Every cell, classified once, for the ratchets that count a whole population.</summary>

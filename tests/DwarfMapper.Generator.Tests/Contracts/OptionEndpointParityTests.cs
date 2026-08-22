@@ -149,6 +149,42 @@ public class OptionEndpointParityTests
         }
     }
 
+    /// <summary>
+    ///     No cell may be excused twice (B12). <c>DeclaredDivergences.Reasons</c> says "it should apply here
+    ///     and does not"; <c>StructurallyInapplicable</c> says "there is nothing here it could apply to".
+    ///     They are opposite claims, and a cell making both is counted against two separate ratchets — so
+    ///     deleting either row leaves it still excused, and closing the divergence for real lowers two
+    ///     ceilings by one apiece for one fix.
+    ///     <para>
+    ///         Disjoint today and not by luck: the option matrix renders a structural cell as
+    ///         <c>n/a (no such surface)</c> BEFORE it probes, so such a cell can never read
+    ///         <c>**SILENT**</c>, which is the only reading a <c>Reasons</c> entry is written to excuse. The
+    ///         overlap therefore arrives as a quiet contradiction rather than as a failure — an entry
+    ///         excusing a silence that structurally cannot occur — which is exactly the shape that survives
+    ///         review. Stated as an assertion so it cannot be created by accident, and so creating it on
+    ///         purpose is a deliberate edit here with the reasoning attached.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void No_option_cell_is_both_a_declared_divergence_and_structurally_inapplicable()
+    {
+        var structural = DeclaredDivergences.StructurallyInapplicable.Keys.ToHashSet();
+
+        var both = DeclaredDivergences.DeclaredOptionCells
+            .Where(structural.Contains)
+            .Select(cell => $"{cell.Option} @ {cell.Endpoint}")
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(both.Count == 0,
+            "Option cell(s) claimed by BOTH DeclaredDivergences.Reasons and StructurallyInapplicable:\n  "
+            + string.Join("\n  ", both)
+            + "\n\nThe two stores make opposite claims — 'the option should apply here and is discarded' "
+            + "versus 'this endpoint has no surface the option could configure' — and a cell in both is "
+            + "counted against two ratchets, so neither row is load-bearing and one fix would lower two "
+            + "ceilings. Decide which claim is true and delete the other.");
+    }
+
     [Theory]
     [InlineData(Endpoint.SpanMap)]
     [InlineData(Endpoint.AsyncStream)]

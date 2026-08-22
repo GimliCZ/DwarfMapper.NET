@@ -53,6 +53,23 @@ internal static class GeneratedSourceExtensions
     ///         A <c>null</c> tree — an attribute with no syntax reference — is treated as generator-authored,
     ///         because it cannot have been written in this compilation's source at all: it came from metadata.
     ///     </para>
+    ///     <para>
+    ///         <b>The collision case, stated rather than left to be rediscovered (B14).</b> The suffix is not
+    ///         exclusive to THIS generator: any other source generator in the consumer's compilation that
+    ///         emits under a <c>*<see cref="GeneratedFileSuffix" /></c> hint name, and any <c>.g.cs</c> file a
+    ///         consumer checks in by hand, produces a tree this predicate calls generator-authored. A manifest
+    ///         attribute written there is therefore exempted from <c>DWARF086</c> and the refusal never fires.
+    ///     </para>
+    ///     <para>
+    ///         That is accepted, and the direction is why: the failure is PERMISSIVE-ONLY. The collision can
+    ///         only ever WITHHOLD a diagnostic from source that would otherwise have been refused — it can
+    ///         never redden a consumer build that should have been green, and it cannot make the generator
+    ///         emit anything different. Tightening it would mean asking Roslyn which generator produced a
+    ///         tree, which the <c>SyntaxTree</c> a <c>SyntaxReference</c> hands back does not carry; the
+    ///         alternative discriminators were examined and are worse (see the path-emptiness paragraph
+    ///         above). Recorded here, at the method that decides it, because an undocumented false negative
+    ///         is indistinguishable from an oversight to whoever reads this next.
+    ///     </para>
     /// </remarks>
     public static bool IsGeneratorAuthored(SyntaxTree? tree)
     {

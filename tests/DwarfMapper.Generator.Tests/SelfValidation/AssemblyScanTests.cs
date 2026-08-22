@@ -430,6 +430,31 @@ public sealed class AssemblyScanTests
     // paperwork instead of with the tests. Both files are excluded here. Re-measured when the exclusion went
     // in: all 84 live ids still appear in at least one other test file (min 1, median 2), so the scan still
     // passes, now for a reason. No allowlist entry was needed and DiagnosticTestAllowlist stays empty.
+    /// <summary>
+    ///     "This list must only SHRINK" was prose on two id stores and a gate on neither (B8), so appending
+    ///     an id instead of writing the test — or instead of writing the CHANGELOG entry — was a one-line
+    ///     edit nothing failed on.
+    ///     <para>
+    ///         One guard covered both stores when the row was filed. The second, <c>PredatesTheChangelog</c>,
+    ///         shrank to empty and was DELETED on 2026-08-21 by task D-e (see the banner above), so the
+    ///         obligation now has one store to hold — and it holds it as an EXACT PIN at zero, not as a
+    ///         shrink-only ratchet. A tolerance band over a population of zero passes every value it could
+    ///         ever take; below eleven the house rule is exactness, which is why
+    ///         <c>SurfaceParityTests.AssertRatchet</c> refuses a ceiling of ten or less outright.
+    ///     </para>
+    ///     <para>
+    ///         Deliberately NOT phrased as "the count did not grow": the whole point is that
+    ///         <see cref="Scan3_Every_diagnostic_id_has_a_test_reference" /> subtracts this set from its
+    ///         corpus, so every id put here is an id nothing tests. Zero is the only honest value, and
+    ///         raising it has to be a visible edit to this assertion with its justification beside it.
+    ///     </para>
+    /// </summary>
+    [Fact]
+    public void Scan3s_allowlist_is_exactly_empty_and_may_not_grow()
+    {
+        Assert.Empty(DiagnosticTestAllowlist.Ids);
+    }
+
     [Fact]
     public void Scan3_Every_diagnostic_id_has_a_test_reference()
     {
