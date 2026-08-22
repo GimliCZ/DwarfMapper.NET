@@ -773,3 +773,141 @@ jobs:
       # still LOADS and EMITS under the next major, and the matrix has its own job.
       # --blame-hang: the H7-f backstop, same rationale as in build-test.
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
+
+  # ── Benchmark wall-time regression: ALERT-ONLY, NEVER A GATE (round-23 S2) ────────────────────────────
+  # Tracks the smoke run's MEAN TIMES across nightly runs and surfaces a regression. It must never fail a
+  # build, and the reason is not squeamishness — it is invariant R4. Wall-clock on a shared runner is a
+  # nondeterministic oracle, and this repository's own measurements say so twice over:
+  #
+  #   * the Dict-vs-Mapperly throughput figure is PLATFORM-DEPENDENT — 2.13x on Windows, ~1.14x on Linux
+  #     for the same benchmark (benchmarks/results/2026-08-11-dict-windows-rerun.md). The numbers this leg
+  #     collects are LINUX numbers and must NEVER be quoted as the Windows figures, in the README, in a
+  #     release note, or anywhere else. The 3.29x ALLOCATION lead is the platform-independent claim.
+  #   * the smoke is a ShortRun (1 launch, 3 warmup, 3 measured iterations — SmokeConfig in
+  #     benchmarks/DwarfMapper.Benchmarks/Program.cs), chosen because the ONLY numbers the deep tier gates
+  #     on are MemoryDiagnoser's allocated bytes, which are deterministic per SDK. Its timing column is
+  #     noisy by construction. Round-21 T8 already gates the deterministic half EXACTLY
+  #     (allocation-baseline.json, byte-for-byte, both directions).
+  #
+  # So the deterministic half is exactly pinned and the nondeterministic half is observed. That is the
+  # whole design, and no part of it may migrate into a per-PR gate.
+  #
+  # HOW "ALERT WITHOUT FAILING" IS WIRED, because the obvious spelling does not work. Reading
+  # github-action-benchmark v1.22.1's own dist: handleAlert() returns EARLY when both `comment-on-alert`
+  # and `fail-on-alert` are false, so with neither set the `alert-threshold` input is dead decoration and
+  # nothing compares anything. `comment-on-alert` needs a github-token and `contents: write` — an
+  # automated repo write this workflow deliberately does not take. So: `fail-on-alert: true`, which makes
+  # the threshold real, with `continue-on-error: true` ON THE STEP, which keeps the JOB and the workflow
+  # GREEN while the alert table lands in the log as an ignored step failure plus a job summary. Verified
+  # from the same source that the data file is written and the summary emitted BEFORE the alert throws
+  # (writeBenchmark() calls writeBenchmarkToExternalJson -> handleSummary -> handleAlert), so a regression
+  # does not freeze the baseline: the next night still compares against last night.
+  #
+  # The cost of that trick, stated rather than hidden: `continue-on-error` also swallows a genuine action
+  # error (a parse break, an upstream change). That is why the step BEFORE it is a plain deterministic
+  # check of the input file which DOES fail the job — absence and malformation are not nondeterministic
+  # measurements, and "the alert leg could not find its subject" must not read as "no regression".
+  # conformance-gate.sh fails on absence for exactly this reason.
+  #
+  # STORAGE: `external-data-json-path` + actions/cache, the action's own documented tokenless mode. NOT
+  # `auto-push` to gh-pages — an automated push is the one thing this repository does not do. The cache
+  # key rotates per run with a prefix restore-key, because a fixed key is never re-saved by actions/cache
+  # and the history would freeze at the first run. GitHub evicts cache entries unused for 7 days, so a
+  # week-long gap in the nightly loses the baseline; the action then reports no previous benchmark and
+  # alerts nothing, which is visible in the log and is the honest behaviour.
+  #
+  # THIRD-PARTY ACTION, maintenance status recorded per the pinning rule: benchmark-action/github-action-
+  # benchmark, tag v1.22.1 = 52576c92bccf6ac60c8223ec7eb2565637cae9ba, dated 2026-05-06 — the newest tag
+  # at the time of writing, ~3.5 months old, actively released. It is the only third-party action in this
+  # workflow that is not from actions/ or github/, and it runs with `permissions: contents: read` and no
+  # token, so its blast radius is the runner and the cache.
+  #
+  # It consumes deep-test's EXISTING `bench-smoke-results` artifact rather than re-running the suite: the
+  # smoke already costs ~6:40 nightly and running it twice to alert on it would be absurd. `needs:
+  # deep-test` (plain, not `always()`) is deliberate — if deep-test failed, the nightly is already red and
+  # this leg's input is untrustworthy; making the alert conditional on a successful producer keeps a red
+  # here meaning "the artifact contract broke".
+  bench-wall-time-alert:
+    runs-on: ubuntu-latest
+    needs: deep-test
+    # Redundant with the needs-skip above (a skipped dependency skips its dependents) and kept for the
+    # reader: this is a nightly leg, exactly like the job it consumes.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ESTIMATE, not a measurement — never run. An artifact download of a few hundred KB plus a node action
+    # is ~1-2 min; 10 leaves room for a slow download without letting the leg idle.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: bench-smoke-results
+          path: bench-results
+      # Deterministic input check, and it DOES fail the job. Absence is not a measurement: a missing or
+      # unparseable report would otherwise sail past the alert step's continue-on-error and leave a green
+      # check that proved nothing — "skipped" indistinguishable from "no regression".
+      - name: Assert the smoke report is present and parseable
+        run: |
+          set -euo pipefail
+          report=bench-results/MapperBenchmarks-report-full.json
+          if [ ! -f "$report" ]; then
+            echo "::error::$report is missing from the bench-smoke-results artifact. deep-test uploads" \
+                 "BenchmarkDotNet.Artifacts/results/ after the smoke; either the exporter, the file name" \
+                 "or the upload path moved. Listing what did arrive:" >&2
+            ls -la bench-results >&2 || true
+            exit 1
+          fi
+          python3 - "$report" <<'PYEOF'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as fh:
+              report = json.load(fh)
+          benches = report.get("Benchmarks") or []
+          # The adapter reads FullName and Statistics.Mean off every entry. A report with none of those is
+          # a report the alert step would silently turn into an empty suite.
+          usable = [b for b in benches
+                    if b.get("FullName") and isinstance((b.get("Statistics") or {}).get("Mean"), (int, float))]
+          if not usable:
+              print(f"::error::{sys.argv[1]} carries {len(benches)} benchmark(s) and none has both a "
+                    f"FullName and a numeric Statistics.Mean - github-action-benchmark's benchmarkdotnet "
+                    f"adapter reads exactly those two fields, so the alert would compare an empty suite.")
+              sys.exit(1)
+          print(f"{len(usable)}/{len(benches)} benchmarks carry FullName + Statistics.Mean.")
+          PYEOF
+      # Restores the newest previous history file and saves a fresh entry in the post step. The rotating
+      # key is load-bearing: actions/cache never overwrites an existing key, so the documented
+      # fixed-key recipe would pin the baseline to the first night forever.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: bench-history
+          key: bench-wall-time-${{ github.run_id }}
+          restore-keys: |
+            bench-wall-time-
+      - run: mkdir -p bench-history
+      # ALERT ONLY. See the wiring note above for why fail-on-alert is TRUE here and why that does not
+      # make this a gate. Under no circumstances remove `continue-on-error` from this step: that single
+      # line is what keeps a nondeterministic wall-clock measurement out of the build's verdict (R4).
+      - name: Compare against the previous nightly and alert on a regression
+        continue-on-error: true
+        uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
+        with:
+          name: DwarfMapper smoke (ShortRun, ubuntu — LINUX numbers, see the job comment)
+          tool: benchmarkdotnet
+          output-file-path: bench-results/MapperBenchmarks-report-full.json
+          external-data-json-path: bench-history/benchmark-data.json
+          save-data-file: true
+          # 150%: a mean 1.5x worse than the previous night. Generous on purpose — a ShortRun mean on a
+          # shared 4-core runner moves far more than a tuned run would, and a threshold tight enough to
+          # catch a 10% regression here would alert on scheduler noise every other night.
+          alert-threshold: '150%'
+          fail-on-alert: true
+          # No github-token anywhere in this job: both of these need one, and both would write to the
+          # repository. The job summary carries the comparison table instead.
+          comment-always: false
+          comment-on-alert: false
+          summary-always: true
+      # The history file is the baseline every future night compares against, and the cache can evict it.
+      # Keeping a copy per run makes a lost baseline diagnosable instead of merely puzzling.
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bench-wall-time-history
+          path: bench-history/benchmark-data.json
