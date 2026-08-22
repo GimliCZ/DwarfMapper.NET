@@ -121,6 +121,9 @@ public class RepoWriteGuardTests
                 (1, "InTempFile helper: the B23 doc-XML fixture, temp directory only"),
             ["DwarfMapper.Generator.Tests/SelfValidation/GateBandLogicTests.cs"] =
                 (1, "WriteTemp helper: fake Stryker reports + the pwsh battery script, temp directory only"),
+            ["DwarfMapper.Generator.Tests/SelfValidation/MutationDecontaminationSweepTests.cs"] =
+                (1, "WriteTemp helper: the I4 sweep's fake repo trees + the pwsh battery script, temp "
+                    + "directory only"),
             ["DwarfMapper.Generator.Tests/SelfValidation/GeneratedDocsAreCurrentTests.cs"] =
                 (1, "HasGitMarker probe writing a fake .git file into a temp directory"),
             ["DwarfMapper.Generator.Tests/SelfValidation/RepoWriteGuardTests.cs"] =

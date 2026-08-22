@@ -291,6 +291,17 @@ jobs:
       # this step makes that contract a checked CI invariant for every leg instead of a ledger sentence.
       - name: Assert the tracked tree survived the leg
         run: git diff --exit-code
+      # ...and the UNTRACKED half of the same contract (I4). bin/ is git-ignored, so the step above is
+      # blind to the mutated DwarfMapper.Generator.dll copies Stryker plants in analyzer-referencing test
+      # bins — it backs up only files it OVERWRITES, and those bins hold no pre-run copy (analyzer-only
+      # reference, no CopyLocal), so no *.stryker-unchanged marker is written and restore never touches
+      # them. The next incremental build keeps the mutant. Runs the SAME function housekeeping's three
+      # legs call, dot-sourced rather than re-implemented, so the two cannot drift.
+      - name: Assert no mutated product binary survived the leg
+        shell: pwsh
+        run: |
+          . ./scripts/gate-checks.ps1
+          Assert-NoMutatedProductBinaries -Leg '${{ matrix.leg }}' -Root (Get-Location).Path
       # Kept on failure too: when the score drops, the report names which mutants changed status, which is the
       # only thing that distinguishes a real regression from a re-classification.
       - if: always()

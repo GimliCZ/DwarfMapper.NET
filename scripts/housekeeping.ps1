@@ -466,6 +466,7 @@ try {
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
+        Assert-NoMutatedProductBinaries -Leg 'generator' -Root $root
 
         # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
         # this leg the doc tests are trusted on the strength of being green — the evidence a vacuous test
@@ -477,6 +478,7 @@ try {
         Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
+        Assert-NoMutatedProductBinaries -Leg 'doc tooling' -Root $root
 
         # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
         # facade and the exception types have no derivable case-space — no AttributeUsage to decompose, no
@@ -489,6 +491,7 @@ try {
         Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
+        Assert-NoMutatedProductBinaries -Leg 'runtime' -Root $root
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green
