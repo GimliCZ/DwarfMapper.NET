@@ -538,9 +538,12 @@ jobs:
   # -p:EnablePackageValidation=false, with the reason: ApiCompat package validation is a SEPARATE existing
   # gate that runs AfterTargets="Pack", it downloads the 1.0.2-rc.1 baseline from nuget.org (an external
   # input a reproducibility leg should not depend on), and its red would mean "the API changed", not "the
-  # bytes moved" — the two must not be able to masquerade as each other. It is ALSO broken today: see
-  # I15 in Issues/round20/TASKS.md, where `dotnet pack` exits 1 on an intentional, already-written
-  # suppression the SDK never reads. Turning it off here neither hides nor fixes that; I15 records it.
+  # bytes moved" — the two must not be able to masquerade as each other. Those two reasons stand on their
+  # own and are why the flag stays. What is NO LONGER a reason: validation was also BROKEN when this job
+  # was written (I15 — `dotnet pack` exited 1 on an intentional suppression wired through a property the
+  # SDK never reads). I15 is fixed as of round 23 and `dotnet pack` is green on both packages, so this
+  # flag now hides nothing. Running validation somewhere nightly — rather than only at a version tag in
+  # release.yml — remains open; see I15's DONE row for why it was not folded into this job.
   reproducible-build:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
@@ -608,7 +611,9 @@ jobs:
   # cost of that choice is one extra nightly runner and one extra pack (~5 min estimated).
   #
   # -p:EnablePackageValidation=false for the same reasons spelled out on the reproducible-build job:
-  # validation is a separate gate with an external nuget.org input, and it is broken today (I15).
+  # validation is a separate gate with an external nuget.org input, and one job cannot report two
+  # verdicts. (It was ALSO broken when this job was written; I15 fixed that in round 23, so the flag no
+  # longer masks anything.)
   package-size:
     runs-on: ubuntu-latest
     # Nightly cron and manual dispatch only — never on push or pull_request.
