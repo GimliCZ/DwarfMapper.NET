@@ -109,11 +109,18 @@ public class ProjectionScopedRefusalTests
 
     /// <summary>
     ///     The two signposts must never contradict each other. A projection that refuses CLEANLY (only
-    ///     DWARF028) sits beside a Map method with an unmapped member: the projection's refusal is scoped, so
-    ///     DWARF096 would be added — and then the Map method's DWARF001 suppresses the class anyway and
-    ///     DWARF078 says nothing was generated. Both reported, one of them lying. DWARF096 exists solely to
-    ///     describe the SCOPE of the damage, so it stands down when the scope is no longer what it claims and
-    ///     lets the class-wide signpost speak. The errors underneath are unaffected.
+    ///     DWARF028) sits beside a Map method carrying a CLASS-level error: the projection's refusal is
+    ///     scoped, so DWARF096 would be added — and then the class is suppressed anyway and DWARF078 says
+    ///     nothing was generated. Both reported, one of them lying. DWARF096 exists solely to describe the
+    ///     SCOPE of the damage, so it stands down when the scope is no longer what it claims and lets the
+    ///     class-wide signpost speak. The errors underneath are unaffected.
+    ///     <para>
+    ///         <b>The fixture changed at I17 and the reason is the point.</b> It used to reach the
+    ///         whole-class kill through a <c>DWARF001</c> on the sibling <c>Map</c> method — which no longer
+    ///         kills the class, because completeness is now per-method too. The killer has to be an error
+    ///         that really is class-level, so it is a <c>DWARF010</c> ambiguity. That the old fixture stopped
+    ///         working is the I17 ruling being enforced, not this test decaying.
+    ///     </para>
     /// </summary>
     [Fact]
     public void The_scoped_signpost_stands_down_when_a_class_level_error_kills_everything_anyway()
@@ -126,13 +133,13 @@ public class ProjectionScopedRefusalTests
 
             public sealed class Src { public List<int> Tags { get; set; } = new(); }
             public sealed class Dst { public HashSet<int> Tags { get; set; } = new(); }
-            public sealed class Other { public int X { get; set; } }
-            public sealed class OtherDto { public int X { get; set; } public int Missing { get; set; } }
+            public sealed class Other { public int x { get; set; } public int X { get; set; } }
+            public sealed class OtherDto { public int X { get; set; } }
 
-            [DwarfMapper]
+            [DwarfMapper(CaseInsensitive = true)]
             public partial class MixedFailureMapper
             {
-                public partial OtherDto MapIncomplete(Other o);
+                public partial OtherDto MapAmbiguous(Other o);
                 public partial IQueryable<Dst> Project(IQueryable<Src> q);
             }
             """;
@@ -140,7 +147,7 @@ public class ProjectionScopedRefusalTests
         var (diagnostics, generated) = GeneratorTestHarness.Run(code);
 
         // Both errors still reported — suppressing the signpost must not suppress the diagnosis.
-        Assert.Contains(diagnostics, d => d.Id == "DWARF001");
+        Assert.Contains(diagnostics, d => d.Id == "DWARF010");
         Assert.Contains(diagnostics, d => d.Id == "DWARF028");
 
         // The accurate signpost speaks; the one whose claim has become false does not.

@@ -172,4 +172,14 @@ public sealed record MapMethodModel(
     /// (<see cref="ConstructorArguments"/> is empty; <c>init</c>/<c>required</c>/get-only members are the
     /// factory's responsibility).
     /// </summary>
-    string? FactoryMethod = null) : IEquatable<MapMethodModel>;
+    string? FactoryMethod = null,
+    /// <summary>
+    /// When <c>true</c>, this method was RESOLVED but must not be EMITTED: its own completeness gate
+    /// refused it (<c>DWARF001</c>), and I17 confines that refusal to the method rather than killing the
+    /// mapper. The model is still built and still sits in <see cref="MapperClassModel.Methods" />, because
+    /// every class-level analysis downstream — the DWARF060 same-source collision pass, <c>[RestatesBase]</c>
+    /// drift, recursion capability, the location table keyed by index into that list — asks what the mapper
+    /// DECLARES, and a declaration is not un-made by failing to compile. Only the six emission and
+    /// aggregation sites skip it, so the single thing that changes is what reaches the consumer's file.
+    /// </summary>
+    bool Withheld = false) : IEquatable<MapMethodModel>;

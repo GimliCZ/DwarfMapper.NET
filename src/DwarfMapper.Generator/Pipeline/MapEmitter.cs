@@ -36,7 +36,12 @@ internal static class MapEmitter
         sb.Append(model.Accessibility).Append(" partial class ").AppendLine(model.ClassName);
         sb.AppendLine("{");
 
-        foreach (var method in model.Methods) EmitMethod(sb, method, "    ");
+        // I17: a method whose own completeness gate refused it (DWARF001) is recorded in the model but
+        // never written. Half a mapping method is silently wrong data — worse than the CS8795 the
+        // missing implementing part produces, which DWARF097 signposts.
+        foreach (var method in model.Methods)
+            if (!method.Withheld)
+                EmitMethod(sb, method, "    ");
 
         foreach (var synth in model.SynthesizedMethods)
         {

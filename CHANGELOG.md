@@ -15,6 +15,25 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **One incomplete mapping method took every other method on the mapper down with it.** A destination member
+  with no source is `DWARF001`, an Error, and an error suppressed the whole class — so a mapper declaring a
+  complete `MapGood` beside an incomplete `MapBad` generated **nothing**, and the consumer got one real error
+  plus a `CS8795` for every *other* partial method on the class, each pointing at code they had not broken.
+  Completeness is a promise about ONE method: it is evaluated over that method's `(source, target)` pair and
+  honours that method's own `[MapIgnore]` set — which is why `DWARF001`'s own text tells you to annotate *the
+  method*. Its unit of evaluation and its unit of remedy are both the method, so the refusal is now confined
+  to it: the incomplete method is withheld, everything else on the mapper is generated, and the one `CS8795`
+  that follows is signposted by the new `DWARF097`. **The build still fails** — `DWARF001` is unchanged and
+  still an Error — so no mapping that compiled before compiles differently now; what changes is that the
+  errors point only at what is actually wrong. This reaches the create map, the update-into map and the
+  `[GenerateMap]` pair (where it is starkest: the pair has no partial declaration of its own, so every
+  `CS8795` a whole-class kill produced there landed on somebody else's method). Two shapes deliberately keep
+  the whole-class kill: a method that raises `DWARF001` *and* a class-level error such as `DWARF010`, and an
+  incomplete **synthesized** pair — a nested or element pair is mapped through a helper shared by every route
+  that reaches it, so its incompleteness is true of each of them and pinning it on one method would be wrong.
+  That last one is why an incomplete element pair behind a span map or an async-stream map still reports
+  `DWARF078`. (round 23, I17)
+
 - **`Project` ignored `NullCollections`, so a null source collection came back EMPTY through `Map` and
   `null` through `Project`.** The option is documented once, for the mapper, with no endpoint qualifier —
   *"Null source collection → `AsEmpty` (never throws)"* — and the projection pipeline never read it: it
@@ -450,6 +469,17 @@ so a version with no section here ships with no notes.
   auto-nested while every sibling path honoured the setting. (ISSUE-043)
 
 ### Added
+
+- **`DWARF097` — the per-method twin of `DWARF078` for the `Map` endpoints (Warning).** Reported when one
+  mapping method was not generated because a destination member of it has no source, and the rest of the
+  mapper was. `DWARF078` says *"no code was generated for this mapper"*, which used to be true of a
+  completeness failure and is not any more: the class is emitted, every other method with it, and exactly one
+  `CS8795` follows on the withheld method. That single `CS8795` needs the same signpost the class-wide wall
+  has always had — it is a cascade, not a missing analyzer reference — and it needs different remedy text from
+  `DWARF096`, which can suggest dropping the `Project` method and mapping at runtime: nonsense advice for a
+  `Map` method whose destination simply has a member nobody mapped. Suppressible like any warning; it never
+  appears beside `DWARF078`, because when a class-level error takes the class down anyway the scoped signpost
+  stands down rather than claim a scope that is no longer true. (round 23, I17)
 
 - **`DWARF096` — the per-method twin of `DWARF078` (Warning).** Reported when one `Project` method was not
   generated because a member of it cannot be translated, and the rest of the mapper was. `DWARF078` says

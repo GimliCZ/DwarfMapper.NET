@@ -321,7 +321,7 @@ public sealed class DwarfGenerator : IIncrementalGenerator
         foreach (var model in models)
         foreach (var method in model.Methods)
         {
-            if (method.IsPartial || !GeneratedNames.IsObjectMap(method.MethodName)) continue;
+            if (method.Withheld || method.IsPartial || !GeneratedNames.IsObjectMap(method.MethodName)) continue;
 
             if (!byName.TryGetValue(method.MethodName, out var variants))
             {
@@ -437,19 +437,24 @@ public sealed class DwarfGenerator : IIncrementalGenerator
 
     private static void Execute(SourceProductionContext spc, MapperClassModel model)
     {
-        // DWARF096 says "the rest of this mapper WAS generated", and when a CLASS-level error is also
-        // present that is false: DWARF078 is about to say nothing was. Both would be reported, and one of
-        // them would be lying to the reader. Reachable without contriving — a refused-clean projection
-        // beside a Map method with an unmapped member is enough — so the scoped signpost stands down and
-        // lets the class-wide one speak. The DWARF028 underneath it is still reported either way; only the
-        // signpost, which exists solely to describe the SCOPE of the damage, is suppressed when the scope
-        // is no longer what it claims.
+        // DWARF096 and DWARF097 say "the rest of this mapper WAS generated", and when a CLASS-level error
+        // is also present that is false: DWARF078 is about to say nothing was. Both would be reported, and
+        // one of them would be lying to the reader. Reachable without contriving — a refused-clean
+        // projection beside a Map method with an ambiguous member is enough — so a scoped signpost stands
+        // down and lets the class-wide one speak. The error underneath it is still reported either way;
+        // only the signpost, which exists solely to describe the SCOPE of the damage, is suppressed when
+        // the scope is no longer what it claims.
+        //
+        // Both ids, and the list is the whole guard: DWARF097 (I17) arrived after this check was written
+        // for DWARF096 alone, and a per-method signpost added without being named here would repeat, word
+        // for word, the defect the check exists to prevent.
         var suppressScopedSignpost = model.HasBlockingError;
 
         foreach (var diagnostic in model.Diagnostics)
         {
             if (suppressScopedSignpost
-                && ReferenceEquals(diagnostic.Descriptor, DiagnosticDescriptors.ProjectionMethodNotGenerated))
+                && (ReferenceEquals(diagnostic.Descriptor, DiagnosticDescriptors.ProjectionMethodNotGenerated)
+                    || ReferenceEquals(diagnostic.Descriptor, DiagnosticDescriptors.MappingMethodNotGenerated)))
                 continue;
 
             spc.ReportDiagnostic(diagnostic.ToDiagnostic());

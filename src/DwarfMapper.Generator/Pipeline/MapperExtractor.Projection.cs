@@ -45,12 +45,13 @@ internal static partial class MapperExtractor
     ///         refused.
     ///     </para>
     ///     <para>
-    ///         Only DWARF028 is scoped, and only when it is the <em>sole</em> kind of error this method
-    ///         raised. Every other error a projection method can collect — an ambiguous member name
-    ///         (DWARF010), an unknown destination (DWARF008), a duplicate <c>[MapProperty]</c> — describes
-    ///         the SOURCE MODEL, is equally true of the <c>Map</c> methods over the same pair, and keeps the
-    ///         whole-class suppression it has always had. "Untranslatable" is the one error that is a
-    ///         property of the endpoint rather than of the mapping.
+    ///         Two errors are scopable here, and only when EVERY error this method raised is one of them:
+    ///         DWARF028 (untranslatable — a property of the endpoint, not of the mapping) and, since I17,
+    ///         DWARF001 (an unmapped destination member — a property of THIS method's pair and THIS
+    ///         method's <c>[MapIgnore]</c> set). Every other error a projection method can collect — an
+    ///         ambiguous member name (DWARF010), an unknown destination (DWARF008), a duplicate
+    ///         <c>[MapProperty]</c> — describes the SOURCE MODEL, is equally true of the <c>Map</c> methods
+    ///         over the same pair, and keeps the whole-class suppression it has always had.
     ///     </para>
     ///     <para>
     ///         The method is dropped either way. A projection whose members did not all resolve has no
@@ -61,31 +62,17 @@ internal static partial class MapperExtractor
     private static bool TryScopeProjectionRefusalToItsMethod(
         List<DiagnosticInfo> diagnostics, int start, string methodName, LocationInfo? location)
     {
-        var sawError = false;
-        var allAreTranslatability = true;
-
-        for (var i = start; i < diagnostics.Count; i++)
-        {
-            var d = diagnostics[i];
-            if (!d.IsError) continue;
-            sawError = true;
-            if (!ReferenceEquals(d.Descriptor, DiagnosticDescriptors.ProjectionNotTranslatable))
-                allAreTranslatability = false;
-        }
-
-        if (!sawError) return false;
-        if (!allAreTranslatability) return true; // dropped, but the class still dies on the other error
-
-        for (var i = start; i < diagnostics.Count; i++)
-            if (diagnostics[i].IsError)
-                diagnostics[i] = diagnostics[i] with { ScopedToMethod = true };
-
-        // The per-method twin of DWARF078, at the method's own location: exactly one CS8795 follows, and it
-        // needs the same "this is a cascade, not a missing analyzer reference" signpost the class-wide wall
-        // has always had.
-        diagnostics.Add(new DiagnosticInfo(
-            DiagnosticDescriptors.ProjectionMethodNotGenerated, location, methodName));
-        return true;
+        return TryScopeMethodRefusal(
+            diagnostics, start, methodName, location,
+            DiagnosticDescriptors.ProjectionMethodNotGenerated,
+            DiagnosticDescriptors.ProjectionNotTranslatable,
+            // I17: completeness is per METHOD at every endpoint, this one included. A projection resolves
+            // its own members (MapperExtractor.Projection emits UnmappedMember at two sites, both inside
+            // this method's diagnostic range), and its method-level [MapIgnore] set is its own — so a
+            // destination member this projection does not map says nothing about the Map methods beside it.
+            // Reading it as class-level here and per-method everywhere else would make the SAME error
+            // proportional at four endpoints and not at the fifth.
+            DiagnosticDescriptors.UnmappedMember);
     }
 
     private static bool IsQueryable(ITypeSymbol type, out ITypeSymbol element)

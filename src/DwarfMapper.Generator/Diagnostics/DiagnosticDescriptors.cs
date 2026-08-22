@@ -1423,7 +1423,7 @@ public static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor ProjectionMethodNotGenerated = new(
         "DWARF096",
         "Projection method was not generated",
-        "Projection method '{0}' was not generated because of the DWARF028 error(s) above; it will ALSO "
+        "Projection method '{0}' was not generated because of the error(s) above; it will ALSO "
         + "report CS8795 (\"must have an implementing part\") — that is a cascade of this, not a separate "
         + "problem, and it is not caused by a missing analyzer reference. The rest of this mapper WAS "
         + "generated: only this method is missing. Fix the error(s) above, or drop the Project method and "
@@ -1434,4 +1434,47 @@ public static class DiagnosticDescriptors
         + "on the same mapper are unaffected and are still generated. This warning marks the one method that "
         + "is missing so its CS8795 is not mistaken for a broken analyzer reference.",
         HelpBase + "dwarf096");
+
+    /// <summary>
+    ///     The per-METHOD twin of <see cref="NoCodeGenerated" /> (DWARF078) for the <c>Map</c> endpoints:
+    ///     one mapping method was not generated because a destination member of it is unmapped, and the
+    ///     rest of the mapper WAS.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         DWARF001 is an error, and an error used to suppress the whole class — so one incomplete
+    ///         method cost the consumer every OTHER method on the mapper, each reporting its own CS8795
+    ///         (TASKS.md I17). Those siblings were collateral: completeness is evaluated over one
+    ///         (source, target) pair and one method-level <c>[MapIgnore]</c> set, so an unmapped member on
+    ///         one method says nothing about the next. A refusal is now proportional to what was refused —
+    ///         the incomplete method is withheld, the class is emitted, and this signpost explains the ONE
+    ///         CS8795 that follows.
+    ///     </para>
+    ///     <para>
+    ///         Distinct from <see cref="ProjectionMethodNotGenerated" /> (DWARF096) rather than folded into
+    ///         it, because the two prescribe different remedies: DWARF096 can suggest dropping the
+    ///         <c>Project</c> method and mapping at runtime, which is nonsense advice for a <c>Map</c>
+    ///         method whose destination simply has a member nobody mapped.
+    ///     </para>
+    ///     <para>
+    ///         A <b>Warning</b>, exactly like DWARF078 and DWARF096, and for the same reason: it is a
+    ///         signpost, not the defect. The DWARF001 above it is the error, and it is the one to fix.
+    ///     </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MappingMethodNotGenerated = new(
+        "DWARF097",
+        "Mapping method was not generated",
+        "Mapping method '{0}' was not generated because of the completeness error(s) above; if it is "
+        + "declared with accessibility modifiers it will ALSO report CS8795 (\"must have an implementing "
+        + "part\") — that is a cascade of this, not a separate problem, and it is not caused by a missing "
+        + "analyzer reference. "
+        + "The rest of this mapper WAS generated: only this method is missing. Map the destination "
+        + "member(s) named above, or annotate this method with [MapIgnore(\"…\")].",
+        Category, DiagnosticSeverity.Warning, isEnabledByDefault: true,
+        "Completeness is a promise about ONE mapping method: it is evaluated over that method's source and "
+        + "target pair and honours that method's own [MapIgnore] set. An unmapped destination member "
+        + "therefore withholds the method it belongs to and leaves the mapper's other methods generated. "
+        + "This warning marks the one method that is missing so its CS8795 is not mistaken for a broken "
+        + "analyzer reference.",
+        HelpBase + "dwarf097");
 }

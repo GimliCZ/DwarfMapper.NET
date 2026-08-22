@@ -15,7 +15,7 @@
 //       UnscopedIgnoreNoMatchTests). Both shapes are in this file because the two statements name different
 //       scopes and both wordings are pinned below. A Warning like DWARF056: the mapper works, the directive
 //       does nothing.
-// EXPECT: DWARF095, DWARF001, DWARF078
+// EXPECT: DWARF095, DWARF001, DWARF097
 // EXPECT-MESSAGE DWARF095: [MapIgnore("Extar")] on 'Map' names no destination member of 'IgnDst'
 // EXPECT-MESSAGE DWARF095: excludes nothing (directive names match exactly, including case)
 // EXPECT-MESSAGE DWARF095: [MapIgnore("id")] on mapper 'ClassSiteMapper' names no destination member of any pair this mapper maps

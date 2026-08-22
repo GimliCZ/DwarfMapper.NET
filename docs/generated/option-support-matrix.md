@@ -26,7 +26,7 @@ neither has a mapper class to carry a class-level option.
 
 | Option | CreateMap | UpdateInto | Projection | SpanMap | AsyncStream |
 |---|---|---|---|---|---|
-| `AllowNonPublic` | honoured | honoured | `DWARF028,DWARF096 (Warning)` | honoured | honoured |
+| `AllowNonPublic` | honoured | honoured | `DWARF028` | honoured | honoured |
 | `AutoMatchMembers` | `DWARF072` | `DWARF072` | `DWARF072` | `DWARF077` | `DWARF077` |
 | `AutoNest` | `DWARF005` | `DWARF005` | `DWARF005` | `DWARF005` | `DWARF005` |
 | `CaseInsensitive` | honoured | honoured | honoured | honoured | honoured |

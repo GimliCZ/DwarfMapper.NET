@@ -102,6 +102,7 @@ DWARF093 | DwarfMapper | Warning | [GenerateWrapperMap] has no declared pair to 
 DWARF094 | DwarfMapper | Error | [GenerateMap] duplicates an existing map method
 DWARF095 | DwarfMapper | Warning | [MapIgnore] names no destination member
 DWARF096 | DwarfMapper | Warning | Projection method was not generated
+DWARF097 | DwarfMapper | Warning | Mapping method was not generated
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────
 ; These ship in the same package and surface in the same IDE error list as the DWARF0xx rules, so a

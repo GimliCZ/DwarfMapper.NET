@@ -385,6 +385,10 @@ internal static class AggregateEmitter
     /// </remarks>
     private static bool IsAmbientUpdateRegisterable(MapMethodModel m)
     {
+        // I17: a WITHHELD method (its own DWARF001 refused it) is never emitted, so a facade,
+        // DI or registry entry pointing at it would not compile. It stays in `Methods` for the
+        // class-level analyses; the three aggregate gates are where it is filtered out.
+        if (m.Withheld) return false;
         if (!m.IsUpdateInto) return false;
         if (!(m.IsPartial || m.EmitAsNonPartial)) return false;
         if (m.Accessibility != "public" && m.Accessibility != "internal") return false;
@@ -462,6 +466,10 @@ internal static class AggregateEmitter
     /// </summary>
     private static bool IsAmbientRegisterable(MapMethodModel m)
     {
+        // I17: a WITHHELD method (its own DWARF001 refused it) is never emitted, so a facade,
+        // DI or registry entry pointing at it would not compile. It stays in `Methods` for the
+        // class-level analyses; the three aggregate gates are where it is filtered out.
+        if (m.Withheld) return false;
         if (!(m.IsPartial || m.EmitAsNonPartial)) return false;
         if (m.Accessibility != "public" && m.Accessibility != "internal") return false;
         if (m.IsProjection || m.IsUpdateInto || m.IsSpanMap) return false;
@@ -505,6 +513,10 @@ internal static class AggregateEmitter
     /// </summary>
     private static bool IsEligible(MapMethodModel m)
     {
+        // I17: a WITHHELD method (its own DWARF001 refused it) is never emitted, so a facade,
+        // DI or registry entry pointing at it would not compile. It stays in `Methods` for the
+        // class-level analyses; the three aggregate gates are where it is filtered out.
+        if (m.Withheld) return false;
         if (m.IsProjection || m.IsUpdateInto || m.IsSpanMap || m.IsAsyncStreamMap ||
             m.IsTopLevelCollectionConversion)
             return false;

@@ -100,5 +100,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF094` | Error | [GenerateMap] duplicates an existing map method |
 | `DWARF095` | Warning | [MapIgnore] names no destination member |
 | `DWARF096` | Warning | Projection method was not generated |
+| `DWARF097` | Warning | Mapping method was not generated |
 
-92 diagnostics.
+93 diagnostics.

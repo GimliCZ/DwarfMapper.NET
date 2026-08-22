@@ -816,10 +816,14 @@ class. That is the right call (half-generated code produces worse errors than no
 `partial` mapping method on the class loses its implementing part simultaneously, and the build fills with
 `CS8795: … must have an implementing part`.
 
-One error is **not** class-level: [`DWARF028`](#dwarf028), an untranslatable projection member. It is a fact
-about one `Project` method and says nothing about the `Map` methods beside it, so that one method is dropped,
-the rest of the mapper is generated as usual, and [`DWARF096`](#dwarf096) — not this diagnostic — signposts the
-single `CS8795` that follows.
+Two errors are **not** class-level. [`DWARF028`](#dwarf028), an untranslatable projection member, is a fact
+about one `Project` method and says nothing about the `Map` methods beside it. [`DWARF001`](#dwarf001), an
+unmapped destination member, is a fact about one method's pair and one method's `[MapIgnore]` set — its own
+remedy names the method — and says nothing about the method beside it. Either way that one method is withheld,
+the rest of the mapper is generated as usual, and [`DWARF096`](#dwarf096) or [`DWARF097`](#dwarf097) — not this
+diagnostic — signposts the single `CS8795` that follows. A method raising `DWARF001` **together with** a
+class-level error keeps the whole-class kill, and so does an incomplete *synthesized* pair, which is shared by
+every route that reaches it.
 
 That wall is ambiguous, and both readings are common:
 
@@ -1681,6 +1685,53 @@ has an error, nothing is generated after all — this warning's claim would be f
 **Fix:** fix the `DWARF028` error(s) above it — usually by making the destination member nullable, widening a
 narrowing numeric target, or choosing a translatable collection target. Or drop the `Project` method and map
 those members with a runtime `Map` method, which has none of these restrictions.
+
+## dwarf097
+**Mapping method was not generated** · Warning
+
+The per-method twin of [`DWARF078`](#dwarf078) for the `Map` endpoints. One mapping method carried a
+[`DWARF001`](#dwarf001) — a destination member with no source — so **that method** was not generated. The rest
+of the mapper was: every other method on the same class is emitted normally, and so are the facade extensions,
+the DI registration and the ambient registry entries built from them.
+
+Exactly one `CS8795: … must have an implementing part` follows, on that method, and this warning marks it so it
+is not mistaken for the other cause of that message (a project missing the analyzer reference — see
+[`DWARF078`](#dwarf078)'s table). A method declared without accessibility modifiers — a plain
+`partial void Map(S src, D dest);` — is allowed by C# to have no implementing part at all, so there it simply
+disappears and this warning is the only thing you see.
+
+**Why completeness is per-method.** It is evaluated over one `(source, target)` pair and honours that method's
+own `[MapIgnore]` set — which is why `DWARF001`'s own text tells you to annotate *the method*. Its unit of
+evaluation and its unit of remedy are both the method, so an unmapped member on one method says nothing about
+the method beside it. Two errors that look similar are deliberately **not** treated this way, because they
+describe the source model rather than one mapping: an ambiguous member name ([`DWARF010`](#dwarf010)) and an
+unknown destination ([`DWARF008`](#dwarf008)) are equally true of every method over the same pair, so they still
+suppress the whole class. A method that raises `DWARF001` *and* one of those keeps the whole-class kill too.
+
+**A `[GenerateMap]` pair keeps the whole-class kill**, and the reason is the boundary of the whole rule:
+withholding a method is only safe while its *declaration* survives. A `partial` method is declared by you, so
+another method mapping a nested member through it still binds and the single `CS8795` is the whole cost. A
+`[GenerateMap]` pair has no declaration — the generator is the only source of that symbol — so withholding it
+would leave a sibling calling a method that does not exist (`CS0103`) in a file you cannot edit. Loud collateral
+beats generated code that does not compile.
+
+**An incomplete *synthesized* pair also keeps the whole-class kill**, and for a reason rather than an
+exception: a nested or element pair is mapped through a helper **shared by every route that reaches it**, so
+its incompleteness is true of each of them and pinning it on one method would be wrong. That is why an
+incomplete element pair behind a span map or an async-stream map reports [`DWARF078`](#dwarf078), not this.
+
+Refusing the method rather than emitting a partial one is deliberate: a mapping method missing the members that
+did not resolve would return objects with those members silently unset, which is the failure the completeness
+gate exists to prevent.
+
+You will never see this **and** [`DWARF078`](#dwarf078) on one mapper. If some other method on the class also
+has a class-level error, nothing is generated after all — this warning's claim would be false, so it stands
+down and `DWARF078` reports the wider scope. The `DWARF001` itself is reported either way.
+
+**Fix:** map the destination member(s) named in the `DWARF001` above (`[MapProperty]`, `[MapValue]`, a matching
+source name), or annotate the method with `[MapIgnore("Name")]` if leaving it at its default is intended.
+
+---
 
 ---
 
