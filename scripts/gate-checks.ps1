@@ -238,3 +238,123 @@ function Assert-NoMutatedProductBinaries {
 
     Write-Host "   ${Leg}: $($planted.Count) product assemblies under tests/**/bin, none mutated" -ForegroundColor DarkGray
 }
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Package-size ceiling (round-23 S6; the RESEARCH-97-PERCENT-GATES "package/binary size ratchet" row).
+#
+# The shipped .nupkg has a MEASURED ceiling in whole KB, and the ceiling equals the measurement truncated
+# (invariant R1: the gate's stated precision is the KB, and no cushion is added on top). A package over
+# its ceiling fails; the only fix is a commit that re-measures and moves the number WITH the reason,
+# exactly as $coverageFloors and allocation-baseline.json are moved.
+#
+# WHY A SIZE GATE AT ALL, given ApiCompat and PublicAPI.Shipped/Unshipped already guard the SURFACE:
+# because a surface check cannot see what is not surface. An accidentally embedded resource, a dependency
+# that started shipping into lib/, a second copy of an analyzer - all of those leave the public API
+# identical and the package fatter. Size is the cheap secondary signal for exactly that class.
+#
+# DELIBERATELY ONE-SIDED, unlike the R2 coverage/mutation band and unlike the two-directional allocation
+# pins. A package that SHRINKS is not a finding the way a smaller allocation is: allocated bytes are a
+# behavioural fact whose unexplained movement means the code changed, while package size has no
+# correctness meaning at all. The round-23 plan's S6 row says "raise-only-with-re-measure" and this
+# follows it. If the maintainer later wants the forcing direction too, the band shape is one line away -
+# Test-CoverageWithinBand above is the template.
+#
+# NOTE THE TIGHTNESS, so nobody is surprised by the first red: at the measured 247 KB the headroom to the
+# ceiling is ~530 bytes. That is what "the ceiling equals the measurement at the gate's stated precision"
+# costs, and it is the same bargain the one-decimal coverage floors and the exact allocation pins make.
+# Any generator or runtime change that adds half a kilobyte of IL is expected to re-measure this number
+# in its own commit; the failure message says so.
+#
+# R4 clean: the oracle is a file's length in bytes. No clock, no percentage, no sampling.
+#
+# MEASURED 2026-08-22, Windows, SDK 10.0.101, at commit 81c4ace (the round-23 branch tip when S4 and S6
+# were written), CI=true, from a `git clean -xdf` tree, two independent packs each:
+#   DwarfMapper.1.0.2-rc.1.nupkg          253,420 B and 253,421 B  -> floor(253421/1024) = 247 KB
+#   DwarfMapper.Testing.1.0.2-rc.1.nupkg   48,508 B and  48,508 B  -> floor( 48508/1024) =  47 KB
+# (The one-byte wobble is NuGet's random .psmdcp part name, not build output - scripts/repro-pack-check.py
+# measured exactly that and its header records it.)
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+$script:PackageSizeCeilingsKb = [ordered]@{
+    'DwarfMapper'         = 247
+    'DwarfMapper.Testing' = 47
+}
+
+function Assert-PackageSizeWithinCeiling {
+    param(
+        [Parameter(Mandatory)][string]$PackageDir
+    )
+    if (-not (Test-Path -LiteralPath $PackageDir)) {
+        throw "package size: no package directory at $PackageDir - the ceiling gate has nothing to measure"
+    }
+
+    # .snupkg is deliberately NOT ceilinged: symbols are not the shipped consumer payload, and their size
+    # tracks debug-info settings rather than what a consumer downloads. They are printed, not gated.
+    $packages = @(Get-ChildItem -LiteralPath $PackageDir -File -Filter '*.nupkg')
+    if ($packages.Count -eq 0) {
+        throw ("package size: not one .nupkg under $PackageDir. A ceiling check over an empty set passes " +
+               "by looking at nothing, which is the failure mode this guard exists to deny - run " +
+               "dotnet pack into this directory first.")
+    }
+
+    $failures = @()
+    $matched = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($id in $script:PackageSizeCeilingsKb.Keys) {
+        # <id>.<version>.nupkg, where the version starts with a digit - so DwarfMapper's pattern cannot
+        # also swallow DwarfMapper.Testing's package and report the wrong file's size against the wrong
+        # ceiling. The version itself is not pinned here; Directory.Build.props owns it, CI overrides it.
+        $hits = @($packages | Where-Object {
+            $_.Name -like "$id.*.nupkg" -and
+            $_.Name.Substring($id.Length + 1, 1) -match '^[0-9]$'
+        })
+        if ($hits.Count -eq 0) {
+            # The vacuity guard the allocation pins taught: a renamed or no-longer-produced package must
+            # FAIL the gate, never silently fall out of it.
+            $failures += ("package size: '$id' has a ceiling of $($script:PackageSizeCeilingsKb[$id]) KB " +
+                          "but no $id.<version>.nupkg was produced into $PackageDir - the gate cannot see " +
+                          "it. Either the package stopped shipping (delete the ceiling in the same commit, " +
+                          "with the reason) or the pack step is broken.")
+            continue
+        }
+        if ($hits.Count -gt 1) {
+            $failures += ("package size: $($hits.Count) packages match $id.<version>.nupkg in " +
+                          "$PackageDir (" + (($hits | ForEach-Object { $_.Name }) -join ', ') + "). Pack " +
+                          "into a clean directory - the gate must not have to guess which one ships.")
+            continue
+        }
+
+        $file = $hits[0]
+        [void]$matched.Add($file.Name)
+        $ceiling = [int]$script:PackageSizeCeilingsKb[$id]
+        $kb = [int][math]::Floor($file.Length / 1024)
+        if ($kb -gt $ceiling) {
+            $failures += ("package size: $($file.Name) is $kb KB ($($file.Length) bytes), above the " +
+                          "measured ceiling $ceiling KB. Exact-ceiling protocol (invariant R1): if the " +
+                          "growth is intended, re-measure and raise PackageSizeCeilingsKb in " +
+                          "scripts/gate-checks.ps1 IN THIS COMMIT, with the new measurement's date, SDK " +
+                          "and commit in the comment above it. If it is NOT intended, something started " +
+                          "shipping that should not - list the package with unzip -l and find it.")
+        }
+        else {
+            Write-Host "   package size: $($file.Name) $kb KB <= ceiling $ceiling KB ($($file.Length) bytes)" -ForegroundColor DarkGray
+        }
+    }
+
+    # A newly shipped package must not slip in unceilinged. Populations of ten or fewer stay exactly
+    # pinned (the house rule), and the shipped-package population is two.
+    $unpinned = @($packages | Where-Object { -not $matched.Contains($_.Name) })
+    if ($unpinned.Count -gt 0) {
+        $failures += ("package size: " + $unpinned.Count + " packed .nupkg(s) have no ceiling (" +
+                      (($unpinned | ForEach-Object { $_.Name }) -join ', ') + "). A newly shipped package " +
+                      "must arrive WITH its measured ceiling in the same commit, or the ratchet covers a " +
+                      "shrinking fraction of what ships while staying green.")
+    }
+
+    foreach ($sym in @(Get-ChildItem -LiteralPath $PackageDir -File -Filter '*.snupkg')) {
+        Write-Host "   package size: $($sym.Name) $([int][math]::Floor($sym.Length / 1024)) KB (symbols - informational, not gated)" -ForegroundColor DarkGray
+    }
+
+    if ($failures.Count -gt 0) {
+        throw ($failures -join [Environment]::NewLine)
+    }
+}

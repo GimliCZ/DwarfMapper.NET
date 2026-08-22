@@ -590,3 +590,55 @@ jobs:
           path: |
             ${{ runner.temp }}/pack-a
             ${{ runner.temp }}/pack-b
+
+  # ── Package-size ceiling (round-23 S6) ────────────────────────────────────────────────────────────────
+  # `dotnet pack` the two SHIPPED packages and fail if either is over its measured KB ceiling. The check
+  # itself, its measurement provenance and its failure message live in scripts/gate-checks.ps1
+  # (Assert-PackageSizeWithinCeiling) — dot-sourced here rather than re-implemented, the same reason the
+  # mutation matrix dot-sources Assert-NoMutatedProductBinaries: a CI copy of a gate is a gate that can
+  # drift from the one a maintainer runs locally.
+  #
+  # Ceiling = the measurement truncated to whole KB, raise-only-with-re-measure (invariant R1). It is a
+  # SECONDARY signal on purpose: ApiCompat package validation and PublicAPI.Shipped/Unshipped already
+  # guard the public surface, and size catches the class they structurally cannot — an embedded resource
+  # nobody meant to ship, a dependency that started landing in lib/, a duplicated analyzer.
+  #
+  # Its own job rather than a step inside `reproducible-build`, which already packs: a size red and a
+  # reproducibility red mean completely different things, and one job cannot report two verdicts. The
+  # cost of that choice is one extra nightly runner and one extra pack (~5 min estimated).
+  #
+  # -p:EnablePackageValidation=false for the same reasons spelled out on the reproducible-build job:
+  # validation is a separate gate with an external nuget.org input, and it is broken today (I15).
+  package-size:
+    runs-on: ubuntu-latest
+    # Nightly cron and manual dispatch only — never on push or pull_request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # ESTIMATE, not a measurement — never run on a hosted runner. Local Windows 12-core at 81c4ace: locked
+    # restore + pack of both packages = ~20 s with a warm NuGet cache. A ~4-core hosted runner with a cold
+    # cache is dominated by restore (~2 min) and the analyzer-heavy Release build (~2 min), ~5 min with SDK
+    # setup. Trebled -> 15. Replace this paragraph with the first real run's wall-clock.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.101'
+      - run: dotnet restore DwarfMapper.NET.sln --locked-mode
+      - name: Pack the shipped packages
+        run: |
+          set -euo pipefail
+          for proj in src/DwarfMapper/DwarfMapper.csproj src/DwarfMapper.Testing/DwarfMapper.Testing.csproj; do
+            dotnet pack "$proj" -c Release -o "$RUNNER_TEMP/pack" -p:EnablePackageValidation=false
+          done
+      - name: Check the package-size ceilings
+        shell: pwsh
+        run: |
+          . ./scripts/gate-checks.ps1
+          Assert-PackageSizeWithinCeiling -PackageDir "$env:RUNNER_TEMP/pack"
+      # Kept on failure only: a ceiling red is a claim about a specific package's bytes, and diagnosing it
+      # means opening that package and finding what started shipping.
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-size-packages
+          path: ${{ runner.temp }}/pack
