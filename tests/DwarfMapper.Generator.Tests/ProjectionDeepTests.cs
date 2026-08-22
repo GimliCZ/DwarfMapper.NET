@@ -579,24 +579,33 @@ public class ProjectionDeepTests
 
     // ── VF4: nullable collection SOURCE member in projection → null guard on the collection ─
 
-    [Fact]
-    public void Projection_nullable_collection_member_gets_source_null_guard()
+    /// <summary>
+    ///     The guard itself, and — since I19 — what its null arm YIELDS. The guard has to be there at all
+    ///     because <c>Enumerable.Select(null, …)</c> throws at query-evaluation time; which value the null
+    ///     arm produces is <c>NullCollections</c>, and this endpoint used to answer that without reading the
+    ///     option (always <c>null</c>, so a null source collection came back empty through <c>.Map</c> and
+    ///     null through <c>.Project</c>). Both settings are pinned here because pinning one would let the
+    ///     other be hard-wired.
+    /// </summary>
+    [Theory]
+    // Default = AsEmpty: the documented "null source collection → AsEmpty (never throws)".
+    [InlineData("", "__s.Items == null ? new global::System.Collections.Generic.List<global::D.ItemDto>() :")]
+    // AsNull over a target that CAN hold the null: the old emission, now reached only when asked for.
+    [InlineData("(NullCollections = NullCollectionStrategy.AsNull)", "__s.Items == null ? null :")]
+    public void Projection_nullable_collection_member_gets_source_null_guard(string option, string expected)
     {
-        // If __s.Items is null, Enumerable.Select(null!, ...) throws at query evaluation time.
-        // The source expression must be guarded: __s.Items == null ? null : Enumerable.Select(...)
-        const string s = """
-                         using DwarfMapper; using System.Linq; using System.Collections.Generic;
-                         namespace D;
-                         public class Item { public int V { get; set; } }
-                         public class ItemDto { public int V { get; set; } }
-                         public class Outer { public List<Item>? Items { get; set; } }
-                         public class OuterDto { public List<ItemDto>? Items { get; set; } }
-                         [DwarfMapper] public partial class M { public partial IQueryable<OuterDto> P(IQueryable<Outer> q); }
-                         """;
+        var s = $$"""
+                  #nullable enable
+                  using DwarfMapper; using System.Linq; using System.Collections.Generic;
+                  namespace D;
+                  public class Item { public int V { get; set; } }
+                  public class ItemDto { public int V { get; set; } }
+                  public class Outer { public List<Item>? Items { get; set; } }
+                  public class OuterDto { public List<ItemDto>? Items { get; set; } }
+                  [DwarfMapper{{option}}] public partial class M { public partial IQueryable<OuterDto> P(IQueryable<Outer> q); }
+                  """;
         var gen = GeneratorAssert.CompilesClean(s);
-        // The COLLECTION source expression (__s.Items) must be null-guarded before Select call.
-        // Pattern: "__s.Items == null ? null : Enumerable..."
-        Assert.Contains("__s.Items == null ? null :", gen, StringComparison.Ordinal);
+        Assert.Contains(expected, gen, StringComparison.Ordinal);
     }
 
     // ── VF5: projection method with applicable hook silently drops it → DWARF028 ─

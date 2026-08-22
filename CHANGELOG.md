@@ -15,6 +15,22 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **`Project` ignored `NullCollections`, so a null source collection came back EMPTY through `Map` and
+  `null` through `Project`.** The option is documented once, for the mapper, with no endpoint qualifier —
+  *"Null source collection → `AsEmpty` (never throws)"* — and the projection pipeline never read it: it
+  emitted `__s.M == null ? null : …` whatever the mapper had configured, so the same member answered
+  differently depending on which method the caller reached for. It reads the option now, and computes the
+  effective answer with the **same predicate the runtime endpoint uses** — `AsNull` propagates the null only
+  when the destination member can hold it, and degrades to `AsEmpty` when it cannot — so the two endpoints
+  agree in a `#nullable`-annotated context and in a nullable-oblivious one alike. The null arm is chosen per
+  translatable target kind so both arms of the conditional share one static type and no cast appears:
+  `new List<T>()` against `ToList`, `Array.Empty<T>()` against `ToArray`, `Enumerable.Empty<T>()` against
+  the lazy `Select`. **This changes behaviour for existing projections**: a consumer reading `null` out of a
+  projected collection member under the default now reads an empty collection, which is what the
+  documentation has always promised and what `Map` has always done. No ternary is added where none existed —
+  the guard is still emitted only for a source member that may be null, so a correctly-annotated query gains
+  no construct its provider has to translate. (round 23, I19)
+
 - **A collection member whose `Count` is an explicit interface implementation emitted code that did not
   compile.** The buffer pre-sizing predicate asked whether the source type *implements* `ICollection<T>` or
   `IReadOnlyCollection<T>`, and then wrote `s.Count` as the `List<T>` capacity. Implementing an interface is

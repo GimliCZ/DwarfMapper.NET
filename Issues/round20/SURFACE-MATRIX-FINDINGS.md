@@ -504,13 +504,38 @@ prose, including why its severity is lower than it sounds, is in the store.
 
 <a id="NullCollections"></a>
 
-### NullCollections — `NullCollections = AsNull` at Projection — 2 cells
+### NullCollections — `NullCollections = AsNull` at Projection — 2 cells — RESOLVED
 
-*`[DwarfMapper]` class site and `[assembly: DwarfMapperDefaults]` → Projection.* The one entry here that is a
-**design decision rather than an oversight**: a refusal was implemented and reverted because it amounted to
-"you cannot project a nullable collection under default options". Three candidate resolutions, and the
-argument against each, are recorded verbatim in the store — that text is the most valuable in the file and is
-carried unchanged.
+> **RESOLVED 2026-08-23 as I19, by the resolution this entry's own text listed as candidate (a).** The
+> projection read the option nowhere and always emitted `src.Items == null ? null : …` — i.e. `AsNull` —
+> so under the documented `AsEmpty` default `.Map` produced an empty collection and `.Project` produced
+> `null` for the same input, and a caller doing `dto.Items.Count` got an NRE on the projection path only.
+>
+> **(a) taken:** the resolver reads `NullCollections` and emits `== null ? new List<T>() : …`
+> (`Array.Empty<T>()` / `Enumerable.Empty<T>()` per target kind, so both arms of the conditional share one
+> static type and no cast appears). The effective `AsNull` is computed by the **same predicate the runtime
+> endpoint uses** — propagate the null only when the destination member can hold it — so the documented
+> degrade over a null-incapable target holds at both ends, and the two endpoints also agree in a
+> nullable-oblivious context, where both degrade.
+>
+> **(b) refuse with `DWARF028` — rejected** for the reason this entry already gave: it amounts to "you
+> cannot project a nullable collection under default options", a capability regression larger than the
+> divergence it closes. **(c) document the split as intentional — rejected** because `docs/options.md`
+> states one behaviour for the option with no endpoint qualifier, and a code-versus-documentation
+> disagreement that only a test knows about is the failure this matrix exists to prevent.
+>
+> The one worry (a) carried — *"someone needs to confirm the provider translates a constructed empty
+> collection inside an expression tree"* — is answered as far as it can be and no further. No provider runs
+> in this repository (B19's rule); what bounds the claim is that **no ternary is added where none existed**:
+> the guard was already emitted for every source member that may be null, and only its null arm changed.
+> The guard is still gated on the source member being nullable-annotated or nullable-oblivious, precisely so
+> a correctly-annotated query gains no construct — the residual (a non-nullable member that is null anyway
+> throws from `Project` where `Map` returns empty) is stated in `docs/options.md` and pinned by
+> `ProjectionNullCollectionsTests`.
+>
+> **Two cells, Silent → Honoured.** `DivergenceFindingCeiling` 2 → 1, `DivergentCellCeiling` 4 → 2.
+
+*`[DwarfMapper]` class site and `[assembly: DwarfMapperDefaults]` → Projection.*
 
 <a id="D1"></a>
 

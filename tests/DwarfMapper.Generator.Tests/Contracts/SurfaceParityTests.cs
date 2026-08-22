@@ -776,8 +776,16 @@ public sealed class SurfaceParityTests
     ///         raise anywhere on it. See <see cref="StructurallyExcusedCellCeiling" /> for the measurement
     ///         that earned it.
     ///     </para>
+    ///     <para>
+    ///         2 → <b>1</b> when the <c>NullCollections</c> row closed (<c>I19</c>), by the very resolution
+    ///         its own text listed as candidate (a): the projection reads the option and emits
+    ///         <c>== null ? new List&lt;T&gt;() : …</c>, with the effective <c>AsNull</c> computed by the
+    ///         predicate the runtime endpoint already used. Both of its cells went
+    ///         <see cref="SurfaceEffect.Silent" /> → <see cref="SurfaceEffect.Honoured" />, so
+    ///         <see cref="DivergentCellCeiling" /> fell by exactly two and no other population moved.
+    ///     </para>
     /// </summary>
-    private const int DivergenceFindingCeiling = 2;
+    private const int DivergenceFindingCeiling = 1;
 
     /// <summary>
     ///     The number of CELLS those findings cover. Shrink-only, and the wider of the two guards.
@@ -916,8 +924,14 @@ public sealed class SurfaceParityTests
     ///         by exactly the one cell this fell by. That is the trade stated as a pair of numbers rather than
     ///         as a paragraph.
     ///     </para>
+    ///     <para>
+    ///         4 → <b>2</b> with <c>I19</c>: the two <c>NullCollections</c> @ <c>Projection</c> cells (the
+    ///         <c>[DwarfMapper]</c> form and its <c>[assembly: DwarfMapperDefaults]</c> twin) measured
+    ///         <see cref="SurfaceEffect.Honoured" /> once the projection resolver read the option. A verdict
+    ///         change, not a reclassification — nothing rose to compensate.
+    ///     </para>
     /// </summary>
-    private const int DivergentCellCeiling = 4;
+    private const int DivergentCellCeiling = 2;
 
     /// <summary>
     ///     Neither the number of recorded divergences nor the number of cells they cover may grow.

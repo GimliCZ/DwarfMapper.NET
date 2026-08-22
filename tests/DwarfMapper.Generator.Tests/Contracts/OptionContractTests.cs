@@ -88,6 +88,16 @@ public class OptionContractTests
             "source-side completeness: an unconsumed source member is reported here exactly as it is at the "
             + "create and update endpoints"),
 
+        new("NullCollections", CellStatus.Honoured, null,
+            "the projection resolver reads the option and computes its effective answer with the SAME "
+            + "predicate the runtime endpoint uses: AsNull propagates the null only when the destination "
+            + "member can hold it and degrades to AsEmpty when it cannot. This row was declared "
+            + "NotApplicable — 'collection rebuilds are untranslatable outright, so the null policy for them "
+            + "is unreachable' — and the excuse was FALSE twice over: List/array/IEnumerable rebuilds are "
+            + "translatable and always were (only HashSet/dictionary/immutable ones are refused), and the "
+            + "endpoint answered the null policy anyway, always with `null`, whatever the mapper had "
+            + "configured. That is I19: the same member answering differently through .Map and .Project"),
+
         new("EnumStrategy", CellStatus.Honoured, null,
             "the projection resolver consults the strategy directly: ByValue emits a plain enum cast in the "
             + "SELECT (translatable), where the ByName default is refused as DWARF028 whose own remedy text "
@@ -117,9 +127,6 @@ public class OptionContractTests
             "measured, not assumed: enum<->string mapping is a generated switch, which projection refuses "
             + "outright with DWARF028 before any string-source policy is consulted. The member is rejected, "
             + "so the option cannot be silently dropped here — the failure mode this matrix exists for"),
-
-        new("NullCollections", CellStatus.NotApplicable, null,
-            "collection rebuilds are untranslatable outright, so the null policy for them is unreachable"),
 
         new("OnCycle", CellStatus.NotApplicable, null,
             "cycles require reference tracking, which is refused at this endpoint for the same reason"),
@@ -228,14 +235,16 @@ public class OptionContractTests
 
     /// <summary>
     ///     The exact size of the <see cref="CellStatus.NotApplicable" /> class in
-    ///     <see cref="ProjectionCells" />. Measured 2026-08-22 at 7 of 18 rows — it was 8 when B3 was
-    ///     picked up, and the FIRST run of the live re-measurement below retired one: EnumStrategy's excuse
-    ///     was stale (see its row). Shrink-only: a row leaving
+    ///     <see cref="ProjectionCells" />. Measured 2026-08-23 at 6 of 18 rows — 8 when B3 was picked up,
+    ///     7 after the FIRST run of the live re-measurement below retired EnumStrategy's stale excuse, and 6
+    ///     since I19 retired NullCollections': that one was not merely stale but wrong when written
+    ///     (List/array/IEnumerable rebuilds ARE translatable), and the endpoint was answering the null
+    ///     policy on its own the whole time. Shrink-only: a row leaving
     ///     the class (measured into Honoured or Refused) lowers the pin in the same commit, and a new
     ///     NotApplicable row is a deliberate act with a number attached — the same rule every excuse
     ///     population in the surface matrix already lives under.
     /// </summary>
-    private const int NotApplicablePin = 7;
+    private const int NotApplicablePin = 6;
 
     /// <summary>
     ///     B3's counting half. The theory above makes each NotApplicable row LIVE (re-measured every run);

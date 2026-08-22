@@ -147,33 +147,29 @@ public class ProjectionAgreementTests
     }
 
     /// <summary>
-    ///     <b>I19, found by this leg's very first run and PINNED AS THE DIVERGENCE IT IS.</b> A null source
-    ///     collection maps to an EMPTY destination collection through <c>Map</c> — the documented
-    ///     <c>NullCollections = AsEmpty</c> default (<c>docs/options.md</c>: <i>"Null source collection →
-    ///     AsEmpty (never throws)"</i>) — and to <c>null</c> through <c>Project</c>, which never consults
-    ///     the option at all.
+    ///     <b>I19, FIXED — and this is the pin that replaced the alarm.</b> A null source collection
+    ///     materialises an EMPTY destination collection through <c>Project</c>, exactly as it does through
+    ///     <c>Map</c>: the documented <c>NullCollections = AsEmpty</c> default (<c>docs/options.md</c>:
+    ///     <i>"Null source collection → AsEmpty (never throws)"</i>), which the projection endpoint used to
+    ///     not read at all.
     ///     <para>
-    ///         <b>This test asserts the WRONG behaviour on purpose,</b> which needs saying out loud. It is
-    ///         not a ratification: it is the alarm that makes the defect impossible to fix silently or to
-    ///         forget. The moment <c>Project</c> starts honouring <c>NullCollections</c>, this test goes RED
-    ///         and its message says what to do — delete it, delete the <c>nullCollections: false</c>
-    ///         exclusion on the sampled leg above, and close I19. The same shape as the surface matrix's
-    ///         recorded divergences, which also fail the build the moment they start working.
+    ///         The predecessor of this test asserted the WRONG behaviour on purpose — the alarm that made
+    ///         the defect impossible to fix silently. It went red the moment the option was honoured, and
+    ///         its message carried the four-step cleanup: this pin, the deleted <c>nullCollections: false</c>
+    ///         argument in <c>RunAgreementLeg</c>, the deleted exclusion on <c>ReflectionOracle.Populate</c>
+    ///         (the parameter itself is gone, not just its documentation — no caller passed false any more,
+    ///         and a dead population axis is a lie about coverage), and the I19 row.
     ///     </para>
     ///     <para>
-    ///         <b>Why it was filed and not fixed here:</b> I18's task is to extend the sampled space, and
-    ///         the space immediately paid for itself. Changing a projection's null-collection semantics is
-    ///         a product decision with a documentation surface (the <c>NullCollections</c> row asserts one
-    ///         behaviour for both endpoints), and the I14 precedent — the same member answering differently
-    ///         depending on which method the caller reached for, which I14's ruling called "the defect, not
-    ///         the remedy" — is the argument that it should be fixed, in its own commit, with its own
-    ///         ruling.
+    ///         Kept as a DETERMINISTIC pin rather than left to the sampled leg above, which now covers the
+    ///         shape again: sampling proves the endpoints AGREE, and agreement is satisfied by both being
+    ///         wrong together. This one names the documented VALUE — empty, not null, on both sides.
     ///     </para>
     /// </summary>
     [Fact]
-    public void I19_a_null_source_collection_diverges_between_the_endpoints()
+    public void I19_a_null_source_collection_materialises_empty_at_both_endpoints()
     {
-        // Minimal shrink of the sampled red (case index 1, seed daA_s6TURop8): one collection member,
+        // The graph the sampled red shrank to (case index 1, seed daA_s6TURop8): one collection member,
         // one scalar element type, both sides classes. Everything the sampled case carried beyond this —
         // record struct source, CtorParam shape, Guid elements, three extra nodes — was irrelevant.
         var graph = new GraphSpec(
@@ -209,13 +205,12 @@ public class ProjectionAgreementTests
             + "real regression just landed on the RUNTIME endpoint.");
         Assert.Empty(((System.Collections.IEnumerable)mappedMember!).Cast<object?>());
 
-        Assert.True(projectedMember is null,
-            "I19 IS FIXED: Project now produces something other than null for a null source collection. "
-            + "That is the intended end state — so finish the job rather than adjusting this assertion: "
-            + "(1) delete this whole test, (2) delete the `nullCollections: false` argument in "
-            + "RunAgreementLeg so the sampled leg covers the shape again, (3) delete the exclusion "
-            + "paragraph on ReflectionOracle.Populate's nullCollections parameter, and (4) flip I19 to "
-            + "DONE in Issues/round20/TASKS.md.");
+        Assert.True(projectedMember is System.Collections.IEnumerable,
+            "I19 HAS REGRESSED: Project produced " + (projectedMember?.ToString() ?? "null") + " for a null "
+            + "source collection instead of the documented empty one. The projection resolver reads "
+            + "NullCollections at MapperExtractor.Projection's collection branch; if that read was removed "
+            + "or bypassed, the two endpoints disagree about the same member again.");
+        Assert.Empty(((System.Collections.IEnumerable)projectedMember!).Cast<object?>());
     }
 
     /// <summary>
@@ -234,13 +229,14 @@ public class ProjectionAgreementTests
         // equivalent only while the populator is deterministic, and making the relation depend on that
         // would test the populator instead of the product.
         //
-        // nullCollections: false — the ONE named exclusion on this leg, and it is a filed defect, not a
-        // convenience. A null source collection diverges between the endpoints BY CONSTRUCTION today:
-        // Map emits the documented NullCollections=AsEmpty helper, Project emits `x == null ? null : …`.
-        // That is I19, pinned deterministically below. Sampling it would red ~20 % of every collection
-        // member on every run and drown every other disagreement this relation exists to find. Delete
-        // this argument with the fix.
-        var source = ReflectionOracle.Populate(sourceType, seed, nullCollections: false);
+        // I19 CLOSED, and with it this leg's ONLY population exclusion. A null source collection used to
+        // diverge between the endpoints by construction — Map materialised the documented
+        // NullCollections=AsEmpty default, Project emitted `x == null ? null : …` and never read the
+        // option — so the axis was excluded here (`nullCollections: false`) rather than reddening ~20 % of
+        // every collection member forever. The projection reads NullCollections now, the exclusion is
+        // gone from the call AND from ReflectionOracle.Populate's parameter list, and this leg samples
+        // null collections like every other population axis.
+        var source = ReflectionOracle.Populate(sourceType, seed);
 
         var mapped = Invoke("Map", () => CompilerTestHarness.InvokeMap(assembly, source));
         var projected = Invoke("Project", () => CompilerTestHarness.InvokeProject(assembly, sourceType, source));

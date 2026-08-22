@@ -215,6 +215,11 @@ internal static partial class MapperExtractor
             mapPropertyExtras = null,
         bool skipNullSourceMembers = false, bool allowNonPublic = false,
         bool explicitOnly = false, bool ignoreObsolete = false, bool autoNest = true,
+        // I19: the projection endpoint reads NullCollections like every other endpoint. It used to read it
+        // nowhere at all, so a null source collection came back EMPTY through .Map (the documented AsEmpty
+        // default) and NULL through .Project — the same member answering differently depending on which
+        // method the caller reached for. The one call site passes the mapper's real setting.
+        bool nullAsNull = false,
         HashSet<string>? consumedSources = null, IReadOnlyList<string>? flattenRoots = null,
         IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
             mapValues = null)
@@ -402,7 +407,7 @@ internal static partial class MapperExtractor
             var srcExprForExplicit = paramExpr + "." + Identifiers.EscapePath(srcName);
             var inlineExpr = ResolveProjectionExpr(
                 sm, tgtType, srcExprForExplicit, 0, compilation, location,
-                diagnostics, tgtName, enumPolicy, comparer, autoNest);
+                diagnostics, tgtName, enumPolicy, comparer, autoNest, nullAsNull);
             if (inlineExpr is null)
                 continue;
 
@@ -480,7 +485,7 @@ internal static partial class MapperExtractor
             // C4: pass comparer (carries CaseInsensitive setting) to ctor projection resolver.
             var ctorExpr = ResolveProjectionCtorExpr(
                 projectionCtor, sourceType, paramExpr, 0,
-                compilation, location, diagnostics, targetType, enumPolicy, comparer, autoNest,
+                compilation, location, diagnostics, targetType, enumPolicy, comparer, autoNest, nullAsNull,
                 ctorArgExprs, ctorArgTargets);
             if (ctorExpr is null)
                 return result;
@@ -546,7 +551,7 @@ internal static partial class MapperExtractor
                     var flatExpr = ResolveProjectionExpr(
                         fm.LeafType, target.Type,
                         paramExpr + "." + Identifiers.EscapePath(fm.Root + "." + fm.Leaf), 0, compilation,
-                        location, diagnostics, target.Name, enumPolicy, comparer, autoNest);
+                        location, diagnostics, target.Name, enumPolicy, comparer, autoNest, nullAsNull);
                     if (flatExpr is not null) result.Add(new ProjectionMemberMap(target.Name, flatExpr));
                     continue;
                 }
@@ -591,7 +596,7 @@ internal static partial class MapperExtractor
             // C4: pass comparer so nested objects respect CaseInsensitive setting.
             var inlineExpr = ResolveProjectionExpr(
                 src.Type, target.Type, srcAccessExpr, 0,
-                compilation, location, diagnostics, target.Name, enumPolicy, comparer, autoNest);
+                compilation, location, diagnostics, target.Name, enumPolicy, comparer, autoNest, nullAsNull);
             if (inlineExpr is not null)
                 result.Add(new ProjectionMemberMap(target.Name, inlineExpr));
         }
@@ -630,7 +635,8 @@ internal static partial class MapperExtractor
         string targetMemberName,
         EnumPolicy enumPolicy,
         StringComparer? comparer,
-        bool autoNest)
+        bool autoNest,
+        bool nullAsNull)
     {
         comparer ??= StringComparer.Ordinal;
 
@@ -662,7 +668,7 @@ internal static partial class MapperExtractor
             // C4: propagate comparer into element expression resolver.
             var elemExpr = ResolveProjectionExpr(
                 srcElem, tgtElem, elemParam, depth + 1,
-                compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
+                compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest, nullAsNull);
             if (elemExpr is null) return null; // DWARF028 already emitted
 
             // Use fully-qualified Enumerable.Select to avoid needing 'using System.Linq' in generated code.
@@ -682,8 +688,33 @@ internal static partial class MapperExtractor
             // Guard the source collection with a null-conditional ternary ONLY when it may actually be
             // null (nullable-annotated or nullable-oblivious). A non-nullable source needs no guard —
             // guarding it would assign null to a non-nullable target (CS8601). EF translates the ternary.
-            if (ProjectionSourceMayBeNull(srcType)) return $"{srcExpr} == null ? null : {collectionExpr}";
-            return collectionExpr;
+            if (!ProjectionSourceMayBeNull(srcType)) return collectionExpr;
+
+            // I19: WHICH VALUE the guard's null arm yields is NullCollections, and this endpoint used to
+            // answer it without asking — always `null`, whatever the mapper had configured. The effective
+            // rule is the SAME LINE the runtime endpoint computes (MapperExtractor.Conversions, the
+            // `nullAsNull && IsNullableReferenceType(tgtType)` gate): AsNull propagates the null only when
+            // the target member can HOLD it, and degrades to AsEmpty when it cannot. Reading the option
+            // here is what makes the two endpoints agree; computing it the same way is what keeps them
+            // agreeing in an oblivious (`#nullable disable`) context, where BOTH degrade.
+            if (nullAsNull && IsNullableReferenceType(tgtType))
+                return $"{srcExpr} == null ? null : {collectionExpr}";
+
+            // AsEmpty — the documented default (docs/options.md, `NullCollections`: "Null source collection
+            // → AsEmpty (never throws)"). The empty arm is chosen per target kind so the two arms have the
+            // SAME static type and the conditional needs no cast: `List<T>` both sides, `T[]` both sides,
+            // `IEnumerable<T>` both sides. No new construct class enters the tree beyond an empty
+            // materialisation — the ternary itself is the one this endpoint already emitted here.
+            var emptyExpr = shape.Target switch
+            {
+                CollectionConverter.TargetKind.Array =>
+                    $"global::System.Array.Empty<{tgtElemFqn}>()",
+                CollectionConverter.TargetKind.IEnumerable =>
+                    $"global::System.Linq.Enumerable.Empty<{tgtElemFqn}>()",
+                _ =>
+                    $"new global::System.Collections.Generic.List<{tgtElemFqn}>()"
+            };
+            return $"{srcExpr} == null ? {emptyExpr} : {collectionExpr}";
         }
 
         // ── Pre-check: Dictionary targets (always non-translatable in projection) ──
@@ -796,7 +827,7 @@ internal static partial class MapperExtractor
             // C4: pass comparer into nested object resolver.
             return ResolveProjectionNestedObjectExpr(
                 namedSrc, namedTgt, srcExpr, depth, compilation, location, diagnostics,
-                targetMemberName, enumPolicy, comparer, autoNest);
+                targetMemberName, enumPolicy, comparer, autoNest, nullAsNull);
         }
 
         // ── Nullable-value source T? → a target that CAN hold null, or one that cannot ───────────────────────
@@ -815,7 +846,7 @@ internal static partial class MapperExtractor
                 // int?→long?: null-preserving ternary: __s.X.HasValue ? (long?)__s.X.Value : null
                 var innerExpr = ResolveProjectionExpr(
                     srcUnderlying, tgtUnderlying, srcExpr + ".Value", depth,
-                    compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
+                    compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest, nullAsNull);
                 if (innerExpr is null) return null;
                 // The cast is carried ONLY for a Nullable<U> target, where the two arms (U and the null
                 // literal) have no best common type and CS0173 would follow. For a nullable-ANNOTATED
@@ -862,7 +893,7 @@ internal static partial class MapperExtractor
             // the guard this branch is about to add anyway. One guard, and it is this one.
             var refInnerExpr = ResolveProjectionExpr(
                 srcType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), refTgtUnderlying, srcExpr,
-                depth, compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest);
+                depth, compilation, location, diagnostics, targetMemberName, enumPolicy, comparer, autoNest, nullAsNull);
             if (refInnerExpr is null) return null;
             // A non-nullable-annotated source cannot be null, so it needs no guard — only the widening to
             // Nullable<U>, which is implicit. Guarding it would be the false-CS8601 shape
@@ -1076,7 +1107,8 @@ internal static partial class MapperExtractor
         Compilation compilation, LocationInfo? location, List<DiagnosticInfo> diagnostics,
         string targetMemberName, EnumPolicy enumPolicy,
         StringComparer? comparer,
-        bool autoNest)
+        bool autoNest,
+        bool nullAsNull)
     {
         comparer ??= StringComparer.Ordinal;
         var tgtFqn = tgtType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -1126,7 +1158,7 @@ internal static partial class MapperExtractor
                 var memberInlineExpr = ResolveProjectionExpr(
                     srcMember.Type, tgtMember.Type, memberSrcExpr, depth + 1,
                     compilation, location, diagnostics,
-                    targetMemberName + "." + tgtMember.Name, enumPolicy, comparer, autoNest);
+                    targetMemberName + "." + tgtMember.Name, enumPolicy, comparer, autoNest, nullAsNull);
 
                 if (memberInlineExpr is null)
                 {
@@ -1161,7 +1193,7 @@ internal static partial class MapperExtractor
             var ctorExpr = ResolveProjectionCtorExpr(
                 bestCtor, srcType, srcExpr, depth,
                 compilation, location, diagnostics, tgtType, enumPolicy,
-                comparer, autoNest);
+                comparer, autoNest, nullAsNull);
             if (ctorExpr is null) return null;
 
             // R18-32, nested half: a member the constructor did not take used to be dropped here in silence,
@@ -1239,6 +1271,7 @@ internal static partial class MapperExtractor
         EnumPolicy enumPolicy,
         StringComparer comparer,
         bool autoNest,
+        bool nullAsNull,
         Dictionary<string, string>? explicitArgExprs = null,
         HashSet<string>? explicitArgTargets = null)
     {
@@ -1276,7 +1309,7 @@ internal static partial class MapperExtractor
             // C4: propagate comparer into ctor param expression resolver.
             var paramInlineExpr = ResolveProjectionExpr(
                 srcMember.Type, param.Type, paramSrcExpr, depth + 1,
-                compilation, location, diagnostics, param.Name, enumPolicy, comparer, autoNest);
+                compilation, location, diagnostics, param.Name, enumPolicy, comparer, autoNest, nullAsNull);
 
             if (paramInlineExpr is null)
             {

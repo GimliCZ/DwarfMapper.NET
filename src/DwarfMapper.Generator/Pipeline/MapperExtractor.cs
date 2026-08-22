@@ -699,6 +699,10 @@ internal static partial class MapperExtractor
                     // is fixed: a CS8795 behind a blocking DWARF error now reads Refused.
                     ResolveNullSkip(pairNullSkips, method, projSource, projTargetNamed, skipNullSrc),
                     allowNonPublic, explicitOnly, ignoreObsolete, projAutoNest,
+                    // I19: the FIFTH reader of NullCollections, and the endpoint that never read it. Same
+                    // value, same shape as the four .Map call sites above — a null source collection now
+                    // materialises the documented AsEmpty default through .Project too.
+                    nullCollections == NullCollectionsBehavior.AsNull,
                     projConsumedSources,
                     // Both [Flatten] and [MapValue] are threaded now, and they arrive from opposite
                     // directions worth keeping distinct. A flattened leaf is `__s.Root.Leaf`, the navigation
