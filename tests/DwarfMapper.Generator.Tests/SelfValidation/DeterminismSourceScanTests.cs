@@ -38,16 +38,16 @@ public class DeterminismSourceScanTests
     [
         // The exact defect fixed in 10b8932. A comparer-less SortedSet/SortedDictionary of strings or string
         // tuples orders through Comparer<T>.Default -> string.CompareTo, which is CULTURE-SENSITIVE.
-        ("D1", new Regex(@"new\s+Sorted(Set|Dictionary)\s*<[^>]*>\s*\(\s*\)", RegexOptions.Compiled),
+        ("D1", new Regex(@"new\s+Sorted(?:Set|Dictionary)\s*<[^>]*>\s*\(\s*\)", RegexOptions.Compiled),
             "a comparer-less SortedSet/SortedDictionary orders via culture-sensitive string.CompareTo; "
             + "pass an explicit ordinal comparer (see AmbientValidator.OrdinalPair)"),
 
-        ("D2", new Regex(@"(CultureInfo|StringComparison|StringComparer)\.CurrentCulture", RegexOptions.Compiled),
+        ("D2", new Regex(@"(?:CultureInfo|StringComparison|StringComparer)\.CurrentCulture", RegexOptions.Compiled),
             "current-culture comparison makes generated output depend on the build machine's locale; "
             + "use the Ordinal/Invariant form"),
 
         // Wall-clock and randomness cannot be reproduced by a second build of the same input.
-        ("D3", new Regex(@"DateTime\.(Now|UtcNow)|DateTimeOffset\.(Now|UtcNow)", RegexOptions.Compiled),
+        ("D3", new Regex(@"DateTime\.(?:Now|UtcNow)|DateTimeOffset\.(?:Now|UtcNow)", RegexOptions.Compiled),
             "wall-clock time in the generator makes two builds of the same source differ"),
 
         ("D4", new Regex(@"Guid\.NewGuid\s*\(", RegexOptions.Compiled),

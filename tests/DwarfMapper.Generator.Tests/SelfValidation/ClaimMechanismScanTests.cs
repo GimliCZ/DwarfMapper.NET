@@ -27,7 +27,7 @@ public class ClaimMechanismScanTests
 {
     /// <summary>Matches a register row: <c>| SEC-01 | claim text | `TestName` |</c>.</summary>
     private static readonly Regex RegisterRow = new(
-        @"^\|\s*(?<id>(SEC|COR)-\d{2})\s*\|(?<claim>[^|]*)\|\s*`(?<mech>[^`]+)`\s*\|",
+        @"^\|\s*(?<id>(?:SEC|COR)-\d{2})\s*\|(?<claim>[^|]*)\|\s*`(?<mech>[^`]+)`\s*\|",
         RegexOptions.Compiled | RegexOptions.Multiline);
 
     private static List<(string Id, string Claim, string Mechanism, string File)> Register()

@@ -7,7 +7,8 @@ namespace DwarfMapper.Conformance;
 
 public static class R
 {
-    public static int Pass, Fail;
+    public static int Pass { get; private set; }
+    public static int Fail { get; private set; }
 
     public static void Check(string feat, bool ok, string detail = "")
     {

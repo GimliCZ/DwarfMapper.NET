@@ -297,6 +297,11 @@ internal static class SurfaceCatalog
         var problems = new List<string>();
         AttributeTargets seen = default; // the sites an earlier claim already covers
 
+        // MA0099 (name the enum value, do not compare against 0): AttributeTargets is a BCL [Flags] enum with
+        // NO zero member, so "no sites at all" and "no bits in common" cannot be spelled as a named value.
+        // Scoped to this loop; SurfaceEndpoints comparisons elsewhere DO name SurfaceEndpoints.None.
+#pragma warning disable MA0099
+
         foreach (var claim in claims)
         {
             if (claim.Site == 0)
@@ -315,6 +320,7 @@ internal static class SurfaceCatalog
                 problems.Add($"{name}: two [DwarfSurfaceSite] claims both cover {overlap}. One of them would "
                              + "never be consulted, and which one depends on declaration order.");
             seen |= claim.Site;
+#pragma warning restore MA0099
 
             if (string.IsNullOrWhiteSpace(claim.Because))
                 problems.Add($"{name}: [DwarfSurfaceSite({claim.Site})] states no reason. The reason must be "

@@ -294,7 +294,7 @@ public sealed class TestTheTestsScanTests
             .Where(name => !MatrixExemptAttributes.UsageNames.Contains(name))
             .Where(name => !fimText.Contains(name, StringComparison.Ordinal))
             .Select(name => $"[{name}]")
-            .OrderBy(n => n)
+            .OrderBy(n => n, StringComparer.Ordinal)
             .ToList();
 
         Assert.True(missing.Count == 0,

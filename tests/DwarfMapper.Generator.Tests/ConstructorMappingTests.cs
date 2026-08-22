@@ -174,7 +174,7 @@ public class ConstructorMappingTests
         var usage = (AttributeUsageAttribute?)attr.GetCustomAttributes(typeof(AttributeUsageAttribute), false)
             .FirstOrDefault();
         Assert.NotNull(usage);
-        Assert.True((usage!.ValidOn & AttributeTargets.Constructor) != 0);
+        Assert.True(usage!.ValidOn.HasFlag(AttributeTargets.Constructor));
     }
 
     // ── MapMethodModel has ConstructorArguments ──────────────────────────────

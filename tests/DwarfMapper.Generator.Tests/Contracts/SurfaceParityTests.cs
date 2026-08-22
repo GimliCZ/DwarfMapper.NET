@@ -92,7 +92,7 @@ public sealed class SurfaceParityTests
         string usageName, int arity, string axis, string site, Endpoint endpoint)
     {
         var (element, c) = Resolve(usageName, arity, axis, site);
-        var claimed = (SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) != 0;
+        var claimed = (SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) != SurfaceEndpoints.None;
         var (effect, detail) = SurfaceProbe.Classify(c, endpoint);
 
         // No cell to judge: the endpoint has no such site, or AttributeUsage forbids it and the compiler
@@ -660,7 +660,7 @@ public sealed class SurfaceParityTests
         foreach (var c in SurfaceCatalog.CasesFor(element))
         foreach (var endpoint in EndpointSources.All)
         {
-            if ((SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) == 0) continue;
+            if ((SurfaceCatalog.ClaimFor(element, c.Site) & ToFlag(endpoint)) == SurfaceEndpoints.None) continue;
             if (SurfaceProbe.Classify(c, endpoint).Effect is not SurfaceEffect.Silent) continue;
             if (StructurallyInapplicableOption(c.Axis, endpoint) is not { } why) continue;
             excused.Add($"  {element.UsageName}({c.Axis}) on a {c.Site} @ {endpoint} — {why}");
@@ -1000,7 +1000,7 @@ public sealed class SurfaceParityTests
             }
 
             var endpoint = Enum.Parse<Endpoint>(endpointFlag.ToString());
-            if ((SurfaceCatalog.ClaimFor(element!, probed.Site) & endpointFlag) == 0)
+            if ((SurfaceCatalog.ClaimFor(element!, probed.Site) & endpointFlag) == SurfaceEndpoints.None)
             {
                 stale.Add($"{where} — the element no longer CLAIMS this endpoint, so the cell is not judged "
                           + "here any more. The divergence was declared away rather than fixed; delete the "

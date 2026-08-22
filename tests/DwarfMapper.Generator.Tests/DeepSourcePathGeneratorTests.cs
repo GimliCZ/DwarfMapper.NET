@@ -300,7 +300,7 @@ public class DeepSourcePathGeneratorTests
             var next = i < depth - 1
                 ? $"public N{i + 1} Next {{ get; set; }} = new();"
                 : "public string Value { get; set; } = \"\";";
-            sb.AppendLine($"public class N{i} {{ {next} }}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"public class N{i} {{ {next} }}");
         }
 
         sb.AppendLine("public class S { public N0 Root { get; set; } = new(); }");

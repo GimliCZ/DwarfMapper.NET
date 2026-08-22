@@ -173,7 +173,7 @@ public class HeteroFlattenGraphRuntimeTests
         var result = _mapper.Map(tree);
 
         Assert.Equal(3, result.Nodes.Count);
-        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x).ToList();
+        var names = result.Nodes.Select(n => n.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { "inner", "inner.txt", "outer" }, names);
     }
 

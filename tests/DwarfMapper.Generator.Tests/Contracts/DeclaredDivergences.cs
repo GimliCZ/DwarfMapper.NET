@@ -441,7 +441,7 @@ internal static class DeclaredDivergences
                 && cell.Arity == arity
                 && string.Equals(cell.Axis, axis, StringComparison.Ordinal)
                 && cell.Site == site
-                && (cell.Endpoints & endpoint) != 0))
+                && (cell.Endpoints & endpoint) != SurfaceEndpoints.None))
             .ToList();
 
         return matches.Count == 0 ? null : matches.Single();
@@ -454,7 +454,7 @@ internal static class DeclaredDivergences
         foreach (var (id, divergence) in Reasons)
         foreach (var cell in divergence.Cells)
         foreach (var endpoint in Enum.GetValues<SurfaceEndpoints>())
-            if (int.PopCount((int)endpoint) == 1 && (cell.Endpoints & endpoint) != 0)
+            if (int.PopCount((int)endpoint) == 1 && (cell.Endpoints & endpoint) != SurfaceEndpoints.None)
                 yield return (id, divergence, cell, endpoint);
     }
 
@@ -474,7 +474,7 @@ internal static class DeclaredDivergences
     public static bool CoversOption(string optionName, Endpoint endpoint) =>
         Reasons.Values.Any(d =>
             string.Equals(d.OptionName, optionName, StringComparison.Ordinal)
-            && d.Cells.Any(c => (c.Endpoints & ToSurfaceFlag(endpoint)) != 0));
+            && d.Cells.Any(c => (c.Endpoints & ToSurfaceFlag(endpoint)) != SurfaceEndpoints.None));
 
     /// <summary>
     ///     Every (option, endpoint) pair some finding claims — the exact population
