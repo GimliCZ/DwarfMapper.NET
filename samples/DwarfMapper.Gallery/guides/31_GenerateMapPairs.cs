@@ -8,27 +8,42 @@
 // destination member pairs by name; Customer.Address is simply not consumed, which the default
 // RequiredMapping = Target permits.
 
-namespace DwarfMapper.Gallery.Guides.G31;
-
-// <snippet: generate-map-pairs>
-[DwarfMapper]
-[GenerateMap<Order, OrderRow>]
-[GenerateMap<Customer, CustomerRow>]
-public partial class Mappers { }
+namespace DwarfMapper.Gallery.Guides.G31
+{
+    // <snippet: generate-map-pairs>
+    [DwarfMapper]
+    [GenerateMap<Order, OrderRow>]
+    [GenerateMap<Customer, CustomerRow>]
+    public partial class Mappers
+    {
+    }
 // </snippet>
 
-[DocExample(31, Tier.Guides, "Several pairs on one class",
-    Shows = "`[GenerateMap<A,B>]` stacked — the AutoMapper `CreateMap` shape")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(31,
+        Tier.Guides,
+        "Several pairs on one class",
+        Shows = "`[GenerateMap<A,B>]` stacked — the AutoMapper `CreateMap` shape")]
+    public static class Example
     {
-        var mappers = new Mappers();
+        public static void Run()
+        {
+            var mappers = new Mappers();
 
-        // The overload is picked by the source type — no cast, no generic argument at the call site.
-        var order = mappers.Map(new Order { Id = 7, FullName = "Grace Hopper", Total = 3m });
-        var customer = mappers.Map(new Customer { Id = 8, FullName = "Katherine Johnson", Total = 9m });
+            // The overload is picked by the source type — no cast, no generic argument at the call site.
+            var order = mappers.Map(new Order
+            {
+                Id = 7,
+                FullName = "Grace Hopper",
+                Total = 3m
+            });
+            var customer = mappers.Map(new Customer
+            {
+                Id = 8,
+                FullName = "Katherine Johnson",
+                Total = 9m
+            });
 
-        Console.WriteLine($"31 GenerateMap pairs  -> {order.FullName} ({order.Total}), {customer.FullName}");
+            Console.WriteLine($"31 GenerateMap pairs  -> {order.FullName} ({order.Total}), {customer.FullName}");
+        }
     }
 }

@@ -169,6 +169,58 @@ function Assert-LegScoreWithinBand {
 # used "timestamped inside the run's mutate/compile phase", which is exactly the wall-clock oracle H7
 # forbids — a slow run, a clock skew or a re-run would both miss mutants and invent them.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Remove-PlantedMutants — the "Delete the listed files and rebuild" remedy that
+# Assert-NoMutatedProductBinaries prescribes, performed instead of merely instructed.
+#
+# WHY THIS EXISTS. Stryker backs up only the files it OVERWRITES. A test project that references the
+# generator as an ANALYZER (ReferenceOutputAssembly=false, no CopyLocal) gets a mutant planted with no
+# *.stryker-unchanged beside it, so Stryker's own restore cannot put it back. Every local
+# `housekeeping.ps1 -Mutation` therefore ends with mutated product assemblies under tests/**/bin, and the
+# assertion fires EVERY time. CI never noticed because each nightly leg runs in a throwaway container.
+#
+# WHY THE ASSERTION STAYS, AND IS NOT MADE VACUOUS BY THIS. This function deletes; the assertion that
+# follows still has to pass on its own terms. It fails if anything mutated SURVIVES the delete - a locked
+# file, a copy outside tests/**/bin, or a mutant carrying a backup that restore should have handled and
+# did not. What changes is that the expected, well-understood residue no longer stops the run; what does
+# not change is that an unexpected mutated binary still fails the gate loudly.
+#
+# The deleted files are BUILD OUTPUT of an analyzer-only reference; the next build restores them. Nothing
+# in src/ or tests/ source is touched. Every removal is printed, because a silent cleanup is how a real
+# contamination would hide.
+function Remove-PlantedMutants {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [Parameter(Mandatory)][string]$Root
+    )
+    $marker = 'Stryker'
+    $binSegment = [System.IO.Path]::DirectorySeparatorChar + 'bin' + [System.IO.Path]::DirectorySeparatorChar
+    $srcBin = Join-Path $Root 'src'
+    $productNames = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]@(Get-ChildItem -Path $srcBin -Recurse -File -Filter 'DwarfMapper*.dll' -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FullName.Contains($binSegment, [System.StringComparison]::Ordinal) } |
+                    ForEach-Object { $_.Name }),
+        [System.StringComparer]::OrdinalIgnoreCase)
+
+    $removed = 0
+    Get-ChildItem -Path (Join-Path $Root 'tests') -Recurse -File -Filter 'DwarfMapper*.dll' -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName.Contains($binSegment, [System.StringComparison]::Ordinal) -and
+                       $productNames.Contains($_.Name) } |
+        ForEach-Object {
+            $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+            if ($text.Contains($marker)) {
+                Write-Host "   ${Leg}: removing planted mutant $($_.FullName)" -ForegroundColor DarkGray
+                Remove-Item -LiteralPath $_.FullName -Force
+                $removed++
+            }
+        }
+    if ($removed -gt 0) {
+        Write-Host ("   ${Leg}: removed $removed planted mutant(s) (analyzer-only references Stryker " +
+                    "cannot restore); the next build restores them") -ForegroundColor DarkGray
+    }
+}
+
 function Assert-NoMutatedProductBinaries {
     param(
         [Parameter(Mandatory)][string]$Leg,

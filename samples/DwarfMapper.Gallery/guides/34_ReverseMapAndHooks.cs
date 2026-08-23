@@ -8,78 +8,108 @@
 // OrderReceipt. RatedOrderMapper may share OrderDto because a mapper with constructor dependencies is not
 // ambient-registered at all (DWARF062, Info).
 
-namespace DwarfMapper.Gallery.Guides.G34;
-
-/// <summary>A dependency a converter needs — the thing a static method cannot reach.</summary>
-public interface IRateService
+namespace DwarfMapper.Gallery.Guides.G34
 {
-    decimal Convert(decimal amount);
-}
+    /// <summary>A dependency a converter needs — the thing a static method cannot reach.</summary>
+    public interface IRateService
+    {
+        decimal Convert(decimal amount);
+    }
 
-public sealed class DoublingRates : IRateService
-{
-    public decimal Convert(decimal amount) => amount * 2;
-}
+    public sealed class DoublingRates : IRateService
+    {
+        public decimal Convert(decimal amount)
+        {
+            return amount * 2;
+        }
+    }
 
 // <snippet: reverse-map>
-[DwarfMapper]
-public partial class ReversibleOrderMapper
-{
-    [ReverseMap]
-    [MapProperty(nameof(Order.FullName), nameof(OrderDto.Name))]
-    [MapIgnore(nameof(OrderDto.Source))]
-    public partial OrderDto ToDto(Order o);
+    [DwarfMapper]
+    public partial class ReversibleOrderMapper
+    {
+        [ReverseMap]
+        [MapProperty(nameof(Order.FullName), nameof(OrderDto.Name))]
+        [MapIgnore(nameof(OrderDto.Source))]
+        public partial OrderDto ToDto(Order o);
 
-    public partial Order FromDto(OrderDto d);   // inherits the inverted Name -> FullName rename
-}
+        public partial Order FromDto(OrderDto d); // inherits the inverted Name -> FullName rename
+    }
 // </snippet>
 
 // <snippet: ctor-injection>
-[DwarfMapper]
-public partial class RatedOrderMapper(IRateService rates)   // primary constructor
-{
-    [MapProperty(nameof(Order.FullName), nameof(OrderDto.Name))]
-    [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(ToLocal))]
-    [MapValue(nameof(OrderDto.Source), "api-v2")]
-    public partial OrderDto ToDto(Order o);
+    [DwarfMapper]
+    public partial class RatedOrderMapper(IRateService rates) // primary constructor
+    {
+        [MapProperty(nameof(Order.FullName), nameof(OrderDto.Name))]
+        [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(ToLocal))]
+        [MapValue(nameof(OrderDto.Source), "api-v2")]
+        public partial OrderDto ToDto(Order o);
 
-    private decimal ToLocal(decimal amount) => rates.Convert(amount);
-}
+        private decimal ToLocal(decimal amount)
+        {
+            return rates.Convert(amount);
+        }
+    }
 // </snippet>
 
 // <snippet: after-map-hook>
-[DwarfMapper]
-public partial class StampedOrderMapper
-{
-    [MapProperty(nameof(Order.FullName), nameof(OrderReceipt.Name))]                          // rename
-    [MapProperty(nameof(Order.Total), nameof(OrderReceipt.Total), Use = nameof(Round))]       // transform
-    [MapValue(nameof(OrderReceipt.Source), "api-v2")]                                         // constant
-    [MapIgnore(nameof(OrderReceipt.Checksum))]                                                // filled below
-    public partial OrderReceipt ToReceipt(Order o);
+    [DwarfMapper]
+    public partial class StampedOrderMapper
+    {
+        [MapProperty(nameof(Order.FullName), nameof(OrderReceipt.Name))] // rename
+        [MapProperty(nameof(Order.Total), nameof(OrderReceipt.Total), Use = nameof(Round))] // transform
+        [MapValue(nameof(OrderReceipt.Source), "api-v2")] // constant
+        [MapIgnore(nameof(OrderReceipt.Checksum))] // filled below
+        public partial OrderReceipt ToReceipt(Order o);
 
-    private static decimal Round(decimal d) => Math.Round(d, 2);
+        private static decimal Round(decimal d)
+        {
+            return Math.Round(d, 2);
+        }
 
-    [AfterMap]  // the imperative tail you couldn't express declaratively
-    private static void Stamp(Order o, OrderReceipt r) => r.Checksum = $"{o.Id:x8}";
-}
+        [AfterMap] // the imperative tail you couldn't express declaratively
+        private static void Stamp(Order o, OrderReceipt r)
+        {
+            r.Checksum = $"{o.Id:x8}";
+        }
+    }
 // </snippet>
 
-[DocExample(34, Tier.Guides, "Inverse maps, injected dependencies, and hooks",
-    Shows = "`[ReverseMap]`, a primary-constructor dependency in a `Use=` converter, and `[AfterMap]`")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(34,
+        Tier.Guides,
+        "Inverse maps, injected dependencies, and hooks",
+        Shows = "`[ReverseMap]`, a primary-constructor dependency in a `Use=` converter, and `[AfterMap]`")]
+    public static class Example
     {
-        var reversible = new ReversibleOrderMapper();
-        var order = new Order { Id = 1, FullName = "Ada", Total = 5m };
-        var back = reversible.FromDto(reversible.ToDto(order));
+        public static void Run()
+        {
+            var reversible = new ReversibleOrderMapper();
+            var order = new Order
+            {
+                Id = 1,
+                FullName = "Ada",
+                Total = 5m
+            };
+            var back = reversible.FromDto(reversible.ToDto(order));
 
-        var rated = new RatedOrderMapper(new DoublingRates())
-            .ToDto(new Order { Id = 2, FullName = "Grace", Total = 21m });
+            var rated = new RatedOrderMapper(new DoublingRates())
+                .ToDto(new Order
+                {
+                    Id = 2,
+                    FullName = "Grace",
+                    Total = 21m
+                });
 
-        var stamped = new StampedOrderMapper().ToReceipt(new Order { Id = 9, FullName = "Alan", Total = 1m });
+            var stamped = new StampedOrderMapper().ToReceipt(new Order
+            {
+                Id = 9,
+                FullName = "Alan",
+                Total = 1m
+            });
 
-        Console.WriteLine(
-            $"34 Reverse/ctor/hook  -> round-trip {back.FullName}, rated {rated.Total}, {stamped.Source} {stamped.Checksum}");
+            Console.WriteLine(
+                $"34 Reverse/ctor/hook  -> round-trip {back.FullName}, rated {rated.Total}, {stamped.Source} {stamped.Checksum}");
+        }
     }
 }

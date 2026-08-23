@@ -7,26 +7,34 @@
 
 using DwarfMapper.Extensions;
 using DwarfMapper.Gallery.Ex15.Models;
+
 // surfaces the generated model.ToPersonDto() extension
 // Person
 
 // PersonDto (carries its own mapping)
 
-namespace DwarfMapper.Gallery.Ex15;
-
-[DocExample(15, Tier.FrontDoors, "Co-located on the DTO",
-    Shows = "`[GenerateMap]` on a plain `sealed` DTO — no `partial`, no `[DwarfMapper]`")]
-public static class Example
+namespace DwarfMapper.Gallery.Ex15
 {
-    public static void Run()
+    [DocExample(15,
+        Tier.FrontDoors,
+        "Co-located on the DTO",
+        Shows = "`[GenerateMap]` on a plain `sealed` DTO — no `partial`, no `[DwarfMapper]`")]
+    public static class Example
     {
-        // <snippet: co-located-call>
-        var model = new Person { Name = "John Doe", Age = 100 };
+        public static void Run()
+        {
+            // <snippet: co-located-call>
+            var model = new Person
+            {
+                Name = "John Doe",
+                Age = 100
+            };
 
-        // No mapper class exists in this example — the generated extension is the whole call site.
-        var dto = model.ToPersonDto();
-        // </snippet>
+            // No mapper class exists in this example — the generated extension is the whole call site.
+            var dto = model.ToPersonDto();
+            // </snippet>
 
-        Console.WriteLine($"15 Co-located on DTO -> {dto.FullName}: Age {dto.Age}");
+            Console.WriteLine($"15 Co-located on DTO -> {dto.FullName}: Age {dto.Age}");
+        }
     }
 }

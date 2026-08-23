@@ -10,59 +10,74 @@
 // extension method, so there is no `new Mapper()` either.
 // (An attribute that matches no mapped pair is DWARF056 — a misconfigured linkage is never a silent no-op.)
 
-using DwarfMapper.Extensions;
 
 // surfaces the generated moria.ToPlaceDto() extension
 
-namespace DwarfMapper.Gallery.Ex14;
-
-public sealed class Person
+using DwarfMapper.Extensions;
+namespace DwarfMapper.Gallery.Ex14
 {
-    public string Name { get; set; } = "";
-}
+    public sealed class Person
+    {
+        public string Name { get; set; } = "";
+    }
 
-public sealed class Place
-{
-    public string Name { get; set; } = "";
-    public List<Person> People { get; set; } = new();
-}
+    public sealed class Place
+    {
+        public string Name { get; set; } = "";
 
-public sealed class PersonDto
-{
-    public string FullName { get; set; } = "";
-}
+        public List<Person> People { get; set; } = new();
+    }
 
-public sealed class PlaceDto
-{
-    public string Name { get; set; } = "";
-    public List<PersonDto> People { get; set; } = new();
-}
+    public sealed class PersonDto
+    {
+        public string FullName { get; set; } = "";
+    }
+
+    public sealed class PlaceDto
+    {
+        public string Name { get; set; } = "";
+
+        public List<PersonDto> People { get; set; } = new();
+    }
 
 // <snippet: nested-list-config-ergonomic>
-[DwarfMapper]
-[GenerateMap<Place, PlaceDto>]
-[MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]
-public partial class Mapper
-{
-} // no methods — the pair-scoped attribute carries the nested rename
+    [DwarfMapper]
+    [GenerateMap<Place, PlaceDto>]
+    [MapProperty<Person, PersonDto>(nameof(Person.Name), nameof(PersonDto.FullName))]
+    public partial class Mapper
+    {
+    } // no methods — the pair-scoped attribute carries the nested rename
 // </snippet>
 
-[DocExample(14, Tier.Configuration, "The same, with no partial methods",
-    Shows = "pair-scoped `[MapProperty<S,T>]` on the class carries the nested rename")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(14,
+        Tier.Configuration,
+        "The same, with no partial methods",
+        Shows = "pair-scoped `[MapProperty<S,T>]` on the class carries the nested rename")]
+    public static class Example
     {
-        var moria = new Place
+        public static void Run()
         {
-            Name = "Moria",
-            People = new List<Person> { new() { Name = "Gimli" }, new() { Name = "Balin" } }
-        };
+            var moria = new Place
+            {
+                Name = "Moria",
+                People = new List<Person>
+                {
+                    new()
+                    {
+                        Name = "Gimli"
+                    },
+                    new()
+                    {
+                        Name = "Balin"
+                    }
+                }
+            };
 
-        // No `new Mapper()`, no methods on the mapper at all — just the generated extension:
-        var dto = moria.ToPlaceDto();
+            // No `new Mapper()`, no methods on the mapper at all — just the generated extension:
+            var dto = moria.ToPlaceDto();
 
-        Console.WriteLine(
-            $"14 Nested (ergonomic) -> {dto.Name}: [{string.Join(", ", dto.People.Select(p => p.FullName))}]");
+            Console.WriteLine(
+                $"14 Nested (ergonomic) -> {dto.Name}: [{string.Join((string?)", ", (IEnumerable<string?>)dto.People.Select(p => p.FullName))}]");
+        }
     }
 }

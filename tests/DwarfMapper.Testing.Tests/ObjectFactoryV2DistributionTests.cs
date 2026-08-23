@@ -1,113 +1,115 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections;
+using DwarfMapper.TestInfrastructure;
 using System.Globalization;
 
-namespace DwarfMapper.Testing.Tests;
-
-/// <summary>
-///     Meta-tests for what the fuzz INPUT generator can actually produce (ISSUE-031 / ISSUE-032).
-///     <para>
-///     A fuzz suite over a shrunken input space goes green no matter what — it cannot fail on a value it never
-///     generates. ObjectFactoryV2 used to unwrap <c>Nullable&lt;T&gt;</c> to <c>T</c> and always return a value,
-///     never returned a null reference, and drew every integral as <c>rng.Next(1, MaxValue)</c> — so no fuzz test
-///     ever saw a null, a zero, a negative, or a type boundary. The whole null-handling engine (NullStrategy,
-///     NullSubstitute, nullable→non-nullable, SkipNullSourceMembers, nullAsNull, null-propagation in synthesized
-///     helpers) and most of the narrowing/sign-conversion machinery were therefore unfuzzed.
-///     </para>
-///     These assert the generator's REACH, so the space can never silently shrink back.
-/// </summary>
-public class ObjectFactoryV2DistributionTests
+namespace DwarfMapper.Testing.Tests
 {
-    // Fast 400 / deep 4000 — see DeepPopulation.ObjectFactoryDistributionSeeds. Every reach assertion
-    // below is an existence (Contains) or depth-property claim, so more seeds only strengthen it.
-    private static readonly int Seeds =
-        TestInfrastructure.DeepTier.Count(TestInfrastructure.DeepPopulation.ObjectFactoryDistributionSeeds);
-
-    private static IEnumerable<object?> Sample(Type t, int? seeds = null, int depth = 0)
+    /// <summary>
+    ///     Meta-tests for what the fuzz INPUT generator can actually produce (ISSUE-031 / ISSUE-032).
+    ///     <para>
+    ///         A fuzz suite over a shrunken input space goes green no matter what — it cannot fail on a value it never
+    ///         generates. ObjectFactoryV2 used to unwrap <c>Nullable&lt;T&gt;</c> to <c>T</c> and always return a value,
+    ///         never returned a null reference, and drew every integral as <c>rng.Next(1, MaxValue)</c> — so no fuzz test
+    ///         ever saw a null, a zero, a negative, or a type boundary. The whole null-handling engine (NullStrategy,
+    ///         NullSubstitute, nullable→non-nullable, SkipNullSourceMembers, nullAsNull, null-propagation in synthesized
+    ///         helpers) and most of the narrowing/sign-conversion machinery were therefore unfuzzed.
+    ///     </para>
+    ///     These assert the generator's REACH, so the space can never silently shrink back.
+    /// </summary>
+    public class ObjectFactoryV2DistributionTests
     {
-        var count = seeds ?? Seeds;
-        for (var seed = 0; seed < count; seed++)
-            yield return ObjectFactoryV2.Create(t, new Random(seed), depth);
-    }
+        // Fast 400 / deep 4000 — see DeepPopulation.ObjectFactoryDistributionSeeds. Every reach assertion
+        // below is an existence (Contains) or depth-property claim, so more seeds only strengthen it.
+        private static readonly int Seeds =
+            DeepTier.Count(DeepPopulation.ObjectFactoryDistributionSeeds);
 
-    [Fact]
-    public void Nullable_value_types_are_sometimes_null()
-    {
-        Assert.Contains(Sample(typeof(int?)), v => v is null);
-        Assert.Contains(Sample(typeof(DateTime?)), v => v is null);
+        private static IEnumerable<object?> Sample(Type t, int? seeds = null, int depth = 0)
+        {
+            var count = seeds ?? Seeds;
+            for (var seed = 0; seed < count; seed++)
+                yield return ObjectFactoryV2.Create(t, new Random(seed), depth);
+        }
 
-        // …and are not ALWAYS null either — a generator that only produced null would be just as blind.
-        Assert.Contains(Sample(typeof(int?)), v => v is not null);
-    }
+        [Fact]
+        public void Nullable_value_types_are_sometimes_null()
+        {
+            Assert.Contains(Sample(typeof(int?)), v => v is null);
+            Assert.Contains(Sample(typeof(DateTime?)), v => v is null);
 
-    [Fact]
-    public void Reference_types_are_sometimes_null_below_the_root()
-    {
-        // Depth > 0 only: roots are materialised with `!` by every caller, so a null root is a broken
-        // fixture rather than an interesting input.
-        Assert.Contains(Sample(typeof(string), depth: 1), v => v is null);
-        Assert.DoesNotContain(Sample(typeof(string)), v => v is null);
-    }
+            // …and are not ALWAYS null either — a generator that only produced null would be just as blind.
+            Assert.Contains(Sample(typeof(int?)), v => v is not null);
+        }
 
-    [Theory]
-    [InlineData(typeof(int))]
-    [InlineData(typeof(sbyte))]
-    [InlineData(typeof(short))]
-    [InlineData(typeof(long))]
-    public void Signed_integrals_reach_zero_negative_and_both_limits(Type t)
-    {
-        ArgumentNullException.ThrowIfNull(t);
+        [Fact]
+        public void Reference_types_are_sometimes_null_below_the_root()
+        {
+            // Depth > 0 only: roots are materialised with `!` by every caller, so a null root is a broken
+            // fixture rather than an interesting input.
+            Assert.Contains(Sample(typeof(string), depth: 1), v => v is null);
+            Assert.DoesNotContain(Sample(typeof(string)), v => v is null);
+        }
 
-        var values = Sample(t).Where(v => v is not null).Select(v => Convert.ToDecimal(v, CultureInfo.InvariantCulture)).ToHashSet();
+        [Theory]
+        [InlineData(typeof(int))]
+        [InlineData(typeof(sbyte))]
+        [InlineData(typeof(short))]
+        [InlineData(typeof(long))]
+        public void Signed_integrals_reach_zero_negative_and_both_limits(Type t)
+        {
+            ArgumentNullException.ThrowIfNull(t);
 
-        var min = Convert.ToDecimal(t.GetField("MinValue")!.GetValue(null), CultureInfo.InvariantCulture);
-        var max = Convert.ToDecimal(t.GetField("MaxValue")!.GetValue(null), CultureInfo.InvariantCulture);
+            var values = Sample(t).Where(v => v is not null).Select(v => Convert.ToDecimal(v, CultureInfo.InvariantCulture)).ToHashSet();
 
-        Assert.Contains(0m, values);
-        Assert.Contains(values, v => v < 0m);
-        Assert.Contains(min, values);
-        Assert.Contains(max, values);
-    }
+            var min = Convert.ToDecimal(t.GetField("MinValue")!.GetValue(null), CultureInfo.InvariantCulture);
+            var max = Convert.ToDecimal(t.GetField("MaxValue")!.GetValue(null), CultureInfo.InvariantCulture);
 
-    [Theory]
-    [InlineData(typeof(byte))]
-    [InlineData(typeof(ushort))]
-    [InlineData(typeof(uint))]
-    [InlineData(typeof(ulong))]
-    public void Unsigned_integrals_reach_zero_and_max(Type t)
-    {
-        ArgumentNullException.ThrowIfNull(t);
+            Assert.Contains(0m, values);
+            Assert.Contains(values, v => v < 0m);
+            Assert.Contains(min, values);
+            Assert.Contains(max, values);
+        }
 
-        var values = Sample(t).Where(v => v is not null).Select(v => Convert.ToDecimal(v, CultureInfo.InvariantCulture)).ToHashSet();
-        Assert.Contains(0m, values);
-        Assert.Contains(Convert.ToDecimal(t.GetField("MaxValue")!.GetValue(null), CultureInfo.InvariantCulture), values);
-    }
+        [Theory]
+        [InlineData(typeof(byte))]
+        [InlineData(typeof(ushort))]
+        [InlineData(typeof(uint))]
+        [InlineData(typeof(ulong))]
+        public void Unsigned_integrals_reach_zero_and_max(Type t)
+        {
+            ArgumentNullException.ThrowIfNull(t);
 
-    [Fact]
-    public void Strings_are_sometimes_empty()
-    {
-        Assert.Contains(Sample(typeof(string)), v => (v as string)?.Length == 0);
-    }
+            var values = Sample(t).Where(v => v is not null).Select(v => Convert.ToDecimal(v, CultureInfo.InvariantCulture)).ToHashSet();
+            Assert.Contains(0m, values);
+            Assert.Contains(Convert.ToDecimal(t.GetField("MaxValue")!.GetValue(null), CultureInfo.InvariantCulture), values);
+        }
 
-    [Fact]
-    public void Collections_are_sometimes_empty_and_sometimes_large()
-    {
-        var sizes = Sample(typeof(List<int>))
-            .Where(v => v is not null)
-            .Select(v => ((ICollection)v!).Count)
-            .ToHashSet();
+        [Fact]
+        public void Strings_are_sometimes_empty()
+        {
+            Assert.Contains(Sample(typeof(string)), v => (v as string)?.Length == 0);
+        }
 
-        Assert.Contains(0, sizes);                  // empty-collection paths (AsEmpty/AsNull, unknown-count)
-        Assert.Contains(sizes, n => n >= 8);        // beyond the old hard 1..3 ceiling
-    }
+        [Fact]
+        public void Collections_are_sometimes_empty_and_sometimes_large()
+        {
+            var sizes = Sample(typeof(List<int>))
+                .Where(v => v is not null)
+                .Select(v => ((ICollection)v!).Count)
+                .ToHashSet();
 
-    [Fact]
-    public void Dictionary_keys_are_never_null()
-    {
-        // A null dictionary key throws, so it is not a legal input at any probability.
-        foreach (var d in Sample(typeof(Dictionary<string, int>)).OfType<IDictionary>())
+            Assert.Contains(0, sizes); // empty-collection paths (AsEmpty/AsNull, unknown-count)
+            Assert.Contains(sizes, n => n >= 8); // beyond the old hard 1..3 ceiling
+        }
+
+        [Fact]
+        public void Dictionary_keys_are_never_null()
+        {
+            // A null dictionary key throws, so it is not a legal input at any probability.
+            foreach (var d in Sample(typeof(Dictionary<string, int>)).OfType<IDictionary>())
             foreach (var k in d.Keys)
                 Assert.NotNull(k);
+        }
     }
 }

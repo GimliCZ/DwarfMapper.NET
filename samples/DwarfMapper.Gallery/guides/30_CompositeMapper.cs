@@ -7,35 +7,45 @@
 
 using System.Globalization;
 
-namespace DwarfMapper.Gallery.Guides.G30;
-
-// <snippet: composite-mapper>
-[DwarfMapper]
-public partial class CustomerMapper
+namespace DwarfMapper.Gallery.Guides.G30
 {
-    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]                           // rename
-    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))]  // conversion
-    [Flatten(nameof(Customer.Address))]                                                          // Address.City -> City
-    public partial CustomerDto ToDto(Customer src);
+    // <snippet: composite-mapper>
+    [DwarfMapper]
+    public partial class CustomerMapper
+    {
+        [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))] // rename
+        [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))] // conversion
+        [Flatten(nameof(Customer.Address))] // Address.City -> City
+        public partial CustomerDto ToDto(Customer src);
 
-    private static string FormatMoney(decimal d) => d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
-}
+        private static string FormatMoney(decimal d)
+        {
+            return d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
+        }
+    }
 // </snippet>
 
-[DocExample(30, Tier.Guides, "A composite mapper",
-    Shows = "rename, `Use=` conversion, and `[Flatten]` in one mapper")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(30,
+        Tier.Guides,
+        "A composite mapper",
+        Shows = "rename, `Use=` conversion, and `[Flatten]` in one mapper")]
+    public static class Example
     {
-        var dto = new CustomerMapper().ToDto(new Customer
+        public static void Run()
         {
-            Id = 1,
-            FullName = "Ada Lovelace",
-            Total = 12.5m,
-            Address = new Address { City = "London", Zip = "NW1" }
-        });
+            var dto = new CustomerMapper().ToDto(new Customer
+            {
+                Id = 1,
+                FullName = "Ada Lovelace",
+                Total = 12.5m,
+                Address = new Address
+                {
+                    City = "London",
+                    Zip = "NW1"
+                }
+            });
 
-        Console.WriteLine($"30 Composite mapper   -> {dto.Name}, {dto.Total}, {dto.City} {dto.Zip}");
+            Console.WriteLine($"30 Composite mapper   -> {dto.Name}, {dto.Total}, {dto.City} {dto.Zip}");
+        }
     }
 }

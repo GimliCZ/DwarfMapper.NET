@@ -68,12 +68,34 @@ if ($Nightly) {
 # Generator, CodeFixes and Testing line values measured unchanged to this decimal (Testing's branch moved
 # 81.9 -> 82.2 with no code change — the R4 wobble exhibit; branch stays informational).
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Re-measured 2026-08-23 (post-reformat) — fast tier, Release, exact covered/coverable from
+# TestResults/coverage-report/Summary.json, truncated with [math]::Floor(x*10)/10 as the rule above requires:
+#   DwarfMapper 91.2/77.2 · Generator 93.4/87.9 · DocTooling 96.0/91.7 · CodeFixes 88.8/68.4 · Testing 82.7/82.6
+# Exact covered/coverable behind those line values: DwarfMapper 281/308 = 91.2338 ·
+# Generator 10080/10787 = 93.4458 · DocTooling 414/431 = 96.0557 · CodeFixes 238/268 = 88.8060 ·
+# Testing 773/932 = 82.9399 (fast) and 82.7 (deep, the pinned one).
+#
+# THREE FLOORS ARE LOWERED. The written reason the rule demands: a repository-wide reformat expanded
+# every single-line guard clause — `if (x) return;` — onto two lines. Measured: 314 such guards existed
+# across src/ at fac40f3 and ZERO remain (CodeFixes 16, Generator 221, DwarfMapper 3, Testing 74,
+# DocTooling 13). Where the guarded branch is not always taken, one covered line becomes a covered `if`
+# plus an uncovered body, so coverable lines grow while covered lines do not. Expression-bodied members
+# expanded to block bodies the same way. This is a DENOMINATOR effect from formatting, not lost testing:
+# no test was deleted or disabled, and the suite is green at 8010 (fast) and 16122 (deep) with 0 failures.
+# CodeFixes moves most (92.4 -> 88.8) because it is the smallest assembly and the most guard-dense.
+#
+# DocTooling is RAISED 95.7 -> 96.0 (measured 96.0557) — the normal move, locking in the improvement.
+# Testing is pinned to 82.7, the DEEP-tier measurement, which is BELOW the fast-tier 82.9. The two tiers
+# were measured separately and agree everywhere else to the printed decimal; pinning the minimum is what
+# makes the gate hold under both `-Coverage` and `-Nightly` (-Deep -Coverage) rather than only the tier
+# that happened to be measured.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
     'DwarfMapper'            = 91.2
-    'DwarfMapper.Generator'  = 93.7
-    'DwarfMapper.DocTooling' = 95.7
-    'DwarfMapper.CodeFixes'  = 92.4
-    'DwarfMapper.Testing'    = 83.2
+    'DwarfMapper.Generator'  = 93.4
+    'DwarfMapper.DocTooling' = 96.0
+    'DwarfMapper.CodeFixes'  = 88.8
+    'DwarfMapper.Testing'    = 82.7
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -321,6 +343,24 @@ try {
     if (-not $SkipAot) {
         Write-Host "== 3/4 AOT publish + EXECUTE (codegen correctness/determinism) ==" -ForegroundColor Cyan
         $rid = if ($IsWindows) { 'win-x64' } else { 'linux-x64' }
+        # NativeAOT on Windows shells out to build/findvcvarsall.bat in the ILCompiler package. That script
+        # locates the MSVC toolchain with vswhere by ABSOLUTE path, then CALLs vcvarsall.bat with stdout sent
+        # to NUL - but NOT stderr. vcvarsall itself runs a bare `vswhere` (PATH-relative) for some components,
+        # so when the VS Installer directory is not on PATH it prints
+        #     'vswhere.exe' is not recognized as an internal or external command
+        # to stderr. MSBuild's Exec captures stderr together with stdout, that line lands FIRST in the
+        # captured output, and the targets read line 1 as the linker directory - producing
+        # "The filename, directory name, or volume label is incorrect" and MSB3073, with the misleading
+        # vswhere text quoted back. The toolchain was never missing; the probe's output was polluted.
+        # Verified on this machine: with the directory on PATH, findvcvarsall.bat x64 emits exactly its two
+        # expected lines and exits 0. Prepend it when it exists and vswhere is not already resolvable.
+        if ($IsWindows) {
+            $vsInstaller = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+            if ((Test-Path (Join-Path $vsInstaller 'vswhere.exe')) -and -not (Get-Command vswhere.exe -ErrorAction SilentlyContinue)) {
+                $env:PATH = "$vsInstaller;$env:PATH"
+                Write-Host "   PATH += $vsInstaller (vcvarsall's stderr would otherwise corrupt the linker probe)" -ForegroundColor DarkGray
+            }
+        }
         # PublishAot is deliberately NOT passed on the command line, for the reason ci.yml's aot-trim-gate
         # states verbatim and this stage did not inherit (I6): `-p:` sets a GLOBAL property, which MSBuild
         # flows down the whole project graph - including src/DwarfMapper.Generator and
@@ -466,6 +506,7 @@ try {
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
+        Remove-PlantedMutants -Leg 'generator' -Root $root
         Assert-NoMutatedProductBinaries -Leg 'generator' -Root $root
 
         # Stryker mutates ONE project per run, so the documentation pipeline needs its own config. Without
@@ -478,6 +519,7 @@ try {
         Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
+        Remove-PlantedMutants -Leg 'doc tooling' -Root $root
         Assert-NoMutatedProductBinaries -Leg 'doc tooling' -Root $root
 
         # The SHIPPED runtime assembly. Unlike the attribute surface, registry members, the IDwarfMapper
@@ -491,6 +533,7 @@ try {
         Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
+        Remove-PlantedMutants -Leg 'runtime' -Root $root
         Assert-NoMutatedProductBinaries -Leg 'runtime' -Root $root
     }
 

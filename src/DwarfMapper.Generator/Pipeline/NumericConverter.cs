@@ -5,111 +5,114 @@ using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
-namespace DwarfMapper.Generator.Pipeline;
-
-/// <summary>
-///     Handles integral↔integral narrowing / sign-change conversions by emitting
-///     a call to <c>INumberBase&lt;TSelf&gt;.CreateChecked</c>, which throws
-///     <c>OverflowException</c> when the value does not fit the target type.
-///     This converter is only reached when there is NO implicit conversion between
-///     <paramref name="src" /> and <paramref name="tgt" /> (widening stays on the
-///     zero-cost direct-assign path). Enum types are excluded: enums have
-///     <c>SpecialType.None</c>, so <see cref="TypeInterfaces.IsIntegral" /> returns
-///     false for them — they stay in <see cref="EnumConverter" />.
-/// </summary>
-internal static class NumericConverter
+namespace DwarfMapper.Generator.Pipeline
 {
     /// <summary>
-    ///     True when <paramref name="src" /> and <paramref name="tgt" /> are both basic numeric types but sit in
-    ///     DIFFERENT categories (integer kind vs floating/decimal kind) — e.g. <c>long → double</c>,
-    ///     <c>int → float</c>, <c>long → decimal</c>. Such conversions are *implicit* in C#, so the compiler is
-    ///     silent, yet they lose precision once the magnitude exceeds the mantissa.
-    ///     <para>
-    ///     Shared by BOTH engines on purpose. It previously lived as a private helper inside
-    ///     <c>MapperExtractor</c>, so the class model reported DWARF038 for these while the <c>[MapTo]</c>
-    ///     registry — which could not see it — emitted a silent direct assignment for the same types. Having one
-    ///     definition both engines call is what stops that drift recurring.
-    ///     </para>
+    ///     Handles integral↔integral narrowing / sign-change conversions by emitting
+    ///     a call to <c>INumberBase&lt;TSelf&gt;.CreateChecked</c>, which throws
+    ///     <c>OverflowException</c> when the value does not fit the target type.
+    ///     This converter is only reached when there is NO implicit conversion between
+    ///     <paramref name="src" /> and <paramref name="tgt" /> (widening stays on the
+    ///     zero-cost direct-assign path). Enum types are excluded: enums have
+    ///     <c>SpecialType.None</c>, so <see cref="TypeInterfaces.IsIntegral" /> returns
+    ///     false for them — they stay in <see cref="EnumConverter" />.
     /// </summary>
-    // NOTE (ISSUE-017): char counts as integer-kind HERE while TypeInterfaces.IsIntegral excludes it. That
-    // is deliberate, not drift — see the note there. This classifier only decides category crossing.
-    public static bool IsCrossCategoryLossy(ITypeSymbol src, ITypeSymbol tgt)
+    internal static class NumericConverter
     {
-        static int Cat(ITypeSymbol t)
+        /// <summary>
+        ///     True when <paramref name="src" /> and <paramref name="tgt" /> are both basic numeric types but sit in
+        ///     DIFFERENT categories (integer kind vs floating/decimal kind) — e.g. <c>long → double</c>,
+        ///     <c>int → float</c>, <c>long → decimal</c>. Such conversions are *implicit* in C#, so the compiler is
+        ///     silent, yet they lose precision once the magnitude exceeds the mantissa.
+        ///     <para>
+        ///         Shared by BOTH engines on purpose. It previously lived as a private helper inside
+        ///         <c>MapperExtractor</c>, so the class model reported DWARF038 for these while the <c>[MapTo]</c>
+        ///         registry — which could not see it — emitted a silent direct assignment for the same types. Having one
+        ///         definition both engines call is what stops that drift recurring.
+        ///     </para>
+        /// </summary>
+        // NOTE (ISSUE-017): char counts as integer-kind HERE while TypeInterfaces.IsIntegral excludes it. That
+        // is deliberate, not drift — see the note there. This classifier only decides category crossing.
+        public static bool IsCrossCategoryLossy(ITypeSymbol src, ITypeSymbol tgt)
         {
-            // Nullable<T> answers the SAME numeric question one wrapper up, and this classifier used to say
-            // no to all of them: `Nullable<long>` carries SpecialType.System_Nullable_T, not
-            // System_Int64, so `long? → double?` and `long → double?` were classified "not a numeric basic
-            // type" and passed silently — the direct-assign path takes them, because C# LIFTS the implicit
-            // numeric conversion over Nullable<>. The lifted conversion loses exactly the precision the
-            // unlifted one does. Unwrapping here rather than at the two call sites is deliberate: this
-            // predicate is shared by the class engine and the [MapTo] registry precisely so the two cannot
-            // disagree, and a guard written outside it would be the drift the sharing exists to prevent.
-            // (TASKS.md I20; the same silence at the projection endpoint is the other half of that row.)
-            if (t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } n
-                && n.TypeArguments.Length == 1)
-                t = n.TypeArguments[0];
-
-            return t.SpecialType switch
+            static int Cat(ITypeSymbol t)
             {
-                SpecialType.System_SByte or SpecialType.System_Byte
-                    or SpecialType.System_Int16 or SpecialType.System_UInt16
-                    or SpecialType.System_Int32 or SpecialType.System_UInt32
-                    or SpecialType.System_Int64 or SpecialType.System_UInt64
-                    or SpecialType.System_Char => 1, // integer kind
-                SpecialType.System_Single or SpecialType.System_Double
-                    or SpecialType.System_Decimal => 2, // floating / decimal kind
-                _ => 0 // not a numeric basic type
-            };
+                // Nullable<T> answers the SAME numeric question one wrapper up, and this classifier used to say
+                // no to all of them: `Nullable<long>` carries SpecialType.System_Nullable_T, not
+                // System_Int64, so `long? → double?` and `long → double?` were classified "not a numeric basic
+                // type" and passed silently — the direct-assign path takes them, because C# LIFTS the implicit
+                // numeric conversion over Nullable<>. The lifted conversion loses exactly the precision the
+                // unlifted one does. Unwrapping here rather than at the two call sites is deliberate: this
+                // predicate is shared by the class engine and the [MapTo] registry precisely so the two cannot
+                // disagree, and a guard written outside it would be the drift the sharing exists to prevent.
+                // (TASKS.md I20; the same silence at the projection endpoint is the other half of that row.)
+                if (t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } n && n.TypeArguments.Length == 1)
+                {
+                    t = n.TypeArguments[0];
+                }
+
+                return t.SpecialType switch
+                {
+                    SpecialType.System_SByte or SpecialType.System_Byte
+                        or SpecialType.System_Int16 or SpecialType.System_UInt16
+                        or SpecialType.System_Int32 or SpecialType.System_UInt32
+                        or SpecialType.System_Int64 or SpecialType.System_UInt64
+                        or SpecialType.System_Char => 1, // integer kind
+                    SpecialType.System_Single or SpecialType.System_Double
+                        or SpecialType.System_Decimal => 2, // floating / decimal kind
+                    _ => 0 // not a numeric basic type
+                };
+            }
+
+            var a = Cat(src);
+            var b = Cat(tgt);
+            return a != 0 && b != 0 && a != b;
         }
 
-        var a = Cat(src);
-        var b = Cat(tgt);
-        return a != 0 && b != 0 && a != b;
-    }
-
-    /// <summary>
-    ///     Returns a synthesized method name if both <paramref name="src" /> and
-    ///     <paramref name="tgt" /> are integral (non-enum) types; null otherwise.
-    /// </summary>
-    public static string? TryCreate(
-        ITypeSymbol src,
-        ITypeSymbol tgt,
-        Dictionary<string, SynthesizedMethod> synthesized)
-    {
-        if (!TypeInterfaces.IsIntegral(src) || !TypeInterfaces.IsIntegral(tgt))
-            return null;
-
-        var name = MethodName(src, tgt);
-        if (!synthesized.ContainsKey(name))
+        /// <summary>
+        ///     Returns a synthesized method name if both <paramref name="src" /> and
+        ///     <paramref name="tgt" /> are integral (non-enum) types; null otherwise.
+        /// </summary>
+        public static string? TryCreate(
+            ITypeSymbol src,
+            ITypeSymbol tgt,
+            Dictionary<string, SynthesizedMethod> synthesized)
         {
-            // Emit: private static {Fq(tgt)} {name}({Fq(src)} v) => {Fq(tgt)}.CreateChecked(v);
-            // global::System.Int32.CreateChecked(v) is a valid C# static-abstract-interface
-            // invocation on .NET 10 — reflection-free and AOT-safe.
-            var code = $"    private static {Fq(tgt)} {name}({Fq(src)} v) => {Fq(tgt)}.CreateChecked(v);\n";
-            synthesized[name] = new SynthesizedMethod(name, code);
+            if (!TypeInterfaces.IsIntegral(src) || !TypeInterfaces.IsIntegral(tgt))
+            {
+                return null;
+            }
+
+            var name = MethodName(src, tgt);
+            if (!synthesized.ContainsKey(name))
+            {
+                // Emit: private static {Fq(tgt)} {name}({Fq(src)} v) => {Fq(tgt)}.CreateChecked(v);
+                // global::System.Int32.CreateChecked(v) is a valid C# static-abstract-interface
+                // invocation on .NET 10 — reflection-free and AOT-safe.
+                var code = $"    private static {Fq(tgt)} {name}({Fq(src)} v) => {Fq(tgt)}.CreateChecked(v);\n";
+                synthesized[name] = new SynthesizedMethod(name, code);
+            }
+
+            return name;
         }
 
-        return name;
-    }
+        private static string Fq(ITypeSymbol t)
+        {
+            return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        }
 
-    private static string Fq(ITypeSymbol t)
-    {
-        return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-    }
+        private static string MethodName(ITypeSymbol src, ITypeSymbol tgt)
+        {
+            return GeneratedNames.Numeric + Sanitize(src) + "__" + Sanitize(tgt) + "_" + StableHash.Fnv1a("Num|" + Fq(src) + "|" + Fq(tgt));
+        }
 
-    private static string MethodName(ITypeSymbol src, ITypeSymbol tgt)
-    {
-        return GeneratedNames.Numeric + Sanitize(src) + "__" + Sanitize(tgt)
-               + "_" + StableHash.Fnv1a("Num|" + Fq(src) + "|" + Fq(tgt));
-    }
-
-    private static string Sanitize(ITypeSymbol t)
-    {
-        var s = Fq(t);
-        var sb = new StringBuilder(s.Length);
-        foreach (var ch in s)
-            sb.Append(char.IsLetterOrDigit(ch) ? ch : '_');
-        return sb.ToString();
+        private static string Sanitize(ITypeSymbol t)
+        {
+            var s = Fq(t);
+            var sb = new StringBuilder(s.Length);
+            foreach (var ch in s)
+                sb.Append(char.IsLetterOrDigit(ch) ? ch : '_');
+            return sb.ToString();
+        }
     }
 }

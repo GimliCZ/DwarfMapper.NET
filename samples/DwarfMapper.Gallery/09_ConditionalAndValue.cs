@@ -6,51 +6,71 @@
 //   NullSubstitute = v      emit `src ?? v` for a nullable source
 //   [MapValue(tgt, const)]  give a source-less destination member a constant (counts as mapped)
 
-namespace DwarfMapper.Gallery.Ex09;
-
-public sealed class Member
+namespace DwarfMapper.Gallery.Ex09
 {
-    public string Name { get; set; } = "";
-    public string? Nickname { get; set; }
-    public bool IsVip { get; set; }
-    public int Score { get; set; }
-}
+    public sealed class Member
+    {
+        public string Name { get; set; } = "";
 
-public sealed class MemberDto
-{
-    public string Name { get; set; } = "";
-    public string Nickname { get; set; } = "";
-    public string Tier { get; set; } = "";
-    public int Score { get; set; }
-}
+        public string? Nickname { get; set; }
+
+        public bool IsVip { get; set; }
+
+        public int Score { get; set; }
+    }
+
+    public sealed class MemberDto
+    {
+        public string Name { get; set; } = "";
+
+        public string Nickname { get; set; } = "";
+
+        public string Tier { get; set; } = "";
+
+        public int Score { get; set; }
+    }
 
 // <snippet: conditional-and-value>
-[DwarfMapper]
-public partial class Mapper
-{
-    [MapProperty(nameof(Member.Nickname), nameof(MemberDto.Nickname), NullSubstitute = "(none)")]
-    [MapValue(nameof(MemberDto.Tier), "guild")]
-    [MapProperty(nameof(Member.Score), nameof(MemberDto.Score), When = nameof(IsActive))]
-    public partial MemberDto ToDto(Member m);
-
-    private static bool IsActive(Member m)
+    [DwarfMapper]
+    public partial class Mapper
     {
-        return m.IsVip;
-        // Score is copied only for VIPs; others keep 0
+        [MapProperty(nameof(Member.Nickname), nameof(MemberDto.Nickname), NullSubstitute = "(none)")]
+        [MapValue(nameof(MemberDto.Tier), "guild")]
+        [MapProperty(nameof(Member.Score), nameof(MemberDto.Score), When = nameof(IsActive))]
+        public partial MemberDto ToDto(Member m);
+
+        private static bool IsActive(Member m)
+        {
+            return m.IsVip;
+            // Score is copied only for VIPs; others keep 0
+        }
     }
-}
 // </snippet>
 
-[DocExample(9, Tier.Configuration, "Conditional and constant values",
-    Shows = "`When=`, `NullSubstitute=`, and `[MapValue]`")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(9,
+        Tier.Configuration,
+        "Conditional and constant values",
+        Shows = "`When=`, `NullSubstitute=`, and `[MapValue]`")]
+    public static class Example
     {
-        var vip = new Mapper().ToDto(new Member
-            { Name = "Thorin", Nickname = "Oakenshield", IsVip = true, Score = 90 });
-        var plain = new Mapper().ToDto(new Member { Name = "Bombur", Nickname = null, IsVip = false, Score = 90 });
-        Console.WriteLine($"09 When/Value/Null    -> {vip.Name} '{vip.Nickname}' {vip.Tier} score {vip.Score}; " +
-                          $"{plain.Name} '{plain.Nickname}' score {plain.Score}");
+        public static void Run()
+        {
+            var vip = new Mapper().ToDto(new Member
+            {
+                Name = "Thorin",
+                Nickname = "Oakenshield",
+                IsVip = true,
+                Score = 90
+            });
+            var plain = new Mapper().ToDto(new Member
+            {
+                Name = "Bombur",
+                Nickname = null,
+                IsVip = false,
+                Score = 90
+            });
+            Console.WriteLine($"09 When/Value/Null    -> {vip.Name} '{vip.Nickname}' {vip.Tier} score {vip.Score}; " +
+                              $"{plain.Name} '{plain.Nickname}' score {plain.Score}");
+        }
     }
 }

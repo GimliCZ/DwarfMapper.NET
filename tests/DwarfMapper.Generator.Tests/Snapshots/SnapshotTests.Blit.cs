@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-namespace DwarfMapper.Generator.Tests;
-
-public partial class SnapshotSuite
+namespace DwarfMapper.Generator.Tests
 {
-    // ── Blit: layout-identical unmanaged structs → MemoryMarshal.Cast ─────────
-    [Fact]
-    public Task Snap_Blit_LayoutIdenticalStructArray()
+    public partial class SnapshotSuite
     {
-        const string src = """
-                           using DwarfMapper;
-                           namespace Demo;
-                           public struct SrcV { public float X; public float Y; public float Z; }
-                           public struct DstV { public float X; public float Y; public float Z; }
-                           public class A { public SrcV[] Verts { get; set; } = System.Array.Empty<SrcV>(); }
-                           public class B { public DstV[] Verts { get; set; } = System.Array.Empty<DstV>(); }
-                           [DwarfMapper] public partial class M { public partial B Map(A a); }
-                           """;
-        var (_, generated) = GeneratorTestHarness.Run(src);
-        return Verify(generated);
+        // ── Blit: layout-identical unmanaged structs → MemoryMarshal.Cast ─────────
+        [Fact]
+        public Task Snap_Blit_LayoutIdenticalStructArray()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public struct SrcV { public float X; public float Y; public float Z; }
+                               public struct DstV { public float X; public float Y; public float Z; }
+                               public class A { public SrcV[] Verts { get; set; } = System.Array.Empty<SrcV>(); }
+                               public class B { public DstV[] Verts { get; set; } = System.Array.Empty<DstV>(); }
+                               [DwarfMapper] public partial class M { public partial B Map(A a); }
+                               """;
+            var (_, generated) = GeneratorTestHarness.Run(src);
+            return Verify(generated);
+        }
     }
 }

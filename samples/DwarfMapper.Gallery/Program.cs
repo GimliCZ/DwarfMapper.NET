@@ -26,8 +26,10 @@ var examples = Assembly.GetExecutingAssembly().GetTypes()
     .ToList();
 
 if (examples.Count == 0)
+{
     throw new InvalidOperationException(
         "No [DocExample] types found. The Gallery would print nothing and exit 0, which reads as success.");
+}
 
 Tier? tier = null;
 foreach (var (type, attr) in examples)
@@ -38,8 +40,7 @@ foreach (var (type, attr) in examples)
         Console.WriteLine($"-- {TierName.Of(attr.Tier)} --");
     }
 
-    var run = type.GetMethod("Run", BindingFlags.Public | BindingFlags.Static)
-              ?? throw new InvalidOperationException($"{type.Name} has no public static Run().");
+    var run = type.GetMethod("Run", BindingFlags.Public | BindingFlags.Static) ?? throw new InvalidOperationException($"{type.Name} has no public static Run().");
     run.Invoke(null, null);
 }
 

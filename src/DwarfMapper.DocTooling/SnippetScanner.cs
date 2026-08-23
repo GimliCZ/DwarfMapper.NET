@@ -1,179 +1,203 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-namespace DwarfMapper.DocTooling;
-
-/// <summary>One extractable region of sample source, already dedented and ready to sit inside a fence.</summary>
-public sealed record SnippetRegion(string Id, string Body, string RelativeFile, int StartLine);
-
-/// <summary>
-///     Finds <c>// &lt;snippet: id&gt;</c> … <c>// &lt;/snippet&gt;</c> regions in sample source. This is the
-///     source-scanning half of the pipeline; the compiled sample is the truth and this is how the docs read
-///     it, so a snippet cannot describe code that does not build.
-///     <para>
-///         Every malformed shape throws rather than degrading. The injector writes into tracked files, and a
-///         marker bug that silently dropped or truncated a region would be data loss in the documentation.
-///     </para>
-/// </summary>
-public static class SnippetScanner
+namespace DwarfMapper.DocTooling
 {
-    private const string OpenPrefix = "// <snippet:";
-    private const string CloseMarker = "// </snippet>";
+    /// <summary>One extractable region of sample source, already dedented and ready to sit inside a fence.</summary>
+    public sealed record SnippetRegion(string Id, string Body, string RelativeFile, int StartLine);
 
     /// <summary>
-    ///     Every region in every sample file, keyed by id. Duplicate ids across files are refused here rather
-    ///     than resolved, because "whichever was found first" is not a documentation contract.
+    ///     Finds <c>// &lt;snippet: id&gt;</c> … <c>// &lt;/snippet&gt;</c> regions in sample source. This is the
+    ///     source-scanning half of the pipeline; the compiled sample is the truth and this is how the docs read
+    ///     it, so a snippet cannot describe code that does not build.
+    ///     <para>
+    ///         Every malformed shape throws rather than degrading. The injector writes into tracked files, and a
+    ///         marker bug that silently dropped or truncated a region would be data loss in the documentation.
+    ///     </para>
     /// </summary>
-    public static IReadOnlyDictionary<string, SnippetRegion> ScanAll() =>
-        Merge(Directory
-            .GetFiles(RepoLayout.Samples, "*.cs", SearchOption.AllDirectories)
-            .Where(IsNotBuildOutput)
-            .OrderBy(p => p, StringComparer.Ordinal)
-            .SelectMany(path => ScanFile(
-                Path.GetRelativePath(RepoLayout.Root, path).Replace('\\', '/'), File.ReadAllText(path))));
-
-    /// <summary>
-    ///     Keys regions by id, refusing duplicates. Separate from <see cref="ScanAll" /> so the refusal is
-    ///     testable without contriving a duplicate in the real corpus — the mutation battery found that a
-    ///     disabled check here changed nothing observable, because no test could reach it.
-    /// </summary>
-    public static IReadOnlyDictionary<string, SnippetRegion> Merge(IEnumerable<SnippetRegion> regions)
+    public static class SnippetScanner
     {
-        ArgumentNullException.ThrowIfNull(regions);
+        private const string OpenPrefix = "// <snippet:";
+        private const string CloseMarker = "// </snippet>";
 
-        var result = new Dictionary<string, SnippetRegion>(StringComparer.Ordinal);
-        foreach (var region in regions)
+        /// <summary>
+        ///     Every region in every sample file, keyed by id. Duplicate ids across files are refused here rather
+        ///     than resolved, because "whichever was found first" is not a documentation contract.
+        /// </summary>
+        public static IReadOnlyDictionary<string, SnippetRegion> ScanAll()
         {
-            if (result.TryGetValue(region.Id, out var first))
-                throw new DocToolingException(
-                    $"Duplicate snippet id '{region.Id}': {first.RelativeFile}:{first.StartLine} and "
-                    + $"{region.RelativeFile}:{region.StartLine}. A doc marker must resolve to exactly one "
-                    + "region — rename one of them.");
-
-            result[region.Id] = region;
+            return Merge(Directory
+                .GetFiles(RepoLayout.Samples, "*.cs", SearchOption.AllDirectories)
+                .Where(IsNotBuildOutput)
+                .OrderBy(p => p, StringComparer.Ordinal)
+                .SelectMany(path => ScanFile(
+                    Path.GetRelativePath(RepoLayout.Root, path).Replace('\\', '/'),
+                    File.ReadAllText(path))));
         }
 
-        return result;
-    }
-
-    // Internal rather than private: the exclusion is a path-shape contract the tests pin directly —
-    // the live corpus keeps no marker-bearing sources under bin/obj, so no test through ScanAll() can
-    // tell a correct predicate from a broken one.
-    internal static bool IsNotBuildOutput(string path) =>
-        !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
-            StringComparison.Ordinal)
-        && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
-            StringComparison.Ordinal);
-
-    /// <summary>Parses one file's regions. <paramref name="relativePath" /> is used only for messages.</summary>
-    public static IReadOnlyList<SnippetRegion> ScanFile(string relativePath, string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-
-        var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        var found = new List<SnippetRegion>();
-        var body = new List<string>();
-        string? openId = null;
-        var openLine = 0;
-
-        for (var i = 0; i < lines.Length; i++)
+        /// <summary>
+        ///     Keys regions by id, refusing duplicates. Separate from <see cref="ScanAll" /> so the refusal is
+        ///     testable without contriving a duplicate in the real corpus — the mutation battery found that a
+        ///     disabled check here changed nothing observable, because no test could reach it.
+        /// </summary>
+        public static IReadOnlyDictionary<string, SnippetRegion> Merge(IEnumerable<SnippetRegion> regions)
         {
-            var trimmed = lines[i].TrimStart();
+            ArgumentNullException.ThrowIfNull(regions);
 
-            if (trimmed.StartsWith(OpenPrefix, StringComparison.Ordinal))
+            var result = new Dictionary<string, SnippetRegion>(StringComparer.Ordinal);
+            foreach (var region in regions)
             {
-                var id = ParseId(trimmed, relativePath, i + 1);
+                if (result.TryGetValue(region.Id, out var first))
+                {
+                    throw new DocToolingException(
+                        $"Duplicate snippet id '{region.Id}': {first.RelativeFile}:{first.StartLine} and " + $"{region.RelativeFile}:{region.StartLine}. A doc marker must resolve to exactly one " + "region — rename one of them.");
+                }
+
+                result[region.Id] = region;
+            }
+
+            return result;
+        }
+
+        // Internal rather than private: the exclusion is a path-shape contract the tests pin directly —
+        // the live corpus keeps no marker-bearing sources under bin/obj, so no test through ScanAll() can
+        // tell a correct predicate from a broken one.
+        internal static bool IsNotBuildOutput(string path)
+        {
+            return !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                       StringComparison.Ordinal) &&
+                   !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                       StringComparison.Ordinal);
+        }
+
+        /// <summary>Parses one file's regions. <paramref name="relativePath" /> is used only for messages.</summary>
+        public static IReadOnlyList<SnippetRegion> ScanFile(string relativePath, string text)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+
+            var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            var found = new List<SnippetRegion>();
+            var body = new List<string>();
+            string? openId = null;
+            var openLine = 0;
+
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var trimmed = lines[i].TrimStart();
+
+                if (trimmed.StartsWith(OpenPrefix, StringComparison.Ordinal))
+                {
+                    var id = ParseId(trimmed, relativePath, i + 1);
+                    if (openId is not null)
+                    {
+                        throw new DocToolingException(
+                            $"{relativePath}:{i + 1}: snippet '{id}' opens while '{openId}' (line {openLine}) is " + "still open. Nested snippet regions are not supported.");
+                    }
+
+                    openId = id;
+                    openLine = i + 1;
+                    body.Clear();
+                    continue;
+                }
+
+                if (string.Equals(trimmed, CloseMarker, StringComparison.Ordinal))
+                {
+                    if (openId is null)
+                    {
+                        throw new DocToolingException(
+                            $"{relativePath}:{i + 1}: '{CloseMarker}' with no matching open marker.");
+                    }
+
+                    found.Add(new SnippetRegion(
+                        openId,
+                        Dedent(body, openId, relativePath, openLine),
+                        relativePath,
+                        openLine));
+                    openId = null;
+                    continue;
+                }
+
                 if (openId is not null)
-                    throw new DocToolingException(
-                        $"{relativePath}:{i + 1}: snippet '{id}' opens while '{openId}' (line {openLine}) is "
-                        + "still open. Nested snippet regions are not supported.");
-
-                openId = id;
-                openLine = i + 1;
-                body.Clear();
-                continue;
+                {
+                    body.Add(lines[i]);
+                }
             }
 
-            if (string.Equals(trimmed, CloseMarker, StringComparison.Ordinal))
+            if (openId is not null)
             {
-                if (openId is null)
-                    throw new DocToolingException(
-                        $"{relativePath}:{i + 1}: '{CloseMarker}' with no matching open marker.");
-
-                found.Add(new SnippetRegion(
-                    openId, Dedent(body, openId, relativePath, openLine), relativePath, openLine));
-                openId = null;
-                continue;
+                throw new DocToolingException(
+                    $"{relativePath}:{openLine}: snippet '{openId}' is never closed with '{CloseMarker}'.");
             }
 
-            if (openId is not null) body.Add(lines[i]);
+            return found;
         }
 
-        if (openId is not null)
-            throw new DocToolingException(
-                $"{relativePath}:{openLine}: snippet '{openId}' is never closed with '{CloseMarker}'.");
-
-        return found;
-    }
-
-    private static string ParseId(string trimmedLine, string relativePath, int line)
-    {
-        var close = trimmedLine.IndexOf('>', StringComparison.Ordinal);
-        if (close < 0)
-            throw new DocToolingException(
-                $"{relativePath}:{line}: malformed snippet marker '{trimmedLine}' — expected "
-                + "'// <snippet: id>'.");
-
-        var id = trimmedLine[OpenPrefix.Length..close].Trim();
-        if (id.Length == 0)
-            throw new DocToolingException($"{relativePath}:{line}: snippet marker has an empty id.");
-
-        return id;
-    }
-
-    /// <summary>
-    ///     Removes the longest whitespace prefix common to every non-blank line. Matched as a STRING, not
-    ///     counted as characters: a tab is one character but not one space, so counting would cut a
-    ///     tab-indented line at the wrong offset and corrupt the rendered snippet.
-    /// </summary>
-    private static string Dedent(List<string> body, string id, string relativePath, int openLine)
-    {
-        // Trim leading/trailing blank lines by index computation and one slice rather than a mutable
-        // remove-loop: the trim is a pure function of the body, and this shape has no loop state to get
-        // wrong. first < 0 means every line is blank (or the body is empty) — the old Count == 0 path.
-        var first = body.FindIndex(l => !string.IsNullOrWhiteSpace(l));
-        if (first < 0)
-            throw new DocToolingException(
-                $"{relativePath}:{openLine}: snippet '{id}' is empty. An empty region renders as an empty "
-                + "code fence, which reads as \"this feature needs no code\".");
-
-        var last = body.FindLastIndex(l => !string.IsNullOrWhiteSpace(l));
-        var kept = body.GetRange(first, last - first + 1);
-
-        // A body carrying the injector's own closing marker has no correct rendering: once written into a
-        // document, the next run would find THAT line first and treat everything after it as prose, garbling
-        // the file. Refusing is the only safe answer, and no real sample needs such a line.
-        var marker = kept.FirstOrDefault(l =>
-            string.Equals(l.Trim(), "<!-- endsnippet -->", StringComparison.Ordinal)
-            || string.Equals(l.Trim(), "<!-- endtable -->", StringComparison.Ordinal));
-
-        if (marker is not null)
-            throw new DocToolingException(
-                $"{relativePath}:{openLine}: snippet '{id}' contains the line '{marker.Trim()}', which is an "
-                + "injector marker. Once written into a document the next run would end the block there and "
-                + "treat the rest of the file as prose. Remove the line or narrow the region.");
-
-        var nonBlank = kept.Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
-        var prefix = Whitespace(nonBlank[0]);
-        foreach (var line in nonBlank)
+        private static string ParseId(string trimmedLine, string relativePath, int line)
         {
-            var w = Whitespace(line);
-            while (prefix.Length > 0 && !w.StartsWith(prefix, StringComparison.Ordinal))
-                prefix = prefix[..^1];
+            var close = trimmedLine.IndexOf('>', StringComparison.Ordinal);
+            if (close < 0)
+            {
+                throw new DocToolingException(
+                    $"{relativePath}:{line}: malformed snippet marker '{trimmedLine}' — expected " + "'// <snippet: id>'.");
+            }
+
+            var id = trimmedLine[OpenPrefix.Length..close].Trim();
+            if (id.Length == 0)
+            {
+                throw new DocToolingException($"{relativePath}:{line}: snippet marker has an empty id.");
+            }
+
+            return id;
         }
 
-        return string.Join('\n', kept.Select(l =>
-            string.IsNullOrWhiteSpace(l) ? "" : l[prefix.Length..]));
-    }
+        /// <summary>
+        ///     Removes the longest whitespace prefix common to every non-blank line. Matched as a STRING, not
+        ///     counted as characters: a tab is one character but not one space, so counting would cut a
+        ///     tab-indented line at the wrong offset and corrupt the rendered snippet.
+        /// </summary>
+        private static string Dedent(List<string> body, string id, string relativePath, int openLine)
+        {
+            // Trim leading/trailing blank lines by index computation and one slice rather than a mutable
+            // remove-loop: the trim is a pure function of the body, and this shape has no loop state to get
+            // wrong. first < 0 means every line is blank (or the body is empty) — the old Count == 0 path.
+            var first = body.FindIndex(l => !string.IsNullOrWhiteSpace(l));
+            if (first < 0)
+            {
+                throw new DocToolingException(
+                    $"{relativePath}:{openLine}: snippet '{id}' is empty. An empty region renders as an empty " + "code fence, which reads as \"this feature needs no code\".");
+            }
 
-    private static string Whitespace(string line) => line[..(line.Length - line.TrimStart().Length)];
+            var last = body.FindLastIndex(l => !string.IsNullOrWhiteSpace(l));
+            var kept = body.GetRange(first, last - first + 1);
+
+            // A body carrying the injector's own closing marker has no correct rendering: once written into a
+            // document, the next run would find THAT line first and treat everything after it as prose, garbling
+            // the file. Refusing is the only safe answer, and no real sample needs such a line.
+            var marker = kept.FirstOrDefault(l =>
+                string.Equals(l.Trim(), "<!-- endsnippet -->", StringComparison.Ordinal) || string.Equals(l.Trim(), "<!-- endtable -->", StringComparison.Ordinal));
+
+            if (marker is not null)
+            {
+                throw new DocToolingException(
+                    $"{relativePath}:{openLine}: snippet '{id}' contains the line '{marker.Trim()}', which is an " + "injector marker. Once written into a document the next run would end the block there and " + "treat the rest of the file as prose. Remove the line or narrow the region.");
+            }
+
+            var nonBlank = kept.Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+            var prefix = Whitespace(nonBlank[0]);
+            foreach (var line in nonBlank)
+            {
+                var w = Whitespace(line);
+                while (prefix.Length > 0 && !w.StartsWith(prefix, StringComparison.Ordinal))
+                    prefix = prefix[..^1];
+            }
+
+            return string.Join('\n',
+                kept.Select(l =>
+                    string.IsNullOrWhiteSpace(l) ? "" : l[prefix.Length..]));
+        }
+
+        private static string Whitespace(string line)
+        {
+            return line[..(line.Length - line.TrimStart().Length)];
+        }
+    }
 }

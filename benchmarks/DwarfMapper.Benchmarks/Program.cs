@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections.Immutable;
 using AutoMapper;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
@@ -7,6 +8,7 @@ using BenchmarkDotNet.Exporters.Json;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
 using DwarfMapper;
+using DwarfMapper.Benchmarks;
 using Mapster;
 
 // `args` MUST be forwarded. Without it BenchmarkRunner silently ignores every command-line switch, so
@@ -22,12 +24,12 @@ BenchmarkRunner.Run<MapperBenchmarks>(
 ///     rather than a CLI switch so the arg-forwarding contract above stays untouched and a stray extra
 ///     argument cannot half-apply the mode. <c>scripts/housekeeping.ps1 -BenchSmoke</c> sets it.
 ///     <para>
-///     ShortRun (1 launch, 3 warmup, 3 measured iterations) runs every benchmark end-to-end against
-///     current source in single-digit minutes. TIMING numbers from a smoke run are explicitly NON-GATES:
-///     three short iterations measure nothing reliable about speed, and throughput is platform-dependent
-///     anyway (see benchmarks/results/). The ONLY numbers the smoke gate reads are MemoryDiagnoser's
-///     allocated bytes per op — deterministic for a fixed SDK — which the gate compares byte-exactly
-///     against allocation-baseline.json. Full measured runs use the default job: run WITHOUT the env var.
+///         ShortRun (1 launch, 3 warmup, 3 measured iterations) runs every benchmark end-to-end against
+///         current source in single-digit minutes. TIMING numbers from a smoke run are explicitly NON-GATES:
+///         three short iterations measure nothing reliable about speed, and throughput is platform-dependent
+///         anyway (see benchmarks/results/). The ONLY numbers the smoke gate reads are MemoryDiagnoser's
+///         allocated bytes per op — deterministic for a fixed SDK — which the gate compares byte-exactly
+///         against allocation-baseline.json. Full measured runs use the default job: run WITHOUT the env var.
 ///     </para>
 /// </summary>
 internal static class SmokeConfig
@@ -48,16 +50,22 @@ internal static class SmokeConfig
 public sealed class FlatSrc
 {
     public int Id { get; set; }
+
     public string? Name { get; set; } = "";
+
     public long Score { get; set; }
+
     public bool Active { get; set; }
 }
 
 public sealed class FlatDst
 {
     public int Id { get; set; }
+
     public string? Name { get; set; } = "";
+
     public long Score { get; set; }
+
     public bool Active { get; set; }
 }
 
@@ -69,12 +77,14 @@ public sealed class FlatDst
 public sealed class NestedSrc
 {
     public int Id { get; set; }
+
     public FlatSrc Inner { get; set; } = new();
 }
 
 public sealed class NestedDst
 {
     public int Id { get; set; }
+
     public FlatDst Inner { get; set; } = new();
 }
 
@@ -118,14 +128,18 @@ public sealed class ListDst
 public struct Vec3Src
 {
     public float X { get; set; }
+
     public float Y { get; set; }
+
     public float Z { get; set; }
 }
 
 public struct Vec3Dst
 {
     public float X { get; set; }
+
     public float Y { get; set; }
+
     public float Z { get; set; }
 }
 
@@ -155,20 +169,25 @@ public sealed class WidenDst
 public sealed class FlCustomer
 {
     public string? Name { get; set; } = "";
+
     public string? Email { get; set; } = "";
 }
 
 public sealed class FlOrder
 {
     public int Id { get; set; }
+
     public FlCustomer Customer { get; set; } = new();
+
     public decimal Amount { get; set; }
 }
 
 public sealed class FlOrderDto
 {
     public int Id { get; set; }
+
     public string? CustomerName { get; set; } = "";
+
     public decimal Amount { get; set; }
 }
 
@@ -190,12 +209,14 @@ public enum BenchStatusDto
 public sealed class EnumSrc
 {
     public int Id { get; set; }
+
     public BenchStatus Status { get; set; }
 }
 
 public sealed class EnumDst
 {
     public int Id { get; set; }
+
     public BenchStatusDto Status { get; set; }
 }
 
@@ -223,12 +244,14 @@ public sealed class DictDst
 public sealed class NmSrc
 {
     public int Id { get; set; }
+
     public string? Name { get; set; } = "";
 }
 
 public sealed class NmDst
 {
     public int Id { get; set; }
+
     public string Name { get; set; } = "";
 }
 
@@ -254,7 +277,7 @@ public sealed class ImmSrc
 
 public sealed class ImmDst
 {
-    public System.Collections.Immutable.ImmutableArray<int> V { get; set; }
+    public ImmutableArray<int> V { get; set; }
 }
 
 // ── DwarfMapper (compile-time, reflection-free, AOT-safe) ─────────────────────
@@ -274,8 +297,10 @@ public partial class DwarfM
 
     public partial EnumDst MapEnum(EnumSrc s); // enum by-name
     public partial DictDst MapDict(DictSrc s); // dictionary copy + value widen (int→long)
+
     [MapProperty(nameof(NmSrc.Name), nameof(NmDst.Name), NullSubstitute = "")]
     public partial NmDst MapNullMismatch(NmSrc s); // string? → string via NullSubstitute (DWARF070 shape)
+
     public partial SetDst MapSet(SetSrc s); // int[] → HashSet<int>
     public partial ImmDst MapImmutable(ImmSrc s); // int[] → ImmutableArray<int>
 }
@@ -303,22 +328,23 @@ public class MapperBenchmarks
     private readonly DwarfM _dwarf = new();
     private readonly MapperlyM _mapperly = new();
     private ArraySrc _array = null!;
-    private SeqSrc _seq = null!;
     private IMapper _auto = null!;
     private BlitSrc _blit = null!;
     private DictSrc _dict = null!;
     private EnumSrc _enum = null!;
+    private FlOrder _flOrder = null!;
 
     private FlatSrc _flat = null!;
-    private FlOrder _flOrder = null!;
+    private ImmSrc _imm = null!;
     private ListSrc _list = null!;
     private NestedSrc _nested = null!;
-    private WidenSrc _widen = null!;
     private NmSrc _nm = null!;
+    private SeqSrc _seq = null!;
     private SetSrc _set = null!;
-    private ImmSrc _imm = null!;
+    private WidenSrc _widen = null!;
 
-    [Params(1000)] public int N { get; set; }
+    [Params(1000)]
+    public int N { get; set; }
 
     [GlobalSetup]
     public void Setup()
@@ -339,21 +365,45 @@ public class MapperBenchmarks
         // Element CONTENT is factory-drawn; element COUNT stays pinned to N. The factory builds 1-3 element
         // collections, so letting it size these would quietly turn an N=1000 benchmark into N≈2.
         var items = RealisticPayloads.Elements<FlatSrc>(N, 3);
-        _array = new ArraySrc { Items = items };
-        _list = new ListSrc { Items = new List<FlatSrc>(items) };
+        _array = new ArraySrc
+        {
+            Items = items
+        };
+        _list = new ListSrc
+        {
+            Items = new List<FlatSrc>(items)
+        };
         // Statically IEnumerable<T>, a List at runtime — the probe hits, which is the common real-world case.
-        _seq = new SeqSrc { Items = new List<FlatSrc>(items) };
+        _seq = new SeqSrc
+        {
+            Items = new List<FlatSrc>(items)
+        };
 
-        _blit = new BlitSrc { Items = RealisticPayloads.Elements<Vec3Src>(N, 4) };
-        _widen = new WidenSrc { V = RealisticPayloads.Elements<int>(N, 5) };
+        _blit = new BlitSrc
+        {
+            Items = RealisticPayloads.Elements<Vec3Src>(N, 4)
+        };
+        _widen = new WidenSrc
+        {
+            V = RealisticPayloads.Elements<int>(N, 5)
+        };
 
         _flOrder = RealisticPayloads.One<FlOrder>(6);
         _flOrder.Customer ??= RealisticPayloads.One<FlCustomer>(61);
         _enum = RealisticPayloads.One<EnumSrc>(7);
-        _dict = new DictSrc { M = RealisticPayloads.Map(N, 8) };
+        _dict = new DictSrc
+        {
+            M = RealisticPayloads.Map(N, 8)
+        };
         _nm = RealisticPayloads.One<NmSrc>(9);
-        _set = new SetSrc { V = RealisticPayloads.Elements<int>(N, 10) };
-        _imm = new ImmSrc { V = RealisticPayloads.Elements<int>(N, 11) };
+        _set = new SetSrc
+        {
+            V = RealisticPayloads.Elements<int>(N, 10)
+        };
+        _imm = new ImmSrc
+        {
+            V = RealisticPayloads.Elements<int>(N, 11)
+        };
 
         // Fail loudly if the draw came back degenerate. Without this, a change to the factory's probabilities
         // (or an unlucky seed) would silently restore the old flat distribution while every benchmark still
@@ -381,7 +431,13 @@ public class MapperBenchmarks
     [BenchmarkCategory("Flat")]
     public FlatDst Flat_Hand()
     {
-        return new FlatDst { Id = _flat.Id, Name = _flat.Name, Score = _flat.Score, Active = _flat.Active };
+        return new FlatDst
+        {
+            Id = _flat.Id,
+            Name = _flat.Name,
+            Score = _flat.Score,
+            Active = _flat.Active
+        };
     }
 
     [Benchmark]

@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
-#nullable enable
 
-using Xunit;
-
-namespace DwarfMapper.IntegrationTests;
-
-// The polymorphic silent drop.
+namespace DwarfMapper.IntegrationTests
+{
+    // The polymorphic silent drop.
 //
 // A source member is DECLARED as a concrete base class (`Animal`), but at run time it holds a DERIVED instance
 // (`Dog`). A compile-time mapper can only see the declared type, so it copies the base members and constructs a
@@ -21,53 +18,61 @@ namespace DwarfMapper.IntegrationTests;
 // tested fact rather than an accident, and so the DWARF071 diagnostic that warns about it has a runtime
 // counterpart proving why it is worth warning about.
 
-public class Animal
-{
-    public string Name { get; set; } = "";
-}
+    public class Animal
+    {
+        public string Name { get; set; } = "";
+    }
 
-public sealed class Dog : Animal
-{
-    public string Breed { get; set; } = "";
-}
+    public sealed class Dog : Animal
+    {
+        public string Breed { get; set; } = "";
+    }
 
-public sealed class AnimalDto
-{
-    public string Name { get; set; } = "";
-}
+    public sealed class AnimalDto
+    {
+        public string Name { get; set; } = "";
+    }
 
-public sealed class KennelSrc
-{
-    public Animal Pet { get; set; } = new();
-}
+    public sealed class KennelSrc
+    {
+        public Animal Pet { get; set; } = new();
+    }
 
-public sealed class KennelDst
-{
-    public AnimalDto Pet { get; set; } = new();
-}
+    public sealed class KennelDst
+    {
+        public AnimalDto Pet { get; set; } = new();
+    }
 
 // Raises DWARF071 — which is the point. It is an Info, so it never breaks the build; no suppression needed.
-[DwarfMapper]
-public partial class KennelMapper
-{
-    public partial KennelDst Map(KennelSrc src);
-}
-
-public class PolymorphicSilentDropRuntimeTests
-{
-    [Fact]
-    public void A_derived_instance_is_mapped_as_its_declared_base_type()
+    [DwarfMapper]
+    public partial class KennelMapper
     {
-        var src = new KennelSrc { Pet = new Dog { Name = "Balin", Breed = "Terrier" } };
+        public partial KennelDst Map(KennelSrc src);
+    }
 
-        var result = new KennelMapper().Map(src);
+    public class PolymorphicSilentDropRuntimeTests
+    {
+        [Fact]
+        public void A_derived_instance_is_mapped_as_its_declared_base_type()
+        {
+            var src = new KennelSrc
+            {
+                Pet = new Dog
+                {
+                    Name = "Balin",
+                    Breed = "Terrier"
+                }
+            };
 
-        // The base member survives...
-        Assert.Equal("Balin", result.Pet.Name);
+            var result = new KennelMapper().Map(src);
 
-        // ...and `Breed` is simply gone. Not an exception, not a diagnostic at run time — just absent. That is
-        // why DWARF071 warns at BUILD time: this is the one thing the developer cannot discover by testing the
-        // happy path, because the happy path looks fine.
-        Assert.IsType<AnimalDto>(result.Pet);
+            // The base member survives...
+            Assert.Equal("Balin", result.Pet.Name);
+
+            // ...and `Breed` is simply gone. Not an exception, not a diagnostic at run time — just absent. That is
+            // why DWARF071 warns at BUILD time: this is the one thing the developer cannot discover by testing the
+            // happy path, because the happy path looks fine.
+            Assert.IsType<AnimalDto>(result.Pet);
+        }
     }
 }

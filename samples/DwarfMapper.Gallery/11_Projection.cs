@@ -7,42 +7,55 @@
 // and dotted [MapProperty] flattening; a member needing a *runtime* conversion (narrowing, parse, enum-by-name,
 // custom Use=) is DWARF028, by design — do that with a runtime Map method instead.
 
-namespace DwarfMapper.Gallery.Ex11;
-
-public sealed class Order
+namespace DwarfMapper.Gallery.Ex11
 {
-    public int Id { get; set; }
-    public string Code { get; set; } = "";
-}
+    public sealed class Order
+    {
+        public int Id { get; set; }
 
-public sealed class OrderDto
-{
-    public int Id { get; set; }
-    public string Code { get; set; } = "";
-}
+        public string Code { get; set; } = "";
+    }
+
+    public sealed class OrderDto
+    {
+        public int Id { get; set; }
+
+        public string Code { get; set; } = "";
+    }
 
 // <snippet: projection>
-[DwarfMapper]
-public partial class Mapper
-{
-    public partial IQueryable<OrderDto> Project(IQueryable<Order> src);
-}
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        public partial IQueryable<OrderDto> Project(IQueryable<Order> src);
+    }
 // </snippet>
 
-[DocExample(11, Tier.Configuration, "IQueryable projection",
-    Shows = "the one place a `Select` lambda is generated for you")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(11,
+        Tier.Configuration,
+        "IQueryable projection",
+        Shows = "the one place a `Select` lambda is generated for you")]
+    public static class Example
     {
-        var orders = new List<Order>
+        public static void Run()
         {
-            new() { Id = 1, Code = "MITHRIL" },
-            new() { Id = 2, Code = "GOLD" }
-        }.AsQueryable();
+            var orders = new List<Order>
+            {
+                new()
+                {
+                    Id = 1,
+                    Code = "MITHRIL"
+                },
+                new()
+                {
+                    Id = 2,
+                    Code = "GOLD"
+                }
+            }.AsQueryable();
 
-        var projected = new Mapper().Project(orders).ToList();
-        Console.WriteLine(
-            $"11 Projection         -> {projected.Count} rows: {string.Join(", ", projected.Select(o => o.Code))}");
+            var projected = new Mapper().Project(orders).ToList();
+            Console.WriteLine(
+                $"11 Projection         -> {projected.Count} rows: {string.Join(", ", projected.Select(o => o.Code))}");
+        }
     }
 }

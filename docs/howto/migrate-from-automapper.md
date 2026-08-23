@@ -1,4 +1,4 @@
-﻿<!-- SPDX-License-Identifier: GPL-2.0-only -->
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
 # How-to: migrate from AutoMapper to DwarfMapper
 
 A step-by-step walkthrough for moving a codebase off **AutoMapper 14.0.0** (the last MIT release).
@@ -170,12 +170,15 @@ method `Compute(srcMemberType) -> destType` referenced by `Use=`. A `Condition(s
 [DwarfMapper]
 public partial class CustomerMapper
 {
-    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]                           // rename
-    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))]  // conversion
-    [Flatten(nameof(Customer.Address))]                                                          // Address.City -> City
+    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))] // rename
+    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))] // conversion
+    [Flatten(nameof(Customer.Address))] // Address.City -> City
     public partial CustomerDto ToDto(Customer src);
 
-    private static string FormatMoney(decimal d) => d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
+    private static string FormatMoney(decimal d)
+    {
+        return d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
+    }
 }
 ```
 <!-- endsnippet -->
@@ -199,14 +202,17 @@ constructor and reference the dependency from an **instance** `Use=`/`Convert` m
 <!-- snippet: ctor-injection -->
 ```csharp
 [DwarfMapper]
-public partial class RatedOrderMapper(IRateService rates)   // primary constructor
+public partial class RatedOrderMapper(IRateService rates) // primary constructor
 {
     [MapProperty(nameof(Order.FullName), nameof(OrderDto.Name))]
     [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(ToLocal))]
     [MapValue(nameof(OrderDto.Source), "api-v2")]
     public partial OrderDto ToDto(Order o);
 
-    private decimal ToLocal(decimal amount) => rates.Convert(amount);
+    private decimal ToLocal(decimal amount)
+    {
+        return rates.Convert(amount);
+    }
 }
 ```
 <!-- endsnippet -->
@@ -269,7 +275,7 @@ public partial class ReversibleOrderMapper
     [MapIgnore(nameof(OrderDto.Source))]
     public partial OrderDto ToDto(Order o);
 
-    public partial Order FromDto(OrderDto d);   // inherits the inverted Name -> FullName rename
+    public partial Order FromDto(OrderDto d); // inherits the inverted Name -> FullName rename
 }
 ```
 <!-- endsnippet -->

@@ -9,41 +9,50 @@
 
 using System.Globalization;
 
-namespace DwarfMapper.Gallery.Ex08;
-
-public sealed class Order
+namespace DwarfMapper.Gallery.Ex08
 {
-    public int Id { get; set; }
-    public decimal Total { get; set; }
-}
+    public sealed class Order
+    {
+        public int Id { get; set; }
 
-public sealed class OrderDto
-{
-    public int Id { get; set; }
-    public string Total { get; set; } = "";
-}
+        public decimal Total { get; set; }
+    }
+
+    public sealed class OrderDto
+    {
+        public int Id { get; set; }
+
+        public string Total { get; set; } = "";
+    }
 
 // <snippet: custom-conversion>
-[DwarfMapper]
-public partial class Mapper
-{
-    [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(FormatMoney))]
-    public partial OrderDto ToDto(Order o);
-
-    private static string FormatMoney(decimal d)
+    [DwarfMapper]
+    public partial class Mapper
     {
-        return d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
+        [MapProperty(nameof(Order.Total), nameof(OrderDto.Total), Use = nameof(FormatMoney))]
+        public partial OrderDto ToDto(Order o);
+
+        private static string FormatMoney(decimal d)
+        {
+            return d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
+        }
     }
-}
 // </snippet>
 
-[DocExample(8, Tier.Configuration, "Custom conversion",
-    Shows = "`Use = nameof(Method)` — the method body is the \"lambda\"")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(8,
+        Tier.Configuration,
+        "Custom conversion",
+        Shows = "`Use = nameof(Method)` — the method body is the \"lambda\"")]
+    public static class Example
     {
-        var dto = new Mapper().ToDto(new Order { Id = 5, Total = 1234.5m });
-        Console.WriteLine($"08 Custom (Use=)      -> order {dto.Id} total {dto.Total}");
+        public static void Run()
+        {
+            var dto = new Mapper().ToDto(new Order
+            {
+                Id = 5,
+                Total = 1234.5m
+            });
+            Console.WriteLine($"08 Custom (Use=)      -> order {dto.Id} total {dto.Total}");
+        }
     }
 }

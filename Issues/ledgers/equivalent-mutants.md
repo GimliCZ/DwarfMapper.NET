@@ -38,9 +38,9 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 201 | 81.59 % (2026-08-22, P5 re-measure) | 24 | 0 | 6 | 88.05 % |
-| doctooling | `stryker-config.doctooling.json` | 284 | 95.42 % (2026-08-22, P3 re-measure) | 10 | 0 | 0 | 96.47 % |
-| runtime | `stryker-config.runtime.json` | 113 | 96.46 % (2026-08-21, P2 re-measure) | 2 | 1 | 1 | 98.23 % |
+| generator | `stryker-config.json` | 258 | 84.88 % (2026-08-23, round-24 kill program) | 24 | 0 | 6 | 90.69 % |
+| doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
+| runtime | `stryker-config.runtime.json` | 119 | 97.48 % (2026-08-23, round-24 kill program) | 2 | 1 | 1 | 98.31 % |
 
 Fuller arithmetic, carried from the research and updated by P5 (context, not gates): the generator leg's
 *realistic* raw ceiling is lower than 88.05 — the 6 probably-equivalent survivors and the 3 NoCoverage
@@ -83,36 +83,36 @@ is its documentation. Edit both together — the scan cross-checks the summary n
   "legs": {
     "generator": {
       "config": "stryker-config.json",
-      "scoreable": 201,
-      "measuredRawScore": 81.59,
-      "measuredOn": "2026-08-22",
+      "scoreable": 258,
+      "measuredRawScore": 84.88,
+      "measuredOn": "2026-08-23",
       "provenEquivalent": 24,
       "ruledInPractice": 0,
       "probablyEquivalent": 6,
-      "rawCeiling": 88.05,
-      "rawCeilingFormula": "(201 - 24) / 201"
+      "rawCeiling": 90.69,
+      "rawCeilingFormula": "(258 - 24) / 258"
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
-      "scoreable": 284,
-      "measuredRawScore": 95.42,
-      "measuredOn": "2026-08-22",
+      "scoreable": 289,
+      "measuredRawScore": 95.85,
+      "measuredOn": "2026-08-23",
       "provenEquivalent": 10,
       "ruledInPractice": 0,
       "probablyEquivalent": 0,
-      "rawCeiling": 96.47,
-      "rawCeilingFormula": "(284 - 10) / 284"
+      "rawCeiling": 96.53,
+      "rawCeilingFormula": "(289 - 10) / 289"
     },
     "runtime": {
       "config": "stryker-config.runtime.json",
-      "scoreable": 113,
-      "measuredRawScore": 96.46,
-      "measuredOn": "2026-08-21",
+      "scoreable": 119,
+      "measuredRawScore": 97.48,
+      "measuredOn": "2026-08-23",
       "provenEquivalent": 2,
       "ruledInPractice": 1,
       "probablyEquivalent": 1,
-      "rawCeiling": 98.23,
-      "rawCeilingFormula": "(113 - 2) / 113"
+      "rawCeiling": 98.31,
+      "rawCeilingFormula": "(119 - 2) / 119"
     }
   },
   "entries": [

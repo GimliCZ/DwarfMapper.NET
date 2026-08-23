@@ -1,183 +1,185 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using Microsoft.CodeAnalysis;
 
-namespace DwarfMapper.Generator.Tests;
-
-/// <summary>
-///     <c>DWARF083</c> — an enum whose string form is not its identifier.
-/// </summary>
-/// <remarks>
-///     <para>
-///         For enum↔string, a member's <c>[EnumMember(Value=…)]</c> wins, then <c>[Description(…)]</c>, then
-///         the identifier. That precedence is deliberate and good: it lets <c>InProgress</c> serialize as
-///         <c>"in_progress"</c> with no custom converter.
-///     </para>
-///     <para>
-///         The hazard is that <c>[Description]</c> is overwhelmingly a <b>display</b> annotation — people put
-///         it on enums for combo-box labels — and here it silently becomes the <b>persistence</b> format.
-///         Round 18 came within one code review of shipping exactly that: <c>DispatchChannel.NextDay</c> carried
-///         <c>[Description("Next-Day")]</c>, and the migration would have begun writing <c>"Next-Day"</c> into a
-///         MongoDB collection full of <c>"NextDay"</c>, breaking reads of every existing document. The previous
-///         mapper used <c>.ToString()</c>, i.e. always the identifier.
-///     </para>
-/// </remarks>
-public class EnumStringNameDivergesTests
+namespace DwarfMapper.Generator.Tests
 {
-    private const string Id = "DWARF083";
+    /// <summary>
+    ///     <c>DWARF083</c> — an enum whose string form is not its identifier.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         For enum↔string, a member's <c>[EnumMember(Value=…)]</c> wins, then <c>[Description(…)]</c>, then
+    ///         the identifier. That precedence is deliberate and good: it lets <c>InProgress</c> serialize as
+    ///         <c>"in_progress"</c> with no custom converter.
+    ///     </para>
+    ///     <para>
+    ///         The hazard is that <c>[Description]</c> is overwhelmingly a <b>display</b> annotation — people put
+    ///         it on enums for combo-box labels — and here it silently becomes the <b>persistence</b> format.
+    ///         Round 18 came within one code review of shipping exactly that: <c>DispatchChannel.NextDay</c> carried
+    ///         <c>[Description("Next-Day")]</c>, and the migration would have begun writing <c>"Next-Day"</c> into a
+    ///         MongoDB collection full of <c>"NextDay"</c>, breaking reads of every existing document. The previous
+    ///         mapper used <c>.ToString()</c>, i.e. always the identifier.
+    ///     </para>
+    /// </remarks>
+    public class EnumStringNameDivergesTests
+    {
+        private const string Id = "DWARF083";
 
-    private const string NextDaySource = """
-        using System.ComponentModel;
-        using DwarfMapper;
-        namespace Demo;
+        private const string NextDaySource = """
+                                             using System.ComponentModel;
+                                             using DwarfMapper;
+                                             namespace Demo;
 
-        public enum DispatchChannel
+                                             public enum DispatchChannel
+                                             {
+                                                 [Description("Next-Day")] NextDay,
+                                                 Standard
+                                             }
+
+                                             public class Src { public DispatchChannel Source { get; set; } }
+                                             public class Dst { public string Source { get; set; } = ""; }
+
+                                             [DwarfMapper]
+                                             [GenerateMap<Src, Dst>]
+                                             public partial class M { }
+                                             """;
+
+        [Fact]
+        public void Reports_when_a_Description_redirects_the_persisted_string()
         {
-            [Description("Next-Day")] NextDay,
-            Standard
+            Assert.NotEmpty(GeneratorAssert.Reports(NextDaySource, Id));
         }
 
-        public class Src { public DispatchChannel Source { get; set; } }
-        public class Dst { public string Source { get; set; } = ""; }
+        [Fact]
+        public void The_message_shows_the_actual_value_that_will_be_written()
+        {
+            var message = GeneratorAssert.Reports(NextDaySource, Id)[0].GetMessage(CultureInfo.InvariantCulture);
 
-        [DwarfMapper]
-        [GenerateMap<Src, Dst>]
-        public partial class M { }
-        """;
+            // Naming the enum is not enough — the reader has to SEE that "NextDay" becomes "Next-Day", because that is
+            // the fact that makes it a data problem rather than a style note.
+            Assert.Contains("DispatchChannel", message, StringComparison.Ordinal);
+            Assert.Contains("NextDay", message, StringComparison.Ordinal);
+            Assert.Contains("Next-Day", message, StringComparison.Ordinal);
+            Assert.Contains("display", message, StringComparison.Ordinal);
+        }
 
-    [Fact]
-    public void Reports_when_a_Description_redirects_the_persisted_string()
-    {
-        Assert.NotEmpty(GeneratorAssert.Reports(NextDaySource, Id));
-    }
+        [Fact]
+        public void Reports_for_the_string_to_enum_direction_too()
+        {
+            // Reading is as affected as writing: the generated parse switch matches on the serialized name, so a
+            // store full of identifiers stops parsing.
+            const string src = """
+                               using System.ComponentModel;
+                               using DwarfMapper;
+                               namespace Demo;
 
-    [Fact]
-    public void The_message_shows_the_actual_value_that_will_be_written()
-    {
-        var message = GeneratorAssert.Reports(NextDaySource, Id)[0].GetMessage(CultureInfo.InvariantCulture);
+                               public enum DispatchChannel
+                               {
+                                   [Description("Next-Day")] NextDay,
+                                   Standard
+                               }
 
-        // Naming the enum is not enough — the reader has to SEE that "NextDay" becomes "Next-Day", because that is
-        // the fact that makes it a data problem rather than a style note.
-        Assert.Contains("DispatchChannel", message, StringComparison.Ordinal);
-        Assert.Contains("NextDay", message, StringComparison.Ordinal);
-        Assert.Contains("Next-Day", message, StringComparison.Ordinal);
-        Assert.Contains("display", message, StringComparison.Ordinal);
-    }
+                               public class Src { public string Source { get; set; } = ""; }
+                               public class Dst { public DispatchChannel Source { get; set; } }
 
-    [Fact]
-    public void Reports_for_the_string_to_enum_direction_too()
-    {
-        // Reading is as affected as writing: the generated parse switch matches on the serialized name, so a
-        // store full of identifiers stops parsing.
-        const string src = """
-            using System.ComponentModel;
-            using DwarfMapper;
-            namespace Demo;
+                               [DwarfMapper]
+                               [GenerateMap<Src, Dst>]
+                               public partial class M { }
+                               """;
 
-            public enum DispatchChannel
-            {
-                [Description("Next-Day")] NextDay,
-                Standard
-            }
+            Assert.NotEmpty(GeneratorAssert.Reports(src, Id));
+        }
 
-            public class Src { public string Source { get; set; } = ""; }
-            public class Dst { public DispatchChannel Source { get; set; } }
+        [Fact]
+        public void Is_silent_when_every_member_serializes_as_its_identifier()
+        {
+            // The overwhelmingly common case. Firing here would make the id noise.
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public enum Level { Low, High }
+                               public class Src { public Level Level { get; set; } }
+                               public class Dst { public string Level { get; set; } = ""; }
 
-            [DwarfMapper]
-            [GenerateMap<Src, Dst>]
-            public partial class M { }
-            """;
+                               [DwarfMapper]
+                               [GenerateMap<Src, Dst>]
+                               public partial class M { }
+                               """;
 
-        Assert.NotEmpty(GeneratorAssert.Reports(src, Id));
-    }
+            GeneratorAssert.CompilesClean(src);
+            GeneratorAssert.DoesNotReport(src, Id);
+        }
 
-    [Fact]
-    public void Is_silent_when_every_member_serializes_as_its_identifier()
-    {
-        // The overwhelmingly common case. Firing here would make the id noise.
-        const string src = """
-            using DwarfMapper;
-            namespace Demo;
-            public enum Level { Low, High }
-            public class Src { public Level Level { get; set; } }
-            public class Dst { public string Level { get; set; } = ""; }
+        [Fact]
+        public void Is_silent_for_a_Flags_enum()
+        {
+            // [Flags] keeps identifier semantics in both directions — its string form is a comma-joined list
+            // Enum.ToString builds from identifiers — so there is nothing to diverge.
+            const string src = """
+                               using System;
+                               using System.ComponentModel;
+                               using DwarfMapper;
+                               namespace Demo;
 
-            [DwarfMapper]
-            [GenerateMap<Src, Dst>]
-            public partial class M { }
-            """;
+                               [Flags]
+                               public enum Perm { [Description("R")] Read = 1, [Description("W")] Write = 2 }
 
-        GeneratorAssert.CompilesClean(src);
-        GeneratorAssert.DoesNotReport(src, Id);
-    }
+                               public class Src { public Perm Perm { get; set; } }
+                               public class Dst { public string Perm { get; set; } = ""; }
 
-    [Fact]
-    public void Is_silent_for_a_Flags_enum()
-    {
-        // [Flags] keeps identifier semantics in both directions — its string form is a comma-joined list
-        // Enum.ToString builds from identifiers — so there is nothing to diverge.
-        const string src = """
-            using System;
-            using System.ComponentModel;
-            using DwarfMapper;
-            namespace Demo;
+                               [DwarfMapper]
+                               [GenerateMap<Src, Dst>]
+                               public partial class M { }
+                               """;
 
-            [Flags]
-            public enum Perm { [Description("R")] Read = 1, [Description("W")] Write = 2 }
+            GeneratorAssert.DoesNotReport(src, Id);
+        }
 
-            public class Src { public Perm Perm { get; set; } }
-            public class Dst { public string Perm { get; set; } = ""; }
+        [Fact]
+        public void Reports_once_per_enum_not_once_per_member()
+        {
+            // An enum annotated for display usually annotates most of its members. One report per member is how a
+            // useful diagnostic gets ignored.
+            const string src = """
+                               using System.ComponentModel;
+                               using DwarfMapper;
+                               namespace Demo;
 
-            [DwarfMapper]
-            [GenerateMap<Src, Dst>]
-            public partial class M { }
-            """;
+                               public enum Status
+                               {
+                                   [Description("a")] A,
+                                   [Description("b")] B,
+                                   [Description("c")] C,
+                                   [Description("d")] D,
+                                   [Description("e")] E
+                               }
 
-        GeneratorAssert.DoesNotReport(src, Id);
-    }
+                               public class Src { public Status Status { get; set; } }
+                               public class Dst { public string Status { get; set; } = ""; }
 
-    [Fact]
-    public void Reports_once_per_enum_not_once_per_member()
-    {
-        // An enum annotated for display usually annotates most of its members. One report per member is how a
-        // useful diagnostic gets ignored.
-        const string src = """
-            using System.ComponentModel;
-            using DwarfMapper;
-            namespace Demo;
+                               [DwarfMapper]
+                               [GenerateMap<Src, Dst>]
+                               public partial class M { }
+                               """;
 
-            public enum Status
-            {
-                [Description("a")] A,
-                [Description("b")] B,
-                [Description("c")] C,
-                [Description("d")] D,
-                [Description("e")] E
-            }
+            var reported = GeneratorAssert.Reports(src, Id);
 
-            public class Src { public Status Status { get; set; } }
-            public class Dst { public string Status { get; set; } = ""; }
+            Assert.Single(reported);
 
-            [DwarfMapper]
-            [GenerateMap<Src, Dst>]
-            public partial class M { }
-            """;
+            // …and it must still be useful: the first few are named, with a count so the reader knows the scale.
+            var message = reported[0].GetMessage(CultureInfo.InvariantCulture);
+            Assert.Contains("5 in total", message, StringComparison.Ordinal);
+        }
 
-        var reported = GeneratorAssert.Reports(src, Id);
-
-        Assert.Single(reported);
-
-        // …and it must still be useful: the first few are named, with a count so the reader knows the scale.
-        var message = reported[0].GetMessage(CultureInfo.InvariantCulture);
-        Assert.Contains("5 in total", message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Is_Info_because_the_precedence_is_a_deliberate_feature()
-    {
-        // Serializing InProgress as "in_progress" is exactly what the precedence is FOR. This surfaces the
-        // consequence; it does not forbid it, and it must not break a warnings-as-errors build.
-        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Info,
-            GeneratorAssert.Reports(NextDaySource, Id)[0].Severity);
+        [Fact]
+        public void Is_Info_because_the_precedence_is_a_deliberate_feature()
+        {
+            // Serializing InProgress as "in_progress" is exactly what the precedence is FOR. This surfaces the
+            // consequence; it does not forbid it, and it must not break a warnings-as-errors build.
+            Assert.Equal(DiagnosticSeverity.Info,
+                GeneratorAssert.Reports(NextDaySource, Id)[0].Severity);
+        }
     }
 }

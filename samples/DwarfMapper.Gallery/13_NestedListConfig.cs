@@ -8,59 +8,74 @@
 // through it. There is no separate Profile/config object — every rule, including for nested element types,
 // lives on this single [DwarfMapper] class.
 
-namespace DwarfMapper.Gallery.Ex13;
-
-public sealed class Person
+namespace DwarfMapper.Gallery.Ex13
 {
-    public string Name { get; set; } = "";
-}
+    public sealed class Person
+    {
+        public string Name { get; set; } = "";
+    }
 
-public sealed class Place
-{
-    public string Name { get; set; } = "";
-    public List<Person> People { get; set; } = new();
-}
+    public sealed class Place
+    {
+        public string Name { get; set; } = "";
 
-public sealed class PersonDto
-{
-    public string FullName { get; set; } = "";
-}
+        public List<Person> People { get; set; } = new();
+    }
 
-public sealed class PlaceDto
-{
-    public string Name { get; set; } = "";
-    public List<PersonDto> People { get; set; } = new();
-}
+    public sealed class PersonDto
+    {
+        public string FullName { get; set; } = "";
+    }
+
+    public sealed class PlaceDto
+    {
+        public string Name { get; set; } = "";
+
+        public List<PersonDto> People { get; set; } = new();
+    }
 
 // <snippet: nested-list-config>
-[DwarfMapper]
-public partial class Mapper
-{
-    // Top-level map. People (List<Person> -> List<PersonDto>) is routed through the nested method below.
-    public partial PlaceDto ToDto(Place place);
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        // Top-level map. People (List<Person> -> List<PersonDto>) is routed through the nested method below.
+        public partial PlaceDto ToDto(Place place);
 
-    // The nested element mapping, configured right here: Person.Name -> PersonDto.FullName.
-    [MapProperty(nameof(Person.Name), nameof(PersonDto.FullName))]
-    public partial PersonDto ToDto(Person person);
-}
+        // The nested element mapping, configured right here: Person.Name -> PersonDto.FullName.
+        [MapProperty(nameof(Person.Name), nameof(PersonDto.FullName))]
+        public partial PersonDto ToDto(Person person);
+    }
 // </snippet>
 
-[DocExample(13, Tier.Configuration, "Configure a collection-element map",
-    Shows = "renaming a member of the element type inside a `List<T>`")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(13,
+        Tier.Configuration,
+        "Configure a collection-element map",
+        Shows = "renaming a member of the element type inside a `List<T>`")]
+    public static class Example
     {
-        var moria = new Place
+        public static void Run()
         {
-            Name = "Moria",
-            People = new List<Person> { new() { Name = "Gimli" }, new() { Name = "Balin" } }
-        };
+            var moria = new Place
+            {
+                Name = "Moria",
+                People = new List<Person>
+                {
+                    new()
+                    {
+                        Name = "Gimli"
+                    },
+                    new()
+                    {
+                        Name = "Balin"
+                    }
+                }
+            };
 
-        var dto = new Mapper().ToDto(moria);
+            var dto = new Mapper().ToDto(moria);
 
-        // dto.People[0].FullName == "Gimli" — the nested rename was applied to every list element.
-        Console.WriteLine(
-            $"13 Nested list config -> {dto.Name}: [{string.Join(", ", dto.People.Select(p => p.FullName))}]");
+            // dto.People[0].FullName == "Gimli" — the nested rename was applied to every list element.
+            Console.WriteLine(
+                $"13 Nested list config -> {dto.Name}: [{string.Join((string?)", ", (IEnumerable<string?>)dto.People.Select(p => p.FullName))}]");
+        }
     }
 }

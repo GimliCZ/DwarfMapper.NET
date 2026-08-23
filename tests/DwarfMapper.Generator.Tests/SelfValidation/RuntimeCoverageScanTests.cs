@@ -9,138 +9,141 @@
 
 using System.Reflection;
 
-namespace DwarfMapper.Generator.Tests.SelfValidation;
-
-/// <summary>
-///     Feature attributes/enums exempt from the RUNTIME-coverage requirement (must stay tiny + justified).
-///     RoundTrip — a compile-time anti-mislinking VERIFICATION feature: [RoundTrip] pairs a method with its
-///     inverse and the generator proves the pairing (DWARF020/021). Its runtime behaviour is
-///     identical to an ordinary map (no distinct runtime semantics), so a dedicated runtime test
-///     would add no behavioural signal. Covered by RoundTripGenTests + ReverseMap runtime tests.
-///     DwarfMapperOptions — an assembly-level compile-time option (generated-extension visibility). Its only
-///     observable effect is cross-assembly accessibility, which a single integration assembly cannot
-///     exercise behaviourally; a runtime test would be hollow. Covered by FacadeExtensionsGeneratorTests.
-/// </summary>
-file static class RuntimeCoverageExempt
+namespace DwarfMapper.Generator.Tests.SelfValidation
 {
-    // RoundTrip / DwarfMapperOptions — verification/assembly-option markers, not per-mapping execution.
-    // DwarfMapperDefaults — ASSEMBLY-GLOBAL default options. It cannot be exercised in this shared integration
-    //   assembly: one [assembly: DwarfMapperDefaults(...)] would re-default every mapper in the project. Its
-    //   layering (mapper > assembly defaults > built-in) is covered at the generator level by
-    //   AssemblyDefaultsTests, which is the correct place to isolate an assembly-scoped attribute.
-    // DwarfProvidesMap / DwarfRequiresMap / UsesMap / DwarfMapperValidationRoot — ambient cross-assembly
-    //   registry infrastructure (manifests / consumption marker / validation-root marker). You cannot
-    //   "execute a mapping" using them; they are covered by AmbientRegistryTests (runtime registry +
-    //   facade) and AmbientManifestAttributesTests, plus the ambient-registry generator/validation tests.
-    public static readonly IReadOnlySet<string> AttributeUsageNames =
-        new HashSet<string>(StringComparer.Ordinal)
-        {
-            "RoundTrip",
-            "DwarfMapperOptions",
-            "DwarfMapperDefaults",
-            "DwarfProvidesMap",
-            "DwarfRequiresMap",
-            "UsesMap",
-            "DwarfMapperValidationRoot"
-        };
-
-    public static readonly IReadOnlySet<string> EnumTypeNames =
-        new HashSet<string>(StringComparer.Ordinal);
-}
-
-public sealed class RuntimeCoverageScanTests
-{
-    private static readonly Assembly DwarfMapperAssembly = typeof(DwarfMapperAttribute).Assembly;
-
-    private static readonly Lazy<string> IntegrationTestText = new(() =>
+    /// <summary>
+    ///     Feature attributes/enums exempt from the RUNTIME-coverage requirement (must stay tiny + justified).
+    ///     RoundTrip — a compile-time anti-mislinking VERIFICATION feature: [RoundTrip] pairs a method with its
+    ///     inverse and the generator proves the pairing (DWARF020/021). Its runtime behaviour is
+    ///     identical to an ordinary map (no distinct runtime semantics), so a dedicated runtime test
+    ///     would add no behavioural signal. Covered by RoundTripGenTests + ReverseMap runtime tests.
+    ///     DwarfMapperOptions — an assembly-level compile-time option (generated-extension visibility). Its only
+    ///     observable effect is cross-assembly accessibility, which a single integration assembly cannot
+    ///     exercise behaviourally; a runtime test would be hollow. Covered by FacadeExtensionsGeneratorTests.
+    /// </summary>
+    file static class RuntimeCoverageExempt
     {
-        var dir = Path.Combine(FindRepoRoot(), "tests", "DwarfMapper.IntegrationTests");
-        return string.Concat(
-            Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
-                .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
-                    StringComparison.Ordinal))
-                .Select(File.ReadAllText));
-    });
-
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(Path.GetDirectoryName(typeof(RuntimeCoverageScanTests).Assembly.Location)!);
-        while (dir != null)
-        {
-            if (dir.GetFiles("DwarfMapper.NET.sln").Length > 0)
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("Cannot locate repository root (DwarfMapper.NET.sln).");
-    }
-
-    // SCAN R1 — every public feature attribute is exercised in the integration (runtime) project.
-    [Fact]
-    public void Every_public_attribute_has_a_runtime_test()
-    {
-        var blob = IntegrationTestText.Value;
-        var missing = DwarfMapperAssembly.GetTypes()
-            .Where(t => t.IsPublic && !t.IsAbstract && typeof(Attribute).IsAssignableFrom(t))
-            .Select(t =>
+        // RoundTrip / DwarfMapperOptions — verification/assembly-option markers, not per-mapping execution.
+        // DwarfMapperDefaults — ASSEMBLY-GLOBAL default options. It cannot be exercised in this shared integration
+        //   assembly: one [assembly: DwarfMapperDefaults(...)] would re-default every mapper in the project. Its
+        //   layering (mapper > assembly defaults > built-in) is covered at the generator level by
+        //   AssemblyDefaultsTests, which is the correct place to isolate an assembly-scoped attribute.
+        // DwarfProvidesMap / DwarfRequiresMap / UsesMap / DwarfMapperValidationRoot — ambient cross-assembly
+        //   registry infrastructure (manifests / consumption marker / validation-root marker). You cannot
+        //   "execute a mapping" using them; they are covered by AmbientRegistryTests (runtime registry +
+        //   facade) and AmbientManifestAttributesTests, plus the ambient-registry generator/validation tests.
+        public static readonly IReadOnlySet<string> AttributeUsageNames =
+            new HashSet<string>(StringComparer.Ordinal)
             {
-                // Reflection names generic attributes as e.g. "GenerateMapAttribute`2" — strip the arity
-                // suffix, then the "Attribute" suffix, to get the usage name "GenerateMap".
-                var name = t.Name.Split('`')[0];
-                return name.EndsWith("Attribute", StringComparison.Ordinal) ? name[..^"Attribute".Length] : name;
-            })
-            .Where(usage => !RuntimeCoverageExempt.AttributeUsageNames.Contains(usage))
-            // Usage as `[Name` or `[Name(` (generic [GenerateMap<...>] uses the same prefix).
-            .Where(usage => !blob.Contains("[" + usage, StringComparison.Ordinal))
-            .OrderBy(x => x, StringComparer.Ordinal)
-            .ToList();
+                "RoundTrip",
+                "DwarfMapperOptions",
+                "DwarfMapperDefaults",
+                "DwarfProvidesMap",
+                "DwarfRequiresMap",
+                "UsesMap",
+                "DwarfMapperValidationRoot"
+            };
 
-        Assert.True(missing.Count == 0,
-            "Public attribute(s) with NO runtime/behavioural test in DwarfMapper.IntegrationTests: "
-            + string.Join(", ", missing)
-            + ". Add a runtime test that executes a mapping using the attribute, or (rarely) add it to "
-            + "RuntimeCoverageExempt with justification.");
+        public static readonly IReadOnlySet<string> EnumTypeNames =
+            new HashSet<string>(StringComparer.Ordinal);
     }
 
-    // SCAN R2 — every public enum type is exercised in the integration (runtime) project.
-    [Fact]
-    public void Every_public_enum_has_a_runtime_test()
+    public sealed class RuntimeCoverageScanTests
     {
-        var blob = IntegrationTestText.Value;
-        var missing = DwarfMapperAssembly.GetTypes()
-            .Where(t => t.IsPublic && t.IsEnum)
-            .Select(t => t.Name)
-            .Where(name => !RuntimeCoverageExempt.EnumTypeNames.Contains(name))
-            .Where(name => !blob.Contains(name + ".", StringComparison.Ordinal))
-            .OrderBy(x => x, StringComparer.Ordinal)
-            .ToList();
+        private static readonly Assembly DwarfMapperAssembly = typeof(DwarfMapperAttribute).Assembly;
 
-        Assert.True(missing.Count == 0,
-            "Public enum(s) with NO runtime/behavioural test in DwarfMapper.IntegrationTests: "
-            + string.Join(", ", missing)
-            + ". Add a runtime test that maps under that strategy, or add it to RuntimeCoverageExempt.");
-    }
-
-    // SCAN R3 — every public enum VALUE (not just the type) is exercised at runtime. R2 only proves the enum
-    // TYPE is named somewhere; a new value (e.g. a future NullStrategy.X) would ship "covered" by the type name
-    // with no behavioural test. This requires each value to appear as the qualified `EnumType.Value` in an
-    // integration test — the form a mapper option or assertion actually uses.
-    [Fact]
-    public void Every_public_enum_value_has_a_runtime_test()
-    {
-        var blob = IntegrationTestText.Value;
-        var missing = new List<string>();
-        foreach (var t in DwarfMapperAssembly.GetTypes().Where(t => t.IsPublic && t.IsEnum))
+        private static readonly Lazy<string> IntegrationTestText = new(() =>
         {
-            if (RuntimeCoverageExempt.EnumTypeNames.Contains(t.Name)) continue;
-            foreach (var v in Enum.GetNames(t))
-                if (!blob.Contains($"{t.Name}.{v}", StringComparison.Ordinal))
-                    missing.Add($"{t.Name}.{v}");
+            var dir = Path.Combine(FindRepoRoot(), "tests", "DwarfMapper.IntegrationTests");
+            return string.Concat(
+                Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
+                    .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar,
+                        StringComparison.Ordinal))
+                    .Select(File.ReadAllText));
+        });
+
+        private static string FindRepoRoot()
+        {
+            var dir = new DirectoryInfo(Path.GetDirectoryName(typeof(RuntimeCoverageScanTests).Assembly.Location)!);
+            while (dir != null)
+            {
+                if (dir.GetFiles("DwarfMapper.NET.sln").Length > 0)
+                {
+                    return dir.FullName;
+                }
+
+                dir = dir.Parent;
+            }
+
+            throw new InvalidOperationException("Cannot locate repository root (DwarfMapper.NET.sln).");
         }
 
-        Assert.True(missing.Count == 0,
-            "Public enum VALUE(s) with NO runtime test in DwarfMapper.IntegrationTests (as qualified "
-            + "`EnumType.Value`):\n  " + string.Join("\n  ", missing.OrderBy(x => x, StringComparer.Ordinal))
-            + "\nAdd a runtime test that maps under that value.");
+        // SCAN R1 — every public feature attribute is exercised in the integration (runtime) project.
+        [Fact]
+        public void Every_public_attribute_has_a_runtime_test()
+        {
+            var blob = IntegrationTestText.Value;
+            var missing = DwarfMapperAssembly.GetTypes()
+                .Where(t => t.IsPublic && !t.IsAbstract && typeof(Attribute).IsAssignableFrom(t))
+                .Select(t =>
+                {
+                    // Reflection names generic attributes as e.g. "GenerateMapAttribute`2" — strip the arity
+                    // suffix, then the "Attribute" suffix, to get the usage name "GenerateMap".
+                    var name = t.Name.Split('`')[0];
+                    return name.EndsWith("Attribute", StringComparison.Ordinal) ? name[..^"Attribute".Length] : name;
+                })
+                .Where(usage => !RuntimeCoverageExempt.AttributeUsageNames.Contains(usage))
+                // Usage as `[Name` or `[Name(` (generic [GenerateMap<...>] uses the same prefix).
+                .Where(usage => !blob.Contains("[" + usage, StringComparison.Ordinal))
+                .OrderBy(x => x, StringComparer.Ordinal)
+                .ToList();
+
+            Assert.True(missing.Count == 0,
+                "Public attribute(s) with NO runtime/behavioural test in DwarfMapper.IntegrationTests: " + string.Join(", ", missing) + ". Add a runtime test that executes a mapping using the attribute, or (rarely) add it to " + "RuntimeCoverageExempt with justification.");
+        }
+
+        // SCAN R2 — every public enum type is exercised in the integration (runtime) project.
+        [Fact]
+        public void Every_public_enum_has_a_runtime_test()
+        {
+            var blob = IntegrationTestText.Value;
+            var missing = DwarfMapperAssembly.GetTypes()
+                .Where(t => t.IsPublic && t.IsEnum)
+                .Select(t => t.Name)
+                .Where(name => !RuntimeCoverageExempt.EnumTypeNames.Contains(name))
+                .Where(name => !blob.Contains(name + ".", StringComparison.Ordinal))
+                .OrderBy(x => x, StringComparer.Ordinal)
+                .ToList();
+
+            Assert.True(missing.Count == 0,
+                "Public enum(s) with NO runtime/behavioural test in DwarfMapper.IntegrationTests: " + string.Join(", ", missing) + ". Add a runtime test that maps under that strategy, or add it to RuntimeCoverageExempt.");
+        }
+
+        // SCAN R3 — every public enum VALUE (not just the type) is exercised at runtime. R2 only proves the enum
+        // TYPE is named somewhere; a new value (e.g. a future NullStrategy.X) would ship "covered" by the type name
+        // with no behavioural test. This requires each value to appear as the qualified `EnumType.Value` in an
+        // integration test — the form a mapper option or assertion actually uses.
+        [Fact]
+        public void Every_public_enum_value_has_a_runtime_test()
+        {
+            var blob = IntegrationTestText.Value;
+            var missing = new List<string>();
+            foreach (var t in DwarfMapperAssembly.GetTypes().Where(t => t.IsPublic && t.IsEnum))
+            {
+                if (RuntimeCoverageExempt.EnumTypeNames.Contains(t.Name))
+                {
+                    continue;
+                }
+
+                foreach (var v in Enum.GetNames(t))
+                    if (!blob.Contains($"{t.Name}.{v}", StringComparison.Ordinal))
+                    {
+                        missing.Add($"{t.Name}.{v}");
+                    }
+            }
+
+            Assert.True(missing.Count == 0,
+                "Public enum VALUE(s) with NO runtime test in DwarfMapper.IntegrationTests (as qualified " + "`EnumType.Value`):\n  " + string.Join("\n  ", missing.OrderBy(x => x, StringComparer.Ordinal)) + "\nAdd a runtime test that maps under that value.");
+        }
     }
 }

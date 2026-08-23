@@ -9,52 +9,67 @@
 // fails the proof silently falls back to ordinary per-member assignment. You write nothing to opt in — this
 // mapper is declared exactly like example 01. The speed is a property of the DATA, not of the declaration.
 
-namespace DwarfMapper.Gallery.Ex21;
-
-public struct Vein
+namespace DwarfMapper.Gallery.Ex21
 {
-    public int Depth;
-    public int Yield;
-}
+    public struct Vein
+    {
+        public int Depth;
+        public int Yield;
+    }
 
-public struct VeinDto
-{
-    public int Depth;
-    public int Yield;
-}
+    public struct VeinDto
+    {
+        public int Depth;
+        public int Yield;
+    }
 
-public sealed class Seam
-{
-    public Vein[] Veins { get; set; } = [];
-}
+    public sealed class Seam
+    {
+        public Vein[] Veins { get; set; } = [];
+    }
 
-public sealed class SeamDto
-{
-    public VeinDto[] Veins { get; set; } = [];
-}
+    public sealed class SeamDto
+    {
+        public VeinDto[] Veins { get; set; } = [];
+    }
 
 // <snippet: blittable-simd>
-[DwarfMapper]
-public partial class Mapper
-{
-    // Vein[] -> VeinDto[]: unmanaged, same size, same field names and order, so the whole array is
-    // bulk-copied rather than looped. Nothing here asks for that; the generator proves it.
-    public partial SeamDto ToDto(Seam s);
-}
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        // Vein[] -> VeinDto[]: unmanaged, same size, same field names and order, so the whole array is
+        // bulk-copied rather than looped. Nothing here asks for that; the generator proves it.
+        public partial SeamDto ToDto(Seam s);
+    }
 // </snippet>
 
-[DocExample(21, Tier.Advanced, "Blittable bulk copy",
-    Shows = "a layout-identical array is bulk-copied, not looped — proven, never assumed")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(21,
+        Tier.Advanced,
+        "Blittable bulk copy",
+        Shows = "a layout-identical array is bulk-copied, not looped — proven, never assumed")]
+    public static class Example
     {
-        var dto = new Mapper().ToDto(new Seam
+        public static void Run()
         {
-            Veins = [new Vein { Depth = 700, Yield = 12 }, new Vein { Depth = 1400, Yield = 3 }]
-        });
+            var dto = new Mapper().ToDto(new Seam
+            {
+                Veins =
+                [
+                    new Vein
+                    {
+                        Depth = 700,
+                        Yield = 12
+                    },
+                    new Vein
+                    {
+                        Depth = 1400,
+                        Yield = 3
+                    }
+                ]
+            });
 
-        Console.WriteLine(
-            $"21 Blittable copy     -> {dto.Veins.Length} veins, first {dto.Veins[0].Depth}m/{dto.Veins[0].Yield}");
+            Console.WriteLine(
+                $"21 Blittable copy     -> {dto.Veins.Length} veins, first {dto.Veins[0].Depth}m/{dto.Veins[0].Yield}");
+        }
     }
 }

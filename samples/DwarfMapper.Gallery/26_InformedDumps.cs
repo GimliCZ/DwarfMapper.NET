@@ -12,51 +12,55 @@
 
 using DwarfMapper.Testing;
 
-namespace DwarfMapper.Gallery.Ex26;
-
-public sealed class Coin
+namespace DwarfMapper.Gallery.Ex26
 {
-    public int Id { get; set; }
-    public string Mint { get; set; } = "";
-}
+    public sealed class Coin
+    {
+        public int Id { get; set; }
 
-public sealed class CoinDto
-{
-    public int Id { get; set; }   // no Mint — the round trip cannot survive this
-}
+        public string Mint { get; set; } = "";
+    }
+
+    public sealed class CoinDto
+    {
+        public int Id { get; set; } // no Mint — the round trip cannot survive this
+    }
 
 // <snippet: informed-dumps>
-[DwarfMapper]
-public partial class Mapper
-{
-    public partial CoinDto ToDto(Coin c);
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        public partial CoinDto ToDto(Coin c);
 
-    [MapIgnore(nameof(Coin.Mint))]   // nothing to restore it from — stated, not forgotten
-    public partial Coin FromDto(CoinDto d);
-}
+        [MapIgnore(nameof(Coin.Mint))] // nothing to restore it from — stated, not forgotten
+        public partial Coin FromDto(CoinDto d);
+    }
 // </snippet>
 
-[DocExample(26, Tier.Testing, "Informed failure dumps",
-    Shows = "a failed round trip names the diverging member path, not two object dumps")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(26,
+        Tier.Testing,
+        "Informed failure dumps",
+        Shows = "a failed round trip names the diverging member path, not two object dumps")]
+    public static class Example
     {
-        var mapper = new Mapper();
-
-        try
+        public static void Run()
         {
-            RoundTrip.Verify<Coin, CoinDto>(mapper.ToDto, mapper.FromDto, 7, 20);
-            Console.WriteLine("26 Informed dumps     -> UNEXPECTED: the lossy map round-tripped");
-        }
-        catch (RoundTripException ex)
-        {
-            // One line of it is enough to make the point: the failure names the member, not the object.
-            var headline = ex.Message.Split('\n')
-                .FirstOrDefault(l => l.Contains("Mint", StringComparison.Ordinal))?.Trim()
-                ?? ex.Message.Split('\n')[0].Trim();
+            var mapper = new Mapper();
 
-            Console.WriteLine($"26 Informed dumps     -> caught as designed: {headline}");
+            try
+            {
+                RoundTrip.Verify<Coin, CoinDto>(mapper.ToDto, mapper.FromDto, 7, 20);
+                Console.WriteLine("26 Informed dumps     -> UNEXPECTED: the lossy map round-tripped");
+            }
+            catch (RoundTripException ex)
+            {
+                // One line of it is enough to make the point: the failure names the member, not the object.
+                var headline = ex.Message.Split('\n')
+                                   .FirstOrDefault(l => l.Contains("Mint", StringComparison.Ordinal))?.Trim() ??
+                               ex.Message.Split('\n')[0].Trim();
+
+                Console.WriteLine($"26 Informed dumps     -> caught as designed: {headline}");
+            }
         }
     }
 }

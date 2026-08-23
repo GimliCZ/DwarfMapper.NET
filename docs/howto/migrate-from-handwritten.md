@@ -80,16 +80,22 @@ This is Gallery example 34, so it compiles and runs (`dotnet run --project sampl
 [DwarfMapper]
 public partial class StampedOrderMapper
 {
-    [MapProperty(nameof(Order.FullName), nameof(OrderReceipt.Name))]                          // rename
-    [MapProperty(nameof(Order.Total), nameof(OrderReceipt.Total), Use = nameof(Round))]       // transform
-    [MapValue(nameof(OrderReceipt.Source), "api-v2")]                                         // constant
-    [MapIgnore(nameof(OrderReceipt.Checksum))]                                                // filled below
+    [MapProperty(nameof(Order.FullName), nameof(OrderReceipt.Name))] // rename
+    [MapProperty(nameof(Order.Total), nameof(OrderReceipt.Total), Use = nameof(Round))] // transform
+    [MapValue(nameof(OrderReceipt.Source), "api-v2")] // constant
+    [MapIgnore(nameof(OrderReceipt.Checksum))] // filled below
     public partial OrderReceipt ToReceipt(Order o);
 
-    private static decimal Round(decimal d) => Math.Round(d, 2);
+    private static decimal Round(decimal d)
+    {
+        return Math.Round(d, 2);
+    }
 
-    [AfterMap]  // the imperative tail you couldn't express declaratively
-    private static void Stamp(Order o, OrderReceipt r) => r.Checksum = $"{o.Id:x8}";
+    [AfterMap] // the imperative tail you couldn't express declaratively
+    private static void Stamp(Order o, OrderReceipt r)
+    {
+        r.Checksum = $"{o.Id:x8}";
+    }
 }
 ```
 <!-- endsnippet -->

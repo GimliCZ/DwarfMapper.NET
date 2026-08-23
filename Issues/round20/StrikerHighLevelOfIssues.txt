@@ -1,0 +1,55 @@
+﻿The repo's mutation testing has never run — twice over.
+
+  1. comment is not an allowed key inside the stryker-config object. Both existing configs put it there, so dotnet stryker --config-file stryker-config.json fails outright. Those configs have been in the
+  repo, referenced by housekeeping.ps1, doing nothing.
+  2. Worse, and exactly the shape this whole branch exists to delete: mutate globs resolve against the project directory, not the repo root. The runtime config as I had it committed mutated nothing — 185
+  mutants "Removed by mutate filter", no score, and exit code 0. housekeeping.ps1 checks $LASTEXITCODE, so a vacuous run reports success. A green that measured nothing, wrapped in a check that can't tell.
+
+  Both fixed in all three configs.
+
+  The measurement: 66.95%, break set to 66. 111 mutants tested — 68 killed, 11 timeout, 32 survived, 7 no-coverage, 8 compile-error. 44 minutes wall-clock.
+
+  That is a starting ratchet, not a clean bill. For the one taxonomy where mutation is the only available proof, two-thirds is the honest number and I'd rather state it than dress it.
+
+  The single most interesting survivor is DwarfMapperRegistry.cs:291 — the && in Key.Equals. That is the identity function for the entire registry, and nothing in the suite proves that (A,B) and (A,C) are
+  different maps. A false equality there would alias unrelated map pairs to each other. Round 18 flagged AmbiguousInterfaces and DestinationType as having zero references anywhere; this is the same class
+  of hole, one level deeper.
+
+  Two others named as kill-first: the return; that keeps a duplicate Register out of InterfaceMaps — a stated invariant with zero tests — and Count: > 1 in the exception path.
+
+  One cost was disclosed rather than hidden: excluding Generator.Tests (to keep the run at 44 minutes rather than hours) leaves DwarfMapValidationException unreachable, since it's thrown only by generated
+  code.
+
+  Once the review clears, the current list is done and R20 starts — beginning with the generator emitting uncompilable code.
+
+✻ Waiting for 1 background agent to finish
+
+● Agent "Review Task 9" finished · 6m 21s
+
+● The review caught that my headline was wrong, and I need to correct it — more below. Fix round 1 first:
+  ⎿  Resuming agent a5ccd44
+  ⎿  Allowed by auto mode classifier
+
+● Correction to what I told you an hour ago. I reported Key.Equals's && as the most serious survivor — "nothing proves (A,B) and (A,C) are different maps." That was wrong, and it changes the conclusion,
+  so it's worth stating plainly rather than quietly re-ranking.
+
+  Key is a private readonly struct, so its only caller is ConcurrentDictionary, whose node walk is hashcode == n._hashcode && comparer.Equals(...). (A,B) and (A,C) have different hashes, so Equals is
+  never consulted — the mutant is inert and unkillable without forcing a hash collision. The registry identity function is not the hole I described.
+
+  Sharper still: the report proposed a test to kill it, and that test would have passed without killing the mutant — booking false mutation coverage. That's the exact failure mode this branch exists to
+  remove, showing up inside the tool meant to detect it.
+
+  The real strongest finding is DwarfMapperRegistry.cs:76 — the return; that keeps a duplicate Register out of InterfaceMaps. Drop it and a duplicate interface registration adds a second entry, after
+  which Map's candidates.Count == 1 check fails and throws ambiguous. A stated invariant with zero tests. The reviewer confirmed the mechanism independently by tracing to line 163.
+
+  The third one is real but narrower than I said: Count: > 1 is a public-constructor contract hole, not a registry-aliasing risk — Count == 1 returns earlier, so that path is only reachable by calling the
+  three-argument constructor directly.
+
+  One more thing worth your attention. The two sibling Stryker configs are now parse-fixed but have still never been run — and a vacuous run exits 0. That's precisely the state that let the runtime config
+  mutate nothing and report success. I've asked for a non-vacuous-run assertion in housekeeping.ps1 (fail if the JSON report's denominator is zero), plus the json reporter both siblings are missing.
+  Without it, we've fixed two instances and left the trap.
+
+  Everything else held up: the 66.95% reproduced exactly from the JSON on re-parse, break: 66 is the floor rather than the siblings' inherited 70, and the no-coverage mutants sit in the denominator rather
+  than being folded out.
+
+  Once this lands, the current list is complete and R20 starts.

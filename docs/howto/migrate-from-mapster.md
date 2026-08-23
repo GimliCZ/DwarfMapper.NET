@@ -80,12 +80,15 @@ The rule (same as every guide): **lambdas become named methods.**
 [DwarfMapper]
 public partial class CustomerMapper
 {
-    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]                           // rename
-    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))]  // conversion
-    [Flatten(nameof(Customer.Address))]                                                          // Address.City -> City
+    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))] // rename
+    [MapProperty(nameof(Customer.Total), nameof(CustomerDto.Total), Use = nameof(FormatMoney))] // conversion
+    [Flatten(nameof(Customer.Address))] // Address.City -> City
     public partial CustomerDto ToDto(Customer src);
 
-    private static string FormatMoney(decimal d) => d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
+    private static string FormatMoney(decimal d)
+    {
+        return d.ToString("C", CultureInfo.GetCultureInfo("en-US"));
+    }
 }
 ```
 <!-- endsnippet -->

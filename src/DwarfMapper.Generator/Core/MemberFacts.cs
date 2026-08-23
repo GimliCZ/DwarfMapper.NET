@@ -2,181 +2,241 @@
 
 using Microsoft.CodeAnalysis;
 
-namespace DwarfMapper.Generator.Core;
-
-/// <summary>
-///     The single implementation of "which members can be read from / written to a type", shared by both
-///     engines. Both <see cref="Readable" /> and <see cref="Writable" /> walk the base-type chain and
-///     de-duplicate by name so a shadowing override yields once, and both apply ACCESSOR-level usability rather
-///     than merely property-level. Only <see cref="Readable" /> has the extra interface branch — for an
-///     interface type it walks that interface plus all transitively inherited interfaces, since interfaces have
-///     no <c>BaseType</c> chain to fall back on; <see cref="Writable" /> walks <c>BaseType</c> only.
-///     <para>
-///     This lived privately inside <c>MapperExtractor</c> while <c>MapToGenerator</c> had its own shallower
-///     copy that never walked base types — so inherited members were invisible to the registry, silently
-///     dropping data. One implementation is what stops that class of divergence recurring.
-///     </para>
-/// </summary>
-internal static class MemberFacts
+namespace DwarfMapper.Generator.Core
 {
-    // A property accessor / field is usable by the generated mapper when it is public, or — when the mapper
-    // opted in via [DwarfMapper(AllowNonPublic = true)] — an internal/protected-internal accessor the mapper's
-    // assembly can reach (same assembly or via [InternalsVisibleTo]). private/protected stay unreachable.
-    private static bool AccessorUsable(IMethodSymbol? accessor, Compilation? compilation, bool allowNonPublic)
+    /// <summary>
+    ///     The single implementation of "which members can be read from / written to a type", shared by both
+    ///     engines. Both <see cref="Readable" /> and <see cref="Writable" /> walk the base-type chain and
+    ///     de-duplicate by name so a shadowing override yields once, and both apply ACCESSOR-level usability rather
+    ///     than merely property-level. Only <see cref="Readable" /> has the extra interface branch — for an
+    ///     interface type it walks that interface plus all transitively inherited interfaces, since interfaces have
+    ///     no <c>BaseType</c> chain to fall back on; <see cref="Writable" /> walks <c>BaseType</c> only.
+    ///     <para>
+    ///         This lived privately inside <c>MapperExtractor</c> while <c>MapToGenerator</c> had its own shallower
+    ///         copy that never walked base types — so inherited members were invisible to the registry, silently
+    ///         dropping data. One implementation is what stops that class of divergence recurring.
+    ///     </para>
+    /// </summary>
+    internal static class MemberFacts
     {
-        return accessor is not null &&
-               IsMemberReachable(accessor, accessor.DeclaredAccessibility, compilation, allowNonPublic);
-    }
-
-    private static bool FieldUsable(IFieldSymbol field, Compilation? compilation, bool allowNonPublic)
-    {
-        return IsMemberReachable(field, field.DeclaredAccessibility, compilation, allowNonPublic);
-    }
-
-    // public is always reachable; internal / protected-internal is reachable when the mapper opted in AND the
-    // mapper's own assembly can see it (same assembly, or [InternalsVisibleTo]). protected / private never are.
-    private static bool IsMemberReachable(ISymbol member, Accessibility accessibility, Compilation? compilation,
-        bool allowNonPublic)
-    {
-        if (accessibility == Accessibility.Public) return true;
-        if (!allowNonPublic) return false;
-        if (accessibility is not (Accessibility.Internal or Accessibility.ProtectedOrInternal)) return false;
-        if (compilation is null) return true; // no context → same-assembly is the only safe assumption
-        // Reachable when the member lives in the mapper's own assembly, or its assembly grants
-        // [InternalsVisibleTo] to the mapper's assembly. (IsSymbolAccessibleWithin is unreliable for
-        // property accessors scoped to an IAssemblySymbol, so check assembly identity / IVT directly.)
-        var memberAsm = member.ContainingAssembly;
-        return memberAsm is not null
-               && (SymbolEqualityComparer.Default.Equals(memberAsm, compilation.Assembly)
-                   || memberAsm.GivesAccessTo(compilation.Assembly));
-    }
-
-    // ISSUE-044: no defaults on purpose. `(null, false)` is a real answer — "public members only, no
-    // cross-assembly context" — and it must be chosen at the call site, not inherited. The wrappers in
-    // MapperExtractor were fixed first and ConstructorSelector still slipped through as a DIRECT caller,
-    // which is exactly what a default here permits.
-    internal static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> Readable(ITypeSymbol type,
-        Compilation? compilation, bool allowNonPublic)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        // ONE classification for both branches, so the interface path and the class path cannot answer the same
-        // "is this member readable?" question differently. ISSUE-040: the interface branch used to gate only on
-        // `GetMethod is not null` and skipped the accessor-usability check the class branch applied, so a C# 8+
-        // non-public default interface member leaked into generated code (CS0122) — the exact engine divergence
-        // this shared class was extracted to end, reintroduced within one method.
-        (ISymbol Symbol, string Name, ITypeSymbol Type)? Classify(ISymbol m) => m switch
+        // A property accessor / field is usable by the generated mapper when it is public, or — when the mapper
+        // opted in via [DwarfMapper(AllowNonPublic = true)] — an internal/protected-internal accessor the mapper's
+        // assembly can reach (same assembly or via [InternalsVisibleTo]). private/protected stay unreachable.
+        private static bool AccessorUsable(IMethodSymbol? accessor, Compilation? compilation, bool allowNonPublic)
         {
-            IPropertySymbol p when !p.IsIndexer && AccessorUsable(p.GetMethod, compilation, allowNonPublic)
-                => (p, p.Name, p.Type),
-            IFieldSymbol f when !f.IsImplicitlyDeclared && FieldUsable(f, compilation, allowNonPublic)
-                => (f, f.Name, f.Type),
-            _ => null
-        };
-
-        // Interface types: walk the interface itself plus all transitively inherited interfaces.
-        // Interfaces don't have a BaseType class chain, so the normal loop would only see
-        // the interface's own members and miss parent-interface properties.
-        if (type.TypeKind == TypeKind.Interface && type is INamedTypeSymbol ifaceType)
-        {
-            foreach (var iface in new[] { type }.Concat(ifaceType.AllInterfaces))
-            foreach (var m in iface.GetMembers())
-            {
-                if (m.IsStatic) continue;
-                if (Classify(m) is { } r && seen.Add(r.Name))
-                    yield return r;
-            }
-
-            yield break;
+            return accessor is not null &&
+                   IsMemberReachable(accessor, accessor.DeclaredAccessibility, compilation, allowNonPublic);
         }
 
-        // Classes and structs: walk the inheritance chain.
-        for (var current = type;
-             current is not null && current.SpecialType != SpecialType.System_Object;
-             current = current.BaseType)
-            foreach (var m in current.GetMembers())
-            {
-                if (m.IsStatic) continue;
-                if (Classify(m) is { } r && seen.Add(r.Name))
-                    yield return r;
-            }
-    }
-
-    /// <summary>
-    ///     Resolves a dotted source path (e.g. <c>"Customer.Name"</c>) hop-by-hop from <paramref name="root" />
-    ///     over <see cref="Readable" />, returning the leaf member's type. <paramref name="nullableHop" /> is set
-    ///     when an <i>interior</i> hop (any but the last) is a nullable/oblivious reference — dereferencing it can
-    ///     throw at runtime (DWARF044). On failure, <paramref name="badSegment" /> names the first unresolved
-    ///     segment (DWARF043). Segments are matched by exact ordinal name; member names never contain dots, so
-    ///     the split is unambiguous. A path with no dot resolves as a single hop, which makes this a superset of
-    ///     the flat lookup and lets a caller ask one question instead of two.
-    /// </summary>
-    /// <remarks>
-    ///     ISSUE-R18-31: this walk lives here rather than in the extractor because FOUR places have to agree
-    ///     about what a dotted source means — member resolution, constructor-argument resolution,
-    ///     <c>ConstructorSelector</c>'s satisfiability scoring, and the projection resolver. Two of them had
-    ///     their own flat-name lookup, so a path that resolved fine for a member was reported as a member that
-    ///     "does not exist" when it fed a constructor parameter; a third had its own copy of this loop.
-    ///     <para>
-    ///     The DIAGNOSTIC each caller draws from the answer still differs, and should: projection deliberately
-    ///     discards <paramref name="nullableHop" />, because a null interior throws in emitted C# and yields
-    ///     null in a provider-translated join. One walk, four consequences.
-    ///     </para>
-    /// </remarks>
-    internal static bool TryResolvePath(
-        ITypeSymbol root, string dottedPath, Compilation? compilation, bool allowNonPublic,
-        out ITypeSymbol? leafType, out bool nullableHop, out string badSegment)
-    {
-        leafType = null;
-        nullableHop = false;
-        badSegment = "";
-        var segments = dottedPath.Split('.');
-        var current = root;
-        for (var i = 0; i < segments.Length; i++)
+        private static bool FieldUsable(IFieldSymbol field, Compilation? compilation, bool allowNonPublic)
         {
-            var seg = segments[i];
-            var member = Readable(current, compilation, allowNonPublic)
-                .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
-                .Select(m => ((string Name, ITypeSymbol Type)?)(m.Name, m.Type))
-                .FirstOrDefault();
-            if (member is null)
+            return IsMemberReachable(field, field.DeclaredAccessibility, compilation, allowNonPublic);
+        }
+
+        // public is always reachable; internal / protected-internal is reachable when the mapper opted in AND the
+        // mapper's own assembly can see it (same assembly, or [InternalsVisibleTo]). protected / private never are.
+        private static bool IsMemberReachable(
+            ISymbol member,
+            Accessibility accessibility,
+            Compilation? compilation,
+            bool allowNonPublic)
+        {
+            if (accessibility == Accessibility.Public)
             {
-                badSegment = seg;
+                return true;
+            }
+
+            if (!allowNonPublic)
+            {
                 return false;
             }
 
-            if (i < segments.Length - 1
-                && member.Value.Type.IsReferenceType
-                && member.Value.Type.NullableAnnotation != NullableAnnotation.NotAnnotated)
-                nullableHop = true;
-            current = member.Value.Type;
+            if (accessibility is not (Accessibility.Internal or Accessibility.ProtectedOrInternal))
+            {
+                return false;
+            }
+
+            if (compilation is null)
+            {
+                return true; // no context → same-assembly is the only safe assumption
+            }
+
+            // Reachable when the member lives in the mapper's own assembly, or its assembly grants
+            // [InternalsVisibleTo] to the mapper's assembly. (IsSymbolAccessibleWithin is unreliable for
+            // property accessors scoped to an IAssemblySymbol, so check assembly identity / IVT directly.)
+            var memberAsm = member.ContainingAssembly;
+            return memberAsm is not null && (SymbolEqualityComparer.Default.Equals(memberAsm, compilation.Assembly) || memberAsm.GivesAccessTo(compilation.Assembly));
         }
 
-        leafType = current;
-        return true;
-    }
+        // ISSUE-044: no defaults on purpose. `(null, false)` is a real answer — "public members only, no
+        // cross-assembly context" — and it must be chosen at the call site, not inherited. The wrappers in
+        // MapperExtractor were fixed first and ConstructorSelector still slipped through as a DIRECT caller,
+        // which is exactly what a default here permits.
+        internal static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> Readable(
+            ITypeSymbol type,
+            Compilation? compilation,
+            bool allowNonPublic)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
 
-    internal static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> Writable(ITypeSymbol type,
-        Compilation? compilation, bool allowNonPublic)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        for (var current = type;
-             current is not null && current.SpecialType != SpecialType.System_Object;
-             current = current.BaseType)
-            foreach (var m in current.GetMembers())
+            // ONE classification for both branches, so the interface path and the class path cannot answer the same
+            // "is this member readable?" question differently. ISSUE-040: the interface branch used to gate only on
+            // `GetMethod is not null` and skipped the accessor-usability check the class branch applied, so a C# 8+
+            // non-public default interface member leaked into generated code (CS0122) — the exact engine divergence
+            // this shared class was extracted to end, reintroduced within one method.
+            (ISymbol Symbol, string Name, ITypeSymbol Type)? Classify(ISymbol m)
             {
-                if (m.IsStatic) continue;
-                switch (m)
+                return m switch
                 {
-                    case IPropertySymbol p
-                        when !p.IsIndexer && AccessorUsable(p.SetMethod, compilation, allowNonPublic):
-                        if (seen.Add(p.Name)) yield return (p, p.Name, p.Type);
-                        break;
-                    case IFieldSymbol f when !f.IsImplicitlyDeclared && !f.IsReadOnly &&
-                                             FieldUsable(f, compilation, allowNonPublic):
-                        if (seen.Add(f.Name)) yield return (f, f.Name, f.Type);
-                        break;
-                }
+                    IPropertySymbol p when !p.IsIndexer && AccessorUsable(p.GetMethod, compilation, allowNonPublic)
+                        => (p, p.Name, p.Type),
+                    IFieldSymbol f when !f.IsImplicitlyDeclared && FieldUsable(f, compilation, allowNonPublic)
+                        => (f, f.Name, f.Type),
+                    _ => null
+                };
             }
+
+            // Interface types: walk the interface itself plus all transitively inherited interfaces.
+            // Interfaces don't have a BaseType class chain, so the normal loop would only see
+            // the interface's own members and miss parent-interface properties.
+            if (type.TypeKind == TypeKind.Interface && type is INamedTypeSymbol ifaceType)
+            {
+                foreach (var iface in new[]
+                         {
+                             type
+                         }.Concat(ifaceType.AllInterfaces))
+                foreach (var m in iface.GetMembers())
+                {
+                    if (m.IsStatic)
+                    {
+                        continue;
+                    }
+
+                    if (Classify(m) is { } r && seen.Add(r.Name))
+                    {
+                        yield return r;
+                    }
+                }
+
+                yield break;
+            }
+
+            // Classes and structs: walk the inheritance chain.
+            for (var current = type;
+                 current is not null && current.SpecialType != SpecialType.System_Object;
+                 current = current.BaseType)
+                foreach (var m in current.GetMembers())
+                {
+                    if (m.IsStatic)
+                    {
+                        continue;
+                    }
+
+                    if (Classify(m) is { } r && seen.Add(r.Name))
+                    {
+                        yield return r;
+                    }
+                }
+        }
+
+        /// <summary>
+        ///     Resolves a dotted source path (e.g. <c>"Customer.Name"</c>) hop-by-hop from <paramref name="root" />
+        ///     over <see cref="Readable" />, returning the leaf member's type. <paramref name="nullableHop" /> is set
+        ///     when an <i>interior</i> hop (any but the last) is a nullable/oblivious reference — dereferencing it can
+        ///     throw at runtime (DWARF044). On failure, <paramref name="badSegment" /> names the first unresolved
+        ///     segment (DWARF043). Segments are matched by exact ordinal name; member names never contain dots, so
+        ///     the split is unambiguous. A path with no dot resolves as a single hop, which makes this a superset of
+        ///     the flat lookup and lets a caller ask one question instead of two.
+        /// </summary>
+        /// <remarks>
+        ///     ISSUE-R18-31: this walk lives here rather than in the extractor because FOUR places have to agree
+        ///     about what a dotted source means — member resolution, constructor-argument resolution,
+        ///     <c>ConstructorSelector</c>'s satisfiability scoring, and the projection resolver. Two of them had
+        ///     their own flat-name lookup, so a path that resolved fine for a member was reported as a member that
+        ///     "does not exist" when it fed a constructor parameter; a third had its own copy of this loop.
+        ///     <para>
+        ///         The DIAGNOSTIC each caller draws from the answer still differs, and should: projection deliberately
+        ///         discards <paramref name="nullableHop" />, because a null interior throws in emitted C# and yields
+        ///         null in a provider-translated join. One walk, four consequences.
+        ///     </para>
+        /// </remarks>
+        internal static bool TryResolvePath(
+            ITypeSymbol root,
+            string dottedPath,
+            Compilation? compilation,
+            bool allowNonPublic,
+            out ITypeSymbol? leafType,
+            out bool nullableHop,
+            out string badSegment)
+        {
+            leafType = null;
+            nullableHop = false;
+            badSegment = "";
+            var segments = dottedPath.Split('.');
+            var current = root;
+            for (var i = 0; i < segments.Length; i++)
+            {
+                var seg = segments[i];
+                var member = Readable(current, compilation, allowNonPublic)
+                    .Where(m => StringComparer.Ordinal.Equals(m.Name, seg))
+                    .Select(m => ((string Name, ITypeSymbol Type)?)(m.Name, m.Type))
+                    .FirstOrDefault();
+                if (member is null)
+                {
+                    badSegment = seg;
+                    return false;
+                }
+
+                if (i < segments.Length - 1 && member.Value.Type.IsReferenceType && member.Value.Type.NullableAnnotation != NullableAnnotation.NotAnnotated)
+                {
+                    nullableHop = true;
+                }
+
+                current = member.Value.Type;
+            }
+
+            leafType = current;
+            return true;
+        }
+
+        internal static IEnumerable<(ISymbol Symbol, string Name, ITypeSymbol Type)> Writable(
+            ITypeSymbol type,
+            Compilation? compilation,
+            bool allowNonPublic)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (var current = type;
+                 current is not null && current.SpecialType != SpecialType.System_Object;
+                 current = current.BaseType)
+                foreach (var m in current.GetMembers())
+                {
+                    if (m.IsStatic)
+                    {
+                        continue;
+                    }
+
+                    switch (m)
+                    {
+                        case IPropertySymbol p
+                            when !p.IsIndexer && AccessorUsable(p.SetMethod, compilation, allowNonPublic):
+                            if (seen.Add(p.Name))
+                            {
+                                yield return (p, p.Name, p.Type);
+                            }
+
+                            break;
+
+                        case IFieldSymbol f when !f.IsImplicitlyDeclared &&
+                                                 !f.IsReadOnly &&
+                                                 FieldUsable(f, compilation, allowNonPublic):
+                            if (seen.Add(f.Name))
+                            {
+                                yield return (f, f.Name, f.Type);
+                            }
+
+                            break;
+                    }
+                }
+        }
     }
 }

@@ -21,11 +21,61 @@ dotnet_diagnostic.IDE0073.severity = error
 file_header_template = SPDX-License-Identifier: GPL-2.0-only
 
 # Strictness pass: dead private code is an error (removed, not tolerated).
-dotnet_diagnostic.IDE0051.severity = error   # unused private member
-dotnet_diagnostic.IDE0052.severity = error   # unread private member
+dotnet_diagnostic.IDE0051.severity = error # unused private member
+dotnet_diagnostic.IDE0052.severity = error # unread private member
 # IDE0060 (unused parameter) is deliberately left at its default (suggestion), NOT error: the generator's
 # emit-method families (EmitList/EmitHashSet/EmitStackQueue/…, and the collection-converter helpers) share a
 # UNIFORM signature so the dispatch can call any of them interchangeably, and not every overload reads every
 # parameter. Forcing IDE0060 would mean either dropping params that keep those signatures uniform or renaming
 # them to `_` — both LESS readable than the named, self-documenting parameter. Strictness that degrades the code
 # is not strictness worth having.
+
+# ══ Rider / ReSharper: conventions this repository holds on purpose ═════════════════════════════
+# The `resharper_*` keys below are read ONLY by ReSharper/Rider. MSBuild, Roslyn and the analyzer
+# packages ignore them, so nothing in this block can change the build or the tests. They exist
+# because Rider reports ~600 findings that are correct about the code and wrong about the intent.
+# Repository-wide NAMING policy lives in DwarfMapper.NET.sln.DotSettings; severities live here,
+# because a DotSettings severity is solution-wide and cannot be limited to a directory.
+
+# The Gallery is 27 numbered examples in one flat folder; each owns a namespace (…Gallery.Ex13) so
+# the examples can declare same-named fixture types (Person, Src, Dst) without colliding. Numbered,
+# not foldered, is the point: the file name IS the running order.
+[samples/DwarfMapper.Gallery/*.cs]
+resharper_check_namespace_highlighting = none
+
+# The CleanCorpus models a layered application (Domain / Application / Before / After / Ddd) inside
+# one project folder. The layering is the subject under test — an AutoMapper-shaped "before" and the
+# DwarfMapper "after" have to sit side by side to be diffed — so the namespaces describe the layer,
+# not the directory.
+[tests/DwarfMapper.ConsumerTests/CleanCorpus/*.cs]
+resharper_check_namespace_highlighting = none
+
+# MapConfig<TSource,TTarget> is a compile-time-only configuration surface: the generator READS the
+# body of a method that takes one, syntactically, and never executes it. The private constructor is
+# what makes "you cannot new this up" a compile error rather than a runtime surprise. Not
+# instantiable is the design, so "class cannot be instantiated" is the design being reported.
+[src/DwarfMapper/MapConfig.cs]
+resharper_class_cannot_be_instantiated_highlighting = none
+
+# Every record in the incremental generator's model states `: IEquatable<T>` explicitly. The
+# compiler already implements it, so ReSharper is right that the entry is redundant — but the
+# declaration is the standing reminder that these types flow through IncrementalValuesProvider<T>
+# and are only cacheable while their equality stays value-based. It is documentation with a
+# compiler check attached, and it is uniform across every model type.
+[src/DwarfMapper.Generator/Model/*.cs]
+resharper_redundant_extends_list_entry_highlighting = none
+[src/DwarfMapper.Generator/Registry/MapToGenerator.cs]
+resharper_redundant_extends_list_entry_highlighting = none
+
+# SurfaceFixtures holds 19 [SurfaceProbe]-attributed private fields that are read exclusively
+# through GetFields()/GetValue() — the reflective indirection IS the mechanism, so no analyzer can
+# see the use. The file already says so with `#pragma warning disable CS0414, CA1802, CA1823,
+# IDE0051`, which the compiler honours and Rider does not; these four lines restate the same
+# decision in the form Rider reads. Note the widening: the pragma covers the fixture block, this
+# section covers the whole file, so dead private code added OUTSIDE that block in THIS ONE FILE
+# would no longer be flagged. Nowhere else is IDE0051's escalation to error relaxed.
+[tests/DwarfMapper.Generator.Tests/Contracts/SurfaceFixtures.cs]
+dotnet_diagnostic.CS0414.severity = none  # assigned but never used — read by reflection
+dotnet_diagnostic.CA1802.severity = none  # "use const" — a const field cannot be attribute-scanned
+dotnet_diagnostic.CA1823.severity = none  # unused private field — read by reflection
+dotnet_diagnostic.IDE0051.severity = none # unused private member — read by reflection

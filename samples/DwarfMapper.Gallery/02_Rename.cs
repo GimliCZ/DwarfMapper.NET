@@ -5,36 +5,45 @@
 // members with `nameof` in a [MapProperty] attribute. Use a named `partial` method when you want a specific
 // method name (here ToDto). Everything else (Age) auto-matches.
 
-namespace DwarfMapper.Gallery.Ex02;
-
-public sealed class Customer
+namespace DwarfMapper.Gallery.Ex02
 {
-    public string FullName { get; set; } = "";
-    public int Age { get; set; }
-}
+    public sealed class Customer
+    {
+        public string FullName { get; set; } = "";
 
-public sealed class CustomerDto
-{
-    public string Name { get; set; } = "";
-    public int Age { get; set; }
-}
+        public int Age { get; set; }
+    }
+
+    public sealed class CustomerDto
+    {
+        public string Name { get; set; } = "";
+
+        public int Age { get; set; }
+    }
 
 // <snippet: rename>
-[DwarfMapper]
-public partial class Mapper
-{
-    [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]
-    public partial CustomerDto ToDto(Customer c);
-}
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        [MapProperty(nameof(Customer.FullName), nameof(CustomerDto.Name))]
+        public partial CustomerDto ToDto(Customer c);
+    }
 // </snippet>
 
-[DocExample(2, Tier.Basics, "Rename a member",
-    Shows = "`[MapProperty(nameof(...), nameof(...))]`")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(2,
+        Tier.Basics,
+        "Rename a member",
+        Shows = "`[MapProperty(nameof(...), nameof(...))]`")]
+    public static class Example
     {
-        var dto = new Mapper().ToDto(new Customer { FullName = "Gimli son of Glóin", Age = 62 });
-        Console.WriteLine($"02 Rename             -> {dto.Name}, age {dto.Age}");
+        public static void Run()
+        {
+            var dto = new Mapper().ToDto(new Customer
+            {
+                FullName = "Gimli son of Glóin",
+                Age = 62
+            });
+            Console.WriteLine($"02 Rename             -> {dto.Name}, age {dto.Age}");
+        }
     }
 }

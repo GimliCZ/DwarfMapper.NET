@@ -13,87 +13,111 @@
 // Unconsumed SOURCE members are fine throughout: RequiredMapping defaults to Target, so only every
 // destination member must be mapped. That is why the *Row/*View/*Summary targets can ignore Customer.Address.
 
-namespace DwarfMapper.Gallery.Guides;
-
-public sealed class Address
+namespace DwarfMapper.Gallery.Guides
 {
-    public string City { get; set; } = "";
-    public string Zip { get; set; } = "";
-}
+    public sealed class Address
+    {
+        public string City { get; set; } = "";
 
-public sealed class Customer
-{
-    public int Id { get; set; }
-    public string FullName { get; set; } = "";
-    public decimal Total { get; set; }
-    public Address Address { get; set; } = new();
-}
+        public string Zip { get; set; } = "";
+    }
 
-/// <summary>Composite target (example 30): renamed member, converted member, flattened address.</summary>
-public sealed class CustomerDto
-{
-    public int Id { get; set; }
-    public string Name { get; set; } = "";
-    public string Total { get; set; } = "";
-    public string City { get; set; } = "";
-    public string Zip { get; set; } = "";
-}
+    public sealed class Customer
+    {
+        public int Id { get; set; }
 
-/// <summary>Auto-matching target (example 31): every member pairs by name, so the pair needs no config.</summary>
-public sealed class CustomerRow
-{
-    public int Id { get; set; }
-    public string FullName { get; set; } = "";
-    public decimal Total { get; set; }
-}
+        public string FullName { get; set; } = "";
 
-/// <summary>Ambient-facade target (example 35).</summary>
-public sealed class CustomerSummary
-{
-    public int Id { get; set; }
-    public string FullName { get; set; } = "";
-}
+        public decimal Total { get; set; }
 
-public sealed class Order
-{
-    public int Id { get; set; }
-    public string FullName { get; set; } = "";
-    public decimal Total { get; set; }
-}
+        public Address Address { get; set; } = new();
+    }
 
-/// <summary>Auto-matching target (example 31).</summary>
-public sealed class OrderRow
-{
-    public int Id { get; set; }
-    public string FullName { get; set; } = "";
-    public decimal Total { get; set; }
-}
+    /// <summary>Composite target (example 30): renamed member, converted member, flattened address.</summary>
+    public sealed class CustomerDto
+    {
+        public int Id { get; set; }
 
-/// <summary>Auto-matching target (example 32), reached through the generated <c>ToOrderView()</c>.</summary>
-public sealed class OrderView
-{
-    public int Id { get; set; }
-    public string FullName { get; set; } = "";
-    public decimal Total { get; set; }
-}
+        public string Name { get; set; } = "";
 
-/// <summary>Renamed target shared by the reversible and rate-converting mappers (example 34).</summary>
-public sealed class OrderDto
-{
-    public int Id { get; set; }
-    public string Name { get; set; } = "";
-    public decimal Total { get; set; }
-    public string Source { get; set; } = "";
-}
+        public string Total { get; set; } = "";
 
-/// <summary>Target for the [AfterMap] mapper (example 34), which must not share OrderDto — see the note above.</summary>
-public sealed class OrderReceipt
-{
-    public int Id { get; set; }
-    public string Name { get; set; } = "";
-    public decimal Total { get; set; }
-    public string Source { get; set; } = "";
+        public string City { get; set; } = "";
 
-    /// <summary>Left default by the map and filled in the hook — the "TODO compute later" member.</summary>
-    public string Checksum { get; set; } = "";
+        public string Zip { get; set; } = "";
+    }
+
+    /// <summary>Auto-matching target (example 31): every member pairs by name, so the pair needs no config.</summary>
+    public sealed class CustomerRow
+    {
+        public int Id { get; set; }
+
+        public string FullName { get; set; } = "";
+
+        public decimal Total { get; set; }
+    }
+
+    /// <summary>Ambient-facade target (example 35).</summary>
+    public sealed class CustomerSummary
+    {
+        public int Id { get; set; }
+
+        public string FullName { get; set; } = "";
+    }
+
+    public sealed class Order
+    {
+        public int Id { get; set; }
+
+        public string FullName { get; set; } = "";
+
+        public decimal Total { get; set; }
+    }
+
+    /// <summary>Auto-matching target (example 31).</summary>
+    public sealed class OrderRow
+    {
+        public int Id { get; set; }
+
+        public string FullName { get; set; } = "";
+
+        public decimal Total { get; set; }
+    }
+
+    /// <summary>Auto-matching target (example 32), reached through the generated <c>ToOrderView()</c>.</summary>
+    public sealed class OrderView
+    {
+        public int Id { get; set; }
+
+        public string FullName { get; set; } = "";
+
+        public decimal Total { get; set; }
+    }
+
+    /// <summary>Renamed target shared by the reversible and rate-converting mappers (example 34).</summary>
+    public sealed class OrderDto
+    {
+        public int Id { get; set; }
+
+        public string Name { get; set; } = "";
+
+        public decimal Total { get; set; }
+
+        public string Source { get; set; } = "";
+    }
+
+    /// <summary>Target for the [AfterMap] mapper (example 34), which must not share OrderDto — see the note above.</summary>
+    public sealed class OrderReceipt
+    {
+        public int Id { get; set; }
+
+        public string Name { get; set; } = "";
+
+        public decimal Total { get; set; }
+
+        public string Source { get; set; } = "";
+
+        /// <summary>Left default by the map and filled in the hook — the "TODO compute later" member.</summary>
+        public string Checksum { get; set; } = "";
+    }
 }

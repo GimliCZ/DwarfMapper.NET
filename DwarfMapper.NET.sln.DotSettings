@@ -1,0 +1,49 @@
+<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:ss="urn:shemas-jetbrains-com:settings-storage-xaml" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+	<!--
+	    SPDX-License-Identifier: GPL-2.0-only
+
+	    Team-shared ReSharper/Rider settings. This layer sits ABOVE "This computer" (personal global
+	    settings) and BELOW "Solution personal" (DwarfMapper.NET.sln.DotSettings.user), so it is the right
+	    place for conventions that belong to the REPOSITORY rather than to a machine. It has to be COMMITTED
+	    to be shared; an uncommitted file only helps the machine it sits on.
+
+	    It carries NAMING POLICY ONLY. Nothing here is read by MSBuild, Roslyn or the analyzer packages, so
+	    nothing here can change the build or the tests. Narrowly-scoped inspection severities live in
+	    .editorconfig instead, because a DotSettings severity is solution-wide and cannot be limited to a
+	    directory.
+
+	    Every entry below states an ACCEPTED PATTERN. None of them switches an inspection off.
+
+	    Two of the three rules override rules that already exist in the "This computer" layer and are
+	    addressed by their GUID; a clone that does not have those personal rules simply gains a rule that
+	    permits what the repository already writes, which is harmless.
+	-->
+	<!--
+	    PUBLIC CLASSES (and record classes) - UpperCamelCase, or Corpus_UpperCamelCase.
+	    The test corpora encode WHICH corpus a fixture belongs to in an underscore-separated prefix:
+	    Cc_ (computed-null), Ce_ (enum/collection), Cf_ (flatten/rename), Ec_ (edge-case parity),
+	    Par_ (library parity), Nf_ (new features), Rf_, Sec_. 244 public classes carry one. The prefix is
+	    the corpus index - it is what makes a fixture greppable back to the corpus that owns it - so
+	    flattening Cc_Person to CcPerson would delete the only information the prefix carries.
+	-->
+	<s:String x:Key="/Default/CodeStyle/Naming/CSharpNaming/UserRules/=26f6df82_002D24db_002D4a53_002Daec3_002D2895ec20c0c1/@EntryIndexedValue">&lt;Policy&gt;&lt;Descriptor Staticness="Static, Instance" AccessRightKinds="Public" Description="Public classes: UpperCamelCase, or Corpus_UpperCamelCase for the prefixed test fixtures"&gt;&lt;ElementKinds&gt;&lt;Kind Name="CLASS" /&gt;&lt;/ElementKinds&gt;&lt;/Descriptor&gt;&lt;Policy Inspect="True" Prefix="" Suffix="" Style="AaBb"&gt;&lt;ExtraRule Prefix="" Suffix="" Style="AaBb_AaBb" /&gt;&lt;/Policy&gt;&lt;/Policy&gt;</s:String>
+	<!--
+	    LOCAL CONSTANTS - lowerCamelCase, or UpperCamelCase.
+	    The generator and compiler test suites hold the C# source under test in a local constant
+	    conventionally named `src`, `s`, `source` or `code` - 836 of them across 139 files. The name is the
+	    subject-matter noun: the test reads "compile THIS source". The rule this replaces (same GUID, in the
+	    personal layer) demanded a leading underscore and lumped CLASS in with LOCAL_CONSTANT, which is why
+	    `const string source` was reported with the suggestion `_source`; an underscore prefix is a
+	    private-field convention and was never a local-constant or class convention here. Narrowed to local
+	    constants, underscore dropped, UpperCamelCase kept for the constants that spell out a value.
+	-->
+	<s:String x:Key="/Default/CodeStyle/Naming/CSharpNaming/UserRules/=466cff5f_002Daaec_002D4d64_002D9a77_002Dfe69d32ccfa5/@EntryIndexedValue">&lt;Policy&gt;&lt;Descriptor Staticness="Static, Instance" AccessRightKinds="Private, Public" Description="Local constants: lowerCamelCase (src/s/source/code hold the source under test), or UpperCamelCase"&gt;&lt;ElementKinds&gt;&lt;Kind Name="LOCAL_CONSTANT" /&gt;&lt;/ElementKinds&gt;&lt;/Descriptor&gt;&lt;Policy Inspect="True" Prefix="" Suffix="" Style="aaBb"&gt;&lt;ExtraRule Prefix="" Suffix="" Style="AaBb" /&gt;&lt;/Policy&gt;&lt;/Policy&gt;</s:String>
+	<!--
+	    ENUMS AND STRUCTS - same corpus-prefix convention, same policy. The rule above covers classes and
+	    record classes only; the six enums and two structs that carry a corpus prefix (Ce_Priority,
+	    Ce_ColorA, ...) would otherwise still be reported by the built-in "Types and namespaces" rule.
+	    Interfaces are deliberately NOT listed: the `I` prefix they are held to is a convention this
+	    repository keeps, and no interface here carries a corpus prefix.
+	-->
+	<s:String x:Key="/Default/CodeStyle/Naming/CSharpNaming/UserRules/=d1c6b3a2_002D4f7e_002D4a90_002D9b21_002D3e8c5f0a7d64/@EntryIndexedValue">&lt;Policy&gt;&lt;Descriptor Staticness="Static, Instance" AccessRightKinds="Private, Public" Description="Enums and structs: UpperCamelCase, or Corpus_UpperCamelCase for the prefixed test fixtures"&gt;&lt;ElementKinds&gt;&lt;Kind Name="ENUM" /&gt;&lt;Kind Name="STRUCT" /&gt;&lt;/ElementKinds&gt;&lt;/Descriptor&gt;&lt;Policy Inspect="True" Prefix="" Suffix="" Style="AaBb"&gt;&lt;ExtraRule Prefix="" Suffix="" Style="AaBb_AaBb" /&gt;&lt;/Policy&gt;&lt;/Policy&gt;</s:String>
+</wpf:ResourceDictionary>

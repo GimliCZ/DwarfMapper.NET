@@ -4,48 +4,62 @@
 // Map the outer pair only; the generator synthesizes the nested Address -> AddressDto mapper for you
 // (auto-nesting is on by default). No need to declare every nested pair.
 
-namespace DwarfMapper.Gallery.Ex04;
-
-public sealed class Address
+namespace DwarfMapper.Gallery.Ex04
 {
-    public string City { get; set; } = "";
-    public string Country { get; set; } = "";
-}
+    public sealed class Address
+    {
+        public string City { get; set; } = "";
 
-public sealed class AddressDto
-{
-    public string City { get; set; } = "";
-    public string Country { get; set; } = "";
-}
+        public string Country { get; set; } = "";
+    }
 
-public sealed class Order
-{
-    public int Id { get; set; }
-    public Address ShipTo { get; set; } = new();
-}
+    public sealed class AddressDto
+    {
+        public string City { get; set; } = "";
 
-public sealed class OrderDto
-{
-    public int Id { get; set; }
-    public AddressDto ShipTo { get; set; } = new();
-}
+        public string Country { get; set; } = "";
+    }
+
+    public sealed class Order
+    {
+        public int Id { get; set; }
+
+        public Address ShipTo { get; set; } = new();
+    }
+
+    public sealed class OrderDto
+    {
+        public int Id { get; set; }
+
+        public AddressDto ShipTo { get; set; } = new();
+    }
 
 // <snippet: nested>
-[DwarfMapper]
-public partial class Mapper
-{
-    public partial OrderDto ToDto(Order o); // ShipTo (Address -> AddressDto) auto-nested
-}
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        public partial OrderDto ToDto(Order o); // ShipTo (Address -> AddressDto) auto-nested
+    }
 // </snippet>
 
-[DocExample(4, Tier.Basics, "Nested objects",
-    Shows = "auto-nesting a nested `(S,T)` pair")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(4,
+        Tier.Basics,
+        "Nested objects",
+        Shows = "auto-nesting a nested `(S,T)` pair")]
+    public static class Example
     {
-        var dto = new Mapper().ToDto(new Order
-            { Id = 12, ShipTo = new Address { City = "Erebor", Country = "Under the Mountain" } });
-        Console.WriteLine($"04 Nested object      -> order {dto.Id}, ships to {dto.ShipTo.City}");
+        public static void Run()
+        {
+            var dto = new Mapper().ToDto(new Order
+            {
+                Id = 12,
+                ShipTo = new Address
+                {
+                    City = "Erebor",
+                    Country = "Under the Mountain"
+                }
+            });
+            Console.WriteLine($"04 Nested object      -> order {dto.Id}, ships to {dto.ShipTo.City}");
+        }
     }
 }

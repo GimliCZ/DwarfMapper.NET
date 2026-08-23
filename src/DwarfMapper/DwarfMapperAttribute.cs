@@ -1,304 +1,302 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-namespace DwarfMapper;
-
-/// <summary>
-///     Marks a partial class as a DwarfMapper. The generator implements the
-///     partial mapping methods declared on it at compile time.
-/// </summary>
-[DwarfSurface(SurfaceCategory.ConsumerDirective)]
+namespace DwarfMapper
+{
+    /// <summary>
+    ///     Marks a partial class as a DwarfMapper. The generator implements the
+    ///     partial mapping methods declared on it at compile time.
+    /// </summary>
+    [DwarfSurface(SurfaceCategory.ConsumerDirective)]
 // One fixture per OPTION, not per element. Every key below names a DTO shape that makes exactly that option
 // observable; probed against the flat pair the whole bag reads "no effect" while the options work perfectly.
 // The three unlisted options (AutoMatchMembers, GenerateExtensions, RegisterCollectionShapes) are already
 // observable against the flat pair, and an option with no fixture demand says so by not appearing here.
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.AutoNest), ProbeKey = "nested-pair")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.AllowNonPublic), ProbeKey = "internal-member")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NameConvention), ProbeKey = "snake-case-member")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.CaseInsensitive), ProbeKey = "case-mismatched-member")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.IgnoreObsoleteMembers), ProbeKey = "obsolete-member")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.SkipNullSourceMembers), ProbeKey = "nullable-source-nonnull-target")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NullStrategy), ProbeKey = "nullable-value-to-nonnull")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.RequiredMapping), ProbeKey = "unconsumed-source-member")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.EnumStrategy), ProbeKey = "divergent-order-enums")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.EnumStringSource), ProbeKey = "described-enum-to-string")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.NullCollections), ProbeKey = "nullable-collection-rebuild")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.OnCycle), ProbeKey = "recursive-graph")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.ImplicitConversions), ProbeKey = "narrowing-conversion")]
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.ReferenceHandling), ProbeKey = "shared-reference-graph")]
+    [DwarfSurfaceProbe(nameof(AutoNest), ProbeKey = "nested-pair")]
+    [DwarfSurfaceProbe(nameof(AllowNonPublic), ProbeKey = "internal-member")]
+    [DwarfSurfaceProbe(nameof(NameConvention), ProbeKey = "snake-case-member")]
+    [DwarfSurfaceProbe(nameof(CaseInsensitive), ProbeKey = "case-mismatched-member")]
+    [DwarfSurfaceProbe(nameof(IgnoreObsoleteMembers), ProbeKey = "obsolete-member")]
+    [DwarfSurfaceProbe(nameof(SkipNullSourceMembers), ProbeKey = "nullable-source-nonnull-target")]
+    [DwarfSurfaceProbe(nameof(NullStrategy), ProbeKey = "nullable-value-to-nonnull")]
+    [DwarfSurfaceProbe(nameof(RequiredMapping), ProbeKey = "unconsumed-source-member")]
+    [DwarfSurfaceProbe(nameof(EnumStrategy), ProbeKey = "divergent-order-enums")]
+    [DwarfSurfaceProbe(nameof(EnumStringSource), ProbeKey = "described-enum-to-string")]
+    [DwarfSurfaceProbe(nameof(NullCollections), ProbeKey = "nullable-collection-rebuild")]
+    [DwarfSurfaceProbe(nameof(OnCycle), ProbeKey = "recursive-graph")]
+    [DwarfSurfaceProbe(nameof(ImplicitConversions), ProbeKey = "narrowing-conversion")]
+    [DwarfSurfaceProbe(nameof(ReferenceHandling), ProbeKey = "shared-reference-graph")]
 // A budget, not a count: stepping the default to 65 binds on nothing against a graph three deep. Value = "1"
 // is the only probe that makes a depth limit observable at all, and no reflection over an int reveals that.
-[DwarfSurfaceProbe(nameof(DwarfMapperAttribute.MaxDepth), ProbeKey = "recursive-graph", Value = "1")]
+    [DwarfSurfaceProbe(nameof(MaxDepth), ProbeKey = "recursive-graph", Value = "1")]
 // Two of the eighteen options are not the same KIND of surface as the bag they sit in, so they do not carry
 // the element's ConsumerDirective obligation ("demonstrate it where a reader can run it"). Each names the
 // obligation it satisfies instead; there is no way to name none. MaxDepth deliberately has no redirect — its
 // former excuse ("a sample that throws on purpose reads as a broken sample") went stale the day AotSample
 // began catching DwarfMappingDepthException on purpose, and it now passes the ordinary obligation on evidence.
-[DwarfSurfaceOption(nameof(DwarfMapperAttribute.GenerateExtensions), SurfaceCategory.EmissionShape,
-    "its whole observable effect is the ABSENCE of a generated `source.ToTarget()` extension, which no "
-    + "running sample can show; the proof is a structural assertion over the generated text")]
-[DwarfSurfaceOption(nameof(DwarfMapperAttribute.ImplicitConversions), SurfaceCategory.BuildFailureOnly,
-    "true is the default and changes nothing to observe; false turns the DWARF038 narrowing-conversion "
-    + "warning into a refusal, so the sample that would demonstrate the difference could not compile. The "
-    + "proof is a NegativeCases row pinning the id and its remedy wording")]
-[DwarfSurfaceProbe(constructorArity: 0,
-    Unmeasured = "a bare [DwarfMapper] selects every option's default, so there is nothing here for any "
-                 + "endpoint to honour or refuse — the case is silent by construction, whatever the generator "
-                 + "does. The questions this element can actually pose are the eighteen option cases above.")]
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class DwarfMapperAttribute : Attribute
-{
-    /// <summary>
-    ///     When <c>true</c>, source and destination member names are matched
-    ///     case-insensitively (ordinal-ignore-case). Defaults to <c>false</c>
-    ///     (exact, case-sensitive matching).
-    /// </summary>
-    public bool CaseInsensitive { get; set; }
+    [DwarfSurfaceOption(nameof(GenerateExtensions),
+        SurfaceCategory.EmissionShape,
+        "its whole observable effect is the ABSENCE of a generated `source.ToTarget()` extension, which no " + "running sample can show; the proof is a structural assertion over the generated text")]
+    [DwarfSurfaceOption(nameof(ImplicitConversions),
+        SurfaceCategory.BuildFailureOnly,
+        "true is the default and changes nothing to observe; false turns the DWARF038 narrowing-conversion " + "warning into a refusal, so the sample that would demonstrate the difference could not compile. The " + "proof is a NegativeCases row pinning the id and its remedy wording")]
+    [DwarfSurfaceProbe(0,
+        Unmeasured = "a bare [DwarfMapper] selects every option's default, so there is nothing here for any " + "endpoint to honour or refuse — the case is silent by construction, whatever the generator " + "does. The questions this element can actually pose are the eighteen option cases above.")]
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class DwarfMapperAttribute : Attribute
+    {
+        /// <summary>
+        ///     When <c>true</c>, source and destination member names are matched
+        ///     case-insensitively (ordinal-ignore-case). Defaults to <c>false</c>
+        ///     (exact, case-sensitive matching).
+        /// </summary>
+        public bool CaseInsensitive { get; set; }
 
-    /// <summary>
-    ///     Strategy for enum-to-enum mapping. Defaults to <see cref="EnumStrategy.ByName" />.
-    /// </summary>
-    public EnumStrategy EnumStrategy { get; set; } = EnumStrategy.ByName;
+        /// <summary>
+        ///     Strategy for enum-to-enum mapping. Defaults to <see cref="EnumStrategy.ByName" />.
+        /// </summary>
+        public EnumStrategy EnumStrategy { get; set; } = EnumStrategy.ByName;
 
-    /// <summary>
-    ///     Which text an enum member maps to and from when the other side is a <see cref="string" />.
-    ///     Defaults to <see cref="DwarfMapper.EnumStringSource.Attribute" />.
-    ///     <para>
-    ///         Set it to <see cref="DwarfMapper.EnumStringSource.Identifier" /> when the enum's
-    ///         <c>[Description]</c> annotations are for display and the persisted form is the member name —
-    ///         the usual situation in a codebase migrating off <c>.ToString()</c>. See <c>DWARF083</c>.
-    ///     </para>
-    /// </summary>
-    public EnumStringSource EnumStringSource { get; set; } = EnumStringSource.Attribute;
+        /// <summary>
+        ///     Which text an enum member maps to and from when the other side is a <see cref="string" />.
+        ///     Defaults to <see cref="DwarfMapper.EnumStringSource.Attribute" />.
+        ///     <para>
+        ///         Set it to <see cref="DwarfMapper.EnumStringSource.Identifier" /> when the enum's
+        ///         <c>[Description]</c> annotations are for display and the persisted form is the member name —
+        ///         the usual situation in a codebase migrating off <c>.ToString()</c>. See <c>DWARF083</c>.
+        ///     </para>
+        /// </summary>
+        public EnumStringSource EnumStringSource { get; set; } = EnumStringSource.Attribute;
 
-    /// <summary>
-    ///     How a nullable value-type source mapped to a non-nullable destination is
-    ///     handled when null. Defaults to <see cref="NullStrategy.Throw" />.
-    /// </summary>
-    public NullStrategy NullStrategy { get; set; } = NullStrategy.Throw;
+        /// <summary>
+        ///     How a nullable value-type source mapped to a non-nullable destination is
+        ///     handled when null. Defaults to <see cref="NullStrategy.Throw" />.
+        /// </summary>
+        public NullStrategy NullStrategy { get; set; } = NullStrategy.Throw;
 
-    /// <summary>
-    ///     When <c>true</c> (the default), a member whose type is a mappable object pair
-    ///     <c>(S, T)</c> with no declared mapper is automatically resolved by synthesizing
-    ///     a private nested mapper. Set to <c>false</c> to require explicit declarations
-    ///     for every nested type (the legacy opt-out behaviour, before auto-nesting became the default).
-    /// </summary>
-    public bool AutoNest { get; set; } = true;
+        /// <summary>
+        ///     When <c>true</c> (the default), a member whose type is a mappable object pair
+        ///     <c>(S, T)</c> with no declared mapper is automatically resolved by synthesizing
+        ///     a private nested mapper. Set to <c>false</c> to require explicit declarations
+        ///     for every nested type (the legacy opt-out behaviour, before auto-nesting became the default).
+        /// </summary>
+        public bool AutoNest { get; set; } = true;
 
-    /// <summary>
-    ///     When <c>true</c> (the default), destination members are matched to same-named source members
-    ///     automatically. Set to <c>false</c> for an <b>explicit-only</b> mapper: nothing is wired by name —
-    ///     every destination member must be mapped with <c>[MapProperty]</c>/<c>[MapValue]</c> or skipped with
-    ///     <c>[MapIgnore]</c>, or the build fails (<c>DWARF072</c>).
-    ///     <para>
-    ///         This is the <b>trust-boundary / anti-over-posting guard</b>. By-name auto-matching is convenient
-    ///         inside your own code, but at a trust boundary (mapping an untrusted input DTO onto a domain
-    ///         entity) it silently wires whatever names line up — so an attacker-controlled <c>IsAdmin</c> that
-    ///         happens to match a protected entity field is copied with no diagnostic, and the completeness gate
-    ///         still reports success. That is mass assignment (OWASP API6). With auto-matching off, adding a
-    ///         protected field to the entity forces a visible, reviewable <c>[MapProperty]</c>/<c>[MapIgnore]</c>
-    ///         decision instead of a silent auto-wire. Put untrusted-input maps in their own
-    ///         <c>[DwarfMapper(AutoMatchMembers = false)]</c> class; keep convenient auto-matching for output
-    ///         mapping elsewhere.
-    ///     </para>
-    ///     <para>
-    ///         Explicit <c>[MapProperty]</c>, <c>[MapValue]</c>, <c>[Flatten]</c>, additional mapping parameters,
-    ///         and constructor parameters still resolve — they are all explicit or structurally required. Only
-    ///         the implicit by-name matching of settable members is disabled.
-    ///     </para>
-    ///     <para>
-    ///         The <b>assembly-level</b> form (<c>[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]</c>)
-    ///         closes the boundary for the <c>[MapTo]</c> registry front door as well, which refuses the by-name
-    ///         wire there with <c>DWARFR10</c>. A guard honoured at only some front doors is worse than no guard,
-    ///         because the developer believes they have one.
-    ///     </para>
-    /// </summary>
-    public bool AutoMatchMembers { get; set; } = true;
+        /// <summary>
+        ///     When <c>true</c> (the default), destination members are matched to same-named source members
+        ///     automatically. Set to <c>false</c> for an <b>explicit-only</b> mapper: nothing is wired by name —
+        ///     every destination member must be mapped with <c>[MapProperty]</c>/<c>[MapValue]</c> or skipped with
+        ///     <c>[MapIgnore]</c>, or the build fails (<c>DWARF072</c>).
+        ///     <para>
+        ///         This is the <b>trust-boundary / anti-over-posting guard</b>. By-name auto-matching is convenient
+        ///         inside your own code, but at a trust boundary (mapping an untrusted input DTO onto a domain
+        ///         entity) it silently wires whatever names line up — so an attacker-controlled <c>IsAdmin</c> that
+        ///         happens to match a protected entity field is copied with no diagnostic, and the completeness gate
+        ///         still reports success. That is mass assignment (OWASP API6). With auto-matching off, adding a
+        ///         protected field to the entity forces a visible, reviewable <c>[MapProperty]</c>/<c>[MapIgnore]</c>
+        ///         decision instead of a silent auto-wire. Put untrusted-input maps in their own
+        ///         <c>[DwarfMapper(AutoMatchMembers = false)]</c> class; keep convenient auto-matching for output
+        ///         mapping elsewhere.
+        ///     </para>
+        ///     <para>
+        ///         Explicit <c>[MapProperty]</c>, <c>[MapValue]</c>, <c>[Flatten]</c>, additional mapping parameters,
+        ///         and constructor parameters still resolve — they are all explicit or structurally required. Only
+        ///         the implicit by-name matching of settable members is disabled.
+        ///     </para>
+        ///     <para>
+        ///         The <b>assembly-level</b> form (<c>[assembly: DwarfMapperDefaults(AutoMatchMembers = false)]</c>)
+        ///         closes the boundary for the <c>[MapTo]</c> registry front door as well, which refuses the by-name
+        ///         wire there with <c>DWARFR10</c>. A guard honoured at only some front doors is worse than no guard,
+        ///         because the developer believes they have one.
+        ///     </para>
+        /// </summary>
+        public bool AutoMatchMembers { get; set; } = true;
 
-    /// <summary>
-    ///     When <c>true</c>, members marked <c>[Obsolete]</c> are excluded from mapping: an obsolete
-    ///     <b>destination</b> member is neither required to be mapped nor auto-populated, and an obsolete
-    ///     <b>source</b> member does not need to be consumed under <see cref="RequiredMapping" /> =
-    ///     <see cref="RequiredMappingStrategy.Both" />. Defaults to <c>false</c>.
-    ///     <para>
-    ///         The point of deprecating a member is to stop feeding it. Without this flag the completeness gate
-    ///         works against that — <c>DWARF001</c> forces you to map (or explicitly <c>[MapIgnore]</c>) every
-    ///         obsolete destination member, and mapping one revives the very data flow you are retiring. With it,
-    ///         obsolete members drop out silently-but-safely: they keep their default and no diagnostic fires.
-    ///         An explicit <c>[MapProperty]</c>/<c>[MapValue]</c> targeting an obsolete member still wins, so you
-    ///         can opt a specific one back in.
-    ///     </para>
-    /// </summary>
-    public bool IgnoreObsoleteMembers { get; set; }
+        /// <summary>
+        ///     When <c>true</c>, members marked <c>[Obsolete]</c> are excluded from mapping: an obsolete
+        ///     <b>destination</b> member is neither required to be mapped nor auto-populated, and an obsolete
+        ///     <b>source</b> member does not need to be consumed under <see cref="RequiredMapping" /> =
+        ///     <see cref="RequiredMappingStrategy.Both" />. Defaults to <c>false</c>.
+        ///     <para>
+        ///         The point of deprecating a member is to stop feeding it. Without this flag the completeness gate
+        ///         works against that — <c>DWARF001</c> forces you to map (or explicitly <c>[MapIgnore]</c>) every
+        ///         obsolete destination member, and mapping one revives the very data flow you are retiring. With it,
+        ///         obsolete members drop out silently-but-safely: they keep their default and no diagnostic fires.
+        ///         An explicit <c>[MapProperty]</c>/<c>[MapValue]</c> targeting an obsolete member still wins, so you
+        ///         can opt a specific one back in.
+        ///     </para>
+        /// </summary>
+        public bool IgnoreObsoleteMembers { get; set; }
 
-    /// <summary>
-    ///     When <c>true</c>, a <b>null source member never overwrites the destination's default</b>: for every
-    ///     nullable-source, post-construction-settable member the generator emits
-    ///     <c>if (src.Member is not null) dest.Member = …;</c>, so a default set in the destination's field
-    ///     initializer or constructor survives a null source. Defaults to <c>false</c>.
-    ///     <para>
-    ///         This is the equivalent of AutoMapper's
-    ///         <c>ForAllMembers(o =&gt; o.Condition((_, _, srcMember) =&gt; srcMember != null))</c> — the common
-    ///         "don't clobber data with nulls" guard when sanitizing/merging. Non-nullable value-type members
-    ///         (which can never be null) are unaffected; <c>required</c> and <c>init</c>-only members are always
-    ///         assigned (they cannot be deferred) and so are unaffected too.
-    ///     </para>
-    /// </summary>
-    public bool SkipNullSourceMembers { get; set; }
+        /// <summary>
+        ///     When <c>true</c>, a <b>null source member never overwrites the destination's default</b>: for every
+        ///     nullable-source, post-construction-settable member the generator emits
+        ///     <c>if (src.Member is not null) dest.Member = …;</c>, so a default set in the destination's field
+        ///     initializer or constructor survives a null source. Defaults to <c>false</c>.
+        ///     <para>
+        ///         This is the equivalent of AutoMapper's
+        ///         <c>ForAllMembers(o =&gt; o.Condition((_, _, srcMember) =&gt; srcMember != null))</c> — the common
+        ///         "don't clobber data with nulls" guard when sanitizing/merging. Non-nullable value-type members
+        ///         (which can never be null) are unaffected; <c>required</c> and <c>init</c>-only members are always
+        ///         assigned (they cannot be deferred) and so are unaffected too.
+        ///     </para>
+        /// </summary>
+        public bool SkipNullSourceMembers { get; set; }
 
-    /// <summary>
-    ///     When <c>true</c> (the default), each declared object map is ALSO registered into the ambient
-    ///     registry under the common <b>collection shapes</b>, so
-    ///     <c>IDwarfMapper.Map&lt;ICollection&lt;TTarget&gt;&gt;(listOfSources)</c> resolves without declaring a
-    ///     separate collection pair.
-    /// </summary>
-    /// <remarks>
-    ///     <para>
-    ///         AutoMapper derived collection maps implicitly from the element map. DwarfMapper's registry
-    ///         resolves an EXACT pair, so before this option a facade call over a collection threw
-    ///         <c>DwarfMapMissingException</c> at first use — behind a green build, and invisible to the
-    ///         <c>DWARF061</c> validation root, which can only see the call site's static destination type. A
-    ///         real migration found 47 such call sites, every one of them latent.
-    ///     </para>
-    ///     <para>
-    ///         The registrations are emitted at COMPILE time — no reflection, no runtime synthesis, nothing
-    ///         that would compromise trimming or AOT. Each declared pair adds six rows, keyed on
-    ///         <c>IEnumerable&lt;TSource&gt;</c> so a <c>List</c>, an array, a <c>HashSet</c> and even a lazy
-    ///         LINQ iterator are all served by the same entry.
-    ///     </para>
-    ///     <para>
-    ///         Set to <c>false</c> to keep the registration table minimal when a mapper's maps are never
-    ///         reached through the ambient facade over a collection.
-    ///     </para>
-    /// </remarks>
-    public bool RegisterCollectionShapes { get; set; } = true;
+        /// <summary>
+        ///     When <c>true</c> (the default), each declared object map is ALSO registered into the ambient
+        ///     registry under the common <b>collection shapes</b>, so
+        ///     <c>IDwarfMapper.Map&lt;ICollection&lt;TTarget&gt;&gt;(listOfSources)</c> resolves without declaring a
+        ///     separate collection pair.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         AutoMapper derived collection maps implicitly from the element map. DwarfMapper's registry
+        ///         resolves an EXACT pair, so before this option a facade call over a collection threw
+        ///         <c>DwarfMapMissingException</c> at first use — behind a green build, and invisible to the
+        ///         <c>DWARF061</c> validation root, which can only see the call site's static destination type. A
+        ///         real migration found 47 such call sites, every one of them latent.
+        ///     </para>
+        ///     <para>
+        ///         The registrations are emitted at COMPILE time — no reflection, no runtime synthesis, nothing
+        ///         that would compromise trimming or AOT. Each declared pair adds six rows, keyed on
+        ///         <c>IEnumerable&lt;TSource&gt;</c> so a <c>List</c>, an array, a <c>HashSet</c> and even a lazy
+        ///         LINQ iterator are all served by the same entry.
+        ///     </para>
+        ///     <para>
+        ///         Set to <c>false</c> to keep the registration table minimal when a mapper's maps are never
+        ///         reached through the ambient facade over a collection.
+        ///     </para>
+        /// </remarks>
+        public bool RegisterCollectionShapes { get; set; } = true;
 
-    /// <summary>
-    ///     When <c>true</c>, the generator may use <b>non-public but reachable</b> constructors AND members —
-    ///     an <c>internal</c> / <c>protected internal</c> constructor, getter, or setter that the generated
-    ///     mapper's assembly can see, either because it is the same assembly or because the target's assembly
-    ///     grants access via <c>[InternalsVisibleTo]</c>. Defaults to <c>false</c>.
-    ///     <para>
-    ///         This is opt-in by design: an <c>internal</c> constructor or accessor is non-public on purpose (a
-    ///         factory pattern, an invariant enforced elsewhere), so reaching it from a mapper is a deliberate
-    ///         choice that must be stated, never assumed. <c>private</c> and <c>protected</c> constructors/accessors
-    ///         are <b>never</b> usable regardless of this flag — the generated code could not compile. <c>public</c>
-    ///         constructors and members are always usable and need no flag.
-    ///     </para>
-    /// </summary>
-    public bool AllowNonPublic { get; set; }
+        /// <summary>
+        ///     When <c>true</c>, the generator may use <b>non-public but reachable</b> constructors AND members —
+        ///     an <c>internal</c> / <c>protected internal</c> constructor, getter, or setter that the generated
+        ///     mapper's assembly can see, either because it is the same assembly or because the target's assembly
+        ///     grants access via <c>[InternalsVisibleTo]</c>. Defaults to <c>false</c>.
+        ///     <para>
+        ///         This is opt-in by design: an <c>internal</c> constructor or accessor is non-public on purpose (a
+        ///         factory pattern, an invariant enforced elsewhere), so reaching it from a mapper is a deliberate
+        ///         choice that must be stated, never assumed. <c>private</c> and <c>protected</c> constructors/accessors
+        ///         are <b>never</b> usable regardless of this flag — the generated code could not compile. <c>public</c>
+        ///         constructors and members are always usable and need no flag.
+        ///     </para>
+        /// </summary>
+        public bool AllowNonPublic { get; set; }
 
-    /// <summary>
-    ///     Controls how a null source collection or dictionary is mapped.
-    ///     <para>
-    ///         <see cref="NullCollectionStrategy.AsEmpty" /> (default): a null source
-    ///         produces an empty target; the mapper never throws <see cref="System.NullReferenceException" />
-    ///         for a null collection.
-    ///     </para>
-    ///     <para>
-    ///         <see cref="NullCollectionStrategy.AsNull" />: a null source propagates as
-    ///         <c>null</c> on the target — only when the target member is nullable (a nullable reference, or a nullable
-    ///         value-type collection like <c>ImmutableArray&lt;T&gt;?</c>); a non-nullable target silently degrades to
-    ///         <c>AsEmpty</c>.
-    ///     </para>
-    /// </summary>
-    public NullCollectionStrategy NullCollections { get; set; } = NullCollectionStrategy.AsEmpty;
+        /// <summary>
+        ///     Controls how a null source collection or dictionary is mapped.
+        ///     <para>
+        ///         <see cref="NullCollectionStrategy.AsEmpty" /> (default): a null source
+        ///         produces an empty target; the mapper never throws <see cref="System.NullReferenceException" />
+        ///         for a null collection.
+        ///     </para>
+        ///     <para>
+        ///         <see cref="NullCollectionStrategy.AsNull" />: a null source propagates as
+        ///         <c>null</c> on the target — only when the target member is nullable (a nullable reference, or a nullable
+        ///         value-type collection like <c>ImmutableArray&lt;T&gt;?</c>); a non-nullable target silently degrades to
+        ///         <c>AsEmpty</c>.
+        ///     </para>
+        /// </summary>
+        public NullCollectionStrategy NullCollections { get; set; } = NullCollectionStrategy.AsEmpty;
 
-    /// <summary>
-    ///     Controls how shared object references and cycles in the source graph are handled.
-    ///     <para>
-    ///         <see cref="ReferenceHandlingStrategy.None" /> (default): no identity map. Recursion-capable
-    ///         pairs still get a depth counter — cyclic data throws <see cref="DwarfMappingDepthException" />
-    ///         at <see cref="MaxDepth" />. Zero allocation overhead.
-    ///     </para>
-    ///     <para>
-    ///         <see cref="ReferenceHandlingStrategy.Preserve" />: full topology reconstruction — every distinct
-    ///         source node mapped once, all edges (shared/cycle) relinked. One small dictionary allocation
-    ///         per top-level <c>Map</c> call (keyed by reference identity via
-    ///         <c>ReferenceEqualityComparer.Instance</c>).
-    ///     </para>
-    /// </summary>
-    public ReferenceHandlingStrategy ReferenceHandling { get; set; } = ReferenceHandlingStrategy.None;
+        /// <summary>
+        ///     Controls how shared object references and cycles in the source graph are handled.
+        ///     <para>
+        ///         <see cref="ReferenceHandlingStrategy.None" /> (default): no identity map. Recursion-capable
+        ///         pairs still get a depth counter — cyclic data throws <see cref="DwarfMappingDepthException" />
+        ///         at <see cref="MaxDepth" />. Zero allocation overhead.
+        ///     </para>
+        ///     <para>
+        ///         <see cref="ReferenceHandlingStrategy.Preserve" />: full topology reconstruction — every distinct
+        ///         source node mapped once, all edges (shared/cycle) relinked. One small dictionary allocation
+        ///         per top-level <c>Map</c> call (keyed by reference identity via
+        ///         <c>ReferenceEqualityComparer.Instance</c>).
+        ///     </para>
+        /// </summary>
+        public ReferenceHandlingStrategy ReferenceHandling { get; set; } = ReferenceHandlingStrategy.None;
 
-    /// <summary>
-    ///     How a reference cycle in the source data is handled while
-    ///     <see cref="ReferenceHandlingStrategy.None" /> is active (the default reference mode).
-    ///     <para>
-    ///         <see cref="OnCycleStrategy.Throw" /> (default): a cycle (or over-deep chain) throws a
-    ///         catchable <see cref="DwarfMappingDepthException" /> at <see cref="MaxDepth" />.
-    ///     </para>
-    ///     <para>
-    ///         <see cref="OnCycleStrategy.SetNull" />: the re-entrant back-edge is set to <c>null</c>
-    ///         (≡ <c>System.Text.Json</c> <c>IgnoreCycles</c>), producing a finite acyclic projection.
-    ///     </para>
-    ///     <para>
-    ///         Ignored under <see cref="ReferenceHandlingStrategy.Preserve" /> (cycles are reconstructed);
-    ///         configuring both reports <c>DWARF037</c>.
-    ///     </para>
-    /// </summary>
-    public OnCycleStrategy OnCycle { get; set; } = OnCycleStrategy.Throw;
+        /// <summary>
+        ///     How a reference cycle in the source data is handled while
+        ///     <see cref="ReferenceHandlingStrategy.None" /> is active (the default reference mode).
+        ///     <para>
+        ///         <see cref="OnCycleStrategy.Throw" /> (default): a cycle (or over-deep chain) throws a
+        ///         catchable <see cref="DwarfMappingDepthException" /> at <see cref="MaxDepth" />.
+        ///     </para>
+        ///     <para>
+        ///         <see cref="OnCycleStrategy.SetNull" />: the re-entrant back-edge is set to <c>null</c>
+        ///         (≡ <c>System.Text.Json</c> <c>IgnoreCycles</c>), producing a finite acyclic projection.
+        ///     </para>
+        ///     <para>
+        ///         Ignored under <see cref="ReferenceHandlingStrategy.Preserve" /> (cycles are reconstructed);
+        ///         configuring both reports <c>DWARF037</c>.
+        ///     </para>
+        /// </summary>
+        public OnCycleStrategy OnCycle { get; set; } = OnCycleStrategy.Throw;
 
-    /// <summary>
-    ///     Controls whether non-lossless implicit type conversions between differently-typed members are
-    ///     allowed automatically. Defaults to <c>true</c> (permissive — today's behavior).
-    ///     <para>
-    ///         When <c>true</c>: lossless same-category widening (<c>int→long</c>, <c>float→double</c>) is silent;
-    ///         narrowing (<c>long→int</c>), cross-category (<c>int→double</c>, <c>int→string</c>) and parse
-    ///         (<c>string→int</c>) conversions are still applied but surface a <c>DWARF038</c> suggestion (Info)
-    ///         so they are never silent.
-    ///     </para>
-    ///     <para>
-    ///         When <c>false</c> (strict, Mapperly-style): those same non-lossless conversions become a
-    ///         <c>DWARF038</c> <b>build error</b> — you must opt in per member with
-    ///         <c>[MapProperty(..., Use = nameof(Method))]</c>. Lossless widening and identity still map freely.
-    ///     </para>
-    /// </summary>
-    public bool ImplicitConversions { get; set; } = true;
+        /// <summary>
+        ///     Controls whether non-lossless implicit type conversions between differently-typed members are
+        ///     allowed automatically. Defaults to <c>true</c> (permissive — today's behavior).
+        ///     <para>
+        ///         When <c>true</c>: lossless same-category widening (<c>int→long</c>, <c>float→double</c>) is silent;
+        ///         narrowing (<c>long→int</c>), cross-category (<c>int→double</c>, <c>int→string</c>) and parse
+        ///         (<c>string→int</c>) conversions are still applied but surface a <c>DWARF038</c> suggestion (Info)
+        ///         so they are never silent.
+        ///     </para>
+        ///     <para>
+        ///         When <c>false</c> (strict, Mapperly-style): those same non-lossless conversions become a
+        ///         <c>DWARF038</c> <b>build error</b> — you must opt in per member with
+        ///         <c>[MapProperty(..., Use = nameof(Method))]</c>. Lossless widening and identity still map freely.
+        ///     </para>
+        /// </summary>
+        public bool ImplicitConversions { get; set; } = true;
 
-    /// <summary>
-    ///     Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64).
-    ///     When a mapping reaches this depth, a <see cref="DwarfMappingDepthException" /> is thrown
-    ///     instead of a silent (uncatchable) <see cref="System.StackOverflowException" />.
-    ///     <para>
-    ///         The depth counter applies only to pairs that can form a cycle in the type graph
-    ///         (self-referential or mutually-recursive types). Acyclic type graphs have zero overhead.
-    ///     </para>
-    ///     <para>
-    ///         Hard cap: <c>1000</c>. Values above 1000 are silently clamped to 1000.
-    ///         Default: <c>64</c> (matching System.Text.Json / AutoMapper defaults).
-    ///     </para>
-    /// </summary>
-    public int MaxDepth { get; set; } = 64;
+        /// <summary>
+        ///     Maximum recursion depth for recursion-capable auto-synthesized mappers (default 64).
+        ///     When a mapping reaches this depth, a <see cref="DwarfMappingDepthException" /> is thrown
+        ///     instead of a silent (uncatchable) <see cref="System.StackOverflowException" />.
+        ///     <para>
+        ///         The depth counter applies only to pairs that can form a cycle in the type graph
+        ///         (self-referential or mutually-recursive types). Acyclic type graphs have zero overhead.
+        ///     </para>
+        ///     <para>
+        ///         Hard cap: <c>1000</c>. Values above 1000 are silently clamped to 1000.
+        ///         Default: <c>64</c> (matching System.Text.Json / AutoMapper defaults).
+        ///     </para>
+        /// </summary>
+        public int MaxDepth { get; set; } = 64;
 
-    /// <summary>
-    ///     Which side(s) of the mapping must be fully covered. Defaults to
-    ///     <see cref="RequiredMappingStrategy.Target" /> (today's behaviour — every destination member must be
-    ///     mapped). Set to <see cref="RequiredMappingStrategy.Both" /> to additionally require every source
-    ///     member to be read by some destination; an unconsumed source member then surfaces the
-    ///     <c>DWARF039</c> suggestion (Info). Suppress a specific member with
-    ///     <c>[MapIgnoreSource("Member")]</c>; escalate to a build error via
-    ///     <c>dotnet_diagnostic.DWARF039.severity = error</c> in <c>.editorconfig</c>.
-    /// </summary>
-    public RequiredMappingStrategy RequiredMapping { get; set; } = RequiredMappingStrategy.Target;
+        /// <summary>
+        ///     Which side(s) of the mapping must be fully covered. Defaults to
+        ///     <see cref="RequiredMappingStrategy.Target" /> (today's behaviour — every destination member must be
+        ///     mapped). Set to <see cref="RequiredMappingStrategy.Both" /> to additionally require every source
+        ///     member to be read by some destination; an unconsumed source member then surfaces the
+        ///     <c>DWARF039</c> suggestion (Info). Suppress a specific member with
+        ///     <c>[MapIgnoreSource("Member")]</c>; escalate to a build error via
+        ///     <c>dotnet_diagnostic.DWARF039.severity = error</c> in <c>.editorconfig</c>.
+        /// </summary>
+        public RequiredMappingStrategy RequiredMapping { get; set; } = RequiredMappingStrategy.Target;
 
-    /// <summary>
-    ///     Member-name matching strategy. Defaults to <see cref="NameConvention.Exact" /> (today's behaviour).
-    ///     <see cref="NameConvention.Flexible" /> matches across casing styles (<c>PascalCase</c> ↔
-    ///     <c>camelCase</c> ↔ <c>snake_case</c> ↔ <c>UPPER_CASE</c>) by normalizing names; a post-normalization
-    ///     collision is the build error <c>DWARF048</c>.
-    /// </summary>
-    public NameConvention NameConvention { get; set; } = NameConvention.Exact;
+        /// <summary>
+        ///     Member-name matching strategy. Defaults to <see cref="NameConvention.Exact" /> (today's behaviour).
+        ///     <see cref="NameConvention.Flexible" /> matches across casing styles (<c>PascalCase</c> ↔
+        ///     <c>camelCase</c> ↔ <c>snake_case</c> ↔ <c>UPPER_CASE</c>) by normalizing names; a post-normalization
+        ///     collision is the build error <c>DWARF048</c>.
+        /// </summary>
+        public NameConvention NameConvention { get; set; } = NameConvention.Exact;
 
-    /// <summary>
-    ///     When <c>true</c> (the default), the generator also emits convenience extension methods for this
-    ///     mapper's simple <c>TTarget Map(TSource)</c> methods — e.g. <c>order.ToOrderDto()</c> instead of
-    ///     <c>new OrderMapper().ToDto(order)</c>. They live in the <c>DwarfMapper.Extensions</c> namespace
-    ///     (add <c>using DwarfMapper.Extensions;</c> to use them), are backed by a cached, stateless mapper
-    ///     instance, and are assembly-internal. Set to <c>false</c> to suppress them for this mapper.
-    ///     <para>
-    ///         Only plain single-argument maps get an extension. Update-into, span, async-streaming, projection,
-    ///         derived-type dispatch, and methods with extra parameters are skipped, as are pairs whose generated
-    ///         name would collide.
-    ///     </para>
-    /// </summary>
-    public bool GenerateExtensions { get; set; } = true;
+        /// <summary>
+        ///     When <c>true</c> (the default), the generator also emits convenience extension methods for this
+        ///     mapper's simple <c>TTarget Map(TSource)</c> methods — e.g. <c>order.ToOrderDto()</c> instead of
+        ///     <c>new OrderMapper().ToDto(order)</c>. They live in the <c>DwarfMapper.Extensions</c> namespace
+        ///     (add <c>using DwarfMapper.Extensions;</c> to use them), are backed by a cached, stateless mapper
+        ///     instance, and are assembly-internal. Set to <c>false</c> to suppress them for this mapper.
+        ///     <para>
+        ///         Only plain single-argument maps get an extension. Update-into, span, async-streaming, projection,
+        ///         derived-type dispatch, and methods with extra parameters are skipped, as are pairs whose generated
+        ///         name would collide.
+        ///     </para>
+        /// </summary>
+        public bool GenerateExtensions { get; set; } = true;
+    }
 }

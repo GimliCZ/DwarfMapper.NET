@@ -11,40 +11,45 @@
 //
 // On mismatch it does not dump two objects at you: see example 26.
 
-namespace DwarfMapper.Gallery.Ex25;
-
-public sealed class Ledger
+namespace DwarfMapper.Gallery.Ex25
 {
-    public int Id { get; set; }
-    public string Keeper { get; set; } = "";
-}
+    public sealed class Ledger
+    {
+        public int Id { get; set; }
 
-public sealed class LedgerDto
-{
-    public int Id { get; set; }
-    public string Keeper { get; set; } = "";
-}
+        public string Keeper { get; set; } = "";
+    }
+
+    public sealed class LedgerDto
+    {
+        public int Id { get; set; }
+
+        public string Keeper { get; set; } = "";
+    }
 
 // <snippet: round-trip>
-[DwarfMapper]
-public partial class Mapper
-{
-    [RoundTrip]                                       // emits VerifyRoundTrip_ToDto(seed, count)
-    public partial LedgerDto ToDto(Ledger l);
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        [RoundTrip] // emits VerifyRoundTrip_ToDto(seed, count)
+        public partial LedgerDto ToDto(Ledger l);
 
-    public partial Ledger FromDto(LedgerDto d);       // the inverse it verifies against
-}
+        public partial Ledger FromDto(LedgerDto d); // the inverse it verifies against
+    }
 // </snippet>
 
-[DocExample(25, Tier.Testing, "`[RoundTrip]` verification",
-    Shows = "one attribute emits a fuzzing harness asserting `Back(Forward(x)) == x`")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(25,
+        Tier.Testing,
+        "`[RoundTrip]` verification",
+        Shows = "one attribute emits a fuzzing harness asserting `Back(Forward(x)) == x`")]
+    public static class Example
     {
-        // Normally: [Fact] public void Ledger_roundtrips() => new Mapper().VerifyRoundTrip_ToDto();
-        new Mapper().VerifyRoundTrip_ToDto(7, 50);
+        public static void Run()
+        {
+            // Normally: [Fact] public void Ledger_roundtrips() => new Mapper().VerifyRoundTrip_ToDto();
+            new Mapper().VerifyRoundTrip_ToDto(7, 50);
 
-        Console.WriteLine("25 [RoundTrip]        -> 50 fuzzed inputs survived forward-then-back (seed 7)");
+            Console.WriteLine("25 [RoundTrip]        -> 50 fuzzed inputs survived forward-then-back (seed 7)");
+        }
     }
 }

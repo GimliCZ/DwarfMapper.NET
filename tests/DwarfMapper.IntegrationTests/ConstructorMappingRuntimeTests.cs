@@ -2,548 +2,638 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-namespace DwarfMapper.IntegrationTests;
-
-// ── Positional record → positional record ─────────────────────────────────────
-
-public record CtorSrcRecord(int X, string Y);
-
-public record CtorDstRecord(int X, string Y);
-
-[DwarfMapper]
-public partial class RecordToRecordMapper
+namespace DwarfMapper.IntegrationTests
 {
-    public partial CtorDstRecord Map(CtorSrcRecord s);
-}
+    // ── Positional record → positional record ─────────────────────────────────────
+
+    public record CtorSrcRecord(int X, string Y);
+
+    public record CtorDstRecord(int X, string Y);
+
+    [DwarfMapper]
+    public partial class RecordToRecordMapper
+    {
+        public partial CtorDstRecord Map(CtorSrcRecord s);
+    }
 
 // ── Class source → positional record target ───────────────────────────────────
 
-public class CtorClassSrc
-{
-    public int X { get; set; }
-    public string Y { get; set; } = "";
-}
+    public class CtorClassSrc
+    {
+        public int X { get; set; }
 
-public record CtorRecordDst(int X, string Y);
+        public string Y { get; set; } = "";
+    }
 
-[DwarfMapper]
-public partial class ClassToRecordMapper
-{
-    public partial CtorRecordDst Map(CtorClassSrc s);
-}
+    public record CtorRecordDst(int X, string Y);
+
+    [DwarfMapper]
+    public partial class ClassToRecordMapper
+    {
+        public partial CtorRecordDst Map(CtorClassSrc s);
+    }
 
 // ── Record with extra init/set props beyond positional params ─────────────────
 
-public class CtorSrcWithExtra
-{
-    public int X { get; set; }
-    public string Y { get; set; } = "";
-    public int Z { get; set; }
-}
+    public class CtorSrcWithExtra
+    {
+        public int X { get; set; }
 
-public record CtorRecordWithExtra(int X, string Y)
-{
-    public int Z { get; init; }
-}
+        public string Y { get; set; } = "";
 
-[DwarfMapper]
-public partial class RecordWithExtraMapper
-{
-    public partial CtorRecordWithExtra Map(CtorSrcWithExtra s);
-}
+        public int Z { get; set; }
+    }
+
+    public record CtorRecordWithExtra(int X, string Y)
+    {
+        public int Z { get; init; }
+    }
+
+    [DwarfMapper]
+    public partial class RecordWithExtraMapper
+    {
+        public partial CtorRecordWithExtra Map(CtorSrcWithExtra s);
+    }
 
 // ── Ctor param needing conversion ─────────────────────────────────────────────
 
 // long→int via CreateChecked
-public class LongSrc2
-{
-    public long X { get; set; }
-}
-
-public class IntCtorDst
-{
-    public IntCtorDst(int X)
+    public class LongSrc2
     {
-        this.X = X;
+        public long X { get; set; }
     }
 
-    public int X { get; }
-}
+    public class IntCtorDst
+    {
+        public IntCtorDst(int X)
+        {
+            this.X = X;
+        }
 
-[DwarfMapper]
-public partial class LongToIntCtorMapper
-{
-    public partial IntCtorDst Map(LongSrc2 s);
-}
+        public int X { get; }
+    }
+
+    [DwarfMapper]
+    public partial class LongToIntCtorMapper
+    {
+        public partial IntCtorDst Map(LongSrc2 s);
+    }
 
 // string→Guid via IParsable
-public class StringGuidSrc
-{
-    public string G { get; set; } = "";
-}
-
-public class GuidCtorDst
-{
-    public GuidCtorDst(Guid G)
+    public class StringGuidSrc
     {
-        this.G = G;
+        public string G { get; set; } = "";
     }
 
-    public Guid G { get; }
-}
+    public class GuidCtorDst
+    {
+        public GuidCtorDst(Guid G)
+        {
+            this.G = G;
+        }
 
-[DwarfMapper]
-public partial class StringToGuidCtorMapper
-{
-    public partial GuidCtorDst Map(StringGuidSrc s);
-}
+        public Guid G { get; }
+    }
+
+    [DwarfMapper]
+    public partial class StringToGuidCtorMapper
+    {
+        public partial GuidCtorDst Map(StringGuidSrc s);
+    }
 
 // int? ctor param (nullable→non-nullable with ThrowIfNull)
-public class NullableCtorSrc
-{
-    public int? X { get; set; }
-}
-
-public class NonNullableCtorDst
-{
-    public NonNullableCtorDst(int X)
+    public class NullableCtorSrc
     {
-        this.X = X;
+        public int? X { get; set; }
     }
 
-    public int X { get; }
-}
+    public class NonNullableCtorDst
+    {
+        public NonNullableCtorDst(int X)
+        {
+            this.X = X;
+        }
 
-[DwarfMapper]
-public partial class NullableToCtorMapper
-{
-    public partial NonNullableCtorDst Map(NullableCtorSrc s);
-}
+        public int X { get; }
+    }
+
+    [DwarfMapper]
+    public partial class NullableToCtorMapper
+    {
+        public partial NonNullableCtorDst Map(NullableCtorSrc s);
+    }
 
 // ── Constructor-only class (no parameterless ctor, no setters) ────────────────
 
-public class CtorSrc2
-{
-    public int A { get; set; }
-    public string B { get; set; } = "";
-}
-
-public class CtorOnlyDst
-{
-    public CtorOnlyDst(int A, string B)
+    public class CtorSrc2
     {
-        this.A = A;
-        this.B = B;
+        public int A { get; set; }
+
+        public string B { get; set; } = "";
     }
 
-    public int A { get; }
-    public string B { get; } = "";
-}
+    public class CtorOnlyDst
+    {
+        public CtorOnlyDst(int A, string B)
+        {
+            this.A = A;
+            this.B = B;
+        }
 
-[DwarfMapper]
-public partial class CtorOnlyMapper
-{
-    public partial CtorOnlyDst Map(CtorSrc2 s);
-}
+        public int A { get; }
+
+        public string B { get; } = "";
+    }
+
+    [DwarfMapper]
+    public partial class CtorOnlyMapper
+    {
+        public partial CtorOnlyDst Map(CtorSrc2 s);
+    }
 
 // ── record struct ─────────────────────────────────────────────────────────────
 
-public class RecStructSrc
-{
-    public int X { get; set; }
-    public int Y { get; set; }
-}
+    public class RecStructSrc
+    {
+        public int X { get; set; }
 
-public record struct CtorRecordStruct(int X, int Y);
+        public int Y { get; set; }
+    }
 
-[DwarfMapper]
-public partial class RecordStructMapper
-{
-    public partial CtorRecordStruct Map(RecStructSrc s);
-}
+    public record struct CtorRecordStruct(int X, int Y);
+
+    [DwarfMapper]
+    public partial class RecordStructMapper
+    {
+        public partial CtorRecordStruct Map(RecStructSrc s);
+    }
 
 // ── readonly record struct ────────────────────────────────────────────────────
 
-public class RoRecStructSrc
-{
-    public int X { get; set; }
-    public int Y { get; set; }
-}
+    public class RoRecStructSrc
+    {
+        public int X { get; set; }
 
-public readonly record struct CtorReadonlyRecordStruct(int X, int Y);
+        public int Y { get; set; }
+    }
 
-[DwarfMapper]
-public partial class ReadonlyRecordStructMapper
-{
-    public partial CtorReadonlyRecordStruct Map(RoRecStructSrc s);
-}
+    public readonly record struct CtorReadonlyRecordStruct(int X, int Y);
+
+    [DwarfMapper]
+    public partial class ReadonlyRecordStructMapper
+    {
+        public partial CtorReadonlyRecordStruct Map(RoRecStructSrc s);
+    }
 
 // ── readonly struct with explicit ctor ────────────────────────────────────────
 
-public class RoStructSrc
-{
-    public int X { get; set; }
-    public int Y { get; set; }
-}
-
-public readonly struct CtorReadonlyStruct
-{
-    public CtorReadonlyStruct(int X, int Y)
+    public class RoStructSrc
     {
-        this.X = X;
-        this.Y = Y;
+        public int X { get; set; }
+
+        public int Y { get; set; }
     }
 
-    public int X { get; }
-    public int Y { get; }
-}
+    public readonly struct CtorReadonlyStruct
+    {
+        public CtorReadonlyStruct(int X, int Y)
+        {
+            this.X = X;
+            this.Y = Y;
+        }
 
-[DwarfMapper]
-public partial class ReadonlyStructMapper
-{
-    public partial CtorReadonlyStruct Map(RoStructSrc s);
-}
+        public int X { get; }
+
+        public int Y { get; }
+    }
+
+    [DwarfMapper]
+    public partial class ReadonlyStructMapper
+    {
+        public partial CtorReadonlyStruct Map(RoStructSrc s);
+    }
 
 // ── required members + ctor combo ─────────────────────────────────────────────
 
-public class RequiredCtorSrc
-{
-    public int X { get; set; }
-    public string Y { get; set; } = "";
-    public int Z { get; set; }
-}
-
-public class RequiredCtorDst
-{
-    public RequiredCtorDst(int X)
+    public class RequiredCtorSrc
     {
-        this.X = X;
+        public int X { get; set; }
+
+        public string Y { get; set; } = "";
+
+        public int Z { get; set; }
     }
 
-    public int X { get; }
-    public required string Y { get; set; }
-    public int Z { get; set; }
-}
+    public class RequiredCtorDst
+    {
+        public RequiredCtorDst(int X)
+        {
+            this.X = X;
+        }
 
-[DwarfMapper]
-public partial class RequiredCtorMapper
-{
-    public partial RequiredCtorDst Map(RequiredCtorSrc s);
-}
+        public int X { get; }
+
+        public required string Y { get; set; }
+
+        public int Z { get; set; }
+    }
+
+    [DwarfMapper]
+    public partial class RequiredCtorMapper
+    {
+        public partial RequiredCtorDst Map(RequiredCtorSrc s);
+    }
 
 // ── MUST-FIX 1: required member that is ALSO a ctor param (no [SetsRequiredMembers]) ─
 
-public class RequiredCtorParamSrc
-{
-    public int X { get; set; }
-}
-
-public class RequiredCtorParamDst
-{
-    public RequiredCtorParamDst(int X)
+    public class RequiredCtorParamSrc
     {
-        this.X = X;
+        public int X { get; set; }
     }
 
-    public required int X { get; init; }
-}
+    public class RequiredCtorParamDst
+    {
+        public RequiredCtorParamDst(int X)
+        {
+            this.X = X;
+        }
 
-[DwarfMapper]
-public partial class RequiredCtorParamMapper
-{
-    public partial RequiredCtorParamDst Map(RequiredCtorParamSrc s);
-}
+        public required int X { get; init; }
+    }
+
+    [DwarfMapper]
+    public partial class RequiredCtorParamMapper
+    {
+        public partial RequiredCtorParamDst Map(RequiredCtorParamSrc s);
+    }
 
 // ── MUST-FIX 1b: same but WITH [SetsRequiredMembers] (verify no regression) ────
 
-public class RequiredCtorParamSetsSrc
-{
-    public int X { get; set; }
-}
-
-public class RequiredCtorParamSetsDst
-{
-    [SetsRequiredMembers]
-    public RequiredCtorParamSetsDst(int X)
+    public class RequiredCtorParamSetsSrc
     {
-        this.X = X;
+        public int X { get; set; }
     }
 
-    public required int X { get; init; }
-}
+    public class RequiredCtorParamSetsDst
+    {
+        [SetsRequiredMembers]
+        public RequiredCtorParamSetsDst(int X)
+        {
+            this.X = X;
+        }
 
-[DwarfMapper]
-public partial class RequiredCtorParamSetsMapper
-{
-    public partial RequiredCtorParamSetsDst Map(RequiredCtorParamSetsSrc s);
-}
+        public required int X { get; init; }
+    }
+
+    [DwarfMapper]
+    public partial class RequiredCtorParamSetsMapper
+    {
+        public partial RequiredCtorParamSetsDst Map(RequiredCtorParamSetsSrc s);
+    }
 
 // ── Regression: class with parameterless ctor + settable props ────────────────
 
-public class RegSrc
-{
-    public int X { get; set; }
-    public string Y { get; set; } = "";
-}
+    public class RegSrc
+    {
+        public int X { get; set; }
 
-public class RegDst
-{
-    public int X { get; set; }
-    public string Y { get; set; } = "";
-}
+        public string Y { get; set; } = "";
+    }
 
-[DwarfMapper]
-public partial class RegressionSettableMapper
-{
-    public partial RegDst Map(RegSrc s);
-}
+    public class RegDst
+    {
+        public int X { get; set; }
+
+        public string Y { get; set; } = "";
+    }
+
+    [DwarfMapper]
+    public partial class RegressionSettableMapper
+    {
+        public partial RegDst Map(RegSrc s);
+    }
 
 // ── Nested: ctor param whose type is itself a mapped record ───────────────────
 // Outer has an Inner member of class type; inner mapper converts it to a record.
 
-public record InnerRecord(int V);
+    public record InnerRecord(int V);
 
-public class InnerClassSrc
-{
-    public int V { get; set; }
-}
+    public class InnerClassSrc
+    {
+        public int V { get; set; }
+    }
 
-public class OuterClassSrc
-{
-    public InnerClassSrc Inner { get; set; } = new();
-    public int Outer { get; set; }
-}
+    public class OuterClassSrc
+    {
+        public InnerClassSrc Inner { get; set; } = new();
 
-public record OuterRecord(InnerRecord Inner, int Outer);
+        public int Outer { get; set; }
+    }
 
-[DwarfMapper]
-public partial class NestedRecordMapper
-{
-    public partial OuterRecord Map(OuterClassSrc s);
-    public partial InnerRecord Map(InnerClassSrc s);
-}
+    public record OuterRecord(InnerRecord Inner, int Outer);
+
+    [DwarfMapper]
+    public partial class NestedRecordMapper
+    {
+        public partial OuterRecord Map(OuterClassSrc s);
+        public partial InnerRecord Map(InnerClassSrc s);
+    }
 
 // ── Optional ctor params (author-declared defaults) ──────────────────────────
 // Source lacks Note/Count entirely → the optional params must fall back to their
 // declared defaults, NOT trigger DWARF024. A common modern record shape.
 
-public class OptSrc
-{
-    public int Id { get; set; }
-}
+    public class OptSrc
+    {
+        public int Id { get; set; }
+    }
 
-public record OptDst(int Id, string Note = "default", int Count = 5);
+    public record OptDst(int Id, string Note = "default", int Count = 5);
 
-[DwarfMapper]
-public partial class OptionalParamMapper
-{
-    public partial OptDst Map(OptSrc s);
-}
+    [DwarfMapper]
+    public partial class OptionalParamMapper
+    {
+        public partial OptDst Map(OptSrc s);
+    }
 
 // Optional param IS supplied by source → source wins over the default.
-public class OptSrc2
-{
-    public int Id { get; set; }
-    public string Note { get; set; } = "";
-}
+    public class OptSrc2
+    {
+        public int Id { get; set; }
 
-public record OptDst2(int Id, string Note = "default");
+        public string Note { get; set; } = "";
+    }
 
-[DwarfMapper]
-public partial class OptionalParamSuppliedMapper
-{
-    public partial OptDst2 Map(OptSrc2 s);
-}
+    public record OptDst2(int Id, string Note = "default");
+
+    [DwarfMapper]
+    public partial class OptionalParamSuppliedMapper
+    {
+        public partial OptDst2 Map(OptSrc2 s);
+    }
 
 // All-optional ctor, source supplies none → new T() with all defaults.
-public class AllOptSrc
-{
-    public int Whatever { get; set; }
-}
+    public class AllOptSrc
+    {
+        public int Whatever { get; set; }
+    }
 
-public record AllOptDst(int A = 1, int B = 2);
+    public record AllOptDst(int A = 1, int B = 2);
 
-[DwarfMapper]
-public partial class AllOptionalMapper
-{
-    public partial AllOptDst Map(AllOptSrc s);
-}
+    [DwarfMapper]
+    public partial class AllOptionalMapper
+    {
+        public partial AllOptDst Map(AllOptSrc s);
+    }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-public class ConstructorMappingRuntimeTests
-{
-    [Fact]
-    public void Optional_ctor_params_use_declared_defaults_when_source_lacks_them()
+    public class ConstructorMappingRuntimeTests
     {
-        var result = new OptionalParamMapper().Map(new OptSrc { Id = 7 });
-        Assert.Equal(7, result.Id);
-        Assert.Equal("default", result.Note);
-        Assert.Equal(5, result.Count);
-    }
+        [Fact]
+        public void Optional_ctor_params_use_declared_defaults_when_source_lacks_them()
+        {
+            var result = new OptionalParamMapper().Map(new OptSrc
+            {
+                Id = 7
+            });
+            Assert.Equal(7, result.Id);
+            Assert.Equal("default", result.Note);
+            Assert.Equal(5, result.Count);
+        }
 
-    [Fact]
-    public void Optional_ctor_param_uses_source_value_when_present()
-    {
-        var result = new OptionalParamSuppliedMapper().Map(new OptSrc2 { Id = 3, Note = "fromsource" });
-        Assert.Equal(3, result.Id);
-        Assert.Equal("fromsource", result.Note);
-    }
+        [Fact]
+        public void Optional_ctor_param_uses_source_value_when_present()
+        {
+            var result = new OptionalParamSuppliedMapper().Map(new OptSrc2
+            {
+                Id = 3,
+                Note = "fromsource"
+            });
+            Assert.Equal(3, result.Id);
+            Assert.Equal("fromsource", result.Note);
+        }
 
-    [Fact]
-    public void All_optional_ctor_uses_all_defaults()
-    {
-        var result = new AllOptionalMapper().Map(new AllOptSrc { Whatever = 99 });
-        Assert.Equal(1, result.A);
-        Assert.Equal(2, result.B);
-    }
+        [Fact]
+        public void All_optional_ctor_uses_all_defaults()
+        {
+            var result = new AllOptionalMapper().Map(new AllOptSrc
+            {
+                Whatever = 99
+            });
+            Assert.Equal(1, result.A);
+            Assert.Equal(2, result.B);
+        }
 
-    [Fact]
-    public void Record_to_record_maps_all_values()
-    {
-        var mapper = new RecordToRecordMapper();
-        var result = mapper.Map(new CtorSrcRecord(42, "hello"));
-        Assert.Equal(42, result.X);
-        Assert.Equal("hello", result.Y);
-    }
+        [Fact]
+        public void Record_to_record_maps_all_values()
+        {
+            var mapper = new RecordToRecordMapper();
+            var result = mapper.Map(new CtorSrcRecord(42, "hello"));
+            Assert.Equal(42, result.X);
+            Assert.Equal("hello", result.Y);
+        }
 
-    [Fact]
-    public void Class_source_to_record_target_maps_correctly()
-    {
-        var mapper = new ClassToRecordMapper();
-        var result = mapper.Map(new CtorClassSrc { X = 7, Y = "world" });
-        Assert.Equal(7, result.X);
-        Assert.Equal("world", result.Y);
-    }
+        [Fact]
+        public void Class_source_to_record_target_maps_correctly()
+        {
+            var mapper = new ClassToRecordMapper();
+            var result = mapper.Map(new CtorClassSrc
+            {
+                X = 7,
+                Y = "world"
+            });
+            Assert.Equal(7, result.X);
+            Assert.Equal("world", result.Y);
+        }
 
-    [Fact]
-    public void Record_with_extra_init_maps_ctor_params_and_init_props()
-    {
-        var mapper = new RecordWithExtraMapper();
-        var result = mapper.Map(new CtorSrcWithExtra { X = 1, Y = "test", Z = 99 });
-        Assert.Equal(1, result.X);
-        Assert.Equal("test", result.Y);
-        Assert.Equal(99, result.Z);
-    }
+        [Fact]
+        public void Record_with_extra_init_maps_ctor_params_and_init_props()
+        {
+            var mapper = new RecordWithExtraMapper();
+            var result = mapper.Map(new CtorSrcWithExtra
+            {
+                X = 1,
+                Y = "test",
+                Z = 99
+            });
+            Assert.Equal(1, result.X);
+            Assert.Equal("test", result.Y);
+            Assert.Equal(99, result.Z);
+        }
 
-    [Fact]
-    public void Long_to_int_ctor_param_in_range_succeeds()
-    {
-        var mapper = new LongToIntCtorMapper();
-        var result = mapper.Map(new LongSrc2 { X = 100L });
-        Assert.Equal(100, result.X);
-    }
+        [Fact]
+        public void Long_to_int_ctor_param_in_range_succeeds()
+        {
+            var mapper = new LongToIntCtorMapper();
+            var result = mapper.Map(new LongSrc2
+            {
+                X = 100L
+            });
+            Assert.Equal(100, result.X);
+        }
 
-    [Fact]
-    public void Long_to_int_ctor_param_overflow_throws()
-    {
-        var mapper = new LongToIntCtorMapper();
-        Assert.Throws<OverflowException>(() => mapper.Map(new LongSrc2 { X = int.MaxValue + 1L }));
-    }
+        [Fact]
+        public void Long_to_int_ctor_param_overflow_throws()
+        {
+            var mapper = new LongToIntCtorMapper();
+            Assert.Throws<OverflowException>(() => mapper.Map(new LongSrc2
+            {
+                X = int.MaxValue + 1L
+            }));
+        }
 
-    [Fact]
-    public void String_to_guid_ctor_param_parses()
-    {
-        var mapper = new StringToGuidCtorMapper();
-        var g = Guid.Parse("12345678-1234-5678-1234-567812345678");
-        var result = mapper.Map(new StringGuidSrc { G = g.ToString() });
-        Assert.Equal(g, result.G);
-    }
+        [Fact]
+        public void String_to_guid_ctor_param_parses()
+        {
+            var mapper = new StringToGuidCtorMapper();
+            var g = Guid.Parse("12345678-1234-5678-1234-567812345678");
+            var result = mapper.Map(new StringGuidSrc
+            {
+                G = g.ToString()
+            });
+            Assert.Equal(g, result.G);
+        }
 
-    [Fact]
-    public void Nullable_to_ctor_param_with_value_succeeds()
-    {
-        var mapper = new NullableToCtorMapper();
-        var result = mapper.Map(new NullableCtorSrc { X = 42 });
-        Assert.Equal(42, result.X);
-    }
+        [Fact]
+        public void Nullable_to_ctor_param_with_value_succeeds()
+        {
+            var mapper = new NullableToCtorMapper();
+            var result = mapper.Map(new NullableCtorSrc
+            {
+                X = 42
+            });
+            Assert.Equal(42, result.X);
+        }
 
-    [Fact]
-    public void Nullable_to_ctor_param_null_throws()
-    {
-        var mapper = new NullableToCtorMapper();
-        Assert.Throws<InvalidOperationException>(() => mapper.Map(new NullableCtorSrc { X = null }));
-    }
+        [Fact]
+        public void Nullable_to_ctor_param_null_throws()
+        {
+            var mapper = new NullableToCtorMapper();
+            Assert.Throws<InvalidOperationException>(() => mapper.Map(new NullableCtorSrc
+            {
+                X = null
+            }));
+        }
 
-    [Fact]
-    public void Constructor_only_class_maps_correctly()
-    {
-        var mapper = new CtorOnlyMapper();
-        var result = mapper.Map(new CtorSrc2 { A = 5, B = "five" });
-        Assert.Equal(5, result.A);
-        Assert.Equal("five", result.B);
-    }
+        [Fact]
+        public void Constructor_only_class_maps_correctly()
+        {
+            var mapper = new CtorOnlyMapper();
+            var result = mapper.Map(new CtorSrc2
+            {
+                A = 5,
+                B = "five"
+            });
+            Assert.Equal(5, result.A);
+            Assert.Equal("five", result.B);
+        }
 
-    [Fact]
-    public void Record_struct_maps_correctly()
-    {
-        var mapper = new RecordStructMapper();
-        var result = mapper.Map(new RecStructSrc { X = 10, Y = 20 });
-        Assert.Equal(10, result.X);
-        Assert.Equal(20, result.Y);
-    }
+        [Fact]
+        public void Record_struct_maps_correctly()
+        {
+            var mapper = new RecordStructMapper();
+            var result = mapper.Map(new RecStructSrc
+            {
+                X = 10,
+                Y = 20
+            });
+            Assert.Equal(10, result.X);
+            Assert.Equal(20, result.Y);
+        }
 
-    [Fact]
-    public void Readonly_record_struct_maps_correctly()
-    {
-        var mapper = new ReadonlyRecordStructMapper();
-        var result = mapper.Map(new RoRecStructSrc { X = 3, Y = 4 });
-        Assert.Equal(3, result.X);
-        Assert.Equal(4, result.Y);
-    }
+        [Fact]
+        public void Readonly_record_struct_maps_correctly()
+        {
+            var mapper = new ReadonlyRecordStructMapper();
+            var result = mapper.Map(new RoRecStructSrc
+            {
+                X = 3,
+                Y = 4
+            });
+            Assert.Equal(3, result.X);
+            Assert.Equal(4, result.Y);
+        }
 
-    [Fact]
-    public void Readonly_struct_with_explicit_ctor_maps_correctly()
-    {
-        var mapper = new ReadonlyStructMapper();
-        var result = mapper.Map(new RoStructSrc { X = 11, Y = 22 });
-        Assert.Equal(11, result.X);
-        Assert.Equal(22, result.Y);
-    }
+        [Fact]
+        public void Readonly_struct_with_explicit_ctor_maps_correctly()
+        {
+            var mapper = new ReadonlyStructMapper();
+            var result = mapper.Map(new RoStructSrc
+            {
+                X = 11,
+                Y = 22
+            });
+            Assert.Equal(11, result.X);
+            Assert.Equal(22, result.Y);
+        }
 
-    [Fact]
-    public void Required_members_plus_ctor_maps_all_fields()
-    {
-        var mapper = new RequiredCtorMapper();
-        var result = mapper.Map(new RequiredCtorSrc { X = 1, Y = "req", Z = 3 });
-        Assert.Equal(1, result.X);
-        Assert.Equal("req", result.Y);
-        Assert.Equal(3, result.Z);
-    }
+        [Fact]
+        public void Required_members_plus_ctor_maps_all_fields()
+        {
+            var mapper = new RequiredCtorMapper();
+            var result = mapper.Map(new RequiredCtorSrc
+            {
+                X = 1,
+                Y = "req",
+                Z = 3
+            });
+            Assert.Equal(1, result.X);
+            Assert.Equal("req", result.Y);
+            Assert.Equal(3, result.Z);
+        }
 
-    [Fact]
-    public void Regression_settable_class_still_uses_object_initializer()
-    {
-        var mapper = new RegressionSettableMapper();
-        var result = mapper.Map(new RegSrc { X = 9, Y = "nine" });
-        Assert.Equal(9, result.X);
-        Assert.Equal("nine", result.Y);
-    }
+        [Fact]
+        public void Regression_settable_class_still_uses_object_initializer()
+        {
+            var mapper = new RegressionSettableMapper();
+            var result = mapper.Map(new RegSrc
+            {
+                X = 9,
+                Y = "nine"
+            });
+            Assert.Equal(9, result.X);
+            Assert.Equal("nine", result.Y);
+        }
 
-    [Fact]
-    public void Nested_record_ctor_param_invokes_auto_nested_mapper()
-    {
-        var mapper = new NestedRecordMapper();
-        var result = mapper.Map(new OuterClassSrc { Inner = new InnerClassSrc { V = 7 }, Outer = 100 });
-        Assert.Equal(7, result.Inner.V);
-        Assert.Equal(100, result.Outer);
-    }
+        [Fact]
+        public void Nested_record_ctor_param_invokes_auto_nested_mapper()
+        {
+            var mapper = new NestedRecordMapper();
+            var result = mapper.Map(new OuterClassSrc
+            {
+                Inner = new InnerClassSrc
+                {
+                    V = 7
+                },
+                Outer = 100
+            });
+            Assert.Equal(7, result.Inner.V);
+            Assert.Equal(100, result.Outer);
+        }
 
-    // ── MUST-FIX 1: required member that is also a ctor param ─────────────────
+        // ── MUST-FIX 1: required member that is also a ctor param ─────────────────
 
-    [Fact]
-    public void Required_member_that_is_ctor_param_maps_correctly()
-    {
-        var mapper = new RequiredCtorParamMapper();
-        var result = mapper.Map(new RequiredCtorParamSrc { X = 42 });
-        Assert.Equal(42, result.X);
-    }
+        [Fact]
+        public void Required_member_that_is_ctor_param_maps_correctly()
+        {
+            var mapper = new RequiredCtorParamMapper();
+            var result = mapper.Map(new RequiredCtorParamSrc
+            {
+                X = 42
+            });
+            Assert.Equal(42, result.X);
+        }
 
-    [Fact]
-    public void Required_member_with_SetsRequiredMembers_maps_correctly()
-    {
-        var mapper = new RequiredCtorParamSetsMapper();
-        var result = mapper.Map(new RequiredCtorParamSetsSrc { X = 99 });
-        Assert.Equal(99, result.X);
+        [Fact]
+        public void Required_member_with_SetsRequiredMembers_maps_correctly()
+        {
+            var mapper = new RequiredCtorParamSetsMapper();
+            var result = mapper.Map(new RequiredCtorParamSetsSrc
+            {
+                X = 99
+            });
+            Assert.Equal(99, result.X);
+        }
     }
 }

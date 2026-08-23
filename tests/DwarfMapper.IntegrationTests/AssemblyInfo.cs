@@ -20,3 +20,5 @@
 // and the one Provided read outside the torture collection (AmbientRegistryTests) is an Assert.Contains of
 // a key that test itself registered — safe while other collections register different keys concurrently.
 // A future test that asserts over registry-GLOBAL state (enumeration, counts) must join a serial collection.
+
+

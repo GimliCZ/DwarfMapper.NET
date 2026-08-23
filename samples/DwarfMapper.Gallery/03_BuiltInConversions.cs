@@ -5,49 +5,58 @@
 // enum-by-name are silent. (Parse/narrowing like string -> int also work, but surface a DWARF038 *suggestion*
 // so they're visible, never silent — see docs/diagnostics.md#dwarf038.)
 
-namespace DwarfMapper.Gallery.Ex03;
-
-public enum Rank
+namespace DwarfMapper.Gallery.Ex03
 {
-    Miner,
-    Smith,
-    Lord
-}
+    public enum Rank
+    {
+        Miner,
+        Smith,
+        Lord
+    }
 
-public enum RankDto
-{
-    Miner,
-    Smith,
-    Lord
-}
+    public enum RankDto
+    {
+        Miner,
+        Smith,
+        Lord
+    }
 
-public sealed class Hero
-{
-    public int Level { get; set; }
-    public Rank Rank { get; set; }
-}
+    public sealed class Hero
+    {
+        public int Level { get; set; }
 
-public sealed class HeroDto
-{
-    public long Level { get; set; }
-    public RankDto Rank { get; set; }
-}
+        public Rank Rank { get; set; }
+    }
+
+    public sealed class HeroDto
+    {
+        public long Level { get; set; }
+
+        public RankDto Rank { get; set; }
+    }
 
 // <snippet: built-in-conversions>
-[DwarfMapper]
-public partial class Mapper
-{
-    public partial HeroDto ToDto(Hero h); // int -> long (widen), Rank -> RankDto (by name)
-}
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        public partial HeroDto ToDto(Hero h); // int -> long (widen), Rank -> RankDto (by name)
+    }
 // </snippet>
 
-[DocExample(3, Tier.Basics, "Built-in conversions",
-    Shows = "automatic widening and enum-by-name")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(3,
+        Tier.Basics,
+        "Built-in conversions",
+        Shows = "automatic widening and enum-by-name")]
+    public static class Example
     {
-        var dto = new Mapper().ToDto(new Hero { Level = 7, Rank = Rank.Smith });
-        Console.WriteLine($"03 Built-in convert   -> level {dto.Level} (long), rank {dto.Rank}");
+        public static void Run()
+        {
+            var dto = new Mapper().ToDto(new Hero
+            {
+                Level = 7,
+                Rank = Rank.Smith
+            });
+            Console.WriteLine($"03 Built-in convert   -> level {dto.Level} (long), rank {dto.Rank}");
+        }
     }
 }

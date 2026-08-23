@@ -6,31 +6,39 @@
 // (a missing one is the build error DWARF024) — optional/`params` parameters take their default — so you can't
 // silently leave a required immutable field unset.
 
-namespace DwarfMapper.Gallery.Ex10;
-
-public sealed class Person
+namespace DwarfMapper.Gallery.Ex10
 {
-    public int Id { get; set; }
-    public string Name { get; set; } = "";
-}
+    public sealed class Person
+    {
+        public int Id { get; set; }
+
+        public string Name { get; set; } = "";
+    }
 
 // <snippet: record-target>
-public record PersonDto(int Id, string Name); // immutable, no parameterless ctor
+    public record PersonDto(int Id, string Name); // immutable, no parameterless ctor
 
-[DwarfMapper]
-public partial class Mapper
-{
-    public partial PersonDto ToDto(Person p); // emits new PersonDto(Id: p.Id, Name: p.Name)
-}
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        public partial PersonDto ToDto(Person p); // emits new PersonDto(Id: p.Id, Name: p.Name)
+    }
 // </snippet>
 
-[DocExample(10, Tier.Configuration, "Immutable record target",
-    Shows = "constructor binding into a record with no parameterless ctor")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(10,
+        Tier.Configuration,
+        "Immutable record target",
+        Shows = "constructor binding into a record with no parameterless ctor")]
+    public static class Example
     {
-        var dto = new Mapper().ToDto(new Person { Id = 3, Name = "Fíli" });
-        Console.WriteLine($"10 Record/immutable   -> {dto} (immutable)");
+        public static void Run()
+        {
+            var dto = new Mapper().ToDto(new Person
+            {
+                Id = 3,
+                Name = "Fíli"
+            });
+            Console.WriteLine($"10 Record/immutable   -> {dto} (immutable)");
+        }
     }
 }

@@ -8,53 +8,67 @@
 //   DwarfMapper: [MapProperty("Customer.Address.City", nameof(OrderSummary.City))]
 // A nullable hop on the path surfaces DWARF044 (a visible suggestion), so it's never a silent NRE.
 
-namespace DwarfMapper.Gallery.Ex06;
-
-public sealed class Address
+namespace DwarfMapper.Gallery.Ex06
 {
-    public string City { get; set; } = "";
-}
+    public sealed class Address
+    {
+        public string City { get; set; } = "";
+    }
 
-public sealed class Customer
-{
-    public string Name { get; set; } = "";
-    public Address Address { get; set; } = new();
-}
+    public sealed class Customer
+    {
+        public string Name { get; set; } = "";
 
-public sealed class Order
-{
-    public int Id { get; set; }
-    public Customer Customer { get; set; } = new();
-}
+        public Address Address { get; set; } = new();
+    }
 
-public sealed class OrderSummary
-{
-    public int Id { get; set; }
-    public string CustomerName { get; set; } = "";
-    public string City { get; set; } = "";
-}
+    public sealed class Order
+    {
+        public int Id { get; set; }
+
+        public Customer Customer { get; set; } = new();
+    }
+
+    public sealed class OrderSummary
+    {
+        public int Id { get; set; }
+
+        public string CustomerName { get; set; } = "";
+
+        public string City { get; set; } = "";
+    }
 
 // <snippet: deep-paths>
-[DwarfMapper]
-public partial class Mapper
-{
-    [MapProperty("Customer.Name", nameof(OrderSummary.CustomerName))]
-    [MapProperty("Customer.Address.City", nameof(OrderSummary.City))]
-    public partial OrderSummary ToSummary(Order o);
-}
+    [DwarfMapper]
+    public partial class Mapper
+    {
+        [MapProperty("Customer.Name", nameof(OrderSummary.CustomerName))]
+        [MapProperty("Customer.Address.City", nameof(OrderSummary.City))]
+        public partial OrderSummary ToSummary(Order o);
+    }
 // </snippet>
 
-[DocExample(6, Tier.Configuration, "Deep dotted paths",
-    Shows = "a dotted source path — what others reach with a lambda")]
-public static class Example
-{
-    public static void Run()
+    [DocExample(6,
+        Tier.Configuration,
+        "Deep dotted paths",
+        Shows = "a dotted source path — what others reach with a lambda")]
+    public static class Example
     {
-        var summary = new Mapper().ToSummary(new Order
+        public static void Run()
         {
-            Id = 99,
-            Customer = new Customer { Name = "Balin", Address = new Address { City = "Moria" } }
-        });
-        Console.WriteLine($"06 Deep paths         -> #{summary.Id}: {summary.CustomerName} of {summary.City}");
+            var summary = new Mapper().ToSummary(new Order
+            {
+                Id = 99,
+                Customer = new Customer
+                {
+                    Name = "Balin",
+                    Address = new Address
+                    {
+                        City = "Moria"
+                    }
+                }
+            });
+            Console.WriteLine($"06 Deep paths         -> #{summary.Id}: {summary.CustomerName} of {summary.City}");
+        }
     }
 }

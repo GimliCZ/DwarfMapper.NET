@@ -14,7 +14,10 @@ Inject `IDwarfMapper` and call `Map<TDestination>(source)`:
 ```csharp
 public sealed class SettingsService(IDwarfMapper mapper)
 {
-    public CustomerSummary Summarise(Customer customer) => mapper.Map<CustomerSummary>(customer);
+    public CustomerSummary Summarise(Customer customer)
+    {
+        return mapper.Map<CustomerSummary>(customer);
+    }
 }
 ```
 <!-- endsnippet -->
