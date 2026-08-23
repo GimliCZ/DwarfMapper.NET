@@ -353,21 +353,33 @@ namespace DwarfMapper.Generator.Pipeline
                         or CollectionConverter.TargetKind.IList
                         or CollectionConverter.TargetKind.IReadOnlyList
                         or CollectionConverter.TargetKind.IReadOnlyCollection;
+                    var tgtIsImmutableArray = collShape.Target == CollectionConverter.TargetKind.ImmutableArray;
                     var srcIsList = CollectionConverter.IsConcreteList(srcType);
+                    var srcIsImmutableArray = CollectionConverter.IsImmutableArray(srcType);
                     var elementBlits = BlittableProof.CanReinterpret(srcElem, tgtElem) ||
                                        BlittableProof.CanReinterpretEnums(srcElem, tgtElem, enumPolicy.Strategy);
 
+                    var srcStorage = collShape.SourceIsArray ? CollectionConverter.BlitStorage.Array
+                        : srcIsList ? CollectionConverter.BlitStorage.List
+                        : srcIsImmutableArray ? CollectionConverter.BlitStorage.ImmutableArray
+                        : (CollectionConverter.BlitStorage?)null;
+
+                    var tgtStorage = tgtIsArray ? CollectionConverter.BlitStorage.Array
+                        : tgtIsListFamily ? CollectionConverter.BlitStorage.List
+                        : tgtIsImmutableArray ? CollectionConverter.BlitStorage.ImmutableArray
+                        : (CollectionConverter.BlitStorage?)null;
+
                     if (elementBlits &&
-                        (collShape.SourceIsArray || srcIsList) &&
-                        (tgtIsArray || tgtIsListFamily) &&
-                        !(collShape.SourceIsArray && tgtIsArray))
+                        srcStorage is { } ss &&
+                        tgtStorage is { } ts &&
+                        !(ss == CollectionConverter.BlitStorage.Array && ts == CollectionConverter.BlitStorage.Array))
                     {
                         converterMethod = CollectionConverter.SynthesizeBlitListShape(synthesized,
                             srcType,
                             srcElem,
                             tgtElem,
-                            collShape.SourceIsArray,
-                            tgtIsArray);
+                            ss,
+                            ts);
                         return true;
                     }
                 }

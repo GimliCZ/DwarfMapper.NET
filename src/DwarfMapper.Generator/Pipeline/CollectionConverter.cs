@@ -1023,6 +1023,16 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when <paramref name="t" /> is exactly <c>ImmutableArray&lt;T&gt;</c>, which exposes its
+        ///     backing storage publicly through <c>AsSpan()</c> and <c>ImmutableCollectionsMarshal</c>.
+        /// </summary>
+        public static bool IsImmutableArray(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { IsGenericType: true } n &&
+                   n.ConstructedFrom.ToDisplayString() == "System.Collections.Immutable.ImmutableArray<T>";
+        }
+
+        /// <summary>
         ///     Synthesize a reinterpret-blit for the List-involved shapes — <c>array → List</c>,
         ///     <c>List → array</c> and <c>List → List</c> — which the array-to-array gate does not reach.
         ///     <para>
@@ -1038,14 +1048,20 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol srcCollType,
             ITypeSymbol srcElem,
             ITypeSymbol tgtElem,
-            bool sourceIsArray,
-            bool targetIsArray)
+            BlitStorage source,
+            BlitStorage target)
         {
             var elem = Fq(tgtElem);
             var srcE = Fq(srcElem);
             var srcFq = Fq(srcCollType);
             var listFq = "global::System.Collections.Generic.List<" + elem + ">";
-            var ret = targetIsArray ? elem + "[]" : listFq;
+            var iaFq = "global::System.Collections.Immutable.ImmutableArray<" + elem + ">";
+            var ret = target switch
+            {
+                BlitStorage.Array => elem + "[]",
+                BlitStorage.List => listFq,
+                _ => iaFq,
+            };
 
             var name = "__DwarfBlitL_" + StableHash.Fnv1a(srcFq + "=>" + ret);
             if (synth.ContainsKey(name))
@@ -1053,17 +1069,37 @@ namespace DwarfMapper.Generator.Pipeline
                 return name;
             }
 
-            var count = sourceIsArray ? "src.Length" : "src.Count";
-            var srcSpan = sourceIsArray
-                ? "new global::System.ReadOnlySpan<" + srcE + ">(src)"
-                : "global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(src)";
+            var count = source switch
+            {
+                BlitStorage.Array => "src.Length",
+                BlitStorage.List => "src.Count",
+                _ => "src.Length",
+            };
+
+            var srcSpan = source switch
+            {
+                BlitStorage.Array => "new global::System.ReadOnlySpan<" + srcE + ">(src)",
+                BlitStorage.List => "global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(src)",
+                // ImmutableArray<T>.AsSpan() is public and allocation-free. Guarded by IsDefaultOrEmpty above,
+                // because a `default` ImmutableArray wraps a null array.
+                _ => "src.AsSpan()",
+            };
+
+            var emptyReturn = target switch
+            {
+                BlitStorage.Array => "global::System.Array.Empty<" + elem + ">()",
+                BlitStorage.List => "new " + listFq + "()",
+                _ => iaFq + ".Empty",
+            };
 
             var w = new CodeWriter(1);
             using (w.Block("private static " + ret + " " + name + "(" + srcFq + " src)"))
             {
-                w.Line(targetIsArray
-                    ? "if (src is null) return global::System.Array.Empty<" + elem + ">();"
-                    : "if (src is null) return new " + listFq + "();");
+                // An ImmutableArray<T> is a struct: it is never null, but it CAN be `default`, which wraps a
+                // null array and would fault on AsSpan().
+                w.Line(source == BlitStorage.ImmutableArray
+                    ? "if (src.IsDefaultOrEmpty) return " + emptyReturn + ";"
+                    : "if (src is null) return " + emptyReturn + ";");
 
                 // Before SetCount, deliberately: see the remark above.
                 w.Line("if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + srcE + ">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + elem + ">())");
@@ -1075,23 +1111,42 @@ namespace DwarfMapper.Generator.Pipeline
 
                 w.Line("var __n = " + count + ";");
 
-                if (targetIsArray)
+                switch (target)
                 {
-                    w.Line("var __r = new " + elem + "[__n];");
-                    w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(__r);");
-                }
-                else
-                {
-                    w.Line("var __r = new " + listFq + "(__n);");
-                    w.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __n);");
-                    w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r));");
-                }
+                    case BlitStorage.List:
+                        w.Line("var __r = new " + listFq + "(__n);");
+                        w.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __n);");
+                        w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r));");
+                        w.Line("return __r;");
+                        break;
 
-                w.Line("return __r;");
+                    case BlitStorage.ImmutableArray:
+                        // The wrapped array MUST be freshly allocated. Re-wrapping the source's own storage
+                        // would give two immutable values one buffer — for an immutable type that is a
+                        // correctness bug, not a saved allocation.
+                        w.Line("var __r = new " + elem + "[__n];");
+                        w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(__r);");
+                        w.Line("return global::System.Runtime.InteropServices.ImmutableCollectionsMarshal.AsImmutableArray(__r);");
+                        break;
+
+                    default:
+                        w.Line("var __r = new " + elem + "[__n];");
+                        w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(__r);");
+                        w.Line("return __r;");
+                        break;
+                }
             }
 
             synth[name] = new SynthesizedMethod(name, w.ToString());
             return name;
+        }
+
+        /// <summary>Which storage a blit reads from or writes to. All three expose a span publicly.</summary>
+        internal enum BlitStorage
+        {
+            Array,
+            List,
+            ImmutableArray
         }
 
         /// <summary>
