@@ -112,9 +112,18 @@ the method signature that matches your access pattern:
 
 When the layout allows it, the generator beats even a hand-written name-based copy — and it's automatic:
 
-- **Blittable bulk copy.** A layout-identical `TSrc[] → TDst[]` (both unmanaged, sequential, same packing,
-  same ordered fields) is reinterpreted as a single `MemoryMarshal.Cast` block copy behind a JIT-folded size
+- **Blittable bulk copy.** A layout-identical element pair (both unmanaged, sequential, same packing, same
+  ordered fields) is reinterpreted as a single `MemoryMarshal.Cast` block copy behind a JIT-folded size
   guard — benchmarked **~2× faster** than every competitor on a 1000-struct array, which copy field-by-field.
+  The storage does not have to be an array on both sides: **`List<T>`** (and the interfaces that materialise
+  to it — `IList<T>`, `IReadOnlyList<T>`, `ICollection<T>`, `IReadOnlyCollection<T>`) and
+  **`ImmutableArray<T>`** take it too, measured **2.3–3.3× faster** than the element loop for a
+  1000-element collection. **Enum arrays** qualify where the conversion is genuinely a reinterpret —
+  `EnumStrategy.ByValue` over the same underlying type, or an enum against its own underlying primitive. The
+  default by-name enum mapping is deliberately excluded: it *throws* on a value matching no member, and a
+  block copy would pass such a value through instead. `Dictionary<K,V>` and `HashSet<T>` never qualify —
+  their entries sit in a private struct with no public span, so no layout can be proven.
+  When a pair comes close and misses, `DWARF100` tells you which condition failed.
 - **SIMD widening.** A lossless primitive widen array (`int[]→long[]` and the other six `Vector.Widen`
   pairs) is vectorized behind a hardware-acceleration guard with a scalar tail — bit-for-bit identical to
   the scalar widen, purely a throughput win.
