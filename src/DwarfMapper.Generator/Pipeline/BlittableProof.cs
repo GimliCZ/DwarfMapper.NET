@@ -22,6 +22,116 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Explains why a pair that a caller could reasonably have expected to blit did not, but ONLY for a
+        ///     genuine near-miss: a pair blocked by exactly one identifiable thing.
+        ///     <para>
+        ///         Deliberately narrow. The broad reading — "report whenever something looked blittable" — would
+        ///         fire on every ordinary struct-array mapping whose members happen to differ, which is not a
+        ///         failed fast path but simply a mapping. An informational diagnostic that common gets suppressed
+        ///         wholesale, and would then hide the cases worth reading. So a pair whose field counts or field
+        ///         TYPES differ is not reported at all: nothing about it suggests the caller expected a blit.
+        ///     </para>
+        ///     <para>
+        ///         The name-mismatch case is the one this exists for. Such a pair is byte-identical and one rename
+        ///         away from the fast path, and nothing in the build would otherwise say so.
+        ///     </para>
+        /// </summary>
+        public static bool TryExplainNearMiss(ITypeSymbol src, ITypeSymbol dst, out string reason)
+        {
+            reason = string.Empty;
+
+            // Identity already takes the Clone() memmove; there is no fast path being missed.
+            if (SymbolEqualityComparer.Default.Equals(src, dst))
+            {
+                return false;
+            }
+
+            // Two different primitives are a CONVERSION, not a near-miss blit. Same-primitive is identity, above.
+            if (IsPrimitive(src) || IsPrimitive(dst))
+            {
+                return false;
+            }
+
+            if (src is not INamedTypeSymbol a || dst is not INamedTypeSymbol b)
+            {
+                return false;
+            }
+
+            if (a.TypeKind != TypeKind.Struct)
+            {
+                return false; // enums and classes are not almost-blittable; they are something else
+            }
+#pragma warning disable CA1508 // flow analysis false positive: INamedTypeSymbol can be Class/Enum/Interface/Delegate, not only Struct
+            if (b.TypeKind != TypeKind.Struct)
+            {
+                return false;
+            }
+#pragma warning restore CA1508
+
+            if (!a.IsUnmanagedType || !b.IsUnmanagedType)
+            {
+                return false; // a managed member is a categorical refusal, not a near-miss
+            }
+
+            // Layout blockers, reported in the order the proof itself checks them.
+            if (!a.Locations.Any(l => l.IsInSource))
+            {
+                reason = $"'{a.Name}' is declared in metadata, so an absent [StructLayout] cannot be read as Sequential";
+                return true;
+            }
+
+            if (!b.Locations.Any(l => l.IsInSource))
+            {
+                reason = $"'{b.Name}' is declared in metadata, so an absent [StructLayout] cannot be read as Sequential";
+                return true;
+            }
+
+            if (!IsSourceSequential(a, out var packA))
+            {
+                reason = $"'{a.Name}' declares a [StructLayout] that is not Sequential, so its field order is not guaranteed";
+                return true;
+            }
+
+            if (!IsSourceSequential(b, out var packB))
+            {
+                reason = $"'{b.Name}' declares a [StructLayout] that is not Sequential, so its field order is not guaranteed";
+                return true;
+            }
+
+            if (packA != packB)
+            {
+                reason = $"'{a.Name}' packs to {packA} and '{b.Name}' packs to {packB}, so the two layouts differ";
+                return true;
+            }
+
+            var fa = InstanceFields(a);
+            var fb = InstanceFields(b);
+            if (fa.Count == 0 || fa.Count != fb.Count)
+            {
+                return false; // a different shape entirely — an ordinary mapping, not a missed fast path
+            }
+
+            // Types must line up positionally for this to be a near-miss at all; if they do not, the pair is
+            // simply two different structs and the element loop is the right answer.
+            for (var i = 0; i < fa.Count; i++)
+                if (!LayoutIdentical(fa[i].Type, fb[i].Type))
+                {
+                    return false;
+                }
+
+            for (var i = 0; i < fa.Count; i++)
+                if (!string.Equals(fa[i].Name, fb[i].Name, StringComparison.Ordinal))
+                {
+                    reason =
+                        $"field {i} is named '{fa[i].Name}' on '{a.Name}' but '{fb[i].Name}' on '{b.Name}', and a " +
+                        "positional reinterpret would only agree with DwarfMapper's by-name mapping if the names line up";
+                    return true;
+                }
+
+            return false; // nothing left to block it — it would have been proven, so there is nothing to explain
+        }
+
+        /// <summary>
         ///     True when two types are byte-identical in layout AND field-name-aligned, so a positional
         ///     reinterpret equals DwarfMapper's name-based mapping. Recurses through nested structs.
         /// </summary>

@@ -323,6 +323,21 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+                // The blit was not provable. If the pair MISSED it narrowly, say so — the element loop is correct
+                // but the caller is one rename away from a block copy, and nothing else in the build reports that.
+                // Never reached for [Reinterpret] members: that branch forces the blit and returns before this
+                // method is called, so DWARF022 stays the only voice on the explicit form.
+                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                    collShape.SourceIsArray &&
+                    BlittableProof.TryExplainNearMiss(srcElem, tgtElem, out var nearMissReason))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,
+                        location,
+                        $"'{targetName}' maps an array whose element types are nearly layout-identical, so it " +
+                        $"takes the element-by-element copy: {nearMissReason}",
+                        MemberName: targetName));
+                }
+
                 // SIMD widening fast-path: array→array of a lossless primitive widen pair (e.g. int[]→long[],
                 // float[]→double[]) → Vector.Widen. Identical result to the scalar implicit widen; reflection-free.
                 // Comes AFTER blit (same-size pairs blit; widen pairs differ in size so CanReinterpret is false).

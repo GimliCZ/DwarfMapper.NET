@@ -40,6 +40,18 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF100` — an array pair narrowly missed the blittable fast path (Info).** A pair of arrays came within
+  one identifiable step of the block-copy fast path and took the element-by-element loop instead, silently.
+  The three blockers it reports are a layout that is not `Sequential` (`Auto` lets the runtime reorder fields,
+  which is why `DateTime` never blits), a struct declared in metadata (where an absent `[StructLayout]` cannot
+  be read as `Sequential`), and field names that do not line up — DwarfMapper maps by name, so a positional
+  reinterpret is only equivalent when the names agree. **Your mapping was already correct; this only tells you
+  what a rename or one attribute would buy.** It is informational and will stay informational: a warning would
+  become a build failure under `TreatWarningsAsErrors`, and plenty of callers do not care about the copy
+  strategy for an array of four elements. It is also deliberately narrow — a pair whose field counts or field
+  *types* differ is silent, because that is an ordinary mapping rather than a missed fast path, and a hint
+  that fired on every struct mapping would be suppressed wholesale, hiding the cases worth reading.
+
 - **`DWARF099` — one pair carries two contradicting `[MapNullSkip<TSource, TTarget>]` declarations (Error).**
   The generic form is `AllowMultiple`, so `[MapNullSkip<Dto, Entity>(true)]` beside
   `[MapNullSkip<Dto, Entity>(false)]` compiled clean and the reader returned the first by declaration order —

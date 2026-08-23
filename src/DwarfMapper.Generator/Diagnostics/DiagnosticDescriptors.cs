@@ -1706,5 +1706,41 @@ namespace DwarfMapper.Generator.Diagnostics
             "same scope, and only source order separates them — so the mapper is refused rather than resolved " +
             "by an accident of ordering. Two declarations that AGREE are accepted.",
             HelpBase + "dwarf099");
+
+        /// <summary>
+        ///     <c>DWARF100</c> — an array pair is one identifiable step away from the blittable fast path, and
+        ///     took the element-by-element loop instead.
+        ///     <para>
+        ///         <b>Informational, and it must stay that way</b>: the mapping is correct and complete. The only
+        ///         thing lost is speed, and the caller may not care. Reporting it as a warning would turn a
+        ///         performance hint into a build failure under <c>TreatWarningsAsErrors</c>.
+        ///     </para>
+        ///     <para>
+        ///         Scoped to a NEAR-MISS on purpose — see <c>BlittableProof.TryExplainNearMiss</c>. The broad
+        ///         reading, "report whenever something looked blittable", would fire on every ordinary struct-array
+        ///         mapping whose members differ, and a diagnostic that common gets suppressed wholesale, hiding
+        ///         the cases worth reading. A pair whose field counts or field TYPES differ is therefore silent.
+        ///     </para>
+        ///     <para>
+        ///         The case this exists for is a byte-identical pair whose FIELD NAMES differ. It is one rename
+        ///         from a large win, DwarfMapper cannot take it silently because it maps by name, and nothing else
+        ///         in the build would ever say so. The remedy is a rename, or <c>[Reinterpret]</c> to declare that
+        ///         positional semantics are what the caller actually wants. Round 25, <c>T0-B</c>.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor BlitNearMiss = new(
+            "DWARF100",
+            "Array pair narrowly missed the blittable fast path",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            "The blittable fast path reinterprets one array's memory as another in a single block copy, which is " +
+            "sound only when the two element types are provably identical in layout AND their field names line " +
+            "up — DwarfMapper maps by name, so a positional reinterpret is equivalent only when the names agree. " +
+            "This pair satisfies every part of that proof but one. The mapping is correct either way; this is a " +
+            "performance hint, which is why it is informational. Fix it by aligning the names, or apply " +
+            "[Reinterpret] to state that positional semantics are intended.",
+            HelpBase + "dwarf100");
     }
 }
