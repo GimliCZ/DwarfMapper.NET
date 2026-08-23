@@ -220,3 +220,57 @@ guard — that plurality is the entire reason they can drift.
 
 Proved to bite: reintroducing the inline form at ONE of `MapToGenerator`'s two sites fails the test with
 `MapToGenerator.cs:470`, then reverted.
+
+## Round 24 — CLOSED 2026-08-23
+
+This document is I21-scoped, but the round was not: the maintainer framed it as "the formatting fixes, emit
+and analyze fixes". Recording the whole of it here so no half of the round is undocumented. Decisions, with
+their cost-if-wrong, are in `Issues/ledgers/round24-ledger.md`.
+
+| Commit | What it closed |
+|---|---|
+| `fc71bac` | The repo-wide reformat repair, and the gate ratchets it made possible |
+| `76859d1` | The generator's own output made analyzable — the round's premise, with the control that proves analysis was genuinely off beforehand |
+| `d38cda1` | The sweep itself, repo-wide: samples, consumer projects, the whole test corpus |
+| `6ad8652` | The two decisions on the findings — `static` yes (specified), `sealed` no |
+| `0230197` | The one real defect fixed, and covered by a sabotage-proven scan |
+| `263dcca` | The three blockers that defeat a model-only `static` shortcut |
+
+**The reformat half, since it has no other document home.** A repo-wide reformat had left the tree at 1,314
+build errors and 185 failing tests; repairing it to 0 / 0 is `fc71bac`. Two findings from that repair are
+worth keeping, because both are cases of a *cosmetic* change moving a *measurement*:
+
+* 314 expanded guard clauses lowered line coverage without changing behaviour;
+* converting expression bodies to blocks INFLATED the mutant population — runtime 113 → 129, doc tooling
+  284 → 289 — because a block body offers mutation operators an expression body does not. `MapConfig.cs` was
+  reverted to expression bodies for exactly this reason and no other: it is compile-time-only, and the blocks
+  minted 10 unkillable `NoCoverage` mutants.
+
+The repair also caught damage a token-level differ structurally cannot see — a `//` injected inside a doc
+`cref` (`GeneratedSourceExtensions.cs:12`), invisible because the differ drops comments. It was ReSharper,
+not Roslyn, that found it.
+
+On the back of the re-measurement, every gate moved forward to a MEASURED value in the same commit:
+mutation `break` 84 / 95 / 97 across the three legs, and all five coverage floors re-measured with dated
+`line/branch` provenance. Two repairs were needed to get one unbroken battery: the AOT stage (the real cause
+was a single stderr line from `vcvarsall` landing where the linker path was expected, not a missing native
+toolchain as first concluded — `vswhere` is now prepended to `PATH`) and the mutation decontamination gate
+(structural: analyzer-only references get mutants with no `*.stryker-unchanged` backup, so
+`Remove-PlantedMutants` runs before each assertion).
+
+**Final state at close.** Whole solution 0 errors / 0 warnings, samples included. Suite 8,040 passed / 0
+failed across 9 projects. One full local battery green end to end.
+
+**Carried forward, deliberately.**
+
+* **I22** — `static` on the 360 generator-owned helpers. Specified above, blockers recorded; accepted by the
+  maintainer as filed rather than built.
+* **The always-on gate** — blocked on per-rule severity in `.editorconfig`; the audit is Debug-only and
+  on-demand until that is solved.
+* **K0's generated graph corpus** — emits nothing to disk, so it was never swept.
+* **Six locally-runnable CI gates never exercised here** — `pack`, `conformance`, `reproducible-build`,
+  `package-size`, `sbom`, `roslyn-forward-compat`.
+
+`Issues/round20/StrikerHighLevelOfIssues.txt` **stays**. It arrived in `fc71bac` as an unintended sweep and I
+offered to drop it; on reading, it is the contemporaneous record of the round-20 finding that mutation
+testing had never actually run — twice over — which is evidence this repository keeps rather than tidies.

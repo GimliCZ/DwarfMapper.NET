@@ -15,6 +15,17 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Two emitters disagreed on how the emitted null guard is written.** The registry emitter wrote the guard
+  inline as `if (source is null) throw new global::System.ArgumentNullException(nameof(source));`, while every
+  other emitter used the BCL throw-helper `global::System.ArgumentNullException.ThrowIfNull(source)`.
+  **Nothing observable changes**: the same exception type is thrown, with the same `ParamName` — the helper
+  captures the argument expression through `[CallerArgumentExpression]`, and that expression is literally
+  `source`. What changes is the emitted IL. The inline form puts a `throw` in the body of a method that runs on
+  every map, which inflates its IL size and can stop the JIT inlining it; the helper form keeps the `throw` in
+  a `[DoesNotReturn]`, non-inlined callee. Found by compiling the generator's own output with the analyzers
+  enabled for the first time, and now guarded by a scan that reads **every** emitter at once — each emitter was
+  internally consistent, so the divergence lived between them and no per-emitter test could have seen it.
+
 - **A `[MapProperty]` or `[MapIgnore]` written on a member of the mapper class was swallowed.** `DWARF088` was
   raised off the mapper class and off each mapping method, never off a **member** of the mapper — so the one
   placement left was silent, and a caller who annotated a property or field of their `[DwarfMapper]` type got
