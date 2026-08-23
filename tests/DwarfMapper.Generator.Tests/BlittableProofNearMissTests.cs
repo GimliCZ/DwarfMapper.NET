@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
+using System.Text.RegularExpressions;
+using DwarfMapper.Generator.Tests.Contracts;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Tests
@@ -20,6 +23,146 @@ namespace DwarfMapper.Generator.Tests
         {
             var (diagnostics, _) = GeneratorTestHarness.Run(source);
             return diagnostics.Any(d => d.Id == "DWARF100");
+        }
+
+        private static string NearMissReason(string source)
+        {
+            var (diagnostics, _) = GeneratorTestHarness.Run(source);
+            var hint = diagnostics.SingleOrDefault(d => d.Id == "DWARF100");
+            return hint is null ? string.Empty : hint.GetMessage(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        ///     One fixture per reason the classifier can give, each paired with the phrase that identifies it.
+        ///     Consumed twice: once to prove each branch reports what it claims, and once — against the
+        ///     generator's own source — to prove no branch exists that nothing here reaches.
+        /// </summary>
+        public static TheoryData<string, string> EveryReasonBranch =>
+            new()
+            {
+                {
+                    // Shaped against Guid's ACTUAL field list — Int32, Int16, Int16, then eight Bytes — because
+                    // the metadata branch sits behind the shape check and is unreachable until the fields line
+                    // up. A guessed shape here would have made this case pass by reporting nothing at all.
+                    "metadata", """
+                                using DwarfMapper;
+                                namespace Demo;
+                                public struct SrcV
+                                {
+                                    public int A; public short B; public short C;
+                                    public byte D; public byte E; public byte F; public byte G;
+                                    public byte H; public byte I; public byte J; public byte K;
+                                }
+                                public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                public class D { public System.Guid[] V { get; set; } = System.Array.Empty<System.Guid>(); }
+                                [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                """
+                },
+                {
+                    "not Sequential", """
+                                     using System.Runtime.InteropServices;
+                                     using DwarfMapper;
+                                     namespace Demo;
+                                     public struct SrcV { public int X; public int Y; }
+                                     [StructLayout(LayoutKind.Auto)]
+                                     public struct DstV { public int X; public int Y; }
+                                     public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                     public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                     [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                     """
+                },
+                {
+                    "packs to", """
+                                using System.Runtime.InteropServices;
+                                using DwarfMapper;
+                                namespace Demo;
+                                [StructLayout(LayoutKind.Sequential, Pack = 1)]
+                                public struct SrcV { public byte A; public int X; }
+                                [StructLayout(LayoutKind.Sequential, Pack = 4)]
+                                public struct DstV { public byte A; public int X; }
+                                public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                """
+                },
+                {
+                    "is named", """
+                                using DwarfMapper;
+                                namespace Demo;
+                                public struct SrcV { public int X; public int Y; }
+                                public struct DstV { public int A; public int B; }
+                                public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                [DwarfMapper]
+                                [MapProperty<SrcV, DstV>("X", "A")]
+                                [MapProperty<SrcV, DstV>("Y", "B")]
+                                public partial class M { public partial D Map(C c); }
+                                """
+                },
+            };
+
+        [Theory]
+        [MemberData(nameof(EveryReasonBranch))]
+        public void Each_reason_branch_reports_the_reason_it_claims(string phrase, string source)
+        {
+            Assert.Contains(phrase, NearMissReason(source), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void No_reason_branch_exists_that_no_fixture_reaches()
+        {
+            // The pack branch shipped with NO test, and the metadata branch shipped MIS-ORDERED, and eight
+            // green tests noticed neither. A per-branch fixture list only helps while it is complete, so
+            // completeness is read off the generator's own source rather than trusted: every `reason =`
+            // assignment in TryExplainNearMiss must have a fixture above that provokes it.
+            var source = File.ReadAllText(Path.Combine(RepoPaths.Root,
+                "src",
+                "DwarfMapper.Generator",
+                "Pipeline",
+                "BlittableProof.cs"));
+
+            var start = source.IndexOf("TryExplainNearMiss", StringComparison.Ordinal);
+            Assert.True(start >= 0, "TryExplainNearMiss not found — this scan is reading the wrong file.");
+            var end = source.IndexOf("private static bool LayoutIdentical", start, StringComparison.Ordinal);
+            Assert.True(end > start, "Could not bound the method — the scan would read the whole file.");
+
+            var literals = Regex.Matches(source.Substring(start, end - start), @"\breason\s*=\s*\$?""([^""]*)""")
+                .Select(m => m.Groups[1].Value)
+                .ToList();
+
+            // Six assignment SITES for four reason KINDS — the metadata and non-Sequential reasons each have
+            // an 'a' arm and a 'b' arm. Counting sites would therefore be the wrong assertion; what must hold
+            // is that no site can produce wording that no fixture provokes.
+            Assert.NotEmpty(literals);
+            var phrases = EveryReasonBranch.Select(row => (string)row[0]).ToList();
+            var unreached = literals
+                .Where(lit => !phrases.Exists(p => lit.Contains(p, StringComparison.Ordinal)))
+                .ToList();
+
+            Assert.True(unreached.Count == 0,
+                "reason branch(es) in TryExplainNearMiss that no fixture in EveryReasonBranch provokes — add "
+                + "one, or the branch ships untested the way the pack branch did:\n  "
+                + string.Join("\n  ", unreached));
+        }
+
+        [Theory]
+        [MemberData(nameof(EveryReasonBranch))]
+        public void No_blocker_can_report_when_the_SHAPES_do_not_align(string phrase, string source)
+        {
+            // The ordering invariant, pinned directly rather than left to one spot fixture.
+            //
+            // The blockers used to be tested BEFORE the shape, so a pair could be announced as "nearly
+            // layout-identical" on the strength of a layout attribute alone, without anything having compared
+            // its fields. Here every blocker fixture is re-run with one extra field bolted onto the source
+            // struct: the shapes no longer align, so whatever the blocker says, the answer must be silence.
+            _ = phrase;
+            ArgumentNullException.ThrowIfNull(source);
+            var shapeBroken = Regex.Replace(source,
+                @"public struct SrcV\s*\{",
+                "public struct SrcV { public long __Extra;");
+            Assert.NotEqual(source, shapeBroken); // the substitution must actually have happened
+
+            Assert.False(ReportsNearMiss(shapeBroken));
         }
 
         [Fact]
