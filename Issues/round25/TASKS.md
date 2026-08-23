@@ -68,7 +68,7 @@ So **T2's real scope is the List-involved shapes only** — see the rewritten ta
 | **T2** List-involved shapes | DONE — array→List, List→array, List→List, plus the whole interface family |
 | **T3** metadata allowlist | DECLINED on measurement; the short-circuit it relied on is now pinned |
 | **T4** standing perf gate | DONE — ratio gate at n=1000, sabotage-proven both directions |
-| **T5** skip-if-identical | NOT SHIPPED (**ratify** — this plan had said "ships") |
+| **T5** skip-if-identical | NOT SHIPPED — **ruled by the maintainer 2026-08-23**, "T5 should be skipped" |
 | **T6** park checked narrowing | DONE — emitted-source pin, with a control |
 | **T7** `ImmutableArray<T>` | DONE — both directions, fresh-array wrap pinned |
 
@@ -317,7 +317,7 @@ therefore ships opt-in, documented so that the **cost is stated in the same brea
 feature documented as a speed-up when it is measurably a slow-down is precisely the kind of claim this
 repository exists to prevent.
 
-### OUTCOME 2026-08-23: NOT SHIPPED — recommended for the maintainer to overrule if they disagree
+### OUTCOME: NOT SHIPPED — recommended on the evidence below, and RULED BY THE MAINTAINER 2026-08-23
 
 **This section previously committed to shipping it. Two facts found by probing before building changed the
 picture, and both are the kind of fact that is supposed to change a plan.**
@@ -340,10 +340,13 @@ slowdown in the common case and a win only for very large already-identical coll
 better engineering call, and it is the same evidence-driven outcome this round already reached for R25-01
 and R25-06.**
 
-**This is flagged for ratification rather than closed unilaterally**, because unlike those two the plan had
-already said "ships". If the EF semantics are wanted for the non-keyed and cross-element-type cases that
-`[MapCollectionKey]` cannot reach, say so and it gets built — the measurement above is what its
-documentation must carry, and the n≥65,536 band is where it should be recommended rather than warned about.
+This was raised for ratification rather than closed unilaterally, because unlike those two the plan had
+already said "ships". **The maintainer ruled "T5 should be skipped" on 2026-08-23**, so it is closed by
+decision rather than by inference from a benchmark.
+
+If the EF semantics are ever wanted for the non-keyed and cross-element-type cases that `[MapCollectionKey]`
+cannot reach, the measurement above is what the feature's documentation must carry — and n ≥ 65,536 is the
+band to recommend it in, rather than warn about.
 
 ---
 

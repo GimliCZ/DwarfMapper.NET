@@ -81,7 +81,7 @@ kernel measured 0.27x. An emitted-source pin now fails the build if a `TensorPri
 kernel ever appears on the narrowing path.
 **Cost if wrong:** a future genuine vectorised narrow has to delete a test to land — which is the point.
 
-## Ruling: R25-04 skip-if-identical is NOT SHIPPED. 2026-08-23. **RATIFY — the plan said "ships"**
+## Ruling: R25-04 skip-if-identical is NOT SHIPPED. **RATIFIED BY THE MAINTAINER 2026-08-23** ("T5 should be skipped")
 
 Probing before building found two facts the plan did not have. Its justification is largely already served —
 `[MapCollectionKey]` keeps the destination list instance and upserts by key, which is the EF
@@ -90,8 +90,10 @@ the cost is worse than believed: comparing first loses **even on a hit** from n=
 0.28x. New public attribute surface, overlapping an existing option, to buy a 3.5x slowdown in the common
 case is a bad trade.
 **Cost if wrong:** the non-keyed and cross-element-type cases `[MapCollectionKey]` cannot reach have no
-answer. Flagged rather than closed, because unlike the two rulings above the plan had already committed to
-shipping it. One word overrules this.
+answer — if that gap is ever felt, the measurement above is what the feature's documentation must carry, and
+n >= 65,536 is the band to recommend it in rather than warn about. Raised as a ratification item because the
+plan had already committed to shipping it; the maintainer ruled **skip** the same day, so the decision is
+theirs and not an inference from a benchmark.
 *(One correction to the record came out of the measurement: the container concluded skip-if-identical is
 NEVER faster, at 0.49x for n=65536. Locally a hit there is **4.20x faster** — skipping a megabyte of writes
 beats paying for them. "Never faster" is wrong at the top end and right everywhere else.)*
@@ -113,4 +115,7 @@ logical order.
 1. **`bool[]` non-normalization.** A blit and the element loop both preserve a non-0/1 byte, but pinning that
    with a test turns it into an observable contract. Pin it as documented behaviour, or normalize and give up
    the blit. Unanswered since the plan was written.
-2. The two **RATIFY** rulings above.
+2. **`DWARF100`'s near-miss scoping**, which is narrower than R25-07 specified. Info severity and one
+   function, so widening it later is cheap.
+
+*(T5 was the third item here and is now settled — ruled **skip** by the maintainer, 2026-08-23.)*
