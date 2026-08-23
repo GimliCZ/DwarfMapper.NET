@@ -173,3 +173,29 @@ CA1852 fires on 4 sites, all the co-located `[GenerateMap]`-on-a-DTO path (`Pers
 
 Removing a consumer's extension point to win a virtual dispatch that mostly is not happening is a bad
 trade. If this is revisited, the argument to beat is the `partial` one, not the perf one.
+
+## Tooling note — Rider's inspector cannot reach emitted code
+
+`lint_files` over the emitted files returns *"File is not included in any project of the current
+solution"* for every one of them, and that is correct: they live under `obj/`, which is not a project
+item. So the ReSharper rule set — a genuinely different set from the Roslyn analyzers, and the one that
+caught the `//`-in-a-cref damage during the reformat repair — has no route to the generated output as
+things stand. Reaching it would mean compiling the emitted files as ordinary source in a throwaway audit
+project, which for test-corpus output means reproducing each consumer's own types; not obviously worth it.
+
+The Roslyn route (`generated_code = false`) IS the working mechanism and is the one that found the real
+defect, so this is a recorded limitation rather than a blocker.
+
+## Regression cover
+
+`SelfValidation/EmittedNullGuardScanTests` scans the generator's SOURCE for emitted null guards and bans
+the inline `throw new ArgumentNullException` form. A per-emitter test would not have caught the original
+defect — each emitter was self-consistent and the divergence lived BETWEEN them — so the check runs over
+the whole generator at once, which also covers a third emitter added later without anyone remembering.
+
+It carries its own anti-vacuity fact: the corpus must be real (>20 sources) and at least TWO files must
+still emit the helper form, because the ban only means something while more than one emitter writes a
+guard — that plurality is the entire reason they can drift.
+
+Proved to bite: reintroducing the inline form at ONE of `MapToGenerator`'s two sites fails the test with
+`MapToGenerator.cs:470`, then reverted.
