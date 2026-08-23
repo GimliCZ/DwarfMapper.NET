@@ -22,6 +22,74 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when an enum-bearing element pair is a pure REINTERPRET, so the array can be block-copied.
+        ///     <para>
+        ///         The scalar path is the oracle, and reading it decides this — not the layout. Enums are the one
+        ///         case where two element types can be byte-identical and still convert differently, because the
+        ///         conversion is by NAME by default:
+        ///     </para>
+        ///     <list type="bullet">
+        ///         <item>
+        ///             <b><c>ByName</c> (the default) can never blit.</b> Its emitted switch ends in
+        ///             <c>_ =&gt; throw new ArgumentOutOfRangeException(… "Unmapped enum value")</c>, and an enum
+        ///             variable may legally hold ANY value of its underlying type. A blit would pass an undefined
+        ///             value through where the scalar path throws — a behaviour change, not an optimisation.
+        ///             Per-name value identity does not rescue it: the throw is about values that match no member
+        ///             at all.
+        ///         </item>
+        ///         <item>
+        ///             <b><c>ByValue</c> with the SAME underlying type can.</b> It emits
+        ///             <c>(Tgt)TgtU.CreateChecked((SrcU)v)</c>, and <c>CreateChecked</c> from a type to itself is
+        ///             the identity — it cannot throw, and it preserves undefined values exactly as a blit does.
+        ///             Differing underlying types are a real conversion (and differ in size anyway).
+        ///         </item>
+        ///         <item>
+        ///             <b>An enum against its OWN underlying primitive can, in either direction</b>, and
+        ///             regardless of strategy: those pairs go through <c>AddEnumToNum</c> / <c>AddNumToEnum</c>,
+        ///             which are the same identity <c>CreateChecked</c>.
+        ///         </item>
+        ///     </list>
+        /// </summary>
+        public static bool CanReinterpretEnums(ITypeSymbol src, ITypeSymbol dst, EnumStrategy strategy)
+        {
+            // Identity is the existing Clone() memmove, not a reinterpret.
+            if (SymbolEqualityComparer.Default.Equals(src, dst))
+            {
+                return false;
+            }
+
+            var srcIsEnum = src.TypeKind == TypeKind.Enum;
+            var dstIsEnum = dst.TypeKind == TypeKind.Enum;
+
+            if (srcIsEnum && dstIsEnum)
+            {
+                // ByName's switch throws on a value matching no member; a blit would pass it through.
+                if (strategy != EnumStrategy.ByValue)
+                {
+                    return false;
+                }
+
+                var su = ((INamedTypeSymbol)src).EnumUnderlyingType?.SpecialType ?? SpecialType.None;
+                var du = ((INamedTypeSymbol)dst).EnumUnderlyingType?.SpecialType ?? SpecialType.None;
+                return su != SpecialType.None && su == du;
+            }
+
+            if (srcIsEnum)
+            {
+                var su = ((INamedTypeSymbol)src).EnumUnderlyingType?.SpecialType ?? SpecialType.None;
+                return su != SpecialType.None && su == dst.SpecialType;
+            }
+
+            if (dstIsEnum)
+            {
+                var du = ((INamedTypeSymbol)dst).EnumUnderlyingType?.SpecialType ?? SpecialType.None;
+                return du != SpecialType.None && du == src.SpecialType;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         ///     Explains why a pair that a caller could reasonably have expected to blit did not, but ONLY for a
         ///     genuine near-miss: a pair blocked by exactly one identifiable thing.
         ///     <para>

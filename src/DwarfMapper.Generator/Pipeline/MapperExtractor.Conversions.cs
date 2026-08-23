@@ -323,6 +323,18 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+                // R25-03: enum arrays as underlying-primitive blit. Kept separate from the struct proof above
+                // because the question is not layout — the layouts are trivially identical — but whether the
+                // SCALAR path is a reinterpret. Under ByName it is not: its switch throws on a value matching
+                // no member, and an enum may legally hold any value of its underlying type.
+                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                    collShape.SourceIsArray &&
+                    BlittableProof.CanReinterpretEnums(srcElem, tgtElem, enumPolicy.Strategy))
+                {
+                    converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
+                    return true;
+                }
+
                 // The blit was not provable. If the pair MISSED it narrowly, say so — the element loop is correct
                 // but the caller is one rename away from a block copy, and nothing else in the build reports that.
                 // Never reached for [Reinterpret] members: that branch forces the blit and returns before this
