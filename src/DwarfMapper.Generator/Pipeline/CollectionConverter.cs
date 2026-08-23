@@ -970,7 +970,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         // ─── Blit ─────────────────────────────────────────────────────────────────
 
-        /// <summary>Synthesize a reinterpret-blit array mapper (vectorized memmove with a runtime size guard).</summary>
+        /// <summary>Synthesize a reinterpret-blit array mapper (a single vectorized memmove).</summary>
         public static string SynthesizeBlit(
             Dictionary<string, SynthesizedMethod> synth,
             ITypeSymbol srcArrayType,
@@ -990,13 +990,6 @@ namespace DwarfMapper.Generator.Pipeline
             using (w.Block("private static " + elem + "[] " + name + "(" + srcFq + " src)"))
             {
                 w.Line("if (src is null) return global::System.Array.Empty<" + elem + ">();");
-                w.Line("if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + srcE + ">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + elem + ">())");
-                using (w.Indent())
-                {
-                    w.Line(
-                        "throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");");
-                }
-
                 w.Line("var __r = new " + elem + "[src.Length];");
                 w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(new global::System.ReadOnlySpan<" + srcE + ">(src)).CopyTo(__r);");
                 w.Line("return __r;");
@@ -1036,11 +1029,12 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Synthesize a reinterpret-blit for the List-involved shapes — <c>array → List</c>,
         ///     <c>List → array</c> and <c>List → List</c> — which the array-to-array gate does not reach.
         ///     <para>
-        ///         The <c>SetCount</c> hazard is handled structurally rather than by comment.
-        ///         <c>CollectionsMarshal.SetCount</c> exposes uninitialised memory until the copy completes, so
-        ///         anything that could throw in that window would be observable. The element-size guard is
-        ///         therefore emitted BEFORE <c>SetCount</c>, and nothing between it and the <c>CopyTo</c> can
-        ///         throw.
+        ///         The <c>SetCount</c> hazard is closed by CONSTRUCTION rather than by ordering.
+        ///         <c>CollectionsMarshal.SetCount</c> makes the list report a <c>Count</c> covering memory
+        ///         nothing has written yet, so anything that could throw between it and the copy would expose
+        ///         uninitialised data. Nothing in the emitted body can throw at all: there is no guard, no
+        ///         conversion and no user code between the two — only the allocation, which throws before
+        ///         <c>SetCount</c> or not at all.
         ///     </para>
         /// </summary>
         public static string SynthesizeBlitListShape(
@@ -1102,13 +1096,6 @@ namespace DwarfMapper.Generator.Pipeline
                     : "if (src is null) return " + emptyReturn + ";");
 
                 // Before SetCount, deliberately: see the remark above.
-                w.Line("if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + srcE + ">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + elem + ">())");
-                using (w.Indent())
-                {
-                    w.Line(
-                        "throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");");
-                }
-
                 w.Line("var __n = " + count + ";");
 
                 switch (target)

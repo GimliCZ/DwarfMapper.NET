@@ -22,8 +22,6 @@ public partial class M
     private static global::Demo.DstV[] __DwarfBlit_143a123f(global::Demo.SrcV[] src)
     {
         if (src is null) return global::System.Array.Empty<global::Demo.DstV>();
-        if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<global::Demo.SrcV>() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<global::Demo.DstV>())
-            throw new global::System.InvalidOperationException("DwarfMapper blit: element size mismatch");
         var __r = new global::Demo.DstV[src.Length];
         global::System.Runtime.InteropServices.MemoryMarshal.Cast<global::Demo.SrcV, global::Demo.DstV>(new global::System.ReadOnlySpan<global::Demo.SrcV>(src)).CopyTo(__r);
         return __r;

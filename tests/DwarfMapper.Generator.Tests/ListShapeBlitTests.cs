@@ -90,23 +90,32 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
-        public void Nothing_that_can_throw_sits_between_SetCount_and_the_copy()
+        public void The_blit_helper_contains_no_throwing_statement_at_all()
         {
-            // CollectionsMarshal.SetCount exposes uninitialised memory until the copy completes. A throw in
-            // that window would be observable, so the element-size guard is emitted BEFORE SetCount and the
-            // property is pinned structurally rather than left to a comment someone can delete.
+            // CollectionsMarshal.SetCount makes the list report a Count covering memory nothing has written
+            // yet, so anything that could throw between it and the copy would hand a caller uninitialised
+            // data. This used to be guaranteed by ORDERING — the element-size guard was emitted before
+            // SetCount. It is now guaranteed by CONSTRUCTION: the guard is gone (equal size follows from the
+            // layout proof, so it could only fire on a generator bug), and nothing else in the body can
+            // throw. The allocation either throws before SetCount or not at all.
+            //
+            // Asserted over the HELPER rather than the whole file, because the surrounding mapper legitimately
+            // contains ArgumentNullException.ThrowIfNull on its public entry point.
             var gen = GeneratorAssert.CompilesClean(Mapper("SrcV[]", "List<DstV>"));
 
-            var setCount = gen.IndexOf("CollectionsMarshal.SetCount", StringComparison.Ordinal);
-            var copyTo = gen.IndexOf("CopyTo", setCount, StringComparison.Ordinal);
-            Assert.True(setCount >= 0 && copyTo > setCount, "expected SetCount followed by CopyTo");
+            var start = gen.IndexOf("__DwarfBlitL_", StringComparison.Ordinal);
+            Assert.True(start >= 0, "expected a List-shape blit helper to be emitted");
+            var bodyStart = gen.IndexOf('{', gen.IndexOf("private static", start, StringComparison.Ordinal));
+            var end = gen.IndexOf("return __r;", bodyStart, StringComparison.Ordinal);
+            Assert.True(end > bodyStart, "could not bound the helper body");
 
-            var between = gen.Substring(setCount, copyTo - setCount);
-            Assert.DoesNotContain("throw", between, StringComparison.Ordinal);
+            var body = gen.Substring(bodyStart, end - bodyStart);
 
-            // …and the guard really is present, before it — otherwise the assertion above passes vacuously
-            // on a helper that never checks sizes at all.
-            Assert.Contains("Unsafe.SizeOf<", gen.Substring(0, setCount), StringComparison.Ordinal);
+            // Anti-vacuity: the slice must really be the blit, not an empty or mis-bounded region.
+            Assert.Contains("CollectionsMarshal.SetCount", body, StringComparison.Ordinal);
+            Assert.Contains("CopyTo", body, StringComparison.Ordinal);
+
+            Assert.DoesNotContain("throw", body, StringComparison.Ordinal);
         }
 
         [Fact]
