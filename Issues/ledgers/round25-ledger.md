@@ -88,6 +88,19 @@ by a longer path, and the `fixed` pinning costs a little extra (0.14x against 0.
 **Cost if wrong:** none — `CopyTo` also needs no `unsafe` block and works uniformly over an array, a
 `List<T>` span and an `ImmutableArray<T>` span, which the pointer form would not.
 
+## Ruling: `Span.CopyTo` is the copy primitive at EVERY size; no small-`n` alternative exists. 2026-08-23.
+
+Asked whether some cheaper operation serves small collections better. Measured `Unsafe.CopyBlockUnaligned`
+(raw `cpblk`) against `MemoryMarshal.Cast(...).CopyTo(...)` with the destination preallocated: `CopyTo` wins
+everywhere it differs — up to **3x** at n<=4 — and ties above ~4,096 elements. `Buffer.Memmove` has a
+small-size fast path raw `cpblk` does not.
+
+The number that matters more than the ratio: **the copy costs 3.3 ns at n=1.** The small-`n` deficit is
+therefore not in the copy at all, it is in constructing the destination. An adaptive switch between copy
+primitives would be choosing between 3.3 ns and 9.8 ns inside a ~75 ns operation.
+**Cost if wrong:** none — this closes a question rather than opening one, and it removes the premise of the
+guard debate below.
+
 ## Ruling: no small-`n` guard, on the corrected numbers. 2026-08-23.
 
 Re-measured against the shape actually emitted (fresh destination): the crossover is between **n=2 and n=4**

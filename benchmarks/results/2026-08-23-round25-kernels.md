@@ -124,6 +124,47 @@ pinning it requires costs a little extra.
 `CopyTo` matches or beats it everywhere that matters, needs no `unsafe` block, and works uniformly over an
 array, a `List<T>` span and an `ImmutableArray<T>` span. It stays.
 
+## Is there a cheaper copy primitive for SMALL collections?
+
+Asked directly, and the answer is **no — and the question turns out to be aimed at the wrong cost.**
+
+`Unsafe.CopyBlockUnaligned` (raw `cpblk`, no length recomputation, no `Memmove` dispatch ladder) is the
+obvious candidate for tiny copies. Measured against `MemoryMarshal.Cast(...).CopyTo(...)` with the
+destination allocated once, so only the copy is timed — 2,000 iterations per trial, median of 25, two runs
+that agree to within a nanosecond:
+
+| n | bytes | `Cast+CopyTo` | `CopyBlockUnaligned` | ratio |
+|---|---|---|---|---|
+| 1 | 16 | **3.3 ns** | 9.8 | 0.34x |
+| 2 | 32 | **3.3** | 9.8 | 0.34x |
+| 4 | 64 | **3.5** | 10.0 | 0.35x |
+| 16 | 256 | **6.7** | 13.2 | 0.51x |
+| 64 | 1,024 | **15.7** | 21.4 | 0.74x |
+| 256 | 4,096 | **38.3** | 44.5 | 0.86x |
+| 4,096 | 65,536 | 5,859 | 5,872 | 1.00x |
+| 262,144 | 4,194,304 | 220,440 | 208,665 | 1.06x |
+
+`CopyTo` **wins everywhere it differs**, by up to 3x at the smallest sizes, and ties above about 4,096
+elements. `Buffer.Memmove` has a small-size fast path that raw `cpblk` does not; the JIT does not turn an
+unknown-length `cpblk` into anything smarter.
+
+**The more useful finding is the absolute number: the copy costs 3.3 ns at n=1.** So the small-`n` deficit
+measured on the emitted shape is not in the copy at all — it is in constructing the destination
+(`new List<T>` + `SetCount` versus `Add`-ing into a pre-sized list). Any adaptive switch *between copy
+primitives* would be choosing between 3.3 ns and 9.8 ns inside a ~75 ns operation, which is why the
+allocation-inclusive small-`n` numbers were so noisy: they were trying to resolve a 3 ns difference underneath
+a 70 ns one.
+
+That closes the guard question from the other side. A length-gated dual path would not be selecting a better
+copy — there isn't one — it would be selecting a different *destination-construction* strategy, which is a
+different feature with a different (and much smaller) ceiling than the ratios above suggest.
+
+*(A discarded intermediate measurement is worth naming so it is not repeated: comparing these primitives with
+the allocation left INSIDE the timed region produced a table where `CopyBlock` appeared to win at every size,
+and where the `Add` baseline was non-monotonic — 56 ns at n=1 but 25 ns at n=8. Non-monotonic cost with
+increasing input is the tell that a microbenchmark is measuring something other than its subject. Isolating
+the copy reversed the result completely.)*
+
 ## What was deliberately not measured
 
 Array→array struct blit, which has shipped since Plan 15. Benchmarking it would measure the past rather than
