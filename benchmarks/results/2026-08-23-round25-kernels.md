@@ -14,19 +14,25 @@ that measurement.
 | Host | Windows 10.0.19045, 12 logical cores |
 | Runtime | .NET 10.0.1, Release, workstation GC |
 | Vectors | `Vector.IsHardwareAccelerated = true`, `Vector<byte>.Count = 32` (256-bit) |
-| Method | each candidate against its **scalar twin in the same process**, so shared noise cancels; 200 warmup iterations for tier-up, then median of 15 trials of 50 iterations |
+| Method | each candidate against its **scalar twin in the same process**, so shared noise cancels; 200 warmup iterations for tier-up, then median of 15 trials of 50 iterations. The correction under point 2 re-ran the large sizes with 21 trials and 10 inner iterations, to keep Large Object Heap traffic out of the timed region |
 | Runs | executed twice; both runs reported below where they differ materially |
 
 Ratios are the finding. Absolute nanoseconds carry machine noise and are not comparable across runs.
 
 ## Results
 
-Ratio > 1 means the fast path wins.
+Ratio > 1 means the fast path wins. All four kernels allocate their destination, which is what the generator
+emits.
+
+**The two `n=65536` cells in bold below are SUPERSEDED — do not cite them.** They were produced by a harness
+that allocated 1 MB inside the timed region, i.e. on the Large Object Heap, 50 times per trial. The
+correction under point 2 has the re-measured figures; every large size is a win. The rest of the table stands
+and was reproduced across two runs.
 
 | kernel | n=4 | n=8 | n=16 | n=32 | n=64 | n=128 | n=256 | n=1024 | n=16384 | n=65536 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| A `array → List<T>`, 16-byte struct | 1.08 / 1.00 | 1.48 / 1.55 | 1.83 / 1.82 | 2.22 | 2.66 | 2.86 | 3.61 | **13.47** | 1.23 / 1.19 | **0.93 / 0.92** |
-| B `List<T> → array`, 16-byte struct | 0.84 / 1.02 | 1.82 / 1.55 | 1.83 / 1.92 | 2.48 | 2.66 | 3.02 | 10.29 | 8.88 | 1.22 / 1.22 | **1.16 / 0.79** |
+| A `array → List<T>`, 16-byte struct | 1.08 / 1.00 | 1.48 / 1.55 | 1.83 / 1.82 | 2.22 | 2.66 | 2.86 | 3.61 | **13.47** | 1.23 / 1.19 | ~~0.93 / 0.92~~ |
+| B `List<T> → array`, 16-byte struct | 0.84 / 1.02 | 1.82 / 1.55 | 1.83 / 1.92 | 2.48 | 2.66 | 3.02 | 10.29 | 8.88 | 1.22 / 1.22 | ~~1.16 / 0.79~~ |
 | C enum array (T1, as shipped) | 0.76 / 0.82 | 1.19 / 1.60 | 1.89 / 2.35 | 2.53 | 3.33 | 4.36 | 5.44 | 6.89 | 7.91 / 9.25 | 1.39 / 1.49 |
 | D `List<T> → List<T>`, 16-byte struct | 0.95 / 0.92 | 1.82 / 1.10 | 2.16 / 2.52 | 2.63 | 2.67 | 3.55 | 3.49 | **12.44** | 1.48 / 1.94 | 1.25 / 1.15 |
 
@@ -34,18 +40,46 @@ Ratio > 1 means the fast path wins.
 
 **1. The container's `Count >= 32` List guard does not reproduce, and no guard ships.** The RFC recorded
 `Add` winning below about 32 elements and specified a threshold expressed as a `Vector<T>.Count` multiple.
-Measured here, the crossover is between **n=4 and n=8** — the blit already wins at 8 in every shape — and
-below the crossover the penalty is **tens of nanoseconds** against multi-fold gains above it. A runtime
-branch to dodge a 20 ns loss, calibrated on a constant that is wrong on at least one machine, is worse than
-no branch. Shipping unconditionally, with this measurement as the reason.
+Measured here on the shape that is actually emitted (a fresh destination), the crossover sits between
+**n=2 and n=4**: n=2 is 0.76 / 0.79x, n=4 is already 1.08 / 1.14x, and it climbs from there. So the only
+losing size is a two-element collection, at a cost of about **20 ns**.
 
-**2. The gate must target the IN-CACHE regime, not the large-n one — the plan inherited this backwards.**
-The v2 table showed large-n ratios settling at about 2x and the plan therefore specified the gate at "the
-large-n regime, ratio >= 1.5x". On this hardware that gate would **fail on green code**: at n=65536 the
-struct shapes measure 0.79–1.16x, and A reproduces *below* 1.0 across both runs. At roughly 1 MB of working
-set both arms are bandwidth-bound and the copy strategy stops mattering; it can invert. The advantage lives
-between about n=16 and n=16384, peaking in the low thousands, which is also where real DTO collections live.
-**T4's gate is therefore specified at n≈1024, not at 65536.**
+A guard would mean emitting BOTH strategies at every blittable collection site and choosing at run time —
+double the emitted code, a second path to test, and a runtime answer to "which one ran" — to recover 20 ns on
+collections of two. Declined on that trade, with the numbers above as the reason rather than a hunch.
+
+*(A note on reading the REUSE column below: it shows the blit losing badly at small n, but it describes a
+different operation — copying into an ALREADY-ALLOCATED destination. DwarfMapper does not emit that for these
+shapes; it allocates the destination, which is the ALLOC column. The REUSE numbers matter only if an
+update-into blit is ever built.)*
+
+**2. The gate targets the IN-CACHE regime, at n≈1024, where the ratio is largest and most stable.**
+The plan, following v2, had specified the gate at "the large-n regime, ratio >= 1.5x". That is the wrong
+place — not because the blit loses there, but because the ratio collapses toward 1.0 as both arms become
+memory-bandwidth-bound, leaving no headroom between a healthy result and a de-emitted fast path. A gate needs
+margin to be meaningful. At n≈1024 the measured ratio is 13–20x against a 1.5x floor; at n=65536 it is
+1.1–1.2x, where noise and a real regression are indistinguishable. **T4's gate is therefore at n≈1024.**
+
+> ### CORRECTION, same day — the large-n "inversion" was an artifact of this harness
+>
+> The first version of this file reported `array → List` at **0.93 / 0.92x** for n=65536 and concluded the
+> blit *loses* at large sizes. **That does not reproduce and should not be cited.** The cause was the harness,
+> not the code: it allocated a fresh 1 MB destination on every one of 50 inner iterations per trial. A 1 MB
+> array lands on the **Large Object Heap**, so the row was measuring LOH allocation and collection rather
+> than the copy.
+>
+> Re-measured with 21 trials and a reduced inner count, two runs, plus a REUSE arm that allocates the
+> destination once:
+>
+> | n | ALLOC (fresh destination, what is emitted) | REUSE (copy only) |
+> |---|---|---|
+> | 16,384 | 1.04 / 1.18 | 3.20 / 4.91 |
+> | 65,536 | 1.20 / 1.22 | 1.09 / 1.12 |
+> | 262,144 | 1.07 / 1.02 | 1.17 / 1.19 |
+>
+> Every large size is a win. **There is no large-n regression.** The lesson is the one this round keeps
+> relearning: a measurement that allocates inside the timed region is measuring the allocator, and above 85 KB
+> it is measuring the LOH.
 
 **3. T1's enum blit is confirmed on this hardware** — up to 9.25x at n=16384, and positive from n=8 —
 so it earns its place independently of the container's 76x claim, which was measured against a different
@@ -73,6 +107,22 @@ The correction is at the top end: the container measured 0.49x at n=65536 and co
 *never* faster. Locally a HIT there is **4.20x faster**, because at roughly 1 MB the write is the expensive
 part and skipping it avoids the bandwidth outright. So "never faster" is not quite true — it is faster only
 for very large, already-identical collections, and it remains a loss on a miss even there (0.81x).
+
+## Is `Buffer.MemoryCopy` a better primitive than `CopyTo`?
+
+Asked, and measured rather than reasoned about: **no.** `Span<T>.CopyTo` already bottoms out in the internal
+`Buffer.Memmove`, so the public unsafe route is the same primitive reached by a longer path — and the `fixed`
+pinning it requires costs a little extra.
+
+| n | scalar | via `CopyTo` | via `Buffer.MemoryCopy` |
+|---|---|---|---|
+| 2 | 1.00 | 0.19x | 0.14x |
+| 1,024 | 1.00 | **3.78x** | 3.58x |
+| 16,384 | 1.00 | 3.20x | 3.20x |
+| 262,144 | 1.00 | 1.17x | 1.19x |
+
+`CopyTo` matches or beats it everywhere that matters, needs no `unsafe` block, and works uniformly over an
+array, a `List<T>` span and an `ImmutableArray<T>` span. It stays.
 
 ## What was deliberately not measured
 

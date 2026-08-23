@@ -61,20 +61,40 @@ being interrupted.
 **Cost if wrong:** a consumer who never opens the IDE's suggestion list misses a speed-up on a mapping that
 already works. Reversible in one line — but see the Error finding above before reaching for it.
 
-## Ruling: no small-`n` guard on the List blit, against the RFC's `Count >= 32`. 2026-08-23.
-
-Measured locally: the crossover is between n=4 and n=8, not 32, and below it the penalty is tens of
-nanoseconds against multi-fold gains above. A runtime branch to dodge a 20 ns loss, calibrated on a constant
-already known wrong on one machine, costs more than it buys.
-**Cost if wrong:** a few nanoseconds on collections of four elements.
-
 ## Ruling: the perf gate sits at n=1000, not at the large size the plan inherited. 2026-08-23.
 
-The plan specified ">= 1.5x at the large-n regime". On this hardware that gate **fails on green code**: at
-n=65536 the struct shapes measure 0.79–1.16x and array→List reproduces *below* 1.0 across two runs, because
-at ~1 MB both arms are bandwidth-bound. The win lives in-cache, which is where real DTO collections live.
-**Cost if wrong:** a large-collection regression would not be caught by this gate. Accepted: the gate's
-purpose is detecting a de-emitted fast path, not measuring throughput.
+The plan specified ">= 1.5x at the large-n regime". Wrong place — a gate needs MARGIN to mean anything, and
+at large n both arms become memory-bandwidth-bound and the ratio collapses toward 1.0, where a healthy result
+and a de-emitted fast path are indistinguishable. At n≈1000 the ratio is 13–20x against a 1.5x floor.
+**Cost if wrong:** a regression specific to very large collections would not be caught here. Accepted: this
+gate exists to detect a fast path that stopped being EMITTED, not to measure throughput.
+
+**Correction to this ruling's original evidence, same day.** It first justified the placement by claiming the
+blit *loses* at n=65536 (0.92x, "reproduced across two runs"). **That was an artifact of the harness and must
+not be cited.** The harness allocated a fresh 1 MB destination inside the timed region, 50 times per trial —
+Large Object Heap traffic, not copy cost. Re-measured with the allocation moved out and 21 trials, every
+large size is a win: 1.20/1.22x at n=65536 and 1.07/1.02x at n=262144. The DECISION stands on the
+margin argument above, which never depended on the bad number; only the stated reason was wrong.
+
+Worth keeping as a methodology note, because this round produced the same class of error twice: a benchmark
+that allocates inside the timed region measures the allocator, and above 85 KB it measures the LOH.
+
+## Ruling: `Buffer.MemoryCopy` is NOT substituted for `Span.CopyTo`. 2026-08-23.
+
+Asked whether exercising the memory-copy primitive more directly would be better. Measured: no. `CopyTo`
+already bottoms out in the internal `Buffer.Memmove`, so the public unsafe route reaches the same primitive
+by a longer path, and the `fixed` pinning costs a little extra (0.14x against 0.19x at n=2; 3.58x against
+3.78x at n=1024; a tie from n=16384 up).
+**Cost if wrong:** none — `CopyTo` also needs no `unsafe` block and works uniformly over an array, a
+`List<T>` span and an `ImmutableArray<T>` span, which the pointer form would not.
+
+## Ruling: no small-`n` guard, on the corrected numbers. 2026-08-23.
+
+Re-measured against the shape actually emitted (fresh destination): the crossover is between **n=2 and n=4**
+— n=2 is 0.76/0.79x, n=4 is already 1.08/1.14x. The only losing size is a two-element collection, costing
+about **20 ns**. A guard would mean emitting BOTH strategies at every blittable collection site and choosing
+at run time: double the emitted code, a second path to test, and a runtime answer to "which one ran".
+**Cost if wrong:** ~20 ns per mapped two-element collection. Declined on that trade.
 
 ## Ruling: enum arrays blit only where the SCALAR path is itself a reinterpret. 2026-08-23.
 
