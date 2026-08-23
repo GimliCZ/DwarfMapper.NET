@@ -121,3 +121,55 @@ I21's suggested scope order ends at "eventually point it at K0's generated graph
 covered samples, consumer projects and the whole test corpus as they stand; the K0 type-graph corpus
 generates its mappers inside the compiler-test harness rather than a project, so it emits nothing to
 disk and was not analysed.
+
+## Two decisions taken on the findings
+
+### `static` on generator-owned helpers — WORTH DOING, specified here, not improvised
+
+Of the 1,066 CA1822 findings, **360 are on private helpers the generator owns outright** (the `__Dwarf`
+prefix: `__DwarfMapColl_*`, `__DwarfMapDict_*`, `__DwarfMap_Obj_*`, `__DwarfMap_Depth_Map`). The other 706
+are on consumer-shaped API (`Map` 592, `ToDto` 32, `FromDto`, `Update`, `Replace`, `Patch`) whose
+instance-ness is dictated by the consumer's own `partial` declaration and is not the generator's to change.
+
+Those 360 are a real win — no `this` argument, smaller call, better inlining — in code that runs on every
+map. It should be done. It must NOT be done by emitting `static` and seeing what breaks, because a wrong
+`static` produces code that does not compile IN A CONSUMER'S BUILD, which is the silent-emitted-CS-error
+class this repository already hunts (I5, I14, I17).
+
+A helper is static-safe only if nothing in its body binds to an instance, and the emitter currently cannot
+know that. Three inputs are missing, all at `MapEmitter.cs:222` / `:230` where `private ` is written:
+
+1. **Hooks.** `MapMethodModel` carries `BeforeHooks`/`AfterHooks` and a synthesized helper replicates the
+   pair's hooks, but `HookCall(Name, TakesSource, TargetByRef)` has no `IsStatic`. A user's `[BeforeMap]`
+   may be an instance method.
+2. **Converters.** `MemberMap.ConverterMethod` is a bare name. `Use = nameof(FormatMoney)` resolves to an
+   instance method just as easily as a static one.
+3. **Declared-pair reuse.** `NestedMappingRegistry.cs:30` states it: a helper whose element/key/value
+   resolves to a PUBLIC DECLARED method calls that method — an instance call by construction.
+
+So the work is: carry staticness for (1) and (2) on the models, and a "calls a declared member" bit for
+(3); then emit `static` iff all three say so. Both `HookCall` and `MapMethodModel` are incremental-generator
+cache keys, so the added members must participate in equality deliberately — the same care
+`EquatableArray` exists to enforce. Expect snapshot churn across most generated files, all of it one token.
+
+The honest test that this landed correctly is not "the build is green" — it is a fixture per input: an
+instance hook, an instance converter, and a declared-pair-reuse nested map, each asserting the helper is
+NOT static, plus the converse for the clean case.
+
+### `sealed` on generated types — DECIDED: NO
+
+CA1852 fires on 4 sites, all the co-located `[GenerateMap]`-on-a-DTO path (`PersonDtoMapper`,
+`ClPersonDtoMapper`). Sealing them is technically safe today and I am still declining it:
+
+* the type is emitted as `partial`, which IS an extension point — a consumer may add their own part, and
+  `sealed` on the generated part seals the whole type out from under them;
+* Gallery example 15 documents the emitted type BY NAME ("the generator emits the actual mapper into a
+  SEPARATE generated type (PersonDtoMapper), reachable via the generated `model.ToPersonDto()` extension"),
+  so it is closer to a documented surface than to an implementation detail;
+* the payoff is devirtualization on a type normally reached through a static extension method, where the
+  call is already direct;
+* and doing it safely still needs the `MapperClassModel` flag that distinguishes generator-owned types from
+  consumer partials — the same cache-key change, spent on a smaller prize.
+
+Removing a consumer's extension point to win a virtual dispatch that mostly is not happening is a bad
+trade. If this is revisited, the argument to beat is the `partial` one, not the perf one.
