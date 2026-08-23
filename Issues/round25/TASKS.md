@@ -33,6 +33,29 @@ this round is:
 > correctness proof. The perf gate trails, because a gate calibrated before there is anything to measure is
 > a constant someone invented.
 
+**3. R25-02 is mostly ALREADY SHIPPED, and the one part of it that is not shipped must never be built.**
+Found by reading the gate and its tests rather than the RFC. Evidence:
+`src/DwarfMapper.Generator/Pipeline/BlittableProof.cs`,
+`src/DwarfMapper.Generator/Pipeline/MapperExtractor.Conversions.cs:317`, and the pins in
+`tests/DwarfMapper.Generator.Tests/BlitTests.cs`.
+
+* **Distinct blittable struct pairs already blit, including nested ones.** `LayoutIdentical` recurses
+  through nested structs, and `Layout_identical_structs_blit` and `Nested_layout_identical_structs_blit`
+  pin it. The RFC's premise — "only primitive arrays hit the blit today" — is false; this landed as
+  Plan 15. **The v2 container's 35.8x "struct blit CONFIRMED" row therefore justified nothing that was not
+  already built**: it measured standalone kernels against a product gap that does not exist.
+* **The RFC's "name-independent (offsets and types, not member names)" is wrong and must be rejected.**
+  The proof requires field names to align, deliberately — the source comment says it outright: *positional
+  == name-based requires same names*. DwarfMapper maps by NAME, so a positional reinterpret is only
+  equivalent when the names line up. Making it name-independent would blit `struct A(int X, int Y)` onto
+  `struct B(int Y, int X)` and silently swap the values, which is precisely the mislinking this library
+  exists to turn into a build error. `Different_field_names_do_not_blit` pins the refusal.
+* **The name-independent behaviour the RFC asks for already exists as an explicit opt-in** —
+  `[Reinterpret]` forces the blit past the name proof, pinned by `Reinterpret_forces_blit_skipping_name_proof`.
+  A caller who genuinely wants positional semantics says so, and it is their declaration, not our guess.
+
+So **T2's real scope is the List-involved shapes only** — see the rewritten task below.
+
 ---
 
 ## Layer 0 — instruments, before any emission change
@@ -51,9 +74,19 @@ between them, and a single-size measurement picks a winner by accident.
 Payloads come from the fuzzer and fixtures, not hand-built uniform literals (standing rule: uniform data
 misrepresents branch prediction and cache behaviour alike).
 
-Output: a dated file in `benchmarks/results/`, carrying local ratios for R25-02, R25-03 and R25-06's three
-classes. **Exit criterion: a class that does not clear the bar locally does not ship, regardless of what the
-container measured.**
+Output: a dated file in `benchmarks/results/`, carrying local ratios. **Exit criterion: a class that does not
+clear the bar locally does not ship, regardless of what the container measured.**
+
+**Measure only the genuinely open paths** (correction 3 removed one of the RFC's headline rows from the
+work-list):
+
+* `SetCount` + span copy against the `Add` loop, across the small-`n` region — this is what pins the
+  threshold constant, so it is the one measurement the later gate depends on;
+* enum blit against the **actual current scalar enum loop**, not against a hand-written stand-in;
+* the R25-06 classes.
+
+Do **not** re-measure array→array struct blit. It is shipped product behaviour, so a benchmark of it
+measures the past, not a decision.
 
 ### T0-B — R25-07, the layout-equivalence gate, minting **DWARF100**
 
@@ -85,20 +118,47 @@ Neither may land before T0-B, whose gate they call.
 
 ### T1 — R25-03, enum arrays as underlying-primitive blit
 
-The largest measured win (container: up to 76x in-cache, 6.4x at bandwidth) and the simplest proof, which is
-why it goes first. Covers `Status[] → Status[]`, `Status[] → StatusDto[]` where underlying types match and
-value sets are identical, and `Status[] ↔ int[]`. These are reinterpretations, not conversions.
+The largest measured win (container: up to 76x in-cache, 6.4x at bandwidth). `BlittableProof` excludes
+`TypeKind.Enum` today, with the reason stated in the source: *by-name enum mapping != byte copy*. R25-03 is
+the case for overriding that, and it must clear two bars the RFC states too loosely.
 
-The value-set analysis **already exists** — the enum converter computes it for its diagnostics — so only the
-emission is scalar. Differing underlying types, or mismatched value sets, stay in the loop: those are
-genuine conversions.
+**Real scope.** `Status[] → Status[]` (same type) already takes the Clone/memmove path, pinned by
+`Same_type_array_still_uses_clone_not_reinterpret`, so it is NOT a win here. The genuine targets are
+**cross-type enum** pairs and **enum ↔ underlying primitive**.
 
-### T2 — R25-02, struct blit, with the `List<T>` guard
+**The RFC's predicate is unsound as written.** It says "value sets identical". That is not enough:
+`Src { A = 1, B = 2 }` and `Dst { A = 2, B = 1 }` have identical value *sets*, but by-name mapping sends
+`1 → 2` while a blit preserves `1`. The correct predicate is **per-name value identity** — for every member,
+the same name carries the same underlying value — which is the same theorem the struct proof enforces:
+positional must equal name-based. Reuse the enum converter's existing member analysis, but assert the
+stronger property.
 
-Identical sequential blittable layout on both sides, name-independent — offsets and types, not member names.
-For `List<T>` targets, `CollectionsMarshal.SetCount` plus a span copy.
+**Check before writing any code:** what the current scalar path emits for a cross-enum element when the
+source holds an **undefined** value. Enums can carry any value of their underlying type, so this is
+reachable without any cast in the caller's code. If the scalar oracle throws or substitutes on an undefined
+value, a blit that preserves it is a **semantic change** and the gate must exclude that case; if the oracle
+is a plain cast, the blit matches and there is nothing to do. Read the emission — the scalar path is the
+oracle, and this is exactly the kind of divergence that is invisible in a green test suite.
 
-Two constraints v3 extracted that are easy to lose:
+### T2 — R25-02, REWRITTEN: blit the List-involved shapes
+
+**Not** "extend blit to structs" — that shipped in Plan 15 (see correction 3). The gate at
+`MapperExtractor.Conversions.cs:317` requires `Target == Array && SourceIsArray`, so exactly three shapes
+are still scalar even when the element pair is provably blittable:
+
+* `Array → List<T>`
+* `List<T> → Array`
+* `List<T> → List<T>`
+
+Source side is `CollectionsMarshal.AsSpan(srcList)`; target side is `CollectionsMarshal.SetCount` plus a span
+copy. The element proof is **unchanged** — the existing `BlittableProof.CanReinterpret` is reused verbatim,
+never relaxed.
+
+**The name-alignment requirement STAYS.** Anyone reading the RFC will be tempted to "fix" the proof to be
+name-independent; that would be silent mislinking, and the opt-in for it (`[Reinterpret]`) already exists.
+Leave a comment at the gate saying so, because the RFC will outlive the memory of this decision.
+
+Two constraints v3 extracted that carry over unchanged:
 
 * the small-`n` guard is real — below the threshold, `Add` wins about 2x — and the threshold is expressed as
   a **`Vector<T>.Count` multiple**, following dotnet/runtime's own idiom, not as a bare `32`;
@@ -115,6 +175,14 @@ Two constraints v3 extracted that are easy to lose:
 All three ride the identical template. The load-bearing test is the **cross-nullability refusal**:
 `T?[] → T[]` must take the loud path and never blit. That single test is what fails if the gate is subtly
 wrong, so it matters more than the three positive cases combined.
+
+**The obstacle is specific, and the fix must not be a relaxation.** `BlittableProof.IsSourceSequential`
+requires the type to be declared **in source**, and the reason is sound: only for a source-declared struct
+does an absent `[StructLayout]` reliably mean the C# default of Sequential. `Guid` and `decimal` are
+metadata types and fail that check today. So the change is an explicit **well-known allowlist** —
+`System.Guid`, `System.Decimal`, and `Nullable<T>` of an allowlisted `T` with exactly matching nullability —
+punched through as named exceptions. Weakening the general in-source rule to admit them would silently admit
+every other metadata struct too, including the `[StructLayout(Auto)]` ones T0-B exists to refuse.
 
 ---
 
