@@ -152,6 +152,27 @@ So the work is: carry staticness for (1) and (2) on the models, and a "calls a d
 cache keys, so the added members must participate in equality deliberately — the same care
 `EquatableArray` exists to enforce. Expect snapshot churn across most generated files, all of it one token.
 
+**Three further blockers, found while attempting a shortcut and recorded so the next attempt does not
+spend the same hours.** The tempting move is a conservative predicate over the EXISTING model — "static iff
+no hooks and no converter and no predicate and no value-expression" — needing no new state. It does not
+hold, for three independent reasons:
+
+* **Mappers can carry injected instance state.** `DiagnosticDescriptors.cs:590` documents mappers with
+  CONSTRUCTOR DEPENDENCIES (they are excluded from ambient self-registration for exactly that reason). A
+  helper inside one may legitimately reference an injected field, and no member-level flag reveals it.
+* **The helper call graph exists only in rendered text.** `SynthesizedMethod` is `(string Name, string Code)`
+  and a collection helper calls its element helper as a plain unqualified instance call inside that string
+  (`__r[__i] = __DwarfMap_Obj_...(src[__i])`). `static` is a FIXED POINT over that graph — A can be static
+  only if everything A calls is static — and the graph is not in the model at all.
+* **`IsSynthesized` is a naming convention, not a flag.** It lives in `GeneratedNames` as a prefix rule, so
+  `ConverterMethod == null` does NOT imply "calls nothing"; nested and collection dispatch flows through
+  the name, not the field.
+
+The consequence is that the work is genuinely the model change described above, plus a call-graph edge on
+`SynthesizedMethod`, plus a `HasConstructorDependencies` bit on `MapperClassModel` — and then a fixed-point
+pass. It is a real feature with a real design, not a cleanup, and the failure mode of getting it wrong is
+code that does not compile in a CONSUMER's build.
+
 The honest test that this landed correctly is not "the build is green" — it is a fixture per input: an
 instance hook, an instance converter, and a declared-pair-reuse nested map, each asserting the helper is
 NOT static, plus the converse for the clean case.
