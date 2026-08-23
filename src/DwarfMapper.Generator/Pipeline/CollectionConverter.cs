@@ -1007,6 +1007,94 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when <paramref name="t" /> is exactly <c>List&lt;T&gt;</c>.
+        ///     <para>
+        ///         Exactly, and not an interface it implements: the blit needs
+        ///         <c>CollectionsMarshal.AsSpan</c>, which is declared on the concrete type. An
+        ///         <c>IReadOnlyList&lt;T&gt;</c> parameter may be backed by a <c>List&lt;T&gt;</c> at runtime, but
+        ///         proving that is not something the generator can do — and a type test plus a fallback would
+        ///         cost more than the copy it saves.
+        ///     </para>
+        /// </summary>
+        public static bool IsConcreteList(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { IsGenericType: true } n &&
+                   n.ConstructedFrom.ToDisplayString() == "System.Collections.Generic.List<T>";
+        }
+
+        /// <summary>
+        ///     Synthesize a reinterpret-blit for the List-involved shapes — <c>array → List</c>,
+        ///     <c>List → array</c> and <c>List → List</c> — which the array-to-array gate does not reach.
+        ///     <para>
+        ///         The <c>SetCount</c> hazard is handled structurally rather than by comment.
+        ///         <c>CollectionsMarshal.SetCount</c> exposes uninitialised memory until the copy completes, so
+        ///         anything that could throw in that window would be observable. The element-size guard is
+        ///         therefore emitted BEFORE <c>SetCount</c>, and nothing between it and the <c>CopyTo</c> can
+        ///         throw.
+        ///     </para>
+        /// </summary>
+        public static string SynthesizeBlitListShape(
+            Dictionary<string, SynthesizedMethod> synth,
+            ITypeSymbol srcCollType,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            bool sourceIsArray,
+            bool targetIsArray)
+        {
+            var elem = Fq(tgtElem);
+            var srcE = Fq(srcElem);
+            var srcFq = Fq(srcCollType);
+            var listFq = "global::System.Collections.Generic.List<" + elem + ">";
+            var ret = targetIsArray ? elem + "[]" : listFq;
+
+            var name = "__DwarfBlitL_" + StableHash.Fnv1a(srcFq + "=>" + ret);
+            if (synth.ContainsKey(name))
+            {
+                return name;
+            }
+
+            var count = sourceIsArray ? "src.Length" : "src.Count";
+            var srcSpan = sourceIsArray
+                ? "new global::System.ReadOnlySpan<" + srcE + ">(src)"
+                : "global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(src)";
+
+            var w = new CodeWriter(1);
+            using (w.Block("private static " + ret + " " + name + "(" + srcFq + " src)"))
+            {
+                w.Line(targetIsArray
+                    ? "if (src is null) return global::System.Array.Empty<" + elem + ">();"
+                    : "if (src is null) return new " + listFq + "();");
+
+                // Before SetCount, deliberately: see the remark above.
+                w.Line("if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + srcE + ">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + elem + ">())");
+                using (w.Indent())
+                {
+                    w.Line(
+                        "throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");");
+                }
+
+                w.Line("var __n = " + count + ";");
+
+                if (targetIsArray)
+                {
+                    w.Line("var __r = new " + elem + "[__n];");
+                    w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(__r);");
+                }
+                else
+                {
+                    w.Line("var __r = new " + listFq + "(__n);");
+                    w.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __n);");
+                    w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r));");
+                }
+
+                w.Line("return __r;");
+            }
+
+            synth[name] = new SynthesizedMethod(name, w.ToString());
+            return name;
+        }
+
+        /// <summary>
         ///     True when <paramref name="srcElem" />→<paramref name="tgtElem" /> is one of the seven
         ///     <c>Vector.Widen</c>-supported lossless primitive widenings (e.g. <c>int→long</c>, <c>float→double</c>).
         /// </summary>

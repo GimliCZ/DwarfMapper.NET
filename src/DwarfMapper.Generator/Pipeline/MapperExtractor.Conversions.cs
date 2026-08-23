@@ -335,6 +335,43 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+                // R25-02 (T2): the LIST-involved shapes — array→List, List→array, List→List. The element proof
+                // is the one above, reused verbatim and never relaxed; all that changes is which storage the
+                // bytes are read from and written to. Interfaces are excluded on the source side because
+                // CollectionsMarshal.AsSpan is declared on the concrete List<T>.
+                //
+                // NOT reached for array→array: that returns above. NOT gated on a minimum length either —
+                // measured locally at 2026-08-23, the crossover is between n=4 and n=8 and the sub-crossover
+                // penalty is tens of nanoseconds, so a runtime branch would cost more clarity than it buys
+                // time. The RFC's `Count >= 32` guard came from a container that this hardware does not
+                // reproduce. See benchmarks/results/2026-08-23-round25-kernels.md.
+                if (!collShape.NullAsNull)
+                {
+                    var tgtIsArray = collShape.Target == CollectionConverter.TargetKind.Array;
+                    var tgtIsListFamily = collShape.Target is CollectionConverter.TargetKind.List
+                        or CollectionConverter.TargetKind.ICollection
+                        or CollectionConverter.TargetKind.IList
+                        or CollectionConverter.TargetKind.IReadOnlyList
+                        or CollectionConverter.TargetKind.IReadOnlyCollection;
+                    var srcIsList = CollectionConverter.IsConcreteList(srcType);
+                    var elementBlits = BlittableProof.CanReinterpret(srcElem, tgtElem) ||
+                                       BlittableProof.CanReinterpretEnums(srcElem, tgtElem, enumPolicy.Strategy);
+
+                    if (elementBlits &&
+                        (collShape.SourceIsArray || srcIsList) &&
+                        (tgtIsArray || tgtIsListFamily) &&
+                        !(collShape.SourceIsArray && tgtIsArray))
+                    {
+                        converterMethod = CollectionConverter.SynthesizeBlitListShape(synthesized,
+                            srcType,
+                            srcElem,
+                            tgtElem,
+                            collShape.SourceIsArray,
+                            tgtIsArray);
+                        return true;
+                    }
+                }
+
                 // The blit was not provable. If the pair MISSED it narrowly, say so — the element loop is correct
                 // but the caller is one rename away from a block copy, and nothing else in the build reports that.
                 // Never reached for [Reinterpret] members: that branch forces the blit and returns before this
