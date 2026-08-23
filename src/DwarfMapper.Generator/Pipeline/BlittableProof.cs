@@ -73,7 +73,34 @@ namespace DwarfMapper.Generator.Pipeline
                 return false; // a managed member is a categorical refusal, not a near-miss
             }
 
-            // Layout blockers, reported in the order the proof itself checks them.
+            // SHAPE FIRST, blockers second — the order matters and the obvious order is wrong.
+            //
+            // Checking the layout blockers first looks natural (it is the order the proof itself uses) and
+            // silently breaks the scoping rule: EVERY pair of distinct metadata structs would report, however
+            // unrelated, because the metadata branch would answer before anything examined their fields. Note
+            // that `decimal` is not in IsPrimitive, so `decimal` against `Guid` is a real reachable pair — two
+            // structs with nothing in common, which would have been announced as "nearly layout-identical".
+            //
+            // GetMembers() works perfectly well on metadata symbols; the in-source restriction exists because
+            // an absent [StructLayout] is only reliable for a type we can see the source of, not because the
+            // fields are unavailable. So the shape check runs first for every pair, and a pair that is not
+            // shaped alike stays silent whatever else is true of it.
+            var fa = InstanceFields(a);
+            var fb = InstanceFields(b);
+            if (fa.Count == 0 || fa.Count != fb.Count)
+            {
+                return false; // a different shape entirely — an ordinary mapping, not a missed fast path
+            }
+
+            // Types must line up positionally for this to be a near-miss at all; if they do not, the pair is
+            // simply two different structs and the element loop is the right answer.
+            for (var i = 0; i < fa.Count; i++)
+                if (!LayoutIdentical(fa[i].Type, fb[i].Type))
+                {
+                    return false;
+                }
+
+            // Only now, with the shapes known to align, is there a fast path worth explaining the absence of.
             if (!a.Locations.Any(l => l.IsInSource))
             {
                 reason = $"'{a.Name}' is declared in metadata, so an absent [StructLayout] cannot be read as Sequential";
@@ -103,21 +130,6 @@ namespace DwarfMapper.Generator.Pipeline
                 reason = $"'{a.Name}' packs to {packA} and '{b.Name}' packs to {packB}, so the two layouts differ";
                 return true;
             }
-
-            var fa = InstanceFields(a);
-            var fb = InstanceFields(b);
-            if (fa.Count == 0 || fa.Count != fb.Count)
-            {
-                return false; // a different shape entirely — an ordinary mapping, not a missed fast path
-            }
-
-            // Types must line up positionally for this to be a near-miss at all; if they do not, the pair is
-            // simply two different structs and the element loop is the right answer.
-            for (var i = 0; i < fa.Count; i++)
-                if (!LayoutIdentical(fa[i].Type, fb[i].Type))
-                {
-                    return false;
-                }
 
             for (var i = 0; i < fa.Count; i++)
                 if (!string.Equals(fa[i].Name, fb[i].Name, StringComparison.Ordinal))

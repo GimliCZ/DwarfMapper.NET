@@ -105,6 +105,27 @@ Hard refusals to encode together with the reason, because they LOOK blittable: `
 The diagnostic is **informational** — the mapping still works. The id exists so a consumer who expected the
 fast path learns why they did not get it.
 
+**SHIPPED as `DWARF100`, narrower than the RFC specified — a deviation, recorded for ratification.** The RFC
+asked for it "whenever a pair *looks* blittable but the generator cannot prove identical layout". Built that
+way it would fire on every ordinary struct-array mapping whose members happen to differ, and an
+informational diagnostic that common gets suppressed wholesale by the first consumer who meets it — taking
+the cases worth reading down with it. So it is scoped to a genuine **near-miss**: a pair whose field counts
+or field TYPES differ is silent, because that is an ordinary mapping and not a missed fast path. Three
+blockers report, each with its remedy: non-Sequential layout, a metadata-declared struct, and misaligned
+field names.
+
+Two findings from building it, neither of which was in the RFC:
+
+* **A bare name mismatch already fails loudly as `DWARF001`, an Error** — the members cannot be mapped at
+  all — so the hint would be redundant noise beside it. The name-mismatch near-miss earns its place only
+  once `[MapProperty]` has reconciled the names and the mapping SUCCEEDS. That is the shape where the slow
+  path is genuinely invisible, and it is pinned as its own test.
+* **Shape must be checked before the layout blockers.** The natural order — blockers first, as the proof
+  itself does it — is wrong: every pair of distinct METADATA structs would report without anything having
+  looked at their fields. `decimal` is not in `IsPrimitive`, so `decimal[] → Guid[]` is a reachable pair with
+  nothing in common that announced itself as nearly layout-identical. Caught by review, not by the suite,
+  and now pinned.
+
 Five-file sync, since this mints an id and `Scan9` fails the build without the CHANGELOG entry:
 `AnalyzerReleases.Unshipped.md` · `docs/diagnostics.md` (fence-exempt, non-compiling illustration) · a
 `NegativeCases` row pinning id AND remedy wording · `CHANGELOG.md` · `docs/generated/diagnostics-index.md`.

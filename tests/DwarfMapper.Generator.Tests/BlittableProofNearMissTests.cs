@@ -124,6 +124,50 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void Two_unrelated_METADATA_structs_are_silent()
+        {
+            // The regression this exists for. The layout blockers used to be tested BEFORE the shape, so any
+            // two distinct metadata structs answered "declared in metadata" without anything having looked at
+            // their fields — and `decimal` is not in IsPrimitive, so decimal against Guid is a reachable pair
+            // of structs with nothing whatever in common that announced itself as nearly layout-identical.
+            // Shape is checked first now, and a pair that is not shaped alike stays silent whatever else is
+            // true of it.
+            const string s = """
+                             using DwarfMapper;
+                             namespace Demo;
+                             public class C { public decimal[] V { get; set; } = System.Array.Empty<decimal>(); }
+                             public class D { public System.Guid[] V { get; set; } = System.Array.Empty<System.Guid>(); }
+                             [DwarfMapper] public partial class M
+                             {
+                                 [MapProperty("V", "V", Use = nameof(Conv))]
+                                 public partial D Map(C c);
+                                 private static System.Guid[] Conv(decimal[] v) => System.Array.Empty<System.Guid>();
+                             }
+                             """;
+            Assert.False(ReportsNearMiss(s));
+        }
+
+        [Fact]
+        public void A_pack_mismatch_reports_the_near_miss()
+        {
+            // Identical names and types on both sides; only the declared packing differs, so the two layouts
+            // genuinely are not the same bytes. Its own branch, so its own test.
+            const string s = """
+                             using System.Runtime.InteropServices;
+                             using DwarfMapper;
+                             namespace Demo;
+                             [StructLayout(LayoutKind.Sequential, Pack = 1)]
+                             public struct SrcV { public byte A; public int X; }
+                             [StructLayout(LayoutKind.Sequential, Pack = 4)]
+                             public struct DstV { public byte A; public int X; }
+                             public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                             public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                             [DwarfMapper] public partial class M { public partial D Map(C c); }
+                             """;
+            Assert.True(ReportsNearMiss(s));
+        }
+
+        [Fact]
         public void A_managed_element_is_silent()
         {
             // A reference field is a categorical refusal, not a near-miss: no rename or attribute brings this
