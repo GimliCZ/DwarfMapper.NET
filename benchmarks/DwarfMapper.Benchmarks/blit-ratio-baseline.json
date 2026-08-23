@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "Round 25 T4 - the blit ratio gate. Each pinned pair names one FAST scenario (a blit emission) and",
+    "its SCALAR TWIN: the same shape, same payload, same process, whose element type is declared",
+    "[StructLayout(Auto)] so the layout is unprovable and the element loop is emitted instead. Same bytes",
+    "moved, different strategy.",
+    "",
+    "WHAT THIS GATE IS. It is a STRUCTURAL check wearing a stopwatch, not a performance measurement. It",
+    "answers one question: is the fast path still being emitted at all? A blit that stopped being emitted",
+    "collapses its pair to roughly 1.0x and fails here. That is the regression this round can actually",
+    "suffer - a proof tightened, a shape dropped from the gate, an emitter refactored - and nothing else",
+    "in the suite would notice, because the OUTPUT stays correct either way. That is what makes a silent",
+    "performance regression silent.",
+    "",
+    "WHY A RATIO, NEVER AN ABSOLUTE TIME. On a shared runner a 2% absolute gate yields roughly 45% false",
+    "positives, and holding a 1% false-positive rate needs about a 7% threshold. A same-process ratio",
+    "cancels the contention both arms feel equally. This also keeps faith with the house rule that smoke",
+    "TIMINGS are non-gates: no absolute time is asserted here, and the floor is set far below the measured",
+    "margin precisely so ShortRun noise cannot reach it.",
+    "",
+    "WHY n=1000 AND NOT LARGER. Measured locally 2026-08-23 (benchmarks/results/2026-08-23-round25-kernels.md):",
+    "at n=65536 both arms are memory-bandwidth-bound and the ratio collapses toward 1.0 - array->List",
+    "reproduced BELOW 1.0 across two runs. A gate at the large size would fail on green code. The win lives",
+    "in-cache, which is also where real DTO collections live.",
+    "",
+    "ONE PAIR PER EMITTER, deliberately: SynthesizeBlit (array->array, which the enum-array blit also uses)",
+    "and SynthesizeBlitListShape (array->List, which the List and ImmutableArray shapes also use). Covering",
+    "every shape would add runtime without adding reach.",
+    "",
+    "UPDATE PROTOCOL. Same as the allocation baseline: the floor moves only to a value measured in the same",
+    "commit, with the reason. Raising it after a real improvement is the normal move. Lowering it demands an",
+    "explanation of what got slower and why that is acceptable."
+  ],
+  "measuredWith": {
+    "date": "2026-08-23",
+    "host": "Windows 10.0.19045, 12 logical cores",
+    "mode": "DWARF_BENCH_SMOKE=1 (ShortRun), N=1000",
+    "note": "measured ratios were 2.35x (array) and 3.31x (list); the floor sits well below both so that ShortRun noise cannot reach it"
+  },
+  "minRatio": 1.5,
+  "pairs": {
+    "array_blit": { "fast": "BlitRatio_Array_Fast", "scalar": "BlitRatio_Array_Scalar", "measured": 2.35 },
+    "list_blit": { "fast": "BlitRatio_List_Fast", "scalar": "BlitRatio_List_Scalar", "measured": 3.31 }
+  }
+}

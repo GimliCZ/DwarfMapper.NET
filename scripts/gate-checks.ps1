@@ -221,6 +221,67 @@ function Remove-PlantedMutants {
     }
 }
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Blit ratio gate (round 25 T4). Reads the SAME smoke report the allocation gate reads and checks that
+# each blit emission still beats its scalar twin.
+#
+# This is a STRUCTURAL check wearing a stopwatch. It does not measure performance and does not assert any
+# absolute time - which is what keeps it honest against the house rule that smoke TIMINGS are non-gates.
+# It answers one question: is the fast path still being emitted? A blit that stopped being emitted
+# collapses its pair to roughly 1.0x. Nothing else in the suite would catch that, because the mapping
+# stays CORRECT either way - which is exactly what makes a performance regression silent.
+#
+# A separate function so it can be driven against a doctored report without paying for a ~7-minute run.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-BlitRatiosHold {
+    param(
+        [Parameter(Mandatory)][string]$ReportPath,
+        [Parameter(Mandatory)][string]$BaselinePath
+    )
+    if (-not (Test-Path $ReportPath)) {
+        throw "blit ratio: no JSON report at $ReportPath - the run produced no parseable results"
+    }
+    $baseline = Get-Content -Raw -LiteralPath $BaselinePath | ConvertFrom-Json
+    $report = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
+    $failures = @()
+
+    $mean = @{}
+    foreach ($b in @($report.Benchmarks)) {
+        if ($null -ne $b.Statistics) { $mean[$b.Method] = [double]$b.Statistics.Mean }
+    }
+
+    foreach ($pair in @($baseline.pairs.PSObject.Properties)) {
+        $fast = $pair.Value.fast
+        $scalar = $pair.Value.scalar
+        # Vacuity guard: a renamed or deleted scenario must FAIL the gate, never fall silently out of it.
+        if (-not $mean.ContainsKey($fast)) {
+            $failures += "blit ratio: '$($pair.Name)' fast arm '$fast' is missing from the report - the gate cannot see it"
+            continue
+        }
+        if (-not $mean.ContainsKey($scalar)) {
+            $failures += "blit ratio: '$($pair.Name)' scalar arm '$scalar' is missing from the report - the gate cannot see it"
+            continue
+        }
+        if ($mean[$fast] -le 0) {
+            $failures += "blit ratio: '$fast' reported a non-positive mean - it crashed or was skipped"
+            continue
+        }
+        $ratio = $mean[$scalar] / $mean[$fast]
+        if ($ratio -lt $baseline.minRatio) {
+            $failures += ("blit ratio: $($pair.Name) is {0:F2}x, floor is {1:F2}x. The blit is no longer " -f $ratio, $baseline.minRatio) +
+                          "beating its scalar twin, which usually means the fast path stopped being EMITTED " +
+                          "for this shape - check the proof gate before assuming the machine is noisy."
+        }
+        else {
+            Write-Host ("   {0}: {1:F2}x (floor {2:F2}x)" -f $pair.Name, $ratio, $baseline.minRatio) -ForegroundColor DarkGray
+        }
+    }
+
+    if ($failures.Count) { throw ($failures -join "`n") }
+    Write-Host "   blit ratio gate: every pinned pair still beats its scalar twin" -ForegroundColor Green
+}
+
+
 function Assert-NoMutatedProductBinaries {
     param(
         [Parameter(Mandatory)][string]$Leg,

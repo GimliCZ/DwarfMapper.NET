@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 using AutoMapper;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
@@ -153,6 +154,41 @@ public sealed class BlitDst
     public Vec3Dst[] Items { get; set; } = Array.Empty<Vec3Dst>();
 }
 
+// ── Round 25 T4: the SCALAR TWIN, so the blit can be measured against what it replaced ────────────────
+// Same member names and types as Vec3Dst, so it maps cleanly by name — but declared [StructLayout(Auto)],
+// which lets the runtime reorder fields and therefore makes the layout unprovable. The blit is refused and
+// the element loop is emitted instead: the SAME bytes moved by a different strategy, which is exactly the
+// comparison the ratio gate needs. Competitor libraries are not involved — this measures one emission
+// against its own alternative, in one process, so shared machine noise cancels.
+//
+// Renaming the members would have been the obvious way to defeat the proof, and it is wrong: it defeats the
+// MAPPING too (DWARF001), so the mapper generates nothing and the "scalar" arm would measure an empty
+// method. Auto layout defeats only the fast path.
+[StructLayout(LayoutKind.Auto)]
+public struct Vec3Ren
+{
+    public float X { get; set; }
+
+    public float Y { get; set; }
+
+    public float Z { get; set; }
+}
+
+public sealed class BlitScalarDst
+{
+    public Vec3Ren[] Items { get; set; } = Array.Empty<Vec3Ren>();
+}
+
+public sealed class BlitListDst
+{
+    public List<Vec3Dst> Items { get; set; } = [];
+}
+
+public sealed class BlitListScalarDst
+{
+    public List<Vec3Ren> Items { get; set; } = [];
+}
+
 // Primitive widening array (int[] → long[]) → DwarfMapper emits Vector.Widen; competitors copy element-by-element.
 public sealed class WidenSrc
 {
@@ -303,6 +339,15 @@ public partial class DwarfM
 
     public partial SetDst MapSet(SetSrc s); // int[] → HashSet<int>
     public partial ImmDst MapImmutable(ImmSrc s); // int[] → ImmutableArray<int>
+
+    // Round 25 T4 — the four halves of the two ratio pairs. Each *Blit method takes a reinterpret; each
+    // *Scalar method is the same shape with renamed members, so the by-name proof fails and the element
+    // loop is emitted. One pair per blit EMITTER: SynthesizeBlit (array→array, which enum arrays also use)
+    // and SynthesizeBlitListShape (array→List, which List and ImmutableArray shapes also use).
+    public partial BlitListDst MapBlitList(BlitSrc s);
+
+    public partial BlitScalarDst MapBlitScalar(BlitSrc s);
+    public partial BlitListScalarDst MapBlitListScalar(BlitSrc s);
 }
 
 // ── Mapperly (compile-time source gen) ────────────────────────────────────────
@@ -560,6 +605,40 @@ public class MapperBenchmarks
     public ListDst List_AutoMapper()
     {
         return _auto.Map<ListDst>(_list);
+    }
+
+    // ── Round 25 T4: blit vs its OWN scalar twin, same process, same payload ──
+    //
+    // The gate reads these four. Ratios, never absolute times: on a shared runner a 2% absolute gate yields
+    // roughly 45% false positives, while a same-process ratio cancels the contention both arms feel. Pinned
+    // at N=1000, the in-cache regime — NOT at large n, where both arms are bandwidth-bound and the ratio
+    // collapses toward 1.0 (measured locally: at n=65536 array→List runs BELOW 1.0).
+    [Benchmark]
+    [BenchmarkCategory("BlitRatio")]
+    public BlitDst BlitRatio_Array_Fast()
+    {
+        return _dwarf.MapBlit(_blit);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("BlitRatio")]
+    public BlitScalarDst BlitRatio_Array_Scalar()
+    {
+        return _dwarf.MapBlitScalar(_blit);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("BlitRatio")]
+    public BlitListDst BlitRatio_List_Fast()
+    {
+        return _dwarf.MapBlitList(_blit);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("BlitRatio")]
+    public BlitListScalarDst BlitRatio_List_Scalar()
+    {
+        return _dwarf.MapBlitListScalar(_blit);
     }
 
     // ── Blittable struct array (DwarfMapper's SIMD reinterpret vs element copy) ──

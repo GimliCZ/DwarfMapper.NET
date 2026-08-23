@@ -491,6 +491,12 @@ try {
         Assert-BenchAllocationsPinned `
             -ReportPath (Join-Path $benchResults 'MapperBenchmarks-report-full.json') `
             -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/allocation-baseline.json')
+        # Round 25 T4. Reads the same report: no extra run, and it catches the one regression the
+        # allocation gate structurally cannot see — a blit that stopped being emitted. The output stays
+        # correct when that happens, so only a comparison against the scalar twin notices.
+        Assert-BlitRatiosHold `
+            -ReportPath (Join-Path $benchResults 'MapperBenchmarks-report-full.json') `
+            -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/blit-ratio-baseline.json')
     }
 
     if ($Mutation) {
