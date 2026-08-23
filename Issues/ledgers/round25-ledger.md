@@ -101,6 +101,29 @@ primitives would be choosing between 3.3 ns and 9.8 ns inside a ~75 ns operation
 **Cost if wrong:** none — this closes a question rather than opening one, and it removes the premise of the
 guard debate below.
 
+## Ruling: the destination stays a ZEROED allocation; `GC.AllocateUninitializedArray` is refused. 2026-08-23.
+
+Considered because the small-`n` cost lives in constructing the destination, not in the copy, and
+`new TDst[n]` returns a zeroed array that the blit then overwrites whole — paying for bytes it immediately
+destroys. `GC.AllocateUninitializedArray<T>` skips that.
+
+Refused on two grounds, in this order:
+
+1. **The measurement does not support it.** Allocation-inclusive, therefore in the noisy regime this round
+   learned to distrust — and the baseline came out NON-MONOTONIC (29.6 ns at n=4, 76.0 at n=16, 39.5 at
+   n=64), which is the repo's own tell for a benchmark measuring something other than its subject. The
+   apparent wins (1.19-1.39x at the top end) sit beside an apparent 0.94x loss at n=16384 and 0.35x at n=4.
+   No trustworthy signal.
+2. **It converts a performance detail into a safety invariant, which is the decisive reason.** Uninitialized
+   memory contains whatever the heap last held. The blit overwrites the whole array today, so it is correct
+   today — but that becomes LOAD-BEARING with nothing guarding it, and any future early-return, partial copy
+   or length mismatch would leak other objects' bytes to the consumer. That is an information-disclosure
+   hazard traded for an unproven few percent.
+
+**Cost if wrong:** a zero-fill we do not need on large destinations. Cheap to revisit if it is ever measured
+properly — but it would need a guard proving the copy covers the whole allocation, and that guard costs more
+than the zeroing it saves.
+
 ## Ruling: no small-`n` guard, on the corrected numbers. 2026-08-23.
 
 Re-measured against the shape actually emitted (fresh destination): the crossover is between **n=2 and n=4**
