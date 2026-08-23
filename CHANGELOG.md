@@ -40,6 +40,28 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **The blittable fast path now covers enum arrays, the `List<T>` shapes, and `ImmutableArray<T>`.** Until
+  now the single-block copy required an array on *both* sides, so provably-identical elements still went
+  through an element-by-element loop the moment a `List<T>` was involved. Three additions, all behind the
+  same generation-time proof and all falling back to the element loop when it cannot be completed:
+
+  - **`array → List<T>`, `List<T> → array`, `List<T> → List<T>`** — and with them the whole interface
+    family, since `IList<T>`, `IReadOnlyList<T>`, `ICollection<T>` and `IReadOnlyCollection<T>` all
+    materialise to `List<T>`. Measured locally at 2.35x–3.31x against the element loop for a 1,000-element
+    collection of 16-byte structs. An *interface* on the source side is refused: reading the storage needs
+    `CollectionsMarshal.AsSpan`, which is declared on the concrete `List<T>`.
+  - **`ImmutableArray<T>`**, in both directions, via `ImmutableCollectionsMarshal`. The result always wraps a
+    freshly allocated array — never the source's own — because sharing one buffer between two immutable
+    values would make "immutable" false.
+  - **Enum arrays**, but only where the conversion is genuinely a reinterpret: `EnumStrategy.ByValue` over
+    the same underlying type, or an enum against its own underlying primitive. **The default `ByName`
+    strategy is deliberately excluded** — its emitted switch throws `ArgumentOutOfRangeException` on a value
+    matching no member, and an enum may legally hold any value of its underlying type, so a block copy would
+    pass such a value through where the mapping rejects it. That is a behaviour change, not an optimisation.
+
+  Nothing about *what* your mappings produce changes; this only affects how the bytes get there. Where the
+  proof fails, `DWARF100` below will now often tell you why.
+
 - **`DWARF100` — an array pair narrowly missed the blittable fast path (Info).** A pair of arrays came within
   one identifiable step of the block-copy fast path and took the element-by-element loop instead, silently.
   The three blockers it reports are a layout that is not `Sequential` (`Auto` lets the runtime reorder fields,

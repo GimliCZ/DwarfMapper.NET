@@ -51,6 +51,29 @@ between about n=16 and n=16384, peaking in the low thousands, which is also wher
 so it earns its place independently of the container's 76x claim, which was measured against a different
 scalar baseline and should not be quoted.
 
+## R25-04 skip-if-identical (T5), measured separately
+
+Compare-then-skip against an unconditional copy, 16-byte structs. HIT = the destination already holds the
+same bytes; MISS = it differs in the **last** element, the worst case for the scan. Ratio > 1 means
+compare-then-skip wins.
+
+| n | copy ns | HIT ns | ratio HIT | MISS ns | ratio MISS |
+|---|---|---|---|---|---|
+| 16 | 84 | 110 | 0.76 | 114 | 0.74 |
+| 256 | 124 | 326 | 0.38 | 374 | 0.33 |
+| 1,024 | 294 | 1,042 | **0.28** | 1,210 | 0.24 |
+| 16,384 | 13,550 | 15,214 | 0.89 | 23,354 | 0.58 |
+| 65,536 | 74,198 | 17,672 | **4.20** | 92,026 | 0.81 |
+
+**This confirms the RFC's retraction and corrects it in one place.** Through the entire range a real mapper
+operates in — tens to low thousands of elements — comparing first is a **loss even when it succeeds**,
+bottoming out at 0.28x. `SequenceEqual` reads two streams where `CopyTo` reads one and writes one.
+
+The correction is at the top end: the container measured 0.49x at n=65536 and concluded skip-if-identical is
+*never* faster. Locally a HIT there is **4.20x faster**, because at roughly 1 MB the write is the expensive
+part and skipping it avoids the bandwidth outright. So "never faster" is not quite true — it is faster only
+for very large, already-identical collections, and it remains a loss on a miss even there (0.81x).
+
 ## What was deliberately not measured
 
 Array→array struct blit, which has shipped since Plan 15. Benchmarking it would measure the past rather than

@@ -299,6 +299,34 @@ therefore ships opt-in, documented so that the **cost is stated in the same brea
 feature documented as a speed-up when it is measurably a slow-down is precisely the kind of claim this
 repository exists to prevent.
 
+### OUTCOME 2026-08-23: NOT SHIPPED — recommended for the maintainer to overrule if they disagree
+
+**This section previously committed to shipping it. Two facts found by probing before building changed the
+picture, and both are the kind of fact that is supposed to change a plan.**
+
+**1. Its stated justification is already largely served.** Update-into assigns a collection member
+wholesale — `dst.Member = <new collection>` — which is what dirties a tracked entity. But
+`[MapCollectionKey]` (G6) already exists and does the opposite: it **keeps the existing list instance** and
+upserts into it by key. For the same-element-type `List<T>` members that EF navigation properties actually
+are, the "don't dirty unchanged entities" story is therefore already available, under an option that also
+does something useful on a miss. R25-04 would add a second, overlapping way to ask for it.
+
+**2. The cost is worse than the RFC knew, in exactly the range that matters.** Measured locally — see
+`benchmarks/results/2026-08-23-round25-kernels.md` — comparing first is a loss **even on a hit** from n=16
+through n=16,384, bottoming out at **0.28x** around a thousand elements. The one place it wins is a hit at
+n=65,536 (**4.20x**), where skipping a megabyte of writes beats paying for them; the container had measured
+0.49x there and concluded "never faster", which is wrong at the top end and right everywhere else.
+
+So the feature would be: new public attribute surface, overlapping an existing option, to buy a 3.5x
+slowdown in the common case and a win only for very large already-identical collections. **Declining is the
+better engineering call, and it is the same evidence-driven outcome this round already reached for R25-01
+and R25-06.**
+
+**This is flagged for ratification rather than closed unilaterally**, because unlike those two the plan had
+already said "ships". If the EF semantics are wanted for the non-keyed and cross-element-type cases that
+`[MapCollectionKey]` cannot reach, say so and it gets built — the measurement above is what its
+documentation must carry, and the n≥65,536 band is where it should be recommended rather than warned about.
+
 ---
 
 ## Parked
