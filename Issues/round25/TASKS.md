@@ -197,6 +197,24 @@ All three ride the identical template. The load-bearing test is the **cross-null
 `T?[] → T[]` must take the loud path and never blit. That single test is what fails if the gate is subtly
 wrong, so it matters more than the three positive cases combined.
 
+**OUTCOME: no allowlist. Measured first, and the cases worth having already work.** `LayoutIdentical`
+returns true immediately for two IDENTICAL types, so a `decimal` field against a `decimal` field, or a
+`Guid` against a `Guid`, never reaches the in-source check at all — only the TOP-LEVEL element type must be
+source-declared. So the realistic shape the RFC was reaching for, a DTO struct carrying a money and an
+identifier, has always blitted. Same-type element pairs (`Guid[] → Guid[]`) are identity and already take
+the `Clone()` memmove, which is the same `Buffer.Memmove` underneath.
+
+What is left is exotic — an element type that IS a metadata struct paired with a *different*, layout-aligned
+type. Buying that would mean punching a hole in the in-source rule, which is the safety property T0-B rests
+on, for a shape nobody has asked for. **Declined**, on the same reasoning as `sealed` in round 24: a real
+safety rule is not worth weakening for a hypothetical gain.
+
+What DID come out of the task is coverage. The short-circuit was load-bearing and accidental — nothing
+stopped a future tightening of the recursion from silently dropping every DTO that carries a `decimal` or a
+`Guid` — so `BlitMetadataFieldTests` now pins it, along with the cross-nullability refusal and a `DateTime`
+look-alike refusal.
+
+*(For the record, the original obstacle analysis, which still governs if anyone revisits this.)*
 **The obstacle is specific, and the fix must not be a relaxation.** `BlittableProof.IsSourceSequential`
 requires the type to be declared **in source**, and the reason is sound: only for a source-declared struct
 does an absent `[StructLayout]` reliably mean the C# default of Sequential. `Guid` and `decimal` are
