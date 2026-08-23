@@ -58,6 +58,24 @@ So **T2's real scope is the List-involved shapes only** — see the rewritten ta
 
 ---
 
+## Status at round close — 2026-08-23
+
+| task | outcome |
+|---|---|
+| **T0-A** measure locally | DONE — `benchmarks/results/2026-08-23-round25-kernels.md`; overturned two inherited constants |
+| **T0-B** layout-equivalence gate | DONE — `DWARF100`, scoped to a near-miss (**ratify**) |
+| **T1** enum blit | DONE — `ByValue`/underlying only; `ByName` refused on the oracle |
+| **T2** List-involved shapes | DONE — array→List, List→array, List→List, plus the whole interface family |
+| **T3** metadata allowlist | DECLINED on measurement; the short-circuit it relied on is now pinned |
+| **T4** standing perf gate | DONE — ratio gate at n=1000, sabotage-proven both directions |
+| **T5** skip-if-identical | NOT SHIPPED (**ratify** — this plan had said "ships") |
+| **T6** park checked narrowing | DONE — emitted-source pin, with a control |
+| **T7** `ImmutableArray<T>` | DONE — both directions, fresh-array wrap pinned |
+
+Suite 8,040 → 8,112. Solution 0 errors / 0 warnings, samples included. Rulings and their cost-if-wrong:
+`Issues/ledgers/round25-ledger.md`. **One question still open for the maintainer: the `bool[]`
+non-normalization contract at the foot of this file.**
+
 ## Layer 0 — instruments, before any emission change
 
 The house rule, learned six times over: a product fix graded by a broken instrument produces a green result

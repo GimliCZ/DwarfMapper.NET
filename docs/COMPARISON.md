@@ -50,7 +50,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | Update-into-existing | ✅ `void/T Map(s, dest)` | ✅ | ✅ `Adapt(s,dest)` | ✅ `Map(s,dest)` |
 | **Zero-alloc `Span<T>` mapping** | ✅ | ❌ | ❌ | ❌ |
 | **Async streaming `IAsyncEnumerable`** | ✅ | ❌ | ✅ | ❌ |
-| **Blittable bulk-copy (reinterpret) fast-path** | ✅ `MemoryMarshal.Cast` memmove | ❌ | ❌ | ❌ |
+| **Blittable bulk-copy (reinterpret) fast-path** | ✅ `MemoryMarshal.Cast` memmove — arrays, `List<T>`, `ImmutableArray<T>`, enum arrays | ❌ | ❌ | ❌ |
 | **SIMD primitive-widening (`int[]`→`long[]`)** | ✅ `Vector.Widen` | ❌ | ❌ | ❌ |
 | **Completeness = build error** | ✅ `DWARF001` (always) | diagnostics | ❌ | `AssertConfigurationIsValid()` (test-time) |
 | **Source-member coverage (unused-source check)** | ✅ `RequiredMapping=Both` → `DWARF039` (opt-in); `[MapIgnoreSource]` | ✅ `RMG020` | ❌ | ✅ (validates) |
@@ -256,9 +256,17 @@ dotnet run -c Release --project benchmarks/DwarfMapper.Benchmarks
 
 DwarfMapper has **two** SIMD fast-paths that no competitor offers:
 
-1. **Blittable bulk copy** — a layout-identical `TSrc[]`→`TDst[]` is reinterpreted as a single
+1. **Blittable bulk copy** — a layout-identical element pair is reinterpreted as a single
    `MemoryMarshal.Cast` block copy behind a JIT-folded size guard; the runtime lowers that memmove to the
-   widest available vector instructions automatically (struct-array case at memcpy speed).
+   widest available vector instructions automatically (struct-array case at memcpy speed). It is not limited
+   to `TSrc[]`→`TDst[]`: **`List<T>` on either side** (and therefore `IList<T>`, `IReadOnlyList<T>`,
+   `ICollection<T>` and `IReadOnlyCollection<T>`, which all materialise to `List<T>`), **`ImmutableArray<T>`
+   in both directions**, and **enum arrays** all take it when the proof holds. Enum arrays qualify only where
+   the conversion is genuinely a reinterpret — `EnumStrategy.ByValue` over the same underlying type, or an
+   enum against its own underlying primitive — because the default by-name mapping *throws* on a value
+   matching no member and a block copy would pass such a value through instead.
+   `Dictionary<K,V>` and `HashSet<T>` cannot join them: their entries live in a private nested struct with no
+   public span over it, so no layout can be proven without reflection.
 2. **SIMD widening** (shipped) — a lossless primitive widen array (`int[]`→`long[]`, `short[]`→`int[]`,
    `byte[]`→`ushort[]`, `float[]`→`double[]`, and the unsigned/sbyte variants — the seven
    `System.Numerics.Vector.Widen` pairs) is vectorized with `Vector.Widen` behind a
