@@ -28,14 +28,38 @@ blit `struct A(int X, int Y)` onto `struct B(int Y, int X)` and silently swap th
 **Cost if wrong:** none — the behaviour the RFC asked for already ships as the explicit `[Reinterpret]`
 opt-in, so a caller who wants positional semantics can still say so, in their own declaration.
 
-## Ruling: DWARF100 is scoped to a NEAR-MISS, narrower than the RFC. 2026-08-23. **RATIFY**
+## Ruling: DWARF100 is scoped to a NEAR-MISS, narrower than the RFC. 2026-08-23.
 
 R25-07 asked for a diagnostic "whenever a pair looks blittable but cannot be proven". Built that way it fires
 on every ordinary struct-array mapping whose members differ, and a hint that common is suppressed wholesale
 by the first consumer who meets it — taking the cases worth reading with it. Scoped instead to pairs blocked
 by exactly one identifiable thing; differing field counts or types stay silent.
-**Cost if wrong:** a consumer with an unusual shape gets no hint. Cheap to widen — it is Info severity, and
-the classifier is one function.
+**Cost if wrong:** a consumer with an unusual shape gets no hint. Cheap to widen — the classifier is one
+function.
+
+## Ruling: DWARF100 stays **Info**. 2026-08-23. Severity was reconsidered twice and the answer did not move.
+
+The maintainer's requirement was stated plainly — *"don't force user, but give him suggestion"* — and asked
+first for Warning, then for Error. Both were attempted; neither delivers that requirement, for reasons found
+by building rather than by arguing:
+
+* **Warning is advisory only until someone enables `TreatWarningsAsErrors`**, at which point it forces. Not
+  hypothetical: flipping the severity broke THIS repository's own build, because the T4 scalar-twin struct is
+  deliberately `[StructLayout(Auto)]` and therefore a genuine near-miss. A consumer with a perfectly correct
+  mapping would have had to add a `NoWarn` line to keep building. That is the trap `DWARF070` sprang once.
+* **Error is categorically worse here, and the reason is specific to this generator.**
+  `MapperClassModel.HasBlockingError` is `Diagnostics.Any(d => d.IsError && !d.ScopedToMethod)`, and a
+  blocking error SUPPRESSES EMISSION. So an Error on DWARF100 would not merely fail a build — a mapping that
+  is completely correct, and merely copies element-by-element instead of in one block, would generate **no
+  code at all**, collapsing the consumer's build into `DWARF078` plus a `CS8795` cascade. A performance hint
+  would delete the feature it is hinting about.
+
+Info is the only severity in Roslyn that keeps "suggest, do not force" unconditionally. The visibility
+problem that made Warning tempting is real and is answered where it belongs — `docs/howto/deploy-and-optimize.md`
+names DWARF100 in the fast-path section, so somebody tuning a hot path finds it by looking rather than by
+being interrupted.
+**Cost if wrong:** a consumer who never opens the IDE's suggestion list misses a speed-up on a mapping that
+already works. Reversible in one line — but see the Error finding above before reaching for it.
 
 ## Ruling: no small-`n` guard on the List blit, against the RFC's `Count >= 32`. 2026-08-23.
 
@@ -110,12 +134,33 @@ logical order.
 
 ---
 
+## Ruling: `bool` non-normalization is pinned as an EQUIVALENCE, not as a value. 2026-08-23.
+
+The plan posed this as a binary — pin the non-normalization as documented behaviour, or normalize and give up
+the blit for `bool`-bearing types. Measuring first showed a third answer is the right one.
+
+**Measured** (.NET 10.0.1, x64, Release): a `bool` holding byte 2 survives *every* path unchanged — the
+element loop, the block copy, a plain `bool[]` loop, and even a box/unbox round trip. The two emitted
+strategies do not diverge, so this was never a correctness question. *(Also measured, and contrary to what
+one would expect: `weird == true` evaluates TRUE, because the JIT lowers `x == true` to `x != 0`. The odd
+byte is invisible even to equality.)*
+
+So the tests pin **that the two paths agree**, across bytes 0, 1, 2 and 0xFF — and deliberately do NOT pin a
+particular byte value. The C# specification says nothing about non-canonical bools; preserving byte 2 is
+current JIT behaviour, not something DwarfMapper is in a position to promise. Pinning the value would turn an
+implementation detail of .NET into a contract owed to consumers forever. Pinning the agreement catches what
+would actually be a defect — the two paths drifting apart, which is exactly how a future JIT change would
+surface.
+**Cost if wrong:** none identified. The weaker pin cannot fail for a reason that is not a real divergence.
+
+---
+
 ## Still open for the maintainer
 
-1. **`bool[]` non-normalization.** A blit and the element loop both preserve a non-0/1 byte, but pinning that
-   with a test turns it into an observable contract. Pin it as documented behaviour, or normalize and give up
-   the blit. Unanswered since the plan was written.
-2. **`DWARF100`'s near-miss scoping**, which is narrower than R25-07 specified. Info severity and one
-   function, so widening it later is cheap.
+Nothing. Every item raised during round 25 is now decided and recorded:
 
-*(T5 was the third item here and is now settled — ruled **skip** by the maintainer, 2026-08-23.)*
+* **T5 skip-if-identical** — ruled **skip** by the maintainer.
+* **`DWARF100` severity** — **Info**, after Warning and Error were both attempted and found to break the
+  stated requirement.
+* **`DWARF100` near-miss scoping** — narrower than R25-07, on the noise argument.
+* **`bool` non-normalization** — pinned as an equivalence.

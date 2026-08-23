@@ -63,7 +63,7 @@ So **T2's real scope is the List-involved shapes only** — see the rewritten ta
 | task | outcome |
 |---|---|
 | **T0-A** measure locally | DONE — `benchmarks/results/2026-08-23-round25-kernels.md`; overturned two inherited constants |
-| **T0-B** layout-equivalence gate | DONE — `DWARF100`, scoped to a near-miss (**ratify**) |
+| **T0-B** layout-equivalence gate | DONE — `DWARF100`, Info, scoped to a near-miss |
 | **T1** enum blit | DONE — `ByValue`/underlying only; `ByName` refused on the oracle |
 | **T2** List-involved shapes | DONE — array→List, List→array, List→List, plus the whole interface family |
 | **T3** metadata allowlist | DECLINED on measurement; the short-circuit it relied on is now pinned |
@@ -72,9 +72,13 @@ So **T2's real scope is the List-involved shapes only** — see the rewritten ta
 | **T6** park checked narrowing | DONE — emitted-source pin, with a control |
 | **T7** `ImmutableArray<T>` | DONE — both directions, fresh-array wrap pinned |
 
-Suite 8,040 → 8,112. Solution 0 errors / 0 warnings, samples included. Rulings and their cost-if-wrong:
-`Issues/ledgers/round25-ledger.md`. **One question still open for the maintainer: the `bool[]`
-non-normalization contract at the foot of this file.**
+Suite 8,040 → 8,117. Solution 0 errors / 0 warnings, samples included. Full nightly battery green —
+deep suite, coverage floors, ILVerify, benchmark smoke with allocation pins 17/45 exact, and the new blit
+ratio gate. Rulings and their cost-if-wrong: `Issues/ledgers/round25-ledger.md`.
+
+**Nothing is left open for the maintainer.** T5 was ruled skip; `DWARF100`'s severity settled at Info after
+Warning and Error were both attempted and measured against the stated requirement; the `bool` question is
+answered at the foot of this file.
 
 ## Layer 0 — instruments, before any emission change
 
@@ -384,8 +388,13 @@ any-lane-out-of-range mask, falling to the scalar loop only on a nonzero mask.
 * **Explicit pathspec on every commit.** No `git commit -a`, no `git add .`.
 * **No push without explicit per-instance approval.**
 
-## Open question for the maintainer
+## The open question, now answered
 
-`bool[]` blits are semantically identical to the loop — a non-0/1 byte is preserved either way — but the
-**non-normalization** becomes an observable contract the moment a test pins it. Worth deciding deliberately
-rather than inheriting: pin it as documented behaviour, or normalize and give up the blit.
+`bool[]` non-normalization is **settled as an equivalence** (2026-08-23). Measured: a `bool` holding byte 2
+survives the element loop, the block copy, a `bool[]` loop and a box/unbox round trip unchanged — the two
+emitted strategies never diverge, so this was never a correctness question.
+
+`BoolBlitEquivalenceRuntimeTests` therefore pins **that the two paths agree** over bytes 0, 1, 2 and 0xFF,
+and deliberately does not pin a byte value: the C# specification says nothing about non-canonical bools, so
+preserving byte 2 is the JIT's behaviour rather than a promise DwarfMapper can make. The weaker pin still
+catches the only thing that would be a defect — the two paths drifting apart.
