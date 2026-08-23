@@ -205,6 +205,50 @@ metadata types and fail that check today. So the change is an explicit **well-kn
 punched through as named exceptions. Weakening the general in-source rule to admit them would silently admit
 every other metadata struct too, including the `[StructLayout(Auto)]` ones T0-B exists to refuse.
 
+### T7 — `ImmutableArray<T>`, the one other collection with a public route to its storage
+
+**NEW, maintainer question 2026-08-23: "can Dictionary and the other ICollection/IDictionary formats blit
+too?"** The API surface was probed rather than recalled, and the answer splits three ways. Two of them are
+already tasks; this is the third.
+
+`ImmutableCollectionsMarshal` exposes `AsArray`, `AsImmutableArray` and `AsMemory` — public, safe, zero-copy
+access to the backing array in both directions. `ImmutableArray<T>` is already a `TargetKind`, so a provable
+element pair can go: unwrap to `T[]`, blit into a fresh array, re-wrap. It is the array theorem plus two
+wrapper calls, and it reuses `BlittableProof` untouched.
+
+The re-wrap must take a **freshly allocated** array and never the source's own, or two immutable values would
+share storage — which for an immutable type is a correctness bug, not an optimisation.
+
+### The refusals, recorded so round 26 does not re-ask
+
+**`Dictionary<K,V>` and `HashSet<T>`: no, and not merely "not yet".** Four independent reasons, in order of
+how final they are:
+
+1. **No public span over the storage.** `CollectionsMarshal` offers exactly `AsSpan(List<T>)`,
+   `SetCount(List<T>)`, `AsBytes(BitArray)`, and per-key `GetValueRefOrNullRef` /
+   `GetValueRefOrAddDefault` for dictionaries. There is no dictionary or set equivalent of `AsSpan`.
+2. **The storage is a private nested `Entry` struct** — measured: `Dictionary<int,int>` holds `int[] _buckets`
+   plus `Entry[] _entries`, and `HashSet<T>` the same pair. `Entry`'s layout is an implementation detail, not
+   a contract, so a blit over it is a layout assumption that **cannot be proven** — exactly what T0-B exists
+   to refuse. Reaching it needs reflection or unsafe punning, which collides with the project's
+   accessibility-and-no-reflection commitment and with AOT/trim safety.
+3. **Hash codes are baked into the entries.** Change the key type and every stored hash is wrong. Keep the
+   key type and comparer and the dictionary is the same dictionary — territory the BCL copy constructor
+   already fast-paths.
+4. So the achievable dictionary win is a different feature entirely: **not rehashing** when key type and
+   comparer are unchanged. That is not exposed publicly either.
+
+**`Queue<T>` and `Stack<T>`: no.** Both hold a private `T[] _array` with no marshal accessor, and `Queue<T>`
+additionally wraps head-to-tail, so its backing array is not even contiguous in logical order.
+
+**The `ICollection` family needs nothing of its own.** `IList<T>`, `IReadOnlyList<T>`, `ICollection<T>`,
+`IReadOnlyCollection<T>` and `IEnumerable<T>` all materialise to `List<T>`, so **T2 covers all of them in one
+go** — that is the answer to the "other ICollection formats" half of the question.
+
+*(Noted in passing: `CollectionsMarshal.AsBytes(BitArray)` is a public byte span over a `BitArray`. Not a
+task — DwarfMapper does not map `BitArray` — but it is the only other blittable surface the BCL hands out,
+so it is worth knowing it exists before someone asks a third time.)*
+
 ---
 
 ## Layer 3 — the standing perf gate
