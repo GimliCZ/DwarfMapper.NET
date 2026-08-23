@@ -467,7 +467,7 @@ namespace DwarfMapper.Generator.Registry
                         if (model.SourceCanBeNull)
                         {
                             w.Line(
-                                "if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
+                                "global::System.ArgumentNullException.ThrowIfNull(source);");
                         }
 
                         foreach (var t in model.Targets)
@@ -486,7 +486,7 @@ namespace DwarfMapper.Generator.Registry
                             if (model.SourceCanBeNull)
                             {
                                 w.Line(
-                                    "if (source is null) throw new global::System.ArgumentNullException(nameof(source));");
+                                    "global::System.ArgumentNullException.ThrowIfNull(source);");
                             }
 
                             w.Line("return new " + t.TargetFqn);

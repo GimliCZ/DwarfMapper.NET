@@ -2,6 +2,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
+        <!-- Round-24 / I21 pilot: emit the generator's output so it can be read and analysed. Debug only.
+             This property does NOT by itself make analyzers read the files - see .editorconfig. -->
+        <EmitCompilerGeneratedFiles Condition="'$(Configuration)' == 'Debug'">true</EmitCompilerGeneratedFiles>
+        <CompilerGeneratedFilesOutputPath Condition="'$(Configuration)' == 'Debug'">$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
         <IsPackable>false</IsPackable>
         <RootNamespace>CleanCorpus</RootNamespace>
         <!-- CA1707: test methods intentionally use underscores -->

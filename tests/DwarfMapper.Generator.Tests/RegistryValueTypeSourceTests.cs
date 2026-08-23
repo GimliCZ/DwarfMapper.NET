@@ -75,9 +75,16 @@ namespace DwarfMapper.Generator.Tests
             // The other direction. A class source is reachable from callers with no nullable annotations at all,
             // so the ArgumentNullException is contract rather than decoration — deleting the guard outright would
             // have turned the struct cells green and quietly removed it. Two methods, two guards.
+            //
+            // The FORM is ArgumentNullException.ThrowIfNull, not an inline `if (source is null) throw`, and that
+            // is pinned deliberately rather than incidentally: round 24 found the [MapTo] emitter still writing
+            // the inline form while MapEmitter had moved to the throw-helper, so one product emitted two idioms
+            // for one contract. Nothing could see it — both compile, and a snapshot pins whatever it is given.
+            // Counting the helper form here is what keeps the two emitters from drifting apart again.
             var generated = GeneratorTestHarness.RunMapToWithSource(ClassSource).GeneratedSource;
 
-            Assert.Equal(2, CountOccurrences(generated, "if (source is null) throw"));
+            Assert.Equal(2, CountOccurrences(generated, "ArgumentNullException.ThrowIfNull(source)"));
+            Assert.DoesNotContain("if (source is null) throw", generated, StringComparison.Ordinal);
         }
 
         /// <summary>
