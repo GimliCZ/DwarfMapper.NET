@@ -189,6 +189,21 @@ public sealed class BlitListScalarDst
     public List<Vec3Ren> Items { get; set; } = [];
 }
 
+// Round 26: a VALUE-element List destination with an element conversion (int → long). The existing List
+// category uses REFERENCE elements, where allocating the destination objects dominates and the fill strategy
+// cannot show through; this is the shape where it can. DwarfMapper fills through
+// CollectionsMarshal.SetCount + a span, skipping List.Add's per-element _version++, capacity check and
+// _size++; the competitors Add element-by-element.
+public sealed class NumListSrc
+{
+    public int[] V { get; set; } = Array.Empty<int>();
+}
+
+public sealed class NumListDst
+{
+    public List<long> V { get; set; } = [];
+}
+
 // Primitive widening array (int[] → long[]) → DwarfMapper emits Vector.Widen; competitors copy element-by-element.
 public sealed class WidenSrc
 {
@@ -337,6 +352,7 @@ public partial class DwarfM
     [MapProperty(nameof(NmSrc.Name), nameof(NmDst.Name), NullSubstitute = "")]
     public partial NmDst MapNullMismatch(NmSrc s); // string? → string via NullSubstitute (DWARF070 shape)
 
+    public partial NumListDst MapNumList(NumListSrc s); // int[] → List<long> (value-element span fill)
     public partial SetDst MapSet(SetSrc s); // int[] → HashSet<int>
     public partial ImmDst MapImmutable(ImmSrc s); // int[] → ImmutableArray<int>
 
@@ -363,6 +379,7 @@ public partial class MapperlyM
     public partial FlOrderDto MapFlatten(FlOrder s); // Mapperly auto-flattens Customer.Name → CustomerName
     public partial EnumDst MapEnum(EnumSrc s);
     public partial DictDst MapDict(DictSrc s);
+    public partial NumListDst MapNumList(NumListSrc s);
 }
 
 [MemoryDiagnoser]
@@ -385,6 +402,7 @@ public class MapperBenchmarks
     private NestedSrc _nested = null!;
     private NmSrc _nm = null!;
     private SeqSrc _seq = null!;
+    private NumListSrc _numList = null!;
     private SetSrc _set = null!;
     private WidenSrc _widen = null!;
 
@@ -449,6 +467,11 @@ public class MapperBenchmarks
         {
             V = RealisticPayloads.Elements<int>(N, 11)
         };
+        // Distinct salt (12) so this draw is not a correlated copy of the Set/Imm draws above.
+        _numList = new NumListSrc
+        {
+            V = RealisticPayloads.Elements<int>(N, 12)
+        };
 
         // Fail loudly if the draw came back degenerate. Without this, a change to the factory's probabilities
         // (or an unlucky seed) would silently restore the old flat distribution while every benchmark still
@@ -467,6 +490,7 @@ public class MapperBenchmarks
             c.CreateMap<FlOrder, FlOrderDto>(); // AutoMapper auto-flattens Customer.Name → CustomerName
             c.CreateMap<EnumSrc, EnumDst>();
             c.CreateMap<DictSrc, DictDst>();
+            c.CreateMap<NumListSrc, NumListDst>();
         });
         _auto = cfg.CreateMapper();
     }
@@ -605,6 +629,38 @@ public class MapperBenchmarks
     public ListDst List_AutoMapper()
     {
         return _auto.Map<ListDst>(_list);
+    }
+
+    // ── Round 26: value-element List destination (int[] → List<long>) ──
+    // The existing List category uses REFERENCE elements, where allocating the destination objects dominates
+    // and the fill strategy cannot show through. Here the elements are values, so what is measured is the
+    // fill itself: DwarfMapper writes through a span after SetCount; the others Add element-by-element.
+    [Benchmark]
+    [BenchmarkCategory("NumList")]
+    public NumListDst NumList_Dwarf()
+    {
+        return _dwarf.MapNumList(_numList);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("NumList")]
+    public NumListDst NumList_Mapperly()
+    {
+        return _mapperly.MapNumList(_numList);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("NumList")]
+    public NumListDst NumList_Mapster()
+    {
+        return _numList.Adapt<NumListDst>();
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("NumList")]
+    public NumListDst NumList_AutoMapper()
+    {
+        return _auto.Map<NumListDst>(_numList);
     }
 
     // ── Round 25 T4: blit vs its OWN scalar twin, same process, same payload ──

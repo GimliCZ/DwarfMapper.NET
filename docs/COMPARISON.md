@@ -219,8 +219,17 @@ vary by hardware; **relative ordering is the point — reproduce locally with th
 | Nested | 11.5 ns | 10.3 ns | 20.5 ns | 58.4 ns | — |
 | Array (1000 objects) | 4.55 µs | 4.47 µs | 5.82 µs | 5.26 µs | — |
 | **Blit (1000 structs)** † | **0.59 µs** | 1.08 µs | 1.11 µs | 1.18 µs | — |
+| **Value-element list (`int[]`→`List<long>`, 1000)** ‡ | **0.69 µs** | 0.99 µs | 0.99 µs | 2.73 µs | — |
 | **Widen (1000 int→long)** | **0.35 µs** | 0.43 µs | 0.69 µs | 0.72 µs | — |
 | Allocations (all scenarios) | = hand-written | = | = | = | baseline |
+
+`‡` **Value-element list, measured 2026-08-23** (Windows, AMD Ryzen 5 5600, .NET 10.0.1, DefaultJob, one run,
+standard error +/- 11 ns). DwarfMapper fills the destination through `CollectionsMarshal.SetCount` + a span;
+the others `Add` element-by-element, paying `_version++`, a capacity check that cannot fail and `_size++` per
+element. **Allocations are identical to Mapperly and Mapster (8,112 B)** — the gap is fill efficiency, not
+memory. Note the contrast with the reference-element `List` row above, where DwarfMapper is *behind* Mapster:
+there the cost of allocating a thousand destination objects dominates and the fill strategy cannot show
+through, which is why the optimisation is deliberately restricted to value elements.
 
 `†` **Flat and Blit re-measured this session** (Linux, AMD Ryzen 5 5600, .NET 10.0.1 DefaultJob, tight
 error bars): on Flat, hand-written (6.7 ns), DwarfMapper (6.7 ns) and Mapperly (6.9 ns) are statistically

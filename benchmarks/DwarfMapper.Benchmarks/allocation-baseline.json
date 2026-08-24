@@ -25,7 +25,9 @@
     "count plus the per-row Statistics/Memory presence check is what makes 'every benchmark still runs'",
     "mechanical rather than hoped.",
     "",
-    "2026-08-23 (round 25 T4): four BlitRatio_* scenarios added, 41 -> 45 benchmarks. They are the two blit-vs-scalar-twin pairs the ratio gate reads. Their allocation pins are recorded here like any other DwarfMapper scenario, but note what the ~4 KB gap between each Fast and Scalar arm is and is NOT: the Scalar arm's element type is [StructLayout(Auto)], which the runtime pads from 12 to 16 bytes, so the gap measures PADDING, not the copy strategy. That is precisely why the ratio gate reads TIMES rather than bytes for this comparison - allocations would look like a difference while measuring the wrong thing."
+    "2026-08-23 (round 25 T4): four BlitRatio_* scenarios added, 41 -> 45 benchmarks. They are the two blit-vs-scalar-twin pairs the ratio gate reads. Their allocation pins are recorded here like any other DwarfMapper scenario, but note what the ~4 KB gap between each Fast and Scalar arm is and is NOT: the Scalar arm's element type is [StructLayout(Auto)], which the runtime pads from 12 to 16 bytes, so the gap measures PADDING, not the copy strategy. That is precisely why the ratio gate reads TIMES rather than bytes for this comparison - allocations would look like a difference while measuring the wrong thing.",
+    "",
+    "2026-08-23 (round 26): four NumList_* scenarios added, 45 -> 49 benchmarks. int[] -> List<long>, the shape where the value-element span fill can show through \u2014 the existing List category uses REFERENCE elements, where allocating the destination objects dominates and the fill strategy is invisible. Only NumList_Dwarf is pinned; the three competitor rows are informational like every other competitor row. Note the pin EQUALS Mapperly's and Mapster's 8,112 B: the win here is fill efficiency, not allocation, which is exactly why it needed a timing comparison rather than the allocation gate to surface."
   ],
   "measuredWith": {
     "sdk": "10.0.101",
@@ -35,7 +37,7 @@
     "tree": "d7b60cd4ae425dfc735b66622c50f5e8f0babfdb plus the T8 smoke config committed together with this file",
     "job": "ShortRun via DWARF_BENCH_SMOKE=1, N=1000, seed RealisticPayloads.Seed=20260724"
   },
-  "totalBenchmarks": 45,
+  "totalBenchmarks": 49,
   "pins": {
     "Flat_Dwarf": 40,
     "Nested_Dwarf": 112,
@@ -53,7 +55,8 @@
     "BlitRatio_Array_Fast": 12048,
     "BlitRatio_Array_Scalar": 16048,
     "BlitRatio_List_Fast": 12112,
-    "BlitRatio_List_Scalar": 16112
+    "BlitRatio_List_Scalar": 16112,
+    "NumList_Dwarf": 8112
   },
   "unstable": {}
 }
