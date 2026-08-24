@@ -220,6 +220,7 @@ vary by hardware; **relative ordering is the point — reproduce locally with th
 | Array (1000 objects) | 4.55 µs | 4.47 µs | 5.82 µs | 5.26 µs | — |
 | **Blit (1000 structs)** † | **0.59 µs** | 1.08 µs | 1.11 µs | 1.18 µs | — |
 | **Value-element list (`int[]`→`List<long>`, 1000)** ‡ | **0.69 µs** | 0.99 µs | 0.99 µs | 2.73 µs | — |
+| **Nested graph, mixed fills (50 lines + value collections)** ‡ | **0.91 µs** | 1.81 µs | 1.14 µs | 2.11 µs | — |
 | **Widen (1000 int→long)** | **0.35 µs** | 0.43 µs | 0.69 µs | 0.72 µs | — |
 | Allocations (all scenarios) | = hand-written | = | = | = | baseline |
 
@@ -230,6 +231,14 @@ element. **Allocations are identical to Mapperly and Mapster (8,112 B)** — the
 memory. Note the contrast with the reference-element `List` row above, where DwarfMapper is *behind* Mapster:
 there the cost of allocating a thousand destination objects dominates and the fill strategy cannot show
 through, which is why the optimisation is deliberately restricted to value elements.
+
+**Read the nested row carefully — it is not a fill-strategy number.** That graph mixes both strategies in one
+map (reference-element `Lines` on the `Add` path, value-element `Totals` and per-line `Quantities` on the
+span fill) and measures the whole mapping, including allocating fifty nested destination objects. Its gap
+against Mapperly (900 ns) is far larger than the isolated value-element gap (257 ns) despite containing
+FEWER value elements, so most of that lead comes from elsewhere in the graph mapping, not from the fill —
+Mapperly also allocates more there (9,456 B against 8,112 B). The `int[]→List<long>` row is the isolation;
+the nested row is what a realistic order-shaped map looks like.
 
 `†` **Flat and Blit re-measured this session** (Linux, AMD Ryzen 5 5600, .NET 10.0.1 DefaultJob, tight
 error bars): on Flat, hand-written (6.7 ns), DwarfMapper (6.7 ns) and Mapperly (6.9 ns) are statistically

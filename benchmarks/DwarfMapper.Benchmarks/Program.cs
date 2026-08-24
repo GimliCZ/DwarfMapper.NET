@@ -204,6 +204,42 @@ public sealed class NumListDst
     public List<long> V { get; set; } = [];
 }
 
+// Round 26: a REALISTIC nested graph that mixes both fill strategies in one map — an order whose Lines are
+// reference elements (Add path) and whose Totals and per-line Quantities are value elements (span fill). The
+// flat NumList category shows the fill strategy in isolation; this shows what is left of it once the cost of
+// allocating the nested destination objects is in the same measurement.
+public sealed class NfLine
+{
+    public string? Sku { get; set; } = "";
+
+    public int[] Quantities { get; set; } = Array.Empty<int>();
+}
+
+public sealed class NfOrder
+{
+    public int Id { get; set; }
+
+    public List<NfLine> Lines { get; set; } = [];
+
+    public int[] Totals { get; set; } = Array.Empty<int>();
+}
+
+public sealed class NfLineDto
+{
+    public string? Sku { get; set; } = "";
+
+    public List<long> Quantities { get; set; } = [];
+}
+
+public sealed class NfOrderDto
+{
+    public int Id { get; set; }
+
+    public List<NfLineDto> Lines { get; set; } = [];
+
+    public List<long> Totals { get; set; } = [];
+}
+
 // Primitive widening array (int[] → long[]) → DwarfMapper emits Vector.Widen; competitors copy element-by-element.
 public sealed class WidenSrc
 {
@@ -353,6 +389,7 @@ public partial class DwarfM
     public partial NmDst MapNullMismatch(NmSrc s); // string? → string via NullSubstitute (DWARF070 shape)
 
     public partial NumListDst MapNumList(NumListSrc s); // int[] → List<long> (value-element span fill)
+    public partial NfOrderDto MapNestedFill(NfOrder s); // nested graph mixing both fill strategies
     public partial SetDst MapSet(SetSrc s); // int[] → HashSet<int>
     public partial ImmDst MapImmutable(ImmSrc s); // int[] → ImmutableArray<int>
 
@@ -380,6 +417,7 @@ public partial class MapperlyM
     public partial EnumDst MapEnum(EnumSrc s);
     public partial DictDst MapDict(DictSrc s);
     public partial NumListDst MapNumList(NumListSrc s);
+    public partial NfOrderDto MapNestedFill(NfOrder s);
 }
 
 [MemoryDiagnoser]
@@ -402,6 +440,7 @@ public class MapperBenchmarks
     private NestedSrc _nested = null!;
     private NmSrc _nm = null!;
     private SeqSrc _seq = null!;
+    private NfOrder _nestedFill = null!;
     private NumListSrc _numList = null!;
     private SetSrc _set = null!;
     private WidenSrc _widen = null!;
@@ -472,6 +511,13 @@ public class MapperBenchmarks
         {
             V = RealisticPayloads.Elements<int>(N, 12)
         };
+        // A graph rather than a flat draw: 50 lines each owning a short value collection, plus a value
+        // collection on the root. Uneven per-line lengths so a shared index would desynchronise.
+        _nestedFill = new NfOrder { Id = 1, Totals = RealisticPayloads.Elements<int>(64, 13) };
+        for (var i = 0; i < 50; i++)
+        {
+            _nestedFill.Lines.Add(new NfLine { Sku = "s" + i.ToString(System.Globalization.CultureInfo.InvariantCulture), Quantities = RealisticPayloads.Elements<int>(i % 7, 14 + i) });
+        }
 
         // Fail loudly if the draw came back degenerate. Without this, a change to the factory's probabilities
         // (or an unlucky seed) would silently restore the old flat distribution while every benchmark still
@@ -491,6 +537,8 @@ public class MapperBenchmarks
             c.CreateMap<EnumSrc, EnumDst>();
             c.CreateMap<DictSrc, DictDst>();
             c.CreateMap<NumListSrc, NumListDst>();
+            c.CreateMap<NfLine, NfLineDto>();
+            c.CreateMap<NfOrder, NfOrderDto>();
         });
         _auto = cfg.CreateMapper();
     }
@@ -661,6 +709,35 @@ public class MapperBenchmarks
     public NumListDst NumList_AutoMapper()
     {
         return _auto.Map<NumListDst>(_numList);
+    }
+
+    // ── Round 26: nested graph, both fill strategies in one map ──
+    [Benchmark]
+    [BenchmarkCategory("NestedFill")]
+    public NfOrderDto NestedFill_Dwarf()
+    {
+        return _dwarf.MapNestedFill(_nestedFill);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("NestedFill")]
+    public NfOrderDto NestedFill_Mapperly()
+    {
+        return _mapperly.MapNestedFill(_nestedFill);
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("NestedFill")]
+    public NfOrderDto NestedFill_Mapster()
+    {
+        return _nestedFill.Adapt<NfOrderDto>();
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("NestedFill")]
+    public NfOrderDto NestedFill_AutoMapper()
+    {
+        return _auto.Map<NfOrderDto>(_nestedFill);
     }
 
     // ── Round 25 T4: blit vs its OWN scalar twin, same process, same payload ──
