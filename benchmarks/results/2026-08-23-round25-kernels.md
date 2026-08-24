@@ -165,6 +165,45 @@ and where the `Add` baseline was non-monotonic — 56 ns at n=1 but 25 ns at n=8
 increasing input is the tell that a microbenchmark is measuring something other than its subject. Isolating
 the copy reversed the result completely.)*
 
+## Instruction-level analysis — the measurement that actually resolved things
+
+Run with BenchmarkDotNet's `DisassemblyDiagnoser`, after timing had been exhausted as an instrument.
+**`Code Size` is deterministic where timing is not** — the same property that makes the allocation gate
+honest. On the run below the timings carried +/- 861 ns of error on a 516 ns mean; the code sizes are exact.
+
+| method | time | native code size |
+|---|---|---|
+| blit, no guard (as emitted today) | 516.5 ns | **900 B** |
+| blit, with the old size guard | 483.8 ns | **957 B** |
+| element loop (what a non-provable pair gets) | 6,150 ns | 443 B |
+
+Ratio blit-to-element-loop: **11.97x** at n=1000, measured same-process against a declared baseline. That is
+the cleanest version of this round's headline number.
+
+**The copy is optimal and needs no further work.** `MemoryMarshal.Cast`'s length recomputation —
+`length * sizeof(TFrom) / sizeof(TTo)` — folds to two instructions with NO division:
+
+```
+lea  r8,[r8+r8*2]   ; n*3
+shl  r8,2           ; n*12  = byte count
+call SpanHelpers.Memmove
+```
+
+**Correction, recorded because it was stated wrongly elsewhere: the deleted size guard did NOT fully fold
+away.** The comparison did — no `cmp` on `SizeOf` survives — but the THROW BLOCK remained: three
+instructions, **57 bytes**, six percent of the method, cold and never executed but present in every blit
+helper in every consumer's binary. The justification for deleting it was always design correctness; this is
+what it cost in machine code.
+
+**What remains is `List<T>`'s own bookkeeping, not ours,** and it is O(1) rather than O(n): `_version++`, a
+capacity check that cannot fail, `_items` reloaded twice because the write barrier defeats CSE, an `AsSpan`
+bounds check that cannot fail, and the backing array being zeroed by `NEWARR` before being overwritten
+whole. About ten instructions against a 12,000-byte `Memmove`. Removing them would mean not using
+`List<T>`, which exposes no public "wrap this array" API.
+
+For contrast the element loop pays roughly **sixteen instructions per element**, including a call, a
+`_version++` and a capacity check — which is where the 11.97x comes from.
+
 ## What was deliberately not measured
 
 Array→array struct blit, which has shipped since Plan 15. Benchmarking it would measure the past rather than
