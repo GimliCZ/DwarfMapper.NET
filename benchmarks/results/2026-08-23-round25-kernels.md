@@ -204,6 +204,37 @@ whole. About ten instructions against a 12,000-byte `Memmove`. Removing them wou
 For contrast the element loop pays roughly **sixteen instructions per element**, including a call, a
 `_version++` and a capacity check — which is where the 11.97x comes from.
 
+## The "regression" that was not one — run composition, not code
+
+Chased because the logic was right: if the code is optimal and provably unchanged, a slower benchmark means
+something really did change, and "noise" is a label rather than an explanation.
+
+What changed was **how the run was composed**, and the effect is large:
+
+| run | `Blit_Dwarf` | error |
+|---|---|---|
+| master, measured inside a 25-benchmark sweep | **393 ns** | +/- 861 ns on the sweep's means |
+| master, measured in an isolated 4-benchmark run | **479.9 ns** | +/- 12.8, SD 36.4 |
+| round 25, measured in an isolated 4-benchmark run | **463.4 ns** | +/- 9.2, SD 13.7 |
+
+Same commit, same machine, same afternoon: **393 against 480 for identical code**, an 18% swing attributable
+entirely to what else was in the run. And measured the SAME way, master and round 25 are statistically
+indistinguishable, with round 25 nominally ahead.
+
+Three separate conclusions in this file were drawn from cross-composition comparisons and are retracted by
+this measurement: that the guard removal cost 17%, that round 25 made `Blit` slower than master, and that
+the machine was drifting. None of them survive matched conditions.
+
+**The rule this yields, which is the durable part:** a benchmark number is only comparable to another number
+produced by the SAME run composition. Not the same machine, not the same day — the same run. Anything else
+is comparing two different experiments. The repository already encodes this correctly in two places, and
+both look better in hindsight: the allocation gate reads bytes rather than times, and the round-25 ratio gate
+measures both arms inside a single process so composition cancels by construction.
+
+Corollary for anyone re-measuring: filter to the categories you care about and keep the filter constant
+across the runs you intend to compare. A number from `--anyCategories Blit` cannot be compared with the same
+benchmark's number from a full sweep.
+
 ## What was deliberately not measured
 
 Array→array struct blit, which has shipped since Plan 15. Benchmarking it would measure the past rather than
