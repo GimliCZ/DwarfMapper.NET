@@ -346,7 +346,8 @@ namespace DwarfMapper.Generator.Pipeline
                 shape,
                 identity,
                 threadCtx,
-                registerBeforeFill);
+                registerBeforeFill,
+                tgtElem.IsValueType);
 
             synth[name] = new SynthesizedMethod(name, w.ToString());
             return name;
@@ -390,7 +391,8 @@ namespace DwarfMapper.Generator.Pipeline
                 shape,
                 false,
                 true,
-                false);
+                false,
+                tgtElem.IsValueType);
             synth[existingName] = new SynthesizedMethod(existingName, w.ToString());
         }
 
@@ -407,7 +409,8 @@ namespace DwarfMapper.Generator.Pipeline
             Shape shape,
             bool identity,
             bool threadCtx,
-            bool registerBeforeFill)
+            bool registerBeforeFill,
+            bool tgtElemIsValueType)
         {
             switch (shape.Target)
             {
@@ -440,7 +443,8 @@ namespace DwarfMapper.Generator.Pipeline
                         identity,
                         shape.NullAsNull,
                         threadCtx,
-                        registerBeforeFill);
+                        registerBeforeFill,
+                        tgtElemIsValueType);
                     break;
 
                 case TargetKind.HashSet:
@@ -675,7 +679,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool identity,
             bool nullAsNull,
             bool threadCtx,
-            bool registerBeforeFill)
+            bool registerBeforeFill,
+            bool tgtElemIsValueType)
         {
             var listFq = "global::System.Collections.Generic.List<" + elem + ">";
             var retFq = nullAsNull ? listFq + "?" : listFq;
@@ -706,9 +711,42 @@ namespace DwarfMapper.Generator.Pipeline
                     // Pre-size from the known source count (CapacityArg) so large lists don't repeatedly
                     // double+copy their backing array — same rationale as the array/dictionary paths.
                     w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("var __r = new " + listFq + "(" + CapacityArg(shape) + ");");
-                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
-                    w.Line("return __r;");
+
+                    var capacity = CapacityArg(shape);
+
+                    // ── SetCount + span fill ───────────────────────────────────────────────────────────
+                    // The list is already pre-sized, so Add can never grow it — yet every element still pays
+                    // Add's bookkeeping: _version++, an _items reload, a capacity check that CANNOT fail, and
+                    // _size++. Writing through the span skips all four. Measured 1.44-1.61x for value
+                    // elements; see Issues/round26/FINDING-list-fill-strategy.md.
+                    //
+                    // Restricted to VALUE element types, and that restriction is measured rather than assumed:
+                    // for reference elements the win is zero (1.00x, then 0.92x on a second run) because
+                    // allocating the destination objects dominates, so the extra emitted code buys nothing.
+                    //
+                    // SAFETY. SetCount makes the list report a Count over memory nothing has written yet, and
+                    // unlike the blit the element expression here is arbitrary generated code that CAN throw —
+                    // CreateChecked overflow, an unmapped enum, a user converter. That is sound ONLY because
+                    // `__r` is a local returned solely on success: a throw makes it unreachable garbage that no
+                    // caller can observe. It is NOT sound where the caller owns the list, which is why
+                    // registerBeforeFill is excluded above (Preserve publishes __r into the context BEFORE
+                    // filling, so a cycle could observe the default-valued tail).
+                    if (tgtElemIsValueType && capacity.Length > 0)
+                    {
+                        w.Line("var __n = " + capacity + ";");
+                        w.Line("var __r = new " + listFq + "(__n);");
+                        w.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __n);");
+                        w.Line("var __d = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r);");
+                        w.Line("var __i = 0;");
+                        w.Line("foreach (var __item in " + shape.SourceExpr + ") { __d[__i++] = " + item + "; }");
+                        w.Line("return __r;");
+                    }
+                    else
+                    {
+                        w.Line("var __r = new " + listFq + "(" + capacity + ");");
+                        w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
+                        w.Line("return __r;");
+                    }
                 }
             }
         }
