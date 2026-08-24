@@ -219,8 +219,14 @@ vary by hardware; **relative ordering is the point — reproduce locally with th
 | Nested | 11.5 ns | 10.3 ns | 20.5 ns | 58.4 ns | — |
 | Array (1000 objects) | 4.55 µs | 4.47 µs | 5.82 µs | 5.26 µs | — |
 | **Blit (1000 structs)** † | **0.59 µs** | 1.08 µs | 1.11 µs | 1.18 µs | — |
-| **Value-element list (`int[]`→`List<long>`, 1000)** ‡ | **0.69 µs** | 0.99 µs | 0.99 µs | 2.73 µs | — |
-| **Nested graph, mixed fills (50 lines + value collections)** ‡ | **0.91 µs** | 1.81 µs | 1.14 µs | 2.11 µs | — |
+| **Value-element list (`int[]`→`List<long>`, 1000)** ‡ | **0.66 µs** | 1.00 µs | 0.92 µs | 2.83 µs | — |
+| **Nested graph, mixed fills (50 lines + value collections)** ‡ | **0.88 µs** | 1.73 µs | 1.02 µs | 2.00 µs | — |
+| **SIMD widen (`int[]`→`long[]`, 1000)** ‡ | **0.36 µs** | 0.44 µs | 0.70 µs | 0.74 µs | — |
+| **Flatten (`Order.Customer.Name`)** ‡ | **4.9 ns** | 5.5 ns | 14.4 ns | 53.6 ns | — |
+| **Nested object** ‡ | **10.8 ns** | 12.3 ns | 21.1 ns | 59.4 ns | — |
+| **List (1000 REFERENCE elements)** ‡ | 6.11 µs | 6.13 µs | **5.42 µs** | 8.73 µs | — |
+| **Array (1000 REFERENCE elements)** ‡ | 4.69 µs | **4.65 µs** | 6.09 µs | 5.23 µs | — |
+| **Enum (scalar member, by name)** ‡ § | 13.0 ns | **3.3 ns** | 12.6 ns | 74.6 ns | — |
 | **Widen (1000 int→long)** | **0.35 µs** | 0.43 µs | 0.69 µs | 0.72 µs | — |
 | Allocations (all scenarios) | = hand-written | = | = | = | baseline |
 
@@ -231,6 +237,27 @@ element. **Allocations are identical to Mapperly and Mapster (8,112 B)** — the
 memory. Note the contrast with the reference-element `List` row above, where DwarfMapper is *behind* Mapster:
 there the cost of allocating a thousand destination objects dominates and the fill strategy cannot show
 through, which is why the optimisation is deliberately restricted to value elements.
+
+`§` **The enum row is the one to read carefully, and it is a weakness rather than a rounding error.**
+DwarfMapper maps enums by NAME through a `switch` over declared members, which is branch-predicted — so a
+benchmark that mapped a single enum value forever reported **4.8 ns**, and cycling all three declared values
+reported **12.97 ns**. Mapperly is flat at ~3.3 ns either way, so a gap published as 1.4x is really **3.98x**
+on varied data. Mapster measures 12.6 ns, i.e. essentially level with us, which points at the switch rather
+than at anything specific to our emission. Improving this is filed, not fixed.
+
+**Every single-object row on this page now maps a RING of 512 distinct fixture-drawn payloads**, cycled per
+iteration, rather than one cached object. That change moved four rows and *flipped one ranking* (Nested went
+from marginally behind Mapperly to 1.14x ahead), which is why it is enforced by an architectural rule —
+`BenchmarkPayloadRuleTests` fails the build if any benchmark maps a static payload.
+
+**The four rows where a rival is ahead are there on purpose.** A comparison that lists only its wins is an
+advertisement. The pattern across the whole sweep is consistent and worth stating plainly: **DwarfMapper
+leads wherever a fast path is eligible and trails slightly where none is.** `List` and `Array` carry
+reference elements, so neither the blit nor the value-element span fill applies, and what remains is
+allocating a thousand destination objects — where there is nothing to win and Mapster's loop is marginally
+tighter. The `Array` gap (1.01x) is smaller than the combined standard error and should be read as parity.
+Full per-row numbers with standard errors:
+[`benchmarks/results/2026-08-24-premerge-full-sweep.md`](../benchmarks/results/2026-08-24-premerge-full-sweep.md).
 
 **Read the nested row carefully — it is not a fill-strategy number.** That graph mixes both strategies in one
 map (reference-element `Lines` on the `Add` path, value-element `Totals` and per-line `Quantities` on the

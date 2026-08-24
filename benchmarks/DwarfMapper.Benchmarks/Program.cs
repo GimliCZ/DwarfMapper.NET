@@ -431,14 +431,16 @@ public class MapperBenchmarks
     private IMapper _auto = null!;
     private BlitSrc _blit = null!;
     private DictSrc _dict = null!;
-    private EnumSrc _enum = null!;
-    private FlOrder _flOrder = null!;
+    private EnumSrc[] _enum = null!;
+    private FlOrder[] _flOrder = null!;
 
-    private FlatSrc _flat = null!;
+    private int _ring;
+
+    private FlatSrc[] _flat = null!;
     private ImmSrc _imm = null!;
     private ListSrc _list = null!;
-    private NestedSrc _nested = null!;
-    private NmSrc _nm = null!;
+    private NestedSrc[] _nested = null!;
+    private NmSrc[] _nm = null!;
     private SeqSrc _seq = null!;
     private NfOrder _nestedFill = null!;
     private NumListSrc _numList = null!;
@@ -448,6 +450,26 @@ public class MapperBenchmarks
     [Params(1000)]
     public int N { get; set; }
 
+    /// <summary>Length of every payload ring. A power of two so the cycling index is a mask.</summary>
+    private const int RingSize = 512;
+
+    /// <summary>
+    ///     A ring of DISTINCT payloads from the fixture factory — one draw per slot, each with its own salt,
+    ///     so consecutive iterations see different data and the branch predictor cannot memorise one object.
+    /// </summary>
+    private static T[] RingOf<T>(int salt)
+    {
+        var ring = new T[RingSize];
+        for (var i = 0; i < RingSize; i++) { ring[i] = RealisticPayloads.One<T>((salt * 100000) + i); }
+        return ring;
+    }
+
+    /// <summary>Next payload in a ring. Masked rather than modulo; RingSize is a power of two.</summary>
+    private T Next<T>(T[] ring)
+    {
+        return ring[this._ring++ & (RingSize - 1)];
+    }
+
     [GlobalSetup]
     public void Setup()
     {
@@ -455,14 +477,20 @@ public class MapperBenchmarks
         // measured distribution includes nulls, boundary numerics and varied string lengths instead of the
         // uniform literals this setup used to hand-build. Each shape gets a distinct salt so categories are
         // not correlated draws of one another. Setup is not measured by BenchmarkDotNet.
-        _flat = RealisticPayloads.One<FlatSrc>(1);
+        // ARCHITECTURAL RULE (round 26): no benchmark maps a STATIC payload. A single object mapped
+        // millions of times sits permanently in L1 with its branches perfectly predicted — that measures an
+        // idealised hot loop, not mapping. It also HID A REAL DEFECT: the enum row read 4.8 ns on one value
+        // and 12.5 ns once all three were cycled, while Mapperly stayed flat at 3.4 — a 1.4x gap that was
+        // really 3.7x. Rings are drawn from RealisticPayloads, the fuzzer/fixture source the test suites
+        // use, one distinct salt per slot.
+        _flat = RingOf<FlatSrc>(1);
 
         // The factory assigns through reflection, which does not see nullable annotations — it can null ANY
         // reference member below the root. For the two shapes whose nested reference is declared non-nullable
         // (see the NestedSrc note), materialise it so the benchmark measures nesting rather than dying on an
         // NRE. Their MEMBERS still carry the factory's nulls and boundary values.
-        _nested = RealisticPayloads.One<NestedSrc>(2);
-        _nested.Inner ??= RealisticPayloads.One<FlatSrc>(21);
+        _nested = RingOf<NestedSrc>(2);
+        for (var i = 0; i < RingSize; i++) { _nested[i].Inner ??= RealisticPayloads.One<FlatSrc>(21 + i); }
 
         // Element CONTENT is factory-drawn; element COUNT stays pinned to N. The factory builds 1-3 element
         // collections, so letting it size these would quietly turn an N=1000 benchmark into N≈2.
@@ -490,14 +518,16 @@ public class MapperBenchmarks
             V = RealisticPayloads.Elements<int>(N, 5)
         };
 
-        _flOrder = RealisticPayloads.One<FlOrder>(6);
-        _flOrder.Customer ??= RealisticPayloads.One<FlCustomer>(61);
-        _enum = RealisticPayloads.One<EnumSrc>(7);
+        _flOrder = RingOf<FlOrder>(6);
+        for (var i = 0; i < RingSize; i++) { _flOrder[i].Customer ??= RealisticPayloads.One<FlCustomer>(61 + i); }
+        _enum = RingOf<EnumSrc>(7);
+        // Every declared member represented, so the by-name switch takes all its arms rather than one.
+        for (var i = 0; i < RingSize; i++) { _enum[i].Status = (BenchStatus)(i % 3); }
         _dict = new DictSrc
         {
             M = RealisticPayloads.Map(N, 8)
         };
-        _nm = RealisticPayloads.One<NmSrc>(9);
+        _nm = RingOf<NmSrc>(9);
         _set = new SetSrc
         {
             V = RealisticPayloads.Elements<int>(N, 10)
@@ -548,12 +578,15 @@ public class MapperBenchmarks
     [BenchmarkCategory("Flat")]
     public FlatDst Flat_Hand()
     {
+        // The hand-written baseline draws from the same ring as every other arm, or it would be measuring
+        // a cached object against everyone else's varied one.
+        var s = Next(_flat);
         return new FlatDst
         {
-            Id = _flat.Id,
-            Name = _flat.Name,
-            Score = _flat.Score,
-            Active = _flat.Active
+            Id = s.Id,
+            Name = s.Name,
+            Score = s.Score,
+            Active = s.Active
         };
     }
 
@@ -561,28 +594,28 @@ public class MapperBenchmarks
     [BenchmarkCategory("Flat")]
     public FlatDst Flat_Dwarf()
     {
-        return _dwarf.MapFlat(_flat);
+        return _dwarf.MapFlat(Next(_flat));
     }
 
     [Benchmark]
     [BenchmarkCategory("Flat")]
     public FlatDst Flat_Mapperly()
     {
-        return _mapperly.MapFlat(_flat);
+        return _mapperly.MapFlat(Next(_flat));
     }
 
     [Benchmark]
     [BenchmarkCategory("Flat")]
     public FlatDst Flat_Mapster()
     {
-        return _flat.Adapt<FlatDst>();
+        return Next(_flat).Adapt<FlatDst>();
     }
 
     [Benchmark]
     [BenchmarkCategory("Flat")]
     public FlatDst Flat_AutoMapper()
     {
-        return _auto.Map<FlatDst>(_flat);
+        return _auto.Map<FlatDst>(Next(_flat));
     }
 
     // ── Nested ────────────────────────────────────────────────────────────────
@@ -590,28 +623,28 @@ public class MapperBenchmarks
     [BenchmarkCategory("Nested")]
     public NestedDst Nested_Dwarf()
     {
-        return _dwarf.MapNested(_nested);
+        return _dwarf.MapNested(Next(_nested));
     }
 
     [Benchmark]
     [BenchmarkCategory("Nested")]
     public NestedDst Nested_Mapperly()
     {
-        return _mapperly.MapNested(_nested);
+        return _mapperly.MapNested(Next(_nested));
     }
 
     [Benchmark]
     [BenchmarkCategory("Nested")]
     public NestedDst Nested_Mapster()
     {
-        return _nested.Adapt<NestedDst>();
+        return Next(_nested).Adapt<NestedDst>();
     }
 
     [Benchmark]
     [BenchmarkCategory("Nested")]
     public NestedDst Nested_AutoMapper()
     {
-        return _auto.Map<NestedDst>(_nested);
+        return _auto.Map<NestedDst>(Next(_nested));
     }
 
     // ── Collection (N objects) ──────────────────────────────────────────────────
@@ -837,28 +870,28 @@ public class MapperBenchmarks
     [BenchmarkCategory("Flatten")]
     public FlOrderDto Flatten_Dwarf()
     {
-        return _dwarf.MapFlatten(_flOrder);
+        return _dwarf.MapFlatten(Next(_flOrder));
     }
 
     [Benchmark]
     [BenchmarkCategory("Flatten")]
     public FlOrderDto Flatten_Mapperly()
     {
-        return _mapperly.MapFlatten(_flOrder);
+        return _mapperly.MapFlatten(Next(_flOrder));
     }
 
     [Benchmark]
     [BenchmarkCategory("Flatten")]
     public FlOrderDto Flatten_Mapster()
     {
-        return _flOrder.Adapt<FlOrderDto>();
+        return Next(_flOrder).Adapt<FlOrderDto>();
     }
 
     [Benchmark]
     [BenchmarkCategory("Flatten")]
     public FlOrderDto Flatten_AutoMapper()
     {
-        return _auto.Map<FlOrderDto>(_flOrder);
+        return _auto.Map<FlOrderDto>(Next(_flOrder));
     }
 
     // ── Enum by-name ────────────────────────────────────────────────────────────
@@ -866,28 +899,28 @@ public class MapperBenchmarks
     [BenchmarkCategory("Enum")]
     public EnumDst Enum_Dwarf()
     {
-        return _dwarf.MapEnum(_enum);
+        return _dwarf.MapEnum(Next(_enum));
     }
 
     [Benchmark]
     [BenchmarkCategory("Enum")]
     public EnumDst Enum_Mapperly()
     {
-        return _mapperly.MapEnum(_enum);
+        return _mapperly.MapEnum(Next(_enum));
     }
 
     [Benchmark]
     [BenchmarkCategory("Enum")]
     public EnumDst Enum_Mapster()
     {
-        return _enum.Adapt<EnumDst>();
+        return Next(_enum).Adapt<EnumDst>();
     }
 
     [Benchmark]
     [BenchmarkCategory("Enum")]
     public EnumDst Enum_AutoMapper()
     {
-        return _auto.Map<EnumDst>(_enum);
+        return _auto.Map<EnumDst>(Next(_enum));
     }
 
     // ── Dictionary copy (N entries) ─────────────────────────────────────────────
@@ -926,7 +959,7 @@ public class MapperBenchmarks
     [BenchmarkCategory("NullMismatch")]
     public NmDst NullMismatch_Dwarf()
     {
-        return _dwarf.MapNullMismatch(_nm);
+        return _dwarf.MapNullMismatch(Next(_nm));
     }
 
     [Benchmark]
