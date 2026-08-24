@@ -22,6 +22,49 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when two element types occupy the SAME BYTES — identical layout, but field names ignored.
+        ///     This is the proof obligation for the explicit <c>[Reinterpret]</c> opt-in.
+        ///     <para>
+        ///         <c>[Reinterpret]</c> exists so a caller can assert the field CORRESPONDENCE the by-name proof
+        ///         cannot verify — differing member names across an assembly boundary, say. It does not, and
+        ///         must not, let them assert that the bytes line up. A caller cannot know that either: a
+        ///         mismatched pair does not fail loudly, it truncates. <c>MemoryMarshal.Cast&lt;int, long&gt;</c>
+        ///         HALVES the span length, so the copy fills half the destination and leaves the rest zeroed —
+        ///         silent data loss, which is the one failure class this project refuses outright.
+        ///     </para>
+        ///     <para>
+        ///         The size requirement was always the documented contract (see <c>DWARF022</c>'s help text:
+        ///         "only sound when both element types are unmanaged AND THE SAME SIZE"). It was enforced only
+        ///         by a runtime guard inside the emitted copy, which round 26 correctly deleted — type safety
+        ///         belongs to the analyzer. This is that check, moved to where it belongs.
+        ///     </para>
+        /// </summary>
+        public static bool SameBytesIgnoringNames(ITypeSymbol src, ITypeSymbol dst)
+        {
+            return LayoutIdentical(src, dst, byBytesOnly: true);
+        }
+
+        /// <summary>
+        ///     Width in bytes of a primitive, or 0 when it has no fixed width the generator can rely on.
+        ///     <para>
+        ///         <c>IntPtr</c> and <c>UIntPtr</c> return 0 deliberately: their width is the platform's, so a
+        ///         pair that matches on the build machine need not match where the consumer runs. Refusing them
+        ///         costs an exotic opt-in; allowing them would make the proof depend on the wrong machine.
+        ///     </para>
+        /// </summary>
+        private static int PrimitiveSize(ITypeSymbol t)
+        {
+            return t.SpecialType switch
+            {
+                SpecialType.System_Boolean or SpecialType.System_Byte or SpecialType.System_SByte => 1,
+                SpecialType.System_Int16 or SpecialType.System_UInt16 or SpecialType.System_Char => 2,
+                SpecialType.System_Int32 or SpecialType.System_UInt32 or SpecialType.System_Single => 4,
+                SpecialType.System_Int64 or SpecialType.System_UInt64 or SpecialType.System_Double => 8,
+                _ => 0,
+            };
+        }
+
+        /// <summary>
         ///     True when an enum-bearing element pair is a pure REINTERPRET, so the array can be block-copied.
         ///     <para>
         ///         The scalar path is the oracle, and reading it decides this — not the layout. Enums are the one
@@ -215,7 +258,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     True when two types are byte-identical in layout AND field-name-aligned, so a positional
         ///     reinterpret equals DwarfMapper's name-based mapping. Recurses through nested structs.
         /// </summary>
-        private static bool LayoutIdentical(ITypeSymbol a, ITypeSymbol b)
+        private static bool LayoutIdentical(ITypeSymbol a, ITypeSymbol b, bool byBytesOnly = false)
         {
             if (SymbolEqualityComparer.Default
                 .Equals(a, b))
@@ -230,6 +273,16 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (IsPrimitive(a) || IsPrimitive(b))
             {
+                // The automatic blit demands the SAME TYPE: int -> uint is a conversion the mapper should
+                // perform properly, not a reinterpret nobody asked for. The explicit [Reinterpret] opt-in
+                // demands only the same WIDTH, because asserting "treat these bits as unsigned" is precisely
+                // what the caller is there to say — and it is a thing they can actually know.
+                if (byBytesOnly)
+                {
+                    var wa = PrimitiveSize(a);
+                    return wa > 0 && wa == PrimitiveSize(b);
+                }
+
                 return a.SpecialType == b.SpecialType && a.SpecialType != SpecialType.None;
             }
 
@@ -268,7 +321,8 @@ namespace DwarfMapper.Generator.Pipeline
 
             for (var i = 0; i < fa.Count; i++)
             {
-                if (!string.Equals(fa[i].Name,
+                if (!byBytesOnly &&
+                    !string.Equals(fa[i].Name,
                         fb[i].Name,
                         StringComparison.Ordinal))
                 {
@@ -276,7 +330,8 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 if (!LayoutIdentical(fa[i].Type,
-                        fb[i].Type))
+                        fb[i].Type,
+                        byBytesOnly))
                 {
                     return false; // recurse: primitive same-SpecialType, identical type, or nested layout-identical struct
                 }
