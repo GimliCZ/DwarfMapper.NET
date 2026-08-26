@@ -404,7 +404,10 @@ public partial class DwarfM
 }
 
 // ── Mapperly (compile-time source gen) ────────────────────────────────────────
-[Riok.Mapperly.Abstractions.Mapper]
+// EnumMappingStrategy.ByName is set HERE, on the mapper, because Mapperly's [MapEnum] configures an
+// enum-to-enum METHOD and rejects a class mapping with RMG063. Nothing else in this mapper maps an enum, so
+// the class-wide setting is exactly the per-method one.
+[Riok.Mapperly.Abstractions.Mapper(EnumMappingStrategy = Riok.Mapperly.Abstractions.EnumMappingStrategy.ByName)]
 public partial class MapperlyM
 {
     public partial FlatDst MapFlat(FlatSrc s);
@@ -414,10 +417,28 @@ public partial class MapperlyM
     public partial BlitDst MapBlit(BlitSrc s);
     public partial WidenDst MapWiden(WidenSrc s);
     public partial FlOrderDto MapFlatten(FlOrder s); // Mapperly auto-flattens Customer.Name → CustomerName
+
+    // BY-NAME, EXPLICITLY. Mapperly's DEFAULT enum strategy is ByValue, which emits a raw `(EnumDst)s.Status`
+    // cast. DwarfMapper's default is ByName, which emits a switch. Left at the defaults these two rows were
+    // not two implementations of one operation -- they were two different operations, and on THESE enums they
+    // do not even agree: BenchStatus is {Pending=0, Active=1, Closed=2} and BenchStatusDto is
+    // {Closed=0, Pending=1, Active=2}, so a value cast turns Pending into Closed. The benchmark was reporting
+    // a 3.98x Mapperly win for producing a different answer. Fully qualified for the reason the differential
+    // harness records: DwarfMapper's own MapEnum-adjacent attributes are reachable here, and an unqualified
+    // name that binds to the wrong library misconfigures the oracle silently.
     public partial EnumDst MapEnum(EnumSrc s);
     public partial DictDst MapDict(DictSrc s);
     public partial NumListDst MapNumList(NumListSrc s);
     public partial NfOrderDto MapNestedFill(NfOrder s);
+}
+
+// Mapperly at its DEFAULT enum strategy -- a raw value cast. Kept so the cost of the semantic difference is a
+// measured number rather than an assertion. Its row is NOT comparable to the by-name rows: on these
+// deliberately reordered enums it answers Closed where every by-name mapper answers Pending.
+[Riok.Mapperly.Abstractions.Mapper]
+public partial class MapperlyEnumByValueM
+{
+    public partial EnumDst MapEnum(EnumSrc s);
 }
 
 [MemoryDiagnoser]
@@ -427,6 +448,7 @@ public class MapperBenchmarks
 {
     private readonly DwarfM _dwarf = new();
     private readonly MapperlyM _mapperly = new();
+    private readonly MapperlyEnumByValueM _mapperlyByValue = new();
     private ArraySrc _array = null!;
     private IMapper _auto = null!;
     private BlitSrc _blit = null!;
@@ -907,6 +929,16 @@ public class MapperBenchmarks
     public EnumDst Enum_Mapperly()
     {
         return _mapperly.MapEnum(Next(_enum));
+    }
+
+    // NOT comparable to the rows above: this is Mapperly's DEFAULT by-VALUE strategy, a raw cast. It is here
+    // to price the semantic difference rather than to win a race -- on these deliberately reordered enums it
+    // returns Closed where every by-name row returns Pending. See EnumSemanticsAreComparedLikeForLikeTests.
+    [Benchmark]
+    [BenchmarkCategory("Enum")]
+    public EnumDst Enum_Mapperly_ByValue_NotComparable()
+    {
+        return _mapperlyByValue.MapEnum(Next(_enum));
     }
 
     [Benchmark]

@@ -17,6 +17,15 @@
         "resolved": "6.0.4",
         "contentHash": "lkhqpF8Pu2Y7IiN7OntbsTtdbpR1syMsm2F3IgX6ootA4ffRqWL5jF7XipHuZQTdVuWG/gVAAcf8mjk8Tz0xPg=="
       },
+      "Mapster": {
+        "type": "Direct",
+        "requested": "[10.0.8, )",
+        "resolved": "10.0.8",
+        "contentHash": "61lfpYqea8kaVs5SpexI/2tySidrVZm5ppUT38CkoyyyclErPdh07qlBfpNOcbPcRZ+A5SGlZ2atFFolcDVmwQ==",
+        "dependencies": {
+          "Mapster.Core": "10.0.8"
+        }
+      },
       "Meziantou.Analyzer": {
         "type": "Direct",
         "requested": "[3.0.167, )",
@@ -55,6 +64,11 @@
         "requested": "[3.1.4, )",
         "resolved": "3.1.4",
         "contentHash": "5mj99LvCqrq3CNi06xYdyIAXOEh+5b33F2nErCzI5zWiDdLHXiPXEWFSUAF8zlIv0ZWqjZNCwHTQeAPYbF3pCg=="
+      },
+      "Mapster.Core": {
+        "type": "Transitive",
+        "resolved": "10.0.8",
+        "contentHash": "KV2IpL6jC2HR9Yul/MeyY+vSmeeXfM3lgBMdhORXtILYLph/n3lH7tvAdIE29CkSAoTy5naw1H+Y8665GBoMwA=="
       },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
