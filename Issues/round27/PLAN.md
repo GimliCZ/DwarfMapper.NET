@@ -373,6 +373,14 @@ overrules are recorded here as decisions rather than quietly absorbed.
 | R27-04 `RegistryTable` | defer | **include** |
 | orphan rule (`CLAUDE.md` #1) | keep scoped | **make strict** |
 | `CaseInsensitive` fence (`CLAUDE.md` #2) | keep exempt | keep exempt |
+| **round order** | — | **Phase 0 first** (maintainer direction) |
+| **API freeze point** | promote after the audit | **promote now, after the audit** |
+| **Gallery gate strictness** | consumer-written attributes, exemptions stated | **as recommended** |
+| **restructuring start** | wait for Phase 0 to complete | **as recommended** |
+
+The last four were settled after the surface-governance findings (§1c). **Phase 0 must complete before any
+code moves** — surface pinned, Gallery gate green, governance written down. The already-decided restructuring
+scope is unchanged; it simply runs behind Phase 0.
 
 **On the scope overrule.** The recommendation to defer rested on *tractability*, not severity: the MI scan
 shows the other three at 0.0, exactly like `ExtractCore`, so on damage they are equally urgent. What they lack
