@@ -2719,5 +2719,680 @@ namespace DwarfMapper.Generator.Pipeline
                 Withheld: withheld));
             acc.PublicMethodLocs[acc.Methods.Count - 1] = methodLocation;
         }
+
+        // ── [GenerateMap<TSrc, TTgt>] — low-ceremony attribute-declared mappers ──────
+        // For each [GenerateMap<S,T>] on the mapper class, synthesize a public `T Map(S)` overload
+        // (EmitAsNonPartial → emitted as a full method, not a partial impl) with the SAME completeness
+        // gate, conversions, nested/collection handling, constructor mapping, and hooks as a declared
+        // partial mapper. Source/target types stay plain POCOs (no attributes on them) — migrating from
+        // e.g. AutoMapper's CreateMap<A,B>() is a near-mechanical 1:1 replace with [GenerateMap<A,B>].
+        // genPairs / genComp / genLoc are computed near the top of Extract, because element and member
+        // resolution has to be able to SEE these pairs long before this loop emits them.
+        // Indexed rather than a foreach because a co-located host's MEMBER directives bind to the pairs
+        // POSITIONALLY, exactly as a [MapTo] source member's do to its targets — so which pair this iteration
+        // is emitting is part of the config, not just a loop variable.
+        /// <remarks>
+        ///     Certified separable by bracing it in place and building: it declares nothing the rest of
+        ///     <c>ExtractCore</c> still needs. The pair-collection stage above it shares twelve locals and the
+        ///     registry drain below shares one, so this is the only clean cut of the three.
+        /// </remarks>
+        private static void ExtractGenerateMapPairs(
+            GeneratorAttributeSyntaxContext ctx,
+            MapperDeclarations decls,
+            MapperPolicy policy,
+            MapperAccumulators acc,
+            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            Compilation genComp,
+            LocationInfo? genLoc,
+            Dictionary<int, HostPairDirectives> hostDirectives)
+        {
+            var withheld = false;
+
+            for (var genIndex = 0; genIndex < genPairs.Count; genIndex++)
+            {
+                var (genSrc, genTgt) = genPairs[genIndex];
+
+                // Pair-scoped [MapProperty<S,T>] / [MapIgnore<T>] config for this declared pair.
+                var (genExplicit, genExtras) = MatchPairProps(decls.PairProps, genSrc, genTgt);
+                var genIgnores = new HashSet<string>(decls.ClassIgnores, IgnoreNameComparer);
+                foreach (var im in MatchPairIgnores(decls.PairIgnores, genTgt)) genIgnores.Add(im);
+                // Class-site liveness against this pair's target ([GenerateMap] pairs have no method site).
+                JudgeUnscopedIgnores(decls.ClassIgnores,
+                    acc.LiveClassIgnores,
+                    null,
+                    genTgt,
+                    ctx.SemanticModel.Compilation,
+                    policy.AllowNonPublic,
+                    genLoc,
+                    acc.Diagnostics,
+                    acc.IgnorableNamesMemo);
+
+                // Member-level [MapProperty("SourceMember")] / [MapIgnore] written on the co-located host itself.
+                // Layered ON TOP of the pair-scoped config rather than instead of it: the two are different
+                // placements of the same intent and a host may reasonably carry both. Empty for every other
+                // shape, so nothing below this line behaves differently for a [DwarfMapper] class.
+                Dictionary<string, string>? genFormats = null;
+                if (hostDirectives.TryGetValue(genIndex, out var hostConfig))
+                {
+                    genExplicit.AddRange(hostConfig.Explicit);
+                    genExtras.AddRange(hostConfig.Extras);
+                    foreach (var hm in hostConfig.Ignores) genIgnores.Add(hm);
+                    genFormats = hostConfig.StringFormats;
+                }
+
+                // Top-level collection/dictionary [GenerateMap<Coll, Coll>]: route through the collection/dict
+                // converter (as a declared partial method does, see "Fix 1" above) instead of object-mapping the
+                // target's members — which would e.g. flag List<T>.Capacity via DWARF001. The source may be ANY
+                // IEnumerable<T> (custom user collections like a ConcurrentList<T> included), matching the
+                // member-level collection handling.
+                var genIsColl = CollectionConverter.TryResolve(genTgt, genTgt, out _, out _, out _);
+                var genIsDict = !genIsColl && DictionaryConverter.TryResolve(genTgt, genTgt, out _, out _, out _, out _, out _);
+
+                // An ENUM target needs the same treatment, and for the same reason: it is a VALUE to convert,
+                // not an object to construct. Without this, `[GenerateMap<SrcKind, DstKind>]` emitted
+                // `return new DstKind { };` — an empty object initializer over an enum, which compiles, has no
+                // members to flag, and silently returns the zero value while discarding the source entirely.
+                // Green build, no diagnostic, every mapped value wrong.
+                //
+                // The conversion machinery was never the problem: the identical pair used as a MEMBER already
+                // resolves correctly through the enum converter. Only this declared-pair path constructed
+                // instead of converting.
+                // Every VALUE-like target, not just enums. The enum case was found first, but the bug class is
+                // "a declared top-level pair whose target is a value gets object-mapped instead of converted" —
+                // and a follow-up audit caught [GenerateMap<int, long>] emitting `return new long { };` for
+                // exactly the same reason. SpecialType covers the primitives, string, decimal, char and bool;
+                // TypeKind.Enum covers the rest of the family.
+                var genIsValueLike = genTgt.TypeKind == TypeKind.Enum || genTgt.SpecialType != SpecialType.None;
+
+                if (genIsColl || genIsDict || genIsValueLike)
+                {
+                    var gResolved = TryResolveConversion(
+                        genComp,
+                        genSrc,
+                        genTgt,
+                        null,
+                        decls.AllMethods,
+                        // This pair is resolved as a WHOLE, so it must not be a candidate for its own conversion.
+                        ExcludingPair(decls.MapperMethods, genSrc, genTgt),
+                        policy.EnumPolicy,
+                        acc.Synthesized,
+                        policy.NullStrategy,
+                        genLoc,
+                        "Map",
+                        acc.Diagnostics,
+                        out var gConv,
+                        out _,
+                        out var gNeedsCtx,
+                        policy.ClassAutoNest,
+                        acc.NestedRegistry,
+                        policy.NullCollections == NullCollectionsBehavior.AsNull,
+                        policy.IsPreserveMode,
+                        isSetNull: policy.IsSetNullMode,
+                        implicitConversions: policy.ImplicitConversions,
+                        // Without this the ELEMENT conversion for a collection pair can adopt a method
+                        // dedicated to one pair — a [MapConstructor] factory over the same types matches by
+                        // signature and wins, so the loop constructs each element and assigns nothing.
+                        reservedConverters: decls.MapperReservedConverters);
+
+                    if (!gResolved || gConv is null)
+                    {
+                        continue; // element/shape diagnostic already reported by the recursive call
+                    }
+
+                    var gMember = new MemberMap(
+                        "",
+                        "", // sentinel: emit helper(param), not helper(param.Member)
+                        gConv,
+                        ConverterNeedsDepthCtx: gNeedsCtx);
+
+                    // I17 STOPS HERE, and the boundary is a measurement rather than a preference. Withholding a
+                    // method is only safe while its DECLARATION survives: a partial method is declared by the
+                    // CONSUMER, so a sibling that maps a nested member through it still BINDS and the single
+                    // CS8795 is the whole cost. A [GenerateMap] pair has no declaration — the generator is the
+                    // only source of the symbol — so withholding it made a sibling's `N = Map(o.N)` emit
+                    // **CS0103, 'the name Map does not exist'**, in a file the consumer cannot edit: the
+                    // EmittedInvalidCode genre, whose ceiling is exactly zero. Measured on a two-pair probe
+                    // before this line was written. So the pair keeps the whole-class kill, and the CS8795 it
+                    // costs a sibling stays: loud collateral beats generated code that does not compile.
+                    withheld = false;
+
+                    acc.Methods.Add(new MapMethodModel(
+                        "Map",
+                        "public",
+                        genTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        genSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                        "src",
+                        genSrc.IsReferenceType,
+                        EquatableArray.From(new[]
+                        {
+                            gMember
+                        }),
+                        EquatableArray.From(Array.Empty<string>()),
+                        EquatableArray.From(Array.Empty<HookCall>()),
+                        false,
+                        "",
+                        EquatableArray.From(Array.Empty<MemberMap>()),
+                        true,
+                        genTgt.IsReferenceType,
+                        IsTopLevelCollectionConversion: true,
+                        EmitAsNonPartial: true,
+                        ParameterIsPublicType: IsEffectivelyPublic(genSrc),
+                        ReturnIsPublicType: IsEffectivelyPublic(genTgt),
+                        Withheld: withheld));
+                    acc.PublicMethodLocs[acc.Methods.Count - 1] = genLoc;
+                    continue;
+                }
+
+                // Pair-scoped [MapConstructor<S,T>(factory)] override: delegate construction to a user factory
+                // method and only populate settable members afterward (AutoMapper ConstructUsing semantics).
+                string? genFactory = null;
+                foreach (var pc in decls.PairConstructors)
+                {
+                    if (!SymbolEqualityComparer.Default.Equals(pc.Source, genSrc) || !SymbolEqualityComparer.Default.Equals(pc.Target, genTgt))
+                    {
+                        continue;
+                    }
+
+                    pc.Consumed = true;
+                    var factory = decls.AllMethods.FirstOrDefault(m =>
+                        string.Equals(m.Name, pc.Method, StringComparison.Ordinal) && HasImplicitConversion(genComp, genSrc, m.ParamType) && HasImplicitConversion(genComp, m.ReturnType, genTgt));
+                    if (factory.Name is null)
+                    {
+                        acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapConstructorInvalid,
+                            pc.Loc,
+                            $"[MapConstructor<{genSrc.ToDisplayString()}, {genTgt.ToDisplayString()}>(\"{pc.Method}\")] factory was not found or has an incompatible signature (it must take the source type '{genSrc.ToDisplayString()}' and return the destination type '{genTgt.ToDisplayString()}')"));
+                    }
+                    else
+                    {
+                        genFactory = factory.Name;
+                    }
+
+                    break;
+                }
+
+                MemberMap[] genCtorArgs;
+                HashSet<string> genConsumed;
+                HashSet<string> genRequiredInit;
+
+                // Whether the chosen constructor already satisfies every `required` member. Tracked separately
+                // from genRequiredInit because the selected ctor is scoped to the pattern below and DWARF079 asks
+                // a different question of it — see CtorSetsRequiredMembers.
+                var genCtorSetsRequired = false;
+                HashSet<string>? genFactoryExcluded = null;
+
+                if (genFactory is not null)
+                {
+                    // Factory builds the object; only settable members are assigned afterward, so init-only /
+                    // required members are excluded (the factory owns them) and there are no ctor args.
+                    genCtorArgs = Array.Empty<MemberMap>();
+                    genConsumed = CollectFactoryExcludedMembers(genTgt);
+                    genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    // Kept separately from genConsumed so DWARF080 can tell "the ctor assigns it" (no loss) from
+                    // "the factory owns it and the source value is dropped" (silent loss).
+                    genFactoryExcluded = genConsumed;
+                }
+                else if (ConstructorSelector.Select(ctx.SemanticModel.Compilation,
+                             genTgt,
+                             acc.Diagnostics,
+                             genLoc,
+                             out var genObjInitOnly,
+                             policy.AllowNonPublic,
+                             genSrc,
+                             genExplicit) is not { } genCtor)
+                {
+                    continue;
+                }
+                else if (genObjInitOnly)
+                {
+                    genCtorSetsRequired = CtorSetsRequiredMembers(genCtor);
+                    genCtorArgs = Array.Empty<MemberMap>();
+                    genConsumed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    genRequiredInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    if (!ResolveConstructorArguments(genCtor,
+                            genSrc,
+                            genComp,
+                            genLoc,
+                            acc.Diagnostics,
+                            policy.CaseInsensitive,
+                            policy.AllowNonPublic,
+                            genExplicit,
+                            decls.AllMethods,
+                            decls.MapperMethods,
+                            policy.EnumPolicy,
+                            acc.Synthesized,
+                            policy.NullStrategy,
+                            policy.ClassAutoNest,
+                            acc.NestedRegistry,
+                            out genCtorArgs,
+                            out genConsumed,
+                            policy.NullCollections == NullCollectionsBehavior.AsNull,
+                            policy.IsPreserveMode,
+                            policy.IsSetNullMode,
+                            policy.ImplicitConversions))
+                    {
+                        continue;
+                    }
+
+                    genRequiredInit = ComputeRequiredMustInitialize(genCtor, genTgt, genConsumed);
+                    genCtorSetsRequired = CtorSetsRequiredMembers(genCtor);
+                }
+
+                var genMembers = ResolveMembers(
+                    genSrc,
+                    genTgt,
+                    genIgnores,
+                    genComp,
+                    genLoc,
+                    acc.Diagnostics,
+                    new MapperOptions(
+                        CaseInsensitive: policy.CaseInsensitive,
+                        AutoNest: policy.ClassAutoNest,
+                        NullAsNull: policy.NullCollections == NullCollectionsBehavior.AsNull,
+                        IsPreserve: policy.IsPreserveMode,
+                        IsSetNull: policy.IsSetNullMode,
+                        ImplicitConversions: policy.ImplicitConversions,
+                        NameConvention: 0,
+                        // No method: a [GenerateMap] pair is declared by the class, so there is no
+                        // method-scoped annotation that could speak for it.
+                        SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, null, genSrc, genTgt, policy.SkipNullSrc),
+                        AllowNonPublic: policy.AllowNonPublic,
+                        ExplicitOnly: policy.ExplicitOnly,
+                        IgnoreObsolete: policy.IgnoreObsolete),
+                    genExplicit,
+                    decls.AllMethods,
+                    decls.MapperMethods,
+                    policy.EnumPolicy,
+                    acc.Synthesized,
+                    policy.NullStrategy,
+                    Array.Empty<string>(),
+                    new List<string>(),
+                    genConsumed,
+                    genRequiredInit,
+                    acc.NestedRegistry,
+                    MatchPairValues(decls.PairValues, genTgt),
+                    decls.ValueProviders,
+                    mapPropertyExtras: genExtras,
+                    // StringFormat rides on the SAME [MapProperty] the rename does, so a path that reads the
+                    // directive and does not thread this drops the format in silence — D20 in miniature.
+                    stringFormats: genFormats,
+                    mapperReservedConverters: decls.MapperReservedConverters,
+                    requiredMembersAlreadySatisfied: genCtorSetsRequired,
+                    factoryExcludedMembers: genFactoryExcluded);
+
+                var genBefore = new List<string>();
+                foreach (var h in decls.BeforeHookDefs)
+                    if (HasImplicitConversion(genComp, genSrc, h.ParamType))
+                    {
+                        genBefore.Add(h.Name);
+                    }
+
+                var genAfter = new List<HookCall>();
+                foreach (var h in decls.AfterHookDefs)
+                {
+                    bool applies;
+                    bool takesSource;
+                    if (h.P1 is null)
+                    {
+                        applies = HasImplicitConversion(genComp, genTgt, h.P0);
+                        takesSource = false;
+                    }
+                    else
+                    {
+                        applies = HasImplicitConversion(genComp, genSrc, h.P0) &&
+                                  HasImplicitConversion(genComp, genTgt, h.P1);
+                        takesSource = true;
+                    }
+
+                    if (!applies)
+                    {
+                        continue;
+                    }
+
+                    var tIsRef = h.TargetRefKind == RefKind.Ref;
+                    if (genTgt.IsValueType && !tIsRef)
+                    {
+                        continue;
+                    }
+
+                    genAfter.Add(new HookCall(h.Name, takesSource, tIsRef));
+                }
+
+                // I17 STOPS HERE, and the boundary is a measurement rather than a preference. Withholding a
+                // method is only safe while its DECLARATION survives: a partial method is declared by the
+                // CONSUMER, so a sibling that maps a nested member through it still BINDS and the single
+                // CS8795 is the whole cost. A [GenerateMap] pair has no declaration — the generator is the
+                // only source of the symbol — so withholding it made a sibling's `N = Map(o.N)` emit
+                // **CS0103, 'the name Map does not exist'**, in a file the consumer cannot edit: the
+                // EmittedInvalidCode genre, whose ceiling is exactly zero. Measured on a two-pair probe
+                // before this line was written. So the pair keeps the whole-class kill, and the CS8795 it
+                // costs a sibling stays: loud collateral beats generated code that does not compile.
+                withheld = false;
+
+                acc.Methods.Add(new MapMethodModel(
+                    "Map",
+                    "public",
+                    genTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    genSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    "src",
+                    genSrc.IsReferenceType,
+                    EquatableArray.From(genMembers),
+                    EquatableArray.From(genBefore),
+                    EquatableArray.From(genAfter),
+                    false,
+                    "",
+                    EquatableArray.From(genCtorArgs),
+                    true,
+                    genTgt.IsReferenceType,
+                    EmitAsNonPartial: true,
+                    ParameterIsPublicType: IsEffectivelyPublic(genSrc),
+                    ReturnIsPublicType: IsEffectivelyPublic(genTgt),
+                    FactoryMethod: genFactory,
+                    Withheld: withheld));
+                acc.PublicMethodLocs[acc.Methods.Count - 1] = genLoc;
+            }
+
+        }
+
+
+        // ── Drain the NestedMappingRegistry queue ────────────────────────────────
+        // User-declared partial methods are already registered in mapperMethods (autoCandidates).
+        // We process synthesized pairs AFTER declared methods so user methods always win.
+        // Each dequeued pair may enqueue further pairs → loop until empty (terminates because
+        // each pair is registered-before-built, so revisits hit the memoization branch).
+        // We also track dependency edges (nestedRegistry.SetCurrentPair) so that after the
+        // drain we can compute which pairs are recursion-capable (Plan 19 C1).
+        // Temporary list: collect models before we know their IsRecursionCapable flag.
+        /// <remarks>
+        ///     <paramref name="pendingNestedModels" /> is owned by the caller: this phase FILLS it and the
+        ///     recursion-cycle phase reads it. Bracing the span in place named that one escaping local before
+        ///     anything moved, which is the check this round added after three boundary bugs found the other
+        ///     way round.
+        /// </remarks>
+        private static void DrainNestedMappingQueue(
+            GeneratorAttributeSyntaxContext ctx,
+            MapperDeclarations decls,
+            MapperPolicy policy,
+            MapperAccumulators acc,
+            List<(ITypeSymbol Src, INamedTypeSymbol Tgt)> genPairs,
+            Compilation genComp,
+            List<(MapMethodModel Model, string MethodName)> pendingNestedModels,
+            CancellationToken ct)
+        {
+
+            while (acc.NestedRegistry.HasPending)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var (nestedSrc, nestedTgt, nestedName, pairAutoNest) = acc.NestedRegistry.Dequeue();
+
+                // Pair-scoped member config for this acc.Synthesized pair (empty when none declared on the class), so a
+                // [MapProperty<S,T>] rename applies even when S -> T is mapped as a nested/collection element.
+                var (nestedExplicit, nestedExtras) = MatchPairProps(decls.PairProps, nestedSrc, nestedTgt);
+                var nestedIgnores = MatchPairIgnores(decls.PairIgnores, nestedTgt);
+
+                // Inform the registry that we are now building this pair's body,
+                // so subsequent GetOrReserve calls record edges in the dependency graph.
+                acc.NestedRegistry.SetCurrentPair(nestedName);
+
+                // C3: use the first declared method's location as the diagnostic anchor for
+                // nested acc.Diagnostics (not null, so DWARF030 has a non-null location).
+                // ISSUE-012: the loop that used to sit here scanned `acc.Methods` for the first partial one and then
+                // `break`-ed out of a comment-only body, discarding the index and never assigning nestedLocation —
+                // dead code that only implied a location was being computed. The method model does not carry a
+                // LocationInfo, so null is the actual contract here (DWARF030 only requires non-null at its own
+                // emission site).
+                LocationInfo? nestedLocation = null;
+
+                // A helper acc.Synthesized for a pair the class ALSO declares must construct it the way the declared
+                // pair does. Under Preserve/SetNull the element route is REQUIRED to be a acc.Synthesized helper —
+                // calling the public method from a collection helper would allocate a fresh DwarfRefContext per
+                // element and lose the identity map — so this is the one place the two routes can still diverge
+                // after element resolution learned to reuse declared pairs. Left alone, `Map(node)` ran the
+                // factory and `Map(node).Kids[0]` did not.
+                //
+                // Scoped to DECLARED pairs deliberately: a [MapConstructor] naming a pair with no [GenerateMap]
+                // is already refused by DWARF056 ("matches no pair"), and quietly honouring it here would make
+                // that diagnostic untrue.
+                string? nestedFactory = null;
+                if (genPairs.Exists(gp => SymbolEqualityComparer.Default.Equals(gp.Src, nestedSrc) && SymbolEqualityComparer.Default.Equals(gp.Tgt, nestedTgt)))
+                {
+                    foreach (var pc in decls.PairConstructors)
+                    {
+                        if (!SymbolEqualityComparer.Default.Equals(pc.Source, nestedSrc) || !SymbolEqualityComparer.Default.Equals(pc.Target, nestedTgt))
+                        {
+                            continue;
+                        }
+
+                        // A factory that does not resolve is already reported against the declared pair; saying
+                        // it twice, once without a usable location, would only add noise.
+                        var nestedFactorySym = decls.AllMethods.FirstOrDefault(m =>
+                            string.Equals(m.Name, pc.Method, StringComparison.Ordinal) && HasImplicitConversion(genComp, nestedSrc, m.ParamType) && HasImplicitConversion(genComp, m.ReturnType, nestedTgt));
+                        if (nestedFactorySym.Name is not null)
+                        {
+                            nestedFactory = nestedFactorySym.Name;
+                        }
+
+                        break;
+                    }
+                }
+
+                // Choose construction strategy for the nested target type.
+                IMethodSymbol? nestedCtor = null;
+                var nestedObjInitOnly = false;
+                if (nestedFactory is null)
+                {
+                    nestedCtor = ConstructorSelector.Select(ctx.SemanticModel.Compilation,
+                        nestedTgt,
+                        acc.Diagnostics,
+                        nestedLocation,
+                        out nestedObjInitOnly,
+                        policy.AllowNonPublic,
+                        nestedSrc,
+                        nestedExplicit);
+                    if (nestedCtor is null)
+                    {
+                        // DWARF025/026 already reported; skip body emission for this pair.
+                        acc.NestedRegistry.ClearCurrentPair();
+                        continue;
+                    }
+                }
+
+                MemberMap[] nestedCtorArgs;
+                HashSet<string> nestedConsumed;
+                HashSet<string> nestedRequiredMustInit;
+                HashSet<string>? nestedFactoryExcluded = null;
+
+                if (nestedFactory is not null)
+                {
+                    // The factory builds the object; only settable members are assigned afterwards, so init-only
+                    // and required members are excluded — the factory owns them. Same shape as the declared path.
+                    nestedCtorArgs = Array.Empty<MemberMap>();
+                    nestedConsumed = CollectFactoryExcludedMembers(nestedTgt);
+                    nestedRequiredMustInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    nestedFactoryExcluded = nestedConsumed;
+                }
+                else if (nestedObjInitOnly)
+                {
+                    nestedCtorArgs = Array.Empty<MemberMap>();
+                    nestedConsumed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    nestedRequiredMustInit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    // C1: use the per-pair autoNest value (pairAutoNest), NOT policy.ClassAutoNest.
+                    if (!ResolveConstructorArguments(nestedCtor!,
+                            nestedSrc,
+                            ctx.SemanticModel.Compilation,
+                            nestedLocation,
+                            acc.Diagnostics,
+                            policy.CaseInsensitive,
+                            policy.AllowNonPublic,
+                            nestedExplicit,
+                            decls.AllMethods,
+                            decls.MapperMethods,
+                            policy.EnumPolicy,
+                            acc.Synthesized,
+                            policy.NullStrategy,
+                            pairAutoNest,
+                            acc.NestedRegistry,
+                            out nestedCtorArgs,
+                            out nestedConsumed,
+                            policy.NullCollections == NullCollectionsBehavior.AsNull,
+                            policy.IsPreserveMode,
+                            policy.IsSetNullMode,
+                            policy.ImplicitConversions))
+                    {
+                        acc.NestedRegistry.ClearCurrentPair();
+                        continue;
+                    }
+
+                    nestedRequiredMustInit = ComputeRequiredMustInitialize(nestedCtor!, nestedTgt, nestedConsumed);
+                }
+
+                // C1: use the per-pair autoNest value (pairAutoNest), NOT policy.ClassAutoNest.
+                var nestedMembers = ResolveMembers(
+                    nestedSrc,
+                    nestedTgt,
+                    nestedIgnores, // pair-scoped [MapIgnore<T>] (empty when none declared)
+                    ctx.SemanticModel.Compilation,
+                    nestedLocation,
+                    acc.Diagnostics,
+                    new MapperOptions(
+                        CaseInsensitive: policy.CaseInsensitive,
+                        AutoNest: pairAutoNest,
+                        NullAsNull: policy.NullCollections == NullCollectionsBehavior.AsNull,
+                        IsPreserve: policy.IsPreserveMode,
+                        IsSetNull: policy.IsSetNullMode,
+                        ImplicitConversions: policy.ImplicitConversions,
+                        NameConvention: 0,
+                        // A acc.Synthesized nested pair honours its own [MapNullSkip<S,T>] if the author declared
+                        // one, otherwise the enclosing class's policy. Without the pair-scoped lookup the
+                        // enclosing class's value is the ONLY input, which is how one logical nested pair
+                        // reached from two classes ended up with opposite null semantics.
+                        SkipNullSourceMembers: ResolveNullSkip(decls.PairNullSkips, null, nestedSrc, nestedTgt, policy.SkipNullSrc),
+                        AllowNonPublic: policy.AllowNonPublic,
+                        // FALSE on purpose: this is the auto-acc.Synthesized NESTED mapper. Explicit-only guards
+                        // the TOP-LEVEL trust boundary; reaching a nested pair already required the developer
+                        // to map that edge explicitly (top-level auto-nest is blocked by DWARF072), so the
+                        // nested contents map normally. Propagating it would give every nested member DWARF072
+                        // — a acc.Synthesized mapper has no [MapProperty] to satisfy it — making nested objects
+                        // unmappable. For a nested trust boundary, declare that pair's own
+                        // [DwarfMapper(AutoMatchMembers = false)] mapper.
+                        ExplicitOnly: false,
+                        // IgnoreObsolete DOES propagate, unlike ExplicitOnly: skipping an obsolete nested
+                        // member just leaves it at its default — safe and consistent, with no "unmappable"
+                        // hazard.
+                        IgnoreObsolete: policy.IgnoreObsolete),
+                    nestedExplicit, // pair-scoped [MapProperty<S,T>] (empty when none declared)
+                    decls.AllMethods,
+                    decls.MapperMethods,
+                    policy.EnumPolicy,
+                    acc.Synthesized,
+                    policy.NullStrategy,
+                    new List<string>(),
+                    new List<string>(), // no flatten/reinterpret
+                    nestedConsumed,
+                    nestedRequiredMustInit,
+                    acc.NestedRegistry,
+                    MatchPairValues(decls.PairValues, nestedTgt),
+                    decls.ValueProviders,
+                    mapPropertyExtras: nestedExtras,
+                    // A acc.Synthesized nested mapper must not adopt a dedicated converter either — the author
+                    // never wrote this pair, so they certainly did not offer it one.
+                    mapperReservedConverters: decls.MapperReservedConverters,
+                    requiredMembersAlreadySatisfied: nestedCtor is not null && CtorSetsRequiredMembers(nestedCtor),
+                    factoryExcludedMembers: nestedFactoryExcluded);
+
+                // Only the pairs registered above — a genuinely NESTED member pair is deliberately left alone,
+                // because source coverage has never applied at depth and turning it on for every acc.Synthesized pair
+                // would be a broad behavioural change rather than closing this gap.
+                foreach (var owed in acc.ElementPairsOwedCoverage)
+                    if (SymbolEqualityComparer.Default.Equals(owed.Src, nestedSrc) && SymbolEqualityComparer.Default.Equals(owed.Tgt, nestedTgt))
+                    {
+                        EmitSourceCoverage(
+                            nestedSrc,
+                            nestedMembers,
+                            null,
+                            decls.ClassIgnoreSources,
+                            owed.IgnoreSources,
+                            policy.IgnoreObsolete,
+                            ctx.SemanticModel.Compilation,
+                            policy.AllowNonPublic,
+                            owed.Loc,
+                            acc.Diagnostics);
+                        break;
+                    }
+
+                acc.NestedRegistry.ClearCurrentPair();
+
+                // Hooks ([BeforeMap]/[AfterMap]) bound to THIS pair must also run when the pair is mapped as a
+                // nested member or collection element — otherwise a target produced via the private helper silently
+                // skips its post-processing (e.g. an AfterMap that rebuilds a dictionary), a data-loss bug.
+                // Match by the same implicit-conversion rule the public pairs use (see ~line 835).
+                var nestedBefore = new List<string>();
+                foreach (var h in decls.BeforeHookDefs)
+                    if (HasImplicitConversion(ctx.SemanticModel.Compilation, nestedSrc, h.ParamType))
+                    {
+                        nestedBefore.Add(h.Name);
+                    }
+
+                var nestedAfter = new List<HookCall>();
+                foreach (var h in decls.AfterHookDefs)
+                {
+                    bool applies;
+                    bool takesSource;
+                    if (h.P1 is null)
+                    {
+                        applies = HasImplicitConversion(ctx.SemanticModel.Compilation, nestedTgt, h.P0);
+                        takesSource = false;
+                    }
+                    else
+                    {
+                        applies = HasImplicitConversion(ctx.SemanticModel.Compilation, nestedSrc, h.P0) && HasImplicitConversion(ctx.SemanticModel.Compilation, nestedTgt, h.P1);
+                        takesSource = true;
+                    }
+
+                    if (!applies)
+                    {
+                        continue;
+                    }
+
+                    var nestedTargetIsRef = h.TargetRefKind == RefKind.Ref;
+                    // Struct target passed by value would lose the hook's mutations; skip it here (the public /
+                    // update-into path for the same pair surfaces the AfterMapValueTargetByValue diagnostic).
+                    if (nestedTgt.IsValueType && !nestedTargetIsRef)
+                    {
+                        continue;
+                    }
+
+                    nestedAfter.Add(new HookCall(h.Name, takesSource, nestedTargetIsRef));
+                }
+
+                // Build a private (non-partial) MapMethodModel for this acc.Synthesized pair.
+                // IsRecursionCapable is set to false here and patched below after ComputeRecursionCapability().
+                var nestedModel = new MapMethodModel(
+                    nestedName,
+                    "private",
+                    nestedTgt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    nestedSrc.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    "s",
+                    nestedSrc.IsReferenceType,
+                    EquatableArray.From(nestedMembers),
+                    EquatableArray.From(nestedBefore),
+                    EquatableArray.From(nestedAfter),
+                    false,
+                    "",
+                    EquatableArray.From(nestedCtorArgs),
+                    false,
+                    nestedTgt.IsReferenceType, // patched below
+                    FactoryMethod: nestedFactory);
+
+                pendingNestedModels.Add((nestedModel, nestedName));
+            }
+
+        }
     }
 }

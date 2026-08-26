@@ -33,6 +33,7 @@ namespace DwarfMapper.Generator.Pipeline
             List<PairProp> PairProps,
             List<PairIgnore> PairIgnores,
             List<PairValue> PairValues,
+            List<PairConstructor> PairConstructors,
             List<(ITypeSymbol Source, ITypeSymbol Target, bool Enabled)> PairNullSkips,
             List<(string Name, ITypeSymbol ParamType)> BeforeHookDefs,
             List<(string Name, ITypeSymbol P0, ITypeSymbol? P1, RefKind TargetRefKind)> AfterHookDefs);
