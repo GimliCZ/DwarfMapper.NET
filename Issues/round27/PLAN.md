@@ -53,6 +53,61 @@ rather than an omission — see §5.
 
 ---
 
+## 1b. Whole-solution scan — the gap in the first pass
+
+The scan above covered `DwarfMapper.Generator` **only**, and was presented as if it were the solution's
+picture. It is not: the solution holds **22 projects, 647 files, 93,291 LOC**, and the generator is 18 % of it.
+Re-run across everything:
+
+| project | files | LOW | MOD | GOOD | LOC |
+|---|---:|---:|---:|---:|---:|
+| `DwarfMapper.Generator` | 54 | **16** | 5 | 33 | 16,720 |
+| `DwarfMapper.Generator.Tests` | 292 | 15 | 40 | 237 | **40,809** |
+| `DwarfMapper.IntegrationTests` | 113 | 7 | 13 | 93 | 19,218 |
+| `DwarfMapper.Testing` *(shipped)* | 8 | **3** | 0 | 5 | 1,696 |
+| `DwarfMapper.Conformance` | 2 | **2** | 0 | 0 | 1,650 |
+| `DwarfMapper` *(shipped runtime)* | 41 | **0** | 0 | 41 | 1,020 |
+| `DwarfMapper.CodeFixes` / `DocTooling` | 14 | 0 | 2 | 12 | 1,263 |
+| *(14 smaller projects)* | 123 | 3 | 8 | 112 | 10,915 |
+| **total** | **647** | **46** | **68** | **533** | **93,291** |
+
+Three things follow, and two of them *narrow* the round rather than widening it.
+
+**The shipped runtime is clean.** All 41 files of `src/DwarfMapper` score GOOD. Whatever architectural debt
+exists, none of it is in the library consumers actually reference.
+
+**The test projects' LOW scores are a size artifact, not tangle — verified, not assumed.** `Generator.Tests` is
+the largest codebase here at 40,809 LOC, 2.4× the generator, and file-level MI flags 15 files LOW. But its
+worst methods by cyclomatic complexity are generated regex code under `obj/` and schema pickers like
+`CombinatorialSchema.ShapeMemberType` — **cyclomatic 42, cognitive 11, nesting 0**. That shape is a flat
+dispatch table: wide, not deep, and read top-to-bottom without holding anything in mind. Contrast
+`ExtractCore` at cognitive 865 and nesting 5. **Test projects are therefore out of refactor scope on
+evidence**, not by omission — and this is exactly why file-level MI alone would have misled us: it penalises
+size, and a catalogue is legitimately large.
+
+**One genuine new finding, in shipped code — see [N5].**
+
+### [N5] `src/DwarfMapper.Testing` carries two overlapping object factories, both tangled
+
+| method | cyclomatic | cognitive | nesting | LLOC |
+|---|---:|---:|---:|---:|
+| `ObjectFactoryV2.Create` | **84** | 115 | 5 | 298 |
+| `ObjectFactory.Create` | **72** | 94 | 4 | 226 |
+| `GraphOracleComparer.CrossTypeCompare` | 39 | 55 | 5 | 153 |
+
+Unlike the test-project files, this is real complexity — cognitive 115 at nesting 5 — and it is in a
+**shipped** library (`src/`, packable), not test scaffolding. Three of its eight files are LOW.
+
+The `V2` is not a migration that finished: **both are live**, V1 with 45 references and V2 with 22, including
+V1 used from `Fuzzer.cs` and `RoundTrip.cs` inside the same assembly. So the library ships two large,
+overlapping object-graph builders and every caller must know which to pick — with no stated rule for choosing.
+
+*Action:* filed as **R27-08**, scoped to *determine and record the intended relationship* (is V2 meant to
+replace V1? is the split deliberate?) before any code moves. That question is the maintainer's, not mine, and
+answering it wrongly would delete a factory some fuzz path depends on.
+
+---
+
 ## 2. Four corrections to the RFC
 
 **C1 — every ceiling in the RFC is stale, and one is already red.** Its `StructureRatchetTests` pins
@@ -205,6 +260,19 @@ allocation stops being tribal knowledge. Ids and wordings do not change, so the 
 ### [R27-06] `ConversionPolicy` — one declarative table, three consumers
 
 Deferred to its natural trigger (when the R25 conversion rows land). Unchanged from the RFC.
+
+### [R27-08] `DwarfMapper.Testing` — decide the two object factories, then act
+
+Scoped to a QUESTION first, deliberately: is `ObjectFactoryV2` intended to replace `ObjectFactory`, or is the
+split meaningful? Both are live (45 vs 22 references) and V1 is used from `Fuzzer.cs` and `RoundTrip.cs` in
+the same assembly. Deleting the wrong one removes a factory some fuzz path depends on, and the fuzzers are
+how several real defects in this repo were found.
+
+Once answered: either finish the migration (V1 becomes a forwarder, then goes) or document the rule for
+choosing between them at both declaration sites. Only then is decomposing `Create` (CC 84 / cognitive 115)
+worth doing.
+
+*Red-when:* a third factory appears, or a caller picks one with no stated reason.
 
 ### [R27-07] Repo hygiene — the "entire solution" part
 
