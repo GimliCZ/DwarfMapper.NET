@@ -119,8 +119,11 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
 
             var housekeeping = File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1"));
             var legCalls = Regex.Matches(housekeeping, @"Assert-NoMutatedProductBinaries ").Count;
-            Assert.True(legCalls == 3,
-                $"scripts/housekeeping.ps1 calls Assert-NoMutatedProductBinaries {legCalls} time(s), expected " + "exactly 3 (one per mutation leg) — a leg that is not swept can leave a mutated product " + "assembly in a test bin, and the next incremental build keeps it (I4).");
+            // FOUR since round 27 added the code-fix leg. A literal, not a count derived from the leg list:
+            // deriving it would make this assertion agree with whatever housekeeping.ps1 happens to do, which
+            // is the one thing a sweep check must not do.
+            Assert.True(legCalls == 4,
+                $"scripts/housekeeping.ps1 calls Assert-NoMutatedProductBinaries {legCalls} time(s), expected " + "exactly 4 (one per mutation leg) — a leg that is not swept can leave a mutated product " + "assembly in a test bin, and the next incremental build keeps it (I4).");
 
             // CI runs the SAME function rather than a re-implementation, so the ci.yml step must dot-source
             // the gate file. A bash re-write of the scan would be a second thing to keep in step, which is

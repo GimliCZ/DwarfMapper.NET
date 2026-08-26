@@ -223,6 +223,9 @@ jobs:
           - leg: doctooling   # measured 5:04-5:30 (2026-08-21, 12 cores)
             config: stryker-config.doctooling.json
             timeout: 60
+          - leg: codefixes    # measured 7:04 (2026-08-26, 12 cores; first run of this leg)
+            config: stryker-config.codefixes.json
+            timeout: 80
     timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

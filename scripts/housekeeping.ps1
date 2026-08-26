@@ -506,6 +506,7 @@ try {
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.doctooling.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.codefixes.json'
         $legStart = Get-Date
         $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 30
         if ($legExit) { throw "mutation score below break threshold (generator)" }
@@ -541,6 +542,24 @@ try {
             -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
         Remove-PlantedMutants -Leg 'runtime' -Root $root
         Assert-NoMutatedProductBinaries -Leg 'runtime' -Root $root
+
+        # The CODE FIXES. Added round 27 after measuring what the other three legs do NOT cover: 15.3 % of
+        # src/ sits inside any leg's globs, and this project sat at 88.8 % LINE coverage with 0 % mutation
+        # coverage -- the exact combination mutation testing exists to interrogate, because it describes code
+        # thoroughly EXECUTED by tests that may assert nothing about it.
+        #
+        # It is also the most literally user-facing code here: an analyzer reports a problem, and these
+        # rewrite the consumer's own source to fix it. A code fix that produces subtly wrong code is worse
+        # than one that fails loudly, and until this leg existed nothing proved the tests would notice.
+        Write-Host "== 4/4d Mutation testing (code fixes) ==" -ForegroundColor Cyan
+        $legStart = Get-Date
+        $legExit = Invoke-StrykerLeg -Leg 'code fixes' -ConfigFile 'stryker-config.codefixes.json' -TimeoutMinutes 30
+        if ($legExit) { throw "mutation score below break threshold (code fixes)" }
+        Assert-MutantsWereTested -Leg 'code fixes' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'code fixes' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.codefixes.json') -Since $legStart
+        Remove-PlantedMutants -Leg 'code fixes' -Root $root
+        Assert-NoMutatedProductBinaries -Leg 'code fixes' -Root $root
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

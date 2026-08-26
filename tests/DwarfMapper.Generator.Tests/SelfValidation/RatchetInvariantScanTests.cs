@@ -176,9 +176,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(housekeeping.Contains("Test-CoverageWithinBand", StringComparison.Ordinal),
                 "scripts/housekeeping.ps1 no longer calls Test-CoverageWithinBand — the coverage gate lost " + "its R2 raise direction and floors can silently lag measurements again.");
 
+            // FOUR since round 27 added the code-fix leg. Pinned as a literal rather than derived from the
+            // leg list on purpose: deriving it would make this assertion agree with whatever housekeeping.ps1
+            // happens to do, which is the one thing it must not do.
             var legCalls = Regex.Matches(housekeeping, @"Assert-LegScoreWithinBand ").Count;
-            Assert.True(legCalls == 3,
-                $"scripts/housekeeping.ps1 calls Assert-LegScoreWithinBand {legCalls} time(s), expected " + "exactly 3 (one per mutation leg) — a leg whose score is not band-checked can bank slack " + "(invariant R2).");
+            Assert.True(legCalls == 4,
+                $"scripts/housekeeping.ps1 calls Assert-LegScoreWithinBand {legCalls} time(s), expected " + "exactly 4 (one per mutation leg) — a leg whose score is not band-checked can bank slack " + "(invariant R2).");
         }
 
         [Fact]
@@ -192,7 +195,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(fence.Success, "equivalent-mutants.md: the fenced JSON table is gone or unfenced — " + "the ledger is no longer machine-readable.");
             using var doc = JsonDocument.Parse(fence.Groups["json"].Value);
 
-            string[] legs = ["generator", "doctooling", "runtime"];
+            string[] legs = ["generator", "doctooling", "runtime", "codefixes"];
             string[] categories = ["proven-equivalent", "ruled-in-practice", "probably-equivalent"];
 
             // Row-level obligations: sanctioned leg + category, nothing empty, occurrences positive, the

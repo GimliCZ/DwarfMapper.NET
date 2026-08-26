@@ -41,6 +41,7 @@ recomputes the ceilings in the same commit.
 | generator | `stryker-config.json` | 258 | 84.88 % (2026-08-23, round-24 kill program) | 24 | 0 | 6 | 90.69 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 119 | 97.48 % (2026-08-23, round-24 kill program) | 2 | 1 | 1 | 98.31 % |
+| codefixes | `stryker-config.codefixes.json` | 177 | 52.54 % (2026-08-26, FIRST measurement) | 0 | 0 | 0 | 100.00 % |
 
 Fuller arithmetic, carried from the research and updated by P5 (context, not gates): the generator leg's
 *realistic* raw ceiling is lower than 88.05 — the 6 probably-equivalent survivors and the 3 NoCoverage
@@ -113,6 +114,17 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "probablyEquivalent": 1,
       "rawCeiling": 98.31,
       "rawCeilingFormula": "(119 - 2) / 119"
+    },
+    "codefixes": {
+      "config": "stryker-config.codefixes.json",
+      "scoreable": 177,
+      "measuredRawScore": 52.54,
+      "measuredOn": "2026-08-26",
+      "provenEquivalent": 0,
+      "ruledInPractice": 0,
+      "probablyEquivalent": 0,
+      "rawCeiling": 100.0,
+      "rawCeilingFormula": "(177 - 0) / 177"
     }
   },
   "entries": [

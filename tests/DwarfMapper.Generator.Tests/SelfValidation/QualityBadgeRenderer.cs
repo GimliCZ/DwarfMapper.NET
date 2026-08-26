@@ -57,7 +57,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         private const int ExpectedCoverageFloors = 5;
 
         /// <summary>How many legs the mutation ledger's per-leg summary must carry.</summary>
-        private const int ExpectedMutationLegs = 3;
+        /// <remarks>
+        ///     Four since round 27 added the code-fix leg. This is a VACUITY floor, not a list: it exists so a
+        ///     reader that silently parsed fewer rows than are gated cannot render a short table that the
+        ///     committed document then matches.
+        /// </remarks>
+        private const int ExpectedMutationLegs = 4;
 
         /// <summary>
         ///     Colour, derived from the gate's own verdict on the rendered number — never hand-assigned per
