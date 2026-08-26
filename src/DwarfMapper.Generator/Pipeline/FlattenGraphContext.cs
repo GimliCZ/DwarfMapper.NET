@@ -34,6 +34,26 @@ namespace DwarfMapper.Generator.Pipeline
             bool AllowNonPublic,
             IReadOnlyList<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>? RawDerivedPairs);
 
+
+        /// <summary>
+        ///     What the source navigation member RESOLVED TO -- the answer the first third of
+        ///     <c>ResolveOneFlattenGraphDirective</c> exists to compute, snapshotted at the moment it is complete.
+        /// </summary>
+        /// <remarks>
+        ///     A snapshot is only sound because all seven are settled before the branch that consumes them: each is
+        ///     assigned in the resolution section above and NONE is assigned afterwards. That was checked, not
+        ///     assumed -- a record built from locals that are still being written would go stale silently, and
+        ///     nothing downstream would notice.
+        /// </remarks>
+        private sealed record FlattenNavShape(
+            ITypeSymbol SrcNavType,
+            ITypeSymbol NodeType,
+            ITypeSymbol NodeDtoType,
+            bool SrcNavIsCollection,
+            bool SrcNavIsArray,
+            bool SrcNavIsDict,
+            bool NeedsToArray);
+
         /// <summary>
         ///     Everything resolving a directive writes into. Four of the six outlive the call and are what the
         ///     method ultimately returns or hands back to its caller; <see cref="SeenTargets" /> exists only to let
