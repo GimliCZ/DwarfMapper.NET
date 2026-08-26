@@ -282,6 +282,67 @@ function Assert-BlitRatiosHold {
 }
 
 
+# -----------------------------------------------------------------------------------------------------
+# Stryker launcher — correct reporters for the context, and a HARD FUSE so a leg can never hang forever.
+#
+# THE HANG, DIAGNOSED 2026-08-24. All three stryker-config*.json files request the `progress` reporter,
+# which draws a live console progress bar using ANSI cursor control. Run interactively that is fine, and six
+# runs on 2026-08-23 completed normally. Run from a DETACHED process with redirected stdout there is no
+# console to address: Stryker created its output directory and then blocked forever, consuming 0.1 s of CPU
+# across 17 processes in 12 seconds. Two attempts hung identically, and disabling MSBuild node reuse made no
+# difference -- it was never the build.
+#
+# So: choose the reporter from the context. Redirected output gets the non-interactive reporters, which emit
+# plain lines and need no cursor. The config files keep `progress` for the interactive case.
+#
+# AND a fuse regardless of cause. A gate that can hang indefinitely is worse than one that fails: a failure
+# is information, a hang is a machine occupied all night with nothing to show. If the deadline passes the
+# process tree is killed and the leg reports WHY, including what to try next.
+# -----------------------------------------------------------------------------------------------------
+function Invoke-StrykerLeg {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [string]$ConfigFile,
+        [int]$TimeoutMinutes = 30
+    )
+
+    $stArgs = @()
+    if ($ConfigFile) { $stArgs += @('--config-file', $ConfigFile) }
+
+    # [Console]::IsOutputRedirected is the honest test: it is false in a terminal and true under a pipe,
+    # a file redirect, or a detached task -- exactly the cases where `progress` has nothing to draw on.
+    if ([Console]::IsOutputRedirected) {
+        Write-Host "   non-interactive stdout detected - using 'dots' instead of the 'progress' reporter" -ForegroundColor DarkGray
+        $stArgs += @('--reporter', 'dots', '--reporter', 'html', '--reporter', 'json')
+    }
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    # Start-Process rather than a bare call so the fuse has something to kill: a plain invocation gives back
+    # no handle, and a fuse that cannot kill what it timed out on is decoration.
+    #
+    # Stdin is an EMPTY FILE, not 'NUL'. -RedirectStandardInput resolves its argument as a PATH, so 'NUL'
+    # becomes <repo>/NUL, which does not exist, and Start-Process throws before anything launches -- the fuse
+    # then fires on a null handle and blames the timeout for a launch failure. An empty file is the portable
+    # equivalent, and it closes the other way to wait forever: a console prompt nobody is there to answer.
+    $stdin = Join-Path ([System.IO.Path]::GetTempPath()) 'dwarf-stryker-stdin.txt'
+    Set-Content -LiteralPath $stdin -Value '' -NoNewline
+    $proc = Start-Process -FilePath 'dotnet' -ArgumentList (@('stryker') + $stArgs) `
+        -NoNewWindow -PassThru -RedirectStandardInput $stdin
+
+    if (-not $proc.WaitForExit($TimeoutMinutes * 60 * 1000)) {
+        try { taskkill /PID $proc.Id /T /F 2>&1 | Out-Null } catch { }
+        throw ("mutation leg '$Leg' HUNG - killed after $TimeoutMinutes min (no exit, no score).`n" +
+               "  This is the round-26 hang: the 'progress' reporter needs a console and blocks without one.`n" +
+               "  The launcher already swaps it out when stdout is redirected, so if you are seeing this the`n" +
+               "  cause is something else - run the leg interactively to see where it stops:`n" +
+               "    dotnet stryker" + $(if ($ConfigFile) { " --config-file $ConfigFile" } else { "" }))
+    }
+
+    $sw.Stop()
+    Write-Host ("   leg '$Leg' finished in {0:mm\:ss}" -f $sw.Elapsed) -ForegroundColor DarkGray
+    return $proc.ExitCode
+}
+
 function Assert-NoMutatedProductBinaries {
     param(
         [Parameter(Mandatory)][string]$Leg,
