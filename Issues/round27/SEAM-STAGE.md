@@ -68,9 +68,11 @@ middle is not.
 | 685–734 | 50 | *(dispatch arm)* | **SEPARABLE** |
 | 880–920 | 41 | `if (autoNest && nestedRegistry is not null && ...)` | **SEPARABLE** |
 
-The shape is a dispatch chain: each candidate tries one conversion kind and returns when it succeeds. That
-makes them natural `bool` phases, exactly like the three endpoint handlers already extracted from
-`ProcessDeclaredMethod` — `return` means "I claimed this", falling through means "not mine".
+The shape is a dispatch chain: each candidate tries one conversion kind and returns out of the whole method
+when it succeeds. That is **three** outcomes, not two — claimed-and-resolved, claimed-and-rejected, and not
+mine — so a plain `bool` is the wrong shape: it merges the first two, and they reach different code. What
+landed is `bool handled` plus `out bool resolved`, which keeps the three distinct and still reads as one line
+at the call site.
 
 ### `ResolveFlattenGraphDirectives` — 1,116 lines, **one 1,073-line loop**
 
@@ -155,8 +157,35 @@ The third produced a 1,077-line method of its own, which was then cut the same w
 path (439), the derived-type arms (205) and the edge/leaf partition (84) came out, leaving 573.
 
 Nothing in the generator pipeline now exceeds 650 lines, against three methods above 890 when the stage
-started. Every step was proven byte-identical against the 973-case golden manifest, with the corpus already
-proven to reach every phase (`scripts/seam-reach.ps1`, 26/26).
+started. Every step was proven byte-identical against the golden manifest.
+
+### The reach that proof depends on — and the hole it had
+
+Byte-identity proves nothing about code no case executes. The reach proof this stage started from,
+`scripts/seam-reach.ps1` at 26/26, measured **`ExtractCore`'s phases** — a different method, before this
+stage. Citing it for these cuts would have been borrowing a proof that never covered them.
+
+So reach was measured for the cuts themselves (`scripts/extracted-reach.ps1`, which reads every
+`private static` method out of the files this stage created, so later cuts are measured without editing a
+list). The first run found a real hole: **`ResolveHeterogeneousFlattenGraph` and `ResolveDerivedTypeArms` —
+468 lines, zero reached.** Exactly where the risk was concentrated, since the heterogeneous branch is one of
+the three places jumps were rewritten. The manifest being unchanged and the suite being green were both
+vacuous for those lines.
+
+A dedicated `Verify` snapshot did cover the shape, so the path was not untested — but the manifest, which is
+the lock these commits cite, was not covering it. The corpus gained a `feat:HeteroFlattenGraph` case (973 →
+974) and the run is now **14/14**. Its feature marker is `__DwarfMap_FlatNodeDispatch_` rather than the
+`__DwarfMap_FlattenGraph` the homogeneous case also emits — a marker both satisfy would advertise coverage
+the new case does not add.
+
+Regenerating the manifest for the addition produced a diff of exactly two lines: the case count, and the one
+new hash. **No existing hash moved** — an independent confirmation, from a direction none of the per-commit
+checks could give, that every extraction in this stage was byte-identical.
+
+**Reach is binary; density is not.** All fourteen are reached, but thinly in places — `ResolveExplicitMaps`
+executes 4 of its 297 lines under the corpus, `ApplySkipNullSourceMembers` 2 of 50. The manifest locks what
+runs, so for those methods it locks little, and the broader suite is what covers them. Worth knowing before
+citing the manifest as though it were uniform.
 
 ## What the stage taught, beyond the cuts
 

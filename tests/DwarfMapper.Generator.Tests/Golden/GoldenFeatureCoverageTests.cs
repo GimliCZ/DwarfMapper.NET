@@ -36,6 +36,13 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "FlattenGraph", "__DwarfMap_FlattenGraph"
                 },
                 {
+                    // Deliberately NOT __DwarfMap_FlattenGraph, which the homogeneous case also emits: the
+                    // per-node DISPATCH helper is synthesized only when several concrete node types share a
+                    // base, so it cannot appear unless the heterogeneous path actually ran. A marker both cases
+                    // satisfy would advertise coverage this case does not add.
+                    "HeteroFlattenGraph", "__DwarfMap_FlatNodeDispatch_"
+                },
+                {
                     "Flatten", "City = "
                 },
                 {
