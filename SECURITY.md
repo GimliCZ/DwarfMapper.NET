@@ -74,7 +74,8 @@ turn validation on and treat ambiguity as a build failure.
 
 ### Accessibility is never bypassed
 
-`AllowNonPublic` widens what the generator will *bind to*, strictly within the C# accessibility rules — it is
+`AllowNonPublic` — settable per mapper with `[DwarfMapper]`, or for a whole assembly with
+`[DwarfMapperDefaults]` — widens what the generator will *bind to*, strictly within the C# accessibility rules — it is
 implemented with Roslyn's own accessibility APIs (`IsSymbolAccessibleWithin`, `GivesAccessTo`), so
 `[InternalsVisibleTo]` is honoured and a member your code could not legally touch stays out of reach. It is
 not a reflective back door: a `private` constructor is refused even with the flag set.

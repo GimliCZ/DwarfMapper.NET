@@ -10,6 +10,50 @@ namespace DwarfMapper
     ///         independent allowlist dictionaries, each of which was one person typing a reason once.
     ///     </para>
     /// </summary>
+    /// <summary>
+    ///     What a surface element is security-relevant FOR, and therefore what must be documented and pinned
+    ///     about it.
+    ///     <para>
+    ///         A separate axis from <see cref="SurfaceCategory" /> rather than more categories, because the two
+    ///         questions are independent: <c>[Reinterpret]</c> is a <c>ConsumerDirective</c> whose proof
+    ///         obligation is the executed cross-product, AND a memory-safety override whose obligation is a
+    ///         refusal test. Folding them would force one to be chosen over the other.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="FlagsAttribute" /> because one element can be several: <c>[DwarfMapper]</c> carries
+    ///         both <c>AllowNonPublic</c> (a trust boundary) and <c>MaxDepth</c> (a resource bound).
+    ///     </para>
+    ///     <para>
+    ///         Every non-<see cref="None" /> value carries an obligation, matching the rule
+    ///         <see cref="SurfaceCategory" /> states: classifying redirects the proof, it never waives it.
+    ///         Enforced by <c>SecuritySurfaceObligationTests</c>.
+    ///     </para>
+    /// </summary>
+    [Flags]
+    internal enum SecuritySurface
+    {
+        /// <summary>No security consequence. See the detector note on <see cref="DwarfSurfaceAttribute.Security" />.</summary>
+        None = 0,
+
+        /// <summary>
+        ///     Widens what the generator may bind to, or who may contribute a mapping. Obligation: a
+        ///     <c>SECURITY.md</c> trust-model section naming the boundary, and a test pinning the invariant.
+        /// </summary>
+        TrustBoundary = 1,
+
+        /// <summary>
+        ///     Lets the consumer override a compile-time proof about memory layout. Obligation: a test proving
+        ///     the unsafe path is unreachable without its proof.
+        /// </summary>
+        MemorySafety = 2,
+
+        /// <summary>
+        ///     Sets or influences a resource limit — the guard against unbounded work. Obligation: the bound is
+        ///     pinned by a test, and every site enforcing it is proven to agree.
+        /// </summary>
+        ResourceBound = 4
+    }
+
     internal enum SurfaceCategory
     {
         /// <summary>
@@ -128,6 +172,24 @@ namespace DwarfMapper
         ///     </para>
         /// </summary>
         public string? ProbeKey { get; set; }
+
+        /// <summary>
+        ///     What this element is security-relevant for. Default <see cref="SecuritySurface.None" />.
+        ///     <para>
+        ///         A default of <c>None</c> would normally be the shape that passes vacuously, which this
+        ///         repository treats as the primary failure mode. It does not here, because the value is
+        ///         DETECTED as well as declared: <c>SecuritySurfaceObligationTests</c> derives the expected
+        ///         flags from the element's own shape — an attribute exposing <c>AllowNonPublic</c> must
+        ///         declare <see cref="SecuritySurface.TrustBoundary" />, one exposing <c>MaxDepth</c> must
+        ///         declare <see cref="SecuritySurface.ResourceBound" />, and the blit override must declare
+        ///         <see cref="SecuritySurface.MemorySafety" /> — and asserts declared ⊇ detected.
+        ///     </para>
+        ///     <para>
+        ///         The limit of that, stated rather than discovered later: it proves no KNOWN mechanism is
+        ///         undeclared. A novel one goes undetected until someone adds a detector for it.
+        ///     </para>
+        /// </summary>
+        public SecuritySurface Security { get; set; } = SecuritySurface.None;
     }
 
     /// <summary>

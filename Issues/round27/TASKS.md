@@ -34,9 +34,9 @@ Status values: `TODO` · `WIP` · `DONE` · `BLOCKED` · `DROPPED` (with a reaso
 | 0.3 | **SEC-2** — structural proof that registry tables are append-only | **DONE** | `RegistryAppendOnlyTests`, 4 facts |
 | 0.4 | **SEC-2 doc** — write the trust model into `SECURITY.md` | **DONE** | `SecurityDocIsCurrentTests`, 4 facts — every cited guard must exist |
 | 0.5 | **SEC-4** — structural: `allowNonPublic` may only widen via a sanctioned accessibility API | **DONE** | `AccessibilityBoundaryTests`, 4 facts; behaviour already covered by `ConstructorSelectorHardeningTests` |
-| 0.6 | **Axis 2** — `Security` property on `DwarfSurfaceAttribute` + per-value obligations + detector | TODO | obligations enforced like `SurfaceObligationTests`; detector proves *declared ⊇ detected* |
-| 0.7 | **A1** — mark infrastructure `[EditorBrowsable(Never)]` | TODO | no signature change; API baseline unchanged |
-| 0.8 | **A2** — `DwarfRefContext` ctor: kill the two adjacent optional bools | TODO | **emitted-bytes change** — reviewed re-bless, 28 positional sites become named |
+| 0.6 | **Axis 2** — `Security` property on `DwarfSurfaceAttribute` + per-value obligations + detector | **DONE** | `SecuritySurfaceObligationTests`, 4 facts; detector derives flags from the element’s own shape |
+| 0.7 | **A1** — mark infrastructure `[EditorBrowsable(Never)]` | **DONE** | `DwarfRefContext` marked; API baseline unchanged, as intended |
+| 0.8 | **A2** — `DwarfRefContext` ctor: emitted call sites now pass the flags BY NAME | **DONE** | emitted-bytes change; 1 manifest line + 2 snapshots, each a one-line diff reviewed before blessing |
 | 0.9 | **Audit** — member-by-member review of the 278 entries + `DwarfMapper.Testing` | TODO | every entry classified consumer / infrastructure / vestigial |
 | 0.10 | **R27-08** — the two object factories merged into one | **DONE** | V1's three fixes ported into V2, V1 deleted, 28 call sites repointed; suite 8,219 green |
 | 0.11 | **Promote** `Unshipped` → `Shipped` — arm the stability ratchet | TODO | analyzer refuses removals afterwards; CHANGELOG entry |

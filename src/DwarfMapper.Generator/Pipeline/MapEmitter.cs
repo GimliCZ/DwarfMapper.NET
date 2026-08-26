@@ -273,7 +273,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // Plan 19 C2: Preserve mode passes preserve:true to allocate the identity map.
                 if (method.IsPreserveMode)
                 {
-                    sb.Append(", true");
+                    sb.Append(", preserve: true");
                 }
                 // OnCycle = SetNull (None mode) passes setNull:true to allocate the on-stack guard.
                 else if (method.IsSetNullMode)
@@ -874,7 +874,7 @@ namespace DwarfMapper.Generator.Pipeline
                 .Append(method.MaxDepth.ToString(CultureInfo.InvariantCulture));
             if (method.IsPreserveMode)
             {
-                sb.Append(", true");
+                sb.Append(", preserve: true");
             }
             else if (method.IsSetNullMode)
             {

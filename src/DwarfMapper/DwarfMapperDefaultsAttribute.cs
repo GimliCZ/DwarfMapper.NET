@@ -27,7 +27,7 @@ namespace DwarfMapper
     ///         whole option list rather than a fallback layer under one.
     ///     </para>
     /// </summary>
-    [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+    [DwarfSurface(SurfaceCategory.ConsumerDirective, Security = SecuritySurface.TrustBoundary)]
 // The same per-option fixtures as [DwarfMapper], for the same reason: these are the layered form of the very
 // same options, and one fixture per element cannot ask twelve different questions. AutoMatchMembers and
 // RegisterCollectionShapes are observable against the flat pair and therefore demand nothing.
