@@ -15,6 +15,16 @@
 # Each mutant is a defect this project actually shipped or narrowly avoided, so a SURVIVOR is not hypothetical:
 # it names a behaviour that regressed once and that nothing would now notice.
 #
+# KNOWN DEFECT -- THE PRINTED SCORE IS AN OVERCOUNT. Measured 2026-08-27 at cb14993: of 33 entries, only 17
+# are genuinely behavioural. 7 do not COMPILE when applied (M02 M07 M09 M10 M13 M23 M25), so the compiler
+# catches them and every test fails -- the run prints "killed by <guard>" for a guard that proved nothing.
+# All 7 were already broken at 1c300f3, so this is long-standing, not new. A further 9 are STALE (the script
+# does report those honestly). The honest reading of a clean run today is 17 of 17 behavioural mutants
+# killed, not 24 of 33. Case analysis, per-id evidence and the repair list:
+#   Issues/round27/FINDING-mutation-battery-catalogue-rot.md
+# THE STRUCTURAL FIX is a build step after applying each mutant: a mutant that does not compile is a
+# catalogue defect and must be reported as one, never counted as killed.
+#
 # Usage:  scripts/mutation-battery.sh [--full]
 #           (default) run the named guard first, and only fall back to the whole suite if it passes
 #           --full    always run the whole suite per mutant (slower; catches "killed by something else")
