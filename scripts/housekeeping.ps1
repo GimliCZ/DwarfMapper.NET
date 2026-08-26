@@ -527,7 +527,13 @@ try {
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.codefixes.json'
         $legStart = Get-Date
-        $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 30
+        # 60, not 30. MEASURED 2026-08-27 on this machine: the leg takes 31 minutes, so the old fuse was
+        # cutting it off about a minute past the finish line and reporting a HANG. The 21-minute figure
+        # in stryker-config.json was taken on a quiet box; a developer machine running an IDE is not one,
+        # and CI already allows this leg 200 minutes for the same reason. A fuse exists to catch a leg
+        # that will never finish -- sized so tightly that a busy machine trips it, it only teaches people
+        # to distrust it.
+        $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 60
         if ($legExit) { throw "mutation score below break threshold (generator)" }
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `

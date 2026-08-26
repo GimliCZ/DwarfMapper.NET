@@ -29,6 +29,30 @@ source run saw it (informational), `lineCurrent` where the expression sits at th
 - `probably-equivalent` — the ledger argues equivalence but stops short of a full proof; explicitly
   low-priority, never "do not attempt" — a future proof may move it either way, with the entry.
 
+## Denominators moved on 2026-08-27 — recorded, not absorbed
+
+Two legs' scoreable populations changed with no edit to the code they mutate, so the reason is written down
+here rather than left as an unexplained number.
+
+**generator, 258 → 338.** The four files this leg mutates — `EquatableArray`, `BlittableProof`,
+`ConstructorSelector`, `LocationInfo` — are byte-identical on this branch: zero commits, empty diff. What
+changed is the classification around them. Stryker mutates and compiles the WHOLE project and only then
+filters, and compile-error rollback is a *compilation-dependent* verdict: 4,142 rollbacks became 3,240, and
+the whole-project mutant population grew 11,389 → 13,129 with the code round 27 added. Round 27 also
+switched the legs from Debug to Release builds when repairing the launcher. The previous figure dates from
+2026-08-23, with rounds 25, 26 and 27 in between, so it was stale by more than one cause.
+
+The score moved 84.88 % → 84.32 %, still above its floor of 84. Worth reading as an arithmetic rather than
+a decline: ~219 detected of 258 became 285 of 338, so the 80 newly-scoreable mutants are being killed at
+about 82 % — slightly below the existing rate, which is exactly why the overall figure dips a third of a
+point while more mutants die than before.
+
+**runtime, 119 → 125.** This one has an ordinary cause: round 27 bound each map table to its own ambiguity
+set (`RegistryTable<TDelegate>`), which changed what there is to mutate in `DwarfMapperRegistry.cs`. Score
+97.48 % → 97.60 %.
+
+Both ceilings are recomputed from the new denominators in the same commit, as the rule below requires.
+
 ## Per-leg summary — counts, raw ceilings, offsets
 
 `rawCeiling` = `(scoreable − provenEquivalent) / scoreable`, truncated to two decimals: the highest raw
@@ -38,9 +62,9 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 258 | 84.88 % (2026-08-23, round-24 kill program) | 24 | 0 | 6 | 90.69 % |
+| generator | `stryker-config.json` | 338 | 84.32 % (2026-08-27, round-27 battery) | 24 | 0 | 6 | 92.89 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
-| runtime | `stryker-config.runtime.json` | 119 | 97.48 % (2026-08-23, round-24 kill program) | 2 | 1 | 1 | 98.31 % |
+| runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
 
 Fuller arithmetic, carried from the research and updated by P5 (context, not gates): the generator leg's
@@ -85,14 +109,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
   "legs": {
     "generator": {
       "config": "stryker-config.json",
-      "scoreable": 258,
-      "measuredRawScore": 84.88,
-      "measuredOn": "2026-08-23",
+      "scoreable": 338,
+      "measuredRawScore": 84.32,
+      "measuredOn": "2026-08-27",
       "provenEquivalent": 24,
       "ruledInPractice": 0,
       "probablyEquivalent": 6,
-      "rawCeiling": 90.69,
-      "rawCeilingFormula": "(258 - 24) / 258"
+      "rawCeiling": 92.89,
+      "rawCeilingFormula": "(338 - 24) / 338"
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
@@ -107,14 +131,14 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "runtime": {
       "config": "stryker-config.runtime.json",
-      "scoreable": 119,
-      "measuredRawScore": 97.48,
-      "measuredOn": "2026-08-23",
+      "scoreable": 125,
+      "measuredRawScore": 97.6,
+      "measuredOn": "2026-08-27",
       "provenEquivalent": 2,
       "ruledInPractice": 1,
       "probablyEquivalent": 1,
-      "rawCeiling": 98.31,
-      "rawCeilingFormula": "(119 - 2) / 119"
+      "rawCeiling": 98.4,
+      "rawCeilingFormula": "(125 - 2) / 125"
     },
     "codefixes": {
       "config": "stryker-config.codefixes.json",
