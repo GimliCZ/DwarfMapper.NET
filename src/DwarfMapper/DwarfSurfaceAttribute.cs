@@ -11,6 +11,50 @@ namespace DwarfMapper
     ///     </para>
     /// </summary>
     /// <summary>
+    ///     Where a human looks this element up, and therefore what must exist for them to find it.
+    ///     <para>
+    ///         A third axis, independent of the other two. <see cref="SurfaceCategory" /> answers "what must be
+    ///         PROVED about this?" and is already satisfied — a <c>ConsumerDirective</c> must appear in a
+    ///         runnable sample, and a Conformance feature discharges that. But Conformance proves an observable
+    ///         runtime difference; it does not teach. A reader asking "how do I use
+    ///         <c>[MapCollectionKey]</c>?" and finding an assertion has found the proof and not the answer.
+    ///     </para>
+    ///     <para>
+    ///         Measured when this axis was added: 24 of 29 attributes had a Conformance feature, 14 had a
+    ///         Gallery example, and 10 were proven but undiscoverable. That gap is what this axis closes.
+    ///     </para>
+    ///     <para>
+    ///         Same rule as the other axes: every value carries an obligation, none waives one. Enforced by
+    ///         <c>DiscoverabilityObligationTests</c>.
+    ///     </para>
+    /// </summary>
+    internal enum Discoverability
+    {
+        /// <summary>
+        ///     Obligation: a Gallery region exists for it, and the generated Gallery README quotes that region.
+        ///     The DEFAULT, deliberately — a newly added attribute acquires the strongest obligation unless
+        ///     someone narrows it on purpose, exactly as <see cref="SurfaceEndpoints.All" /> is the default
+        ///     claim.
+        /// </summary>
+        GalleryExample,
+
+        /// <summary>
+        ///     Obligation: a Conformance feature AND a prose section in <c>docs/</c>. For elements a Gallery
+        ///     example cannot honestly show — a build-failure-only element cannot compile, and a cross-assembly
+        ///     element needs two projects the Gallery does not have.
+        /// </summary>
+        ConformanceOnly,
+
+        /// <summary>
+        ///     Obligation, and it is INVERTED: the element must be <c>[EditorBrowsable(Never)]</c> and must NOT
+        ///     appear in the Gallery. An example showing a consumer hand-writing an attribute the generator
+        ///     emits would document an API that does not exist that way — so its absence is a thing to prove,
+        ///     not a thing to excuse. This is why the axis needs no <c>Exempt</c> member.
+        /// </summary>
+        Infrastructure
+    }
+
+    /// <summary>
     ///     What a surface element is security-relevant FOR, and therefore what must be documented and pinned
     ///     about it.
     ///     <para>
@@ -190,6 +234,12 @@ namespace DwarfMapper
         ///     </para>
         /// </summary>
         public SecuritySurface Security { get; set; } = SecuritySurface.None;
+
+        /// <summary>
+        ///     Where a reader finds this element. Defaults to <see cref="Discoverability.GalleryExample" />,
+        ///     the strongest obligation, so narrowing it is always a deliberate act.
+        /// </summary>
+        public Discoverability Discovery { get; set; } = Discoverability.GalleryExample;
     }
 
     /// <summary>

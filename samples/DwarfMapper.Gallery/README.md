@@ -28,6 +28,10 @@ dotnet run --project samples/DwarfMapper.Gallery
 | 12 | [`12_Ergonomics.cs`](12_Ergonomics.cs) — Extension method and DI | the generated `x.ToGemDto()` and `AddDwarfMappers()` |
 | 13 | [`13_NestedListConfig.cs`](13_NestedListConfig.cs) — Configure a collection-element map | renaming a member of the element type inside a `List<T>` |
 | 14 | [`14_NestedListConfigErgonomic.cs`](14_NestedListConfigErgonomic.cs) — The same, with no partial methods | pair-scoped `[MapProperty<S,T>]` on the class carries the nested rename |
+| 40 | [`40_BeforeAfterHooks.cs`](40_BeforeAfterHooks.cs) — Before-map hook | running your own code before a map, matched by source type |
+| 41 | [`41_AutoNestOverride.cs`](41_AutoNestOverride.cs) — Per-method auto-nest override | disabling nested-mapper synthesis for a single method |
+| 42 | [`42_IgnoreSourceMember.cs`](42_IgnoreSourceMember.cs) — Intentionally unread source member | silencing DWARF039 for a source member no destination reads |
+| 43 | [`43_ConstructorSelection.cs`](43_ConstructorSelection.cs) — Explicit constructor selection | marking the constructor a mapped type should be built through |
 | | **Front doors** | |
 | 15 | [`ex15/15_CoLocated.cs`](ex15/15_CoLocated.cs) — Co-located on the DTO | `[GenerateMap]` on a plain `sealed` DTO — no `partial`, no `[DwarfMapper]` |
 | 16 | [`16_MapToRegistry.cs`](16_MapToRegistry.cs) — The `[MapTo]` registry | declaring the pair on the source type — no mapper class at all |
@@ -41,6 +45,11 @@ dotnet run --project samples/DwarfMapper.Gallery
 | 23 | [`23_FlattenGraph.cs`](23_FlattenGraph.cs) — `[FlattenGraph]` — a graph becomes a list | breadth-first graph collapse with per-node-type mapping |
 | 24 | [`24_MapDerivedType.cs`](24_MapDerivedType.cs) — `[MapDerivedType]` — polymorphic dispatch | one base-typed method that maps each concrete subtype to its own DTO |
 | 27 | [`27_PatchMerge.cs`](27_PatchMerge.cs) — Patch-merge: a null source member leaves the destination alone | [MapNullSkip] scoping SkipNullSourceMembers to one map, so replace and patch coexist |
+| 44 | [`44_FactoryConstruction.cs`](44_FactoryConstruction.cs) — Factory-based construction | constructing the destination through your own factory, pair-scoped |
+| 45 | [`45_WrapperMaps.cs`](45_WrapperMaps.cs) — Wrapper maps | synthesising W<A> to W<B> for every declared payload pair |
+| 46 | [`46_MergeCollectionByKey.cs`](46_MergeCollectionByKey.cs) — Merge a collection by key | updating list elements in place instead of rebuilding the list |
+| 47 | [`47_RestateBaseConfig.cs`](47_RestateBaseConfig.cs) — Restated base configuration | checking a derived pair against the base pair it restates |
+| 48 | [`48_ProvidedMapShape.cs`](48_ProvidedMapShape.cs) — Hand-written provided map | registering your own method as a resolvable map |
 | | **Testing** | |
 | 25 | [`25_RoundTrip.cs`](25_RoundTrip.cs) — `[RoundTrip]` verification | one attribute emits a fuzzing harness asserting `Back(Forward(x)) == x` |
 | 26 | [`26_InformedDumps.cs`](26_InformedDumps.cs) — Informed failure dumps | a failed round trip names the diverging member path, not two object dumps |
