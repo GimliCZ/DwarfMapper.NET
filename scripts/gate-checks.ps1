@@ -309,6 +309,49 @@ function Invoke-StrykerLeg {
     $stArgs = @()
     if ($ConfigFile) { $stArgs += @('--config-file', $ConfigFile) }
 
+    # --- msbuild-path: without it NO leg runs on a machine that has VS Build Tools -------------------
+    # Stryker asks Buildalyzer for an MSBuild and gets the VS 2022 Build Tools one, which predates .NET 10
+    # and cannot resolve its SDK: every project fails with MSB4236 ('the specified SDK Microsoft.NET.Sdk
+    # could not be found') before a single mutant is created. `dotnet build` is unaffected, which is why the
+    # rest of this repository builds happily while all four legs are dead.
+    #
+    # Pointed at the SDK's own MSBuild, Stryker shells out to `dotnet build` instead and the build succeeds.
+    # Guarded on existence rather than hardcoded: on a runner with no VS Build Tools, Stryker already picks
+    # the right one and there is nothing to correct.
+    $sdkMsBuild = Join-Path (Split-Path -Parent (Get-Command dotnet).Source) `
+                            'sdk' | Join-Path -ChildPath (& dotnet --version).Trim() |
+                  Join-Path -ChildPath 'MSBuild.dll'
+    if (Test-Path $sdkMsBuild) {
+        # QUOTED. Start-Process joins -ArgumentList with spaces and quotes nothing, so the default install
+        # path splits at 'Program Files' and Stryker rejects the tail as an unknown command -- a one-second
+        # failure that looks nothing like a path problem.
+        $stArgs += @('--msbuild-path', ('"' + $sdkMsBuild + '"'))
+    }
+
+    # --- configuration: Release, and NOT only for speed ---------------------------------------------
+    # Stryker defaults to Debug. Two reasons this leg does not:
+    #
+    #   * An IDE holds the Debug output. Rider loads this repository's own generator as an analyzer, which
+    #     locks src/DwarfMapper.Generator/bin/Debug/.../DwarfMapper.Generator.dll; Stryker's build then dies
+    #     with MSB3021 ('cannot copy ... because it is being used by another process'). Every other build in
+    #     this repository is Release, which is why nobody noticed. A gate that only runs when the maintainer
+    #     closes their editor is a gate that does not run.
+    #   * Release is what everything else here certifies -- CI, the golden manifest, every dotnet test in
+    #     these scripts. Mutating a Debug build to grade a Release-validated suite is a mismatch.
+    #
+    # Behaviourally identical, and that was checked rather than assumed: src/ contains no '#if DEBUG', no
+    # Debug.Assert, and no configuration-conditional DefineConstants, so no leg's score can move because of
+    # this. If any of those three ever appear, this line stops being free.
+    $stArgs += @('--configuration', 'Release')
+
+    # --- concurrency: leave the machine two cores ---------------------------------------------------
+    # Stryker's default is half the logical processors. Its own test runs are xunit processes that
+    # parallelise INTERNALLY, so the two multiply: the product, not the setting, is what lands on the CPU,
+    # and over-subscription shows up as mutants classified Timeout that are not slow at all -- noise that
+    # reads as a score change. Two cores held back leaves room for the harness itself.
+    $cores = [Environment]::ProcessorCount
+    if ($cores -gt 3) { $stArgs += @('--concurrency', [string]($cores - 2)) }
+
     # [Console]::IsOutputRedirected is the honest test: it is false in a terminal and true under a pipe,
     # a file redirect, or a detached task -- exactly the cases where `progress` has nothing to draw on.
     if ([Console]::IsOutputRedirected) {
