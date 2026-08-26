@@ -19,6 +19,12 @@ import xml.etree.ElementTree as ET
 out = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 FILES = [
+    # ExtractCore's own phases, moved out earlier in round 27. Added after a battery run caught the gap they
+    # fell through: seam-reach measures phases by the seam COMMENTS still inside ExtractCore, so the moment a
+    # phase was extracted it left that file and stopped being counted there -- and it was never in this list.
+    # Ten phases were being measured by neither script, which is precisely the silence this instrument exists
+    # to break.
+    'src/DwarfMapper.Generator/Pipeline/MapperExtractor.Phases.cs',
     'src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs',
     'src/DwarfMapper.Generator/Pipeline/MapperExtractor.Conversions.Arms.cs',
     'src/DwarfMapper.Generator/Pipeline/MapperExtractor.Flatten.Directive.cs',
@@ -27,14 +33,30 @@ FILES = [
     'src/DwarfMapper.Generator/Pipeline/MapperExtractor.Flatten.Members.cs',
 ]
 
-DECL = re.compile(r'^\s*private static (?:void|bool|[\w\.\?<>,\[\] ]+?)\s*(\w+)\($')
+# Anchored on the MODIFIERS, with the name taken as the last identifier before the first '(' -- NOT on a
+# pattern ending in '($'. That earlier form required the signature to WRAP, so it silently skipped every
+# method whose parameters fit on one line: eleven of MapperExtractor.Phases.cs's eighteen, including all ten
+# ExtractCore phases extracted earlier in round 27. A reach instrument that quietly measures a subset is the
+# exact failure it exists to detect.
+DECL_START = re.compile(r'^\s*(?:private|internal|public) static ')
+
+
+def declared_name(line):
+    """The method name on a declaration line, or None when the line is not one."""
+    head = line.split('(')[0]
+    if '=' in head or ' readonly ' in head:
+        return None                                 # a field initialised with new(...), not a method
+    names = re.findall(r'\w+', head)
+    return names[-1] if names else None
 
 
 def methods(path):
     lines = io.open(path, encoding='utf-8').read().split('\n')
     for i, line in enumerate(lines):
-        m = DECL.match(line)
-        if not m:
+        if not DECL_START.match(line) or '(' not in line:
+            continue
+        name = declared_name(line)
+        if name is None:
             continue
         depth, seen = 0, False
         for j in range(i, len(lines)):
@@ -42,7 +64,7 @@ def methods(path):
             if '{' in lines[j]:
                 seen = True
             if seen and depth <= 0:
-                yield m.group(1), i + 1, j + 1
+                yield name, i + 1, j + 1
                 break
 
 
