@@ -30,7 +30,6 @@ if (Test-Path $publishDir) {
     Write-Host "Cleared previous publish output."
 }
 
-$publishStart = Get-Date
 Write-Host "Publishing NativeAOT (this takes a few minutes)..."
 & dotnet publish -c Release -r win-x64 --nologo $proj
 if ($LASTEXITCODE -ne 0) {
@@ -38,17 +37,26 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Trap 2 (part B): a fresh publish MUST have produced a binary newer than when we started.
+# Trap 2 (part B): the publish reported success, so it MUST have put a binary where part A left nothing.
+#
+# The check here used to also require the binary's LastWriteTime to be later than a timestamp taken before the
+# publish. That was removed, for two reasons and in that order:
+#
+#   * It is UNSOUND. MSBuild's copy preserves the source file's timestamp, so a binary copied from the
+#     intermediate output can legitimately carry a time earlier than this run began. The guard then refuses a
+#     perfectly good publish, and a guard that cries wolf gets bypassed -- which costs more than it saves.
+#   * It is REDUNDANT even when it works. Part A deleted the directory and proved the binary was gone; the
+#     publish then reported success. A file existing here can only have been produced by this run. The
+#     timestamp was a proxy for a fact already established directly.
+#
+# What has NOT changed is what the guard is for: a failed publish must never leave month-old numbers looking
+# like a fresh result. That is still fully covered -- by the delete, the existence check below and the
+# exit-code check above, none of which can pass for a stale binary.
 if (-not (Test-Path $exe)) {
     Write-Error "Publish reported success but produced no binary at $exe."
     exit 1
 }
-$exeTime = (Get-Item $exe).LastWriteTime
-if ($exeTime -lt $publishStart) {
-    Write-Error "Binary at $exe is dated $exeTime, older than this publish ($publishStart) — it is STALE. Refusing to run it."
-    exit 1
-}
 
-Write-Host "Running fresh AOT binary ($exeTime)..."
+Write-Host "Running fresh AOT binary ($((Get-Item $exe).LastWriteTime))..."
 & $exe
 exit $LASTEXITCODE
