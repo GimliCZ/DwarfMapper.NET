@@ -226,7 +226,8 @@ vary by hardware; **relative ordering is the point — reproduce locally with th
 | **Nested object** ‡ | **10.8 ns** | 12.3 ns | 21.1 ns | 59.4 ns | — |
 | **List (1000 REFERENCE elements)** ‡ | 6.11 µs | 6.13 µs | **5.42 µs** | 8.73 µs | — |
 | **Array (1000 REFERENCE elements)** ‡ | 4.69 µs | **4.65 µs** | 6.09 µs | 5.23 µs | — |
-| **Enum (scalar member, by name)** ‡ § | 13.0 ns | **3.3 ns** | 12.6 ns | 74.6 ns | — |
+| **Enum, BY NAME** ‡ § | 12.5 ns | **12.3 ns** | — | 73.6 ns | — |
+| **Enum, BY VALUE** ‡ § | **2.9 ns** | 3.0 ns | 12.3 ns | — | — |
 | **Widen (1000 int→long)** | **0.35 µs** | 0.43 µs | 0.69 µs | 0.72 µs | — |
 | Allocations (all scenarios) | = hand-written | = | = | = | baseline |
 
@@ -238,12 +239,37 @@ memory. Note the contrast with the reference-element `List` row above, where Dwa
 there the cost of allocating a thousand destination objects dominates and the fill strategy cannot show
 through, which is why the optimisation is deliberately restricted to value elements.
 
-`§` **The enum row is the one to read carefully, and it is a weakness rather than a rounding error.**
-DwarfMapper maps enums by NAME through a `switch` over declared members, which is branch-predicted — so a
-benchmark that mapped a single enum value forever reported **4.8 ns**, and cycling all three declared values
-reported **12.97 ns**. Mapperly is flat at ~3.3 ns either way, so a gap published as 1.4x is really **3.98x**
-on varied data. Mapster measures 12.6 ns, i.e. essentially level with us, which points at the switch rather
-than at anything specific to our emission. Improving this is filed, not fixed.
+`§` **The enum row used to say DwarfMapper was 3.98x slower than Mapperly. That was an artifact of the
+benchmark, and correcting it removed the finding entirely.** Enum mapping has two legitimate strategies and
+the four libraries do not agree on a default: **DwarfMapper and AutoMapper match member NAMES; Mapperly and
+Mapster cast the underlying VALUE.** The benchmark left every library at its default, so this row was not
+comparing four implementations of one operation — it was comparing a name switch against a raw cast, and
+publishing the difference as a deficiency in our emission.
+
+They do not even produce the same answer. The benchmark's enums are deliberately reordered
+(`{Pending, Active, Closed}` against `{Closed, Pending, Active}`), so a value cast maps `Pending` to
+`Closed`. Roughly a 4x "win" was the price of answering a different question.
+
+Measured like-for-like (2026-08-26, same machine and job as the rows above), **the gap is gone in one
+direction and reversed in the other**:
+
+* **By name** — DwarfMapper **12.5 ns**, Mapperly told to match at `EnumMappingStrategy.ByName` **12.3 ns**.
+  A 1.6 % difference, near enough the run-to-run spread to carry no meaning. AutoMapper, whose default is
+  also by name, takes **73.6 ns**. So our switch was never the problem; the strategy was the whole gap.
+* **By value** — DwarfMapper opted in with `EnumStrategy.ByValue` is **2.9 ns**, ahead of Mapperly's default
+  **3.0 ns** and Mapster's default **12.3 ns**. Mapster performs a cast and still measures like a switch,
+  because its per-call dispatch dominates whatever the cast costs.
+
+Two things follow. **By-name safety is a default, not a tax** — `EnumStrategy.ByValue` is a documented
+one-line opt-out (the same switch that lets an enum array take the blit fast path), and taking it puts
+DwarfMapper first in its class. And **nothing here is filed as a defect any more**; the earlier "improving
+this is filed, not fixed" note is withdrawn, because the thing it proposed to improve did not exist.
+
+The semantics behind both rows are executable rather than asserted: `EnumOrderSensitivityTests` maps
+divergently ordered enums through all four libraries and pins what each returns. Writing it corrected two
+confident guesses of mine — that AutoMapper mapped by value (its ledger entry is about *undefined* values
+passing through, not defined members) and that Mapster mapped by name (12.3 ns merely *looks* switch-shaped).
+Both were wrong, which is why the table now rests on the tests instead of on inference.
 
 **Every single-object row on this page now maps a RING of 512 distinct fixture-drawn payloads**, cycled per
 iteration, rather than one cached object. That change moved four rows and *flipped one ranking* (Nested went

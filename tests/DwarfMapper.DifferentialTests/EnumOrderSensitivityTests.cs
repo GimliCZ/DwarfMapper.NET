@@ -45,6 +45,16 @@ namespace DwarfMapper.DifferentialTests
     [GenerateMap<PhaseSrc, PhaseDst>]
     public partial class DwarfPhase;
 
+    /// <summary>
+    ///     DwarfMapper opted into the OTHER strategy. EnumStrategy.ByValue is a supported, documented option
+    ///     — the same switch that lets an enum array take the blit fast path — so the by-value half of the
+    ///     benchmark compares DwarfMapper against Mapperly and Mapster on equal terms rather than leaving the
+    ///     whole strategy unmeasured.
+    /// </summary>
+    [DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]
+    [GenerateMap<PhaseSrc, PhaseDst>]
+    public partial class DwarfPhaseByValue;
+
     /// <summary>Mapperly's DEFAULT strategy: a raw value cast.</summary>
     [Riok.Mapperly.Abstractions.Mapper]
     public partial class MapperlyPhaseByValue
@@ -90,6 +100,8 @@ namespace DwarfMapper.DifferentialTests
     public class EnumOrderSensitivityTests
     {
         private static readonly DwarfPhase Dwarf = new();
+        private static readonly DwarfPhaseByValue DwarfByValue = new();
+
         private static readonly MapperlyPhaseByName MapperlyByName = new();
 
         private static readonly MapperlyPhaseByValue MapperlyByValue = new();
@@ -104,6 +116,19 @@ namespace DwarfMapper.DifferentialTests
         public void DwarfMapper_maps_by_name_so_reordering_the_destination_changes_nothing(Phase src, PhaseDto expected)
         {
             Assert.Equal(expected, Dwarf.Map(new PhaseSrc { Status = src }).Status);
+        }
+
+        [Theory]
+        [InlineData(Phase.Pending, PhaseDto.Closed)]
+        [InlineData(Phase.Active, PhaseDto.Pending)]
+        [InlineData(Phase.Closed, PhaseDto.Active)]
+        public void DwarfMapper_told_to_map_by_value_agrees_with_Mapperly_and_Mapster(Phase src, PhaseDto expected)
+        {
+            // The point of the opt-in, and the thing that makes the benchmark's by-value category honest:
+            // asked for a cast, DwarfMapper emits a cast and lands on exactly the answer Mapperly's and
+            // Mapster's defaults give. Without this the by-value row would be an unverified claim that our
+            // arm does the same work as theirs.
+            Assert.Equal(expected, DwarfByValue.Map(new PhaseSrc { Status = src }).Status);
         }
 
         [Theory]

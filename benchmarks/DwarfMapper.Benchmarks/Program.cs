@@ -432,9 +432,21 @@ public partial class MapperlyM
     public partial NfOrderDto MapNestedFill(NfOrder s);
 }
 
-// Mapperly at its DEFAULT enum strategy -- a raw value cast. Kept so the cost of the semantic difference is a
-// measured number rather than an assertion. Its row is NOT comparable to the by-name rows: on these
-// deliberately reordered enums it answers Closed where every by-name mapper answers Pending.
+// ── The BY-VALUE half of the enum comparison ──────────────────────────────
+// Enum mapping has two legitimate strategies and the four libraries do not agree on a default: DwarfMapper
+// and AutoMapper match member NAMES, Mapperly and Mapster cast the underlying VALUE. Measuring one against
+// the other compares strategies rather than implementations -- which is what this row used to do, reporting a
+// 3.98x Mapperly "win" that turned out to be entirely the strategy and none of the emission (told to go by
+// name, Mapperly measures 12.315 ns against DwarfMapper's 12.385 ns).
+//
+// So each strategy gets its own category, and every library appears where it can actually be configured.
+// DwarfMapper opts into the cast with EnumStrategy.ByValue -- a supported, documented option, not a
+// benchmark-only contrivance: it is the same switch docs/COMPARISON.md points at for enum-array blitting.
+[DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]
+[GenerateMap<EnumSrc, EnumDst>]
+public partial class DwarfEnumByValueM;
+
+// Mapperly at its DEFAULT strategy: the raw cast.
 [Riok.Mapperly.Abstractions.Mapper]
 public partial class MapperlyEnumByValueM
 {
@@ -449,6 +461,7 @@ public class MapperBenchmarks
     private readonly DwarfM _dwarf = new();
     private readonly MapperlyM _mapperly = new();
     private readonly MapperlyEnumByValueM _mapperlyByValue = new();
+    private readonly DwarfEnumByValueM _dwarfByValue = new();
     private ArraySrc _array = null!;
     private IMapper _auto = null!;
     private BlitSrc _blit = null!;
@@ -916,43 +929,50 @@ public class MapperBenchmarks
         return _auto.Map<FlOrderDto>(Next(_flOrder));
     }
 
-    // ── Enum by-name ────────────────────────────────────────────────────────────
+    // ── Enum, BY NAME — DwarfMapper's default, Mapperly told to match it, AutoMapper's default ──
     [Benchmark]
-    [BenchmarkCategory("Enum")]
+    [BenchmarkCategory("EnumByName")]
     public EnumDst Enum_Dwarf()
     {
         return _dwarf.MapEnum(Next(_enum));
     }
 
     [Benchmark]
-    [BenchmarkCategory("Enum")]
+    [BenchmarkCategory("EnumByName")]
     public EnumDst Enum_Mapperly()
     {
         return _mapperly.MapEnum(Next(_enum));
     }
 
-    // NOT comparable to the rows above: this is Mapperly's DEFAULT by-VALUE strategy, a raw cast. It is here
-    // to price the semantic difference rather than to win a race -- on these deliberately reordered enums it
-    // returns Closed where every by-name row returns Pending. See EnumSemanticsAreComparedLikeForLikeTests.
     [Benchmark]
-    [BenchmarkCategory("Enum")]
-    public EnumDst Enum_Mapperly_ByValue_NotComparable()
+    [BenchmarkCategory("EnumByName")]
+    public EnumDst Enum_AutoMapper()
+    {
+        return _auto.Map<EnumDst>(Next(_enum));
+    }
+
+    // ── Enum, BY VALUE — DwarfMapper opted in, Mapperly's default, Mapster's default ──
+    // Every arm here answers Closed for Pending, because that is what a value cast over divergently ordered
+    // enums does. They are comparable to each other and NOT to the by-name category above.
+    [Benchmark]
+    [BenchmarkCategory("EnumByValue")]
+    public EnumDst EnumByValue_Dwarf()
+    {
+        return _dwarfByValue.Map(Next(_enum));
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("EnumByValue")]
+    public EnumDst EnumByValue_Mapperly()
     {
         return _mapperlyByValue.MapEnum(Next(_enum));
     }
 
     [Benchmark]
-    [BenchmarkCategory("Enum")]
-    public EnumDst Enum_Mapster()
+    [BenchmarkCategory("EnumByValue")]
+    public EnumDst EnumByValue_Mapster()
     {
         return Next(_enum).Adapt<EnumDst>();
-    }
-
-    [Benchmark]
-    [BenchmarkCategory("Enum")]
-    public EnumDst Enum_AutoMapper()
-    {
-        return _auto.Map<EnumDst>(Next(_enum));
     }
 
     // ── Dictionary copy (N entries) ─────────────────────────────────────────────
