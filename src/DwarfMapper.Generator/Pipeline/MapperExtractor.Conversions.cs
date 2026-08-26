@@ -84,6 +84,28 @@ namespace DwarfMapper.Generator.Pipeline
             nullHandling = NullHandling.None;
             converterNeedsCtx = false;
 
+            // One bundle for the arms below. Five of the six read 19 or 20 of this method's parameters, so
+            // passing them individually would give each arm a signature nobody could read. diagnostics and
+            // synthesized stay OUT of it: they are sinks, not inputs -- see ConversionRequest.
+            var req = new ConversionRequest(compilation,
+                srcType,
+                tgtType,
+                useMethod,
+                allMethods,
+                autoCandidates,
+                enumPolicy,
+                nullStrategy,
+                location,
+                targetName,
+                autoNest,
+                nestedRegistry,
+                nullAsNull,
+                isPreserve,
+                allowInterfaceSrc,
+                isSetNull,
+                implicitConversions,
+                reservedConverters);
+
             if (useMethod is not null)
             {
                 foreach (var m in allMethods)
@@ -114,432 +136,14 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            if (DictionaryConverter.TryResolve(srcType,
-                    tgtType,
-                    out var srcKey,
-                    out var srcVal,
-                    out var tgtKey,
-                    out var tgtVal,
-                    out var dictHasCount,
-                    out var dictTargetKind))
+            if (HandleDictionaryConversion(req, diagnostics, synthesized, ref converterMethod, ref converterNeedsCtx, out var dictionaryResolved))
             {
-                // A3: determine effective null-as-null for the OUTER dict helper based on target nullability.
-                // If nullAsNull=true but the target dict type is non-nullable, fall back to AsEmpty
-                // to prevent CS8601 (nullable helper assigned to non-nullable field).
-                var dictEffectiveNullAsNull = nullAsNull && IsNullableReferenceType(tgtType);
-
-                // A1: propagate nullAsNull to nested key/value converters so nullable elements
-                // (e.g. the value type List<int>? in Dictionary<string, List<int>?>) generate
-                // helpers that preserve null instead of silently mapping to empty.
-                if (!TryResolveConversion(compilation,
-                        srcKey,
-                        tgtKey,
-                        null,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        location,
-                        targetName,
-                        diagnostics,
-                        out var keyConv,
-                        out var keyNull,
-                        out var keyNeedsCtx,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull: isSetNull,
-                        implicitConversions: implicitConversions,
-                        reservedConverters: reservedConverters))
-                {
-                    return false;
-                }
-
-                if (!TryResolveConversion(compilation,
-                        srcVal,
-                        tgtVal,
-                        null,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        location,
-                        targetName,
-                        diagnostics,
-                        out var valConv,
-                        out var valNull,
-                        out var valNeedsCtx,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull: isSetNull,
-                        implicitConversions: implicitConversions,
-                        reservedConverters: reservedConverters))
-                {
-                    return false;
-                }
-
-                // Preserve OR SetNull: if the key/value converter is an auto-nested object mapper, force it RC
-                // so it carries (ctx, depth) and the dict helper threads the shared context into it — this is
-                // what lets a cycle routed through a dictionary value break (SetNull) or depth-cap.
-                if ((isPreserve || isSetNull) && nestedRegistry is not null)
-                {
-                    if (keyConv is not null && GeneratedNames.IsObjectMap(keyConv))
-                    {
-                        nestedRegistry.ForceRecursionCapable(keyConv);
-                        keyNeedsCtx = true;
-                    }
-
-                    if (valConv is not null && GeneratedNames.IsObjectMap(valConv))
-                    {
-                        nestedRegistry.ForceRecursionCapable(valConv);
-                        valNeedsCtx = true;
-                    }
-                }
-
-                converterMethod = DictionaryConverter.Synthesize(synthesized,
-                    srcType,
-                    tgtKey,
-                    tgtVal,
-                    dictHasCount,
-                    dictTargetKind,
-                    keyConv,
-                    keyNull,
-                    valConv,
-                    valNull,
-                    dictEffectiveNullAsNull,
-                    isPreserve,
-                    keyNeedsCtx,
-                    valNeedsCtx);
-                // The dict helper threads (ctx, depth) when it register-before-fills (Preserve mutable) OR a
-                // key/value converter is recursion-capable (Preserve, or None/SetNull self-referential value).
-                var isMutableDict = dictTargetKind != DictionaryConverter.DictTargetKind.ImmutableDictionary && dictTargetKind != DictionaryConverter.DictTargetKind.IImmutableDictionary;
-                converterNeedsCtx = (isPreserve && isMutableDict) || keyNeedsCtx || valNeedsCtx;
-
-                // None+Throw: a key/value resolved to a PUBLIC declared method. Record a re-synthesis
-                // closure so the post-pass can upgrade this dict helper if that method is self-recursive.
-                if (!isPreserve && !isSetNull && nestedRegistry is not null)
-                {
-                    var KeyIsPublicObj = keyConv is not null &&
-                                         !keyNeedsCtx &&
-                                         !GeneratedNames.IsAnySynthesized(keyConv) &&
-                                         tgtKey is INamedTypeSymbol tk &&
-                                         IsMappableObjectPair(compilation, srcKey, tk);
-                    var ValIsPublicObj = valConv is not null &&
-                                         !valNeedsCtx &&
-                                         !GeneratedNames.IsAnySynthesized(valConv) &&
-                                         tgtVal is INamedTypeSymbol tv &&
-                                         IsMappableObjectPair(compilation, srcVal, tv);
-                    if (KeyIsPublicObj || ValIsPublicObj)
-                    {
-                        var hName = converterMethod!;
-                        var elems = new List<string>();
-                        if (KeyIsPublicObj)
-                        {
-                            elems.Add(keyConv!);
-                        }
-
-                        if (ValIsPublicObj)
-                        {
-                            elems.Add(valConv!);
-                        }
-
-                        var cSrc = srcType;
-                        var cTk = tgtKey;
-                        var cTv = tgtVal;
-                        var cHas = dictHasCount;
-                        var cKind = dictTargetKind;
-                        var cKeyConv = keyConv;
-                        var cKeyNull = keyNull;
-                        var cValConv = valConv;
-                        var cValNull = valNull;
-                        var cNullAsNull = dictEffectiveNullAsNull;
-                        nestedRegistry.RecordCtxUpgradeCandidate(hName,
-                            elems.ToArray(),
-                            resolve =>
-                            {
-                                var nk = cKeyConv;
-                                var nkCtx = false;
-                                if (KeyIsPublicObj)
-                                {
-                                    var r = resolve(cKeyConv!);
-                                    if (!string.Equals(r, cKeyConv, StringComparison.Ordinal))
-                                    {
-                                        nk = r;
-                                        nkCtx = true;
-                                    }
-                                }
-
-                                var nv = cValConv;
-                                var nvCtx = false;
-                                if (ValIsPublicObj)
-                                {
-                                    var r = resolve(cValConv!);
-                                    if (!string.Equals(r, cValConv, StringComparison.Ordinal))
-                                    {
-                                        nv = r;
-                                        nvCtx = true;
-                                    }
-                                }
-
-                                DictionaryConverter.SynthesizeInPlace(synthesized,
-                                    hName,
-                                    cSrc,
-                                    cTk,
-                                    cTv,
-                                    cHas,
-                                    cKind,
-                                    nk,
-                                    cKeyNull,
-                                    nkCtx,
-                                    nv,
-                                    cValNull,
-                                    nvCtx,
-                                    cNullAsNull);
-                            });
-                    }
-                }
-
-                return true;
+                return dictionaryResolved;
             }
 
-            if (CollectionConverter.TryResolve(srcType,
-                    tgtType,
-                    out var srcElem,
-                    out var tgtElem,
-                    out var collShape,
-                    nullAsNull))
+            if (HandleCollectionConversion(req, diagnostics, synthesized, ref converterMethod, ref converterNeedsCtx, out var collectionResolved))
             {
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
-                    collShape.SourceIsArray &&
-                    BlittableProof.CanReinterpret(srcElem,
-                        tgtElem))
-                {
-                    converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
-                    return true;
-                }
-
-                // R25-03: enum arrays as underlying-primitive blit. Kept separate from the struct proof above
-                // because the question is not layout — the layouts are trivially identical — but whether the
-                // SCALAR path is a reinterpret. Under ByName it is not: its switch throws on a value matching
-                // no member, and an enum may legally hold any value of its underlying type.
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
-                    collShape.SourceIsArray &&
-                    BlittableProof.CanReinterpretEnums(srcElem, tgtElem, enumPolicy.Strategy))
-                {
-                    converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
-                    return true;
-                }
-
-                // R25-02 (T2): the LIST-involved shapes — array→List, List→array, List→List. The element proof
-                // is the one above, reused verbatim and never relaxed; all that changes is which storage the
-                // bytes are read from and written to. Interfaces are excluded on the source side because
-                // CollectionsMarshal.AsSpan is declared on the concrete List<T>.
-                //
-                // NOT reached for array→array: that returns above. NOT gated on a minimum length either —
-                // measured locally at 2026-08-23, the crossover is between n=4 and n=8 and the sub-crossover
-                // penalty is tens of nanoseconds, so a runtime branch would cost more clarity than it buys
-                // time. The RFC's `Count >= 32` guard came from a container that this hardware does not
-                // reproduce. See benchmarks/results/2026-08-23-round25-kernels.md.
-                if (!collShape.NullAsNull)
-                {
-                    var tgtIsArray = collShape.Target == CollectionConverter.TargetKind.Array;
-                    var tgtIsListFamily = collShape.Target is CollectionConverter.TargetKind.List
-                        or CollectionConverter.TargetKind.ICollection
-                        or CollectionConverter.TargetKind.IList
-                        or CollectionConverter.TargetKind.IReadOnlyList
-                        or CollectionConverter.TargetKind.IReadOnlyCollection;
-                    var tgtIsImmutableArray = collShape.Target == CollectionConverter.TargetKind.ImmutableArray;
-                    var srcIsList = CollectionConverter.IsConcreteList(srcType);
-                    var srcIsImmutableArray = CollectionConverter.IsImmutableArray(srcType);
-                    var elementBlits = BlittableProof.CanReinterpret(srcElem, tgtElem) ||
-                                       BlittableProof.CanReinterpretEnums(srcElem, tgtElem, enumPolicy.Strategy);
-
-                    var srcStorage = collShape.SourceIsArray ? CollectionConverter.BlitStorage.Array
-                        : srcIsList ? CollectionConverter.BlitStorage.List
-                        : srcIsImmutableArray ? CollectionConverter.BlitStorage.ImmutableArray
-                        : (CollectionConverter.BlitStorage?)null;
-
-                    var tgtStorage = tgtIsArray ? CollectionConverter.BlitStorage.Array
-                        : tgtIsListFamily ? CollectionConverter.BlitStorage.List
-                        : tgtIsImmutableArray ? CollectionConverter.BlitStorage.ImmutableArray
-                        : (CollectionConverter.BlitStorage?)null;
-
-                    if (elementBlits &&
-                        srcStorage is { } ss &&
-                        tgtStorage is { } ts &&
-                        !(ss == CollectionConverter.BlitStorage.Array && ts == CollectionConverter.BlitStorage.Array))
-                    {
-                        converterMethod = CollectionConverter.SynthesizeBlitListShape(synthesized,
-                            srcType,
-                            srcElem,
-                            tgtElem,
-                            ss,
-                            ts);
-                        return true;
-                    }
-                }
-
-                // The blit was not provable. If the pair MISSED it narrowly, say so — the element loop is correct
-                // but the caller is one rename away from a block copy, and nothing else in the build reports that.
-                // Never reached for [Reinterpret] members: that branch forces the blit and returns before this
-                // method is called, so DWARF022 stays the only voice on the explicit form.
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
-                    collShape.SourceIsArray &&
-                    BlittableProof.TryExplainNearMiss(srcElem, tgtElem, out var nearMissReason))
-                {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,
-                        location,
-                        $"'{targetName}' maps an array whose element types are nearly layout-identical, so it " +
-                        $"takes the element-by-element copy: {nearMissReason}",
-                        MemberName: targetName));
-                }
-
-                // SIMD widening fast-path: array→array of a lossless primitive widen pair (e.g. int[]→long[],
-                // float[]→double[]) → Vector.Widen. Identical result to the scalar implicit widen; reflection-free.
-                // Comes AFTER blit (same-size pairs blit; widen pairs differ in size so CanReinterpret is false).
-                if (collShape.Target == CollectionConverter.TargetKind.Array &&
-                    collShape.SourceIsArray &&
-                    CollectionConverter.IsWidenPair(srcElem,
-                        tgtElem))
-                {
-                    converterMethod = CollectionConverter.SynthesizeSimdWiden(synthesized, srcType, srcElem, tgtElem);
-                    return true;
-                }
-
-                // A3: determine effective null-as-null for the OUTER collection helper based on target nullability.
-                // Reference-type collections: fall back to AsEmpty when target is non-nullable to prevent CS8601.
-                // ImmutableArray<T>?: CollectionConverter.TryResolve already handles Nullable<ImmutableArray<T>>
-                // by unwrapping it and setting nullAsNull=true in the shape, so collShape.NullAsNull is already
-                // correct and we just need to preserve it.
-                var collEffectiveNullAsNull = collShape.Target == CollectionConverter.TargetKind.ImmutableArray
-                    // ImmutableArray: shape.NullAsNull is authoritative (set by TryResolve for Nullable<> unwrapping).
-                    ? collShape.NullAsNull
-                    // Reference-type collections: only AsNull when target field is nullable ref type.
-                    : nullAsNull && IsNullableReferenceType(tgtType);
-
-                // A1: propagate nullAsNull to the element converter so nullable elements
-                // (e.g. element type List<int>? inside List<List<int>?>) generate helpers
-                // that preserve null instead of silently mapping to empty.
-                if (!TryResolveConversion(compilation,
-                        srcElem,
-                        tgtElem,
-                        null,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        location,
-                        targetName,
-                        diagnostics,
-                        out var elemConv,
-                        out var elemNull,
-                        out var elemNeedsCtx,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull: isSetNull,
-                        implicitConversions: implicitConversions,
-                        reservedConverters: reservedConverters))
-                {
-                    return false; // element diagnostic already reported by the recursive call
-                }
-
-                // #100: a nullable-annotated REFERENCE element whose target element is non-nullable needs the
-                // same per-element null handling as a nullable VALUE element (int?→int). SymbolEqualityComparer
-                // ignores nullable annotations, so without this the identity fast-path emits a direct collection
-                // copy the compiler rejects (List<string?>→List<string> = CS8620) or an array clone that smuggles
-                // nulls past the annotation. A non-null target element cannot hold null, so throw on a null
-                // element — loud and never-silent (there is no valid non-null reference "default" to substitute).
-                if (elemConv is null &&
-                    elemNull == NullHandling.None &&
-                    srcElem.IsReferenceType &&
-                    srcElem.NullableAnnotation == NullableAnnotation.Annotated &&
-                    tgtElem.NullableAnnotation != NullableAnnotation.Annotated &&
-                    SymbolEqualityComparer.Default.Equals(
-                        srcElem.WithNullableAnnotation(NullableAnnotation.None),
-                        tgtElem.WithNullableAnnotation(NullableAnnotation.None)))
-                {
-                    elemNull = NullHandling.ThrowIfNull;
-                }
-
-                // Preserve OR SetNull: if the element converter is an auto-nested object mapper, force it
-                // recursion-capable so it gets the (ctx, depth) signature — the collection helper will call it
-                // with (elem, ctx, depth + 1), threading ONE shared context across the collection edge. This
-                // is what lets a cycle routed through a collection break (SetNull → back-edge null) or
-                // depth-cap, instead of the element re-entering the public entry (fresh context → StackOverflow).
-                if ((isPreserve || isSetNull) && elemConv is not null && GeneratedNames.IsObjectMap(elemConv) && nestedRegistry is not null)
-                {
-                    nestedRegistry.ForceRecursionCapable(elemConv);
-                    elemNeedsCtx = true;
-                }
-
-                // Apply effective nullAsNull (A3: may be false even when nullAsNull=true if target is non-nullable).
-                if (collEffectiveNullAsNull != nullAsNull)
-                {
-                    collShape = new CollectionConverter.Shape(collShape.Target,
-                        collShape.SourceIsArray,
-                        collShape.Count,
-                        collEffectiveNullAsNull);
-                }
-
-                converterMethod = CollectionConverter.Synthesize(synthesized,
-                    srcType,
-                    srcElem,
-                    tgtElem,
-                    collShape,
-                    elemConv,
-                    elemNull,
-                    isPreserve,
-                    elemNeedsCtx);
-                // Thread (ctx, depth) when the collection register-before-fills (Preserve mutable) OR its
-                // element is recursion-capable (Preserve, or None/SetNull self-referential element).
-                converterNeedsCtx = (isPreserve && CollectionConverter.IsMutableReferenceCollection(collShape.Target)) ||
-                                    elemNeedsCtx;
-
-                // None+Throw: the element resolved either to a PUBLIC declared method (e.g. a self-map `Map`) or
-                // to a SYNTHESIZED object-map helper (`__DwarfMap_Obj_…`, which is what a [GenerateMap<S,T>] pair
-                // produces — there is no declared method to resolve to). Record a re-synthesis closure for BOTH:
-                // if the element turns out self-recursive, the post-pass re-emits this collection helper so it
-                // threads (ctx, depth) into the element call.
-                //
-                // Only covering the public-method case was a real bug: a [GenerateMap] pair whose type recurses
-                // THROUGH a collection edge (e.g. `class Node { List<Node> Kids; }`) had its object helper marked
-                // recursion-capable by ComputeRecursionCapability() — gaining (ctx, depth) IN PLACE — while the
-                // collection helper calling it was never re-synthesized, so it still called it with one argument.
-                // That emitted code which did not compile (CS7036). The equivalent partial-method mapper worked,
-                // because its element resolved to a declared method and so WAS recorded here.
-                if (!isPreserve && !isSetNull && !elemNeedsCtx && nestedRegistry is not null && elemConv is not null && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv)) && tgtElem is INamedTypeSymbol tgtElemNamed && IsMappableObjectPair(compilation, srcElem, tgtElemNamed))
-                {
-                    var hName = converterMethod!;
-                    var capSrc = srcType;
-                    var capElem = srcElem;
-                    var capTgt = tgtElem;
-                    var capShape = collShape;
-                    var capNull = elemNull;
-                    nestedRegistry.RecordCtxUpgradeCandidate(hName,
-                        new[]
-                        {
-                            elemConv
-                        },
-                        resolve =>
-                            CollectionConverter.SynthesizeInPlace(synthesized,
-                                hName,
-                                capSrc,
-                                capElem,
-                                capTgt,
-                                capShape,
-                                resolve(elemConv),
-                                capNull));
-                }
-
-                return true;
+                return collectionResolved;
             }
 
             // ── DWARF027: target is collection/dict-shaped but not in the supported taxonomy ──
@@ -584,102 +188,15 @@ namespace DwarfMapper.Generator.Pipeline
             // from the types, and undocumented (the NullStrategy contract governs nullable-value source →
             // NON-nullable target). TASKS.md I7 / round 23 N2. Nullable-capable is deliberately annotation-strict
             // for references: an unannotated or oblivious reference target keeps the documented throw.
-            if (IsNullableValue(srcType, out var bothSrcU) && TryGetNullableCapableTarget(tgtType, out var bothTgtU))
-                // implicitConversions is threaded, and it used to be dropped here. Every recursion that crosses
-                // a Nullable<> wrapper defaulted the option back to `true` (permissive), so under
-                // [DwarfMapper(ImplicitConversions = false)] a lossy conversion between two nullable members
-                // reported DWARF038 as a WARNING and the mapper was still generated — the strict setting was
-                // silently off for the whole nullable half of the type space. The collection-element and
-                // dictionary key/value recursions above always passed it; these three did not. (TASKS.md I20.)
+            if (HandleNullableCapableTarget(req, diagnostics, synthesized, ref converterMethod, ref nullHandling, out var nullableTargetResolved))
             {
-                if (TryResolveConversion(compilation,
-                        bothSrcU,
-                        bothTgtU,
-                        useMethod,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        location,
-                        targetName,
-                        diagnostics,
-                        out var innerNN,
-                        out _,
-                        out _,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        implicitConversions: implicitConversions,
-                        reservedConverters: reservedConverters) &&
-                    innerNN is not null)
-                {
-                    converterMethod = innerNN;
-                    nullHandling = NullHandling.NullableProject;
-                    return true;
-                }
+                return nullableTargetResolved;
             }
 
             // Inner unresolved or has no converter (implicit, already caught above) — fall through.
-            if (IsNullableValue(srcType, out var underlying))
+            if (HandleNullableValueSource(req, diagnostics, synthesized, ref converterMethod, ref nullHandling, out var nullableSourceResolved))
             {
-                // First check the simple implicit-conversion path (int? → int, int? → long, etc.)
-                if (HasImplicitConversion(compilation, underlying, tgtType))
-                {
-                    // Same question the direct-assign path at the top of this method asks, and this arm never
-                    // asked it: `long? → double` unwraps to `long → double`, which IS implicit in C# and IS
-                    // lossy, so it was assigned in silence at every severity. The DWARF038 names the UNWRAPPED
-                    // pair, because that is the conversion being applied. (TASKS.md I20.)
-                    if (NumericConverter.IsCrossCategoryLossy(underlying, tgtType))
-                    {
-                        EmitImplicitConversionDiag(diagnostics,
-                            location,
-                            targetName,
-                            underlying,
-                            tgtType,
-                            "cross-category numeric",
-                            implicitConversions,
-                            true);
-                    }
-
-                    nullHandling = nullStrategy == NullStrategy.SetDefault
-                        ? NullHandling.ValueOrDefault
-                        : NullHandling.ThrowIfNull;
-                    return true;
-                }
-
-                // Recurse: try to resolve a conversion from the underlying (non-nullable) type to tgtType.
-                // This handles cases like E1? → E2 where E1 → E2 requires a synthesized conversion.
-                // Guard: 'underlying' is not itself nullable (Nullable<Nullable<T>> is illegal in C#).
-                if (TryResolveConversion(compilation,
-                        underlying,
-                        tgtType,
-                        useMethod,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        location,
-                        targetName,
-                        diagnostics,
-                        out var innerConv,
-                        out _,
-                        out _,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        implicitConversions: implicitConversions,
-                        reservedConverters: reservedConverters))
-                {
-                    nullHandling = nullStrategy == NullStrategy.SetDefault
-                        ? NullHandling.ValueOrDefault
-                        : NullHandling.ThrowIfNull;
-                    converterMethod = innerConv; // may be null (direct assign after unwrap) or a synthesized method
-                    return true;
-                }
-
-                // Fall through — let the rest of TryResolveConversion attempt further resolutions.
+                return nullableSourceResolved;
             }
 
             // Target-nullable composition: non-Nullable<> src → T? (Nullable<> target).
@@ -694,43 +211,9 @@ namespace DwarfMapper.Generator.Pipeline
             // gate above had. NullableProjectRef makes the CALL SITE test for null first, which is the only
             // place that can: the helper's return type leaves it no way to express the answer.
             // TASKS.md I7 / round 23 N2.
-            if (!IsNullableValue(srcType, out _) && IsNullableValue(tgtType, out var tgtUnderlying))
+            if (HandleTargetNullableComposition(req, diagnostics, synthesized, ref converterMethod, ref nullHandling, out var targetNullableResolved))
             {
-                if (TryResolveConversion(compilation,
-                        srcType,
-                        tgtUnderlying,
-                        useMethod,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        location,
-                        targetName,
-                        diagnostics,
-                        out var innerConvT,
-                        out _,
-                        out _,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        implicitConversions: implicitConversions,
-                        reservedConverters: reservedConverters))
-                {
-                    converterMethod = innerConvT; // returns U; assigned to U? field via implicit U→U?
-                    // A possibly-null reference source needs the explicit null test. A value-type source
-                    // (non-Nullable<>) always yields a value, and a direct assignment (no converter) already
-                    // lifts through the implicit U→U?, so both keep NullHandling.None.
-                    if (innerConvT is not null && SourceMayBeNullRef(srcType))
-                    {
-                        nullHandling = NullHandling.NullableProjectRef;
-                    }
-
-                    return true;
-                }
-
-                // Did not resolve — fall through to DWARF005
-                return false;
+                return targetNullableResolved;
             }
 
             // User-provided auto-candidate methods (no Use= annotation, auto-matched by type).
@@ -880,43 +363,9 @@ namespace DwarfMapper.Generator.Pipeline
             // ── Auto-synthesized nested object mapper ─────────────────────────────
             // Placed LAST before DWARF005: only fires when nothing else resolved the pair.
             // Gate: autoNest=true AND both types are mappable named object types.
-            if (autoNest && nestedRegistry is not null && tgtType is INamedTypeSymbol namedTgt)
+            if (HandleAutoNestedObjectMap(req, diagnostics, ref converterMethod, out var autoNestedResolved))
             {
-                if (IsMappableObjectPair(compilation, srcType, namedTgt, allowInterfaceSrc))
-                {
-                    // DWARF071: the source is a CONCRETE class that other types derive from. It maps fine, but only
-                    // the declared members are mapped — a derived instance at run time loses everything declared
-                    // below the base. DWARF033 catches the abstract/interface form of this; the concrete form is
-                    // instantiable and slips past it. Reported (not refused) because base-only mapping is often
-                    // exactly what was intended. Suppressed under allowInterfaceSrc — a [MapDerivedType] arm has
-                    // already told us how the runtime type is dispatched.
-                    if (!allowInterfaceSrc && HasDerivedTypesInCompilation(compilation, srcType))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            DiagnosticDescriptors.PolymorphicSourceMayDropMembers,
-                            location,
-                            srcType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
-                    }
-
-                    // C1: pass the effective autoNest value so the drain loop uses it for the pair's body.
-                    var synthName = nestedRegistry.GetOrReserve(srcType, namedTgt, location, autoNest);
-                    if (synthName is not null)
-                    {
-                        converterMethod = synthName;
-                        return true;
-                    }
-                    // GetOrReserve returned null → cap exceeded; DWARF031 will be reported after drain.
-                    // Fall through to DWARF005.
-                }
-                else if (!allowInterfaceSrc && IsAbstractOrInterfaceAutoNestSource(compilation, srcType, namedTgt))
-                {
-                    // C2: abstract/interface source — emit DWARF033 (loud, never silent).
-                    // Suppressed when allowInterfaceSrc=true (e.g. [MapDerivedType] arms where the caller
-                    // explicitly opted in to mapping an interface source to a concrete DTO).
-                    var srcName = srcType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AbstractSourceAutoNest, location, srcName));
-                    return false;
-                }
+                return autoNestedResolved;
             }
 
             // ── User-defined conversion operators (e.g. a strong-type's `implicit operator int`) ──────────
