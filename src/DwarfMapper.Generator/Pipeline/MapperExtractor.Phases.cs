@@ -1859,99 +1859,8 @@ namespace DwarfMapper.Generator.Pipeline
             members.AddRange(fgInjectedMembers);
 
             // ── Source-member coverage (RequiredMapping = Both) ───────────────────────────
-            // The source-side mirror of the DWARF001 completeness gate: under `Both`, every readable
-            // source member must be read by some destination (member OR constructor argument). A source
-            // consumed by nothing surfaces DWARF039 (Info suggestion), unless suppressed by
-            // [MapIgnoreSource]. Dotted source names (flattened leaves) mark their root consumed.
-            if (policy.RequiredMapping == 1) // RequiredMappingStrategy.Both
-            {
-                EmitSourceCoverage(
-                    sourceType,
-                    members,
-                    ctorArgs,
-                    decls.ClassIgnoreSources,
-                    ReadIgnoreSources(method),
-                    policy.IgnoreObsolete,
-                    ctx.SemanticModel.Compilation,
-                    policy.AllowNonPublic,
-                    methodLocation,
-                    acc.Diagnostics);
-            }
-
-            var applicableBefore = new List<string>();
-            foreach (var h in decls.BeforeHookDefs)
-                if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.ParamType))
-                {
-                    applicableBefore.Add(h.Name);
-                }
-
-            var applicableAfter = new List<HookCall>();
-            foreach (var h in decls.AfterHookDefs)
-            {
-                bool applies;
-                bool takesSource;
-                if (h.P1 is null)
-                {
-                    applies = HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P0);
-                    takesSource = false;
-                }
-                else
-                {
-                    applies = HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0) && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
-                    takesSource = true;
-                }
-
-                if (!applies)
-                {
-                    continue;
-                }
-
-                var targetIsValue = targetType.IsValueType;
-                var targetIsRef = h.TargetRefKind == RefKind.Ref;
-
-                if (targetIsValue && !targetIsRef)
-                {
-                    // Silent correctness bug: struct target passed by value — mutations would be lost.
-                    acc.Diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.AfterMapValueTargetByValue,
-                        methodLocation,
-                        targetType.Name));
-                    // Skip: do not emit this hook.
-                    continue;
-                }
-
-                applicableAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
-            }
-
-            // I17: an unmapped destination member is a statement about THIS method's pair and THIS
-            // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
-            // model is still recorded, because the class-level analyses downstream ask what the mapper
-            // DECLARES (see MapMethodModel.Withheld).
-            withheld = TryScopeCompletenessRefusalToItsMethod(
-                acc.Diagnostics,
-                methodDiagStart,
-                method.Name,
-                methodLocation);
-
-            acc.Methods.Add(new MapMethodModel(
-                method.Name,
-                AccessibilityText(method.DeclaredAccessibility),
-                targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                method.Parameters[0].Name,
-                sourceType.IsReferenceType,
-                EquatableArray.From(members),
-                EquatableArray.From(applicableBefore),
-                EquatableArray.From(applicableAfter),
-                false,
-                "",
-                EquatableArray.From(ctorArgs),
-                FlattenGraphDirectives: EquatableArray.From(resolvedFgDirectives.ToArray()),
-                ExtraParameters: EquatableArray.From(extraParamSig.ToArray()),
-                ParameterIsPublicType: IsEffectivelyPublic(sourceType),
-                ReturnIsPublicType: IsEffectivelyPublic(targetType),
-                Withheld: withheld));
-            acc.PublicMethodLocs[acc.Methods.Count - 1] = methodLocation;
+            ReportSourceMemberCoverage(method, ctx, decls, policy, acc, sourceType, targetType, members,
+                ctorArgs, resolvedFgDirectives, extraParamSig, methodLocation, methodDiagStart, withheld);
         }
 
         // ── Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src) ──
@@ -2691,6 +2600,124 @@ namespace DwarfMapper.Generator.Pipeline
 
 
             return false;
+        }
+
+        // ── Source-member coverage (RequiredMapping = Both) ───────────────────────────
+        // The source-side mirror of the DWARF001 completeness gate: under `Both`, every readable
+        // source member must be read by some destination (member OR constructor argument). A source
+        // consumed by nothing surfaces DWARF039 (Info suggestion), unless suppressed by
+        // [MapIgnoreSource]. Dotted source names (flattened leaves) mark their root consumed.
+        /// <remarks>
+        ///     The only one of the four middle phases the compiler certified as separable. Brace-scoping each
+        ///     in place and building is what asked the question: the other three declare locals the rest of the
+        ///     method still needs — nine of them in the collection/dictionary stage — so those seams mark
+        ///     stages of a pipeline that accumulates a shared working set, not independent phases.
+        /// </remarks>
+        private static void ReportSourceMemberCoverage(
+            IMethodSymbol method,
+            GeneratorAttributeSyntaxContext ctx,
+            MapperDeclarations decls,
+            MapperPolicy policy,
+            MapperAccumulators acc,
+            ITypeSymbol sourceType,
+            INamedTypeSymbol targetType,
+            List<MemberMap> members,
+            IReadOnlyList<MemberMap> ctorArgs,
+            IReadOnlyList<FlattenGraphDirective> resolvedFgDirectives,
+            List<string> extraParamSig,
+            LocationInfo? methodLocation,
+            int methodDiagStart,
+            bool withheld)
+        {
+            if (policy.RequiredMapping == 1) // RequiredMappingStrategy.Both
+            {
+                EmitSourceCoverage(
+                    sourceType,
+                    members,
+                    ctorArgs,
+                    decls.ClassIgnoreSources,
+                    ReadIgnoreSources(method),
+                    policy.IgnoreObsolete,
+                    ctx.SemanticModel.Compilation,
+                    policy.AllowNonPublic,
+                    methodLocation,
+                    acc.Diagnostics);
+            }
+
+            var applicableBefore = new List<string>();
+            foreach (var h in decls.BeforeHookDefs)
+                if (HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.ParamType))
+                {
+                    applicableBefore.Add(h.Name);
+                }
+
+            var applicableAfter = new List<HookCall>();
+            foreach (var h in decls.AfterHookDefs)
+            {
+                bool applies;
+                bool takesSource;
+                if (h.P1 is null)
+                {
+                    applies = HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P0);
+                    takesSource = false;
+                }
+                else
+                {
+                    applies = HasImplicitConversion(ctx.SemanticModel.Compilation, sourceType, h.P0) && HasImplicitConversion(ctx.SemanticModel.Compilation, targetType, h.P1);
+                    takesSource = true;
+                }
+
+                if (!applies)
+                {
+                    continue;
+                }
+
+                var targetIsValue = targetType.IsValueType;
+                var targetIsRef = h.TargetRefKind == RefKind.Ref;
+
+                if (targetIsValue && !targetIsRef)
+                {
+                    // Silent correctness bug: struct target passed by value — mutations would be lost.
+                    acc.Diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.AfterMapValueTargetByValue,
+                        methodLocation,
+                        targetType.Name));
+                    // Skip: do not emit this hook.
+                    continue;
+                }
+
+                applicableAfter.Add(new HookCall(h.Name, takesSource, targetIsRef));
+            }
+
+            // I17: an unmapped destination member is a statement about THIS method's pair and THIS
+            // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
+            // model is still recorded, because the class-level analyses downstream ask what the mapper
+            // DECLARES (see MapMethodModel.Withheld).
+            withheld = TryScopeCompletenessRefusalToItsMethod(
+                acc.Diagnostics,
+                methodDiagStart,
+                method.Name,
+                methodLocation);
+
+            acc.Methods.Add(new MapMethodModel(
+                method.Name,
+                AccessibilityText(method.DeclaredAccessibility),
+                targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                method.Parameters[0].Name,
+                sourceType.IsReferenceType,
+                EquatableArray.From(members),
+                EquatableArray.From(applicableBefore),
+                EquatableArray.From(applicableAfter),
+                false,
+                "",
+                EquatableArray.From(ctorArgs),
+                FlattenGraphDirectives: EquatableArray.From(resolvedFgDirectives.ToArray()),
+                ExtraParameters: EquatableArray.From(extraParamSig.ToArray()),
+                ParameterIsPublicType: IsEffectivelyPublic(sourceType),
+                ReturnIsPublicType: IsEffectivelyPublic(targetType),
+                Withheld: withheld));
+            acc.PublicMethodLocs[acc.Methods.Count - 1] = methodLocation;
         }
     }
 }
