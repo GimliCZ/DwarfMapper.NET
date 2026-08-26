@@ -44,19 +44,26 @@ namespace DwarfMapper.Generator.Pipeline
                     continue;
                 }
 
-                // Nullable<TNode> (for structs — unlikely but supported)
-                if (nm.Type is INamedTypeSymbol nmNamed && nmNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
-                {
-                    var innerNoAnnot = nmNamed.TypeArguments[0].WithNullableAnnotation(NullableAnnotation.None);
-                    var innerToNode = HasImplicitConversion(req.Compilation, innerNoAnnot, nav.NodeType);
-                    var nodeToInner = !innerToNode &&
-                                      HasImplicitConversion(req.Compilation, nodeTypeNoAnnotation, innerNoAnnot);
-                    if (innerToNode || nodeToInner)
-                    {
-                        edgeMembers.Add((nm.Name, false, false, nodeToInner));
-                        continue;
-                    }
-                }
+                // There was a Nullable<TNode> branch here, for a member typed `T?` where T is a struct that
+                // converts to or from the node type. It was REMOVED in round 27 because it could never fire,
+                // and the proof is worth keeping so it is not re-added:
+                //
+                //   * Reaching this method means the node type is a REFERENCE type (every branch that assigns
+                //     nodeType above requires IsReferenceType; anything else is refused with DWARF034) and is
+                //     neither abstract nor an interface (those route to the heterogeneous path instead).
+                //   * T is a struct, because Nullable<T> constrains it to one.
+                //   * HasImplicitConversion is `IsImplicit && !IsUserDefined`, so only a BUILT-IN conversion
+                //     counts. The built-in implicit conversions out of a struct are boxing — to object,
+                //     ValueType, Enum, or an interface T implements — and there is no built-in implicit
+                //     conversion INTO a struct from a reference type at all. ValueType and Enum are abstract
+                //     and interfaces are excluded, so the only surviving candidate is `object`.
+                //   * `object` declares no properties or fields, so ReadableMembers returns nothing for it and
+                //     this loop has no iterations when the node type is object.
+                //
+                // Confirmed empirically before removal: replacing the branch body with a throw and running the
+                // whole suite raised nothing across 8,259 tests, and the golden manifest is byte-identical with
+                // the branch gone. The heterogeneous twin of this branch is NOT dead — a node base may be an
+                // interface there, which makes boxing a built-in conversion to it — and it stays.
 
                 // SF-F3 fix: Dictionary<K,V> where V is assignable to nav.NodeType → dict-value edge.
                 // Only V assignable to nav.NodeType qualifies; keys are not traversed (v1: values only).

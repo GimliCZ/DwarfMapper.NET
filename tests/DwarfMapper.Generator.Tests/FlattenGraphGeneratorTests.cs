@@ -600,25 +600,26 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         /// <remarks>
         ///     <para>
-        ///         This pins a limit rather than a feature, and it was found by chasing coverage. The edge
-        ///         partition has a branch for <c>Nullable&lt;TNode&gt;</c> whose own comment calls it "for
-        ///         structs — unlikely but supported". Measuring showed its two payload lines are executed by
-        ///         nothing, and the reason turns out to be structural: <c>HasImplicitConversion</c> is
-        ///         <c>IsImplicit &amp;&amp; !IsUserDefined</c>, so only a BUILT-IN conversion can make an inner
-        ///         struct reach the node type.
+        ///         The edge partition used to carry a <c>Nullable&lt;TNode&gt;</c> branch, "for structs —
+        ///         unlikely but supported" by its own comment. Chasing coverage showed its payload lines were
+        ///         executed by nothing, and the reason was structural rather than a corpus hole, so the branch
+        ///         was REMOVED in round 27. The proof is on the removal site; the short form is that
+        ///         <c>HasImplicitConversion</c> is <c>IsImplicit &amp;&amp; !IsUserDefined</c>, the only
+        ///         built-in conversion from a struct to a non-abstract, non-interface reference type is boxing
+        ///         to <c>object</c>, and <c>object</c> has no readable members for this loop to walk.
         ///     </para>
         ///     <para>
-        ///         The built-in implicit conversions out of a struct are boxing to <c>object</c>,
-        ///         <c>ValueType</c> or an implemented interface, and the numeric ones between primitives. None
-        ///         of those can be the node type on this path: an interface or abstract base routes to the
-        ///         heterogeneous branch instead, and <c>object</c> or a primitive has no members to walk. So the
-        ///         branch is reachable but its body is not, and the honest thing is to say so here rather than
-        ///         leave a coverage hole looking like an untested feature.
+        ///         So this test now pins the BEHAVIOUR the removal preserves, which is what makes it a
+        ///         regression test rather than a description of deleted code: a nullable struct that reaches
+        ///         the node type only through a user-defined operator is not a graph edge, and the traversal
+        ///         does not read it. It fails if that branch is reinstated in a form that fires, or if
+        ///         <c>HasImplicitConversion</c> is ever widened to accept user-defined operators — which would
+        ///         silently turn this member into an edge.
         ///     </para>
         ///     <para>
-        ///         The test still earns its place: it drives the branch's CONDITIONS, which are live, and it
-        ///         fails the day someone widens <c>HasImplicitConversion</c> to accept user-defined operators —
-        ///         at which point this member silently becomes a graph edge and this assertion inverts.
+        ///         The heterogeneous twin of the removed branch is NOT dead and was left alone: a node base may
+        ///         be an interface there, and boxing a struct to an interface it implements IS built-in. The
+        ///         same shape is reachable on one path and impossible on the other.
         ///     </para>
         /// </remarks>
         [Fact]
