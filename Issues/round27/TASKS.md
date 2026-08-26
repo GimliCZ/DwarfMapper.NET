@@ -38,7 +38,7 @@ Status values: `TODO` · `WIP` · `DONE` · `BLOCKED` · `DROPPED` (with a reaso
 | 0.7 | **A1** — mark infrastructure `[EditorBrowsable(Never)]` | TODO | no signature change; API baseline unchanged |
 | 0.8 | **A2** — `DwarfRefContext` ctor: kill the two adjacent optional bools | TODO | **emitted-bytes change** — reviewed re-bless, 28 positional sites become named |
 | 0.9 | **Audit** — member-by-member review of the 278 entries + `DwarfMapper.Testing` | TODO | every entry classified consumer / infrastructure / vestigial |
-| 0.10 | **R27-08** — settle the two overlapping object factories (blocks the `Testing` freeze) | TODO | **needs a maintainer answer**: is V2 replacing V1? |
+| 0.10 | **R27-08** — settle the two overlapping object factories (blocks the `Testing` freeze) | **BLOCKED** | replacement attempted, measured, reverted — see `FINDING-object-factory-v2-is-not-a-superset.md`. V2 needs V1's three fixes ported in first. |
 | 0.11 | **Promote** `Unshipped` → `Shipped` — arm the stability ratchet | TODO | analyzer refuses removals afterwards; CHANGELOG entry |
 | 0.12 | **Axis 1** — `Discovery` property + Gallery-coverage gate | TODO | `Infrastructure` value asserts the *inverse* — presence in Gallery fails |
 | 0.13 | **Gallery examples** — ~10–11 for Conformance-proven-but-undiscoverable attributes | TODO | one work item with 0.14 |
@@ -64,12 +64,24 @@ Status values: `TODO` · `WIP` · `DONE` · `BLOCKED` · `DROPPED` (with a reaso
 
 ## Open questions blocking a task
 
-**0.10 — the two object factories.** `src/DwarfMapper.Testing` ships `ObjectFactory.Create` (CC 72) and
-`ObjectFactoryV2.Create` (CC 84), both live: 45 references against 22, with V1 called from `Fuzzer.cs` and
-`RoundTrip.cs` inside the same assembly. Is V2 meant to replace V1, or is the split deliberate? Deleting the
-wrong one removes a factory some fuzz path depends on, and the fuzzers are how several real defects here were
-found. **This blocks freezing `DwarfMapper.Testing`'s surface** — a freeze would make the duplication
-permanent.
+**0.10 — the two object factories.** Answered "replace V1, V2 should be better", attempted, and **reverted
+on measurement**: V2 is not a superset. It is better on nulls, boundary values and graph fixtures — the axes
+it was written for — but it lacks three fixes V1 carries, each with recorded provenance:
+
+1. **abstract/interface members come back `null`**, under a comment claiming the opposite ("try to pick a
+   concrete"). This is the regression V1 was fixed for, found in a real ~300-map AutoMapper migration;
+2. **`[Flags]` enums never get a combined value**, so a by-name converter that throws on every combination
+   looks healthy;
+3. **constructor selection uses `ctors[0]`** — reflection order — where V1 orders by parameter count, so V2
+   is not seed-deterministic for records.
+
+Measured: 9 `PolymorphicMemberFuzzTests` failures plus `FlagsEnumCoverageSelfValidationTests` and scattered
+`CrossConfigFuzzTests` cases. Everything reverted; the tree is unchanged.
+
+**The intent stands and the work changed shape: it is a MERGE, not a rename.** Recommended — port V1's three
+fixes into V2 (the better base, and the fixes are small and already written, rationale comments included),
+then delete V1. **Still blocks freezing `DwarfMapper.Testing`'s surface**: promoting two overlapping
+factories makes the duplication a declared API and turns deleting the loser into a break.
 
 ---
 
