@@ -20,8 +20,13 @@ namespace DwarfMapper
     ///     documented default below — so a caller got this option honoured for their <c>[DwarfMapper]</c> classes
     ///     and quietly overridden for their <c>[MapTo]</c> types.
     /// </remarks>
+    // Discovery = ConformanceOnly for the same reason as [DwarfMapperDefaults], and it is a property of the
+    // attribute rather than a shortcut: this is ASSEMBLY-scoped, so a Gallery example would change emission
+    // for every other example in that shared project. It cannot be demonstrated there in isolation.
+    // docs/options.md carries the prose section, and Conformance exercises it at assembly scope.
     [DwarfSurface(SurfaceCategory.EmissionShape,
-        AppliesTo = SurfaceEndpoints.CreateMap | SurfaceEndpoints.Registry | SurfaceEndpoints.CoLocatedHost)]
+        AppliesTo = SurfaceEndpoints.CreateMap | SurfaceEndpoints.Registry | SurfaceEndpoints.CoLocatedHost,
+        Discovery = Discoverability.ConformanceOnly)]
     [DwarfSurfaceProbe(0,
         Unmeasured = "a bare [assembly: DwarfMapperOptions] selects the default accessibility, which is what the " + "generator emits with no attribute at all — silent by construction. The PublicExtensions " + "case above is where this element's one question lives.")]
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]

@@ -54,11 +54,17 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [Fact]
         public void No_snippet_region_outside_a_declared_example_is_orphaned()
         {
-            // A region no document references is maintained forever and read by nobody — but only if the file it
-            // sits in exists SOLELY to be quoted. A region inside a declared [DocExample] is already reader-facing:
-            // the file is linked from the generated index and the example runs on every `dotnet run`, so an
-            // unquoted one is a doc opportunity, not dead weight. Scoping the rule that way keeps it aimed at the
-            // decay it was written for: a region in, say, AotSample, which nothing links and nobody runs by hand.
+            // A region no document references is maintained forever and read by nobody.
+            //
+            // STRICT since round 27, and the name kept for continuity. The rule used to exempt regions inside a
+            // declared [DocExample], on the reasoning that such a file is already reader-facing — it is linked
+            // from the generated index and runs on every `dotnet run`. That reasoning was sound but it left 32
+            // Gallery regions quoted by nothing, and the only ways to close it were to delete the markers —
+            // removing evidence to satisfy a guard — or to write the document that quotes them.
+            //
+            // The document exists now: samples/DwarfMapper.Gallery/README.md, generated, one fence per region.
+            // So the exemption is gone and EVERY region must be quoted somewhere, which is the stronger form:
+            // a region is either reachable from prose or it is dead weight, with no third category.
             var regions = DocRegions.All();
             var referenced = new HashSet<string>(StringComparer.Ordinal);
 
@@ -66,18 +72,17 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 referenced.UnionWith(
                     DocSnippetInjector.Inject(DocSet.Read(relative), regions, relative).ReferencedIds);
 
-            var exampleFiles = ExampleCatalogue.Scan()
-                .Select(e => e.RelativeFile)
-                .ToHashSet(StringComparer.Ordinal);
-
             var orphans = regions.Values
-                .Where(r => !referenced.Contains(r.Id) && !exampleFiles.Contains(r.RelativeFile))
+                .Where(r => !referenced.Contains(r.Id))
                 .Select(r => $"{r.Id} ({r.RelativeFile}:{r.StartLine})")
                 .OrderBy(x => x, StringComparer.Ordinal)
                 .ToList();
 
             Assert.True(orphans.Count == 0,
-                "Snippet region(s) in a non-example file that no document references. Reference them, or delete " + "the markers:\n  " + string.Join("\n  ", orphans));
+                "Snippet region(s) no document references. Every region must be quoted by some document — for a "
+                + "Gallery example that is the generated samples/DwarfMapper.Gallery/README.md, which is "
+                + "regenerated rather than hand-edited. Reference them, or delete the markers:\n  "
+                + string.Join("\n  ", orphans));
         }
 
         [Fact]

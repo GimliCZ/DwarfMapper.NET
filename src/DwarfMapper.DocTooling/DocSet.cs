@@ -12,6 +12,11 @@ namespace DwarfMapper.DocTooling
         public static IReadOnlyList<string> All { get; } =
         [
             "README.md",
+
+            // The illustrated Gallery index. GENERATED (samples/DwarfMapper.Gallery/README.md) and listed here
+            // so the snippet injector fills it: it is the document that quotes every Gallery region, which is
+            // what lets the orphan rule apply to example files too rather than exempting them.
+            "samples/DwarfMapper.Gallery/README.md",
             "CONTRIBUTING.md",
             "docs/diagnostics.md",
             "docs/options.md",

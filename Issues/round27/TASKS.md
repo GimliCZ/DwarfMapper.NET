@@ -8,7 +8,7 @@ The executable form of `PLAN.md` (scope, grounding, decisions) and `DESIGN-surfa
 Phase 0 architecture). **Neither is re-derived here.** This file is the running state: one row per step, with
 its verification and its current status, updated in the commit that moves it.
 
-**Phase 0 must complete before Phase 1 begins** — maintainer direction, recorded in `PLAN.md` §5. Surface
+**PHASE 0 IS COMPLETE** (2026-08-26). Phase 1 may begin. The original rule was that — maintainer direction, recorded in `PLAN.md` §5. Surface
 pinned, Gallery gate green, governance written down, and only then does code move.
 
 Status values: `TODO` · `WIP` · `DONE` · `BLOCKED` · `DROPPED` (with a reason).
@@ -42,7 +42,7 @@ Status values: `TODO` · `WIP` · `DONE` · `BLOCKED` · `DROPPED` (with a reaso
 | 0.11 | **Promote** `Unshipped` → `Shipped` — arm the stability ratchet | **DONE** | 315 entries frozen; proved with a probe member → RS0016 |
 | 0.12 | **Axis 1** — `Discovery` property + Gallery-coverage gate | **DONE** | `DiscoverabilityObligationTests`, 5 facts; `Infrastructure` asserts the INVERSE |
 | 0.13 | **Gallery examples** — 9 written (examples 40–48), all runnable | **DONE** | gate green; `DwarfMapperDefaults` narrowed to ConformanceOnly with a stated reason |
-| 0.14 | **Strict orphan rule** + generated illustrated Gallery README quoting all regions | TODO | already-decided; the README is the quoting document 0.13 needs |
+| 0.14 | **Strict orphan rule** + generated illustrated Gallery README quoting all regions | **DONE** | exemption removed; README quotes 45 regions across 42 examples |
 
 ---
 
