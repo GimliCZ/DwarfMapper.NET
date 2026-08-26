@@ -89,3 +89,27 @@ merely stale:
 Nothing is lost. Each exemption carries its own reason inline at the fence as
 `<!-- fence-exempt: reason -->`, which is where a reader needs it and where `DocFenceScanTests` enforces it.
 The decisions themselves are in `Issues/round20/TASKS.md` and the ledgers.
+
+### 1.7 — one item deliberately NOT done, because it is outside the repository
+
+`Issues/round27/PLAN.md` lists "the round-20 plan file under `.claude/plans/` describes work long since
+landed". That file lives in **your** Claude configuration, not in this repository, and it is still loaded
+into context at the start of every session — so a plan for round 20 arrives alongside round 27's work.
+
+**Not deleted.** Everything else this session touched is under version control and one `git` command from
+being undone; a file in your agent configuration is neither. Deleting it is your call:
+
+    rm "C:\Users\Jouda\.claude\plans\partitioned-knitting-lampson.md"
+
+The other three 1.7 items were done: the two `CLAUDE.md` entries (deleted with the file, flagged above), the
+AOT freshness guard, and the reproducible-build driver.
+
+---
+
+## Final state
+
+Whole solution builds clean. **8,229 tests pass, zero failures.** The golden manifest is unchanged apart from
+the one deliberate `feat:HeteroFlattenGraph` addition, and `scripts/extracted-reach.ps1` reports **14 / 14**
+extracted methods reached by the corpus.
+
+**Commits sit on `feat/round27-arch`. Nothing merged to master. Nothing pushed.**
