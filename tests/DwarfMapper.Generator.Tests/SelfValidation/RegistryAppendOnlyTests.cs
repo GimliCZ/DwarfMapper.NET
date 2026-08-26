@@ -61,8 +61,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // Func<object, object>> Maps` stopped at the inner `>` and yielded "Map", while the two
             // declarations wrapped across lines were missed entirely — three tables found instead of five.
             // The identifier immediately preceding `=` is unambiguous and survives both.
+            // `static` is OPTIONAL since the create and update tables became two instances of one generic
+            // RegistryTable: the dictionaries they hold are INSTANCE fields of that type. Requiring `static`
+            // found three names and silently stopped covering the two that hold every registration -- the
+            // mutation scan below would then have been guarding the wrong set while still passing.
             return Regex.Matches(RegistrySource(),
-                    @"private static readonly[\s\S]*?(?<name>\w+)\s*=",
+                    @"private (?:static )?readonly[\s\S]*?(?<name>\w+)\s*=",
                     RegexOptions.ExplicitCapture)
                 .Select(m => m.Groups["name"].Value)
                 .Distinct(StringComparer.Ordinal)
@@ -79,8 +83,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(tables.Count >= 5,
                 $"Expected at least the five registry tables, found {tables.Count} ({string.Join(", ", tables)}). "
                 + "The field declarations changed shape and this scan no longer describes the registry.");
+
+            // The two static tables, plus the pair of dictionaries every RegistryTable instance holds. Naming
+            // the inner two explicitly is the point: they are where every registration and every ambiguity mark
+            // actually lands, so a scan that missed them would protect nothing that matters.
             Assert.Contains("Maps", tables, StringComparer.Ordinal);
-            Assert.Contains("Ambiguous", tables, StringComparer.Ordinal);
+            Assert.Contains("UpdateMaps", tables, StringComparer.Ordinal);
+            Assert.Contains("_maps", tables, StringComparer.Ordinal);
+            Assert.Contains("_ambiguous", tables, StringComparer.Ordinal);
         }
 
         [Fact]
@@ -121,10 +131,14 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // is guarding a mechanism that no longer exists.
             var src = RegistrySource();
 
-            Assert.True(Regex.Matches(src, @"\.TryAdd\(").Count >= 4,
-                "Fewer than four TryAdd calls remain in the registry — the create and update tables plus their "
-                + "ambiguity mirrors each need one. Inserts have moved to some other mechanism, and the "
-                + "append-only scan above is now checking the wrong thing.");
+            // TWO, not four. It was four when the registry held four loose dictionaries and each needed its own
+            // insert; the create and update tables are now two instances of one generic RegistryTable, so the
+            // single TryAdd pair inside it serves both. The count fell because the DUPLICATION fell -- the
+            // invariant did not move, and the scan above still covers every table by name.
+            Assert.True(Regex.Matches(src, @"\.TryAdd\(").Count >= 2,
+                "Fewer than two TryAdd calls remain in the registry — RegistryTable needs one for the map and "
+                + "one to mark a duplicate. Inserts have moved to some other mechanism, and the append-only "
+                + "scan above is now checking the wrong thing.");
         }
 
         [Fact]
