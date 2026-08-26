@@ -108,6 +108,72 @@ answering it wrongly would delete a factory some fuzz path depends on.
 
 ---
 
+## 1c. PHASE 0 — surface governance, and why it comes first
+
+**Sequencing changed by maintainer direction:** *"before we do any restructuring, we should nail down
+architecture designs of entire repository — especially public API control … since it's close to a compiler
+library, then general purpose library."*
+
+That reordering is right for a reason worth stating. For a compiler-adjacent library the public surface **is**
+the product: a rename hits every consumer at build time, not at runtime behind a feature flag. And an
+attribute nobody can find is functionally missing however well it works. Restructuring first would mean moving
+code whose contract has not yet been written down.
+
+**Governance already exists for two of four surfaces.** This phase completes what the repo half-built rather
+than proposing something new:
+
+| surface | instrument | state |
+|---|---|---|
+| diagnostics (`DWARF###`) | `AnalyzerReleases.*` + wording pins + CHANGELOG | **armed** — the repo already treats ids as public API |
+| emitted code | 973-case golden manifest | **armed** — as bytes rather than declared contract, which is the stronger form |
+| types & attributes | `PublicAPI.*.txt` + PublicApiAnalyzers | installed, **not armed** — see below |
+| discoverability | Gallery + generated index | **the gap** — 15 of 29 attributes have no example |
+
+### [N6] The public-API baseline is inventoried but not committed — and that is *correct* today
+
+`src/DwarfMapper/PublicAPI.Shipped.txt` contains one line: `#nullable enable`. All **278** entries — every
+attribute and every option property — sit in `PublicAPI.Unshipped.txt`.
+
+**This is not a defect.** `git tag -l` returns exactly one tag, `mapconfig-pre-rebase`, which is a branch
+backup rather than a version; `CHANGELOG.md` has only an `[Unreleased]` section. **The library has never
+released.** PublicApiAnalyzers' own workflow is that everything lives in Unshipped until a release moves it to
+Shipped, so the current state is the convention working as designed.
+
+What it *does* mean is that **no stability contract exists yet**: while a symbol sits in Unshipped, renaming or
+removing it costs nothing and the analyzer raises no objection. Arming the ratchet is therefore a **decision
+about when to commit**, not a bug to fix — which is exactly the "slowly harden every step" the direction asks
+for.
+
+**The audit must precede the promotion.** Promoting 278 unreviewed entries freezes every accident among them:
+an accidentally-public helper, a settable property that should be init-only, a vestigial type. Demoting is
+free today and a declared break afterwards. So: audit → fix while it is free → *then* promote.
+
+`CodeFixes` and `DocTooling` need no baseline — `CodeFixes` is `IsPackable=false` and `DocTooling` is internal
+tooling; the generator's consumer-facing types all live in `DwarfMapper`, which has one.
+
+### [N7] 15 of 29 public attributes have no Gallery example — but the gate cannot demand 29/29
+
+Docs cover all 29. The Gallery covers 14. Nothing enforces the link: `ExampleCatalogueTests` validates that an
+example is *well-formed* (binds to one file, exposes a public static `Run`), never that a public attribute
+*has* one.
+
+**Two of the 15 must be exempt, on evidence.** `DwarfProvidesMap` and `DwarfRequiresMap` are emitted BY the
+generator into consumer assemblies — verified in real generated output:
+`[assembly: global::DwarfMapper.DwarfProvidesMap(typeof(...), typeof(...))]`. A Gallery example showing a
+consumer writing one would be a fabrication of an API nobody uses that way. They belong in docs, where they
+already are.
+
+So the gate follows the repo's existing idiom: **coverage required, with an exempt-with-stated-reason list**,
+the allowlist empty of anything unaccounted for. The remaining 13 need classifying as consumer-written vs
+infrastructure before the gate lands — a first heuristic pass could not tell the generator *reading* an
+attribute name from *writing* it, so that classification is work, not a guess.
+
+**This joins work already decided.** The strict orphan rule (§5) requires every snippet region to be quoted by
+some document, and the deliverable there is a generated illustrated Gallery README. New examples need exactly
+such a document. **The ~13 examples, the strict orphan rule, and the generated README are one work item.**
+
+---
+
 ## 2. Four corrections to the RFC
 
 **C1 — every ceiling in the RFC is stale, and one is already red.** Its `StructureRatchetTests` pins
