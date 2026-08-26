@@ -30,4 +30,9 @@
         <AdditionalFiles Include="AnalyzerReleases.Unshipped.md"/>
         <AdditionalFiles Include="BannedSymbols.txt"/>
     </ItemGroup>
+    <ItemGroup>
+        <!-- The recursion bounds, declared once. The generator is netstandard2.0 and cannot
+             reference the runtime, so the constant is LINKED into both rather than duplicated. -->
+        <Compile Include="..\Shared\DwarfLimits.cs" Link="Shared\DwarfLimits.cs"/>
+    </ItemGroup>
 </Project>

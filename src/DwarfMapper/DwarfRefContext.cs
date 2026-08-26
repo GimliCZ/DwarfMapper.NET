@@ -33,7 +33,7 @@ namespace DwarfMapper
         ///     The absolute hard cap. No <c>MaxDepth</c> value can exceed this, regardless of
         ///     the <c>[DwarfMapper(MaxDepth = N)]</c> attribute.
         /// </summary>
-        public const int AbsoluteMaxDepth = 1000;
+        public const int AbsoluteMaxDepth = DwarfLimits.AbsoluteMaxDepth;
 
         // ── Identity map for Preserve mode ───────────────────────────────────────────
         // CRITICAL: Must use ReferenceEqualityComparer.Instance, never the default comparer.
@@ -74,8 +74,8 @@ namespace DwarfMapper
         public DwarfRefContext(int maxDepth, bool preserve = false, bool setNull = false)
         {
             // Clamp: min 1 (a mapper that immediately throws is not useful), max AbsoluteMaxDepth
-            MaxDepth = maxDepth < 1 ? 1
-                : maxDepth > AbsoluteMaxDepth ? AbsoluteMaxDepth
+            MaxDepth = maxDepth < DwarfLimits.MinMaxDepth ? DwarfLimits.MinMaxDepth
+                : maxDepth > DwarfLimits.AbsoluteMaxDepth ? DwarfLimits.AbsoluteMaxDepth
                 : maxDepth;
             // In Preserve mode, allocate the identity map upfront so it is ready on first use.
             // Allocating eagerly here lets TryGetReference/SetReference do a single null check
