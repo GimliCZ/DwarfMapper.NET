@@ -230,6 +230,17 @@ namespace DwarfMapper.Generator.Pipeline
                     }
             }
 
+            // One bundle per DIRECTION over the locals above -- NOT copies of them: every field below is the
+            // same instance this method keeps using, so a pass that mutates through the bundle is doing what
+            // it did when it was inline. See MemberLookups for why the read-only/mutable line falls here.
+            var lookups = new MemberLookups(comparer,
+                flexible,
+                writableByName,
+                sourceGroups,
+                flattenInfos,
+                reservedConverters);
+            var acc = new MemberAccumulators(result, handledTargets, consumedExtraParams, consumedFlattenRoots);
+
             var explicitSeen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var (srcName, tgtName, useMethod) in explicitMaps)
             {
@@ -937,51 +948,7 @@ namespace DwarfMapper.Generator.Pipeline
             // default rather than overwrite it. Mark each simple, nullable-source, post-construction-settable
             // member so the emitter guards it with `if (src.X is not null) dst.X = …;`. Non-nullable value-type
             // sources (never null) and required/init-only/read-only targets (cannot be deferred) are left as-is.
-            if (options.SkipNullSourceMembers && result.Count > 0)
-            {
-                var srcTypeByName = new Dictionary<string, ITypeSymbol>(comparer);
-                foreach (var (sName, sType) in ReadableMembers(sourceType, compilation, options.AllowNonPublic))
-                    srcTypeByName[sName] = sType;
-
-                var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);
-                for (var t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
-                    foreach (var tm in t.GetMembers())
-                        if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: false } && !p.IsRequired)
-                        {
-                            deferrableTargets.Add(p.Name);
-                        }
-                        else if (tm is IFieldSymbol f && !f.IsReadOnly && !f.IsConst && !f.IsRequired)
-                        {
-                            deferrableTargets.Add(f.Name);
-                        }
-
-                for (var i = 0; i < result.Count; i++)
-                {
-                    var m = result[i];
-                    if (string.IsNullOrEmpty(m.SourceName) ||
-                        m.SourceName.IndexOf('.') >= 0 ||
-                        m.ValueExpression is not null ||
-                        m.UnflattenIntermediateFqn is not null ||
-                        m.WhenPredicate is not null ||
-                        m.SkipIfSourceNull ||
-                        !deferrableTargets.Contains(m.TargetName))
-                    {
-                        continue;
-                    }
-
-                    if (srcTypeByName.TryGetValue(m.SourceName, out var st) && (st.IsReferenceType || IsNullableValue(st, out _)))
-                        // The emitter now guards this with `if (src.X is not null) dst.X = …;`, so inside that
-                        // guard flow analysis already proves non-null: no CS8601, hence no '!' and no DWARF070.
-                        // SkipNullSourceMembers IS the fix DWARF070 would have told them to apply.
-                    {
-                        result[i] = m with
-                        {
-                            SkipIfSourceNull = true,
-                            NullRefIntoNonNullable = false
-                        };
-                    }
-                }
-            }
+            ApplySkipNullSourceMembers(sourceType, targetType, compilation, options, lookups, acc);
 
             // DWARF070: a nullable reference source raw-assigned into a non-nullable reference target. Reported
             // here, once, after every other pass has had its chance to handle the null (NullSubstitute, a
