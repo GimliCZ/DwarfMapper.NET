@@ -58,9 +58,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static readonly HashSet<string> Allowlist = new(StringComparer.Ordinal)
         {
-            // 22 rows. Was 31 when this scan was written; ResolveMembers' nine option parameters came out when
-            // R27-02 bundled them into MapperOptions, which is the allowlist doing what a shrink-only list is
-            // for. ResolveProjectionMembers still carries 7 and is the next migration.
+            // 15 rows. Was 31 when this scan was written. ResolveMembers lost nine and ResolveProjectionMembers seven when
+            // R27-02 bundled their mapper-wide flags into MapperOptions — the allowlist doing exactly what a
+            // shrink-only list is for. What remains is the converters and the constructor-argument resolver.
             "CollectionConverter.cs::Synthesize::isPreserve",
             "CollectionConverter.cs::TryResolve::nullAsNull",
             "DictionaryConverter.cs::Synthesize::isPreserve",
@@ -75,13 +75,6 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             "MapperExtractor.Members.cs::ResolveConstructorArguments::isSetNull",
             "MapperExtractor.Members.cs::ResolveConstructorArguments::nullAsNull",
             "MapperExtractor.Members.cs::ResolveMembers::requiredMembersAlreadySatisfied",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers::allowNonPublic",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers::autoNest",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers::explicitOnly",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers::ignoreObsolete",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers::implicitConversions",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers::nullAsNull",
-            "MapperExtractor.Projection.cs::ResolveProjectionMembers::skipNullSourceMembers",
             "NestedMappingRegistry.cs::GetOrReserve::autoNest"
         };
 

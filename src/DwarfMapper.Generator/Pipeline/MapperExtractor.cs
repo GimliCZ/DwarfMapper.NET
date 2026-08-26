@@ -981,41 +981,49 @@ namespace DwarfMapper.Generator.Pipeline
                         ctx.SemanticModel.Compilation,
                         methodLocation,
                         diagnostics,
-                        caseInsensitive,
+                        new MapperOptions(
+                            CaseInsensitive: caseInsensitive,
+                            AutoNest: projAutoNest,
+                            // I19: the FIFTH reader of NullCollections, and the endpoint that never read it.
+                            // Same value, same shape as the four .Map call sites — a null source collection
+                            // materialises the documented AsEmpty default through .Project too.
+                            NullAsNull: nullCollections == NullCollectionsBehavior.AsNull,
+                            // Projection has no reference-tracking context: it builds an expression tree, and
+                            // Preserve/SetNull are runtime graph behaviours with nothing to thread them onto.
+                            // False rather than omitted, because the bundle admits no defaults.
+                            IsPreserve: false,
+                            IsSetNull: false,
+                            // I20: the SIXTH reader of ImplicitConversions, and the endpoint that never read
+                            // it. Same value the five .Map call sites get — a lossy cross-category conversion
+                            // reports at .Project too, and breaks the build at both endpoints or at neither.
+                            ImplicitConversions: implicitConversions,
+                            NameConvention: nameConvention,
+                            // The FOURTH call site of the one reader, and the last: projection used to pass the
+                            // bare class value, which made it the third partial reader of an option written at
+                            // four scopes (D6/D7). It now sees the method form and the pair-scoped form like
+                            // every other endpoint.
+                            //
+                            // The refusal it feeds is not new: ResolveProjectionMembers already refuses an
+                            // untranslatable null-skip per affected member with DWARF028, which is what
+                            // [DwarfMapper(SkipNullSourceMembers = true)] and its assembly-level twin have
+                            // always got here. Threading the scoped forms simply lets them reach it.
+                            //
+                            // This one line was built and reverted once (A6): DWARF028 is an Error, a blocking
+                            // error suppresses the class's emission, the partial projection method is left
+                            // unimplemented, and SurfaceProbe read the resulting CS8795 as "the compiler
+                            // rejected the placement" — so landing it would have raised
+                            // NotCompilableCellCeiling rather than closing anything. That was the R4 ordering
+                            // defect in the instrument, not a fact about this option, and it is fixed: a
+                            // CS8795 behind a blocking DWARF error now reads Refused.
+                            SkipNullSourceMembers: ResolveNullSkip(pairNullSkips, method, projSource, projTargetNamed, skipNullSrc),
+                            AllowNonPublic: allowNonPublic,
+                            ExplicitOnly: explicitOnly,
+                            IgnoreObsolete: ignoreObsolete),
                         projExplicitMaps,
                         enumPolicy,
                         referenceHandling,
                         "__s",
-                        nameConvention,
                         ReadMapPropertyExtras(method),
-                        // The FOURTH call site of the one reader, and the last: projection used to pass the bare
-                        // class value, which made it the third partial reader of an option written at four scopes
-                        // (D6/D7). It now sees the method form and the pair-scoped form like every other endpoint.
-                        //
-                        // The refusal below is not new and was not written for this: ResolveProjectionMembers
-                        // already refuses an untranslatable null-skip per affected member with DWARF028, which is
-                        // what [DwarfMapper(SkipNullSourceMembers = true)] and its assembly-level twin have always
-                        // got here. Threading the scoped forms simply lets them reach it.
-                        //
-                        // This one line was built and reverted once (A6): DWARF028 is an Error, a blocking error
-                        // suppresses the class's emission, the partial projection method is left unimplemented,
-                        // and SurfaceProbe read the resulting CS8795 as "the compiler rejected the placement" —
-                        // so landing it would have raised NotCompilableCellCeiling rather than closing anything.
-                        // That was the R4 ordering defect in the instrument, not a fact about this option, and it
-                        // is fixed: a CS8795 behind a blocking DWARF error now reads Refused.
-                        ResolveNullSkip(pairNullSkips, method, projSource, projTargetNamed, skipNullSrc),
-                        allowNonPublic,
-                        explicitOnly,
-                        ignoreObsolete,
-                        projAutoNest,
-                        // I19: the FIFTH reader of NullCollections, and the endpoint that never read it. Same
-                        // value, same shape as the four .Map call sites above — a null source collection now
-                        // materialises the documented AsEmpty default through .Project too.
-                        nullCollections == NullCollectionsBehavior.AsNull,
-                        // I20: the SIXTH reader of ImplicitConversions, and the endpoint that never read it.
-                        // Same value the five .Map call sites get — a lossy cross-category conversion now
-                        // reports at .Project too, and breaks the build at both endpoints or at neither.
-                        implicitConversions,
                         projConsumedSources,
                         // Both [Flatten] and [MapValue] are threaded now, and they arrive from opposite
                         // directions worth keeping distinct. A flattened leaf is `__s.Root.Leaf`, the navigation
