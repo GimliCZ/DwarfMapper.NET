@@ -346,7 +346,8 @@ namespace DwarfMapper.Generator.Pipeline
                 shape,
                 identity,
                 threadCtx,
-                registerBeforeFill);
+                registerBeforeFill,
+                tgtElem.IsValueType);
 
             synth[name] = new SynthesizedMethod(name, w.ToString());
             return name;
@@ -390,7 +391,8 @@ namespace DwarfMapper.Generator.Pipeline
                 shape,
                 false,
                 true,
-                false);
+                false,
+                tgtElem.IsValueType);
             synth[existingName] = new SynthesizedMethod(existingName, w.ToString());
         }
 
@@ -407,7 +409,8 @@ namespace DwarfMapper.Generator.Pipeline
             Shape shape,
             bool identity,
             bool threadCtx,
-            bool registerBeforeFill)
+            bool registerBeforeFill,
+            bool tgtElemIsValueType)
         {
             switch (shape.Target)
             {
@@ -440,7 +443,8 @@ namespace DwarfMapper.Generator.Pipeline
                         identity,
                         shape.NullAsNull,
                         threadCtx,
-                        registerBeforeFill);
+                        registerBeforeFill,
+                        tgtElemIsValueType);
                     break;
 
                 case TargetKind.HashSet:
@@ -675,7 +679,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool identity,
             bool nullAsNull,
             bool threadCtx,
-            bool registerBeforeFill)
+            bool registerBeforeFill,
+            bool tgtElemIsValueType)
         {
             var listFq = "global::System.Collections.Generic.List<" + elem + ">";
             var retFq = nullAsNull ? listFq + "?" : listFq;
@@ -706,9 +711,42 @@ namespace DwarfMapper.Generator.Pipeline
                     // Pre-size from the known source count (CapacityArg) so large lists don't repeatedly
                     // double+copy their backing array — same rationale as the array/dictionary paths.
                     w.Line("if (src is null) return " + emptyExpr + ";");
-                    w.Line("var __r = new " + listFq + "(" + CapacityArg(shape) + ");");
-                    w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
-                    w.Line("return __r;");
+
+                    var capacity = CapacityArg(shape);
+
+                    // ── SetCount + span fill ───────────────────────────────────────────────────────────
+                    // The list is already pre-sized, so Add can never grow it — yet every element still pays
+                    // Add's bookkeeping: _version++, an _items reload, a capacity check that CANNOT fail, and
+                    // _size++. Writing through the span skips all four. Measured 1.44-1.61x for value
+                    // elements; see Issues/round26/FINDING-list-fill-strategy.md.
+                    //
+                    // Restricted to VALUE element types, and that restriction is measured rather than assumed:
+                    // for reference elements the win is zero (1.00x, then 0.92x on a second run) because
+                    // allocating the destination objects dominates, so the extra emitted code buys nothing.
+                    //
+                    // SAFETY. SetCount makes the list report a Count over memory nothing has written yet, and
+                    // unlike the blit the element expression here is arbitrary generated code that CAN throw —
+                    // CreateChecked overflow, an unmapped enum, a user converter. That is sound ONLY because
+                    // `__r` is a local returned solely on success: a throw makes it unreachable garbage that no
+                    // caller can observe. It is NOT sound where the caller owns the list, which is why
+                    // registerBeforeFill is excluded above (Preserve publishes __r into the context BEFORE
+                    // filling, so a cycle could observe the default-valued tail).
+                    if (tgtElemIsValueType && capacity.Length > 0)
+                    {
+                        w.Line("var __n = " + capacity + ";");
+                        w.Line("var __r = new " + listFq + "(__n);");
+                        w.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __n);");
+                        w.Line("var __d = global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r);");
+                        w.Line("var __i = 0;");
+                        w.Line("foreach (var __item in " + shape.SourceExpr + ") { __d[__i++] = " + item + "; }");
+                        w.Line("return __r;");
+                    }
+                    else
+                    {
+                        w.Line("var __r = new " + listFq + "(" + capacity + ");");
+                        w.Line("foreach (var __item in " + shape.SourceExpr + ") { __r.Add(" + item + "); }");
+                        w.Line("return __r;");
+                    }
                 }
             }
         }
@@ -970,7 +1008,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         // ─── Blit ─────────────────────────────────────────────────────────────────
 
-        /// <summary>Synthesize a reinterpret-blit array mapper (vectorized memmove with a runtime size guard).</summary>
+        /// <summary>Synthesize a reinterpret-blit array mapper (a single vectorized memmove).</summary>
         public static string SynthesizeBlit(
             Dictionary<string, SynthesizedMethod> synth,
             ITypeSymbol srcArrayType,
@@ -990,13 +1028,6 @@ namespace DwarfMapper.Generator.Pipeline
             using (w.Block("private static " + elem + "[] " + name + "(" + srcFq + " src)"))
             {
                 w.Line("if (src is null) return global::System.Array.Empty<" + elem + ">();");
-                w.Line("if (global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + srcE + ">() != global::System.Runtime.CompilerServices.Unsafe.SizeOf<" + elem + ">())");
-                using (w.Indent())
-                {
-                    w.Line(
-                        "throw new global::System.InvalidOperationException(\"DwarfMapper blit: element size mismatch\");");
-                }
-
                 w.Line("var __r = new " + elem + "[src.Length];");
                 w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(new global::System.ReadOnlySpan<" + srcE + ">(src)).CopyTo(__r);");
                 w.Line("return __r;");
@@ -1004,6 +1035,143 @@ namespace DwarfMapper.Generator.Pipeline
 
             synth[name] = new SynthesizedMethod(name, w.ToString());
             return name;
+        }
+
+        /// <summary>
+        ///     True when <paramref name="t" /> is exactly <c>List&lt;T&gt;</c>.
+        ///     <para>
+        ///         Exactly, and not an interface it implements: the blit needs
+        ///         <c>CollectionsMarshal.AsSpan</c>, which is declared on the concrete type. An
+        ///         <c>IReadOnlyList&lt;T&gt;</c> parameter may be backed by a <c>List&lt;T&gt;</c> at runtime, but
+        ///         proving that is not something the generator can do — and a type test plus a fallback would
+        ///         cost more than the copy it saves.
+        ///     </para>
+        /// </summary>
+        public static bool IsConcreteList(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { IsGenericType: true } n &&
+                   n.ConstructedFrom.ToDisplayString() == "System.Collections.Generic.List<T>";
+        }
+
+        /// <summary>
+        ///     True when <paramref name="t" /> is exactly <c>ImmutableArray&lt;T&gt;</c>, which exposes its
+        ///     backing storage publicly through <c>AsSpan()</c> and <c>ImmutableCollectionsMarshal</c>.
+        /// </summary>
+        public static bool IsImmutableArray(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { IsGenericType: true } n &&
+                   n.ConstructedFrom.ToDisplayString() == "System.Collections.Immutable.ImmutableArray<T>";
+        }
+
+        /// <summary>
+        ///     Synthesize a reinterpret-blit for the List-involved shapes — <c>array → List</c>,
+        ///     <c>List → array</c> and <c>List → List</c> — which the array-to-array gate does not reach.
+        ///     <para>
+        ///         The <c>SetCount</c> hazard is closed by CONSTRUCTION rather than by ordering.
+        ///         <c>CollectionsMarshal.SetCount</c> makes the list report a <c>Count</c> covering memory
+        ///         nothing has written yet, so anything that could throw between it and the copy would expose
+        ///         uninitialised data. Nothing in the emitted body can throw at all: there is no guard, no
+        ///         conversion and no user code between the two — only the allocation, which throws before
+        ///         <c>SetCount</c> or not at all.
+        ///     </para>
+        /// </summary>
+        public static string SynthesizeBlitListShape(
+            Dictionary<string, SynthesizedMethod> synth,
+            ITypeSymbol srcCollType,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem,
+            BlitStorage source,
+            BlitStorage target)
+        {
+            var elem = Fq(tgtElem);
+            var srcE = Fq(srcElem);
+            var srcFq = Fq(srcCollType);
+            var listFq = "global::System.Collections.Generic.List<" + elem + ">";
+            var iaFq = "global::System.Collections.Immutable.ImmutableArray<" + elem + ">";
+            var ret = target switch
+            {
+                BlitStorage.Array => elem + "[]",
+                BlitStorage.List => listFq,
+                _ => iaFq,
+            };
+
+            var name = "__DwarfBlitL_" + StableHash.Fnv1a(srcFq + "=>" + ret);
+            if (synth.ContainsKey(name))
+            {
+                return name;
+            }
+
+            var count = source switch
+            {
+                BlitStorage.Array => "src.Length",
+                BlitStorage.List => "src.Count",
+                _ => "src.Length",
+            };
+
+            var srcSpan = source switch
+            {
+                BlitStorage.Array => "new global::System.ReadOnlySpan<" + srcE + ">(src)",
+                BlitStorage.List => "global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(src)",
+                // ImmutableArray<T>.AsSpan() is public and allocation-free. Guarded by IsDefaultOrEmpty above,
+                // because a `default` ImmutableArray wraps a null array.
+                _ => "src.AsSpan()",
+            };
+
+            var emptyReturn = target switch
+            {
+                BlitStorage.Array => "global::System.Array.Empty<" + elem + ">()",
+                BlitStorage.List => "new " + listFq + "()",
+                _ => iaFq + ".Empty",
+            };
+
+            var w = new CodeWriter(1);
+            using (w.Block("private static " + ret + " " + name + "(" + srcFq + " src)"))
+            {
+                // An ImmutableArray<T> is a struct: it is never null, but it CAN be `default`, which wraps a
+                // null array and would fault on AsSpan().
+                w.Line(source == BlitStorage.ImmutableArray
+                    ? "if (src.IsDefaultOrEmpty) return " + emptyReturn + ";"
+                    : "if (src is null) return " + emptyReturn + ";");
+
+                // Before SetCount, deliberately: see the remark above.
+                w.Line("var __n = " + count + ";");
+
+                switch (target)
+                {
+                    case BlitStorage.List:
+                        w.Line("var __r = new " + listFq + "(__n);");
+                        w.Line("global::System.Runtime.InteropServices.CollectionsMarshal.SetCount(__r, __n);");
+                        w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan(__r));");
+                        w.Line("return __r;");
+                        break;
+
+                    case BlitStorage.ImmutableArray:
+                        // The wrapped array MUST be freshly allocated. Re-wrapping the source's own storage
+                        // would give two immutable values one buffer — for an immutable type that is a
+                        // correctness bug, not a saved allocation.
+                        w.Line("var __r = new " + elem + "[__n];");
+                        w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(__r);");
+                        w.Line("return global::System.Runtime.InteropServices.ImmutableCollectionsMarshal.AsImmutableArray(__r);");
+                        break;
+
+                    default:
+                        w.Line("var __r = new " + elem + "[__n];");
+                        w.Line("global::System.Runtime.InteropServices.MemoryMarshal.Cast<" + srcE + ", " + elem + ">(" + srcSpan + ").CopyTo(__r);");
+                        w.Line("return __r;");
+                        break;
+                }
+            }
+
+            synth[name] = new SynthesizedMethod(name, w.ToString());
+            return name;
+        }
+
+        /// <summary>Which storage a blit reads from or writes to. All three expose a span publicly.</summary>
+        internal enum BlitStorage
+        {
+            Array,
+            List,
+            ImmutableArray
         }
 
         /// <summary>

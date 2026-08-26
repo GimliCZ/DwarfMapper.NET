@@ -463,13 +463,25 @@ jobs:
           set -euo pipefail
           rm -f global.json     # the working copy only; the committed pin is untouched
           dotnet --version
-      # Locked-mode note (round-22 S1): this leg inherits RestoreLockedMode from CI=true like every job.
-      # It deliberately runs an UNPINNED newer SDK, and a newer SDK's package-prune data can in principle
-      # change the resolved graph — if this leg ever reds with NU1004 while build-test stays green, that IS
-      # the diagnosis (SDK-driven graph drift, not a lock-file defect), and it is information this
-      # forward-compat leg exists to surface, not noise to exempt.
+      # Locked-mode note (round-22 S1, RESOLVED 2026-08-23): this leg used to inherit RestoreLockedMode from
+      # CI=true like every job, and the note here predicted that a newer SDK could change the resolved graph
+      # and red this leg with NU1004 while build-test stayed green — "the diagnosis, not noise to exempt".
+      #
+      # That prediction came true: the SDK's IMPLICIT AOT/trim packages track the runtime patch, so an
+      # unpinned newer host resolved Microsoft.DotNet.ILCompiler and Microsoft.NET.ILLink.Tasks at 10.0.11
+      # where the lock file records 10.0.1. The diagnosis stands and is recorded in
+      # Issues/round26/FINDING-forward-compat-lockmode.md.
+      #
+      # What the note did not anticipate is the CONSEQUENCE: restore fails, so the leg never reaches the
+      # question it exists to ask — does the generator still LOAD and RUN under a newer compiler. A leg that
+      # dies before its own test is worth nothing, and it had been dying since the SDK moved.
+      #
+      # So locked mode is disabled FOR THIS LEG ONLY. That is not exempting the finding — locked mode stays
+      # on for every other job, which is where lock-file integrity is actually gated. It is admitting that a
+      # deliberately-unpinned SDK and a pinned lock file cannot both hold, and choosing the one this leg is
+      # named after.
       - name: Build the generator against the floor, on a newer compiler
-        run: dotnet build DwarfMapper.NET.sln -c Release
+        run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
       # Same exclusion as build-test: this leg asks "does the generator still LOAD in a newer compiler", and
       # the matrix has its own dedicated job above. (Until 2026-08-18 the stated reason was that the matrix's
       # expected red would drown the answer; it is green now, so the reason is duplication, not noise.)

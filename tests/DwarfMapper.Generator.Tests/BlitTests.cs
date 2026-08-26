@@ -43,7 +43,12 @@ namespace DwarfMapper.Generator.Tests
                              """;
             var gen = GeneratorAssert.CompilesClean(s);
             Assert.Contains("MemoryMarshal.Cast<", gen, StringComparison.Ordinal);
-            Assert.Contains("Unsafe.SizeOf<", gen, StringComparison.Ordinal);
+
+            // No runtime size check. Equal size is a CONSEQUENCE of the layout proof, so a check could only
+            // fire if the generator itself were broken — and a runtime exception in a consumer's production
+            // code is the wrong place to discover that. It was also dead weight the JIT folded away while it
+            // still counted against the method's IL inlining budget.
+            Assert.DoesNotContain("Unsafe.SizeOf<", gen, StringComparison.Ordinal);
         }
 
         [Fact]

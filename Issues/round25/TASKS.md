@@ -33,7 +33,52 @@ this round is:
 > correctness proof. The perf gate trails, because a gate calibrated before there is anything to measure is
 > a constant someone invented.
 
+**3. R25-02 is mostly ALREADY SHIPPED, and the one part of it that is not shipped must never be built.**
+Found by reading the gate and its tests rather than the RFC. Evidence:
+`src/DwarfMapper.Generator/Pipeline/BlittableProof.cs`,
+`src/DwarfMapper.Generator/Pipeline/MapperExtractor.Conversions.cs:317`, and the pins in
+`tests/DwarfMapper.Generator.Tests/BlitTests.cs`.
+
+* **Distinct blittable struct pairs already blit, including nested ones.** `LayoutIdentical` recurses
+  through nested structs, and `Layout_identical_structs_blit` and `Nested_layout_identical_structs_blit`
+  pin it. The RFC's premise — "only primitive arrays hit the blit today" — is false; this landed as
+  Plan 15. **The v2 container's 35.8x "struct blit CONFIRMED" row therefore justified nothing that was not
+  already built**: it measured standalone kernels against a product gap that does not exist.
+* **The RFC's "name-independent (offsets and types, not member names)" is wrong and must be rejected.**
+  The proof requires field names to align, deliberately — the source comment says it outright: *positional
+  == name-based requires same names*. DwarfMapper maps by NAME, so a positional reinterpret is only
+  equivalent when the names line up. Making it name-independent would blit `struct A(int X, int Y)` onto
+  `struct B(int Y, int X)` and silently swap the values, which is precisely the mislinking this library
+  exists to turn into a build error. `Different_field_names_do_not_blit` pins the refusal.
+* **The name-independent behaviour the RFC asks for already exists as an explicit opt-in** —
+  `[Reinterpret]` forces the blit past the name proof, pinned by `Reinterpret_forces_blit_skipping_name_proof`.
+  A caller who genuinely wants positional semantics says so, and it is their declaration, not our guess.
+
+So **T2's real scope is the List-involved shapes only** — see the rewritten task below.
+
 ---
+
+## Status at round close — 2026-08-23
+
+| task | outcome |
+|---|---|
+| **T0-A** measure locally | DONE — `benchmarks/results/2026-08-23-round25-kernels.md`; overturned two inherited constants |
+| **T0-B** layout-equivalence gate | DONE — `DWARF100`, Info, scoped to a near-miss |
+| **T1** enum blit | DONE — `ByValue`/underlying only; `ByName` refused on the oracle |
+| **T2** List-involved shapes | DONE — array→List, List→array, List→List, plus the whole interface family |
+| **T3** metadata allowlist | DECLINED on measurement; the short-circuit it relied on is now pinned |
+| **T4** standing perf gate | DONE — ratio gate at n=1000, sabotage-proven both directions |
+| **T5** skip-if-identical | NOT SHIPPED — **ruled by the maintainer 2026-08-23**, "T5 should be skipped" |
+| **T6** park checked narrowing | DONE — emitted-source pin, with a control |
+| **T7** `ImmutableArray<T>` | DONE — both directions, fresh-array wrap pinned |
+
+Suite 8,040 → 8,117. Solution 0 errors / 0 warnings, samples included. Full nightly battery green —
+deep suite, coverage floors, ILVerify, benchmark smoke with allocation pins 17/45 exact, and the new blit
+ratio gate. Rulings and their cost-if-wrong: `Issues/ledgers/round25-ledger.md`.
+
+**Nothing is left open for the maintainer.** T5 was ruled skip; `DWARF100`'s severity settled at Info after
+Warning and Error were both attempted and measured against the stated requirement; the `bool` question is
+answered at the foot of this file.
 
 ## Layer 0 — instruments, before any emission change
 
@@ -51,9 +96,19 @@ between them, and a single-size measurement picks a winner by accident.
 Payloads come from the fuzzer and fixtures, not hand-built uniform literals (standing rule: uniform data
 misrepresents branch prediction and cache behaviour alike).
 
-Output: a dated file in `benchmarks/results/`, carrying local ratios for R25-02, R25-03 and R25-06's three
-classes. **Exit criterion: a class that does not clear the bar locally does not ship, regardless of what the
-container measured.**
+Output: a dated file in `benchmarks/results/`, carrying local ratios. **Exit criterion: a class that does not
+clear the bar locally does not ship, regardless of what the container measured.**
+
+**Measure only the genuinely open paths** (correction 3 removed one of the RFC's headline rows from the
+work-list):
+
+* `SetCount` + span copy against the `Add` loop, across the small-`n` region — this is what pins the
+  threshold constant, so it is the one measurement the later gate depends on;
+* enum blit against the **actual current scalar enum loop**, not against a hand-written stand-in;
+* the R25-06 classes.
+
+Do **not** re-measure array→array struct blit. It is shipped product behaviour, so a benchmark of it
+measures the past, not a decision.
 
 ### T0-B — R25-07, the layout-equivalence gate, minting **DWARF100**
 
@@ -72,6 +127,27 @@ Hard refusals to encode together with the reason, because they LOOK blittable: `
 The diagnostic is **informational** — the mapping still works. The id exists so a consumer who expected the
 fast path learns why they did not get it.
 
+**SHIPPED as `DWARF100`, narrower than the RFC specified — a deviation, recorded for ratification.** The RFC
+asked for it "whenever a pair *looks* blittable but the generator cannot prove identical layout". Built that
+way it would fire on every ordinary struct-array mapping whose members happen to differ, and an
+informational diagnostic that common gets suppressed wholesale by the first consumer who meets it — taking
+the cases worth reading down with it. So it is scoped to a genuine **near-miss**: a pair whose field counts
+or field TYPES differ is silent, because that is an ordinary mapping and not a missed fast path. Three
+blockers report, each with its remedy: non-Sequential layout, a metadata-declared struct, and misaligned
+field names.
+
+Two findings from building it, neither of which was in the RFC:
+
+* **A bare name mismatch already fails loudly as `DWARF001`, an Error** — the members cannot be mapped at
+  all — so the hint would be redundant noise beside it. The name-mismatch near-miss earns its place only
+  once `[MapProperty]` has reconciled the names and the mapping SUCCEEDS. That is the shape where the slow
+  path is genuinely invisible, and it is pinned as its own test.
+* **Shape must be checked before the layout blockers.** The natural order — blockers first, as the proof
+  itself does it — is wrong: every pair of distinct METADATA structs would report without anything having
+  looked at their fields. `decimal` is not in `IsPrimitive`, so `decimal[] → Guid[]` is a reachable pair with
+  nothing in common that announced itself as nearly layout-identical. Caught by review, not by the suite,
+  and now pinned.
+
 Five-file sync, since this mints an id and `Scan9` fails the build without the CHANGELOG entry:
 `AnalyzerReleases.Unshipped.md` · `docs/diagnostics.md` (fence-exempt, non-compiling illustration) · a
 `NegativeCases` row pinning id AND remedy wording · `CHANGELOG.md` · `docs/generated/diagnostics-index.md`.
@@ -85,20 +161,47 @@ Neither may land before T0-B, whose gate they call.
 
 ### T1 — R25-03, enum arrays as underlying-primitive blit
 
-The largest measured win (container: up to 76x in-cache, 6.4x at bandwidth) and the simplest proof, which is
-why it goes first. Covers `Status[] → Status[]`, `Status[] → StatusDto[]` where underlying types match and
-value sets are identical, and `Status[] ↔ int[]`. These are reinterpretations, not conversions.
+The largest measured win (container: up to 76x in-cache, 6.4x at bandwidth). `BlittableProof` excludes
+`TypeKind.Enum` today, with the reason stated in the source: *by-name enum mapping != byte copy*. R25-03 is
+the case for overriding that, and it must clear two bars the RFC states too loosely.
 
-The value-set analysis **already exists** — the enum converter computes it for its diagnostics — so only the
-emission is scalar. Differing underlying types, or mismatched value sets, stay in the loop: those are
-genuine conversions.
+**Real scope.** `Status[] → Status[]` (same type) already takes the Clone/memmove path, pinned by
+`Same_type_array_still_uses_clone_not_reinterpret`, so it is NOT a win here. The genuine targets are
+**cross-type enum** pairs and **enum ↔ underlying primitive**.
 
-### T2 — R25-02, struct blit, with the `List<T>` guard
+**The RFC's predicate is unsound as written.** It says "value sets identical". That is not enough:
+`Src { A = 1, B = 2 }` and `Dst { A = 2, B = 1 }` have identical value *sets*, but by-name mapping sends
+`1 → 2` while a blit preserves `1`. The correct predicate is **per-name value identity** — for every member,
+the same name carries the same underlying value — which is the same theorem the struct proof enforces:
+positional must equal name-based. Reuse the enum converter's existing member analysis, but assert the
+stronger property.
 
-Identical sequential blittable layout on both sides, name-independent — offsets and types, not member names.
-For `List<T>` targets, `CollectionsMarshal.SetCount` plus a span copy.
+**Check before writing any code:** what the current scalar path emits for a cross-enum element when the
+source holds an **undefined** value. Enums can carry any value of their underlying type, so this is
+reachable without any cast in the caller's code. If the scalar oracle throws or substitutes on an undefined
+value, a blit that preserves it is a **semantic change** and the gate must exclude that case; if the oracle
+is a plain cast, the blit matches and there is nothing to do. Read the emission — the scalar path is the
+oracle, and this is exactly the kind of divergence that is invisible in a green test suite.
 
-Two constraints v3 extracted that are easy to lose:
+### T2 — R25-02, REWRITTEN: blit the List-involved shapes
+
+**Not** "extend blit to structs" — that shipped in Plan 15 (see correction 3). The gate at
+`MapperExtractor.Conversions.cs:317` requires `Target == Array && SourceIsArray`, so exactly three shapes
+are still scalar even when the element pair is provably blittable:
+
+* `Array → List<T>`
+* `List<T> → Array`
+* `List<T> → List<T>`
+
+Source side is `CollectionsMarshal.AsSpan(srcList)`; target side is `CollectionsMarshal.SetCount` plus a span
+copy. The element proof is **unchanged** — the existing `BlittableProof.CanReinterpret` is reused verbatim,
+never relaxed.
+
+**The name-alignment requirement STAYS.** Anyone reading the RFC will be tempted to "fix" the proof to be
+name-independent; that would be silent mislinking, and the opt-in for it (`[Reinterpret]`) already exists.
+Leave a comment at the gate saying so, because the RFC will outlive the memory of this decision.
+
+Two constraints v3 extracted that carry over unchanged:
 
 * the small-`n` guard is real — below the threshold, `Add` wins about 2x — and the threshold is expressed as
   a **`Vector<T>.Count` multiple**, following dotnet/runtime's own idiom, not as a bare `32`;
@@ -115,6 +218,76 @@ Two constraints v3 extracted that are easy to lose:
 All three ride the identical template. The load-bearing test is the **cross-nullability refusal**:
 `T?[] → T[]` must take the loud path and never blit. That single test is what fails if the gate is subtly
 wrong, so it matters more than the three positive cases combined.
+
+**OUTCOME: no allowlist. Measured first, and the cases worth having already work.** `LayoutIdentical`
+returns true immediately for two IDENTICAL types, so a `decimal` field against a `decimal` field, or a
+`Guid` against a `Guid`, never reaches the in-source check at all — only the TOP-LEVEL element type must be
+source-declared. So the realistic shape the RFC was reaching for, a DTO struct carrying a money and an
+identifier, has always blitted. Same-type element pairs (`Guid[] → Guid[]`) are identity and already take
+the `Clone()` memmove, which is the same `Buffer.Memmove` underneath.
+
+What is left is exotic — an element type that IS a metadata struct paired with a *different*, layout-aligned
+type. Buying that would mean punching a hole in the in-source rule, which is the safety property T0-B rests
+on, for a shape nobody has asked for. **Declined**, on the same reasoning as `sealed` in round 24: a real
+safety rule is not worth weakening for a hypothetical gain.
+
+What DID come out of the task is coverage. The short-circuit was load-bearing and accidental — nothing
+stopped a future tightening of the recursion from silently dropping every DTO that carries a `decimal` or a
+`Guid` — so `BlitMetadataFieldTests` now pins it, along with the cross-nullability refusal and a `DateTime`
+look-alike refusal.
+
+*(For the record, the original obstacle analysis, which still governs if anyone revisits this.)*
+**The obstacle is specific, and the fix must not be a relaxation.** `BlittableProof.IsSourceSequential`
+requires the type to be declared **in source**, and the reason is sound: only for a source-declared struct
+does an absent `[StructLayout]` reliably mean the C# default of Sequential. `Guid` and `decimal` are
+metadata types and fail that check today. So the change is an explicit **well-known allowlist** —
+`System.Guid`, `System.Decimal`, and `Nullable<T>` of an allowlisted `T` with exactly matching nullability —
+punched through as named exceptions. Weakening the general in-source rule to admit them would silently admit
+every other metadata struct too, including the `[StructLayout(Auto)]` ones T0-B exists to refuse.
+
+### T7 — `ImmutableArray<T>`, the one other collection with a public route to its storage
+
+**NEW, maintainer question 2026-08-23: "can Dictionary and the other ICollection/IDictionary formats blit
+too?"** The API surface was probed rather than recalled, and the answer splits three ways. Two of them are
+already tasks; this is the third.
+
+`ImmutableCollectionsMarshal` exposes `AsArray`, `AsImmutableArray` and `AsMemory` — public, safe, zero-copy
+access to the backing array in both directions. `ImmutableArray<T>` is already a `TargetKind`, so a provable
+element pair can go: unwrap to `T[]`, blit into a fresh array, re-wrap. It is the array theorem plus two
+wrapper calls, and it reuses `BlittableProof` untouched.
+
+The re-wrap must take a **freshly allocated** array and never the source's own, or two immutable values would
+share storage — which for an immutable type is a correctness bug, not an optimisation.
+
+### The refusals, recorded so round 26 does not re-ask
+
+**`Dictionary<K,V>` and `HashSet<T>`: no, and not merely "not yet".** Four independent reasons, in order of
+how final they are:
+
+1. **No public span over the storage.** `CollectionsMarshal` offers exactly `AsSpan(List<T>)`,
+   `SetCount(List<T>)`, `AsBytes(BitArray)`, and per-key `GetValueRefOrNullRef` /
+   `GetValueRefOrAddDefault` for dictionaries. There is no dictionary or set equivalent of `AsSpan`.
+2. **The storage is a private nested `Entry` struct** — measured: `Dictionary<int,int>` holds `int[] _buckets`
+   plus `Entry[] _entries`, and `HashSet<T>` the same pair. `Entry`'s layout is an implementation detail, not
+   a contract, so a blit over it is a layout assumption that **cannot be proven** — exactly what T0-B exists
+   to refuse. Reaching it needs reflection or unsafe punning, which collides with the project's
+   accessibility-and-no-reflection commitment and with AOT/trim safety.
+3. **Hash codes are baked into the entries.** Change the key type and every stored hash is wrong. Keep the
+   key type and comparer and the dictionary is the same dictionary — territory the BCL copy constructor
+   already fast-paths.
+4. So the achievable dictionary win is a different feature entirely: **not rehashing** when key type and
+   comparer are unchanged. That is not exposed publicly either.
+
+**`Queue<T>` and `Stack<T>`: no.** Both hold a private `T[] _array` with no marshal accessor, and `Queue<T>`
+additionally wraps head-to-tail, so its backing array is not even contiguous in logical order.
+
+**The `ICollection` family needs nothing of its own.** `IList<T>`, `IReadOnlyList<T>`, `ICollection<T>`,
+`IReadOnlyCollection<T>` and `IEnumerable<T>` all materialise to `List<T>`, so **T2 covers all of them in one
+go** — that is the answer to the "other ICollection formats" half of the question.
+
+*(Noted in passing: `CollectionsMarshal.AsBytes(BitArray)` is a public byte span over a `BitArray`. Not a
+task — DwarfMapper does not map `BitArray` — but it is the only other blittable surface the BCL hands out,
+so it is worth knowing it exists before someone asks a third time.)*
 
 ---
 
@@ -147,6 +320,37 @@ It survives on its real justification — EF change-tracker semantics, not dirty
 therefore ships opt-in, documented so that the **cost is stated in the same breath as the benefit**. A
 feature documented as a speed-up when it is measurably a slow-down is precisely the kind of claim this
 repository exists to prevent.
+
+### OUTCOME: NOT SHIPPED — recommended on the evidence below, and RULED BY THE MAINTAINER 2026-08-23
+
+**This section previously committed to shipping it. Two facts found by probing before building changed the
+picture, and both are the kind of fact that is supposed to change a plan.**
+
+**1. Its stated justification is already largely served.** Update-into assigns a collection member
+wholesale — `dst.Member = <new collection>` — which is what dirties a tracked entity. But
+`[MapCollectionKey]` (G6) already exists and does the opposite: it **keeps the existing list instance** and
+upserts into it by key. For the same-element-type `List<T>` members that EF navigation properties actually
+are, the "don't dirty unchanged entities" story is therefore already available, under an option that also
+does something useful on a miss. R25-04 would add a second, overlapping way to ask for it.
+
+**2. The cost is worse than the RFC knew, in exactly the range that matters.** Measured locally — see
+`benchmarks/results/2026-08-23-round25-kernels.md` — comparing first is a loss **even on a hit** from n=16
+through n=16,384, bottoming out at **0.28x** around a thousand elements. The one place it wins is a hit at
+n=65,536 (**4.20x**), where skipping a megabyte of writes beats paying for them; the container had measured
+0.49x there and concluded "never faster", which is wrong at the top end and right everywhere else.
+
+So the feature would be: new public attribute surface, overlapping an existing option, to buy a 3.5x
+slowdown in the common case and a win only for very large already-identical collections. **Declining is the
+better engineering call, and it is the same evidence-driven outcome this round already reached for R25-01
+and R25-06.**
+
+This was raised for ratification rather than closed unilaterally, because unlike those two the plan had
+already said "ships". **The maintainer ruled "T5 should be skipped" on 2026-08-23**, so it is closed by
+decision rather than by inference from a benchmark.
+
+If the EF semantics are ever wanted for the non-keyed and cross-element-type cases that `[MapCollectionKey]`
+cannot reach, the measurement above is what the feature's documentation must carry — and n ≥ 65,536 is the
+band to recommend it in, rather than warn about.
 
 ---
 
@@ -184,8 +388,13 @@ any-lane-out-of-range mask, falling to the scalar loop only on a nonzero mask.
 * **Explicit pathspec on every commit.** No `git commit -a`, no `git add .`.
 * **No push without explicit per-instance approval.**
 
-## Open question for the maintainer
+## The open question, now answered
 
-`bool[]` blits are semantically identical to the loop — a non-0/1 byte is preserved either way — but the
-**non-normalization** becomes an observable contract the moment a test pins it. Worth deciding deliberately
-rather than inheriting: pin it as documented behaviour, or normalize and give up the blit.
+`bool[]` non-normalization is **settled as an equivalence** (2026-08-23). Measured: a `bool` holding byte 2
+survives the element loop, the block copy, a `bool[]` loop and a box/unbox round trip unchanged — the two
+emitted strategies never diverge, so this was never a correctness question.
+
+`BoolBlitEquivalenceRuntimeTests` therefore pins **that the two paths agree** over bytes 0, 1, 2 and 0xFF,
+and deliberately does not pin a byte value: the C# specification says nothing about non-canonical bools, so
+preserving byte 2 is the JIT's behaviour rather than a promise DwarfMapper can make. The weaker pin still
+catches the only thing that would be a defect — the two paths drifting apart.

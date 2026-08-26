@@ -1820,6 +1820,43 @@ discards nothing, so there is nothing to report. Opposite values over *different
 that is one policy per pair, which is what the attribute is for.
 ---
 
+## dwarf100
+**Array pair narrowly missed the blittable fast path** · Info
+
+Your mapping is **correct and complete**. This is a performance hint, and nothing else: an array pair came
+within one identifiable step of the blittable fast path — a single block copy of the whole array — and took
+the element-by-element loop instead.
+
+<!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
+```csharp
+public struct Point { public int X; public int Y; }
+
+[StructLayout(LayoutKind.Auto)]              // DWARF100 — Auto lets the runtime reorder fields
+public struct PointDto { public int X; public int Y; }
+```
+
+**Fix:** whatever the message names. The three it reports are worth knowing in advance:
+
+- **A layout that is not `Sequential`.** `Auto` permits the runtime to reorder fields, so the two layouts are
+  not *provably* identical even when they look it. Declaring `[StructLayout(LayoutKind.Sequential)]` is the
+  whole fix. This is not hypothetical: `DateTime` and `DateTimeOffset` are `Auto`, which is why they never
+  blit however byte-like they appear.
+- **A struct declared in metadata.** For a struct DwarfMapper can see the source of, an absent
+  `[StructLayout]` reliably means the C# default of `Sequential`; for one from another assembly it does not,
+  so the proof cannot be completed.
+- **Field names that differ.** DwarfMapper maps **by name**, so a positional reinterpret only agrees with the
+  declared mapping when the names line up. Rename to align them — or apply `[Reinterpret]` to say that
+  positional semantics are what you actually meant.
+
+**Why informational, and why it stays that way.** The mapping works. Only speed is lost, and plenty of
+callers will not care about an array of four elements. A warning here would become a *build failure* under
+`TreatWarningsAsErrors`, which is a trap this project has already sprung once (see `dwarf070`).
+
+**Why it does not fire more often.** A pair whose field counts or field *types* differ is silent. Those are
+not missed fast paths, they are ordinary mappings, and a hint common enough to appear on every struct mapping
+would be suppressed wholesale — taking the cases worth reading down with it.
+---
+
 ---
 
 ## Runtime exceptions

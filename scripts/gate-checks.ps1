@@ -221,6 +221,128 @@ function Remove-PlantedMutants {
     }
 }
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+# Blit ratio gate (round 25 T4). Reads the SAME smoke report the allocation gate reads and checks that
+# each blit emission still beats its scalar twin.
+#
+# This is a STRUCTURAL check wearing a stopwatch. It does not measure performance and does not assert any
+# absolute time - which is what keeps it honest against the house rule that smoke TIMINGS are non-gates.
+# It answers one question: is the fast path still being emitted? A blit that stopped being emitted
+# collapses its pair to roughly 1.0x. Nothing else in the suite would catch that, because the mapping
+# stays CORRECT either way - which is exactly what makes a performance regression silent.
+#
+# A separate function so it can be driven against a doctored report without paying for a ~7-minute run.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────
+function Assert-BlitRatiosHold {
+    param(
+        [Parameter(Mandatory)][string]$ReportPath,
+        [Parameter(Mandatory)][string]$BaselinePath
+    )
+    if (-not (Test-Path $ReportPath)) {
+        throw "blit ratio: no JSON report at $ReportPath - the run produced no parseable results"
+    }
+    $baseline = Get-Content -Raw -LiteralPath $BaselinePath | ConvertFrom-Json
+    $report = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
+    $failures = @()
+
+    $mean = @{}
+    foreach ($b in @($report.Benchmarks)) {
+        if ($null -ne $b.Statistics) { $mean[$b.Method] = [double]$b.Statistics.Mean }
+    }
+
+    foreach ($pair in @($baseline.pairs.PSObject.Properties)) {
+        $fast = $pair.Value.fast
+        $scalar = $pair.Value.scalar
+        # Vacuity guard: a renamed or deleted scenario must FAIL the gate, never fall silently out of it.
+        if (-not $mean.ContainsKey($fast)) {
+            $failures += "blit ratio: '$($pair.Name)' fast arm '$fast' is missing from the report - the gate cannot see it"
+            continue
+        }
+        if (-not $mean.ContainsKey($scalar)) {
+            $failures += "blit ratio: '$($pair.Name)' scalar arm '$scalar' is missing from the report - the gate cannot see it"
+            continue
+        }
+        if ($mean[$fast] -le 0) {
+            $failures += "blit ratio: '$fast' reported a non-positive mean - it crashed or was skipped"
+            continue
+        }
+        $ratio = $mean[$scalar] / $mean[$fast]
+        if ($ratio -lt $baseline.minRatio) {
+            $failures += ("blit ratio: $($pair.Name) is {0:F2}x, floor is {1:F2}x. The blit is no longer " -f $ratio, $baseline.minRatio) +
+                          "beating its scalar twin, which usually means the fast path stopped being EMITTED " +
+                          "for this shape - check the proof gate before assuming the machine is noisy."
+        }
+        else {
+            Write-Host ("   {0}: {1:F2}x (floor {2:F2}x)" -f $pair.Name, $ratio, $baseline.minRatio) -ForegroundColor DarkGray
+        }
+    }
+
+    if ($failures.Count) { throw ($failures -join "`n") }
+    Write-Host "   blit ratio gate: every pinned pair still beats its scalar twin" -ForegroundColor Green
+}
+
+
+# -----------------------------------------------------------------------------------------------------
+# Stryker launcher — correct reporters for the context, and a HARD FUSE so a leg can never hang forever.
+#
+# THE HANG, DIAGNOSED 2026-08-24. All three stryker-config*.json files request the `progress` reporter,
+# which draws a live console progress bar using ANSI cursor control. Run interactively that is fine, and six
+# runs on 2026-08-23 completed normally. Run from a DETACHED process with redirected stdout there is no
+# console to address: Stryker created its output directory and then blocked forever, consuming 0.1 s of CPU
+# across 17 processes in 12 seconds. Two attempts hung identically, and disabling MSBuild node reuse made no
+# difference -- it was never the build.
+#
+# So: choose the reporter from the context. Redirected output gets the non-interactive reporters, which emit
+# plain lines and need no cursor. The config files keep `progress` for the interactive case.
+#
+# AND a fuse regardless of cause. A gate that can hang indefinitely is worse than one that fails: a failure
+# is information, a hang is a machine occupied all night with nothing to show. If the deadline passes the
+# process tree is killed and the leg reports WHY, including what to try next.
+# -----------------------------------------------------------------------------------------------------
+function Invoke-StrykerLeg {
+    param(
+        [Parameter(Mandatory)][string]$Leg,
+        [string]$ConfigFile,
+        [int]$TimeoutMinutes = 30
+    )
+
+    $stArgs = @()
+    if ($ConfigFile) { $stArgs += @('--config-file', $ConfigFile) }
+
+    # [Console]::IsOutputRedirected is the honest test: it is false in a terminal and true under a pipe,
+    # a file redirect, or a detached task -- exactly the cases where `progress` has nothing to draw on.
+    if ([Console]::IsOutputRedirected) {
+        Write-Host "   non-interactive stdout detected - using 'dots' instead of the 'progress' reporter" -ForegroundColor DarkGray
+        $stArgs += @('--reporter', 'dots', '--reporter', 'html', '--reporter', 'json')
+    }
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    # Start-Process rather than a bare call so the fuse has something to kill: a plain invocation gives back
+    # no handle, and a fuse that cannot kill what it timed out on is decoration.
+    #
+    # Stdin is an EMPTY FILE, not 'NUL'. -RedirectStandardInput resolves its argument as a PATH, so 'NUL'
+    # becomes <repo>/NUL, which does not exist, and Start-Process throws before anything launches -- the fuse
+    # then fires on a null handle and blames the timeout for a launch failure. An empty file is the portable
+    # equivalent, and it closes the other way to wait forever: a console prompt nobody is there to answer.
+    $stdin = Join-Path ([System.IO.Path]::GetTempPath()) 'dwarf-stryker-stdin.txt'
+    Set-Content -LiteralPath $stdin -Value '' -NoNewline
+    $proc = Start-Process -FilePath 'dotnet' -ArgumentList (@('stryker') + $stArgs) `
+        -NoNewWindow -PassThru -RedirectStandardInput $stdin
+
+    if (-not $proc.WaitForExit($TimeoutMinutes * 60 * 1000)) {
+        try { taskkill /PID $proc.Id /T /F 2>&1 | Out-Null } catch { }
+        throw ("mutation leg '$Leg' HUNG - killed after $TimeoutMinutes min (no exit, no score).`n" +
+               "  This is the round-26 hang: the 'progress' reporter needs a console and blocks without one.`n" +
+               "  The launcher already swaps it out when stdout is redirected, so if you are seeing this the`n" +
+               "  cause is something else - run the leg interactively to see where it stops:`n" +
+               "    dotnet stryker" + $(if ($ConfigFile) { " --config-file $ConfigFile" } else { "" }))
+    }
+
+    $sw.Stop()
+    Write-Host ("   leg '$Leg' finished in {0:mm\:ss}" -f $sw.Elapsed) -ForegroundColor DarkGray
+    return $proc.ExitCode
+}
+
 function Assert-NoMutatedProductBinaries {
     param(
         [Parameter(Mandatory)][string]$Leg,

@@ -787,10 +787,17 @@ namespace DwarfMapper.Generator.Pipeline
                 var source = matches[0];
                 if (reinterpretMembers.Contains(target.Name))
                 {
+                    // [Reinterpret] lets the caller assert the field CORRESPONDENCE the by-name proof cannot
+                    // verify. It does NOT let them assert that the bytes line up, because a mismatched pair does
+                    // not fail loudly — MemoryMarshal.Cast<int, long> halves the span length, so the copy fills
+                    // half the destination and zeroes the rest. Same-size was always the documented contract
+                    // (DWARF022's help text); enforcing it here is where that belongs, rather than in a runtime
+                    // guard inside every emitted copy.
                     if (source.Type is IArrayTypeSymbol sa &&
                         target.Type is IArrayTypeSymbol ta &&
                         sa.ElementType.IsUnmanagedType &&
-                        ta.ElementType.IsUnmanagedType)
+                        ta.ElementType.IsUnmanagedType &&
+                        BlittableProof.SameBytesIgnoringNames(sa.ElementType, ta.ElementType))
                     {
                         var blit = CollectionConverter.SynthesizeBlit(synthesized,
                             source.Type,

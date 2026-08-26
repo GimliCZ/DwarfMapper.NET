@@ -491,6 +491,12 @@ try {
         Assert-BenchAllocationsPinned `
             -ReportPath (Join-Path $benchResults 'MapperBenchmarks-report-full.json') `
             -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/allocation-baseline.json')
+        # Round 25 T4. Reads the same report: no extra run, and it catches the one regression the
+        # allocation gate structurally cannot see — a blit that stopped being emitted. The output stays
+        # correct when that happens, so only a comparison against the scalar twin notices.
+        Assert-BlitRatiosHold `
+            -ReportPath (Join-Path $benchResults 'MapperBenchmarks-report-full.json') `
+            -BaselinePath (Join-Path $root 'benchmarks/DwarfMapper.Benchmarks/blit-ratio-baseline.json')
     }
 
     if ($Mutation) {
@@ -501,8 +507,8 @@ try {
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.doctooling.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
         $legStart = Get-Date
-        dotnet stryker
-        if ($LASTEXITCODE) { throw "mutation score below break threshold (generator)" }
+        $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 30
+        if ($legExit) { throw "mutation score below break threshold (generator)" }
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.json') -Since $legStart
@@ -514,8 +520,8 @@ try {
         # also provides.
         Write-Host "== 4/4b Mutation testing (DocTooling) ==" -ForegroundColor Cyan
         $legStart = Get-Date
-        dotnet stryker --config-file stryker-config.doctooling.json
-        if ($LASTEXITCODE) { throw "mutation score below break threshold (doc tooling)" }
+        $legExit = Invoke-StrykerLeg -Leg 'doc tooling' -ConfigFile 'stryker-config.doctooling.json' -TimeoutMinutes 30
+        if ($legExit) { throw "mutation score below break threshold (doc tooling)" }
         Assert-MutantsWereTested -Leg 'doc tooling' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'doc tooling' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.doctooling.json') -Since $legStart
@@ -528,8 +534,8 @@ try {
         # case is untested.
         Write-Host "== 4/4c Mutation testing (runtime assembly) ==" -ForegroundColor Cyan
         $legStart = Get-Date
-        dotnet stryker --config-file stryker-config.runtime.json
-        if ($LASTEXITCODE) { throw "mutation score below break threshold (runtime)" }
+        $legExit = Invoke-StrykerLeg -Leg 'runtime' -ConfigFile 'stryker-config.runtime.json' -TimeoutMinutes 30
+        if ($legExit) { throw "mutation score below break threshold (runtime)" }
         Assert-MutantsWereTested -Leg 'runtime' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'runtime' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
             -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart

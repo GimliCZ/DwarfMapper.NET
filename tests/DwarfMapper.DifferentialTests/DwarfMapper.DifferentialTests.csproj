@@ -27,6 +27,10 @@
              AutoMapper is a runtime library. Both licence-compatible — see Directory.Packages.props. -->
         <PackageReference Include="Riok.Mapperly" ExcludeAssets="runtime" PrivateAssets="all"/>
         <PackageReference Include="AutoMapper"/>
+        <!-- Mapster is a THIRD oracle, added 2026-08-26 for the enum-order question. docs/COMPARISON.md
+             publishes a Mapster column, so its enum semantics are a claim this repo makes and must therefore
+             be measured rather than inferred from a timing that merely looks switch-shaped. MIT. -->
+        <PackageReference Include="Mapster"/>
     </ItemGroup>
 
     <ItemGroup>

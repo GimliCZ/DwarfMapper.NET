@@ -50,7 +50,7 @@ A capability, testing, performance, and **migration-ease** comparison against th
 | Update-into-existing | ✅ `void/T Map(s, dest)` | ✅ | ✅ `Adapt(s,dest)` | ✅ `Map(s,dest)` |
 | **Zero-alloc `Span<T>` mapping** | ✅ | ❌ | ❌ | ❌ |
 | **Async streaming `IAsyncEnumerable`** | ✅ | ❌ | ✅ | ❌ |
-| **Blittable bulk-copy (reinterpret) fast-path** | ✅ `MemoryMarshal.Cast` memmove | ❌ | ❌ | ❌ |
+| **Blittable bulk-copy (reinterpret) fast-path** | ✅ `MemoryMarshal.Cast` memmove — arrays, `List<T>`, `ImmutableArray<T>`, enum arrays | ❌ | ❌ | ❌ |
 | **SIMD primitive-widening (`int[]`→`long[]`)** | ✅ `Vector.Widen` | ❌ | ❌ | ❌ |
 | **Completeness = build error** | ✅ `DWARF001` (always) | diagnostics | ❌ | `AssertConfigurationIsValid()` (test-time) |
 | **Source-member coverage (unused-source check)** | ✅ `RequiredMapping=Both` → `DWARF039` (opt-in); `[MapIgnoreSource]` | ✅ `RMG020` | ❌ | ✅ (validates) |
@@ -219,8 +219,79 @@ vary by hardware; **relative ordering is the point — reproduce locally with th
 | Nested | 11.5 ns | 10.3 ns | 20.5 ns | 58.4 ns | — |
 | Array (1000 objects) | 4.55 µs | 4.47 µs | 5.82 µs | 5.26 µs | — |
 | **Blit (1000 structs)** † | **0.59 µs** | 1.08 µs | 1.11 µs | 1.18 µs | — |
+| **Value-element list (`int[]`→`List<long>`, 1000)** ‡ | **0.66 µs** | 1.00 µs | 0.92 µs | 2.83 µs | — |
+| **Nested graph, mixed fills (50 lines + value collections)** ‡ | **0.88 µs** | 1.73 µs | 1.02 µs | 2.00 µs | — |
+| **SIMD widen (`int[]`→`long[]`, 1000)** ‡ | **0.36 µs** | 0.44 µs | 0.70 µs | 0.74 µs | — |
+| **Flatten (`Order.Customer.Name`)** ‡ | **4.9 ns** | 5.5 ns | 14.4 ns | 53.6 ns | — |
+| **Nested object** ‡ | **10.8 ns** | 12.3 ns | 21.1 ns | 59.4 ns | — |
+| **List (1000 REFERENCE elements)** ‡ | 6.11 µs | 6.13 µs | **5.42 µs** | 8.73 µs | — |
+| **Array (1000 REFERENCE elements)** ‡ | 4.69 µs | **4.65 µs** | 6.09 µs | 5.23 µs | — |
+| **Enum, BY NAME** ‡ § | 12.5 ns | **12.3 ns** | — | 73.6 ns | — |
+| **Enum, BY VALUE** ‡ § | **2.9 ns** | 3.0 ns | 12.3 ns | — | — |
 | **Widen (1000 int→long)** | **0.35 µs** | 0.43 µs | 0.69 µs | 0.72 µs | — |
 | Allocations (all scenarios) | = hand-written | = | = | = | baseline |
+
+`‡` **Value-element list, measured 2026-08-23** (Windows, AMD Ryzen 5 5600, .NET 10.0.1, DefaultJob, one run,
+standard error +/- 11 ns). DwarfMapper fills the destination through `CollectionsMarshal.SetCount` + a span;
+the others `Add` element-by-element, paying `_version++`, a capacity check that cannot fail and `_size++` per
+element. **Allocations are identical to Mapperly and Mapster (8,112 B)** — the gap is fill efficiency, not
+memory. Note the contrast with the reference-element `List` row above, where DwarfMapper is *behind* Mapster:
+there the cost of allocating a thousand destination objects dominates and the fill strategy cannot show
+through, which is why the optimisation is deliberately restricted to value elements.
+
+`§` **The enum row used to say DwarfMapper was 3.98x slower than Mapperly. That was an artifact of the
+benchmark, and correcting it removed the finding entirely.** Enum mapping has two legitimate strategies and
+the four libraries do not agree on a default: **DwarfMapper and AutoMapper match member NAMES; Mapperly and
+Mapster cast the underlying VALUE.** The benchmark left every library at its default, so this row was not
+comparing four implementations of one operation — it was comparing a name switch against a raw cast, and
+publishing the difference as a deficiency in our emission.
+
+They do not even produce the same answer. The benchmark's enums are deliberately reordered
+(`{Pending, Active, Closed}` against `{Closed, Pending, Active}`), so a value cast maps `Pending` to
+`Closed`. Roughly a 4x "win" was the price of answering a different question.
+
+Measured like-for-like (2026-08-26, same machine and job as the rows above), **the gap is gone in one
+direction and reversed in the other**:
+
+* **By name** — DwarfMapper **12.5 ns**, Mapperly told to match at `EnumMappingStrategy.ByName` **12.3 ns**.
+  A 1.6 % difference, near enough the run-to-run spread to carry no meaning. AutoMapper, whose default is
+  also by name, takes **73.6 ns**. So our switch was never the problem; the strategy was the whole gap.
+* **By value** — DwarfMapper opted in with `EnumStrategy.ByValue` is **2.9 ns**, ahead of Mapperly's default
+  **3.0 ns** and Mapster's default **12.3 ns**. Mapster performs a cast and still measures like a switch,
+  because its per-call dispatch dominates whatever the cast costs.
+
+Two things follow. **By-name safety is a default, not a tax** — `EnumStrategy.ByValue` is a documented
+one-line opt-out (the same switch that lets an enum array take the blit fast path), and taking it puts
+DwarfMapper first in its class. And **nothing here is filed as a defect any more**; the earlier "improving
+this is filed, not fixed" note is withdrawn, because the thing it proposed to improve did not exist.
+
+The semantics behind both rows are executable rather than asserted: `EnumOrderSensitivityTests` maps
+divergently ordered enums through all four libraries and pins what each returns. Writing it corrected two
+confident guesses of mine — that AutoMapper mapped by value (its ledger entry is about *undefined* values
+passing through, not defined members) and that Mapster mapped by name (12.3 ns merely *looks* switch-shaped).
+Both were wrong, which is why the table now rests on the tests instead of on inference.
+
+**Every single-object row on this page now maps a RING of 512 distinct fixture-drawn payloads**, cycled per
+iteration, rather than one cached object. That change moved four rows and *flipped one ranking* (Nested went
+from marginally behind Mapperly to 1.14x ahead), which is why it is enforced by an architectural rule —
+`BenchmarkPayloadRuleTests` fails the build if any benchmark maps a static payload.
+
+**The four rows where a rival is ahead are there on purpose.** A comparison that lists only its wins is an
+advertisement. The pattern across the whole sweep is consistent and worth stating plainly: **DwarfMapper
+leads wherever a fast path is eligible and trails slightly where none is.** `List` and `Array` carry
+reference elements, so neither the blit nor the value-element span fill applies, and what remains is
+allocating a thousand destination objects — where there is nothing to win and Mapster's loop is marginally
+tighter. The `Array` gap (1.01x) is smaller than the combined standard error and should be read as parity.
+Full per-row numbers with standard errors:
+[`benchmarks/results/2026-08-24-premerge-full-sweep.md`](../benchmarks/results/2026-08-24-premerge-full-sweep.md).
+
+**Read the nested row carefully — it is not a fill-strategy number.** That graph mixes both strategies in one
+map (reference-element `Lines` on the `Add` path, value-element `Totals` and per-line `Quantities` on the
+span fill) and measures the whole mapping, including allocating fifty nested destination objects. Its gap
+against Mapperly (900 ns) is far larger than the isolated value-element gap (257 ns) despite containing
+FEWER value elements, so most of that lead comes from elsewhere in the graph mapping, not from the fill —
+Mapperly also allocates more there (9,456 B against 8,112 B). The `int[]→List<long>` row is the isolation;
+the nested row is what a realistic order-shaped map looks like.
 
 `†` **Flat and Blit re-measured this session** (Linux, AMD Ryzen 5 5600, .NET 10.0.1 DefaultJob, tight
 error bars): on Flat, hand-written (6.7 ns), DwarfMapper (6.7 ns) and Mapperly (6.9 ns) are statistically
@@ -256,9 +327,17 @@ dotnet run -c Release --project benchmarks/DwarfMapper.Benchmarks
 
 DwarfMapper has **two** SIMD fast-paths that no competitor offers:
 
-1. **Blittable bulk copy** — a layout-identical `TSrc[]`→`TDst[]` is reinterpreted as a single
+1. **Blittable bulk copy** — a layout-identical element pair is reinterpreted as a single
    `MemoryMarshal.Cast` block copy behind a JIT-folded size guard; the runtime lowers that memmove to the
-   widest available vector instructions automatically (struct-array case at memcpy speed).
+   widest available vector instructions automatically (struct-array case at memcpy speed). It is not limited
+   to `TSrc[]`→`TDst[]`: **`List<T>` on either side** (and therefore `IList<T>`, `IReadOnlyList<T>`,
+   `ICollection<T>` and `IReadOnlyCollection<T>`, which all materialise to `List<T>`), **`ImmutableArray<T>`
+   in both directions**, and **enum arrays** all take it when the proof holds. Enum arrays qualify only where
+   the conversion is genuinely a reinterpret — `EnumStrategy.ByValue` over the same underlying type, or an
+   enum against its own underlying primitive — because the default by-name mapping *throws* on a value
+   matching no member and a block copy would pass such a value through instead.
+   `Dictionary<K,V>` and `HashSet<T>` cannot join them: their entries live in a private nested struct with no
+   public span over it, so no layout can be proven without reflection.
 2. **SIMD widening** (shipped) — a lossless primitive widen array (`int[]`→`long[]`, `short[]`→`int[]`,
    `byte[]`→`ushort[]`, `float[]`→`double[]`, and the unsigned/sbyte variants — the seven
    `System.Numerics.Vector.Widen` pairs) is vectorized with `Vector.Widen` behind a

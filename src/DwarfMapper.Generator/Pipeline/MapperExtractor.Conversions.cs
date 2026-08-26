@@ -323,6 +323,82 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+                // R25-03: enum arrays as underlying-primitive blit. Kept separate from the struct proof above
+                // because the question is not layout — the layouts are trivially identical — but whether the
+                // SCALAR path is a reinterpret. Under ByName it is not: its switch throws on a value matching
+                // no member, and an enum may legally hold any value of its underlying type.
+                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                    collShape.SourceIsArray &&
+                    BlittableProof.CanReinterpretEnums(srcElem, tgtElem, enumPolicy.Strategy))
+                {
+                    converterMethod = CollectionConverter.SynthesizeBlit(synthesized, srcType, srcElem, tgtElem);
+                    return true;
+                }
+
+                // R25-02 (T2): the LIST-involved shapes — array→List, List→array, List→List. The element proof
+                // is the one above, reused verbatim and never relaxed; all that changes is which storage the
+                // bytes are read from and written to. Interfaces are excluded on the source side because
+                // CollectionsMarshal.AsSpan is declared on the concrete List<T>.
+                //
+                // NOT reached for array→array: that returns above. NOT gated on a minimum length either —
+                // measured locally at 2026-08-23, the crossover is between n=4 and n=8 and the sub-crossover
+                // penalty is tens of nanoseconds, so a runtime branch would cost more clarity than it buys
+                // time. The RFC's `Count >= 32` guard came from a container that this hardware does not
+                // reproduce. See benchmarks/results/2026-08-23-round25-kernels.md.
+                if (!collShape.NullAsNull)
+                {
+                    var tgtIsArray = collShape.Target == CollectionConverter.TargetKind.Array;
+                    var tgtIsListFamily = collShape.Target is CollectionConverter.TargetKind.List
+                        or CollectionConverter.TargetKind.ICollection
+                        or CollectionConverter.TargetKind.IList
+                        or CollectionConverter.TargetKind.IReadOnlyList
+                        or CollectionConverter.TargetKind.IReadOnlyCollection;
+                    var tgtIsImmutableArray = collShape.Target == CollectionConverter.TargetKind.ImmutableArray;
+                    var srcIsList = CollectionConverter.IsConcreteList(srcType);
+                    var srcIsImmutableArray = CollectionConverter.IsImmutableArray(srcType);
+                    var elementBlits = BlittableProof.CanReinterpret(srcElem, tgtElem) ||
+                                       BlittableProof.CanReinterpretEnums(srcElem, tgtElem, enumPolicy.Strategy);
+
+                    var srcStorage = collShape.SourceIsArray ? CollectionConverter.BlitStorage.Array
+                        : srcIsList ? CollectionConverter.BlitStorage.List
+                        : srcIsImmutableArray ? CollectionConverter.BlitStorage.ImmutableArray
+                        : (CollectionConverter.BlitStorage?)null;
+
+                    var tgtStorage = tgtIsArray ? CollectionConverter.BlitStorage.Array
+                        : tgtIsListFamily ? CollectionConverter.BlitStorage.List
+                        : tgtIsImmutableArray ? CollectionConverter.BlitStorage.ImmutableArray
+                        : (CollectionConverter.BlitStorage?)null;
+
+                    if (elementBlits &&
+                        srcStorage is { } ss &&
+                        tgtStorage is { } ts &&
+                        !(ss == CollectionConverter.BlitStorage.Array && ts == CollectionConverter.BlitStorage.Array))
+                    {
+                        converterMethod = CollectionConverter.SynthesizeBlitListShape(synthesized,
+                            srcType,
+                            srcElem,
+                            tgtElem,
+                            ss,
+                            ts);
+                        return true;
+                    }
+                }
+
+                // The blit was not provable. If the pair MISSED it narrowly, say so — the element loop is correct
+                // but the caller is one rename away from a block copy, and nothing else in the build reports that.
+                // Never reached for [Reinterpret] members: that branch forces the blit and returns before this
+                // method is called, so DWARF022 stays the only voice on the explicit form.
+                if (collShape.Target == CollectionConverter.TargetKind.Array &&
+                    collShape.SourceIsArray &&
+                    BlittableProof.TryExplainNearMiss(srcElem, tgtElem, out var nearMissReason))
+                {
+                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,
+                        location,
+                        $"'{targetName}' maps an array whose element types are nearly layout-identical, so it " +
+                        $"takes the element-by-element copy: {nearMissReason}",
+                        MemberName: targetName));
+                }
+
                 // SIMD widening fast-path: array→array of a lossless primitive widen pair (e.g. int[]→long[],
                 // float[]→double[]) → Vector.Widen. Identical result to the scalar implicit widen; reflection-free.
                 // Comes AFTER blit (same-size pairs blit; widen pairs differ in size so CanReinterpret is false).
