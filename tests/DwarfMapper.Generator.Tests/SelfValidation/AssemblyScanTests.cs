@@ -377,11 +377,36 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         [Fact]
         public void Scan2_Every_descriptor_is_referenced_in_generator_pipeline_source()
         {
-            // Exclude DiagnosticDescriptors.cs itself (that's where the fields are declared).
+            // Exclude the declaration file — that is where the fields are declared, so leaving it in would
+            // make every descriptor find itself and this scan would pass by construction.
+            //
+            // Matched by PREFIX, not by exact name, and that is load-bearing rather than tidiness. Round 27
+            // planned to split this 1,746-line file into DiagnosticDescriptors.<something>.cs partials. Under
+            // an exact-name exclusion those partials would have stayed in the searched text, every one of the
+            // 96 descriptors would have matched its own declaration, and this scan would have gone green while
+            // measuring nothing. The split was not made, for reasons recorded in Issues/round27 — but the trap
+            // it revealed is real and outlives the decision, so the exclusion is widened now rather than left
+            // for whoever does split the file to discover.
             var pipelineText = string.Concat(
                 GeneratorSources()
-                    .Where(f => !f.EndsWith("DiagnosticDescriptors.cs", StringComparison.OrdinalIgnoreCase))
+                    .Where(f => !Path.GetFileName(f)
+                        .StartsWith("DiagnosticDescriptors.", StringComparison.OrdinalIgnoreCase))
                     .Select(File.ReadAllText));
+
+            // The direct non-vacuity check, which no naming scheme can defeat: assert the PROPERTY the filename
+            // filter is trying to achieve, rather than trusting the pattern to achieve it. If any part of the
+            // declaring class survived, every descriptor would match its own definition and the result below
+            // would mean nothing.
+            //
+            // Keyed on the CLASS, not on "public static readonly DiagnosticDescriptor". A first version used the
+            // field-declaration text and failed at once on RegistryDiagnostics.cs, which declares the twelve
+            // DWARFR descriptors — a different class, checked by its own gates in RegistryDiagnosticsGenTests,
+            // and harmless in this search because none of the 96 field names appears there. Excluding it would
+            // have been a fix to a problem that did not exist.
+            Assert.False(pipelineText.Contains("class DiagnosticDescriptors", StringComparison.Ordinal),
+                "Part of the DiagnosticDescriptors class reached the searched text, so every descriptor would "
+                + "match its own definition and this scan would pass by construction. A partial was added "
+                + "outside the DiagnosticDescriptors.* prefix the filter above excludes.");
 
             var dead = GetAllDescriptors()
                 .Where(d => !pipelineText.Contains(d.FieldName, StringComparison.Ordinal))
