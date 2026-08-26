@@ -3527,40 +3527,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // ── OnCycle = SetNull post-processing (None mode) ────────────────────────
-            // After recursion-capability is finalised, flag every recursion-capable method so the
-            // emitter wraps its body in the on-stack guard (TryEnterNode/ExitNode) and the public
-            // entry allocates DwarfRefContext(maxDepth, setNull: true). Only reference-type pairs
-            // can form a reference cycle, so value-type sources are left untouched (they keep the
-            // plain depth-guarded None body — a struct cannot be its own ancestor on the stack).
-            // This is the None-mode analogue of the Preserve post-pass above, but far simpler:
-            // construction is unchanged (no register-before-populate, no DWARF030, no dispatch
-            // wrapper) — the guard only nulls a re-entrant back-edge.
-            if (isSetNullMode)
-            {
-                for (var i = 0; i < methods.Count; i++)
-                {
-                    var m = methods[i];
-                    if (!m.IsRecursionCapable)
-                    {
-                        continue; // only pairs that can re-enter
-                    }
-
-                    // Value types never form ref cycles — but the span / async-stream models record their
-                    // PARAMETER (a span struct / IAsyncEnumerable) here, not their ELEMENT, and it is the
-                    // element pair whose converter carries the on-stack guard. Without this exemption the
-                    // element-wise emitters allocated their shared DwarfRefContext without `setNull: true`,
-                    // so the guard the converter runs had no stack set behind it.
-                    if (!m.ParameterIsReferenceType && !m.IsSpanMap && !m.IsAsyncStreamMap)
-                    {
-                        continue;
-                    }
-
-                    methods[i] = m with
-                    {
-                        IsSetNullMode = true
-                    };
-                }
-            }
+            MapperExtractorPhases.ApplySetNullPostPass(methods, isSetNullMode);
 
             // Report DWARF031 if the registry cap was exceeded.
             if (nestedRegistry.CapExceeded)
