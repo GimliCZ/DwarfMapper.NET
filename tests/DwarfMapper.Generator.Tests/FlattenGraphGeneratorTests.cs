@@ -508,5 +508,147 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.DoesNotReport(src, "DWARF087");
             GeneratorAssert.CompilesClean(src);
         }
+
+        // ── Edge SHAPES: how a node member is recognised as an edge ─────────────
+        //
+        // A round-27 coverage measurement found the array branch and both cast-needing branches of the edge
+        // partition executed by nothing: every existing test reaches a node through a List<TNode>, which is
+        // one of five shapes the code accepts. The others were written, compiled, and never run.
+
+        /// <summary>An ARRAY of the node type is an edge, same as a List of it.</summary>
+        [Fact]
+        public void FlattenGraph_treats_an_array_of_nodes_as_an_edge()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               using System.Collections.Generic;
+                               namespace Demo;
+                               public class Node { public int Id { get; set; } public Node[] Kids { get; set; } = System.Array.Empty<Node>(); }
+                               public class NodeDto { public int Id { get; set; } }
+                               public class Root { public Node? Entry { get; set; } }
+                               public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [FlattenGraph(nameof(Root.Entry), nameof(RootDto.Nodes))]
+                                   public partial RootDto Map(Root r);
+                               }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+
+            // The traversal must actually walk the array. Asserting only that it compiles would pass on a
+            // build that treated Kids as an ordinary leaf and flattened a one-node graph.
+            Assert.Contains("Kids", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     An array whose ELEMENT type is a base or interface of the node — the reverse direction, which
+        ///     needs a cast before the node can be enqueued.
+        /// </summary>
+        [Fact]
+        public void FlattenGraph_treats_an_array_of_a_node_interface_as_an_edge()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               using System.Collections.Generic;
+                               namespace Demo;
+                               public interface IHasId { int Id { get; } }
+                               public class Node : IHasId { public int Id { get; set; } public IHasId[] Kids { get; set; } = System.Array.Empty<IHasId>(); }
+                               public class NodeDto { public int Id { get; set; } }
+                               public class Root { public Node? Entry { get; set; } }
+                               public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [FlattenGraph(nameof(Root.Entry), nameof(RootDto.Nodes))]
+                                   public partial RootDto Map(Root r);
+                               }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("Kids", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>The same reverse direction through a non-array collection.</summary>
+        [Fact]
+        public void FlattenGraph_treats_a_list_of_a_node_interface_as_an_edge()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               using System.Collections.Generic;
+                               namespace Demo;
+                               public interface IHasId { int Id { get; } }
+                               public class Node : IHasId { public int Id { get; set; } public List<IHasId> Kids { get; set; } = new(); }
+                               public class NodeDto { public int Id { get; set; } }
+                               public class Root { public Node? Entry { get; set; } }
+                               public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [FlattenGraph(nameof(Root.Entry), nameof(RootDto.Nodes))]
+                                   public partial RootDto Map(Root r);
+                               }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+            Assert.Contains("Kids", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A <c>Nullable&lt;T&gt;</c> member reachable only by a USER-DEFINED conversion is NOT an edge.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         This pins a limit rather than a feature, and it was found by chasing coverage. The edge
+        ///         partition has a branch for <c>Nullable&lt;TNode&gt;</c> whose own comment calls it "for
+        ///         structs — unlikely but supported". Measuring showed its two payload lines are executed by
+        ///         nothing, and the reason turns out to be structural: <c>HasImplicitConversion</c> is
+        ///         <c>IsImplicit &amp;&amp; !IsUserDefined</c>, so only a BUILT-IN conversion can make an inner
+        ///         struct reach the node type.
+        ///     </para>
+        ///     <para>
+        ///         The built-in implicit conversions out of a struct are boxing to <c>object</c>,
+        ///         <c>ValueType</c> or an implemented interface, and the numeric ones between primitives. None
+        ///         of those can be the node type on this path: an interface or abstract base routes to the
+        ///         heterogeneous branch instead, and <c>object</c> or a primitive has no members to walk. So the
+        ///         branch is reachable but its body is not, and the honest thing is to say so here rather than
+        ///         leave a coverage hole looking like an untested feature.
+        ///     </para>
+        ///     <para>
+        ///         The test still earns its place: it drives the branch's CONDITIONS, which are live, and it
+        ///         fails the day someone widens <c>HasImplicitConversion</c> to accept user-defined operators —
+        ///         at which point this member silently becomes a graph edge and this assertion inverts.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void FlattenGraph_does_not_treat_a_user_convertible_nullable_struct_as_an_edge()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               using System.Collections.Generic;
+                               namespace Demo;
+                               public struct Marker
+                               {
+                                   public int Id { get; set; }
+                                   public static implicit operator Node(Marker m) => new Node { Id = m.Id };
+                               }
+                               public class Node { public int Id { get; set; } public Marker? Tag { get; set; } }
+                               public class NodeDto { public int Id { get; set; } }
+                               public class Root { public Node? Entry { get; set; } }
+                               public class RootDto { public List<NodeDto> Nodes { get; set; } = new(); }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [FlattenGraph(nameof(Root.Entry), nameof(RootDto.Nodes))]
+                                   public partial RootDto Map(Root r);
+                               }
+                               """;
+
+            var generated = GeneratorAssert.EmitsCompilableCode(src);
+
+            // Not an edge: the traversal never reads Tag, so the graph is the single Entry node.
+            Assert.DoesNotContain("Tag", generated, StringComparison.Ordinal);
+        }
     }
 }
