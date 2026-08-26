@@ -230,16 +230,44 @@ namespace DwarfMapper.Generator.Pipeline
                     }
             }
 
-            // One bundle per DIRECTION over the locals above -- NOT copies of them: every field below is the
-            // same instance this method keeps using, so a pass that mutates through the bundle is doing what
-            // it did when it was inline. See MemberLookups for why the read-only/mutable line falls here.
+            // Three bundles over the parameters and locals above -- NOT copies of them: every field below is the
+            // same instance this method keeps using, so a pass that mutates through a bundle is doing exactly what
+            // it did when it was inline. The split is request / derived / filled, and which side a name falls on
+            // was settled by grepping its write-sites rather than by how it reads; see MemberRequest.
+            var req = new MemberRequest(sourceType,
+                targetType,
+                ignores,
+                compilation,
+                location,
+                options,
+                explicitMaps,
+                allMethods,
+                autoCandidates,
+                enumPolicy,
+                nullStrategy,
+                reinterpretMembers,
+                consumedCtorParams,
+                requiredMustInitialize,
+                nestedRegistry,
+                mapValues,
+                valueProviders,
+                extraParams,
+                stringFormats,
+                requiredMembersAlreadySatisfied,
+                factoryExcludedMembers);
             var lookups = new MemberLookups(comparer,
                 flexible,
                 writableByName,
                 sourceGroups,
                 flattenInfos,
-                reservedConverters);
-            var acc = new MemberAccumulators(result, handledTargets, consumedExtraParams, consumedFlattenRoots);
+                reservedConverters,
+                extrasByTarget);
+            var acc = new MemberAccumulators(result,
+                diagnostics,
+                synthesized,
+                handledTargets,
+                consumedExtraParams,
+                consumedFlattenRoots);
 
             var explicitSeen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var (srcName, tgtName, useMethod) in explicitMaps)
@@ -533,8 +561,7 @@ namespace DwarfMapper.Generator.Pipeline
             // after [MapProperty] (so conflicts are caught) and before AUTO matching. A [MapValue]'d target
             // counts as mapped, suppressing DWARF001. The projection resolver reads the directive in the SAME
             // position for the same reason, through the SAME validation below.
-            ResolveMapValues(compilation, location, diagnostics, ignores, mapValues, valueProviders, consumedCtorParams,
-                lookups, acc);
+            ResolveMapValues(req, lookups, acc);
 
             // AUTO: remaining writable targets matched by name under the comparer.
             var targets = WritableMembers(targetType, compilation, options.AllowNonPublic)
@@ -896,7 +923,7 @@ namespace DwarfMapper.Generator.Pipeline
             // default rather than overwrite it. Mark each simple, nullable-source, post-construction-settable
             // member so the emitter guards it with `if (src.X is not null) dst.X = …;`. Non-nullable value-type
             // sources (never null) and required/init-only/read-only targets (cannot be deferred) are left as-is.
-            ApplySkipNullSourceMembers(sourceType, targetType, compilation, options, lookups, acc);
+            ApplySkipNullSourceMembers(req, lookups, acc);
 
             // DWARF070: a nullable reference source raw-assigned into a non-nullable reference target. Reported
             // here, once, after every other pass has had its chance to handle the null (NullSubstitute, a

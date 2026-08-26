@@ -87,25 +87,43 @@ confirm no `break` targets the loop — one cannot be expressed as a void extrac
 
 ## How the shared working set is passed
 
-`ResolveMembers` builds thirteen locals in a prologue and the four passes read and write them. Passing all
-thirteen individually would put phase 3 near twenty parameters, so they are bundled the way
-`MethodExtractionContext` already bundles `ExtractCore`'s — **split by direction, which the write-site
-measurements settle rather than taste**:
+This started as two bundles and a plain parameter list for everything else, on the estimate that a pass would
+need a handful of extras. **The estimate was wrong, and the measurement is why there are three.**
 
-- **`MemberLookups`** — built once in the prologue, never written again (`reservedConverters`' only writes are
-  at 215/221/229, all prologue): `Comparer`, `Flexible`, `WritableByName`, `SourceGroups`, `FlattenInfos`,
-  `ReservedConverters`.
-- **`MemberAccumulators`** — what the passes mutate: `Result`, `HandledTargets`, `ConsumedExtraParams`,
-  `ConsumedFlattenRoots`.
+The free-variable tool that sized the candidates under-reports: it misses names that appear only inside a
+nested call's argument list. Checking each of `ResolveMembers`' 26 parameters against the span text directly
+gives the real figures — **pass 1 needs 19 parameters, pass 3 needs 20**, against a guideline of about a
+dozen. Two independent passes overlapping on 14 read-only inputs is not overflow to absorb; it is a request
+object asking to be named.
 
-Three of the thirteen are not shared at all and move *into* phase 1 rather than becoming parameters:
-`explicitSeen` (declared at 233, used once at 236), `unflattenRoots` with its comment, and the `extrasByTarget`
-build — the phase takes `mapPropertyExtras` and builds its own. A local declared one line above a span reads
-as shared state to any tool that works on spans; it is worth checking each one rather than trusting the list.
+So the bundles mirror `ExtractCore`'s three, because the same three roles are present:
 
-Everything else stays a plain parameter, `in MapperOptions` included. Both records are private, positional,
-and carry **no defaults** — the ISSUE-043/044 totality rule, so adding a field breaks every construction site
-instead of silently defaulting it.
+- **`MemberRequest`** — what resolution was asked to do. The 21 parameters some pass still reads: the two
+  types, the directives, the surrounding facts.
+- **`MemberLookups`** — what the prologue derives from the request and every pass then reads: `Comparer`,
+  `Flexible`, `WritableByName`, `SourceGroups`, `FlattenInfos`, `ReservedConverters`, `ExtrasByTarget`.
+- **`MemberAccumulators`** — what the passes fill: `Result`, `Diagnostics`, `Synthesized`, `HandledTargets`,
+  `ConsumedExtraParams`, `ConsumedFlattenRoots`.
+
+Every pass takes exactly those three.
+
+**Membership was grepped, not judged.** Each parameter was checked for write-sites inside the body, and two
+results contradict how the names read. `diagnostics` and `synthesized` arrive as parameters and look like
+inputs — the passes write to both, so they are accumulators. `ignores` is written too, but only in the
+prologue, folding in the obsolete members; by the time the request is built it is settled, so it is an input.
+`reservedConverters` is the mirror case on the lookups side: mutable-looking, written only in the prologue.
+Guessing would have misplaced at least three of these.
+
+Three parameters are deliberately **absent** from all three bundles — `flattenRoots`, `mapPropertyExtras` and
+`mapperReservedConverters` are consumed by the prologue to build the lookups and no pass reads them again. A
+bundle carrying fields nobody reads misrepresents what resolution depends on.
+
+Two locals stay out because they are genuinely phase-local: `explicitSeen` (declared at 233, used once at 236)
+and `unflattenRoots`, which is filled by the helper that reads it. A local declared one line above a span
+looks like shared state to any tool working on spans; it is worth checking each rather than trusting the list.
+
+All three records are private, positional, and carry **no defaults** — the ISSUE-043/044 totality rule, so
+adding a field breaks every construction site instead of silently defaulting it.
 
 **Deliberately not done here:** `ResolveMembers`' own 26-parameter signature. Bundling *those* would touch
 every caller and inflate a diff that has to be proven byte-identical, and it is the same

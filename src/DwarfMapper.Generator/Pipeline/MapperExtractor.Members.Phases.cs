@@ -32,21 +32,17 @@ namespace DwarfMapper.Generator.Pipeline
         ///     and this one has to see the finished list.
         /// </remarks>
         private static void ApplySkipNullSourceMembers(
-            ITypeSymbol sourceType,
-            INamedTypeSymbol targetType,
-            Compilation compilation,
-            in MapperOptions options,
+            MemberRequest req,
             MemberLookups lookups,
-            MemberAccumulators acc)
-        {
-            if (options.SkipNullSourceMembers && acc.Result.Count > 0)
+            MemberAccumulators acc){
+            if (req.Options.SkipNullSourceMembers && acc.Result.Count > 0)
             {
                 var srcTypeByName = new Dictionary<string, ITypeSymbol>(lookups.Comparer);
-                foreach (var (sName, sType) in ReadableMembers(sourceType, compilation, options.AllowNonPublic))
+                foreach (var (sName, sType) in ReadableMembers(req.SourceType, req.Compilation, req.Options.AllowNonPublic))
                     srcTypeByName[sName] = sType;
 
                 var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);
-                for (var t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+                for (var t = req.TargetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
                     foreach (var tm in t.GetMembers())
                         if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: false } && !p.IsRequired)
                         {
@@ -95,30 +91,22 @@ namespace DwarfMapper.Generator.Pipeline
         ///     before AUTO so a valued target suppresses DWARF001. Moving the call moves the behaviour.
         /// </remarks>
         private static void ResolveMapValues(
-            Compilation compilation,
-            LocationInfo? location,
-            List<DiagnosticInfo> diagnostics,
-            HashSet<string> ignores,
-            IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
-                mapValues,
-            IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders,
-            HashSet<string>? consumedCtorParams,
+            MemberRequest req,
             MemberLookups lookups,
-            MemberAccumulators acc)
-        {
-            foreach (var mv in mapValues ??
+            MemberAccumulators acc){
+            foreach (var mv in req.MapValues ??
                                Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
                                    string? Use, string? ConstLiteral)>())
             {
                 var mvTgt = mv.Target;
                 if (!TryValidateMapValueTarget(mvTgt,
                         acc.HandledTargets,
-                        ignores,
-                        name => consumedCtorParams is not null && consumedCtorParams.Contains(name),
+                        req.Ignores,
+                        name => req.ConsumedCtorParams is not null && req.ConsumedCtorParams.Contains(name),
                         lookups.WritableByName,
                         name => lookups.SourceGroups.ContainsKey(lookups.Flexible ? NormalizeName(name) : name),
-                        location,
-                        diagnostics,
+                        req.Location,
+                        acc.Diagnostics,
                         out var mvTgtType))
                 {
                     continue;
@@ -131,9 +119,9 @@ namespace DwarfMapper.Generator.Pipeline
                     {
                         literal = mv.ConstLiteral;
                     }
-                    else if (!TryFormatConstant(mv.Value, mvTgtType, compilation, out literal, out var why))
+                    else if (!TryFormatConstant(mv.Value, mvTgtType, req.Compilation, out literal, out var why))
                     {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, location, why));
+                        acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, req.Location, why));
                         continue;
                     }
 
@@ -141,12 +129,12 @@ namespace DwarfMapper.Generator.Pipeline
                 }
                 else if (mv.Use is not null)
                 {
-                    var provider = (valueProviders ?? Array.Empty<(string Name, ITypeSymbol ReturnType)>())
+                    var provider = (req.ValueProviders ?? Array.Empty<(string Name, ITypeSymbol ReturnType)>())
                         .FirstOrDefault(p => StringComparer.Ordinal.Equals(p.Name, mv.Use));
-                    if (provider.Name is null || !HasImplicitConversion(compilation, provider.ReturnType, mvTgtType))
+                    if (provider.Name is null || !HasImplicitConversion(req.Compilation, provider.ReturnType, mvTgtType))
                     {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueUseInvalid,
-                            location,
+                        acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueUseInvalid,
+                            req.Location,
                             $"[MapValue(Use = \"{mv.Use}\")] for '{mvTgt}' must name a parameterless method whose return type is assignable to '{mvTgtType.ToDisplayString()}'"));
                         continue;
                     }
@@ -155,8 +143,8 @@ namespace DwarfMapper.Generator.Pipeline
                 }
                 else
                 {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid,
-                        location,
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid,
+                        req.Location,
                         $"[MapValue] for '{mvTgt}' provides neither a constant value nor Use="));
                 }
             }
