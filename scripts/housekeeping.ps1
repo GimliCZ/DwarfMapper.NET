@@ -89,13 +89,29 @@ if ($Nightly) {
 # were measured separately and agree everywhere else to the printed decimal; pinning the minimum is what
 # makes the gate hold under both `-Coverage` and `-Nightly` (-Deep -Coverage) rather than only the tier
 # that happened to be measured.
+#
+# RE-MEASURED 2026-08-26 (round 27), both tiers, and this time they agree to the printed decimal on every
+# assembly — so the minimum and the deep-tier value are the same number and the note above is history
+# rather than a live caveat. Three floors move, all upward:
+#
+#   Generator  93.4 -> 94.5   the seam-stage coverage work
+#   CodeFixes  88.8 -> 96.2   the code-fix leg's kill program, 43 tests
+#   Testing    82.7 -> 87.1   the object-factory graph-shape tests
+#
+# The Testing number is the one worth reading twice. It was 81.0 — BELOW its floor — when this gate was
+# first run in round 27, because merging the two object factories added 105 lines and no coverage run had
+# happened since. All four public graph-shape builders (MakeSelfLoop, MakeTwoNodeCycle, MakeOwnerGraph,
+# MakeDiamond) were executed by nothing. The floor did its job; it had simply not been asked.
+#
+# DwarfMapper (91.5 vs 91.2) and DocTooling (96.3 vs 96.0) are inside the 1.0 pp band, so they pass without
+# a mandatory raise and are left alone — moving a floor by a third of a point is churn, not a ratchet.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
     'DwarfMapper'            = 91.2
-    'DwarfMapper.Generator'  = 93.4
+    'DwarfMapper.Generator'  = 94.5
     'DwarfMapper.DocTooling' = 96.0
-    'DwarfMapper.CodeFixes'  = 88.8
-    'DwarfMapper.Testing'    = 82.7
+    'DwarfMapper.CodeFixes'  = 96.2
+    'DwarfMapper.Testing'    = 87.1
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
