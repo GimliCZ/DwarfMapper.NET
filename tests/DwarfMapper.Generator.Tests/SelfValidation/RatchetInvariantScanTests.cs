@@ -32,8 +32,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 23;
-        private const int PinnedTotalOccurrences = 44;
+        private const int PinnedEntryRows = 46;
+        private const int PinnedTotalOccurrences = 67;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -67,7 +67,20 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // can supply).
             ["runtime|proven-equivalent"] = 2,
             ["runtime|ruled-in-practice"] = 1,
-            ["runtime|probably-equivalent"] = 1
+            ["runtime|probably-equivalent"] = 1,
+            // Round 27 added the code-fixes leg and ran a kill program on it: 52.54 % to 87.01 %, 61 mutants
+            // killed. These 23 are what remained, every one dispositioned, with the case analysis in
+            // Issues/ledgers/codefixes-mutation-survivors.md (same commit). Twenty-two are proven: four
+            // ConfigureAwait flips that cannot change what an await returns, four unreachable root-is-null
+            // guards, four getInnermostNodeForTie flips whose two candidates share the ancestor the code
+            // immediately walks to, index boundaries that could only differ for a type name starting with '.'
+            // or '<', a conditional that is a no-op at its own guard value, two out-parameter writes on paths
+            // that return false, a || -> && whose mutant converges on the same downstream refusal, and three
+            // count guards whose bodies are no-ops when the collection is empty. The one 'probably' is the
+            // trivia source for an added attribute list, which Formatter.Annotation has normalised away in
+            // every case tried -- evidence, not a proof.
+            ["codefixes|proven-equivalent"] = 22,
+            ["codefixes|probably-equivalent"] = 1
         };
 
         // ── shared ────────────────────────────────────────────────────────────────
