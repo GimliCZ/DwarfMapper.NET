@@ -143,17 +143,50 @@ model-the-working-set-first design work this stage defers for `ProcessDeclaredMe
 than about a dozen parameters even with the two records, that is the signal to do it — as its own change, not
 mid-extraction.
 
-## Landing order
+## What landed
 
-1. **`ResolveMembers`** — four independent passes, all separable, no early-return contract needed. The
-   cleanest and therefore the one that proves the pattern on a seamless method.
-2. **`TryResolveConversion`** — the dispatch chain, as `bool` phases.
-3. **`ResolveFlattenGraphDirectives`** — loop-body extraction, then re-derive inside.
+| method | before | after | how it was cut |
+|---|---:|---:|---|
+| `ResolveMembers` | 905 | **263** | four independent passes |
+| `TryResolveConversion` | 890 | **339** | six dispatch arms |
+| `ResolveFlattenGraphDirectives` | 1,116 | **69** | loop body out, then seams re-derived inside it |
 
-Each phase is one commit, proven byte-identical against the 973-case golden manifest, with the corpus already
+The third produced a 1,077-line method of its own, which was then cut the same way: the heterogeneous
+path (439), the derived-type arms (205) and the edge/leaf partition (84) came out, leaving 573.
+
+Nothing in the generator pipeline now exceeds 650 lines, against three methods above 890 when the stage
+started. Every step was proven byte-identical against the 973-case golden manifest, with the corpus already
 proven to reach every phase (`scripts/seam-reach.ps1`, 26/26).
 
----
+## What the stage taught, beyond the cuts
+
+**Bracing a span answers a narrower question than it looks like.** It reports what a span DECLARES that
+something later needs. For a span that is one `if` or `foreach`, that is always nothing — everything inside
+is block-scoped already — so such a span always reads "separable", truthfully and uselessly. The binding
+question there is what the span NEEDS, and that comes from listing declarations at the method's own
+indentation. Both questions matter; they are not the same question.
+
+**Ask the compiler which jumps escape.** Wrapping a loop body in a local function and building makes every
+`continue` or `break` that targeted the outer loop fail with CS0139 and leaves the inner ones silent. On the
+flatten loop that named nine of twenty-six, and proved no `break` escaped — which is what made a void
+extraction expressible at all. The alternative, converting by text, had already compiled cleanly on a
+different loop and stopped the generator emitting.
+
+**A write-site grep cannot see mutation through a callee.** It reported `synthesized` read-only in
+`TryResolveConversion`, which is true of the text and false in effect. Checking argument positions as well
+is what kept it out of the request — and what found `NestedRegistry` sitting in the same position on the
+member side.
+
+**Estimates about parameter counts were wrong by a factor of two.** The two-bundle design assumed a handful
+of extras; measuring found 19 and 20. Three bundles followed from the measurement, not from taste.
+
+## Still open
+
+- `ResolveOneFlattenGraphDirective` (573) — two certified spans remain: the traversal-helper synthesis (128,
+  three locals escape and would need hoisting) and the writable-member loop (135, shares three).
+- `ProcessDeclaredMethod` (644) — its middle is the accumulating working set described below, unchanged.
+- `ResolveProjectionMembers` (530) and `ResolveProjectionExpr` (405) were never in this stage's scope; they
+  have not been derived and nothing is claimed about them.
 
 ## The region this stage does NOT cover
 
