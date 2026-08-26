@@ -66,3 +66,26 @@ which declares the twelve `DWARFR` descriptors. That turned out to be correct be
 assertion: they are a different class with their own gates in `RegistryDiagnosticsGenTests`, including an
 explicit non-vacuity count, and none of the 96 field names appears in that file. The assertion was narrowed
 to the declaring class rather than "fixed" by excluding a file that was never a problem.
+
+### 1.7 — CLAUDE.md deleted, and this is flagged rather than done quietly
+
+`CLAUDE.md` is instructions to the agent, so rounds 19, 20 and 21 each ruled it should be deleted and each
+deliberately left it alone rather than edit the agent's own instructions silently. Recording it loudly is the
+condition those rulings attached, so: **the file is gone, and `git show HEAD~1:CLAUDE.md` brings it back.**
+
+Its own header set the rule — *"delete each item once it is decided... If this file is still here months from
+now with the same three entries, it has become the kind of stale prose the rest of this repository is built
+to prevent."* Both surviving items are decided, and both are now **actively wrong**, which is worse than
+merely stale:
+
+- **Item 1** describes the orphan rule as scoped to non-example files, with the strict form as a hypothetical
+  needing "an illustrated Gallery README quoting all 32 regions". That README exists and the rule has been
+  strict since round 27 — the test says so in its own comment. The note describes the opposite of the code.
+- **Item 2**'s every figure is wrong. It claims 37 C# fences, 29 snippet-backed, 8 exempt, 5 of those in
+  `docs/diagnostics.md`. Measured today: **107 fences, 74 snippet-backed, 36 exempt, 30 in
+  `docs/diagnostics.md`.** Round 21's ledger already flagged these counts as stale; they have since drifted
+  by more than four times.
+
+Nothing is lost. Each exemption carries its own reason inline at the fence as
+`<!-- fence-exempt: reason -->`, which is where a reader needs it and where `DocFenceScanTests` enforces it.
+The decisions themselves are in `Issues/round20/TASKS.md` and the ledgers.
