@@ -37,9 +37,9 @@ Status values: `TODO` · `WIP` · `DONE` · `BLOCKED` · `DROPPED` (with a reaso
 | 0.6 | **Axis 2** — `Security` property on `DwarfSurfaceAttribute` + per-value obligations + detector | **DONE** | `SecuritySurfaceObligationTests`, 4 facts; detector derives flags from the element’s own shape |
 | 0.7 | **A1** — mark infrastructure `[EditorBrowsable(Never)]` | **DONE** | `DwarfRefContext` marked; API baseline unchanged, as intended |
 | 0.8 | **A2** — `DwarfRefContext` ctor: emitted call sites now pass the flags BY NAME | **DONE** | emitted-bytes change; 1 manifest line + 2 snapshots, each a one-line diff reviewed before blessing |
-| 0.9 | **Audit** — member-by-member review of the 278 entries + `DwarfMapper.Testing` | TODO | every entry classified consumer / infrastructure / vestigial |
+| 0.9 | **Audit** — member-by-member review of the 278 entries + `DwarfMapper.Testing` | **DONE** | 0 unreferenced types, 0 unreferenced members; A1/A2 were the whole debt |
 | 0.10 | **R27-08** — the two object factories merged into one | **DONE** | V1's three fixes ported into V2, V1 deleted, 28 call sites repointed; suite 8,219 green |
-| 0.11 | **Promote** `Unshipped` → `Shipped` — arm the stability ratchet | TODO | analyzer refuses removals afterwards; CHANGELOG entry |
+| 0.11 | **Promote** `Unshipped` → `Shipped` — arm the stability ratchet | **DONE** | 315 entries frozen; proved with a probe member → RS0016 |
 | 0.12 | **Axis 1** — `Discovery` property + Gallery-coverage gate | TODO | `Infrastructure` value asserts the *inverse* — presence in Gallery fails |
 | 0.13 | **Gallery examples** — ~10–11 for Conformance-proven-but-undiscoverable attributes | TODO | one work item with 0.14 |
 | 0.14 | **Strict orphan rule** + generated illustrated Gallery README quoting all regions | TODO | already-decided; the README is the quoting document 0.13 needs |

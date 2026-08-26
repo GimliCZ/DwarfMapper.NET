@@ -13,6 +13,22 @@ so a version with no section here ships with no notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **The public API surface is now frozen.** All 315 entries moved from `PublicAPI.Unshipped.txt` to
+  `PublicAPI.Shipped.txt` — 277 for `DwarfMapper`, 38 for `DwarfMapper.Testing`. From here a rename or a
+  removal is a declared break the analyzer refuses, rather than a free edit. Done ahead of the first tag
+  deliberately: the architecture rounds that follow move a great deal of code, and that is exactly when an
+  accidental surface change is most likely to slip through unnoticed.
+- **`DwarfRefContext` is marked `[EditorBrowsable(Never)]`.** It is public because generated code in other
+  assemblies must construct it, not because consumers should call it. No signature changed.
+- **Generated code passes `DwarfRefContext` flags by name.** Emitted call sites now read
+  `new DwarfRefContext(64, preserve: true)` rather than `(64, true)`. Cosmetic in the output, but it removes a
+  transposition hazard from the shipped API's own call sites.
+- **`DwarfMapper.Testing.ObjectFactory` is removed**, merged into `ObjectFactoryV2`. The survivor gained
+  abstract/interface substitution, `[Flags]` combined values and deterministic constructor selection from the
+  factory it replaced, so no fixture capability was lost.
+
 ### Fixed
 
 - **Two emitters disagreed on how the emitted null guard is written.** The registry emitter wrote the guard

@@ -97,13 +97,46 @@ so the exemption is a decision rather than an oversight.
 
 ---
 
-## What this audit does not cover
+## [A4] The member-by-member pass — COMPLETE, and the surface is clean
 
-The **278 entries have not each been read**. This pass looked for structural hazard classes — infrastructure
-leaking as consumer API, and the parameter shapes this repository has already been bitten by twice. A
-member-by-member review of every property and overload is the remaining work before promotion, and it is
-where an accidentally-`set`-able property or a vestigial overload would surface.
+Done 2026-08-26, before promotion. Rather than reading 278 lines for typos, the pass hunted the hazard that
+actually matters: **accidental surface** — a public member nothing was ever meant to call, which promotion
+would freeze forever.
 
-`DwarfMapper.Testing`'s baseline is also unaudited. It ships, so it needs the same pass — and §1b already
-found two overlapping object factories in it (N5), which is exactly the kind of thing that must be settled
-*before* a freeze rather than after.
+Method: probe every declared type and member against the consumer-shaped corpus (`tests/`, `samples/`,
+`benchmarks/`). A public element no consumer-shaped code touches is either infrastructure — and must be marked,
+per A1 — or vestigial, and should be deleted while that is still free.
+
+| population | result |
+|---|---|
+| public types unreferenced by consumer-shaped code | **0** |
+| public members unreferenced by consumer-shaped code | **0** |
+
+A first pass reported 8 unreferenced types and 3 members. Both were artifacts of the probe, not findings.
+Attribute *usage* is `[AutoNest]`, not `AutoNestAttribute`, so the full type name never appears at a use site.
+And the three members — `GenerateWrapperMap.Wrapper`, `MapCollectionKey.CollectionMember` and `.KeyMember` —
+are get-only properties backed by **required** constructor parameters, used positionally: the read-back of a
+mandatory argument rather than surface nobody asked for. Corrected probe: zero in both populations.
+
+So the surface carries no vestigial members. The two structural findings above, A1 and A2, were the whole
+debt, and both were fixed before the freeze.
+
+---
+
+## The freeze is armed, and it was proved rather than assumed
+
+277 entries promoted for `DwarfMapper` and 38 for `DwarfMapper.Testing` — **315 total**. From here a rename or
+a removal is a declared break, which is the point of doing it now.
+
+Proved rather than assumed: a public enum member was added, the analyzer refused it with **RS0016**, and the
+member was reverted. A ratchet nobody has watched bite is a ratchet nobody knows is connected.
+
+---
+
+## What this audit did not cover
+
+The entries were probed for accidental surface rather than read line by line for taste. A member whose *name*
+or *shape* is merely unfortunate — a noun where a verb belongs, an overload that could have been a default —
+would not be caught here, and is now frozen. That trade was accepted deliberately: the alternative was to
+delay the freeze through the restructuring rounds, which is exactly when an accidental surface change is most
+likely to slip in unnoticed.

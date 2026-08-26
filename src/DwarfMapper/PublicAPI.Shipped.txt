@@ -1,1 +1,278 @@
 #nullable enable
+DwarfMapper.AfterMapAttribute
+DwarfMapper.AfterMapAttribute.AfterMapAttribute() -> void
+DwarfMapper.AutoNestAttribute
+DwarfMapper.AutoNestAttribute.AutoNestAttribute(bool enabled = true) -> void
+DwarfMapper.AutoNestAttribute.Enabled.get -> bool
+DwarfMapper.BeforeMapAttribute
+DwarfMapper.BeforeMapAttribute.BeforeMapAttribute() -> void
+DwarfMapper.DwarfMapMissingException
+DwarfMapper.DwarfMapMissingException.AmbiguousInterfaces.get -> System.Collections.Generic.IReadOnlyList<System.Type!>!
+DwarfMapper.DwarfMapMissingException.DestinationType.get -> System.Type?
+DwarfMapper.DwarfMapMissingException.DwarfMapMissingException() -> void
+DwarfMapper.DwarfMapMissingException.DwarfMapMissingException(System.Type! sourceType, System.Type! destinationType) -> void
+DwarfMapper.DwarfMapMissingException.DwarfMapMissingException(System.Type! sourceType, System.Type! destinationType, System.Collections.Generic.IReadOnlyList<System.Type!>? ambiguousInterfaces, bool isUpdate = false) -> void
+DwarfMapper.DwarfMapMissingException.DwarfMapMissingException(string! message) -> void
+DwarfMapper.DwarfMapMissingException.DwarfMapMissingException(string! message, System.Exception! innerException) -> void
+DwarfMapper.DwarfMapMissingException.SourceType.get -> System.Type?
+DwarfMapper.DwarfMapValidationException
+DwarfMapper.DwarfMapValidationException.DwarfMapValidationException() -> void
+DwarfMapper.DwarfMapValidationException.DwarfMapValidationException(string! message) -> void
+DwarfMapper.DwarfMapValidationException.DwarfMapValidationException(string! message, System.Exception! innerException) -> void
+DwarfMapper.DwarfMapperAttribute
+DwarfMapper.DwarfMapperAttribute.AllowNonPublic.get -> bool
+DwarfMapper.DwarfMapperAttribute.AllowNonPublic.set -> void
+DwarfMapper.DwarfMapperAttribute.AutoMatchMembers.get -> bool
+DwarfMapper.DwarfMapperAttribute.AutoMatchMembers.set -> void
+DwarfMapper.DwarfMapperAttribute.AutoNest.get -> bool
+DwarfMapper.DwarfMapperAttribute.AutoNest.set -> void
+DwarfMapper.DwarfMapperAttribute.CaseInsensitive.get -> bool
+DwarfMapper.DwarfMapperAttribute.CaseInsensitive.set -> void
+DwarfMapper.DwarfMapperAttribute.DwarfMapperAttribute() -> void
+DwarfMapper.DwarfMapperAttribute.EnumStrategy.get -> DwarfMapper.EnumStrategy
+DwarfMapper.DwarfMapperAttribute.EnumStrategy.set -> void
+DwarfMapper.DwarfMapperAttribute.EnumStringSource.get -> DwarfMapper.EnumStringSource
+DwarfMapper.DwarfMapperAttribute.EnumStringSource.set -> void
+DwarfMapper.DwarfMapperAttribute.GenerateExtensions.get -> bool
+DwarfMapper.DwarfMapperAttribute.GenerateExtensions.set -> void
+DwarfMapper.DwarfMapperAttribute.IgnoreObsoleteMembers.get -> bool
+DwarfMapper.DwarfMapperAttribute.IgnoreObsoleteMembers.set -> void
+DwarfMapper.DwarfMapperAttribute.ImplicitConversions.get -> bool
+DwarfMapper.DwarfMapperAttribute.ImplicitConversions.set -> void
+DwarfMapper.DwarfMapperAttribute.MaxDepth.get -> int
+DwarfMapper.DwarfMapperAttribute.MaxDepth.set -> void
+DwarfMapper.DwarfMapperAttribute.NameConvention.get -> DwarfMapper.NameConvention
+DwarfMapper.DwarfMapperAttribute.NameConvention.set -> void
+DwarfMapper.DwarfMapperAttribute.NullCollections.get -> DwarfMapper.NullCollectionStrategy
+DwarfMapper.DwarfMapperAttribute.NullCollections.set -> void
+DwarfMapper.DwarfMapperAttribute.NullStrategy.get -> DwarfMapper.NullStrategy
+DwarfMapper.DwarfMapperAttribute.NullStrategy.set -> void
+DwarfMapper.DwarfMapperAttribute.OnCycle.get -> DwarfMapper.OnCycleStrategy
+DwarfMapper.DwarfMapperAttribute.OnCycle.set -> void
+DwarfMapper.DwarfMapperAttribute.ReferenceHandling.get -> DwarfMapper.ReferenceHandlingStrategy
+DwarfMapper.DwarfMapperAttribute.ReferenceHandling.set -> void
+DwarfMapper.DwarfMapperAttribute.RegisterCollectionShapes.get -> bool
+DwarfMapper.DwarfMapperAttribute.RegisterCollectionShapes.set -> void
+DwarfMapper.DwarfMapperAttribute.RequiredMapping.get -> DwarfMapper.RequiredMappingStrategy
+DwarfMapper.DwarfMapperAttribute.RequiredMapping.set -> void
+DwarfMapper.DwarfMapperAttribute.SkipNullSourceMembers.get -> bool
+DwarfMapper.DwarfMapperAttribute.SkipNullSourceMembers.set -> void
+DwarfMapper.DwarfMapperConstructorAttribute
+DwarfMapper.DwarfMapperConstructorAttribute.DwarfMapperConstructorAttribute() -> void
+DwarfMapper.DwarfMapperDefaultsAttribute
+DwarfMapper.DwarfMapperDefaultsAttribute.AllowNonPublic.get -> bool
+DwarfMapper.DwarfMapperDefaultsAttribute.AllowNonPublic.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.AutoMatchMembers.get -> bool
+DwarfMapper.DwarfMapperDefaultsAttribute.AutoMatchMembers.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.AutoNest.get -> bool
+DwarfMapper.DwarfMapperDefaultsAttribute.AutoNest.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.CaseInsensitive.get -> bool
+DwarfMapper.DwarfMapperDefaultsAttribute.CaseInsensitive.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.DwarfMapperDefaultsAttribute() -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.EnumStrategy.get -> DwarfMapper.EnumStrategy
+DwarfMapper.DwarfMapperDefaultsAttribute.EnumStrategy.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.EnumStringSource.get -> DwarfMapper.EnumStringSource
+DwarfMapper.DwarfMapperDefaultsAttribute.EnumStringSource.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.IgnoreObsoleteMembers.get -> bool
+DwarfMapper.DwarfMapperDefaultsAttribute.IgnoreObsoleteMembers.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.ImplicitConversions.get -> bool
+DwarfMapper.DwarfMapperDefaultsAttribute.ImplicitConversions.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.NameConvention.get -> DwarfMapper.NameConvention
+DwarfMapper.DwarfMapperDefaultsAttribute.NameConvention.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.NullCollections.get -> DwarfMapper.NullCollectionStrategy
+DwarfMapper.DwarfMapperDefaultsAttribute.NullCollections.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.NullStrategy.get -> DwarfMapper.NullStrategy
+DwarfMapper.DwarfMapperDefaultsAttribute.NullStrategy.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.RegisterCollectionShapes.get -> bool
+DwarfMapper.DwarfMapperDefaultsAttribute.RegisterCollectionShapes.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.RequiredMapping.get -> DwarfMapper.RequiredMappingStrategy
+DwarfMapper.DwarfMapperDefaultsAttribute.RequiredMapping.set -> void
+DwarfMapper.DwarfMapperDefaultsAttribute.SkipNullSourceMembers.get -> bool
+DwarfMapper.DwarfMapperDefaultsAttribute.SkipNullSourceMembers.set -> void
+DwarfMapper.DwarfMapperFacade
+DwarfMapper.DwarfMapperFacade.DwarfMapperFacade() -> void
+DwarfMapper.DwarfMapperFacade.Map<TDestination>(object! source) -> TDestination
+DwarfMapper.DwarfMapperFacade.Map<TSource, TDestination>(TSource source) -> TDestination
+DwarfMapper.DwarfMapperFacade.Map<TSource, TDestination>(TSource source, TDestination destination) -> void
+DwarfMapper.DwarfMapperOptionsAttribute
+DwarfMapper.DwarfMapperOptionsAttribute.DwarfMapperOptionsAttribute() -> void
+DwarfMapper.DwarfMapperOptionsAttribute.PublicExtensions.get -> bool
+DwarfMapper.DwarfMapperOptionsAttribute.PublicExtensions.set -> void
+DwarfMapper.DwarfMapperRegistry
+DwarfMapper.DwarfMapperValidationRootAttribute
+DwarfMapper.DwarfMapperValidationRootAttribute.AutoValidate.get -> bool
+DwarfMapper.DwarfMapperValidationRootAttribute.AutoValidate.set -> void
+DwarfMapper.DwarfMapperValidationRootAttribute.DwarfMapperValidationRootAttribute() -> void
+DwarfMapper.DwarfMappingDepthException
+DwarfMapper.DwarfMappingDepthException.ActualDepth.get -> int
+DwarfMapper.DwarfMappingDepthException.DwarfMappingDepthException() -> void
+DwarfMapper.DwarfMappingDepthException.DwarfMappingDepthException(int maxDepth, int actualDepth) -> void
+DwarfMapper.DwarfMappingDepthException.DwarfMappingDepthException(string! message) -> void
+DwarfMapper.DwarfMappingDepthException.DwarfMappingDepthException(string! message, System.Exception! innerException) -> void
+DwarfMapper.DwarfMappingDepthException.MaxDepth.get -> int
+DwarfMapper.DwarfProvidesMapAttribute
+DwarfMapper.DwarfProvidesMapAttribute.Destination.get -> System.Type!
+DwarfMapper.DwarfProvidesMapAttribute.DwarfProvidesMapAttribute(System.Type! source, System.Type! destination) -> void
+DwarfMapper.DwarfProvidesMapAttribute.Source.get -> System.Type!
+DwarfMapper.DwarfRefContext
+DwarfMapper.DwarfRefContext.DwarfRefContext(int maxDepth, bool preserve = false, bool setNull = false) -> void
+DwarfMapper.DwarfRefContext.ExitNode(object! src) -> void
+DwarfMapper.DwarfRefContext.MaxDepth.get -> int
+DwarfMapper.DwarfRefContext.SetReference(object! src, object! tgt) -> void
+DwarfMapper.DwarfRefContext.TryEnterNode(object! src) -> bool
+DwarfMapper.DwarfRefContext.TryGetReference(object! src, out object! existing) -> bool
+DwarfMapper.DwarfRequiresMapAttribute
+DwarfMapper.DwarfRequiresMapAttribute.Destination.get -> System.Type!
+DwarfMapper.DwarfRequiresMapAttribute.DwarfRequiresMapAttribute(System.Type! source, System.Type! destination) -> void
+DwarfMapper.DwarfRequiresMapAttribute.Source.get -> System.Type!
+DwarfMapper.EnumStrategy
+DwarfMapper.EnumStrategy.ByName = 0 -> DwarfMapper.EnumStrategy
+DwarfMapper.EnumStrategy.ByValue = 1 -> DwarfMapper.EnumStrategy
+DwarfMapper.EnumStringSource
+DwarfMapper.EnumStringSource.Attribute = 0 -> DwarfMapper.EnumStringSource
+DwarfMapper.EnumStringSource.Identifier = 1 -> DwarfMapper.EnumStringSource
+DwarfMapper.FlattenAttribute
+DwarfMapper.FlattenAttribute.FlattenAttribute(string! sourceMember) -> void
+DwarfMapper.FlattenAttribute.SourceMember.get -> string!
+DwarfMapper.FlattenGraphAttribute
+DwarfMapper.FlattenGraphAttribute.FlattenGraphAttribute(string! sourceNavigation, string! targetCollection) -> void
+DwarfMapper.FlattenGraphAttribute.SourceNavigation.get -> string!
+DwarfMapper.FlattenGraphAttribute.TargetCollection.get -> string!
+DwarfMapper.GenerateMapAttribute<TSource, TTarget>
+DwarfMapper.GenerateMapAttribute<TSource, TTarget>.GenerateMapAttribute() -> void
+DwarfMapper.GenerateWrapperMapAttribute
+DwarfMapper.GenerateWrapperMapAttribute.GenerateWrapperMapAttribute(System.Type! wrapper) -> void
+DwarfMapper.GenerateWrapperMapAttribute.Wrapper.get -> System.Type!
+DwarfMapper.IDwarfMapper
+DwarfMapper.IDwarfMapper.Map<TDestination>(object! source) -> TDestination
+DwarfMapper.IDwarfMapper.Map<TSource, TDestination>(TSource source) -> TDestination
+DwarfMapper.IDwarfMapper.Map<TSource, TDestination>(TSource source, TDestination destination) -> void
+DwarfMapper.MapCollectionKeyAttribute
+DwarfMapper.MapCollectionKeyAttribute.CollectionMember.get -> string!
+DwarfMapper.MapCollectionKeyAttribute.KeyMember.get -> string!
+DwarfMapper.MapCollectionKeyAttribute.MapCollectionKeyAttribute(string! collectionMember, string! keyMember) -> void
+DwarfMapper.MapConfig<TSource, TTarget>
+DwarfMapper.MapConfig<TSource, TTarget>.Construct(System.Func<TSource, TTarget>! factory) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.Ignore<TMember>(System.Func<TTarget, TMember>! target) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.IgnoreSource<TMember>(System.Func<TSource, TMember>! source) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.Map<TMember>(System.Func<TTarget, TMember>! target, System.Func<TSource, TMember>! source) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.Map<TSrcMember, TTgtMember>(System.Func<TTarget, TTgtMember>! target, System.Func<TSource, TSrcMember>! source, System.Func<TSrcMember, TTgtMember>! convert) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.MapOr<TMember>(System.Func<TTarget, TMember?>! target, System.Func<TSource, TMember?>! source, TMember fallback) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.MapOr<TMember>(System.Func<TTarget, TMember?>! target, System.Func<TSource, TMember?>! source, TMember! fallback) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.MapWhen<TMember>(System.Func<TTarget, TMember>! target, System.Func<TSource, TMember>! source, System.Func<TSource, bool>! when) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.Value<TMember>(System.Func<TTarget, TMember>! target, System.Func<TMember>! compute) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConfig<TSource, TTarget>.Value<TMember>(System.Func<TTarget, TMember>! target, TMember value) -> DwarfMapper.MapConfig<TSource, TTarget>!
+DwarfMapper.MapConstructorAttribute<TSource, TTarget>
+DwarfMapper.MapConstructorAttribute<TSource, TTarget>.MapConstructorAttribute(string! method) -> void
+DwarfMapper.MapConstructorAttribute<TSource, TTarget>.Method.get -> string!
+DwarfMapper.MapDerivedTypeAttribute
+DwarfMapper.MapDerivedTypeAttribute.MapDerivedTypeAttribute(System.Type! sourceType, System.Type! targetType) -> void
+DwarfMapper.MapDerivedTypeAttribute.SourceType.get -> System.Type!
+DwarfMapper.MapDerivedTypeAttribute.TargetType.get -> System.Type!
+DwarfMapper.MapDerivedTypeAttribute<TSource, TTarget>
+DwarfMapper.MapDerivedTypeAttribute<TSource, TTarget>.MapDerivedTypeAttribute() -> void
+DwarfMapper.MapIgnoreAttribute
+DwarfMapper.MapIgnoreAttribute.MapIgnoreAttribute() -> void
+DwarfMapper.MapIgnoreAttribute.MapIgnoreAttribute(string! target) -> void
+DwarfMapper.MapIgnoreAttribute.Target.get -> string?
+DwarfMapper.MapIgnoreAttribute<TTarget>
+DwarfMapper.MapIgnoreAttribute<TTarget>.MapIgnoreAttribute(string! target) -> void
+DwarfMapper.MapIgnoreAttribute<TTarget>.Target.get -> string!
+DwarfMapper.MapIgnoreSourceAttribute
+DwarfMapper.MapIgnoreSourceAttribute.MapIgnoreSourceAttribute(string! source) -> void
+DwarfMapper.MapIgnoreSourceAttribute.Source.get -> string!
+DwarfMapper.MapNullSkipAttribute
+DwarfMapper.MapNullSkipAttribute.Enabled.get -> bool
+DwarfMapper.MapNullSkipAttribute.MapNullSkipAttribute(bool enabled = true) -> void
+DwarfMapper.MapNullSkipAttribute<TSource, TTarget>
+DwarfMapper.MapNullSkipAttribute<TSource, TTarget>.Enabled.get -> bool
+DwarfMapper.MapNullSkipAttribute<TSource, TTarget>.MapNullSkipAttribute(bool enabled = true) -> void
+DwarfMapper.MapPropertyAttribute
+DwarfMapper.MapPropertyAttribute.MapPropertyAttribute(string! source, string! target) -> void
+DwarfMapper.MapPropertyAttribute.MapPropertyAttribute(string! target) -> void
+DwarfMapper.MapPropertyAttribute.NullSubstitute.get -> object?
+DwarfMapper.MapPropertyAttribute.NullSubstitute.set -> void
+DwarfMapper.MapPropertyAttribute.Source.get -> string!
+DwarfMapper.MapPropertyAttribute.StringFormat.get -> string?
+DwarfMapper.MapPropertyAttribute.StringFormat.set -> void
+DwarfMapper.MapPropertyAttribute.Target.get -> string!
+DwarfMapper.MapPropertyAttribute.Use.get -> string?
+DwarfMapper.MapPropertyAttribute.Use.set -> void
+DwarfMapper.MapPropertyAttribute.When.get -> string?
+DwarfMapper.MapPropertyAttribute.When.set -> void
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.MapPropertyAttribute(string! source, string! target) -> void
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.NullSubstitute.get -> object?
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.NullSubstitute.set -> void
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.Source.get -> string!
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.Target.get -> string!
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.Use.get -> string?
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.Use.set -> void
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.When.get -> string?
+DwarfMapper.MapPropertyAttribute<TSource, TTarget>.When.set -> void
+DwarfMapper.MapToAttribute
+DwarfMapper.MapToAttribute.MapToAttribute(params System.Type![]! targets) -> void
+DwarfMapper.MapToAttribute.Targets.get -> System.Type![]!
+DwarfMapper.MapValueAttribute
+DwarfMapper.MapValueAttribute.MapValueAttribute(string! target) -> void
+DwarfMapper.MapValueAttribute.MapValueAttribute(string! target, object? value) -> void
+DwarfMapper.MapValueAttribute.Target.get -> string!
+DwarfMapper.MapValueAttribute.Use.get -> string?
+DwarfMapper.MapValueAttribute.Use.set -> void
+DwarfMapper.MapValueAttribute.Value.get -> object?
+DwarfMapper.MapValueAttribute<TTarget>
+DwarfMapper.MapValueAttribute<TTarget>.MapValueAttribute(string! target) -> void
+DwarfMapper.MapValueAttribute<TTarget>.MapValueAttribute(string! target, object? value) -> void
+DwarfMapper.MapValueAttribute<TTarget>.Target.get -> string!
+DwarfMapper.MapValueAttribute<TTarget>.Use.get -> string?
+DwarfMapper.MapValueAttribute<TTarget>.Use.set -> void
+DwarfMapper.MapValueAttribute<TTarget>.Value.get -> object?
+DwarfMapper.NameConvention
+DwarfMapper.NameConvention.Exact = 0 -> DwarfMapper.NameConvention
+DwarfMapper.NameConvention.Flexible = 1 -> DwarfMapper.NameConvention
+DwarfMapper.NullCollectionStrategy
+DwarfMapper.NullCollectionStrategy.AsEmpty = 0 -> DwarfMapper.NullCollectionStrategy
+DwarfMapper.NullCollectionStrategy.AsNull = 1 -> DwarfMapper.NullCollectionStrategy
+DwarfMapper.NullStrategy
+DwarfMapper.NullStrategy.SetDefault = 1 -> DwarfMapper.NullStrategy
+DwarfMapper.NullStrategy.Throw = 0 -> DwarfMapper.NullStrategy
+DwarfMapper.OnCycleStrategy
+DwarfMapper.OnCycleStrategy.SetNull = 1 -> DwarfMapper.OnCycleStrategy
+DwarfMapper.OnCycleStrategy.Throw = 0 -> DwarfMapper.OnCycleStrategy
+DwarfMapper.ProvidesMapAttribute
+DwarfMapper.ProvidesMapAttribute.ProvidesMapAttribute() -> void
+DwarfMapper.ReferenceHandlingStrategy
+DwarfMapper.ReferenceHandlingStrategy.None = 0 -> DwarfMapper.ReferenceHandlingStrategy
+DwarfMapper.ReferenceHandlingStrategy.Preserve = 1 -> DwarfMapper.ReferenceHandlingStrategy
+DwarfMapper.ReinterpretAttribute
+DwarfMapper.ReinterpretAttribute.Member.get -> string!
+DwarfMapper.ReinterpretAttribute.ReinterpretAttribute(string! member) -> void
+DwarfMapper.RequiredMappingStrategy
+DwarfMapper.RequiredMappingStrategy.Both = 1 -> DwarfMapper.RequiredMappingStrategy
+DwarfMapper.RequiredMappingStrategy.Target = 0 -> DwarfMapper.RequiredMappingStrategy
+DwarfMapper.RestatesBaseAttribute<TSource, TTarget>
+DwarfMapper.RestatesBaseAttribute<TSource, TTarget>.Overrides.get -> string![]!
+DwarfMapper.RestatesBaseAttribute<TSource, TTarget>.Overrides.set -> void
+DwarfMapper.RestatesBaseAttribute<TSource, TTarget>.RestatesBaseAttribute() -> void
+DwarfMapper.ReverseMapAttribute
+DwarfMapper.ReverseMapAttribute.ReverseMapAttribute() -> void
+DwarfMapper.RoundTripAttribute
+DwarfMapper.RoundTripAttribute.RoundTripAttribute() -> void
+DwarfMapper.UsesMapAttribute
+DwarfMapper.UsesMapAttribute.Destination.get -> System.Type!
+DwarfMapper.UsesMapAttribute.Source.get -> System.Type!
+DwarfMapper.UsesMapAttribute.UsesMapAttribute(System.Type! source, System.Type! destination) -> void
+DwarfMapper.UsesMapAttribute<TSource, TDestination>
+DwarfMapper.UsesMapAttribute<TSource, TDestination>.UsesMapAttribute() -> void
+const DwarfMapper.DwarfRefContext.AbsoluteMaxDepth = 1000 -> int
+static DwarfMapper.DwarfMapperRegistry.IsAmbiguous(System.Type! source, System.Type! destination) -> bool
+static DwarfMapper.DwarfMapperRegistry.IsProvided(System.Type! source, System.Type! destination) -> bool
+static DwarfMapper.DwarfMapperRegistry.IsUpdateAmbiguous(System.Type! source, System.Type! destination) -> bool
+static DwarfMapper.DwarfMapperRegistry.IsUpdateProvided(System.Type! source, System.Type! destination) -> bool
+static DwarfMapper.DwarfMapperRegistry.Map(object! source, System.Type! destination) -> object!
+static DwarfMapper.DwarfMapperRegistry.Provided.get -> System.Collections.Generic.IReadOnlyCollection<(System.Type! Source, System.Type! Destination)>!
+static DwarfMapper.DwarfMapperRegistry.Register(System.Type! source, System.Type! destination, System.Func<object!, object!>! map) -> void
+static DwarfMapper.DwarfMapperRegistry.RegisterUpdate(System.Type! source, System.Type! destination, System.Action<object!, object!>! map) -> void
+static DwarfMapper.DwarfMapperRegistry.TryGet(System.Type! source, System.Type! destination, out System.Func<object!, object!>? map) -> bool
+static DwarfMapper.DwarfMapperRegistry.Update(object! source, object! destination, System.Type! sourceType, System.Type! destinationType) -> void
+static readonly DwarfMapper.DwarfMapperFacade.Instance -> DwarfMapper.IDwarfMapper!

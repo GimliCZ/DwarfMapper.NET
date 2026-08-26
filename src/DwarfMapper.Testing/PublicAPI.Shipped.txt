@@ -1,1 +1,39 @@
 #nullable enable
+DwarfMapper.Testing.Fuzzer
+DwarfMapper.Testing.GraphOracleComparer
+DwarfMapper.Testing.MemberDiff
+DwarfMapper.Testing.MemberDiff.Actual.get -> string?
+DwarfMapper.Testing.MemberDiff.Expected.get -> string?
+DwarfMapper.Testing.MemberDiff.MemberDiff(string! path, string? expected, string? actual) -> void
+DwarfMapper.Testing.MemberDiff.Path.get -> string!
+DwarfMapper.Testing.ObjectFactoryV2
+DwarfMapper.Testing.RoundTrip
+DwarfMapper.Testing.RoundTripException
+DwarfMapper.Testing.RoundTripException.Diffs.get -> System.Collections.Generic.IReadOnlyList<DwarfMapper.Testing.MemberDiff!>!
+DwarfMapper.Testing.RoundTripException.Iteration.get -> int
+DwarfMapper.Testing.RoundTripException.RoundTripException(int seed, int iteration, System.Collections.Generic.IReadOnlyList<DwarfMapper.Testing.MemberDiff!>! diffs) -> void
+DwarfMapper.Testing.RoundTripException.Seed.get -> int
+DwarfMapper.Testing.StructuralComparer
+const DwarfMapper.Testing.ObjectFactoryV2.EdgeProbability = 0.25 -> double
+const DwarfMapper.Testing.ObjectFactoryV2.NullProbability = 0.15 -> double
+static DwarfMapper.Testing.Fuzzer.Generate<T>(int count, int seed = 0) -> System.Collections.Generic.IEnumerable<T>!
+static DwarfMapper.Testing.GraphOracleComparer.CrossTypeDiff(object? expected, object? actual, System.Type? expectedType = null, System.Type? actualType = null, string! rootPath = "root") -> System.Collections.Generic.IReadOnlyList<string!>!
+static DwarfMapper.Testing.GraphOracleComparer.FlattenGraphDiff(object? srcEntry, System.Collections.IEnumerable? resultNodes, System.Type! nodeBaseType, System.Type! dtoBaseType) -> System.Collections.Generic.IReadOnlyList<string!>!
+static DwarfMapper.Testing.GraphOracleComparer.RenderFlattenGraphDiff(System.Collections.Generic.IReadOnlyList<string!>! violations) -> string!
+static DwarfMapper.Testing.GraphOracleComparer.RenderTopologyDiff(System.Collections.Generic.IReadOnlyList<string!>! violations) -> string!
+static DwarfMapper.Testing.GraphOracleComparer.RenderValueDiff(System.Collections.Generic.IReadOnlyList<string!>! diffs) -> string!
+static DwarfMapper.Testing.GraphOracleComparer.TopologyDiff(object? srcRoot, object? tgtRoot, string! rootPath = "root") -> System.Collections.Generic.IReadOnlyList<string!>!
+static DwarfMapper.Testing.GraphOracleComparer.TopologyPreserved(object? srcRoot, object? tgtRoot) -> bool
+static DwarfMapper.Testing.GraphOracleComparer.ValueDiff(object? expected, object? actual, string! rootPath = "root") -> System.Collections.Generic.IReadOnlyList<string!>!
+static DwarfMapper.Testing.GraphOracleComparer.ValueEqual(object? expected, object? actual) -> bool
+static DwarfMapper.Testing.ObjectFactoryV2.Create(System.Type! type, System.Random! rng, int depth) -> object?
+static DwarfMapper.Testing.ObjectFactoryV2.Create(System.Type! type, System.Random! rng, int depth, bool allowNull) -> object?
+static DwarfMapper.Testing.ObjectFactoryV2.Create<T>() -> T
+static DwarfMapper.Testing.ObjectFactoryV2.Create<T>(int seed) -> T
+static DwarfMapper.Testing.ObjectFactoryV2.MakeDiamond(System.Type! rootType, System.Type! childType, string! leftProp, string! rightProp, System.Random! rng) -> (object! Root, object! SharedChild)
+static DwarfMapper.Testing.ObjectFactoryV2.MakeOwnerGraph(System.Type! typeA, System.Type! typeB, System.Type! typeC, System.Type! typeD, string! bPropOnA, string! cPropOnB, string! dPropOnB, string! bPropOnC, string! dPropOnC, string! bPropOnD, string! cPropOnD, System.Random! rng) -> (object! A, object! B, object! C, object! D)
+static DwarfMapper.Testing.ObjectFactoryV2.MakeSelfLoop(System.Type! nodeType, string! selfPropName, System.Random! rng) -> object!
+static DwarfMapper.Testing.ObjectFactoryV2.MakeTwoNodeCycle(System.Type! nodeType, string! nextPropName, System.Random! rng) -> (object! A, object! B)
+static DwarfMapper.Testing.RoundTrip.Verify<TSource, TDto>(System.Func<TSource, TDto>! forward, System.Func<TDto, TSource>! backward, int seed = 12345, int iterations = 100) -> void
+static DwarfMapper.Testing.StructuralComparer.Diff(object? expected, object? actual) -> System.Collections.Generic.IReadOnlyList<DwarfMapper.Testing.MemberDiff!>!
+static DwarfMapper.Testing.StructuralComparer.Render(System.Collections.Generic.IReadOnlyList<DwarfMapper.Testing.MemberDiff!>! diffs) -> string!
