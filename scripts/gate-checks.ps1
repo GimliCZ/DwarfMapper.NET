@@ -344,13 +344,18 @@ function Invoke-StrykerLeg {
     # this. If any of those three ever appear, this line stops being free.
     $stArgs += @('--configuration', 'Release')
 
-    # --- concurrency: leave the machine two cores ---------------------------------------------------
-    # Stryker's default is half the logical processors. Its own test runs are xunit processes that
-    # parallelise INTERNALLY, so the two multiply: the product, not the setting, is what lands on the CPU,
-    # and over-subscription shows up as mutants classified Timeout that are not slow at all -- noise that
-    # reads as a score change. Two cores held back leaves room for the harness itself.
-    $cores = [Environment]::ProcessorCount
-    if ($cores -gt 3) { $stArgs += @('--concurrency', [string]($cores - 2)) }
+    # --- concurrency: DELIBERATELY NOT SET, and this comment is the correction ----------------------
+    # This launcher briefly raised concurrency to cores-2, on the theory that Stryker's default of half the
+    # logical processors was leaving the machine idle. MEASURED, and wrong: the generator leg, whose recorded
+    # time is 21 minutes at the default, then blew through its 30-minute fuse without finishing.
+    #
+    # The default is not conservatism, it is the right answer. Stryker's workers are xunit processes that
+    # parallelise INTERNALLY, so the two settings multiply and the PRODUCT is what lands on the CPU. Raising
+    # Stryker's half over-subscribes harder, and both visible symptoms get worse: wall-clock, and mutants
+    # classified Timeout that are not slow at all -- noise that reads as a detection.
+    #
+    # So nothing is passed and the tool's own default stands. Anyone tempted again should measure the
+    # generator leg first; it has enough static mutants to make the difference obvious.
 
     # [Console]::IsOutputRedirected is the honest test: it is false in a terminal and true under a pipe,
     # a file redirect, or a detached task -- exactly the cases where `progress` has nothing to draw on.
