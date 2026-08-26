@@ -100,7 +100,7 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            bool caseInsensitive,
+            in MapperOptions options,
             IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
@@ -111,21 +111,11 @@ namespace DwarfMapper.Generator.Pipeline
             List<string> reinterpretMembers,
             HashSet<string>? consumedCtorParams = null,
             HashSet<string>? requiredMustInitialize = null,
-            bool autoNest = false,
             NestedMappingRegistry? nestedRegistry = null,
-            bool nullAsNull = false,
-            bool isPreserve = false,
-            bool isSetNull = false,
-            bool implicitConversions = true,
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>? mapValues = null,
             IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
-            int nameConvention = 0,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
-            bool skipNullSourceMembers = false,
-            bool allowNonPublic = false,
-            bool explicitOnly = false,
-            bool ignoreObsolete = false,
             Dictionary<string, string>? stringFormats = null,
             IReadOnlyCollection<string>? mapperReservedConverters = null,
             // True when every `required` destination member is already satisfied without the object initializer
@@ -150,7 +140,7 @@ namespace DwarfMapper.Generator.Pipeline
             // honours `ignores`, so this one addition covers them all. An obsolete member that IS explicitly
             // targeted (by [MapProperty]/[MapValue]) is left OUT of the ignore set, so the developer can opt a
             // specific one back in without tripping the ignore-vs-explicit conflict (DWARF012).
-            if (ignoreObsolete)
+            if (options.IgnoreObsolete)
             {
                 var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
@@ -177,21 +167,21 @@ namespace DwarfMapper.Generator.Pipeline
                     extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When, e.NullSubLiteral);
             }
 
-            var comparer = caseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            var comparer = options.CaseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
             // NameConvention.Flexible: match on a normalized key (strip '_', lowercase) so PascalCase/camelCase/
             // snake_case/UPPER_CASE are interchangeable. Auto-match only; explicit/flatten paths stay exact.
-            var flexible = nameConvention == 1;
+            var flexible = options.NameConvention == 1;
 
             var sourceGroups = flexible
-                ? ReadableMembers(sourceType, compilation, allowNonPublic)
+                ? ReadableMembers(sourceType, compilation, options.AllowNonPublic)
                     .GroupBy(m => NormalizeName(m.Name), StringComparer.Ordinal)
                     .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal)
-                : ReadableMembers(sourceType, compilation, allowNonPublic)
+                : ReadableMembers(sourceType, compilation, options.AllowNonPublic)
                     .GroupBy(m => m.Name, comparer)
                     .ToDictionary(g => g.Key, g => g.ToList(), comparer);
 
             var writableByName = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
-            foreach (var m in WritableMembers(targetType, compilation, allowNonPublic)) writableByName[m.Name] = m.Type;
+            foreach (var m in WritableMembers(targetType, compilation, options.AllowNonPublic)) writableByName[m.Name] = m.Type;
 
             var result = new List<MemberMap>();
             var handledTargets = new HashSet<string>(StringComparer.Ordinal);
@@ -207,7 +197,7 @@ namespace DwarfMapper.Generator.Pipeline
                 sourceType,
                 comparer,
                 compilation,
-                allowNonPublic,
+                options.AllowNonPublic,
                 true,
                 location,
                 diagnostics);
@@ -283,13 +273,13 @@ namespace DwarfMapper.Generator.Pipeline
                         enumPolicy,
                         synthesized,
                         nullStrategy,
-                        autoNest,
+                        options.AutoNest,
                         nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull,
-                        implicitConversions,
-                        allowNonPublic,
+                        options.NullAsNull,
+                        options.IsPreserve,
+                        options.IsSetNull,
+                        options.ImplicitConversions,
+                        options.AllowNonPublic,
                         result);
                     continue;
                 }
@@ -330,7 +320,7 @@ namespace DwarfMapper.Generator.Pipeline
                     if (!TryResolveSourcePath(sourceType,
                             srcName,
                             compilation,
-                            allowNonPublic,
+                            options.AllowNonPublic,
                             out srcMatch,
                             out var nullableHop,
                             out var badSegment))
@@ -350,7 +340,7 @@ namespace DwarfMapper.Generator.Pipeline
                 }
                 else
                 {
-                    srcMatch = ReadableMembers(sourceType, compilation, allowNonPublic)
+                    srcMatch = ReadableMembers(sourceType, compilation, options.AllowNonPublic)
                         .Where(m => StringComparer.Ordinal.Equals(m.Name, srcName))
                         .Select(m => (ITypeSymbol?)m.Type)
                         .FirstOrDefault();
@@ -386,12 +376,12 @@ namespace DwarfMapper.Generator.Pipeline
                         out var conv,
                         out var nullH,
                         out var convNeedsCtx,
-                        autoNest,
+                        options.AutoNest,
                         nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull: isSetNull,
-                        implicitConversions: implicitConversions,
+                        options.NullAsNull,
+                        options.IsPreserve,
+                        isSetNull: options.IsSetNull,
+                        implicitConversions: options.ImplicitConversions,
                         reservedConverters: reservedConverters))
                 {
                     // [MapProperty(StringFormat="…")]: replace the resolved converter with a format-aware
@@ -588,7 +578,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // AUTO: remaining writable targets matched by name under the comparer.
-            var targets = WritableMembers(targetType, compilation, allowNonPublic)
+            var targets = WritableMembers(targetType, compilation, options.AllowNonPublic)
                 .OrderBy(m => m.Name, StringComparer.Ordinal)
                 .ToList();
             foreach (var target in targets)
@@ -685,12 +675,12 @@ namespace DwarfMapper.Generator.Pipeline
                             out var epConv,
                             out _,
                             out var epNeedsCtx,
-                            autoNest,
+                            options.AutoNest,
                             nestedRegistry,
-                            nullAsNull,
-                            isPreserve,
-                            isSetNull: isSetNull,
-                            implicitConversions: implicitConversions,
+                            options.NullAsNull,
+                            options.IsPreserve,
+                            isSetNull: options.IsSetNull,
+                            implicitConversions: options.ImplicitConversions,
                             reservedConverters: reservedConverters) &&
                         !epNeedsCtx)
                     {
@@ -736,12 +726,12 @@ namespace DwarfMapper.Generator.Pipeline
                                 out var fconv,
                                 out var fnull,
                                 out var fneedsCtx,
-                                autoNest,
+                                options.AutoNest,
                                 nestedRegistry,
-                                nullAsNull,
-                                isPreserve,
-                                isSetNull: isSetNull,
-                                implicitConversions: implicitConversions,
+                                options.NullAsNull,
+                                options.IsPreserve,
+                                isSetNull: options.IsSetNull,
+                                implicitConversions: options.ImplicitConversions,
                                 reservedConverters: reservedConverters))
                         {
                             result.Add(new MemberMap(target.Name,
@@ -824,7 +814,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // attacker-controlled same-named field (IsAdmin) cannot over-post onto a protected member. Explicit
                 // [MapProperty]/[MapValue]/[MapIgnore] and [Reinterpret] have already been honoured above; only the
                 // implicit by-name wire is blocked here.
-                if (explicitOnly)
+                if (options.ExplicitOnly)
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.AutoMatchDisabled,
@@ -849,12 +839,12 @@ namespace DwarfMapper.Generator.Pipeline
                         out var conv,
                         out var nullH,
                         out var needsCtx,
-                        autoNest,
+                        options.AutoNest,
                         nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull: isSetNull,
-                        implicitConversions: implicitConversions,
+                        options.NullAsNull,
+                        options.IsPreserve,
+                        isSetNull: options.IsSetNull,
+                        implicitConversions: options.ImplicitConversions,
                         reservedConverters: reservedConverters))
                 {
                     // A nullable-reference source passed into a user-declared converter/map whose parameter is
@@ -887,7 +877,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // READ-ONLY destinations with a matching source (silent-loss guard).
             // A read-only member satisfied via a constructor parameter is already mapped — no diagnostic.
-            foreach (var readOnly in ReadOnlyMembers(targetType, compilation, allowNonPublic)
+            foreach (var readOnly in ReadOnlyMembers(targetType, compilation, options.AllowNonPublic)
                          .OrderBy(m => m.Name, StringComparer.Ordinal))
             {
                 if (handledTargets.Contains(readOnly.Name) || ignores.Contains(readOnly.Name))
@@ -918,7 +908,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (reinterpretMembers.Count > 0)
             {
                 var writableNames =
-                    new HashSet<string>(WritableMembers(targetType, compilation, allowNonPublic).Select(m => m.Name),
+                    new HashSet<string>(WritableMembers(targetType, compilation, options.AllowNonPublic).Select(m => m.Name),
                         StringComparer.Ordinal);
                 foreach (var rm in reinterpretMembers)
                     if (ignores.Contains(rm))
@@ -947,10 +937,10 @@ namespace DwarfMapper.Generator.Pipeline
             // default rather than overwrite it. Mark each simple, nullable-source, post-construction-settable
             // member so the emitter guards it with `if (src.X is not null) dst.X = …;`. Non-nullable value-type
             // sources (never null) and required/init-only/read-only targets (cannot be deferred) are left as-is.
-            if (skipNullSourceMembers && result.Count > 0)
+            if (options.SkipNullSourceMembers && result.Count > 0)
             {
                 var srcTypeByName = new Dictionary<string, ITypeSymbol>(comparer);
-                foreach (var (sName, sType) in ReadableMembers(sourceType, compilation, allowNonPublic))
+                foreach (var (sName, sType) in ReadableMembers(sourceType, compilation, options.AllowNonPublic))
                     srcTypeByName[sName] = sType;
 
                 var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);

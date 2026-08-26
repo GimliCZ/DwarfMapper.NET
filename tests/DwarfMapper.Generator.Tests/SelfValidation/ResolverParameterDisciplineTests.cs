@@ -58,8 +58,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static readonly HashSet<string> Allowlist = new(StringComparer.Ordinal)
         {
-            // 31 rows, measured 2026-08-26. ResolveMembers carries 10 of them and ResolveProjectionMembers 7 —
-            // the two resolvers the ExtractionContext migration reaches first, so those 17 go first.
+            // 22 rows. Was 31 when this scan was written; ResolveMembers' nine option parameters came out when
+            // R27-02 bundled them into MapperOptions, which is the allowlist doing what a shrink-only list is
+            // for. ResolveProjectionMembers still carries 7 and is the next migration.
             "CollectionConverter.cs::Synthesize::isPreserve",
             "CollectionConverter.cs::TryResolve::nullAsNull",
             "DictionaryConverter.cs::Synthesize::isPreserve",
@@ -73,16 +74,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             "MapperExtractor.Members.cs::ResolveConstructorArguments::isPreserve",
             "MapperExtractor.Members.cs::ResolveConstructorArguments::isSetNull",
             "MapperExtractor.Members.cs::ResolveConstructorArguments::nullAsNull",
-            "MapperExtractor.Members.cs::ResolveMembers::allowNonPublic",
-            "MapperExtractor.Members.cs::ResolveMembers::autoNest",
-            "MapperExtractor.Members.cs::ResolveMembers::explicitOnly",
-            "MapperExtractor.Members.cs::ResolveMembers::ignoreObsolete",
-            "MapperExtractor.Members.cs::ResolveMembers::implicitConversions",
-            "MapperExtractor.Members.cs::ResolveMembers::isPreserve",
-            "MapperExtractor.Members.cs::ResolveMembers::isSetNull",
-            "MapperExtractor.Members.cs::ResolveMembers::nullAsNull",
             "MapperExtractor.Members.cs::ResolveMembers::requiredMembersAlreadySatisfied",
-            "MapperExtractor.Members.cs::ResolveMembers::skipNullSourceMembers",
             "MapperExtractor.Projection.cs::ResolveProjectionMembers::allowNonPublic",
             "MapperExtractor.Projection.cs::ResolveProjectionMembers::autoNest",
             "MapperExtractor.Projection.cs::ResolveProjectionMembers::explicitOnly",

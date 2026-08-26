@@ -570,7 +570,26 @@ namespace DwarfMapper.Generator.Pipeline
                         comp,
                         methodLocation,
                         diagnostics,
-                        caseInsensitive,
+                        new MapperOptions(
+                            CaseInsensitive: caseInsensitive,
+                            AutoNest: updAutoNest,
+                            // These were hardcoded `false` while the other ResolveMembers call sites passed the
+                            // real values. Passing them is consistency, not a demonstrated fix: preserve
+                            // threading actually comes from the class-level nested synthesis path, so setting
+                            // them back to `false` changes no generated output and no test can catch it. Kept
+                            // because a lone hardcoded literal here is a landmine the next person would have to
+                            // re-derive.
+                            NullAsNull: nullCollections == NullCollectionsBehavior.AsNull,
+                            IsPreserve: isPreserveMode,
+                            IsSetNull: isSetNullMode,
+                            ImplicitConversions: implicitConversions,
+                            NameConvention: nameConvention,
+                            // Update-into is where patch-merge actually lives, so a method-level [MapNullSkip]
+                            // matters most here.
+                            SkipNullSourceMembers: ResolveNullSkip(pairNullSkips, method, updSrc, updTgt, skipNullSrc),
+                            AllowNonPublic: allowNonPublic,
+                            ExplicitOnly: explicitOnly,
+                            IgnoreObsolete: ignoreObsolete),
                         updExplicit,
                         allMethods,
                         mapperMethods,
@@ -581,27 +600,10 @@ namespace DwarfMapper.Generator.Pipeline
                         updReinterpret,
                         null,
                         null,
-                        updAutoNest,
                         nestedRegistry,
-                        // These were hardcoded `false` while the six other ResolveMembers call sites pass the
-                        // real values. Passing them is consistency, not a demonstrated fix: preserve threading
-                        // actually comes from the class-level nested synthesis path, so mutating this back to
-                        // `false, false` changes no generated output and no test can catch it. Kept because a
-                        // lone hardcoded literal here is a landmine the next person would have to re-derive.
-                        nullCollections == NullCollectionsBehavior.AsNull,
-                        isPreserveMode,
-                        isSetNullMode,
-                        implicitConversions,
                         updMapValues,
                         valueProviders,
-                        nameConvention: nameConvention,
                         mapPropertyExtras: updMapPropExtras,
-                        // Update-into is where patch-merge actually lives, so a method-level [MapNullSkip]
-                        // matters most here.
-                        skipNullSourceMembers: ResolveNullSkip(pairNullSkips, method, updSrc, updTgt, skipNullSrc),
-                        allowNonPublic: allowNonPublic,
-                        explicitOnly: explicitOnly,
-                        ignoreObsolete: ignoreObsolete,
                         stringFormats: ReadStringFormats(method),
                         mapperReservedConverters: mapperReservedConverters,
                         // Update-into writes into an instance the CALLER already constructed, so there is no
@@ -1617,7 +1619,18 @@ namespace DwarfMapper.Generator.Pipeline
                     ctx.SemanticModel.Compilation,
                     methodLocation,
                     diagnostics,
-                    caseInsensitive,
+                    new MapperOptions(
+                        CaseInsensitive: caseInsensitive,
+                        AutoNest: methodAutoNest,
+                        NullAsNull: nullCollections == NullCollectionsBehavior.AsNull,
+                        IsPreserve: isPreserveMode,
+                        IsSetNull: isSetNullMode,
+                        ImplicitConversions: implicitConversions,
+                        NameConvention: nameConvention,
+                        SkipNullSourceMembers: ResolveNullSkip(pairNullSkips, method, sourceType, targetType, skipNullSrc),
+                        AllowNonPublic: allowNonPublic,
+                        ExplicitOnly: explicitOnly,
+                        IgnoreObsolete: ignoreObsolete),
                     explicitMaps,
                     allMethods,
                     mapperMethods,
@@ -1628,21 +1641,11 @@ namespace DwarfMapper.Generator.Pipeline
                     reinterpretMembers,
                     consumedParams,
                     requiredMustInitialize,
-                    methodAutoNest,
                     nestedRegistry,
-                    nullCollections == NullCollectionsBehavior.AsNull,
-                    isPreserveMode,
-                    isSetNullMode,
-                    implicitConversions,
                     mapValues,
                     valueProviders,
                     extraParams,
-                    nameConvention,
                     mapPropExtras,
-                    ResolveNullSkip(pairNullSkips, method, sourceType, targetType, skipNullSrc),
-                    allowNonPublic,
-                    explicitOnly,
-                    ignoreObsolete,
                     stringFormats,
                     mapperReservedConverters,
                     // NOT gated on objInitOnly: a parameterless constructor can still carry
@@ -2001,7 +2004,20 @@ namespace DwarfMapper.Generator.Pipeline
                     genComp,
                     genLoc,
                     diagnostics,
-                    caseInsensitive,
+                    new MapperOptions(
+                        CaseInsensitive: caseInsensitive,
+                        AutoNest: classAutoNest,
+                        NullAsNull: nullCollections == NullCollectionsBehavior.AsNull,
+                        IsPreserve: isPreserveMode,
+                        IsSetNull: isSetNullMode,
+                        ImplicitConversions: implicitConversions,
+                        NameConvention: 0,
+                        // No method: a [GenerateMap] pair is declared by the class, so there is no
+                        // method-scoped annotation that could speak for it.
+                        SkipNullSourceMembers: ResolveNullSkip(pairNullSkips, null, genSrc, genTgt, skipNullSrc),
+                        AllowNonPublic: allowNonPublic,
+                        ExplicitOnly: explicitOnly,
+                        IgnoreObsolete: ignoreObsolete),
                     genExplicit,
                     allMethods,
                     mapperMethods,
@@ -2012,24 +2028,13 @@ namespace DwarfMapper.Generator.Pipeline
                     new List<string>(),
                     genConsumed,
                     genRequiredInit,
-                    classAutoNest,
                     nestedRegistry,
-                    nullCollections == NullCollectionsBehavior.AsNull,
-                    isPreserveMode,
-                    isSetNullMode,
-                    implicitConversions,
                     MatchPairValues(pairValues, genTgt),
                     valueProviders,
                     mapPropertyExtras: genExtras,
                     // StringFormat rides on the SAME [MapProperty] the rename does, so a path that reads the
                     // directive and does not thread this drops the format in silence — D20 in miniature.
                     stringFormats: genFormats,
-                    // No method: a [GenerateMap] pair is declared by the class, so there is no method-scoped
-                    // annotation that could speak for it.
-                    skipNullSourceMembers: ResolveNullSkip(pairNullSkips, null, genSrc, genTgt, skipNullSrc),
-                    allowNonPublic: allowNonPublic,
-                    explicitOnly: explicitOnly,
-                    ignoreObsolete: ignoreObsolete,
                     mapperReservedConverters: mapperReservedConverters,
                     requiredMembersAlreadySatisfied: genCtorSetsRequired,
                     factoryExcludedMembers: genFactoryExcluded);
@@ -2254,7 +2259,32 @@ namespace DwarfMapper.Generator.Pipeline
                     ctx.SemanticModel.Compilation,
                     nestedLocation,
                     diagnostics,
-                    caseInsensitive,
+                    new MapperOptions(
+                        CaseInsensitive: caseInsensitive,
+                        AutoNest: pairAutoNest,
+                        NullAsNull: nullCollections == NullCollectionsBehavior.AsNull,
+                        IsPreserve: isPreserveMode,
+                        IsSetNull: isSetNullMode,
+                        ImplicitConversions: implicitConversions,
+                        NameConvention: 0,
+                        // A synthesized nested pair honours its own [MapNullSkip<S,T>] if the author declared
+                        // one, otherwise the enclosing class's policy. Without the pair-scoped lookup the
+                        // enclosing class's value is the ONLY input, which is how one logical nested pair
+                        // reached from two classes ended up with opposite null semantics.
+                        SkipNullSourceMembers: ResolveNullSkip(pairNullSkips, null, nestedSrc, nestedTgt, skipNullSrc),
+                        AllowNonPublic: allowNonPublic,
+                        // FALSE on purpose: this is the auto-synthesized NESTED mapper. Explicit-only guards
+                        // the TOP-LEVEL trust boundary; reaching a nested pair already required the developer
+                        // to map that edge explicitly (top-level auto-nest is blocked by DWARF072), so the
+                        // nested contents map normally. Propagating it would give every nested member DWARF072
+                        // — a synthesized mapper has no [MapProperty] to satisfy it — making nested objects
+                        // unmappable. For a nested trust boundary, declare that pair's own
+                        // [DwarfMapper(AutoMatchMembers = false)] mapper.
+                        ExplicitOnly: false,
+                        // IgnoreObsolete DOES propagate, unlike ExplicitOnly: skipping an obsolete nested
+                        // member just leaves it at its default — safe and consistent, with no "unmappable"
+                        // hazard.
+                        IgnoreObsolete: ignoreObsolete),
                     nestedExplicit, // pair-scoped [MapProperty<S,T>] (empty when none declared)
                     allMethods,
                     mapperMethods,
@@ -2265,30 +2295,10 @@ namespace DwarfMapper.Generator.Pipeline
                     new List<string>(), // no flatten/reinterpret
                     nestedConsumed,
                     nestedRequiredMustInit,
-                    pairAutoNest,
                     nestedRegistry,
-                    nullCollections == NullCollectionsBehavior.AsNull,
-                    isPreserveMode,
-                    isSetNullMode,
-                    implicitConversions,
                     MatchPairValues(pairValues, nestedTgt),
                     valueProviders,
-                    // NOT explicitOnly: this is the auto-synthesized NESTED mapper. Explicit-only guards the
-                    // TOP-LEVEL trust boundary; reaching a nested pair already required the developer to map that
-                    // edge explicitly (top-level auto-nest is blocked by DWARF072), so the nested contents map
-                    // normally. Propagating here would give every nested member DWARF072 — a synthesized mapper has
-                    // no [MapProperty] to satisfy it — making nested objects unmappable. For a nested trust
-                    // boundary, declare that pair's own [DwarfMapper(AutoMatchMembers = false)] mapper.
-                    // ignoreObsolete DOES propagate (unlike explicitOnly): skipping an obsolete nested member just
-                    // leaves it at its default — safe and consistent — with no "unmappable" hazard.
                     mapPropertyExtras: nestedExtras,
-                    // A synthesized nested pair honours its own [MapNullSkip<S,T>] if the author declared one,
-                    // otherwise the enclosing class's policy. Without the pair-scoped lookup the enclosing
-                    // class's value is the ONLY input, which is how one logical nested pair reached from two
-                    // classes ended up with opposite null semantics.
-                    skipNullSourceMembers: ResolveNullSkip(pairNullSkips, null, nestedSrc, nestedTgt, skipNullSrc),
-                    allowNonPublic: allowNonPublic,
-                    ignoreObsolete: ignoreObsolete,
                     // A synthesized nested mapper must not adopt a dedicated converter either — the author
                     // never wrote this pair, so they certainly did not offer it one.
                     mapperReservedConverters: mapperReservedConverters,
