@@ -90,9 +90,12 @@ if ($Nightly) {
 # makes the gate hold under both `-Coverage` and `-Nightly` (-Deep -Coverage) rather than only the tier
 # that happened to be measured.
 #
-# RE-MEASURED 2026-08-26 (round 27), both tiers, and this time they agree to the printed decimal on every
-# assembly — so the minimum and the deep-tier value are the same number and the note above is history
-# rather than a live caveat. Three floors move, all upward:
+# Re-measured 2026-08-26 (round 27) — BOTH tiers, and this time they agree to the printed decimal on every
+# assembly, so the minimum and the deep-tier value are the same number and the caveat above is history
+# rather than a live constraint:
+#   DwarfMapper 91.5/79.5 · Generator 94.5/88.9 · DocTooling 96.3/92.1 · CodeFixes 96.2/88.6 · Testing 87.1/84.6
+#
+# Three floors move, all upward, each in the same commit as the work that earned it:
 #
 #   Generator  93.4 -> 94.5   the seam-stage coverage work
 #   CodeFixes  88.8 -> 96.2   the code-fix leg's kill program, 43 tests
