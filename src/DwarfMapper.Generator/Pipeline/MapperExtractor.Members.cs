@@ -533,60 +533,8 @@ namespace DwarfMapper.Generator.Pipeline
             // after [MapProperty] (so conflicts are caught) and before AUTO matching. A [MapValue]'d target
             // counts as mapped, suppressing DWARF001. The projection resolver reads the directive in the SAME
             // position for the same reason, through the SAME validation below.
-            foreach (var mv in mapValues ??
-                               Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
-                                   string? Use, string? ConstLiteral)>())
-            {
-                var mvTgt = mv.Target;
-                if (!TryValidateMapValueTarget(mvTgt,
-                        handledTargets,
-                        ignores,
-                        name => consumedCtorParams is not null && consumedCtorParams.Contains(name),
-                        writableByName,
-                        name => sourceGroups.ContainsKey(flexible ? NormalizeName(name) : name),
-                        location,
-                        diagnostics,
-                        out var mvTgtType))
-                {
-                    continue;
-                }
-
-                if (mv.IsConstant)
-                {
-                    string literal;
-                    if (mv.ConstLiteral is not null)
-                    {
-                        literal = mv.ConstLiteral;
-                    }
-                    else if (!TryFormatConstant(mv.Value, mvTgtType, compilation, out literal, out var why))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, location, why));
-                        continue;
-                    }
-
-                    result.Add(new MemberMap(mvTgt, "", ValueExpression: literal));
-                }
-                else if (mv.Use is not null)
-                {
-                    var provider = (valueProviders ?? Array.Empty<(string Name, ITypeSymbol ReturnType)>())
-                        .FirstOrDefault(p => StringComparer.Ordinal.Equals(p.Name, mv.Use));
-                    if (provider.Name is null || !HasImplicitConversion(compilation, provider.ReturnType, mvTgtType))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueUseInvalid,
-                            location,
-                            $"[MapValue(Use = \"{mv.Use}\")] for '{mvTgt}' must name a parameterless method whose return type is assignable to '{mvTgtType.ToDisplayString()}'"));
-                        continue;
-                    }
-
-                    result.Add(new MemberMap(mvTgt, "", ValueExpression: mv.Use + "()"));
-                }
-                else
-                {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid,
-                        location,
-                        $"[MapValue] for '{mvTgt}' provides neither a constant value nor Use="));
-                }
-            }
+            ResolveMapValues(compilation, location, diagnostics, ignores, mapValues, valueProviders, consumedCtorParams,
+                lookups, acc);
 
             // AUTO: remaining writable targets matched by name under the comparer.
             var targets = WritableMembers(targetType, compilation, options.AllowNonPublic)
