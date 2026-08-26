@@ -51,7 +51,7 @@ Status values: `TODO` · `WIP` · `DONE` · `BLOCKED` · `DROPPED` (with a reaso
 | # | Task | Status | Verification |
 |---|---|---|---|
 | 1.0 | **R27-00** — REG-02's optional-parameter ban | **DONE** `78bc275` | `ResolverParameterDisciplineTests`; 31-row shrink-only allowlist |
-| 1.1 | **R27-01** — prove seam reach: every `ExtractCore` phase exercised by ≥1 golden case | TODO | gaps become corpus additions landing *ahead* of any move |
+| 1.1 | **R27-01** — prove seam reach: every `ExtractCore` phase exercised by ≥1 golden case | **DONE** | **26 / 26 phases reached**, 1,225 covered lines; `scripts/seam-reach.ps1` re-runs it |
 | 1.2 | **R27-02** — `ExtractionContext`, methods only (model records excluded, C4) | TODO | 0.5/1.0 allowlist shrinks as sites migrate |
 | 1.3 | **R27-03** — decompose `ExtractCore` (3,556 lines, ~20 phases) | TODO | one phase per commit, byte-identical each time |
 | 1.4 | **R27-03b** — derive seams for the other three giants, then decompose | TODO | seam proposal lands as a **comment-only commit** first |
