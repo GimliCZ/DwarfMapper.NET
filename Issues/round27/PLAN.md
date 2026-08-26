@@ -168,7 +168,25 @@ one motion. A structure ratchet pins each phase at its **measured** post-split l
 
 *Red-when:* any emitted byte moves during a structural commit; any phase grows past its measured row.
 
-### [R27-04] `RegistryTable<TDelegate>` — one implementation, two instances
+### [R27-03b] Seam analysis, then decomposition, for the other three giants — *in scope*
+
+`ResolveFlattenGraphDirectives` (852 LLOC / CC 130), `ResolveMembers` (665 / 149) and `TryResolveConversion`
+(623 / 148) all score **MI 0.0**, identically to `ExtractCore`. Unlike it they carry **no seam-comment
+structure to cut along**, so each needs its seams *derived* before anything moves:
+
+1. identify phase boundaries from data flow (which locals are live across which regions);
+2. propose the cut, and write it into the method as seam comments **in a comment-only commit**;
+3. verify corpus reach for the proposed phases (the R27-01 instrument, reused);
+4. only then extract, one phase per commit, under the byte-identity lock.
+
+Step 2 is deliberately its own commit: it makes the proposed decomposition reviewable *before* any code moves,
+which is the only cheap moment to disagree with it.
+
+*Red-when:* same locks as R27-03 — any emitted byte moves; any phase exceeds its measured row.
+*Risk, accepted:* this roughly doubles the round. Recorded here so a mid-round decision to stop after
+`ExtractCore` is a scope change made on purpose rather than a failure.
+
+### [R27-04] `RegistryTable<TDelegate>` — one implementation, two instances — *in scope*
 
 As the RFC wrote it: extract `Register/TryGet/IsProvided/IsAmbiguous` plus the base/interface walk into a
 generic; public surface stays byte-compatible via thin forwarders. The round-13 torture suite becomes
@@ -190,29 +208,72 @@ Deferred to its natural trigger (when the R25 conversion rows land). Unchanged f
 
 ### [R27-07] Repo hygiene — the "entire solution" part
 
-- `CLAUDE.md` carries two open decisions dated 2026-07-26. The file's own header says to delete each item once
-  decided, and warns that a stale copy "has become the kind of stale prose the rest of this repository is
-  built to prevent." Decide both, then delete them.
+- `CLAUDE.md`'s two open decisions dated 2026-07-26 are now **decided** (§5) and must be deleted from that
+  file, as its own header demands — it warns that a stale copy "has become the kind of stale prose the rest of
+  this repository is built to prevent."
+  - **Orphan rule → strict.** Every snippet region must be referenced by some document, `[DocExample]`
+    regions included. Deliverable: a **generated illustrated Gallery README** quoting all 32 regions inline,
+    plus removing the `[DocExample]` exemption from
+    `DocReconciliationTests.No_snippet_region_outside_a_declared_example_is_orphaned`.
+    *Red-when:* a region exists that no document quotes.
+  - **`CaseInsensitive` fence → stays exempt.** Converting it would buy one snippet-backed fence for a
+    permanent analyzer suppression in the Gallery; the remaining 8 exemptions stay accounted for with the
+    allowlist empty.
 - The round-20 plan file under `.claude/plans/` describes work long since landed.
 - Two known harness bugs, filed but unfixed: the AOT stale-binary guard false positive, and the
   reproducible-build script not replicating CI's job.
 
 ---
 
-## 5. Recommended scope, and the decision left open
+## 5. Scope — decided
 
-**Recommended for this round:** R27-00, R27-01, R27-02, R27-03, R27-05, R27-07.
+**In scope: R27-00, R27-01, R27-02, R27-03, R27-03b, R27-04, R27-05, R27-07.**
+**Deferred: R27-06** (`ConversionPolicy`), whose trigger — the R25 conversion rows landing — has not fired.
 
-R27-00 closes a live hazard for very little work. R27-01 must precede any motion. R27-02 → R27-03 are the
-round's substance, and the measured growth makes them urgent. R27-05 and R27-07 are independent and cheap.
-R27-04 is genuinely valuable but the drift it guards has not recurred; R27-06 has an explicit trigger that has
-not fired.
+Four decisions were put to the maintainer with a recommendation each; **two were overruled**, and both
+overrules are recorded here as decisions rather than quietly absorbed.
 
-**The open decision is the three other giants** — `ResolveFlattenGraphDirectives` (852 LLOC), `ResolveMembers`
-(665), `TryResolveConversion` (623). Recommendation: **file them for round 28** rather than absorb them.
-R27-03 alone is ~20 commits, and the seam-comment mechanic that makes `ExtractCore` mechanically splittable
-does not obviously exist in the other three — each needs its own seam analysis first. Taking them on now risks
-a round that lands half-finished, which is worse for a refactor round than a smaller one that completes.
+| decision | recommended | **taken** |
+|---|---|---|
+| decomposition scope | `ExtractCore` only, file the rest for R28 | **all four giants** |
+| R27-04 `RegistryTable` | defer | **include** |
+| orphan rule (`CLAUDE.md` #1) | keep scoped | **make strict** |
+| `CaseInsensitive` fence (`CLAUDE.md` #2) | keep exempt | keep exempt |
+
+**On the scope overrule.** The recommendation to defer rested on *tractability*, not severity: the MI scan
+shows the other three at 0.0, exactly like `ExtractCore`, so on damage they are equally urgent. What they lack
+is the seam-comment structure that makes `ExtractCore` mechanically splittable. R27-03b therefore adds an
+explicit seam-derivation step with the proposal landing as a **comment-only commit**, so the cut is reviewable
+before any code moves. The round roughly doubles; the stopping point after `ExtractCore` stays available as a
+deliberate scope change.
+
+**On the orphan rule overrule.** Strict means all 32 Gallery regions must be quoted by some document. The
+deliverable is a generated, illustrated Gallery README quoting every region inline — long, but fully generated,
+so the cost is page length rather than maintenance. This lands in R27-07 together with deleting both
+now-decided items from `CLAUDE.md`, as that file's own header demands.
+
+### Maintainability scan — the evidence behind the scope
+
+Method-level MI uses the Visual Studio formula with Halstead volume computed directly (`roslyn-lens` supplies
+cyclomatic/cognitive/LLOC but not Halstead).
+
+| method | MI | band | CC | LLOC |
+|---|---:|---|---:|---:|
+| `ExtractCore` | **0.0** | LOW | 408 | 2,474 |
+| `ResolveMembers` | **0.0** | LOW | 149 | 665 |
+| `TryResolveConversion` | **0.0** | LOW | 148 | 623 |
+| `ResolveFlattenGraphDirectives` | **0.0** | LOW | 130 | 852 |
+| `EmitMethod` | 6.9 | LOW | 82 | 322 |
+| `ResolveProjectionMembers` | 5.0 | LOW | 72 | 353 |
+| `ResolveProjectionExpr` | 11.9 | MODERATE | 53 | 257 |
+| `ReadMapConfig` | 14.4 | MODERATE | 42 | 233 |
+
+Two limits, stated rather than hidden. **MI floors at 0**, so the top four are "below the scale" and cannot be
+ranked against each other by MI — the components do that. And the file-level sweep estimates cyclomatic
+complexity by regex, so file MI is indicative where method MI is solid.
+
+**13 of 60 generator files fall in the LOW band; 40 are GOOD.** The damage is concentrated in `Pipeline/`
+rather than spread through the codebase, which is precisely what makes a bounded refactor round viable.
 
 ---
 
