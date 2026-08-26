@@ -74,12 +74,46 @@ namespace DwarfMapper.IntegrationTests
     /// </summary>
     public sealed class PolymorphicMemberFuzzTests
     {
+        /// <summary>
+        ///     A profile whose abstract member and dictionary values are all MATERIALISED, found by walking
+        ///     seeds from <paramref name="from" />.
+        /// </summary>
+        /// <remarks>
+        ///     These tests are about polymorphic DISPATCH, which needs a non-null abstract member to dispatch
+        ///     on. Under the old ObjectFactory a fixed seed always produced one, because that factory never
+        ///     returned null for anything. The merged factory draws nulls deliberately — that was the fuzz
+        ///     suite's largest blind spot — so a fixed seed is no longer a reliable way to get a populated
+        ///     graph, and pinning one would make these tests pass or fail on which seed happened to be lucky.
+        ///     <para>
+        ///         Walking is deterministic (the seed sequence is fixed), so a failure still replays exactly.
+        ///         Running out of seeds fails loudly rather than silently testing the null path, which is the
+        ///         precondition <c>The_fixture_factory_populates_an_abstract_member_rather_than_nulling_it</c>
+        ///         exists to guard.
+        ///     </para>
+        /// </remarks>
+        private static AlertProfile PopulatedProfile(int from)
+        {
+            for (var seed = from; seed < from + 500; seed++)
+            {
+                var p = ObjectFactoryV2.Create<AlertProfile>(seed);
+                if (p.Primary is not null && p.ByChannel is { Count: > 0 } && p.ByChannel.Values.All(v => v is not null))
+                {
+                    return p;
+                }
+            }
+
+            Assert.Fail($"No seed in [{from}, {from + 500}) produced a fully-materialised AlertProfile. Either "
+                + "abstract substitution regressed, or NullProbability has been raised so far that these "
+                + "dispatch tests can no longer get a graph to dispatch on.");
+            return null!;
+        }
+
         [Fact]
         public void The_fixture_factory_populates_an_abstract_member_rather_than_nulling_it()
         {
             // The precondition. If this regresses, every mapping assertion below silently starts testing the
             // null path instead — which is exactly how nine phantom failures were produced.
-            var profile = ObjectFactory.Create<AlertProfile>(11);
+            var profile = PopulatedProfile(11);
 
             Assert.NotNull(profile.Primary);
             Assert.IsAssignableFrom<AlertRule>(profile.Primary);
@@ -90,7 +124,7 @@ namespace DwarfMapper.IntegrationTests
         {
             // The exact Round-18 shape: Dictionary<K, AbstractValue>. A null VALUE here is indistinguishable
             // from a mapper bug when the graph is replayed against a mapper that (correctly) refuses nulls.
-            var profile = ObjectFactory.Create<AlertProfile>(7);
+            var profile = PopulatedProfile(7);
 
             Assert.NotEmpty(profile.ByChannel);
             Assert.All(profile.ByChannel.Values, Assert.NotNull);
@@ -113,7 +147,7 @@ namespace DwarfMapper.IntegrationTests
         [MemberData(nameof(GraphSeeds))]
         public void Mapping_a_fuzzed_abstract_membered_graph_dispatches_on_the_runtime_type(int seed)
         {
-            var profile = ObjectFactory.Create<AlertProfile>(seed);
+            var profile = PopulatedProfile(seed);
             var dto = new AlertProfileMappers().ToDto(profile);
 
             Assert.Equal(profile.Owner, dto.Owner);
@@ -133,7 +167,7 @@ namespace DwarfMapper.IntegrationTests
         [Fact]
         public void Every_abstract_dictionary_value_survives_the_map()
         {
-            var profile = ObjectFactory.Create<AlertProfile>(13);
+            var profile = PopulatedProfile(13);
             var dto = new AlertProfileMappers().ToDto(profile);
 
             Assert.Equal(profile.ByChannel.Count, dto.ByChannel.Count);
@@ -151,8 +185,8 @@ namespace DwarfMapper.IntegrationTests
         {
             // Fixtures must be reproducible or a failure cannot be re-run. Candidates are ordered by full name
             // before the draw precisely so the choice does not drift with assembly enumeration order.
-            var a = ObjectFactory.Create<AlertProfile>(4);
-            var b = ObjectFactory.Create<AlertProfile>(4);
+            var a = PopulatedProfile(4);
+            var b = PopulatedProfile(4);
 
             Assert.Equal(a.Primary.GetType(), b.Primary.GetType());
             Assert.Equal(a.Primary.Name, b.Primary.Name);

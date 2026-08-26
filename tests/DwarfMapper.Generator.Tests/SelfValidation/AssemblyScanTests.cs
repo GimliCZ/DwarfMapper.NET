@@ -617,7 +617,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         // The replacement asks the question by running it. CollectionCoverageSelfValidationTests reads the same
         // enum reflectively — so a new value cannot escape by being added after this deletion — and then
         // demands the value actually be EMITTED: once by the combinatorial matrix (crossed against widening,
-        // cycle mode, update-into and null strategy) and once by the fuzz schema, with ObjectFactory proven to
+        // cycle mode, update-into and null strategy) and once by the fuzz schema, with ObjectFactoryV2 proven to
         // populate the shape with real elements. That is the check that caught the IEnumerable<T> aliasing bug
         // this scan's text search sat green through.
         // ─────────────────────────────────────────────────────────────────────────

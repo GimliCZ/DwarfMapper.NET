@@ -38,7 +38,7 @@ Status values: `TODO` · `WIP` · `DONE` · `BLOCKED` · `DROPPED` (with a reaso
 | 0.7 | **A1** — mark infrastructure `[EditorBrowsable(Never)]` | TODO | no signature change; API baseline unchanged |
 | 0.8 | **A2** — `DwarfRefContext` ctor: kill the two adjacent optional bools | TODO | **emitted-bytes change** — reviewed re-bless, 28 positional sites become named |
 | 0.9 | **Audit** — member-by-member review of the 278 entries + `DwarfMapper.Testing` | TODO | every entry classified consumer / infrastructure / vestigial |
-| 0.10 | **R27-08** — settle the two overlapping object factories (blocks the `Testing` freeze) | **BLOCKED** | replacement attempted, measured, reverted — see `FINDING-object-factory-v2-is-not-a-superset.md`. V2 needs V1's three fixes ported in first. |
+| 0.10 | **R27-08** — the two object factories merged into one | **DONE** | V1's three fixes ported into V2, V1 deleted, 28 call sites repointed; suite 8,219 green |
 | 0.11 | **Promote** `Unshipped` → `Shipped` — arm the stability ratchet | TODO | analyzer refuses removals afterwards; CHANGELOG entry |
 | 0.12 | **Axis 1** — `Discovery` property + Gallery-coverage gate | TODO | `Infrastructure` value asserts the *inverse* — presence in Gallery fails |
 | 0.13 | **Gallery examples** — ~10–11 for Conformance-proven-but-undiscoverable attributes | TODO | one work item with 0.14 |

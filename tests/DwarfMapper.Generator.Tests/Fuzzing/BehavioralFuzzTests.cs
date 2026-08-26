@@ -38,7 +38,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var mapper = Activator.CreateInstance(mapperType)!;
             var map = mapperType.GetMethod("Map")!;
 
-            var srcInstance = ObjectFactory.Create(srcType, new Random(seed), 0)!;
+            var srcInstance = ObjectFactoryV2.Create(srcType, new Random(seed), 0)!;
             var dstInstance = map.Invoke(mapper,
                 new[]
                 {
@@ -128,6 +128,23 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             }
 
             if (sv is null && dv is null)
+            {
+                return;
+            }
+
+            // A NULL source collection maps to an EMPTY destination collection: DwarfMapper's documented
+            // default (NullCollections = NullCollectionStrategy.AsEmpty), not a value-preservation failure.
+            //
+            // This is the THIRD copy of this rule. GraphOracleComparer had it and explains why it had to
+            // exist — "until the fuzzers generated nulls at all this pair was unreachable" — and that became
+            // true on 2026-08-26 when the merged object factory started drawing nulls. CrossTypeComparer
+            // needed it next, and this private comparer needed it third. Three comparers with three copies of
+            // one rule is itself the finding; it is recorded in Issues/round27 rather than fixed here, because
+            // consolidating them is a refactor and this commit is a behaviour change.
+            //
+            // Under an explicit NullCollections = AsNull the mapper yields null, which the null==null case
+            // above already accepts, so this is correct for both settings.
+            if (sv is null && dv is System.Collections.IEnumerable dvEmpty && !dvEmpty.GetEnumerator().MoveNext())
             {
                 return;
             }

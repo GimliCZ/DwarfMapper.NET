@@ -8,7 +8,6 @@ DwarfMapper.Testing.MemberDiff.Actual.get -> string?
 DwarfMapper.Testing.MemberDiff.Expected.get -> string?
 DwarfMapper.Testing.MemberDiff.MemberDiff(string! path, string? expected, string? actual) -> void
 DwarfMapper.Testing.MemberDiff.Path.get -> string!
-DwarfMapper.Testing.ObjectFactory
 DwarfMapper.Testing.ObjectFactoryV2
 DwarfMapper.Testing.RoundTrip
 DwarfMapper.Testing.RoundTripException
@@ -27,9 +26,6 @@ static DwarfMapper.Testing.GraphOracleComparer.TopologyDiff(object? srcRoot, obj
 static DwarfMapper.Testing.GraphOracleComparer.TopologyPreserved(object? srcRoot, object? tgtRoot) -> bool
 static DwarfMapper.Testing.GraphOracleComparer.ValueDiff(object? expected, object? actual, string! rootPath = "root") -> System.Collections.Generic.IReadOnlyList<string!>!
 static DwarfMapper.Testing.GraphOracleComparer.ValueEqual(object? expected, object? actual) -> bool
-static DwarfMapper.Testing.ObjectFactory.Create(System.Type! type, System.Random! rng, int depth) -> object?
-static DwarfMapper.Testing.ObjectFactory.Create<T>() -> T
-static DwarfMapper.Testing.ObjectFactory.Create<T>(int seed) -> T
 static DwarfMapper.Testing.ObjectFactoryV2.Create(System.Type! type, System.Random! rng, int depth) -> object?
 static DwarfMapper.Testing.ObjectFactoryV2.Create(System.Type! type, System.Random! rng, int depth, bool allowNull) -> object?
 static DwarfMapper.Testing.ObjectFactoryV2.Create<T>() -> T

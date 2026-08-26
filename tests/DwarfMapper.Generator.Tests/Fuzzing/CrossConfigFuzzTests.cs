@@ -51,7 +51,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var srcType = asm.GetType("Fuzz.Src")!;
             var mapperType = asm.GetType("Fuzz.FuzzMapper")!;
             var mapper = Activator.CreateInstance(mapperType)!;
-            var instance = ObjectFactory.Create(srcType, new Random(seed), 0)!;
+            var instance = ObjectFactoryV2.Create(srcType, new Random(seed), 0)!;
             var dst = mapperType.GetMethod("Map")!.Invoke(mapper,
                 new[]
                 {
@@ -97,7 +97,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var mapperType = asm.GetType("Fuzz.FuzzMapper")!;
             var mapper = Activator.CreateInstance(mapperType)!;
 
-            var instance = ObjectFactory.Create(srcType, new Random(seed), 0)!;
+            var instance = ObjectFactoryV2.Create(srcType, new Random(seed), 0)!;
             var dst = Activator.CreateInstance(dstType)!;
             mapperType.GetMethod("Update")!.Invoke(mapper,
                 new[]

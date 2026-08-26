@@ -204,18 +204,45 @@ namespace DwarfMapper.Generator.Tests
             // The mirror-image hole: a shape the schema CAN emit but the factory cannot fill is just as invisible.
             // Interface-typed members came back null, and sets/dictionaries came back empty, so the fuzzers were
             // comparing nothing at all for those members.
-            var instance = ObjectFactory.Create(type, new Random(12345), 0);
+            //
+            // SAMPLED ACROSS SEEDS since 2026-08-26, when the two object factories were merged. The survivor
+            // draws EMPTY collections on purpose — V1 never producing one was part of the same blind spot as
+            // never producing null — so a single fixed seed no longer distinguishes "the factory cannot fill
+            // this shape" from "this seed happened to draw empty". Requiring the shape to be filled SOMETIMES
+            // still catches the hole this test exists for: a shape the factory can never populate has no
+            // populated draw among 60 seeds.
+            const int seeds = 60;
+            var populated = 0;
+            var nulls = 0;
 
-            Assert.True(instance is not null, $"ObjectFactory returned NULL for {type.Name} — every fuzz test " + "silently skipped this shape.");
-
-            var count = instance switch
+            for (var seed = 0; seed < seeds; seed++)
             {
-                ICollection c => c.Count,
-                IEnumerable e => e.Cast<object?>().Count(),
-                _ => 0
-            };
+                var instance = ObjectFactoryV2.Create(type, new Random(seed), 0);
+                if (instance is null)
+                {
+                    nulls++;
+                    continue;
+                }
 
-            Assert.True(count > 0, $"ObjectFactory produced an EMPTY {type.Name} — the fuzzers were comparing " + "zero elements, so any element-level bug in this shape was unreachable.");
+                var n = instance switch
+                {
+                    ICollection c => c.Count,
+                    IEnumerable e => e.Cast<object?>().Count(),
+                    _ => 0
+                };
+
+                if (n > 0)
+                {
+                    populated++;
+                }
+            }
+
+            Assert.True(nulls < seeds, $"ObjectFactoryV2 returned NULL for {type.Name} on every one of {seeds} "
+                + "seeds — every fuzz test silently skips this shape.");
+
+            Assert.True(populated > 0, $"ObjectFactoryV2 never produced a NON-EMPTY {type.Name} across {seeds} "
+                + "seeds — the fuzzers are comparing zero elements, so any element-level bug in this shape is "
+                + "unreachable.");
         }
     }
 }

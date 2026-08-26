@@ -9,7 +9,7 @@ namespace DwarfMapper.Testing
         public static IEnumerable<T> Generate<T>(int count, int seed = 0)
         {
             var rng = new Random(seed);
-            for (var i = 0; i < count; i++) yield return (T)ObjectFactory.Create(typeof(T), rng, 0)!;
+            for (var i = 0; i < count; i++) yield return (T)ObjectFactoryV2.Create(typeof(T), rng, 0)!;
         }
     }
 }

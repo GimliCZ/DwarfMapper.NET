@@ -71,6 +71,31 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
                 return;
             }
 
+            // A NULL source collection maps to an EMPTY destination collection: that is DwarfMapper's
+            // documented default (NullCollections = NullCollectionStrategy.AsEmpty), not a value-preservation
+            // failure.
+            //
+            // GraphOracleComparer already encodes this rule and says why it had to be: "until the fuzzers
+            // generated nulls at all this pair was unreachable". That became true here on 2026-08-26, when the
+            // two object factories were merged and the survivor started drawing nulls — five
+            // Round_trip_is_idempotent seeds and several CrossConfig pairs failed at once, every one of them
+            // reporting `expected <null>, actual List<...>`. The rule existed in the shipped comparer and was
+            // simply absent from this test-local one; two comparers, one of them taught.
+            //
+            // Under an explicit NullCollections = AsNull the mapper yields null, which the null==null case
+            // above already accepts, so this is correct for both settings. What it cannot catch is an AsNull
+            // mapper wrongly producing empty — noted deliberately, because the alternative is not fuzzing null
+            // collections at all, which is strictly worse.
+            if (a is null && b is IEnumerable bEmpty && ToList(bEmpty).Count == 0)
+            {
+                return;
+            }
+
+            if (b is null && a is IEnumerable aEmpty && ToList(aEmpty).Count == 0)
+            {
+                return;
+            }
+
             if (a is null || b is null)
             {
                 diffs.Add(new Diff(path, Fmt(a), Fmt(b)));

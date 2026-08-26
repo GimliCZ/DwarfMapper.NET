@@ -36,7 +36,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var forward = mapperType.GetMethod("Forward")!;
             var backward = mapperType.GetMethod("Backward")!;
 
-            var original = ObjectFactory.Create(srcType, new Random(seed), 0)!;
+            var original = ObjectFactoryV2.Create(srcType, new Random(seed), 0)!;
             var there = forward.Invoke(mapper,
                 new[]
                 {
@@ -72,7 +72,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var mapper = Activator.CreateInstance(mapperType)!;
             var update = mapperType.GetMethod("Update")!;
 
-            var source = ObjectFactory.Create(srcType, new Random(seed), 0)!;
+            var source = ObjectFactoryV2.Create(srcType, new Random(seed), 0)!;
             var dst = Activator.CreateInstance(dstType)!;
 
             update.Invoke(mapper,

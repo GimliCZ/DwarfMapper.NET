@@ -388,7 +388,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         //
         // CollectionCoverageSelfValidationTests reads the same enum reflectively — a new value still cannot
         // escape — and then demands the value be EMITTED by the combinatorial matrix and by the fuzz schema,
-        // with ObjectFactory proven to populate the shape. Deleting Scan6b and leaving this one would have made
+        // with ObjectFactoryV2 proven to populate the shape. Deleting Scan6b and leaving this one would have made
         // that fix cosmetic.
         // ─────────────────────────────────────────────────────────────────────────
 

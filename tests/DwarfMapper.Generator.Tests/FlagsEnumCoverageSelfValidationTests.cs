@@ -39,7 +39,7 @@ namespace DwarfMapper.Generator.Tests
             // The property that matters is not "it returns a Probe" but "it returns values that are NOT declared
             // members" — because a declared member is exactly what the broken converter could already handle.
             var produced = Enumerable.Range(0, 200)
-                .Select(seed => (Probe)ObjectFactory.Create(typeof(Probe), new Random(seed), 0)!)
+                .Select(seed => (Probe)ObjectFactoryV2.Create(typeof(Probe), new Random(seed), 0)!)
                 .ToList();
 
             var declared = new HashSet<Probe>(Enum.GetValues<Probe>());

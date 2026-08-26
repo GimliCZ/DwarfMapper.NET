@@ -30,7 +30,7 @@ namespace DwarfMapper.Testing
             for (var i = 0; i < iterations; i++)
             {
                 var itemSeed = rng.Next();
-                var original = ObjectFactory.Create<TSource>(itemSeed);
+                var original = ObjectFactoryV2.Create<TSource>(itemSeed);
                 var roundTripped = backward(forward(original));
                 var diffs = StructuralComparer.Diff(original, roundTripped);
                 if (diffs.Count > 0)

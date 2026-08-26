@@ -47,7 +47,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             var mapper = Activator.CreateInstance(mapperType)!;
             var map = mapperType.GetMethod("Map")!;
 
-            var original = ObjectFactory.Create(srcType, new Random(seed), 0)!;
+            var original = ObjectFactoryV2.Create(srcType, new Random(seed), 0)!;
             var mapped = map.Invoke(mapper,
                 new[]
                 {
