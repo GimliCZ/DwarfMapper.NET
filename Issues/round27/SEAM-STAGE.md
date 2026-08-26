@@ -114,6 +114,18 @@ prologue, folding in the obsolete members; by the time the request is built it i
 `reservedConverters` is the mirror case on the lookups side: mutable-looking, written only in the prologue.
 Guessing would have misplaced at least three of these.
 
+**The grep has a blind spot, and it was found by using it twice.** A write-site scan sees only assignments in
+the text it scans — it cannot see mutation through a callee. Running it over `TryResolveConversion` reported
+`synthesized` as read-only, which is true of that method's own text and false in effect: it is handed to
+helpers that write into it. Re-checking `MemberRequest` against that discovery found one field where the same
+thing was already true, `NestedRegistry`, which passes consult and register nested maps into.
+
+It stays in the request, and the record says why rather than glossing it: the passes' relationship to it is
+ask-and-register — a collaborator — not fill-for-the-caller-to-drain, which is what the accumulators are.
+`synthesized` is kept out of the conversion request for the same reason read the other way: nothing consults
+it, helpers only write into it. **For anything with mutating members, check the argument positions, not just
+the assignments.**
+
 Three parameters are deliberately **absent** from all three bundles — `flattenRoots`, `mapPropertyExtras` and
 `mapperReservedConverters` are consumed by the prologue to build the lookups and no pass reads them again. A
 bundle carrying fields nobody reads misrepresents what resolution depends on.

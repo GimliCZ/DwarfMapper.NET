@@ -12,7 +12,8 @@ namespace DwarfMapper.Generator.Pipeline
     {
         /// <summary>
         ///     What member resolution was ASKED to do: the two types, the directives read off the attributes, and
-        ///     the surrounding facts a pass needs to judge a member. Read-only for the whole of resolution.
+        ///     the surrounding facts a pass needs to judge a member. No pass reassigns any of it, and only
+        ///     <see cref="NestedRegistry" /> is mutated at all -- see the remarks, which say how and why.
         /// </summary>
         /// <remarks>
         ///     <para>
@@ -26,6 +27,16 @@ namespace DwarfMapper.Generator.Pipeline
         ///         and are therefore accumulators, not request fields, however much they read like inputs.
         ///         <c>ignores</c> IS written — but only in the prologue, folding in the obsolete members — so by the
         ///         time this record is built it is settled, and it belongs here.
+        ///     </para>
+        ///     <para>
+        ///         <b><see cref="NestedRegistry" /> is the exception, and is named rather than glossed.</b> A
+        ///         write-site grep over this method's own text reports it read-only, which is true and misleading:
+        ///         the passes hand it to helpers that register nested maps into it, so it IS mutated, just not
+        ///         here. It stays in the request because the passes' relationship to it is ask-and-register — a
+        ///         collaborator they consult and extend — rather than an output channel they fill for the caller to
+        ///         drain, which is what the accumulators are. The general lesson is worth more than the placement:
+        ///         a textual write-site scan cannot see mutation through a callee, so for anything with mutating
+        ///         members the argument positions have to be checked too.
         ///     </para>
         ///     <para>
         ///         Three of <c>ResolveMembers</c>' parameters are deliberately absent: <c>flattenRoots</c>,
