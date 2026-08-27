@@ -600,7 +600,10 @@ try {
         # (Issues/round27/AUDIT-mutation-scope.md).
         Write-Host '== 4/4e Mutation testing (member-resolution phases) ==' -ForegroundColor Cyan
         $legStart = Get-Date
-        $legExit = Invoke-StrykerLeg -Leg 'pipeline' -ConfigFile 'stryker-config.pipeline.json' -TimeoutMinutes 60
+        # 90, not 60: MEASURED at 37 minutes, and the repo's precedent is ~2x measured (the generator leg
+        # runs 31 and is fused at 60). A 60-minute fuse was the first guess here and a contended run blew
+        # straight through it, reporting a HANG for a leg that was simply still working.
+        $legExit = Invoke-StrykerLeg -Leg 'pipeline' -ConfigFile 'stryker-config.pipeline.json' -TimeoutMinutes 90
         if ($legExit) { throw 'mutation score below break threshold (pipeline)' }
         Assert-MutantsWereTested -Leg 'pipeline' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'pipeline' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `

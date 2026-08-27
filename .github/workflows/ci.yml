@@ -232,9 +232,15 @@ jobs:
           # cores, which is past this job's ceiling however generously it is budgeted — GitHub caps a job
           # at six hours and the rule here is ~10x measured. The remaining ten files are covered one area
           # per leg, each sized to complete (Issues/round27/AUDIT-mutation-scope.md).
-          - leg: pipeline     # measured 2026-08-27, 12 cores; 944 lines, ~190 tested mutants
+          # TIMEOUT DEPARTS FROM THE ~10x RULE, deliberately. Measured 2026-08-27 on 12 cores: 37 min for
+          # 236 tested mutants (of 13,129 created; 9,583 filtered out-of-leg, 3,240 compile errors). 10x is
+          # 370, which BREACHES the 360-minute ceiling GitHub puts on a job — so 350 is the most this rule
+          # can ask for, and a leg that needs more than this is by definition too big. That is the size
+          # ceiling the one-area-per-leg policy implies; the four sibling legs sit at 5-20 min and fit the
+          # rule with room to spare.
+          - leg: pipeline     # measured 37:00 (2026-08-27, 12 cores, 236 tested mutants)
             config: stryker-config.pipeline.json
-            timeout: 120
+            timeout: 350
     timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
