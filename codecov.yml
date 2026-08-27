@@ -2,25 +2,37 @@
 #
 # Codecov configuration — the hosted replacement for the inline coverage gate in .github/workflows/ci.yml.
 #
-# WHY THIS EXISTS, and what changes. The inline gate checks ONE assembly (DwarfMapper.Generator) at 80 % line
-# and 70 % branch. The floors actually enforced locally by scripts/housekeeping.ps1 are 94.5 % for that same
-# assembly and cover FIVE. So CI has been gating fourteen points below the measured reality and blind to four
-# assemblies entirely — the swap tightens the gate rather than relaxing it, which is the opposite of what
-# "move the gate to a third party" usually means and is the reason it is worth doing.
+# WHY THIS EXISTS, and what changes. The inline gate this replaces checked ONE assembly
+# (DwarfMapper.Generator) at 80 % line and 70 % branch. The floors enforced locally by
+# scripts/housekeeping.ps1 are 94.5 % for that same assembly and cover FIVE, so CI had been gating fourteen
+# points below the measured reality and blind to four assemblies. This is the CI half of that gate.
 #
-# EVERY TARGET BELOW IS A MEASURED VALUE, copied from the floors in scripts/housekeeping.ps1, which are
-# themselves measurements truncated to one decimal and never aspirations. When a floor moves there it moves
-# here in the same commit; they are two statements of one fact and there is no mechanism that reconciles them
-# if they drift, so keep them together by hand until there is.
+# EVERY TARGET IS `auto`, AND THAT IS THE WHOLE POINT. The first version of this file copied the measured
+# floors in as absolute numbers -- 94.5 for the generator, and so on. That was WRONG BY CONSTRUCTION, and the
+# first real upload proved it: aggregating Codecov's own per-file figures gives the generator 90.62 %, not
+# 94.5 %, and the whole repository 89.92 %, which reproduces Codecov's 89.90 % headline almost exactly.
+#
+# The two tools do not mean the same thing by "line coverage":
+#
+#     coverlet / ReportGenerator  a partially-covered line is COVERED      -> generator 94.39 %
+#     Codecov                     a partially-covered line is NOT covered  -> generator 90.62 %
+#
+# Neither is wrong; they are different measurements that happen to share a name. Copying one tool's number
+# into the other's config produces a threshold that fails for a reason unrelated to coverage, which is
+# exactly what would have happened on the first push to master.
+#
+# `auto` compares each component against the SAME METRIC on the base commit, so no number is transcribed and
+# no definition is assumed. It also expresses the rule this repository actually wants -- coverage may not
+# regress -- rather than a snapshot that has to be re-measured by hand whenever anything moves. The absolute
+# floors keep living in housekeeping.ps1, measured with coverlet's definition, gating locally and nightly;
+# RatchetInvariantScanTests.R5 now guards the SEPARATION rather than asserting a false equality between them.
 #
 # COMPONENTS, NOT FLAGS, on purpose. Flags require every upload to declare which assembly it belongs to, and
-# this repository emits one cobertura per test project across two tiers (fast and nightly-deep) — plumbing
-# that correctly is a second thing to get wrong. Components partition by PATH on Codecov's side from exactly
-# the same uploads, so the mapping lives in one file instead of being distributed across CI steps.
+# this repository emits one cobertura per test project across two tiers -- plumbing that is a second thing to
+# get wrong. Components partition by PATH on Codecov's side from the same uploads.
 #
-# WHAT THIS CANNOT DO. Mutation scores are not coverage and do not belong here. The Stryker Dashboard hosts
-# mutation reports but publishes no status check, so mutation stays gated by each leg's `break` threshold
-# inside the run itself — see Issues/round27/PLAN-hosted-reports.md.
+# WHAT THIS CANNOT DO. Mutation scores are not coverage and do not belong here; mutation stays gated by each
+# leg's `break` threshold inside the run -- see Issues/round27/PLAN-hosted-reports.md.
 
 codecov:
   require_ci_to_pass: true
@@ -45,10 +57,14 @@ coverage:
 
     patch:
       default:
-        # New and changed lines must be covered. This is the check the per-assembly floors CANNOT make:
-        # a floor is satisfied by a large well-covered assembly absorbing a small uncovered addition, and
-        # that is precisely how coverage erodes without any floor ever going red.
-        target: 90%
+        # New and changed lines must be covered at least as well as the code they join. This is the check
+        # the per-assembly floors CANNOT make: a floor is satisfied by a large well-covered assembly
+        # absorbing a small uncovered addition, and that is precisely how coverage erodes without any floor
+        # ever going red.
+        #
+        # `auto` for the same reason as the components below — it compares against the base commit, so it
+        # never encodes a number that can be wrong.
+        target: auto
         threshold: 0%
 
 component_management:
@@ -59,7 +75,7 @@ component_management:
         - src/DwarfMapper.Generator/**
       statuses:
         - type: project
-          target: 94.5%
+          target: auto
           threshold: 0%
 
     - component_id: runtime
@@ -68,7 +84,7 @@ component_management:
         - src/DwarfMapper/**
       statuses:
         - type: project
-          target: 91.2%
+          target: auto
           threshold: 0%
 
     - component_id: doctooling
@@ -77,7 +93,7 @@ component_management:
         - src/DwarfMapper.DocTooling/**
       statuses:
         - type: project
-          target: 96.0%
+          target: auto
           threshold: 0%
 
     - component_id: codefixes
@@ -86,7 +102,7 @@ component_management:
         - src/DwarfMapper.CodeFixes/**
       statuses:
         - type: project
-          target: 96.2%
+          target: auto
           threshold: 0%
 
     - component_id: testing
@@ -95,7 +111,7 @@ component_management:
         - src/DwarfMapper.Testing/**
       statuses:
         - type: project
-          target: 87.1%
+          target: auto
           threshold: 0%
 
 ignore:

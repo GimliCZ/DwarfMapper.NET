@@ -468,8 +468,34 @@ jobs:
       # on for every other job, which is where lock-file integrity is actually gated. It is admitting that a
       # deliberately-unpinned SDK and a pinned lock file cannot both hold, and choosing the one this leg is
       # named after.
+      # TreatWarningsAsErrors is turned OFF for this leg only, and that is the fix for a job that had been
+      # red on master every night since at least 2026-08-24 without telling anyone anything.
+      #
+      # Directory.Build.props sets AnalysisLevel=latest-all with TreatWarningsAsErrors=true and an empty
+      # WarningsNotAsErrors — every analyzer rule the SDK ships, as an error. That is right for the pinned
+      # SDK. It is wrong HERE, because this leg deliberately drops the pin to run on a newer compiler, and a
+      # newer compiler ships new and changed analyzer rules. Under the inherited settings the leg therefore
+      # goes red the moment the toolchain gains an opinion, which is not the question it exists to answer.
+      #
+      # The question is "does the generator still load and work on a newer compiler?" — so this leg fails on
+      # what would actually answer it NO: a compile error, or a failing test. New diagnostics are reported
+      # instead, in the step below, which is the signal a forward-compatibility leg is supposed to produce.
       - name: Build the generator against the floor, on a newer compiler
-        run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
+        run: |
+          set -euo pipefail
+          dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false                  -p:TreatWarningsAsErrors=false -v n 2>&1 | tee forward-compat-build.log
+
+      - name: Report what the newer compiler newly objects to
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          echo "SDK under test: $(dotnet --version)"
+          if grep -oE 'warning [A-Z]+[0-9]+' forward-compat-build.log | sort | uniq -c | sort -rn > fc-warnings.txt && [ -s fc-warnings.txt ]; then
+            echo "::notice::the newer SDK produces $(wc -l < fc-warnings.txt) distinct diagnostic(s) this repo does not see on its pinned SDK"
+            cat fc-warnings.txt
+          else
+            echo "no new diagnostics: the newer compiler agrees with the pinned one"
+          fi
       # Same exclusion as build-test: this leg asks "does the generator still LOAD in a newer compiler", and
       # the matrix has its own dedicated job above. (Until 2026-08-18 the stated reason was that the matrix's
       # expected red would drown the answer; it is green now, so the reason is duplication, not noise.)
