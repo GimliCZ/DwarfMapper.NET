@@ -7,7 +7,7 @@ they do not name, measured rather than estimated, and a judgement on each.
 
 ## The headline
 
-**9.4 % of `src/` is inside any leg's `mutate` globs** — 3,334 of 35,538 lines.
+**12.0 % of `src/` is inside any leg's `mutate` globs** — 4,278 of 35,538 lines.
 
 > **Corrected 2026-08-27.** This file previously said 15.3 %, on a table crediting the generator with 10
 > files and 3,849 mutated lines. **No revision of `stryker-config.json` has ever listed more than the four
@@ -23,13 +23,13 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 68 | 4 | 28,181 | 1,025 | **3.6 %** | 94.5 % |
+| `DwarfMapper.Generator` | 68 | 7 | 28,181 | 1,969 | **7.0 %** | 94.5 % |
 | `DwarfMapper` (runtime) | 42 | 6 | 3,431 | 941 | **27.4 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,110 | 657 | **59.2 %** | 96.3 % |
 | `DwarfMapper.CodeFixes` | 4 | 4 | 711 | 711 | **100 %** | 96.2 % |
 | `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **133** | **19** | **35,538** | **3,334** | **9.4 %** | |
+| **all** | **133** | **22** | **35,538** | **4,278** | **12.0 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -42,7 +42,23 @@ leg names, so the denominator grew while the numerator did not.
 
 This is the gap that matters most here: the round-27 brief asked for the moved functions to be covered
 "close to 100 % from mutation and other standpoints". Line coverage and reach were delivered; **mutation
-coverage of those functions is 0 %**.
+coverage of those functions was 0 %**.
+
+`stryker-config.pipeline.json` closes the first slice of it — the four member-resolution phases and the two
+context records that parameterise them, 944 lines — and the sizing of that slice was decided by measurement
+rather than taste. A leg scoped at all 13 extracted files generated 13,129 mutants, of which 1,353 needed
+testing, and **after 158 minutes on 12 cores it had not finished**, leaking idle vstest hosts as it went (26
+of 32 alive with no CPU). It was abandoned deliberately. Two things follow, and both argue the same way:
+
+- **It cannot run nightly.** The CI matrix sizes each leg at roughly ten times its measured wall-clock; ten
+  times 158 minutes exceeds the six-hour ceiling GitHub Actions imposes on a job. The four existing legs run
+  in 5–20 minutes and fit comfortably.
+- **It did not reliably terminate locally either**, which makes it useless as a gate regardless of CI.
+
+So the remaining ten files are not "not worth covering" — they are covered **one area at a time**, each leg
+sized to complete, each with its own measured floor, exactly as section 3 below already recommended. The
+abandoned run's cost curve is what makes that recommendation concrete: ~0.20 tested mutants per line, so an
+area of about a thousand lines is the largest unit that behaves.
 
 ## What is NOT excluded — worth stating, because it is the good news
 
@@ -113,4 +129,8 @@ the compiler and `ShippedRuntimeSafetyTests` do not already say.
 
 The CodeFixes leg is done (87.01 %, and it found what it was predicted to find). **Next is a leg over the
 round-27 extracted `Pipeline/` files**, because that is where the brief actually pointed and where the share
-is 0 %. Record **9.4 %** wherever the leg scores are quoted, so the numbers keep meaning what they say.
+was 0 %. Record **12.0 %** wherever the leg scores are quoted, so the numbers keep meaning what they say.
+
+That figure is no longer maintained by hand: `MutationScopeScanTests` recomputes it from the configs on
+disk and fails when this table drifts from them. The 15.3 % this document used to publish was a one-off
+measurement nothing could re-derive, which is exactly how it survived being wrong for so long.

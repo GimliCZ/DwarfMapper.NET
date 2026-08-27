@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-  # Both added for the NIGHTLY TIER — the `mutation` matrix (all three Stryker legs) and the `deep-test` job
+  # Both added for the NIGHTLY TIER — the `mutation` matrix (all five Stryker legs) and the `deep-test` job
   # (deep suite + coverage floors + ILVerify) — which is far too slow to gate a push; see each job's own
   # comment. Those are the ONLY jobs guarded to these two events; every other job keeps running exactly when
   # it did before. The side effect is that the nightly cron also re-runs the push/PR jobs, which is harmless
@@ -182,8 +182,9 @@ jobs:
       - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   # ── Mutation testing: ALL THREE legs, nightly ─────────────────────────────────────────────────────────
-  # One matrix, three configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
-  # (stryker-config.json) and the DOCUMENTATION PIPELINE (stryker-config.doctooling.json). The runtime leg
+  # One matrix, five configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
+  # (stryker-config.json), the DOCUMENTATION PIPELINE (stryker-config.doctooling.json), the CODE FIXES
+  # (stryker-config.codefixes.json) and the ROUND-27 EXTRACTED PIPELINE (stryker-config.pipeline.json). The runtime leg
   # ran here first (it previously ran in NO job at all — a config someone had to remember to invoke via
   # `housekeeping.ps1 -Mutation`, and a score nobody measures is free to regress silently in either
   # direction); round-21 T5 brought the two sibling legs in beside it under the maintainer's 2026-08-21
@@ -205,7 +206,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
       # One leg failing its break threshold must NOT cancel the others mid-run: the whole point of the
-      # nightly is three scored reports every night, and a cancelled leg leaves no report at all.
+      # nightly is five scored reports every night, and a cancelled leg leaves no report at all.
       fail-fast: false
       matrix:
         include:
@@ -226,6 +227,14 @@ jobs:
           - leg: codefixes    # measured 6:20 (2026-08-26, 12 cores, after the round-27 kill program)
             config: stryker-config.codefixes.json
             timeout: 80
+          # Round-27 member-resolution phases. SCOPED TO ONE AREA on purpose: a leg over all 13 extracted
+          # Pipeline/ files needed to test 1,353 mutants and had not finished after 158 minutes on 12
+          # cores, which is past this job's ceiling however generously it is budgeted — GitHub caps a job
+          # at six hours and the rule here is ~10x measured. The remaining ten files are covered one area
+          # per leg, each sized to complete (Issues/round27/AUDIT-mutation-scope.md).
+          - leg: pipeline     # measured 2026-08-27, 12 cores; 944 lines, ~190 tested mutants
+            config: stryker-config.pipeline.json
+            timeout: 120
     timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

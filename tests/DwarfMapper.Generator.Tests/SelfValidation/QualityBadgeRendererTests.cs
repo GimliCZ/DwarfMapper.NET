@@ -73,11 +73,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var legs = QualityBadgeRenderer.ParseLedgerRows(File.ReadAllText(
                 Path.Combine(RepoLayout.Root, "Issues", "ledgers", "equivalent-mutants.md")));
 
-            Assert.Equal(["generator", "doctooling", "runtime", "codefixes"], legs.Select(l => l.Name).ToArray());
+            Assert.Equal(["generator", "doctooling", "runtime", "codefixes", "pipeline"],
+                legs.Select(l => l.Name).ToArray());
             Assert.Equal(
                 [
                     "stryker-config.json", "stryker-config.doctooling.json", "stryker-config.runtime.json",
-                    "stryker-config.codefixes.json"
+                    "stryker-config.codefixes.json", "stryker-config.pipeline.json"
                 ],
                 legs.Select(l => l.ConfigFile).ToArray());
             Assert.All(legs, l => Assert.InRange(l.RawScore, 1.0, 100.0));
@@ -88,7 +89,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         {
             var ex = Assert.Throws<InvalidOperationException>(() => QualityBadgeRenderer.ParseLedgerRows("| leg | scoreable |\n|---|---|\n| generator | 201 |\n"));
 
-            Assert.Contains("parsed 0 mutation leg row(s), expected 4", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("parsed 0 mutation leg row(s), expected 5", ex.Message, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -161,7 +162,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             var badges = rows.Where(r => r.StartsWith("[![", StringComparison.Ordinal)).ToList();
 
             // + 4: one badge per mutation leg, four of them since the code-fix leg landed.
-            Assert.Equal(FlooredAssemblies.Length + 4, badges.Count);
+            Assert.Equal(FlooredAssemblies.Length + 5, badges.Count);
             Assert.All(badges,
                 b =>
                 {

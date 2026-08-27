@@ -88,6 +88,7 @@ recomputes the ceilings in the same commit.
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
 | runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
 | codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
+| pipeline | `stryker-config.pipeline.json` | 239 | 76.99 % (2026-08-27, first measurement) | 0 | 0 | 0 | 100.00 % |
 
 Fuller arithmetic, carried from the research and updated by P5 (context, not gates): the generator leg's
 *realistic* raw ceiling is lower than 88.05 — the 6 probably-equivalent survivors and the 3 NoCoverage
@@ -172,6 +173,17 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "probablyEquivalent": 1,
       "rawCeiling": 87.57,
       "rawCeilingFormula": "(177 - 22) / 177"
+    },
+    "pipeline": {
+      "config": "stryker-config.pipeline.json",
+      "scoreable": 239,
+      "measuredRawScore": 76.99,
+      "measuredOn": "2026-08-27",
+      "provenEquivalent": 0,
+      "ruledInPractice": 0,
+      "probablyEquivalent": 0,
+      "rawCeiling": 100.0,
+      "rawCeilingFormula": "(239 - 0) / 239 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
     }
   },
   "entries": [

@@ -526,6 +526,7 @@ try {
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.doctooling.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.codefixes.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.pipeline.json'
         $legStart = Get-Date
         # 60, not 30. MEASURED 2026-08-27 on this machine: the leg takes 31 minutes, so the old fuse was
         # cutting it off about a minute past the finish line and reporting a HANG. The 21-minute figure
@@ -585,6 +586,27 @@ try {
             -ConfigPath (Join-Path $root 'stryker-config.codefixes.json') -Since $legStart
         Remove-PlantedMutants -Leg 'code fixes' -Root $root
         Assert-NoMutatedProductBinaries -Leg 'code fixes' -Root $root
+
+        # ── 4/4e: the ROUND-27 MEMBER-RESOLUTION PHASES ──────────────────────────────────────────
+        # The seam stage moved three giant methods into 13 new Pipeline/ files, and the brief asked for
+        # the moved functions to be covered 'close to 100 % from mutation'. Line coverage and reach were
+        # delivered; mutation coverage of them was 0 %, because no leg's globs named any of the new files.
+        #
+        # ONE AREA, not all thirteen. A leg scoped at the whole extraction generated 13,129 mutants, needed
+        # to test 1,353, and after 158 minutes on 12 cores had not finished — while leaking idle vstest
+        # hosts (26 of 32 alive with no CPU). It cannot run nightly either: the CI matrix budgets ~10x
+        # measured, and 10x158 minutes is past the six-hour ceiling GitHub Actions puts on a job. So the
+        # remaining ten files are covered one area per leg, each sized to complete
+        # (Issues/round27/AUDIT-mutation-scope.md).
+        Write-Host '== 4/4e Mutation testing (member-resolution phases) ==' -ForegroundColor Cyan
+        $legStart = Get-Date
+        $legExit = Invoke-StrykerLeg -Leg 'pipeline' -ConfigFile 'stryker-config.pipeline.json' -TimeoutMinutes 60
+        if ($legExit) { throw 'mutation score below break threshold (pipeline)' }
+        Assert-MutantsWereTested -Leg 'pipeline' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'pipeline' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.pipeline.json') -Since $legStart
+        Remove-PlantedMutants -Leg 'pipeline' -Root $root
+        Assert-NoMutatedProductBinaries -Leg 'pipeline' -Root $root
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green
