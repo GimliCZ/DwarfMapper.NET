@@ -1,6 +1,7 @@
 # DwarfMapper.NET
 
 [![CI](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/GimliCZ/DwarfMapper.NET/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/GimliCZ/DwarfMapper.NET/graph/badge.svg?branch=master)](https://codecov.io/gh/GimliCZ/DwarfMapper.NET)
 [![NuGet prerelease](https://img.shields.io/nuget/vpre/DwarfMapper?logo=nuget&label=NuGet%20prerelease)](https://www.nuget.org/packages/DwarfMapper)
 [![downloads](https://img.shields.io/nuget/dt/DwarfMapper?label=downloads)](https://www.nuget.org/packages/DwarfMapper)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
