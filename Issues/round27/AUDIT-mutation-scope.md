@@ -7,7 +7,14 @@ they do not name, measured rather than estimated, and a judgement on each.
 
 ## The headline
 
-**15.3 % of `src/` is inside any leg's `mutate` globs** — 5,458 of 35,664 lines.
+**9.4 % of `src/` is inside any leg's `mutate` globs** — 3,334 of 35,538 lines.
+
+> **Corrected 2026-08-27.** This file previously said 15.3 %, on a table crediting the generator with 10
+> files and 3,849 mutated lines. **No revision of `stryker-config.json` has ever listed more than the four
+> globs it carries today** (`git log -p` on that file: `EquatableArray`, `BlittableProof`,
+> `ConstructorSelector`, `LocationInfo` — unchanged since the file was created). The generator's real share
+> is **3.6 %**, not 13.6 %, and the headline was inflated with it. The document written to stop anyone
+> overstating mutation coverage was itself overstating it by a third.
 
 The scores are therefore not statements about the product. They are statements about a seventh of it, and
 the seventh was chosen well: `EquatableArray`, `ConstructorSelector`, the registry, the exception types,
@@ -16,15 +23,26 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 68 | 10 | 28,242 | 3,849 | **13.6 %** | 93.6 % |
-| `DwarfMapper` (runtime) | 42 | 6 | 3,473 | 947 | **27.3 %** | 73.9 % |
-| `DwarfMapper.DocTooling` | 11 | 5 | 1,121 | 662 | **59.1 %** | 96.3 % |
-| `DwarfMapper.CodeFixes` | 4 | **0** | 715 | 0 | **0 %** | **88.8 %** |
-| `DwarfMapper.Testing` | 7 | **0** | 2,061 | 0 | **0 %** | **66.3 %** |
-| `Shared` | 1 | **0** | 52 | 0 | **0 %** | — |
+| `DwarfMapper.Generator` | 68 | 4 | 28,181 | 1,025 | **3.6 %** | 94.5 % |
+| `DwarfMapper` (runtime) | 42 | 6 | 3,431 | 941 | **27.4 %** | 73.9 % |
+| `DwarfMapper.DocTooling` | 11 | 5 | 1,110 | 657 | **59.2 %** | 96.3 % |
+| `DwarfMapper.CodeFixes` | 4 | 4 | 711 | 711 | **100 %** | 96.2 % |
+| `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
+| `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
+| **all** | **133** | **19** | **35,538** | **3,334** | **9.4 %** | |
 
-The generator's 13.6 % is itself flattered by round 27: of its 3,849 mutated lines, ~2,800 are the six
-files this round added to a new leg. Before that it was nearer 3.7 %.
+Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
+disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
+
+**Round 27 made the generator's share worse, not better.** The seam stage added 6,659 lines across 13 new
+`Pipeline/` files — `MapperExtractor.Phases.cs` (3,398), `.Conversions.Arms.cs` (795),
+`.Members.Phases.cs` (775), `.Flatten.Directive.cs` (609) and nine smaller ones — and **not one of them is
+inside a `mutate` glob**. The refactor moved the most intricate code in the product into files no mutation
+leg names, so the denominator grew while the numerator did not.
+
+This is the gap that matters most here: the round-27 brief asked for the moved functions to be covered
+"close to 100 % from mutation and other standpoints". Line coverage and reach were delivered; **mutation
+coverage of those functions is 0 %**.
 
 ## What is NOT excluded — worth stating, because it is the good news
 
@@ -77,8 +95,10 @@ are weak". Raise line coverage first, then mutate; otherwise the number measures
 
 ### 3. The generator's other 86 % — worth it, but not as one leg
 
-28,242 lines and the round-27 leg already shows the cost curve: 718 mutants from ~2,800 lines. Extrapolated
-naively that is tens of thousands of mutants, which is not a gate anyone runs.
+28,181 lines. The CodeFixes leg gives the only honest cost datum this repo has: **177 mutants from 711
+lines**, roughly one mutant per four lines. Extrapolated naively the generator is ~7,000 mutants, which is
+not a gate anyone runs in one leg. (The "718 mutants from ~2,800 lines" this section used to cite belongs
+to no leg that exists; it went with the erroneous table above.)
 
 The tractable form is per-area legs added one at a time, each with its own measured floor, prioritised by
 where a wrong answer is worst — `CollectionConverter` and `DictionaryConverter` first, since they synthesize
@@ -91,5 +111,6 @@ the compiler and `ShippedRuntimeSafetyTests` do not already say.
 
 ## The recommendation in one line
 
-Add a CodeFixes leg next — small, fast, well-covered, user-facing, and currently unexamined — and record
-the 15.3 % figure wherever the leg scores are quoted, so the numbers keep meaning what they say.
+The CodeFixes leg is done (87.01 %, and it found what it was predicted to find). **Next is a leg over the
+round-27 extracted `Pipeline/` files**, because that is where the brief actually pointed and where the share
+is 0 %. Record **9.4 %** wherever the leg scores are quoted, so the numbers keep meaning what they say.

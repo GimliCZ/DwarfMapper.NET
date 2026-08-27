@@ -29,6 +29,28 @@ source run saw it (informational), `lineCurrent` where the expression sits at th
 - `probably-equivalent` — the ledger argues equivalence but stops short of a full proof; explicitly
   low-priority, never "do not attempt" — a future proof may move it either way, with the entry.
 
+## Anchor maintenance, 2026-08-27 — the identity fields were drifting
+
+Round 27's own review asked whether the relationship structures around the gates were being maintained. For
+this file the answer was "mostly": every `file` resolved and every `anchor` ledger existed, but the
+*positional* and *textual* fields had rotted.
+
+**One row named source that no longer exists.** `DwarfRefContext..ctor (lower clamp)` recorded
+`maxDepth < 1`, and round 27 introduced `src/Shared/DwarfLimits.cs`, replacing the literal with
+`DwarfLimits.MinMaxDepth`. A row's identity is `leg + file + member + mutator + original → mutated`, so an
+`original` naming source that is gone matches **no mutant Stryker can generate** — the entry was still being
+counted in `provenEquivalent`, and the count still reconciled, while describing a mutant that did not exist.
+The expression is updated; **the proof is unchanged**, because `MinMaxDepth == 1` and the two forms still
+differ only at `maxDepth == 1`, where both yield 1.
+
+**Seventeen `lineCurrent` values were stale**, several by hundreds of lines — `BlittableProof` entries at 29,
+80, 81, 85 and 86 actually sit at 274, 370, 371, 378 and 379 after the repo-wide reformat. That field is
+documented as informational, and it is: nothing gates on it. But a reader checking a proof follows the line
+number, and one that lands in unrelated code costs exactly the trust the ledger exists to hold. All
+seventeen are recomputed by locating the row's own `original` text; four rows whose `original` is prose
+(`<empty-quotes literal>`, "one `or` in the SpecialType pattern") or ambiguous (`continue;`) are left
+alone, because for those there is nothing unambiguous to locate.
+
 ## Denominators moved on 2026-08-27 — recorded, not absorbed
 
 Two legs' scoreable populations changed with no edit to the code they mutate, so the reason is written down
@@ -172,7 +194,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "LayoutIdentical",
       "lineAtProof": 29,
-      "lineCurrent": 29,
+      "lineCurrent": 274,
       "mutator": "Logical",
       "original": "IsPrimitive(a) || IsPrimitive(b)",
       "mutated": "IsPrimitive(a) && IsPrimitive(b)",
@@ -200,7 +222,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/ConstructorSelector.cs",
       "member": "Select (hasExplicitNonParameterlessCtor predicate)",
       "lineAtProof": 58,
-      "lineCurrent": 58,
+      "lineCurrent": 83,
       "mutator": "Equality",
       "original": "c.Parameters.Length > 0",
       "mutated": "c.Parameters.Length >= 0",
@@ -214,7 +236,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/ConstructorSelector.cs",
       "member": "AllParametersHaveASource",
       "lineAtProof": 243,
-      "lineCurrent": 243,
+      "lineCurrent": 279,
       "mutator": "Equality",
       "original": "src.IndexOf('.') >= 0",
       "mutated": "src.IndexOf('.') > 0",
@@ -228,7 +250,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "InstanceFields (sort comparator, file-path key, a-side)",
       "lineAtProof": 80,
-      "lineCurrent": 80,
+      "lineCurrent": 370,
       "mutator": "Conditional/Equality/String (4 distinct: cond->true, > -> >=, both string.Empty literals -> \"Stryker was here!\")",
       "original": "a.Locations.Length > 0 ? a.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty",
       "mutated": "the four forms above",
@@ -242,7 +264,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "InstanceFields (sort comparator, file-path key, b-side)",
       "lineAtProof": 81,
-      "lineCurrent": 81,
+      "lineCurrent": 371,
       "mutator": "Conditional/Equality/String (4 distinct: cond->true, > -> >=, both string.Empty literals -> \"Stryker was here!\")",
       "original": "b.Locations.Length > 0 ? b.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty",
       "mutated": "the four forms above",
@@ -256,7 +278,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "InstanceFields (sort comparator, position tie-break, a-side)",
       "lineAtProof": 85,
-      "lineCurrent": 85,
+      "lineCurrent": 378,
       "mutator": "Conditional/Equality (4 distinct: cond->true, cond->false, > -> <, > -> >=)",
       "original": "a.Locations.Length > 0 ? a.Locations[0].SourceSpan.Start : 0",
       "mutated": "the four guard mutations above",
@@ -270,7 +292,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "InstanceFields (sort comparator, position tie-break, b-side)",
       "lineAtProof": 86,
-      "lineCurrent": 86,
+      "lineCurrent": 379,
       "mutator": "Conditional/Equality (2 remaining: cond->true, > -> >=)",
       "original": "b.Locations.Length > 0 ? b.Locations[0].SourceSpan.Start : 0",
       "mutated": "the two guard mutations above",
@@ -284,7 +306,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/DocSnippetInjector.cs",
       "member": "LongestBacktickRun",
       "lineAtProof": 83,
-      "lineCurrent": 97,
+      "lineCurrent": 102,
       "mutator": "Equality",
       "original": "run > longest",
       "mutated": "run >= longest",
@@ -298,7 +320,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/DocSnippetInjector.cs",
       "member": "ParseId (malformed-marker guard)",
       "lineAtProof": 110,
-      "lineCurrent": 110,
+      "lineCurrent": 118,
       "mutator": "Equality",
       "original": "end < 0",
       "mutated": "end <= 0",
@@ -312,7 +334,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
       "member": "ParseId (malformed-marker guard)",
       "lineAtProof": 121,
-      "lineCurrent": 121,
+      "lineCurrent": 137,
       "mutator": "Equality",
       "original": "close < 0",
       "mutated": "close <= 0",
@@ -326,7 +348,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/DocTableInjector.cs",
       "member": "Inject (unclosed-table guard)",
       "lineAtProof": 31,
-      "lineCurrent": 31,
+      "lineCurrent": 37,
       "mutator": "Equality",
       "original": "end < 0",
       "mutated": "end <= 0",
@@ -340,7 +362,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/ExampleCatalogue.cs",
       "member": "Build (ambiguous-match message ternary)",
       "lineAtProof": 74,
-      "lineCurrent": 74,
+      "lineCurrent": 75,
       "mutator": "Equality",
       "original": "matches.Count > 1",
       "mutated": "matches.Count >= 1",
@@ -368,7 +390,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
       "member": "Dedent (common-prefix loop guard)",
       "lineAtProof": 170,
-      "lineCurrent": 170,
+      "lineCurrent": 189,
       "mutator": "Equality",
       "original": "prefix.Length > 0",
       "mutated": "prefix.Length >= 0",
@@ -424,13 +446,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper/DwarfRefContext.cs",
       "member": "DwarfRefContext..ctor (lower clamp)",
       "lineAtProof": 77,
-      "lineCurrent": 77,
+      "lineCurrent": 105,
       "mutator": "Equality",
-      "original": "maxDepth < 1",
-      "mutated": "maxDepth <= 1",
+      "original": "maxDepth < DwarfLimits.MinMaxDepth",
+      "mutated": "maxDepth <= DwarfLimits.MinMaxDepth",
       "occurrences": 1,
       "category": "proven-equivalent",
-      "proof": "The two forms differ on exactly one input, maxDepth == 1, and agree there: the original falls through '1 > AbsoluteMaxDepth' (false) and yields maxDepth = 1; the mutant takes the clamp branch and yields the literal 1. Identical output for every input. (The sibling L77 Conditional-false mutant is a REAL hole - E3-E1 #8 - not this entry.)",
+      "proof": "The two forms differ on exactly one input, maxDepth == 1, and agree there: the original falls through '1 > AbsoluteMaxDepth' (false) and yields maxDepth = 1; the mutant takes the clamp branch and yields the literal 1. Identical output for every input. (The sibling L77 Conditional-false mutant is a REAL hole - E3-E1 #8 - not this entry.) UPDATED 2026-08-27: round 27 introduced src/Shared/DwarfLimits.cs and replaced the literal 1 with DwarfLimits.MinMaxDepth. The proof is UNCHANGED because MinMaxDepth == 1: the two forms still differ only at maxDepth == 1, where both yield 1. The expression text is updated because the row’s identity is leg+file+member+mutator+original, and an identity naming source that no longer exists matches no mutant Stryker can generate.",
       "anchor": "Issues/ledgers/E3-E1-report.md § the equivalent mutant (DwarfRefContext L77 Equality)"
     },
     {
@@ -452,7 +474,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper/DwarfMapExceptions.cs",
       "member": "FormatMessage (ambiguous-branch guard)",
       "lineAtProof": 86,
-      "lineCurrent": 86,
+      "lineCurrent": 94,
       "mutator": "Equality (recursive pattern)",
       "original": "ambiguousInterfaces is { Count: > 1 }",
       "mutated": "ambiguousInterfaces is { Count: >= 1 }",
@@ -466,7 +488,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper/DwarfMapperRegistry.cs",
       "member": "Key.Equals(Key)",
       "lineAtProof": 291,
-      "lineCurrent": 282,
+      "lineCurrent": 356,
       "mutator": "Logical",
       "original": "Source == other.Source && Destination == other.Destination",
       "mutated": "Source == other.Source || Destination == other.Destination",
@@ -690,7 +712,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
       "member": "WithRestatement",
       "lineAtProof": 172,
-      "lineCurrent": 172,
+      "lineCurrent": 173,
       "mutator": "Block removal mutation",
       "original": "return document;",
       "mutated": "{ }",
