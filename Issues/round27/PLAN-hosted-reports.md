@@ -2,8 +2,8 @@
 
 # Moving coverage to Codecov, and mutation to the Stryker Dashboard
 
-Asked for as a swap: hosted reports in place of the local coverage gate. This is what is prepared, what the
-cutover requires, and the one place the swap **cannot** go all the way.
+Asked for as a swap: hosted reports in place of the local coverage gate. Coverage moved; **mutation did
+not**, and the section below records why that was decided rather than deferred.
 
 Everything here is measured or quoted from the tools' own documentation. Both services are free for public
 repositories, and this one is public — verified by an anonymous `git ls-remote` against the origin — so cost
@@ -28,45 +28,51 @@ Every component target in `codecov.yml` is the measured floor from `housekeeping
 statements of one fact, and `RatchetInvariantScanTests.R5` now fails the build when they disagree — so they
 move together in one commit because nothing else is possible, not because someone remembers to.
 
-## Where the swap stops: mutation cannot be gated by a dashboard
+## Mutation: NOT going to the dashboard — decided, not pending
 
-The Stryker Dashboard (`dashboard.stryker-mutator.io`) hosts mutation reports, keeps history per module, and
-serves a badge. It publishes **no status check**, so nothing about it can fail a build. Mutation gating
-happens one place only — the `break` threshold inside the run — and this repository's CI cannot run the
-mutation legs at all.
+The Stryker Dashboard (`dashboard.stryker-mutator.io`) hosts mutation reports, keeps history per module and
+serves a badge. It was evaluated and **declined**. Two reasons, and the second is the one that would have
+applied even if the first were fixed tomorrow.
 
-So the honest end state is asymmetric, and worth stating plainly rather than discovering later:
+**It cannot be logged into.** The GitHub OAuth round-trip completes — `authorize` returns, `callback` fires
+with a code — and the dashboard's own session exchange then answers
+`{"message":"invalid response encountered","error":"Unauthorized","statusCode":401}`. That is after GitHub
+has done its part, so it is a fault in the service, not in this repository or its permissions. Nothing here
+can fix it and nothing here waits on it.
 
-- **coverage** — gated by Codecov's status checks, in CI, on every push.
-- **mutation** — gated by `break` in each config, locally via `housekeeping.ps1`; the dashboard adds history,
-  a badge, and a browsable report, and gates nothing.
+**It would have been the weakest thing in the room anyway.** Its three features already exist here, in forms
+that are gated rather than merely displayed:
 
-`project-info` is already in all five configs (`name` = `github.com/GimliCZ/DwarfMapper.NET`, `module` =
-`generator` / `runtime` / `doctooling` / `codefixes` / `pipeline`). Five modules under one project means each
-leg keeps its own history instead of five runs overwriting one score. The `dashboard` reporter is
-deliberately **not** in the configs: it fails when no API key is present, and a config that cannot run
-without a secret is a config that cannot run.
+| dashboard feature | what this repository already has |
+|---|---|
+| browsable per-mutant report | `mutation-report.html`, written by every local run of every leg |
+| score history per leg | `equivalent-mutants.md` — score, scoreable population and measurement date |
+| badge | six README badges rendered *from* that ledger and byte-compared by the doc suite |
 
-Publishing, once the key exists:
+A dashboard badge asserts whatever was last uploaded. A badge here is generated from the ledger, `R2`
+cross-checks each `measuredRawScore` against its config's `break`, and `R3` pins the row sums — so it is a
+claim the build fails over rather than a picture. And since CI cannot run the mutation legs, uploads could
+only ever come from manual local runs: the resulting trend line would mean "whenever somebody remembered",
+which is the class of half-measured signal this round exists to remove.
 
-```bash
-dotnet stryker --config-file stryker-config.pipeline.json \
-               --reporter dashboard --version "$(git rev-parse --abbrev-ref HEAD)"
-# STRYKER_DASHBOARD_API_KEY in the environment
-```
+**What stays, deliberately.** `project-info` remains in all five configs (`name` =
+`github.com/GimliCZ/DwarfMapper.NET`, `module` = `generator` / `runtime` / `doctooling` / `codefixes` /
+`pipeline`). It is inert without a key, costs nothing, and means that if the service is ever repaired the
+integration is one `--reporter dashboard` flag away rather than a change to five files. The reporter itself
+is **not** configured, so no run depends on a service that cannot authenticate.
 
-`--version` is supplied at the command line rather than written into the file precisely because it is the
-branch, and a branch name committed to a config is wrong the moment anyone branches.
+If someone wants the mutation data, it is already there: the HTML report from any local run, and the ledger
+for the numbers.
 
-## The one feature that might reopen CI mutation
+### The consequence for CI mutation
 
-`--with-baseline` compares against a previously published dashboard version and **tests only the mutants
-that changed**. That is aimed squarely at the constraint that killed the 13-file leg: 1,353 mutants and 158
-minutes without finishing, against a nightly budget that cannot exceed six hours.
+`--with-baseline` — testing only the mutants changed since a published version — required the dashboard as
+the place baselines are published, so declining the dashboard closes that route too. It was the one idea
+that might have made an expensive leg affordable in the nightly, and it is recorded here as closed rather
+than left as a lead someone re-discovers and re-investigates.
 
-It is worth an experiment, not an assumption. The saving depends entirely on how many mutants a typical
-change touches, and a refactor that moves a file invalidates its whole module. Measure it on one leg before
-believing it, and record the number the way every other figure here is recorded.
+That leaves the sizing rule as the only lever, which is where it already was: one area per leg, each sized
+to complete, as `AUDIT-mutation-scope.md` sets out.
 
 ## Cutover — what is done, and what is left
 
