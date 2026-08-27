@@ -103,5 +103,40 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("\"N0\"", generated, StringComparison.Ordinal);
             Assert.Contains("\"X8\"", generated, StringComparison.Ordinal);
         }
+
+        /// <summary>
+        ///     DWARF073's THIRD arm: destination is a string and there is no Use=, so the first two arms pass,
+        ///     but the SOURCE cannot be formatted.
+        /// </summary>
+        /// <remarks>
+        ///     A round-27 coverage measurement found this arm executed by no test, while the sibling arms above
+        ///     were covered — the diagnostic looked tested because its id was reported, from somewhere else.
+        ///     <c>string</c> is the honest trigger and a realistic mistake: it is not <c>IFormattable</c>, so
+        ///     there is no <c>ToString(format, provider)</c> to call, and asking to format one is a no-op the
+        ///     author almost certainly did not intend.
+        /// </remarks>
+        [Fact]
+        public void StringFormat_on_a_source_that_is_not_IFormattable_reports_DWARF073()
+        {
+            const string source = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class Src { public string A { get; set; } = ""; }
+                                  public class Dst { public string A { get; set; } = ""; }
+                                  [DwarfMapper]
+                                  public partial class M
+                                  {
+                                      [MapProperty(nameof(Src.A), nameof(Dst.A), StringFormat = "N0")]
+                                      public partial Dst Map(Src s);
+                                  }
+                                  """;
+
+            var reported = GeneratorAssert.Reports(source, "DWARF073");
+
+            // Pinned to the arm, not just the id: all three arms report DWARF073, so asserting the id alone
+            // would pass on either of the other two and leave this one uncovered again.
+            Assert.Contains(reported, d => d.GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+                .Contains("IFormattable", StringComparison.Ordinal));
+        }
     }
 }

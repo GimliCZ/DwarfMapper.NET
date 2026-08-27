@@ -129,5 +129,35 @@ namespace DwarfMapper.Generator.Tests
             var (diags, _) = GeneratorTestHarness.Run(src);
             Assert.NotNull(Find(diags, "DWARF050"));
         }
+
+        /// <summary>
+        ///     DWARF049's arm for a substitute constant that does not CONVERT to the destination type — distinct
+        ///     from the Use= combination arm, which the tests above already cover.
+        /// </summary>
+        /// <remarks>
+        ///     Found uncovered by a round-27 measurement. The shape is the obvious authoring slip: a string
+        ///     written where the destination is numeric. Without the check the constant would be emitted straight
+        ///     into the coalesce and the GENERATED file would fail to compile, which is the failure this
+        ///     repository refuses to hand a consumer.
+        /// </remarks>
+        [Fact]
+        public void NullSubstitute_constant_that_does_not_convert_to_the_destination_reports_DWARF049()
+        {
+            const string src = """
+                               using DwarfMapper;
+                               namespace Demo;
+                               public class Src { public int? A { get; set; } }
+                               public class Dst { public int A { get; set; } }
+                               [DwarfMapper]
+                               public partial class M
+                               {
+                                   [MapProperty(nameof(Src.A), nameof(Dst.A), NullSubstitute = "not-an-int")]
+                                   public partial Dst Map(Src s);
+                               }
+                               """;
+
+            var (diags, _) = GeneratorTestHarness.Run(src);
+            Assert.NotNull(Find(diags, "DWARF049"));
+        }
     }
 }

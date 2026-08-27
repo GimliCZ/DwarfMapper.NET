@@ -27,13 +27,30 @@ namespace DwarfMapper
     ///         zero overhead.
     ///     </para>
     /// </remarks>
+    /// <remarks>
+    ///     INFRASTRUCTURE, not consumer API. This type is public because GENERATED code in other assemblies
+    ///     must construct and thread it; nothing else does. Verified round 27: the only construction sites are
+    ///     in the generator's own emitter, which writes <c>new global::DwarfMapper.DwarfRefContext(…)</c> into
+    ///     your assembly.
+    ///     <para>
+    ///         Marked <see cref="System.ComponentModel.EditorBrowsableState.Never" /> so it stays out of completion lists, and marked
+    ///         BEFORE the public surface was promoted to <c>PublicAPI.Shipped.txt</c> — after promotion its
+    ///         members become a frozen contract, and freezing one unlabelled would have committed us to an API
+    ///         nobody designed as one, on a type whose whole job is cycle bookkeeping for the emitter.
+    ///     </para>
+    ///     <para>
+    ///         The attribute changes no signature: the surface stays exactly as large. What changes is that it
+    ///         is now labelled for what it is.
+    ///     </para>
+    /// </remarks>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public sealed class DwarfRefContext
     {
         /// <summary>
         ///     The absolute hard cap. No <c>MaxDepth</c> value can exceed this, regardless of
         ///     the <c>[DwarfMapper(MaxDepth = N)]</c> attribute.
         /// </summary>
-        public const int AbsoluteMaxDepth = 1000;
+        public const int AbsoluteMaxDepth = DwarfLimits.AbsoluteMaxDepth;
 
         // ── Identity map for Preserve mode ───────────────────────────────────────────
         // CRITICAL: Must use ReferenceEqualityComparer.Instance, never the default comparer.
@@ -71,11 +88,22 @@ namespace DwarfMapper
         ///     on-stack guard set used to break reference cycles by nulling the back-edge. Mutually
         ///     exclusive with <paramref name="preserve" /> in practice (Preserve ignores OnCycle).
         /// </param>
+        /// <remarks>
+        ///     <paramref name="preserve" /> and <paramref name="setNull" /> are adjacent same-typed booleans,
+        ///     which is the shape ISSUE-043 and ISSUE-044 were both instances of: a transposed pair compiles
+        ///     clean and changes behaviour silently. They are kept optional because the emitter's common case
+        ///     passes neither, but round 27 made every emitted call site that DOES pass one pass it BY NAME —
+        ///     28 sites read `new DwarfRefContext(10, true)`, which does not say true *what*.
+        ///     <para>
+        ///         Pinned by <c>RecursionBoundTests</c> and by the generator's own optional-parameter ban
+        ///         (<c>ResolverParameterDisciplineTests</c>), which forbids exactly this shape in new code.
+        ///     </para>
+        /// </remarks>
         public DwarfRefContext(int maxDepth, bool preserve = false, bool setNull = false)
         {
             // Clamp: min 1 (a mapper that immediately throws is not useful), max AbsoluteMaxDepth
-            MaxDepth = maxDepth < 1 ? 1
-                : maxDepth > AbsoluteMaxDepth ? AbsoluteMaxDepth
+            MaxDepth = maxDepth < DwarfLimits.MinMaxDepth ? DwarfLimits.MinMaxDepth
+                : maxDepth > DwarfLimits.AbsoluteMaxDepth ? DwarfLimits.AbsoluteMaxDepth
                 : maxDepth;
             // In Preserve mode, allocate the identity map upfront so it is ready on first use.
             // Allocating eagerly here lets TryGetReference/SetReference do a single null check

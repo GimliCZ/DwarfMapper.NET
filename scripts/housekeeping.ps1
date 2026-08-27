@@ -89,13 +89,32 @@ if ($Nightly) {
 # were measured separately and agree everywhere else to the printed decimal; pinning the minimum is what
 # makes the gate hold under both `-Coverage` and `-Nightly` (-Deep -Coverage) rather than only the tier
 # that happened to be measured.
+#
+# Re-measured 2026-08-26 (round 27) — BOTH tiers, and this time they agree to the printed decimal on every
+# assembly, so the minimum and the deep-tier value are the same number and the caveat above is history
+# rather than a live constraint:
+#   DwarfMapper 91.5/79.5 · Generator 94.5/88.9 · DocTooling 96.3/92.1 · CodeFixes 96.2/88.6 · Testing 87.1/84.6
+#
+# Three floors move, all upward, each in the same commit as the work that earned it:
+#
+#   Generator  93.4 -> 94.5   the seam-stage coverage work
+#   CodeFixes  88.8 -> 96.2   the code-fix leg's kill program, 43 tests
+#   Testing    82.7 -> 87.1   the object-factory graph-shape tests
+#
+# The Testing number is the one worth reading twice. It was 81.0 — BELOW its floor — when this gate was
+# first run in round 27, because merging the two object factories added 105 lines and no coverage run had
+# happened since. All four public graph-shape builders (MakeSelfLoop, MakeTwoNodeCycle, MakeOwnerGraph,
+# MakeDiamond) were executed by nothing. The floor did its job; it had simply not been asked.
+#
+# DwarfMapper (91.5 vs 91.2) and DocTooling (96.3 vs 96.0) are inside the 1.0 pp band, so they pass without
+# a mandatory raise and are left alone — moving a floor by a third of a point is churn, not a ratchet.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
     'DwarfMapper'            = 91.2
-    'DwarfMapper.Generator'  = 93.4
+    'DwarfMapper.Generator'  = 94.5
     'DwarfMapper.DocTooling' = 96.0
-    'DwarfMapper.CodeFixes'  = 88.8
-    'DwarfMapper.Testing'    = 82.7
+    'DwarfMapper.CodeFixes'  = 96.2
+    'DwarfMapper.Testing'    = 87.1
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -506,8 +525,16 @@ try {
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.doctooling.json'
         Assert-StrykerConfigSane -ConfigFile 'stryker-config.runtime.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.codefixes.json'
+        Assert-StrykerConfigSane -ConfigFile 'stryker-config.pipeline.json'
         $legStart = Get-Date
-        $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 30
+        # 60, not 30. MEASURED 2026-08-27 on this machine: the leg takes 31 minutes, so the old fuse was
+        # cutting it off about a minute past the finish line and reporting a HANG. The 21-minute figure
+        # in stryker-config.json was taken on a quiet box; a developer machine running an IDE is not one,
+        # and CI already allows this leg 200 minutes for the same reason. A fuse exists to catch a leg
+        # that will never finish -- sized so tightly that a busy machine trips it, it only teaches people
+        # to distrust it.
+        $legExit = Invoke-StrykerLeg -Leg 'generator' -TimeoutMinutes 60
         if ($legExit) { throw "mutation score below break threshold (generator)" }
         Assert-MutantsWereTested -Leg 'generator' -Since $legStart
         Assert-LegScoreWithinBand -Leg 'generator' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
@@ -541,6 +568,48 @@ try {
             -ConfigPath (Join-Path $root 'stryker-config.runtime.json') -Since $legStart
         Remove-PlantedMutants -Leg 'runtime' -Root $root
         Assert-NoMutatedProductBinaries -Leg 'runtime' -Root $root
+
+        # The CODE FIXES. Added round 27 after measuring what the other three legs do NOT cover: 15.3 % of
+        # src/ sits inside any leg's globs, and this project sat at 88.8 % LINE coverage with 0 % mutation
+        # coverage -- the exact combination mutation testing exists to interrogate, because it describes code
+        # thoroughly EXECUTED by tests that may assert nothing about it.
+        #
+        # It is also the most literally user-facing code here: an analyzer reports a problem, and these
+        # rewrite the consumer's own source to fix it. A code fix that produces subtly wrong code is worse
+        # than one that fails loudly, and until this leg existed nothing proved the tests would notice.
+        Write-Host "== 4/4d Mutation testing (code fixes) ==" -ForegroundColor Cyan
+        $legStart = Get-Date
+        $legExit = Invoke-StrykerLeg -Leg 'code fixes' -ConfigFile 'stryker-config.codefixes.json' -TimeoutMinutes 30
+        if ($legExit) { throw "mutation score below break threshold (code fixes)" }
+        Assert-MutantsWereTested -Leg 'code fixes' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'code fixes' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.codefixes.json') -Since $legStart
+        Remove-PlantedMutants -Leg 'code fixes' -Root $root
+        Assert-NoMutatedProductBinaries -Leg 'code fixes' -Root $root
+
+        # ── 4/4e: the ROUND-27 MEMBER-RESOLUTION PHASES ──────────────────────────────────────────
+        # The seam stage moved three giant methods into 13 new Pipeline/ files, and the brief asked for
+        # the moved functions to be covered 'close to 100 % from mutation'. Line coverage and reach were
+        # delivered; mutation coverage of them was 0 %, because no leg's globs named any of the new files.
+        #
+        # ONE AREA, not all thirteen. A leg scoped at the whole extraction generated 13,129 mutants, needed
+        # to test 1,353, and after 158 minutes on 12 cores had not finished — while leaking idle vstest
+        # hosts (26 of 32 alive with no CPU). It cannot run nightly either: the CI matrix budgets ~10x
+        # measured, and 10x158 minutes is past the six-hour ceiling GitHub Actions puts on a job. So the
+        # remaining ten files are covered one area per leg, each sized to complete
+        # (Issues/round27/AUDIT-mutation-scope.md).
+        Write-Host '== 4/4e Mutation testing (member-resolution phases) ==' -ForegroundColor Cyan
+        $legStart = Get-Date
+        # 90, not 60: MEASURED at 37 minutes, and the repo's precedent is ~2x measured (the generator leg
+        # runs 31 and is fused at 60). A 60-minute fuse was the first guess here and a contended run blew
+        # straight through it, reporting a HANG for a leg that was simply still working.
+        $legExit = Invoke-StrykerLeg -Leg 'pipeline' -ConfigFile 'stryker-config.pipeline.json' -TimeoutMinutes 90
+        if ($legExit) { throw 'mutation score below break threshold (pipeline)' }
+        Assert-MutantsWereTested -Leg 'pipeline' -Since $legStart
+        Assert-LegScoreWithinBand -Leg 'pipeline' -StrykerOutputRoot (Join-Path $root 'StrykerOutput') `
+            -ConfigPath (Join-Path $root 'stryker-config.pipeline.json') -Since $legStart
+        Remove-PlantedMutants -Leg 'pipeline' -Root $root
+        Assert-NoMutatedProductBinaries -Leg 'pipeline' -Root $root
     }
 
     Write-Host "HOUSEKEEPING PASSED" -ForegroundColor Green

@@ -34,3 +34,8 @@ artifacts/
 .fastembed_cache/
 # Deep-research intermediate dump (curated digest/report committed instead)
 docs/research/_raw-harvest.jsonl
+
+# Stryker run artefacts. Each run directory writes its own .gitignore, but the ROOT was never ignored, so
+# `git status` showed it as untracked and a bare `git add` could stage a report. Mutation output is build
+# output: the ledger and the badges are where a score becomes a fact.
+StrykerOutput/

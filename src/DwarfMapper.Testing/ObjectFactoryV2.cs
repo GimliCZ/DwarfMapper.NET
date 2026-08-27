@@ -272,6 +272,35 @@ namespace DwarfMapper.Testing
             if (type.IsEnum)
             {
                 var values = Enum.GetValues(type);
+                if (values.Length == 0)
+                {
+                    return Activator.CreateInstance(type);
+                }
+
+                // MERGED FROM V1, 2026-08-26. A [Flags] enum's whole point is that COMBINED values
+                // (Read | Write) are legal, and picking a single declared member can never produce one. So
+                // the fuzzers only ever fed enums values that happened to have a NAME, and a by-name
+                // converter that threw on every combination looked perfectly healthy.
+                if (type.IsDefined(typeof(FlagsAttribute), false))
+                {
+                    var picks = rng.Next(1, Math.Min(values.Length, 4) + 1);
+
+                    // Accumulate in the enum's own underlying type: an unsigned enum can hold values above
+                    // long.MaxValue, which Convert.ToInt64 would throw on.
+                    if (Enum.GetUnderlyingType(type) == typeof(ulong))
+                    {
+                        ulong acc = 0;
+                        for (var i = 0; i < picks; i++)
+                            acc |= Convert.ToUInt64(values.GetValue(rng.Next(values.Length)), CultureInfo.InvariantCulture);
+                        return Enum.ToObject(type, acc);
+                    }
+
+                    long signed = 0;
+                    for (var i = 0; i < picks; i++)
+                        signed |= Convert.ToInt64(values.GetValue(rng.Next(values.Length)), CultureInfo.InvariantCulture);
+                    return Enum.ToObject(type, signed);
+                }
+
                 return values.GetValue(rng.Next(values.Length));
             }
 
@@ -444,8 +473,26 @@ namespace DwarfMapper.Testing
                 }
             }
 
-            // ── Interface or abstract → try to pick a concrete ──────────────────
-            if (type.IsInterface || type.IsAbstract || depth >= DefaultMaxDepth)
+            // ── Interface or abstract → substitute a concrete implementation ────
+            //
+            // MERGED FROM V1, 2026-08-26. This branch used to carry exactly this comment and then
+            // `return null`, which is the bug V1 was fixed for: found migrating a ~300-map codebase off
+            // AutoMapper, where a Dictionary<K, AbstractValue> came out with null VALUES, so every fixture
+            // built from it exercised the null path rather than the dispatch path — the shape
+            // [MapDerivedType] exists to map — and then looked like a real behavioural difference when
+            // replayed against a mapper that correctly refuses nulls.
+            if (type.IsInterface || type.IsAbstract)
+            {
+                var concrete = depth < DefaultMaxDepth ? PickConcrete(type, rng) : null;
+                if (concrete is not null)
+                {
+                    return Create(concrete, rng, depth + 1, allowNull);
+                }
+
+                return type.IsValueType ? Activator.CreateInstance(type) : null;
+            }
+
+            if (depth >= DefaultMaxDepth)
             {
                 return type.IsValueType ? Activator.CreateInstance(type) : null;
             }
@@ -454,14 +501,21 @@ namespace DwarfMapper.Testing
             var ctor = type.GetConstructor(Type.EmptyTypes);
             if (ctor is null)
             {
-                // Try first available public ctor (for records)
+                // MERGED FROM V1, 2026-08-26. This took ctors[0] — whichever constructor reflection
+                // happened to return first. Reflection member order is not contractually stable, so the
+                // factory's output was not a pure function of the seed, and seed-determinism is the
+                // property the entire fuzz corpus rests on. Order by parameter count, then by signature.
                 var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
                 if (ctors.Length == 0)
                 {
                     return type.IsValueType ? Activator.CreateInstance(type) : null;
                 }
 
-                var pc = ctors[0];
+                var pc = ctors
+                    .OrderBy(c => c.GetParameters().Length)
+                    .ThenBy(c => string.Join(",", c.GetParameters().Select(x => x.ParameterType.FullName)),
+                        StringComparer.Ordinal)
+                    .First();
                 var parms = pc.GetParameters();
                 var pvals = new object?[parms.Length];
                 for (var i = 0; i < parms.Length; i++)
@@ -483,6 +537,49 @@ namespace DwarfMapper.Testing
                 }
 
             return instance;
+        }
+
+        /// <summary>Concrete candidates per abstract type, resolved once per process.</summary>
+        private static readonly Dictionary<Type, Type[]> ConcreteCandidates = [];
+
+        /// <summary>
+        ///     A concrete, parameterless-constructible type assignable to <paramref name="abstractType" />, or
+        ///     <see langword="null" /> when the loaded assemblies offer none.
+        /// </summary>
+        /// <remarks>
+        ///     Ordered by full name before the draw so the choice is a pure function of the seed — fixtures
+        ///     must not shift because the runtime happened to enumerate assemblies differently.
+        /// </remarks>
+        private static Type? PickConcrete(Type abstractType, Random rng)
+        {
+            Type[] candidates;
+            lock (ConcreteCandidates)
+            {
+                if (!ConcreteCandidates.TryGetValue(abstractType, out candidates!))
+                {
+                    candidates = AppDomain.CurrentDomain.GetAssemblies()
+                        .SelectMany(SafeTypes)
+                        .Where(c => !c.IsAbstract && !c.IsInterface && !c.IsGenericTypeDefinition && abstractType.IsAssignableFrom(c) && c.GetConstructor(Type.EmptyTypes) is not null)
+                        .OrderBy(c => c.FullName, StringComparer.Ordinal)
+                        .ToArray();
+                    ConcreteCandidates[abstractType] = candidates;
+                }
+            }
+
+            return candidates.Length == 0 ? null : candidates[rng.Next(candidates.Length)];
+        }
+
+        /// <summary>A half-loadable assembly must not take the whole scan down.</summary>
+        private static IEnumerable<Type> SafeTypes(Assembly assembly)
+        {
+            try
+            {
+                return assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                return ex.Types.Where(t => t is not null)!;
+            }
         }
 
         // ── Graph fixture builders ───────────────────────────────────────────────────

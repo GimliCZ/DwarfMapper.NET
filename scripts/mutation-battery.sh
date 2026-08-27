@@ -15,6 +15,25 @@
 # Each mutant is a defect this project actually shipped or narrowly avoided, so a SURVIVOR is not hypothetical:
 # it names a behaviour that regressed once and that nothing would now notice.
 #
+# CATALOGUE INVARIANTS, enforced by this script since the round-27 repair. Each exists because it was
+# violated silently for a long time:
+#   * every entry APPLIES     -- a sed matching nothing is reported STALE and fails the run
+#   * every entry COMPILES    -- a mutant that does not build is reported COMPILE-BREAK and fails the run
+#   * the suite is GREEN first -- a red baseline marks every mutant "killed" and measures nothing
+#
+# What the repair found (2026-08-27, at cb14993): 9 of 33 entries were stale and 8 did not compile, so 16
+# measured nothing while the run still printed a score. Six of the stale ones were broken by round 27's
+# parameter bundling -- the anchors matched loose locals that had become record fields, e.g.
+# `elementPairsOwedCoverage` -> `acc.ElementPairsOwedCoverage`, `explicitOnly` -> `options.ExplicitOnly`.
+#
+# IF YOU ADD AN ENTRY, note that `if (false)` is NOT a usable mutation form in this repository: the body
+# becomes unreachable and CS0162 is an error here. Invert the condition instead -- it plants the defect
+# without the unreachable branch. Two entries were blocked by analyzers rather than CS0162: CA1309 refuses
+# a culture-sensitive comparison outright (M02, now via StringComparer.CurrentCulture) and CA1822/MA0140
+# refuse a ternary that stops touching instance state or has identical arms (M07, now inverted).
+#
+# History and per-id evidence: Issues/round27/FINDING-mutation-battery-catalogue-rot.md
+#
 # Usage:  scripts/mutation-battery.sh [--full]
 #           (default) run the named guard first, and only fall back to the whole suite if it passes
 #           --full    always run the whole suite per mutant (slower; catches "killed by something else")
@@ -50,44 +69,56 @@ fi
 # by some other test still counts, but one whose named guard sleeps through it is worth knowing about.
 MUTANTS=(
 "M01|src/DwarfMapper.Generator/Pipeline/AmbientValidator.cs|s/new SortedSet<(string, string)>(OrdinalPair)/new SortedSet<(string, string)>()/g|DeterminismSourceScanTests|culture-sensitive ordering reaching emitted text"
-"M02|src/DwarfMapper.Generator/Pipeline/AmbientValidator.cs|s/string.CompareOrdinal(a.Item1, b.Item1)/string.Compare(a.Item1, b.Item1, StringComparison.CurrentCulture)/|DeterminismSourceScanTests|the ordinal pair comparer quietly becoming culture-sensitive"
+"M02|src/DwarfMapper.Generator/Pipeline/AmbientValidator.cs|s/string.CompareOrdinal(a.Item1, b.Item1)/StringComparer.CurrentCulture.Compare(a.Item1, b.Item1)/|DeterminismSourceScanTests|the ordinal pair comparer quietly becoming culture-sensitive"
 "M03|src/DwarfMapper.Generator/Core/StableHash.cs|s/h ^= c;/h ^= (uint)(c + 1);/|StableHashTests|a hash tweak silently renaming every generated helper"
-"M04|src/DwarfMapper.Generator/Core/StableHash.cs|s/h \\*= Prime;/h *= Prime + 2u;/|StableHashTests|the FNV prime drifting off the published constant"
-"M05|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/nameConvention == 1$/false/|ProjectionRuntimeParityTests|an option reaching the runtime resolver but not projection"
-"M06|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/if (!string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal)) continue;/if (true) continue;/|SelfMapDiagnosticTests|DWARF076 no longer flagging a same-type map"
-"M07|src/DwarfMapper.Generator/Pipeline/CollectionConverter.cs|s/SourceIsValueType ? \"src.GetValueOrDefault()\" : \"src\"/\"src\"/|ValueTypeSourceCollectionTests|a value-type source collection emitting uncompilable code again"
+"M04|src/DwarfMapper.Generator/Core/StableHash.cs|s/h \\*= Prime;/h *= Prime + 2u;/g|StableHashTests|the FNV prime drifting off the published constant"
+"M05|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/options.NameConvention == 1$/options.NameConvention != 1/|ProjectionRuntimeParityTests|an option reaching the runtime resolver but not projection"
+"M06|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Phases.cs|s/if (!string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))/if (string.Equals(m.ParameterTypeFullName, m.ReturnTypeFullName, StringComparison.Ordinal))/|SelfMapDiagnosticTests|DWARF076 no longer flagging a same-type map"
+"M07|src/DwarfMapper.Generator/Pipeline/CollectionConverter.cs|s/SourceIsValueType ? \"src.GetValueOrDefault()\" : \"src\"/SourceIsValueType ? \"src\" : \"src.GetValueOrDefault()\"/|ValueTypeSourceCollectionTests|a value-type source collection emitting uncompilable code again"
 "M08|src/DwarfMapper.Generator/Pipeline/CollectionConverter.cs|s/Count = sourceIsValueType ? CountKind.None : count;/Count = count;/|ValueTypeSourceCollectionTests|src.Count emitted on a Nullable<T> source"
-"M09|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (extra.HasNullSub)/if (false)/|ProjectionRuntimeParityTests|NullSubstitute silently dropped by projection"
-"M10|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (extra.When is not null)/if (false)/|ProjectionRuntimeParityTests|When= silently dropped by projection"
-"M11|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (skipNullSourceMembers$/if (false/|ProjectionRuntimeParityTests|SkipNullSourceMembers silently dropped by projection"
-"M12|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (allowNonPublic$/if (false/|ProjectionRuntimeParityTests|a non-public source member reported as simply missing"
-"M13|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (use is not null)/if (false)/|EndpointContractTests|Use= silently dropped by projection"
+"M09|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (extra.HasNullSub)/if (!extra.HasNullSub)/|ProjectionRuntimeParityTests|NullSubstitute silently dropped by projection"
+"M10|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (extra.When is not null)/if (extra.When is null)/|ProjectionRuntimeParityTests|When= silently dropped by projection"
+"M11|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (options.SkipNullSourceMembers)$/if (!options.SkipNullSourceMembers)/|ProjectionRuntimeParityTests|SkipNullSourceMembers silently dropped by projection"
+"M12|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (options.AllowNonPublic /if (!options.AllowNonPublic /|ProjectionRuntimeParityTests|a non-public source member reported as simply missing"
+"M13|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (use is not null)/if (use is null)/|EndpointContractTests|Use= silently dropped by projection"
 "M14|src/DwarfMapper.Generator/Pipeline/AggregateEmitter.cs|s/if (global::System.Threading.Interlocked.Exchange(ref __registered, 1) != 0) return;//|AutoValidateRuntimeTests|the run-once guard lost, re-registering and corrupting IsAmbiguous"
 "M15|src/DwarfMapper.Generator/Pipeline/MapEmitter.cs|s/ArgumentNullException.ThrowIfNull/ArgumentNullException_DISABLED.ThrowIfNull/g|GeneratedCodeIsWarningFreeTests|the emitted null guard disappearing"
 "M16|src/DwarfMapper.Generator/Pipeline/NumericConverter.cs|s/CreateChecked/CreateTruncating/g|NumericConversionTests|checked narrowing becoming a silent wrap"
 "M17|src/DwarfMapper.Generator/Pipeline/ParsableConverter.cs|s/InvariantCulture/CurrentCulture/g|ParsableConversionTests|emitted parsing becoming culture-dependent"
-"M18|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.cs|s/DiagnosticDescriptors.UnmappedMember/DiagnosticDescriptors.AmbiguousMatch/|DiagnosticTests|the completeness gate reporting the wrong diagnostic"
+"M18|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Members.Phases.cs|s/DiagnosticDescriptors.UnmappedMember/DiagnosticDescriptors.AmbiguousMatch/|DiagnosticTests|the completeness gate reporting the wrong diagnostic"
 "M19|src/DwarfMapper.Generator/Pipeline/EnumConverter.cs|s/ArgumentOutOfRangeException/InvalidOperationException/g|EnumStringTests|string->enum failing with the wrong exception type"
-"M20|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/needs a null decision/is fine actually/|BacklogCTests|the nullable-to-non-nullable projection refusal losing its reason"
-"M22|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (explicitOnly)/if (false)/|OptionContractTests|the mass-assignment trust boundary (AutoMatchMembers=false) not applying at projection"
-"M23|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (!autoNest)/if (false)/|OptionContractTests|projection auto-nesting despite AutoNest=false"
-"M24|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (ignoreObsolete)/if (false)/|OptionContractTests|IgnoreObsoleteMembers silently dropped by projection"
-"M25|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/if (explicitOnly)/if (false)/|OptionEndpointParityTests|the explicit-only trust boundary silently not applying to span/async element pairs"
-"M27|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/                    EmitSourceCoverageFromConsumed(/                    NoOpSourceCoverage(/|GeneratedDocsAreCurrentTests|RequiredMapping source coverage lost at projection"
-"M26|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/foreach (var owed in elementPairsOwedCoverage)/foreach (var owed in new System.Collections.Generic.List<(ITypeSymbol Src, ITypeSymbol Tgt, LocationInfo? Loc, List<string> IgnoreSources)>())/|GeneratedDocsAreCurrentTests|RequiredMapping source coverage lost at the span and async-stream endpoints"
+"M20|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/needs a null decision/is fine actually/g|BacklogCTests|the nullable-to-non-nullable projection refusal losing its reason"
+"M22|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (options.ExplicitOnly)/if (!options.ExplicitOnly)/|OptionContractTests|the mass-assignment trust boundary (AutoMatchMembers=false) not applying at projection"
+"M23|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (!autoNest)/if (autoNest)/|OptionContractTests|projection auto-nesting despite AutoNest=false"
+"M24|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Projection.cs|s/if (options.IgnoreObsolete)/if (!options.IgnoreObsolete)/|OptionContractTests|IgnoreObsoleteMembers silently dropped by projection"
+"M25|src/DwarfMapper.Generator/Pipeline/MapperExtractor.cs|s/if (explicitOnly)/if (!explicitOnly)/|OptionEndpointParityTests|the explicit-only trust boundary silently not applying to span/async element pairs"
+"M27|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Phases.cs|/Source-side completeness for projection/,+3 s/policy.RequiredMapping == 1/policy.RequiredMapping != 1/|GeneratedDocsAreCurrentTests|RequiredMapping source coverage lost at projection"
+"M26|src/DwarfMapper.Generator/Pipeline/MapperExtractor.Phases.cs|s/foreach (var owed in acc.ElementPairsOwedCoverage)/foreach (var owed in new System.Collections.Generic.List<(ITypeSymbol Src, ITypeSymbol Tgt, LocationInfo? Loc, List<string> IgnoreSources)>())/|GeneratedDocsAreCurrentTests|RequiredMapping source coverage lost at the span and async-stream endpoints"
 "M28|tests/DwarfMapper.Generator.Tests/Contracts/OptionCatalog.cs|s/v => !v.Equals(def)/v => true/|OptionContractTests|the derived enum probe collapsing to the DEFAULT value, making every enum cell measure nothing"
-"M21|docs/diagnostics.md|s/\*\*Fix:\*\* disambiguate with/**Fix (optional):** disambiguate with/|Scan8|an ERROR diagnostic downgrading its remedy to optional advice"
+"M21|docs/diagnostics.md|s/\*\*Fix:\*\* disambiguate with/**Fix (optional):** disambiguate with/g|Scan8|an ERROR diagnostic downgrading its remedy to optional advice"
 "M29|src/DwarfMapper.DocTooling/SnippetScanner.cs|s/l\[prefix.Length..\]/l.TrimStart()/|SnippetScannerTests|dedent flattening relative indentation instead of removing the common prefix"
 "M30|src/DwarfMapper.DocTooling/SnippetScanner.cs|s/if (result.TryGetValue(region.Id, out var first))/if (false \&\& result.TryGetValue(region.Id, out var first))/|SnippetScannerTests|a duplicate snippet id silently resolving to whichever file was scanned first"
 "M31|src/DwarfMapper.DocTooling/OptionTableRenderer.cs|s/prose.TryGetValue(p.Name, out var t) ? t : \"\"/prose.TryGetValue(p.Name, out var t) ? t : \"TBD\"/|DocsAreSnippetCurrentTests|a newly added option rendering placeholder prose instead of failing the build"
-"M32|tests/DwarfMapper.Generator.Tests/SelfValidation/DocFenceScanTests.cs|s/preceding?.StartsWith(ExemptMarker, StringComparison.Ordinal) != true/false/|DocFenceScanTests|the fence ratchet accepting any comment as an exemption"
-"M34|src/DwarfMapper.DocTooling/DocSnippetInjector.cs|s/LongestBacktickRun(region.Body) + 1/3/|DocPipelinePropertyTests|a snippet containing \`\`\` closing its own fence and leaking code into the document as prose"
+"M32|tests/DwarfMapper.Generator.Tests/SelfValidation/DocFenceScanTests.cs|s/preceding?.StartsWith(ExemptMarker, StringComparison.Ordinal) != true/preceding?.StartsWith(ExemptMarker, StringComparison.Ordinal) == true/|DocFenceScanTests|the fence ratchet exemption test inverted, so genuine offenders go unrecorded"
+"M34|src/DwarfMapper.DocTooling/DocSnippetInjector.cs|s/LongestBacktickRun(region.Body) + 1/System.Math.Min(LongestBacktickRun(region.Body) + 1, 3)/|DocPipelinePropertyTests|a snippet containing \`\`\` closing its own fence and leaking code into the document as prose"
 )
 
 echo "== mutation battery: ${#MUTANTS[@]} mutants (mode: $MODE) =="
 echo
 
-SURVIVORS=(); STALE=(); KILLED=0
+# BASELINE FIRST. Every verdict below is really "the test run failed", so a suite that is ALREADY red marks
+# EVERY mutant killed and prints a perfectly vacuous 33/33. The score is only a measurement if the
+# unmutated suite is green, so that is established before a single mutant is planted.
+echo "== baseline: the unmutated suite must be green =="
+if ! dotnet test "$TESTS" -c Debug --nologo >/dev/null 2>&1; then
+  echo "FAIL: the unmutated suite is not green, so every mutant below would read as killed." >&2
+  echo "      Fix the suite first; a battery run against a red tree measures nothing." >&2
+  exit 1
+fi
+echo "   baseline green"
+echo
+
+SURVIVORS=(); STALE=(); BROKEN=(); KILLED=0
 
 # Restores the mutated file AND any generated documentation.
 #
@@ -96,6 +127,22 @@ SURVIVORS=(); STALE=(); KILLED=0
 # rendered content reflects the DEFECT — so a battery run left a matrix on disk describing the mutated
 # generator, and that file was then committed as if it described the real one. A harness that silently
 # rewrites tracked artefacts is worse than no harness.
+# The project a mutated file belongs to. Needed because a mutant that does not COMPILE is caught by the
+# COMPILER, not by a test: the build fails, every test in the run fails with it, and the mutant reads as
+# "killed by <guard>" for a guard that never got the chance to run. Seven catalogue entries sat in exactly
+# that state undetected -- see Issues/round27/FINDING-mutation-battery-catalogue-rot.md. A non-compiling
+# mutant is a CATALOGUE DEFECT and is reported as one.
+project_for() {
+  local d p
+  d="$(dirname "$1")"
+  while [[ "$d" != "." && "$d" != "/" && -n "$d" ]]; do
+    p="$(ls "$d"/*.csproj 2>/dev/null | head -1)"
+    if [[ -n "$p" ]]; then echo "$p"; return; fi
+    d="$(dirname "$d")"
+  done
+  echo ""   # markdown and other non-compiled targets have no project above them
+}
+
 restore() {
   git checkout -- "$1" 2>/dev/null || true
   git checkout -- docs/ 2>/dev/null || true
@@ -112,6 +159,13 @@ for entry in "${MUTANTS[@]}"; do
     # changed anything — the catalogue would rot into a green formality.
     echo "   STALE: expression matched nothing (source moved?)"
     STALE+=("$ID — $FILE")
+    restore "$FILE"; echo; continue
+  fi
+
+  CSPROJ="$(project_for "$FILE")"
+  if [[ -n "$CSPROJ" ]] && ! dotnet build "$CSPROJ" -c Debug --nologo -v q >/dev/null 2>&1; then
+    echo "   COMPILE-BREAK: the mutant does not build — a CATALOGUE DEFECT, not a kill"
+    BROKEN+=("$ID — $DESC")
     restore "$FILE"; echo; continue
   fi
 
@@ -154,6 +208,15 @@ if (( ${#STALE[@]} > 0 )); then
   echo "  Update the expression, or drop the mutant if the behaviour is gone." >&2
 fi
 
+if (( ${#BROKEN[@]} > 0 )); then
+  echo
+  echo "COMPILE-BREAK mutants (the catalogue entry is defective, and NOTHING about the suite was tested):" >&2
+  for b in "${BROKEN[@]}"; do echo "  - $b" >&2; done
+  echo "  Rewrite the replacement so it COMPILES and still plants the defect the description names." >&2
+  echo "  Note that 'if (false)' is not a usable form here: the body becomes unreachable and CS0162 is an" >&2
+  echo "  error in this repository. Inverting the condition plants the defect without that problem." >&2
+fi
+
 if (( ${#SURVIVORS[@]} > 0 )); then
   echo
   echo "SURVIVING MUTANTS — each names a behaviour nothing asserts:" >&2
@@ -164,6 +227,6 @@ fi
 
 # Stale entries fail too: a catalogue that silently stops mutating is the mutation-testing equivalent of a
 # vacuous test, and it degrades quietly rather than loudly.
-(( ${#SURVIVORS[@]} == 0 && ${#STALE[@]} == 0 )) || exit 1
+(( ${#SURVIVORS[@]} == 0 && ${#STALE[@]} == 0 && ${#BROKEN[@]} == 0 )) || exit 1
 
 echo "All mutants killed — every catalogued defect is caught by at least one guard."

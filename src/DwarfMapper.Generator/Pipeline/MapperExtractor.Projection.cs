@@ -255,30 +255,22 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            bool caseInsensitive,
+            in MapperOptions options,
             IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
             EnumPolicy enumPolicy,
             int referenceHandling,
             string paramExpr,
-            int nameConvention = 0,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
                 mapPropertyExtras = null,
-            bool skipNullSourceMembers = false,
-            bool allowNonPublic = false,
-            bool explicitOnly = false,
-            bool ignoreObsolete = false,
-            bool autoNest = true,
             // I19: the projection endpoint reads NullCollections like every other endpoint. It used to read it
             // nowhere at all, so a null source collection came back EMPTY through .Map (the documented AsEmpty
             // default) and NULL through .Project — the same member answering differently depending on which
             // method the caller reached for. The one call site passes the mapper's real setting.
-            bool nullAsNull = false,
             // I20: the projection endpoint reads ImplicitConversions, and it used to read it NOWHERE. The option
             // reached ResolveMembers at five call sites and this resolver at none, so under
             // [DwarfMapper(ImplicitConversions = false)] a lossy-but-C#-implicit conversion (long -> double) was
             // an Error at .Map and produced no diagnostic at all at .Project — the strict TRUST setting silently
             // off at one endpoint. The one call site passes the mapper's real setting.
-            bool implicitConversions = true,
             HashSet<string>? consumedSources = null,
             IReadOnlyList<string>? flattenRoots = null,
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
@@ -288,7 +280,7 @@ namespace DwarfMapper.Generator.Pipeline
             // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
             // obsolete member that IS explicitly targeted stays out of the set — opting a retired member back
             // in deliberately must keep working at both endpoints.
-            if (ignoreObsolete)
+            if (options.IgnoreObsolete)
             {
                 var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
@@ -313,7 +305,7 @@ namespace DwarfMapper.Generator.Pipeline
             // required). Mirrors ResolveMembers' rule so the projection diagnostic fires on exactly the members the
             // option would have changed — no more, no less.
             var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);
-            if (skipNullSourceMembers)
+            if (options.SkipNullSourceMembers)
             {
                 for (var t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
                     foreach (var tm in t.GetMembers())
@@ -339,9 +331,9 @@ namespace DwarfMapper.Generator.Pipeline
             // NameConvention.Flexible (1) must reach the projection path too, or the SAME mapper resolves members
             // one way through .Map and another through .Project — the divergence the ambiguity fix below exists to
             // prevent. Expressed as a comparer so it rides the existing propagation into nested/ctor resolvers.
-            var comparer = nameConvention == 1
+            var comparer = options.NameConvention == 1
                 ? FlexibleNameComparer.Instance
-                : caseInsensitive
+                : options.CaseInsensitive
                     ? StringComparer.OrdinalIgnoreCase
                     : StringComparer.Ordinal;
             var sources = BuildProjectionSourceLookup(sourceType, comparer, compilation, location, diagnostics);
@@ -517,9 +509,9 @@ namespace DwarfMapper.Generator.Pipeline
                     tgtName,
                     enumPolicy,
                     comparer,
-                    autoNest,
-                    nullAsNull,
-                    implicitConversions);
+                    options.AutoNest,
+                    options.NullAsNull,
+                    options.ImplicitConversions);
                 if (inlineExpr is null)
                 {
                     continue;
@@ -625,9 +617,9 @@ namespace DwarfMapper.Generator.Pipeline
                     targetType,
                     enumPolicy,
                     comparer,
-                    autoNest,
-                    nullAsNull,
-                    implicitConversions,
+                    options.AutoNest,
+                    options.NullAsNull,
+                    options.ImplicitConversions,
                     ctorArgExprs,
                     ctorArgTargets);
                 if (ctorExpr is null)
@@ -664,7 +656,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // [DwarfMapper(AllowNonPublic = true)]; projection enumerates public members only, so the
                     // generic "no matching source member" would send the reader hunting for a member that is
                     // plainly there. Name the real reason instead.
-                    if (allowNonPublic && ReadableMembers(sourceType, compilation, true).Any(m => comparer.Equals(m.Name, target.Name)))
+                    if (options.AllowNonPublic && ReadableMembers(sourceType, compilation, true).Any(m => comparer.Equals(m.Name, target.Name)))
                     {
                         EmitDWARF028(diagnostics,
                             location,
@@ -712,9 +704,9 @@ namespace DwarfMapper.Generator.Pipeline
                             target.Name,
                             enumPolicy,
                             comparer,
-                            autoNest,
-                            nullAsNull,
-                            implicitConversions);
+                            options.AutoNest,
+                            options.NullAsNull,
+                            options.ImplicitConversions);
                         if (flatExpr is not null)
                         {
                             result.Add(new ProjectionMemberMap(target.Name, flatExpr));
@@ -736,7 +728,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // .Project — a security control that silently did not apply at one endpoint. Explicit
                 // [MapProperty]/[MapValue]/[MapIgnore] have already been handled above; only the implicit
                 // by-name wire is blocked, matching ResolveMembers exactly.
-                if (explicitOnly)
+                if (options.ExplicitOnly)
                 {
                     diagnostics.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.AutoMatchDisabled,
@@ -752,7 +744,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // null source would overwrite that default with null. Reported PER AFFECTED MEMBER, using the same
                 // eligibility the runtime uses (nullable source + a target it could actually have deferred), so
                 // members the option never touched stay quiet.
-                if (skipNullSourceMembers && (src.Type.IsReferenceType || IsNullableValue(src.Type, out _)) && deferrableTargets.Contains(target.Name))
+                if (options.SkipNullSourceMembers && (src.Type.IsReferenceType || IsNullableValue(src.Type, out _)) && deferrableTargets.Contains(target.Name))
                 {
                     EmitDWARF028(diagnostics,
                         location,
@@ -775,9 +767,9 @@ namespace DwarfMapper.Generator.Pipeline
                     target.Name,
                     enumPolicy,
                     comparer,
-                    autoNest,
-                    nullAsNull,
-                    implicitConversions);
+                    options.AutoNest,
+                    options.NullAsNull,
+                    options.ImplicitConversions);
                 if (inlineExpr is not null)
                 {
                     result.Add(new ProjectionMemberMap(target.Name, inlineExpr));

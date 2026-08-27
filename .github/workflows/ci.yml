@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-  # Both added for the NIGHTLY TIER — the `mutation` matrix (all three Stryker legs) and the `deep-test` job
+  # Both added for the NIGHTLY TIER — the `mutation` matrix (all five Stryker legs) and the `deep-test` job
   # (deep suite + coverage floors + ILVerify) — which is far too slow to gate a push; see each job's own
   # comment. Those are the ONLY jobs guarded to these two events; every other job keeps running exactly when
   # it did before. The side effect is that the nightly cron also re-runs the push/PR jobs, which is harmless
@@ -79,98 +79,68 @@ jobs:
       # timeout eats the evidence. Applied to every plain `dotnet test` step in this workflow; the Stryker
       # legs deliberately do NOT carry it — there the per-mutant ceiling plays that role and a second killer
       # would fight it.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults
+      # --logger junit: `dotnet test` ships trx/html/console and NO junit, and Codecov test analytics
+      # reads JUnit XML only. Without it the upload below finds nothing and reports success.
+      # continue-on-error so a FAILING TEST still reaches the upload — test analytics exists to
+      # show which tests fail and how often, which is precisely the run you must not skip.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
+        continue-on-error: true
+        id: tests
 
-      # ── Coverage gate for DwarfMapper.Generator ─────────────────────────────
-      # Thresholds: line ≥ 80% / branch ≥ 70% (achieved ≈84.5%/77.4%; gate is −5pp margin).
-      # Target-file requirements (EquatableArray / TypeInterfaces / BlittableProof /
-      # LocationInfo / FlattenGraphDirective each ≥ 90% line) are enforced here as well.
-      # IMPORTANT: pushing ci.yml changes requires the `workflow` OAuth scope.
-      - name: Check generator coverage thresholds
-        # Thresholds: overall line ≥ 80% / branch ≥ 70% (achieved ≈84.5%/77.4%; gate is −5pp margin).
-        # Per-file: EquatableArray/TypeInterfaces/BlittableProof/LocationInfo/FlattenGraphDirective ≥ 90% line.
-        # IMPORTANT: pushing ci.yml requires the `workflow` OAuth scope.
+      # ── Publish coverage to Codecov ─────────────────────────────────────────
+      # PREPARATION, not yet the gate. The inline gate below still runs, deliberately: a replacement gate is
+      # not proven until it has produced a verdict on a real push, and removing enforcement before that is
+      # how a repository ends up with neither. The cutover — what to delete, and the evidence required first
+      # — is written down in Issues/round27/PLAN-hosted-reports.md.
+      #
+      # fail_ci_if_error is FALSE on purpose. An upload failure means Codecov was unreachable; a coverage
+      # regression means the code got worse. Conflating them teaches everyone to re-run red builds, which is
+      # the habit that makes a gate worthless. The blocking verdict is the STATUS CHECK, configured in
+      # codecov.yml, which simply does not appear if the upload never arrived.
+      - name: Upload test results to Codecov
+        # !cancelled() rather than always(): a cancelled run has no meaningful results, but a FAILED one has
+        # the most meaningful results there are. Paired with continue-on-error on the test step above, a red
+        # suite still publishes which tests were red.
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./TestResults/junit/*.junit.xml
+
+      - name: Upload coverage reports to Codecov
+        # SHA-pinned like all 45 of its neighbours; README's "all GitHub Actions pinned to commit SHAs" is a
+        # claim this file has to keep true, and an unpinned tag is a mutable pointer someone else controls.
+        # The comment carries the human-readable version so the pin can be audited without a lookup.
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          # The token is a REFERENCE, resolved by GitHub at run time from repository secrets. Nothing secret
+          # is stored here; add it under Settings > Secrets and variables > Actions as CODECOV_TOKEN.
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./TestResults/**/coverage.cobertura.xml
+          fail_ci_if_error: false
+          verbose: true
+
+      # The test step is continue-on-error so both uploads run; the build must still fail on a red suite, so
+      # its outcome is re-asserted here, AFTER the results have been published.
+      - name: Fail the build if any test failed
+        if: steps.tests.outcome == 'failure'
         run: |
-          set -euo pipefail
-          # A solution-wide `dotnet test --collect` emits ONE cobertura per test
-          # project (Generator.Tests, IntegrationTests, Testing.Tests, CorpusTests —
-          # every test project in the solution). Only one of them contains the
-          # <package name="DwarfMapper.Generator"> node — so we scan ALL reports and
-          # key the gate off that package directly, rather than the file-level root
-          # rate (which is diluted by, or missing, the generator).
-          mapfile -t COBERTURA < <(find TestResults -name "coverage.cobertura.xml")
-          if [ ${#COBERTURA[@]} -eq 0 ]; then echo "No coverage.cobertura.xml found"; exit 1; fi
-          python3 - "${COBERTURA[@]}" <<'PYEOF'
-          import sys
-          import xml.etree.ElementTree as ET
+          echo "::error::Test suite failed - see the Codecov test-results report for which tests and how often"
+          exit 1
 
-          GENERATOR_PACKAGE   = "DwarfMapper.Generator"
-          LINE_THRESHOLD      = 0.80
-          BRANCH_THRESHOLD    = 0.70
-          FILE_LINE_THRESHOLD = 0.90
+      # ── Coverage is gated by Codecov ────────────────────────────────────────
+      # An inline gate lived here: ~70 lines of embedded Python checking ONE assembly
+      # (DwarfMapper.Generator) at 80 % line / 70 % branch. It was strictly dominated and is deleted rather
+      # than kept "for safety", because two gates disagreeing about one measurement is worse than either
+      # alone — the weaker one passes, and its green is indistinguishable from agreement.
+      #
+      #   inline gate (deleted)   1 assembly    80 %      new lines unchecked
+      #   codecov.yml             5 assemblies  measured  90 % patch target
+      #
+      # The targets in codecov.yml are the same measured floors scripts/housekeeping.ps1 enforces, and
+      # RatchetInvariantScanTests.R5 fails the build if the two ever disagree. Cutover and the evidence it
+      # needs: Issues/round27/PLAN-hosted-reports.md.
 
-          target_files = {
-              "EquatableArray.cs", "TypeInterfaces.cs", "BlittableProof.cs",
-              "LocationInfo.cs", "FlattenGraphDirective.cs",
-          }
-
-          # Locate the generator package across every report. If split across multiple
-          # reports, keep the best line-rate per file and the best package-level rates.
-          gen_line = gen_branch = -1.0
-          file_rates = {}
-          for path in sys.argv[1:]:
-              root = ET.parse(path).getroot()
-              for pkg in root.iter("package"):
-                  if pkg.attrib.get("name") != GENERATOR_PACKAGE:
-                      continue
-                  gen_line   = max(gen_line,   float(pkg.attrib.get("line-rate",   "0")))
-                  gen_branch = max(gen_branch, float(pkg.attrib.get("branch-rate", "0")))
-                  for cls in pkg.iter("class"):
-                      filename = cls.attrib.get("filename", "").replace("\\", "/").split("/")[-1]
-                      if filename in target_files:
-                          rate = float(cls.attrib.get("line-rate", "0"))
-                          file_rates[filename] = max(file_rates.get(filename, 0.0), rate)
-
-          failures = []
-          if gen_line < 0:
-              failures.append(f"No '{GENERATOR_PACKAGE}' package found in any coverage report")
-          else:
-              if gen_line < LINE_THRESHOLD:
-                  failures.append(f"Generator line coverage {gen_line*100:.1f}% < {LINE_THRESHOLD*100:.0f}%")
-              if gen_branch < BRANCH_THRESHOLD:
-                  failures.append(f"Generator branch coverage {gen_branch*100:.1f}% < {BRANCH_THRESHOLD*100:.0f}%")
-              for fname in target_files:
-                  rate = file_rates.get(fname, 0.0)
-                  if rate < FILE_LINE_THRESHOLD:
-                      failures.append(f"{fname} line coverage {rate*100:.1f}% < {FILE_LINE_THRESHOLD*100:.0f}%")
-
-          if failures:
-              print("COVERAGE GATE FAILED:")
-              for msg in failures:
-                  print(f"  - {msg}")
-              sys.exit(1)
-
-          print(f"Coverage gate PASSED  generator line={gen_line*100:.1f}% branch={gen_branch*100:.1f}%")
-          for fname, rate in sorted(file_rates.items()):
-              print(f"  {fname}: {rate*100:.1f}%")
-          PYEOF
-
-  # ── The executed surface cross-product ────────────────────────────────────
-  # Every [DwarfSurface] element, at every legal declaration site, in every case its declaration admits, at
-  # every endpoint — 854 cells, each verified in BOTH directions against the element's own AppliesTo claim.
-  # Its own leg because its red means something different from every other leg's: a failing cell is a
-  # measured statement that a caller wrote something the generator accepted, changed nothing for, and said
-  # nothing about. The default leg excludes it with Category!=SurfaceMatrix.
-  #
-  # BLOCKING. It was non-blocking while the first full run was red by design; the matrix is now GREEN, and
-  # the 174 red cells it started with are down to 17 — 4 covered by a recorded finding in
-  # DeclaredDivergences.Reasons (2 findings, each re-measured every run and each failing the build the moment
-  # it starts working) and 13 where a single option of an option bag has no surface at that endpoint. Both
-  # remaining findings are maintainer-acknowledged design decisions, not silent defects. A leg that cannot
-  # fail is decoration, and the value of this one is entirely in the failure: a red cell here means a caller
-  # wrote something the generator accepted, changed nothing for, and said nothing about. Runtime ~25s: the
-  # baseline compile is memoized per (endpoint, fixture, options), so the cross-product costs one compile per
-  # cell rather than two.
   surface-matrix:
     runs-on: ubuntu-latest
     steps:
@@ -182,8 +152,9 @@ jobs:
       - run: dotnet test tests/DwarfMapper.Generator.Tests/DwarfMapper.Generator.Tests.csproj -c Release --filter "Category=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m
 
   # ── Mutation testing: ALL THREE legs, nightly ─────────────────────────────────────────────────────────
-  # One matrix, three configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
-  # (stryker-config.json) and the DOCUMENTATION PIPELINE (stryker-config.doctooling.json). The runtime leg
+  # One matrix, five configs: the SHIPPED RUNTIME assembly (stryker-config.runtime.json), the GENERATOR
+  # (stryker-config.json), the DOCUMENTATION PIPELINE (stryker-config.doctooling.json), the CODE FIXES
+  # (stryker-config.codefixes.json) and the ROUND-27 EXTRACTED PIPELINE (stryker-config.pipeline.json). The runtime leg
   # ran here first (it previously ran in NO job at all — a config someone had to remember to invoke via
   # `housekeeping.ps1 -Mutation`, and a score nobody measures is free to regress silently in either
   # direction); round-21 T5 brought the two sibling legs in beside it under the maintainer's 2026-08-21
@@ -205,7 +176,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
       # One leg failing its break threshold must NOT cancel the others mid-run: the whole point of the
-      # nightly is three scored reports every night, and a cancelled leg leaves no report at all.
+      # nightly is five scored reports every night, and a cancelled leg leaves no report at all.
       fail-fast: false
       matrix:
         include:
@@ -223,6 +194,23 @@ jobs:
           - leg: doctooling   # measured 5:04-5:30 (2026-08-21, 12 cores)
             config: stryker-config.doctooling.json
             timeout: 60
+          - leg: codefixes    # measured 6:20 (2026-08-26, 12 cores, after the round-27 kill program)
+            config: stryker-config.codefixes.json
+            timeout: 80
+          # Round-27 member-resolution phases. SCOPED TO ONE AREA on purpose: a leg over all 13 extracted
+          # Pipeline/ files needed to test 1,353 mutants and had not finished after 158 minutes on 12
+          # cores, which is past this job's ceiling however generously it is budgeted — GitHub caps a job
+          # at six hours and the rule here is ~10x measured. The remaining ten files are covered one area
+          # per leg, each sized to complete (Issues/round27/AUDIT-mutation-scope.md).
+          # TIMEOUT DEPARTS FROM THE ~10x RULE, deliberately. Measured 2026-08-27 on 12 cores: 37 min for
+          # 236 tested mutants (of 13,129 created; 9,583 filtered out-of-leg, 3,240 compile errors). 10x is
+          # 370, which BREACHES the 360-minute ceiling GitHub puts on a job — so 350 is the most this rule
+          # can ask for, and a leg that needs more than this is by definition too big. That is the size
+          # ceiling the one-area-per-leg policy implies; the four sibling legs sit at 5-20 min and fit the
+          # rule with room to spare.
+          - leg: pipeline     # measured 37:00 (2026-08-27, 12 cores, 236 tested mutants)
+            config: stryker-config.pipeline.json
+            timeout: 350
     timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -480,8 +468,34 @@ jobs:
       # on for every other job, which is where lock-file integrity is actually gated. It is admitting that a
       # deliberately-unpinned SDK and a pinned lock file cannot both hold, and choosing the one this leg is
       # named after.
+      # TreatWarningsAsErrors is turned OFF for this leg only, and that is the fix for a job that had been
+      # red on master every night since at least 2026-08-24 without telling anyone anything.
+      #
+      # Directory.Build.props sets AnalysisLevel=latest-all with TreatWarningsAsErrors=true and an empty
+      # WarningsNotAsErrors — every analyzer rule the SDK ships, as an error. That is right for the pinned
+      # SDK. It is wrong HERE, because this leg deliberately drops the pin to run on a newer compiler, and a
+      # newer compiler ships new and changed analyzer rules. Under the inherited settings the leg therefore
+      # goes red the moment the toolchain gains an opinion, which is not the question it exists to answer.
+      #
+      # The question is "does the generator still load and work on a newer compiler?" — so this leg fails on
+      # what would actually answer it NO: a compile error, or a failing test. New diagnostics are reported
+      # instead, in the step below, which is the signal a forward-compatibility leg is supposed to produce.
       - name: Build the generator against the floor, on a newer compiler
-        run: dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false
+        run: |
+          set -euo pipefail
+          dotnet build DwarfMapper.NET.sln -c Release -p:RestoreLockedMode=false                  -p:TreatWarningsAsErrors=false -v n 2>&1 | tee forward-compat-build.log
+
+      - name: Report what the newer compiler newly objects to
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          echo "SDK under test: $(dotnet --version)"
+          if grep -oE 'warning [A-Z]+[0-9]+' forward-compat-build.log | sort | uniq -c | sort -rn > fc-warnings.txt && [ -s fc-warnings.txt ]; then
+            echo "::notice::the newer SDK produces $(wc -l < fc-warnings.txt) distinct diagnostic(s) this repo does not see on its pinned SDK"
+            cat fc-warnings.txt
+          else
+            echo "no new diagnostics: the newer compiler agrees with the pinned one"
+          fi
       # Same exclusion as build-test: this leg asks "does the generator still LOAD in a newer compiler", and
       # the matrix has its own dedicated job above. (Until 2026-08-18 the stated reason was that the matrix's
       # expected red would drown the answer; it is green now, so the reason is duplication, not noise.)

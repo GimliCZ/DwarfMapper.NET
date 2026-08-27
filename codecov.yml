@@ -1,0 +1,129 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Codecov configuration — the hosted replacement for the inline coverage gate in .github/workflows/ci.yml.
+#
+# WHY THIS EXISTS, and what changes. The inline gate this replaces checked ONE assembly
+# (DwarfMapper.Generator) at 80 % line and 70 % branch. The floors enforced locally by
+# scripts/housekeeping.ps1 are 94.5 % for that same assembly and cover FIVE, so CI had been gating fourteen
+# points below the measured reality and blind to four assemblies. This is the CI half of that gate.
+#
+# EVERY TARGET IS `auto`, AND THAT IS THE WHOLE POINT. The first version of this file copied the measured
+# floors in as absolute numbers -- 94.5 for the generator, and so on. That was WRONG BY CONSTRUCTION, and the
+# first real upload proved it: aggregating Codecov's own per-file figures gives the generator 90.62 %, not
+# 94.5 %, and the whole repository 89.92 %, which reproduces Codecov's 89.90 % headline almost exactly.
+#
+# The two tools do not mean the same thing by "line coverage":
+#
+#     coverlet / ReportGenerator  a partially-covered line is COVERED      -> generator 94.39 %
+#     Codecov                     a partially-covered line is NOT covered  -> generator 90.62 %
+#
+# Neither is wrong; they are different measurements that happen to share a name. Copying one tool's number
+# into the other's config produces a threshold that fails for a reason unrelated to coverage, which is
+# exactly what would have happened on the first push to master.
+#
+# `auto` compares each component against the SAME METRIC on the base commit, so no number is transcribed and
+# no definition is assumed. It also expresses the rule this repository actually wants -- coverage may not
+# regress -- rather than a snapshot that has to be re-measured by hand whenever anything moves. The absolute
+# floors keep living in housekeeping.ps1, measured with coverlet's definition, gating locally and nightly;
+# RatchetInvariantScanTests.R5 now guards the SEPARATION rather than asserting a false equality between them.
+#
+# COMPONENTS, NOT FLAGS, on purpose. Flags require every upload to declare which assembly it belongs to, and
+# this repository emits one cobertura per test project across two tiers -- plumbing that is a second thing to
+# get wrong. Components partition by PATH on Codecov's side from the same uploads.
+#
+# WHAT THIS CANNOT DO. Mutation scores are not coverage and do not belong here; mutation stays gated by each
+# leg's `break` threshold inside the run -- see Issues/round27/PLAN-hosted-reports.md.
+
+codecov:
+  require_ci_to_pass: true
+  notify:
+    # Wait for every upload before judging. The fast tier and the nightly deep tier both produce cobertura,
+    # and the deep tier covers strictly more (tests/Shared/DeepTier.cs multiplies the population), so a
+    # verdict reached on the fast tier alone would understate coverage and red the build for a reason that
+    # is an artefact of upload ordering.
+    wait_for_ci: true
+
+coverage:
+  precision: 1
+  round: down          # matches the floors' [math]::Floor(x*10)/10 convention exactly
+  range: "85...100"
+
+  status:
+    project:
+      default:
+        # The whole-repo number is informational: it moves whenever the ratio of assembly sizes changes,
+        # which is not a quality signal. The per-component statuses below are the real gate.
+        informational: true
+
+    patch:
+      default:
+        # New and changed lines must be covered at least as well as the code they join. This is the check
+        # the per-assembly floors CANNOT make: a floor is satisfied by a large well-covered assembly
+        # absorbing a small uncovered addition, and that is precisely how coverage erodes without any floor
+        # ever going red.
+        #
+        # `auto` for the same reason as the components below — it compares against the base commit, so it
+        # never encodes a number that can be wrong.
+        target: auto
+        threshold: 0%
+
+component_management:
+  individual_components:
+    - component_id: generator
+      name: DwarfMapper.Generator
+      paths:
+        - src/DwarfMapper.Generator/**
+      statuses:
+        - type: project
+          target: auto
+          threshold: 0%
+
+    - component_id: runtime
+      name: DwarfMapper
+      paths:
+        - src/DwarfMapper/**
+      statuses:
+        - type: project
+          target: auto
+          threshold: 0%
+
+    - component_id: doctooling
+      name: DwarfMapper.DocTooling
+      paths:
+        - src/DwarfMapper.DocTooling/**
+      statuses:
+        - type: project
+          target: auto
+          threshold: 0%
+
+    - component_id: codefixes
+      name: DwarfMapper.CodeFixes
+      paths:
+        - src/DwarfMapper.CodeFixes/**
+      statuses:
+        - type: project
+          target: auto
+          threshold: 0%
+
+    - component_id: testing
+      name: DwarfMapper.Testing
+      paths:
+        - src/DwarfMapper.Testing/**
+      statuses:
+        - type: project
+          target: auto
+          threshold: 0%
+
+ignore:
+  # Not shipping code. Samples are written for readability, benchmarks for measurement, and the conformance
+  # sample deliberately exercises shapes no consumer should copy; counting them would move the number for
+  # reasons unrelated to the product.
+  - "samples/**"
+  - "benchmarks/**"
+  - "tests/**"
+  - "**/obj/**"
+  - "**/bin/**"
+
+comment:
+  layout: "condensed_header, diff, components, condensed_files"
+  require_changes: true      # no comment when coverage is unchanged; PR noise is how annotations get ignored

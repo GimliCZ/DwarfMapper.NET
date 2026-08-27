@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 
 namespace DwarfMapper
 {
@@ -19,8 +20,7 @@ namespace DwarfMapper
     /// </remarks>
     public static class DwarfMapperRegistry
     {
-        private static readonly ConcurrentDictionary<Key, Func<object, object>> Maps = new();
-        private static readonly ConcurrentDictionary<Key, byte> Ambiguous = new();
+        private static readonly RegistryTable<Func<object, object>> Maps = new();
 
         /// <summary>
         ///     The subset of <see cref="Maps" /> whose SOURCE is an interface, kept as a flat list so lookup can
@@ -54,21 +54,7 @@ namespace DwarfMapper
         ///     are different operations over the same types — so they cannot share a key space without one
         ///     shadowing the other.
         /// </remarks>
-        private static readonly ConcurrentDictionary<Key, Action<object, object>> UpdateMaps = new();
-
-        /// <summary>
-        ///     The update table's own ambiguity set, separate from <see cref="Ambiguous" /> for the same reason
-        ///     <see cref="UpdateMaps" /> is separate from <see cref="Maps" />: the two key spaces answer different
-        ///     questions about the same pair.
-        /// </summary>
-        /// <remarks>
-        ///     <c>RegisterUpdate</c> used to mark a duplicate in <see cref="Ambiguous" /> — the CREATE table's set,
-        ///     the only one that existed. Two update registrations for a pair with no create map therefore left
-        ///     <see cref="IsAmbiguous" /> reporting <c>true</c> while <see cref="IsProvided" /> reported
-        ///     <c>false</c>: an ambiguous map that was never registered. The duplicate was real, but it was
-        ///     recorded against the wrong table, so the create-side accessor answered a question nobody asked.
-        /// </remarks>
-        private static readonly ConcurrentDictionary<Key, byte> UpdateAmbiguous = new();
+        private static readonly RegistryTable<Action<object, object>> UpdateMaps = new();
 
         /// <summary>All registered (source, destination) pairs. For diagnostics / validation only.</summary>
         public static IReadOnlyCollection<(Type Source, Type Destination)> Provided
@@ -94,9 +80,8 @@ namespace DwarfMapper
             ArgumentNullException.ThrowIfNull(map);
 
             var key = new Key(source, destination);
-            if (!Maps.TryAdd(key, map))
+            if (!Maps.TryRegister(key, map))
             {
-                Ambiguous.TryAdd(key, 1);
                 return;
             }
 
@@ -111,19 +96,19 @@ namespace DwarfMapper
         /// <summary>True if a map for the exact pair is registered.</summary>
         public static bool IsProvided(Type source, Type destination)
         {
-            return Maps.ContainsKey(new Key(source, destination));
+            return Maps.IsProvided(new Key(source, destination));
         }
 
         /// <summary>True if more than one assembly registered a map for the exact pair.</summary>
         public static bool IsAmbiguous(Type source, Type destination)
         {
-            return Ambiguous.ContainsKey(new Key(source, destination));
+            return Maps.IsAmbiguous(new Key(source, destination));
         }
 
         /// <summary>Tries to get the map delegate for the exact pair (no base-type walk).</summary>
         public static bool TryGet(Type source, Type destination, out Func<object, object>? map)
         {
-            return Maps.TryGetValue(new Key(source, destination), out map);
+            return Maps.TryGet(new Key(source, destination), out map);
         }
 
         /// <summary>
@@ -166,13 +151,13 @@ namespace DwarfMapper
 #pragma warning disable RS0030
             var runtimeType = source.GetType();
 #pragma warning restore RS0030
-            if (Maps.TryGetValue(new Key(runtimeType, destination), out var direct))
+            if (Maps.TryGet(new Key(runtimeType, destination), out var direct))
             {
                 return direct(source);
             }
 
             for (var baseType = runtimeType.BaseType; baseType is not null; baseType = baseType.BaseType)
-                if (Maps.TryGetValue(new Key(baseType, destination), out var viaBase))
+                if (Maps.TryGet(new Key(baseType, destination), out var viaBase))
                 {
                     return viaBase(source);
                 }
@@ -219,16 +204,13 @@ namespace DwarfMapper
             ArgumentNullException.ThrowIfNull(map);
 
             var key = new Key(source, destination);
-            if (!UpdateMaps.TryAdd(key, map))
-            {
-                UpdateAmbiguous.TryAdd(key, 1);
-            }
+            UpdateMaps.TryRegister(key, map);
         }
 
         /// <summary>True if an update-into map for the exact pair is registered.</summary>
         public static bool IsUpdateProvided(Type source, Type destination)
         {
-            return UpdateMaps.ContainsKey(new Key(source, destination));
+            return UpdateMaps.IsProvided(new Key(source, destination));
         }
 
         /// <summary>
@@ -238,7 +220,7 @@ namespace DwarfMapper
         /// </summary>
         public static bool IsUpdateAmbiguous(Type source, Type destination)
         {
-            return UpdateAmbiguous.ContainsKey(new Key(source, destination));
+            return UpdateMaps.IsAmbiguous(new Key(source, destination));
         }
 
         // ── Deliberate asymmetries with the create table ────────────────────────────────────────────────
@@ -273,12 +255,89 @@ namespace DwarfMapper
             ArgumentNullException.ThrowIfNull(sourceType);
             ArgumentNullException.ThrowIfNull(destinationType);
 
-            if (!UpdateMaps.TryGetValue(new Key(sourceType, destinationType), out var map))
+            if (!UpdateMaps.TryGet(new Key(sourceType, destinationType), out var map))
             {
                 throw new DwarfMapMissingException(sourceType, destinationType, null, true);
             }
 
             map(source, destination);
+        }
+
+        /// <summary>
+        ///     One registration table: the delegate registered per (source, destination) pair, and the pairs a
+        ///     second, distinct registration arrived for.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The two halves are ONE type because keeping them as separate statics is what allowed the bug
+        ///         this registry used to have. <c>RegisterUpdate</c> marked its duplicates in the CREATE table's
+        ///         ambiguity set — the only one that existed at the time — so two update registrations for a pair
+        ///         with no create map left <see cref="IsAmbiguous" /> reporting <c>true</c> while
+        ///         <see cref="IsProvided" /> reported <c>false</c>: an ambiguous map that was never registered.
+        ///         The duplicate was real; it was recorded against the wrong table.
+        ///     </para>
+        ///     <para>
+        ///         Nothing about that was subtle. It was one identifier out of four, and with four loose
+        ///         dictionaries the type system had no opinion about which ambiguity set belonged to which map
+        ///         table. Bound together, marking the wrong one is not a mistake that can be written: the
+        ///         duplicate is recorded by the same call that failed to add, on the same instance.
+        ///     </para>
+        ///     <para>
+        ///         A pair can legitimately have BOTH a create and an update map — <c>TDest Map(TSource)</c> and
+        ///         <c>void Update(TSource, TDest)</c> are different operations over the same types — so the two
+        ///         instances must stay separate key spaces. That is a real distinction; the four-static version
+        ///         merely failed to enforce it.
+        ///     </para>
+        /// </remarks>
+        private sealed class RegistryTable<TDelegate>
+            where TDelegate : Delegate
+        {
+            private readonly ConcurrentDictionary<Key, byte> _ambiguous = new();
+            private readonly ConcurrentDictionary<Key, TDelegate> _maps = new();
+
+            public int Count => _maps.Count;
+
+            public ICollection<Key> Keys => _maps.Keys;
+
+            /// <summary>
+            ///     Registers <paramref name="map" /> for <paramref name="key" />, first-wins.
+            /// </summary>
+            /// <returns>
+            ///     <c>true</c> when this was the first registration for the pair; <c>false</c> when it was a
+            ///     duplicate, which this call has recorded as ambiguous. Duplicates do not throw at load —
+            ///     validation surfaces them instead, so one bad assembly cannot take the process down at startup.
+            /// </returns>
+            public bool TryRegister(Key key, TDelegate map)
+            {
+                if (_maps.TryAdd(key, map))
+                {
+                    return true;
+                }
+
+                _ambiguous.TryAdd(key, 1);
+                return false;
+            }
+
+            public bool IsProvided(Key key)
+            {
+                return _maps.ContainsKey(key);
+            }
+
+            public bool IsAmbiguous(Key key)
+            {
+                return _ambiguous.ContainsKey(key);
+            }
+
+            /// <remarks>
+            ///     <c>[MaybeNullWhen(false)]</c> so a caller that checks the result gets a non-null delegate
+            ///     without a <c>!</c> — the same contract <c>ConcurrentDictionary.TryGetValue</c> carries, which
+            ///     is where this flow analysis came from before the table existed. Dropping it would have pushed
+            ///     three null-forgiving operators into the lookup path.
+            /// </remarks>
+            public bool TryGet(Key key, [MaybeNullWhen(false)] out TDelegate map)
+            {
+                return _maps.TryGetValue(key, out map);
+            }
         }
 
         private readonly struct Key : IEquatable<Key>

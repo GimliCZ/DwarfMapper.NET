@@ -100,7 +100,7 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
-            bool caseInsensitive,
+            in MapperOptions options,
             IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> allMethods,
             IReadOnlyList<(string Name, ITypeSymbol ParamType, ITypeSymbol ReturnType)> autoCandidates,
@@ -111,21 +111,11 @@ namespace DwarfMapper.Generator.Pipeline
             List<string> reinterpretMembers,
             HashSet<string>? consumedCtorParams = null,
             HashSet<string>? requiredMustInitialize = null,
-            bool autoNest = false,
             NestedMappingRegistry? nestedRegistry = null,
-            bool nullAsNull = false,
-            bool isPreserve = false,
-            bool isSetNull = false,
-            bool implicitConversions = true,
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>? mapValues = null,
             IReadOnlyList<(string Name, ITypeSymbol ReturnType)>? valueProviders = null,
             IReadOnlyList<(string Name, ITypeSymbol Type)>? extraParams = null,
-            int nameConvention = 0,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>? mapPropertyExtras = null,
-            bool skipNullSourceMembers = false,
-            bool allowNonPublic = false,
-            bool explicitOnly = false,
-            bool ignoreObsolete = false,
             Dictionary<string, string>? stringFormats = null,
             IReadOnlyCollection<string>? mapperReservedConverters = null,
             // True when every `required` destination member is already satisfied without the object initializer
@@ -150,7 +140,7 @@ namespace DwarfMapper.Generator.Pipeline
             // honours `ignores`, so this one addition covers them all. An obsolete member that IS explicitly
             // targeted (by [MapProperty]/[MapValue]) is left OUT of the ignore set, so the developer can opt a
             // specific one back in without tripping the ignore-vs-explicit conflict (DWARF012).
-            if (ignoreObsolete)
+            if (options.IgnoreObsolete)
             {
                 var explicitTargets = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var em in explicitMaps) explicitTargets.Add(em.Target);
@@ -177,27 +167,24 @@ namespace DwarfMapper.Generator.Pipeline
                     extrasByTarget[e.Target] = (e.HasNullSub, e.NullSub, e.When, e.NullSubLiteral);
             }
 
-            var comparer = caseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            var comparer = options.CaseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
             // NameConvention.Flexible: match on a normalized key (strip '_', lowercase) so PascalCase/camelCase/
             // snake_case/UPPER_CASE are interchangeable. Auto-match only; explicit/flatten paths stay exact.
-            var flexible = nameConvention == 1;
+            var flexible = options.NameConvention == 1;
 
             var sourceGroups = flexible
-                ? ReadableMembers(sourceType, compilation, allowNonPublic)
+                ? ReadableMembers(sourceType, compilation, options.AllowNonPublic)
                     .GroupBy(m => NormalizeName(m.Name), StringComparer.Ordinal)
                     .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal)
-                : ReadableMembers(sourceType, compilation, allowNonPublic)
+                : ReadableMembers(sourceType, compilation, options.AllowNonPublic)
                     .GroupBy(m => m.Name, comparer)
                     .ToDictionary(g => g.Key, g => g.ToList(), comparer);
 
             var writableByName = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
-            foreach (var m in WritableMembers(targetType, compilation, allowNonPublic)) writableByName[m.Name] = m.Type;
+            foreach (var m in WritableMembers(targetType, compilation, options.AllowNonPublic)) writableByName[m.Name] = m.Type;
 
             var result = new List<MemberMap>();
             var handledTargets = new HashSet<string>(StringComparer.Ordinal);
-            // Intermediate roots already opened by an unflatten leaf — additional leaves into the same root
-            // are allowed (City + Street → Address); only a DIRECT mapping of the root conflicts (DWARF046).
-            var unflattenRoots = new HashSet<string>(StringComparer.Ordinal);
             // Phase 5: which additional parameters were consumed by a destination (the rest → DWARF047).
             var consumedExtraParams = new HashSet<string>(comparer);
 
@@ -207,7 +194,7 @@ namespace DwarfMapper.Generator.Pipeline
                 sourceType,
                 comparer,
                 compilation,
-                allowNonPublic,
+                options.AllowNonPublic,
                 true,
                 location,
                 diagnostics);
@@ -240,654 +227,59 @@ namespace DwarfMapper.Generator.Pipeline
                     }
             }
 
-            var explicitSeen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var (srcName, tgtName, useMethod) in explicitMaps)
-            {
-                if (!explicitSeen.Add(tgtName))
-                {
-                    // More than one [MapProperty] for the same destination.
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.DuplicateMapProperty, location, tgtName));
-                    continue;
-                }
+            // Three bundles over the parameters and locals above -- NOT copies of them: every field below is the
+            // same instance this method keeps using, so a pass that mutates through a bundle is doing exactly what
+            // it did when it was inline. The split is request / derived / filled, and which side a name falls on
+            // was settled by grepping its write-sites rather than by how it reads; see MemberRequest.
+            var req = new MemberRequest(sourceType,
+                targetType,
+                ignores,
+                compilation,
+                location,
+                options,
+                explicitMaps,
+                allMethods,
+                autoCandidates,
+                enumPolicy,
+                nullStrategy,
+                reinterpretMembers,
+                consumedCtorParams,
+                requiredMustInitialize,
+                nestedRegistry,
+                mapValues,
+                valueProviders,
+                extraParams,
+                stringFormats,
+                requiredMembersAlreadySatisfied,
+                factoryExcludedMembers);
+            var lookups = new MemberLookups(comparer,
+                flexible,
+                writableByName,
+                sourceGroups,
+                flattenInfos,
+                reservedConverters,
+                extrasByTarget);
+            var acc = new MemberAccumulators(result,
+                diagnostics,
+                synthesized,
+                handledTargets,
+                consumedExtraParams,
+                consumedFlattenRoots);
 
-                // Unflatten: a dotted TARGET path (e.g. "Address.City") assigns the leaf through a synthesized
-                // intermediate (single level). The intermediate must be a writable class with a public
-                // parameterless constructor; it is instantiated post-construction by the emitter.
-                if (tgtName.IndexOf('.') >= 0)
-                {
-                    // When / NullSubstitute are not supported on an unflatten (dotted) target — the unflatten
-                    // path does not read these extras, so catch the unsupported combination loudly rather than
-                    // silently dropping the annotation.
-                    if (extrasByTarget.TryGetValue(tgtName, out var uex) && (uex.When is not null || uex.HasNullSub))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnflattenInvalid,
-                            location,
-                            $"[MapProperty(When/NullSubstitute)] is not supported on the unflatten target '{tgtName}'; apply it to a direct member"));
-                        continue;
-                    }
-
-                    ResolveUnflattenTarget(
-                        sourceType,
-                        targetType,
-                        srcName,
-                        tgtName,
-                        useMethod,
-                        compilation,
-                        location,
-                        diagnostics,
-                        handledTargets,
-                        unflattenRoots,
-                        writableByName,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull,
-                        implicitConversions,
-                        allowNonPublic,
-                        result);
-                    continue;
-                }
-
-                handledTargets.Add(tgtName);
-
-                // If this explicit mapping targets a constructor parameter (already consumed), skip it here
-                // UNLESS the member is `required` and the ctor lacks [SetsRequiredMembers] — in that case
-                // the member must also appear in the object initializer to satisfy CS9035.
-                if (consumedCtorParams is not null &&
-                    consumedCtorParams.Contains(tgtName) &&
-                    (requiredMustInitialize is null ||
-                     !requiredMustInitialize.Contains(tgtName)))
-                {
-                    continue;
-                }
-
-                if (ignores.Contains(tgtName))
-                {
-                    // Contradictory: [MapIgnore] and [MapProperty] target the same member.
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.IgnoreExplicitConflict, location, tgtName));
-                    continue;
-                }
-
-                if (!writableByName.TryGetValue(tgtName, out var tgtType))
-                {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownTarget, location, tgtName));
-                    continue;
-                }
-
-                ITypeSymbol? srcMatch;
-                if (srcName.IndexOf('.') >= 0)
-                {
-                    // Deep source path, e.g. "Customer.Name" → resolve hop-by-hop (member names never contain
-                    // dots, so this is unambiguous). The leaf type drives the conversion; the dotted SourceName
-                    // is emitted verbatim as `s.Customer.Name` (a null interior hop throws at runtime — DWARF044
-                    // warns when that is possible).
-                    if (!TryResolveSourcePath(sourceType,
-                            srcName,
-                            compilation,
-                            allowNonPublic,
-                            out srcMatch,
-                            out var nullableHop,
-                            out var badSegment))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathSegmentNotFound,
-                            location,
-                            $"[MapProperty] source path '{srcName}' has no member '{badSegment}'"));
-                        continue;
-                    }
-
-                    if (nullableHop)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.PathNullableHop,
-                            location,
-                            $"[MapProperty] source path '{srcName}' traverses a nullable member; a null interior value throws at runtime"));
-                    }
-                }
-                else
-                {
-                    srcMatch = ReadableMembers(sourceType, compilation, allowNonPublic)
-                        .Where(m => StringComparer.Ordinal.Equals(m.Name, srcName))
-                        .Select(m => (ITypeSymbol?)m.Type)
-                        .FirstOrDefault();
-                }
-
-                if (srcMatch is null)
-                {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapPropertyUnknownSource, location, srcName));
-                    continue;
-                }
-
-                // B17: the synthesized-helper table AS IT STOOD before this member's conversion was resolved.
-                // A valid StringFormat REPLACES whatever the resolution below produces, and the replaced helper
-                // used to stay in the table and be emitted as a `private static` nothing calls. Snapshotted here
-                // rather than inside the branch because TryResolveConversion is what adds it, and taken only when
-                // this member actually carries a format — no allocation on the ordinary path.
-                var synthBeforeConversion = stringFormats is not null && stringFormats.ContainsKey(tgtName)
-                    ? new HashSet<string>(synthesized.Keys, StringComparer.Ordinal)
-                    : null;
-
-                if (TryResolveConversion(compilation,
-                        srcMatch,
-                        tgtType,
-                        useMethod,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        location,
-                        tgtName,
-                        diagnostics,
-                        out var conv,
-                        out var nullH,
-                        out var convNeedsCtx,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull: isSetNull,
-                        implicitConversions: implicitConversions,
-                        reservedConverters: reservedConverters))
-                {
-                    // [MapProperty(StringFormat="…")]: replace the resolved converter with a format-aware
-                    // src.ToString(format, InvariantCulture). Only valid for an IFormattable source into a string
-                    // target, and not alongside Use= (which already owns the transform). An invalid use reports
-                    // DWARF073 (an Error — so no output is emitted — hence leaving the default converter in place
-                    // rather than skipping the member avoids a spurious second diagnostic).
-                    if (stringFormats is not null && stringFormats.TryGetValue(tgtName, out var fmt))
-                    {
-                        if (tgtType.SpecialType != SpecialType.System_String)
-                        {
-                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StringFormatInvalid,
-                                location,
-                                $"[MapProperty(StringFormat=\"{fmt}\")] for '{tgtName}' needs a string destination, but it is '{tgtType.ToDisplayString()}'"));
-                        }
-                        else if (useMethod is not null)
-                        {
-                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StringFormatInvalid,
-                                location,
-                                $"[MapProperty(StringFormat=…)] for '{tgtName}' cannot be combined with Use= — the converter already produces the value"));
-                        }
-                        else if (!ParsableConverter.SupportsStringFormat(srcMatch))
-                        {
-                            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StringFormatInvalid,
-                                location,
-                                $"[MapProperty(StringFormat=…)] for '{tgtName}' needs a source implementing IFormattable; '{srcMatch.ToDisplayString()}' does not"));
-                        }
-                        else
-                        {
-                            conv = ParsableConverter.AddFormattedToString(synthesized, srcMatch, fmt);
-                            // B17: drop what the resolution above synthesized for THIS member — the format-aware
-                            // converter has replaced it, so nothing references it and it was being emitted as an
-                            // unused `private static` beside every formatted one. Only keys this call ADDED are
-                            // removed: a helper an earlier member already needed is in the snapshot and survives,
-                            // and a LATER member needing the same conversion re-adds it, because every
-                            // synthesizer is add-if-absent and returns the name either way. The formatted helper
-                            // itself is admitted to the snapshot first so a format whose name collides with a
-                            // just-added key cannot delete itself.
-                            if (synthBeforeConversion is not null)
-                            {
-                                synthBeforeConversion.Add(conv);
-                                foreach (var orphan in synthesized.Keys
-                                             .Where(k => !synthBeforeConversion.Contains(k)).ToList())
-                                    synthesized.Remove(orphan);
-                            }
-                        }
-                    }
-
-                    // Phase 8: NullSubstitute (direct-assignable only) and When (guarded assignment).
-                    string? nullSubLit = null;
-                    string? whenPred = null;
-                    if (extrasByTarget.TryGetValue(tgtName, out var ex))
-                    {
-                        if (ex.HasNullSub)
-                        {
-                            if (conv is not null)
-                            {
-                                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid,
-                                    location,
-                                    $"[MapProperty(NullSubstitute=)] for '{tgtName}' is not supported together with a converter (Use=)"));
-                            }
-                            else if (ex.NullSubLiteral is not null)
-                            {
-                                nullSubLit = ex.NullSubLiteral;
-                            }
-                            else if (!TryFormatConstant(ex.NullSub, tgtType, compilation, out var lit, out var why))
-                            {
-                                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullSubstituteInvalid,
-                                    location,
-                                    why));
-                            }
-                            else
-                            {
-                                nullSubLit = lit;
-                            }
-                        }
-
-                        if (ex.When is not null)
-                        {
-                            var ok = false;
-                            foreach (var m in allMethods)
-                                if (StringComparer.Ordinal.Equals(m.Name, ex.When) && m.ReturnType.SpecialType == SpecialType.System_Boolean && HasImplicitConversion(compilation, sourceType, m.ParamType))
-                                {
-                                    ok = true;
-                                    break;
-                                }
-
-                            if (!ok)
-                            {
-                                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.WhenPredicateInvalid,
-                                    location,
-                                    $"[MapProperty(When = \"{ex.When}\")] for '{tgtName}' must name a bool-returning method that takes the source"));
-                            }
-                            else
-                            {
-                                whenPred = ex.When;
-                                // Item 14 (DWARF066): a When guard on a non-nullable reference target leaves it at
-                                // its default (null) when the predicate is false — a latent null in a non-null
-                                // contract. Restricted to non-nullable reference targets; Info to limit false
-                                // positives (a member with its own default initializer is fine).
-                                if (tgtType.IsReferenceType && tgtType.NullableAnnotation != NullableAnnotation.Annotated)
-                                {
-                                    diagnostics.Add(new DiagnosticInfo(
-                                        DiagnosticDescriptors.WhenLeavesNonNullableDefault,
-                                        location,
-                                        tgtName));
-                                }
-                            }
-                        }
-                    }
-
-                    result.Add(new MemberMap(tgtName,
-                        srcName,
-                        conv,
-                        nullH,
-                        convNeedsCtx,
-                        SourceMayBeNullRef(srcMatch),
-                        NullSubstituteLiteral: nullSubLit,
-                        WhenPredicate: whenPred,
-                        // NullSubstitute already coalesces the null away (`src.X ?? literal`), so the assignment
-                        // is provably non-null and needs neither the '!' nor DWARF070.
-                        NullRefIntoNonNullable: nullSubLit is null && IsDirectNullRefAssign(conv, nullH, srcMatch, tgtType),
-                        // Same nested nullable→non-nullable forgiveness as the auto-match path; skipped when
-                        // NullSubstitute already handled the null.
-                        ConverterParamIsNonNullableRef: nullSubLit is null &&
-                                                        ForgiveNestedNullableArg(conv,
-                                                            srcMatch,
-                                                            tgtType,
-                                                            autoCandidates,
-                                                            allMethods,
-                                                            srcName,
-                                                            location,
-                                                            diagnostics)));
-                }
-            }
+            ResolveExplicitMaps(req, lookups, acc);
 
             // MAPVALUE: constant / computed values assigned to a destination member (no source). Processed
             // after [MapProperty] (so conflicts are caught) and before AUTO matching. A [MapValue]'d target
             // counts as mapped, suppressing DWARF001. The projection resolver reads the directive in the SAME
             // position for the same reason, through the SAME validation below.
-            foreach (var mv in mapValues ??
-                               Array.Empty<(string Target, bool IsConstant, TypedConstant Value,
-                                   string? Use, string? ConstLiteral)>())
-            {
-                var mvTgt = mv.Target;
-                if (!TryValidateMapValueTarget(mvTgt,
-                        handledTargets,
-                        ignores,
-                        name => consumedCtorParams is not null && consumedCtorParams.Contains(name),
-                        writableByName,
-                        name => sourceGroups.ContainsKey(flexible ? NormalizeName(name) : name),
-                        location,
-                        diagnostics,
-                        out var mvTgtType))
-                {
-                    continue;
-                }
-
-                if (mv.IsConstant)
-                {
-                    string literal;
-                    if (mv.ConstLiteral is not null)
-                    {
-                        literal = mv.ConstLiteral;
-                    }
-                    else if (!TryFormatConstant(mv.Value, mvTgtType, compilation, out literal, out var why))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueTypeMismatch, location, why));
-                        continue;
-                    }
-
-                    result.Add(new MemberMap(mvTgt, "", ValueExpression: literal));
-                }
-                else if (mv.Use is not null)
-                {
-                    var provider = (valueProviders ?? Array.Empty<(string Name, ITypeSymbol ReturnType)>())
-                        .FirstOrDefault(p => StringComparer.Ordinal.Equals(p.Name, mv.Use));
-                    if (provider.Name is null || !HasImplicitConversion(compilation, provider.ReturnType, mvTgtType))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueUseInvalid,
-                            location,
-                            $"[MapValue(Use = \"{mv.Use}\")] for '{mvTgt}' must name a parameterless method whose return type is assignable to '{mvTgtType.ToDisplayString()}'"));
-                        continue;
-                    }
-
-                    result.Add(new MemberMap(mvTgt, "", ValueExpression: mv.Use + "()"));
-                }
-                else
-                {
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueInvalid,
-                        location,
-                        $"[MapValue] for '{mvTgt}' provides neither a constant value nor Use="));
-                }
-            }
+            ResolveMapValues(req, lookups, acc);
 
             // AUTO: remaining writable targets matched by name under the comparer.
-            var targets = WritableMembers(targetType, compilation, allowNonPublic)
-                .OrderBy(m => m.Name, StringComparer.Ordinal)
-                .ToList();
-            foreach (var target in targets)
-            {
-                // Skip members already consumed as constructor parameters (positional record members appear
-                // as both ctor params AND init properties — must not double-assign).
-                // EXCEPTION: `required` members whose ctor lacks [SetsRequiredMembers] must also be set in
-                // the object initializer (CS9035), so do NOT skip them.
-                if (consumedCtorParams is not null &&
-                    consumedCtorParams.Contains(target.Name) &&
-                    (requiredMustInitialize is null ||
-                     !requiredMustInitialize.Contains(target.Name)))
-                {
-                    // Under a [MapConstructor] factory the skip above is not "the constructor assigns it" — it is
-                    // "nobody assigns it". The factory owns construction, so an init-only/required member keeps
-                    // whatever the factory chose, and a matching SOURCE value is silently discarded.
-                    //
-                    // Silent is the whole problem: the build is green and the member simply holds the wrong
-                    // value. Round 18 hit this twice in one codebase — once losing an entity's Identifier through
-                    // a `.Empty` factory that minted a fresh Guid, and once in a map that "compiled green but
-                    // silently dropped Identifier, TotalArguments and IsCoreCommand", which was backed out on the
-                    // principle that lossy-but-green is worse than undone.
-                    //
-                    // Only reported when a source member actually WOULD have supplied a value — a member nothing
-                    // maps to loses nothing, and warning about it would be noise on every record type.
-                    if (factoryExcludedMembers is not null && factoryExcludedMembers.Contains(target.Name, StringComparer.Ordinal) && !ignores.Contains(target.Name) && sourceGroups.ContainsKey(flexible ? NormalizeName(target.Name) : target.Name))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            DiagnosticDescriptors.FactoryDropsMember,
-                            location,
-                            target.Name,
-                            MemberName: target.Name));
-                    }
-
-                    continue;
-                }
-
-                if (handledTargets.Contains(target.Name))
-                {
-                    continue;
-                }
-
-                if (ignores.Contains(target.Name))
-                {
-                    // Ignoring a `required` member does not produce a mapper that skips it — it produces an
-                    // object initializer that omits it, which is CS9035 from GENERATED code. The consumer then
-                    // reads a raw compiler error about a file they did not write, with nothing pointing back at
-                    // the [MapIgnore] that caused it.
-                    //
-                    // This is the single most-repeated friction point of the Round-18 migration: three separate
-                    // conversions hit it independently and each reinvented the same workaround, because
-                    // AutoMapper's expression trees bypassed the compile-time rule entirely and simply left the
-                    // member null. `.Ignore()` on a required member is therefore common in migrating code.
-                    if (!requiredMembersAlreadySatisfied && (consumedCtorParams is null || !consumedCtorParams.Contains(target.Name)) && IsRequiredMember(targetType, target.Name))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            DiagnosticDescriptors.IgnoredRequiredMember,
-                            location,
-                            target.Name,
-                            MemberName: target.Name));
-                    }
-
-                    continue;
-                }
-
-                // Phase 5: an additional parameter matching this target by name wins over a by-name source
-                // member. Emitted as the parameter name directly (or a scalar conversion of it). Converters
-                // that need recursion context are not used here (extra params are not propagated to nesting).
-                if (extraParams is not null)
-                {
-                    // Extra parameters match destinations case-insensitively (e.g. param `tenant` → `Tenant`),
-                    // independent of the mapper's member-matching case sensitivity.
-                    (string Name, ITypeSymbol Type) ep = default;
-                    foreach (var cand in extraParams)
-                        if (StringComparer.OrdinalIgnoreCase.Equals(cand.Name, target.Name))
-                        {
-                            ep = cand;
-                            break;
-                        }
-
-                    if (ep.Name is not null &&
-                        TryResolveConversion(compilation,
-                            ep.Type!,
-                            target.Type,
-                            null,
-                            allMethods,
-                            autoCandidates,
-                            enumPolicy,
-                            synthesized,
-                            nullStrategy,
-                            location,
-                            target.Name,
-                            diagnostics,
-                            out var epConv,
-                            out _,
-                            out var epNeedsCtx,
-                            autoNest,
-                            nestedRegistry,
-                            nullAsNull,
-                            isPreserve,
-                            isSetNull: isSetNull,
-                            implicitConversions: implicitConversions,
-                            reservedConverters: reservedConverters) &&
-                        !epNeedsCtx)
-                    {
-                        var valueExpr = epConv is null ? ep.Name : epConv + "(" + ep.Name + ")";
-                        result.Add(new MemberMap(target.Name, "", ValueExpression: valueExpr));
-                        handledTargets.Add(target.Name);
-                        consumedExtraParams.Add(ep.Name);
-                        continue;
-                    }
-                }
-
-                if (!sourceGroups.TryGetValue(flexible ? NormalizeName(target.Name) : target.Name, out var matches))
-                {
-                    var flatMatches = new List<(string Root, string Leaf, ITypeSymbol LeafType)>();
-                    foreach (var fi in flattenInfos)
-                    foreach (var leaf in fi.Leaves)
-                        if (comparer.Equals(leaf.Name, target.Name))
-                        {
-                            flatMatches.Add((fi.Root, leaf.Name, leaf.Type));
-                        }
-
-                    if (flatMatches.Count > 1)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousFlatten, location, target.Name));
-                        continue;
-                    }
-
-                    if (flatMatches.Count == 1)
-                    {
-                        var fm = flatMatches[0];
-                        if (TryResolveConversion(compilation,
-                                fm.LeafType,
-                                target.Type,
-                                null,
-                                allMethods,
-                                autoCandidates,
-                                enumPolicy,
-                                synthesized,
-                                nullStrategy,
-                                location,
-                                target.Name,
-                                diagnostics,
-                                out var fconv,
-                                out var fnull,
-                                out var fneedsCtx,
-                                autoNest,
-                                nestedRegistry,
-                                nullAsNull,
-                                isPreserve,
-                                isSetNull: isSetNull,
-                                implicitConversions: implicitConversions,
-                                reservedConverters: reservedConverters))
-                        {
-                            result.Add(new MemberMap(target.Name,
-                                fm.Root + "." + fm.Leaf,
-                                fconv,
-                                fnull,
-                                fneedsCtx,
-                                SourceMayBeNullRef(fm.LeafType),
-                                NullRefIntoNonNullable:
-                                IsDirectNullRefAssign(fconv, fnull, fm.LeafType, target.Type),
-                                ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(fconv,
-                                    fm.LeafType,
-                                    target.Type,
-                                    autoCandidates,
-                                    allMethods,
-                                    fm.Root + "." + fm.Leaf,
-                                    location,
-                                    diagnostics)));
-                            // B26: an unguarded `src.Root.Leaf` now exists — this is what DWARF044 warns about.
-                            consumedFlattenRoots.Add(fm.Root);
-                        }
-
-                        continue;
-                    }
-
-                    diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.UnmappedMember,
-                        location,
-                        target.Name,
-                        MemberName: target.Name));
-                    continue;
-                }
-
-                if (matches.Count > 1)
-                {
-                    diagnostics.Add(flexible
-                        ? new DiagnosticInfo(DiagnosticDescriptors.AmbiguousNormalizedMatch,
-                            location,
-                            $"target '{target.Name}' matches multiple source members under NameConvention.Flexible (" + string.Join(", ", matches.Select(m => m.Name)) + "); disambiguate with [MapProperty]")
-                        : new DiagnosticInfo(DiagnosticDescriptors.AmbiguousMatch, location, target.Name));
-                    continue;
-                }
-
-                var source = matches[0];
-                if (reinterpretMembers.Contains(target.Name))
-                {
-                    // [Reinterpret] lets the caller assert the field CORRESPONDENCE the by-name proof cannot
-                    // verify. It does NOT let them assert that the bytes line up, because a mismatched pair does
-                    // not fail loudly — MemoryMarshal.Cast<int, long> halves the span length, so the copy fills
-                    // half the destination and zeroes the rest. Same-size was always the documented contract
-                    // (DWARF022's help text); enforcing it here is where that belongs, rather than in a runtime
-                    // guard inside every emitted copy.
-                    if (source.Type is IArrayTypeSymbol sa &&
-                        target.Type is IArrayTypeSymbol ta &&
-                        sa.ElementType.IsUnmanagedType &&
-                        ta.ElementType.IsUnmanagedType &&
-                        BlittableProof.SameBytesIgnoringNames(sa.ElementType, ta.ElementType))
-                    {
-                        var blit = CollectionConverter.SynthesizeBlit(synthesized,
-                            source.Type,
-                            sa.ElementType,
-                            ta.ElementType);
-                        result.Add(new MemberMap(target.Name,
-                            source.Name,
-                            blit,
-                            SourceIsNullableRef: SourceMayBeNullRef(source.Type)));
-                    }
-                    else
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretInvalid,
-                            location,
-                            target.Name));
-                    }
-
-                    continue;
-                }
-
-                // Explicit-only (trust boundary): a by-name match must NOT silently auto-wire. This is exactly the
-                // mass-assignment surface — the field lines up by name, so it WOULD be copied, and DWARF001 would
-                // never notice because the member is "mapped". Refuse it and make the developer decide, so an
-                // attacker-controlled same-named field (IsAdmin) cannot over-post onto a protected member. Explicit
-                // [MapProperty]/[MapValue]/[MapIgnore] and [Reinterpret] have already been honoured above; only the
-                // implicit by-name wire is blocked here.
-                if (explicitOnly)
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.AutoMatchDisabled,
-                        location,
-                        target.Name,
-                        MemberName: target.Name));
-                    continue;
-                }
-
-                if (TryResolveConversion(compilation,
-                        source.Type,
-                        target.Type,
-                        null,
-                        allMethods,
-                        autoCandidates,
-                        enumPolicy,
-                        synthesized,
-                        nullStrategy,
-                        location,
-                        target.Name,
-                        diagnostics,
-                        out var conv,
-                        out var nullH,
-                        out var needsCtx,
-                        autoNest,
-                        nestedRegistry,
-                        nullAsNull,
-                        isPreserve,
-                        isSetNull: isSetNull,
-                        implicitConversions: implicitConversions,
-                        reservedConverters: reservedConverters))
-                {
-                    // A nullable-reference source passed into a user-declared converter/map whose parameter is
-                    // non-nullable would emit CS8604. This only matters when the null would actually reach a
-                    // NON-nullable DESTINATION member: NullRefIntoNonNullableRef gates on exactly that. When the
-                    // destination is nullable, a null legitimately propagates (e.g. a linked list's terminal
-                    // Next) — no forgiving, no diagnostic, behaviour unchanged. When the destination IS
-                    // non-nullable, null-forgive the argument (below, via the emitter) so it compiles, and report
-                    // DWARF070 — the same actionable signal the scalar raw-assign path gives against the user's DTO.
-                    // Synthesized nested mappers flow through IsSynthesized; a null-tolerant user converter (nullable
-                    // param) is excluded by ConverterParamIsNonNullableRef and keeps its null.
-                    result.Add(new MemberMap(target.Name,
-                        source.Name,
-                        conv,
-                        nullH,
-                        needsCtx,
-                        SourceMayBeNullRef(source.Type),
-                        NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, source.Type, target.Type),
-                        ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(
-                            conv,
-                            source.Type,
-                            target.Type,
-                            autoCandidates,
-                            allMethods,
-                            source.Name,
-                            location,
-                            diagnostics)));
-                }
-            }
+            ResolveAutoMatchedMembers(req, lookups, acc);
 
             // READ-ONLY destinations with a matching source (silent-loss guard).
             // A read-only member satisfied via a constructor parameter is already mapped — no diagnostic.
-            foreach (var readOnly in ReadOnlyMembers(targetType, compilation, allowNonPublic)
+            foreach (var readOnly in ReadOnlyMembers(targetType, compilation, options.AllowNonPublic)
                          .OrderBy(m => m.Name, StringComparer.Ordinal))
             {
                 if (handledTargets.Contains(readOnly.Name) || ignores.Contains(readOnly.Name))
@@ -918,7 +310,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (reinterpretMembers.Count > 0)
             {
                 var writableNames =
-                    new HashSet<string>(WritableMembers(targetType, compilation, allowNonPublic).Select(m => m.Name),
+                    new HashSet<string>(WritableMembers(targetType, compilation, options.AllowNonPublic).Select(m => m.Name),
                         StringComparer.Ordinal);
                 foreach (var rm in reinterpretMembers)
                     if (ignores.Contains(rm))
@@ -947,51 +339,7 @@ namespace DwarfMapper.Generator.Pipeline
             // default rather than overwrite it. Mark each simple, nullable-source, post-construction-settable
             // member so the emitter guards it with `if (src.X is not null) dst.X = …;`. Non-nullable value-type
             // sources (never null) and required/init-only/read-only targets (cannot be deferred) are left as-is.
-            if (skipNullSourceMembers && result.Count > 0)
-            {
-                var srcTypeByName = new Dictionary<string, ITypeSymbol>(comparer);
-                foreach (var (sName, sType) in ReadableMembers(sourceType, compilation, allowNonPublic))
-                    srcTypeByName[sName] = sType;
-
-                var deferrableTargets = new HashSet<string>(StringComparer.Ordinal);
-                for (var t = targetType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
-                    foreach (var tm in t.GetMembers())
-                        if (tm is IPropertySymbol p && p.SetMethod is { IsInitOnly: false } && !p.IsRequired)
-                        {
-                            deferrableTargets.Add(p.Name);
-                        }
-                        else if (tm is IFieldSymbol f && !f.IsReadOnly && !f.IsConst && !f.IsRequired)
-                        {
-                            deferrableTargets.Add(f.Name);
-                        }
-
-                for (var i = 0; i < result.Count; i++)
-                {
-                    var m = result[i];
-                    if (string.IsNullOrEmpty(m.SourceName) ||
-                        m.SourceName.IndexOf('.') >= 0 ||
-                        m.ValueExpression is not null ||
-                        m.UnflattenIntermediateFqn is not null ||
-                        m.WhenPredicate is not null ||
-                        m.SkipIfSourceNull ||
-                        !deferrableTargets.Contains(m.TargetName))
-                    {
-                        continue;
-                    }
-
-                    if (srcTypeByName.TryGetValue(m.SourceName, out var st) && (st.IsReferenceType || IsNullableValue(st, out _)))
-                        // The emitter now guards this with `if (src.X is not null) dst.X = …;`, so inside that
-                        // guard flow analysis already proves non-null: no CS8601, hence no '!' and no DWARF070.
-                        // SkipNullSourceMembers IS the fix DWARF070 would have told them to apply.
-                    {
-                        result[i] = m with
-                        {
-                            SkipIfSourceNull = true,
-                            NullRefIntoNonNullable = false
-                        };
-                    }
-                }
-            }
+            ApplySkipNullSourceMembers(req, lookups, acc);
 
             // DWARF070: a nullable reference source raw-assigned into a non-nullable reference target. Reported
             // here, once, after every other pass has had its chance to handle the null (NullSubstitute, a

@@ -32,8 +32,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 23;
-        private const int PinnedTotalOccurrences = 44;
+        private const int PinnedEntryRows = 46;
+        private const int PinnedTotalOccurrences = 67;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -67,7 +67,20 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // can supply).
             ["runtime|proven-equivalent"] = 2,
             ["runtime|ruled-in-practice"] = 1,
-            ["runtime|probably-equivalent"] = 1
+            ["runtime|probably-equivalent"] = 1,
+            // Round 27 added the code-fixes leg and ran a kill program on it: 52.54 % to 87.01 %, 61 mutants
+            // killed. These 23 are what remained, every one dispositioned, with the case analysis in
+            // Issues/ledgers/codefixes-mutation-survivors.md (same commit). Twenty-two are proven: four
+            // ConfigureAwait flips that cannot change what an await returns, four unreachable root-is-null
+            // guards, four getInnermostNodeForTie flips whose two candidates share the ancestor the code
+            // immediately walks to, index boundaries that could only differ for a type name starting with '.'
+            // or '<', a conditional that is a no-op at its own guard value, two out-parameter writes on paths
+            // that return false, a || -> && whose mutant converges on the same downstream refusal, and three
+            // count guards whose bodies are no-ops when the collection is empty. The one 'probably' is the
+            // trivia source for an added attribute list, which Formatter.Annotation has normalised away in
+            // every case tried -- evidence, not a proof.
+            ["codefixes|proven-equivalent"] = 22,
+            ["codefixes|probably-equivalent"] = 1
         };
 
         // ── shared ────────────────────────────────────────────────────────────────
@@ -176,9 +189,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(housekeeping.Contains("Test-CoverageWithinBand", StringComparison.Ordinal),
                 "scripts/housekeeping.ps1 no longer calls Test-CoverageWithinBand — the coverage gate lost " + "its R2 raise direction and floors can silently lag measurements again.");
 
+            // FIVE since round 27 added the code-fix leg and then the extracted-pipeline leg. Pinned as a
+            // literal rather than derived from the
+            // leg list on purpose: deriving it would make this assertion agree with whatever housekeeping.ps1
+            // happens to do, which is the one thing it must not do.
             var legCalls = Regex.Matches(housekeeping, @"Assert-LegScoreWithinBand ").Count;
-            Assert.True(legCalls == 3,
-                $"scripts/housekeeping.ps1 calls Assert-LegScoreWithinBand {legCalls} time(s), expected " + "exactly 3 (one per mutation leg) — a leg whose score is not band-checked can bank slack " + "(invariant R2).");
+            Assert.True(legCalls == 5,
+                $"scripts/housekeeping.ps1 calls Assert-LegScoreWithinBand {legCalls} time(s), expected " + "exactly 5 (one per mutation leg) — a leg whose score is not band-checked can bank slack " + "(invariant R2).");
         }
 
         [Fact]
@@ -192,7 +209,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             Assert.True(fence.Success, "equivalent-mutants.md: the fenced JSON table is gone or unfenced — " + "the ledger is no longer machine-readable.");
             using var doc = JsonDocument.Parse(fence.Groups["json"].Value);
 
-            string[] legs = ["generator", "doctooling", "runtime"];
+            string[] legs = ["generator", "doctooling", "runtime", "codefixes", "pipeline"];
             string[] categories = ["proven-equivalent", "ruled-in-practice", "probably-equivalent"];
 
             // Row-level obligations: sanctioned leg + category, nothing empty, occurrences positive, the
@@ -280,6 +297,55 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 Assert.True((int)Math.Floor(measured) == breakValue,
                     $"equivalent-mutants.md: leg '{leg}' records measuredRawScore {measured} but {configFile} " + $"has break {breakValue} — the leg was re-measured without refreshing the ledger summary " + "(and its scoreable/ceiling arithmetic) in the same commit.");
             }
+        }
+
+        [Fact]
+        public void R5_codecov_states_no_absolute_target_because_it_measures_a_different_thing()
+        {
+            // THIS TEST USED TO ASSERT THE OPPOSITE, and was wrong. It required codecov.yml's component
+            // targets to EQUAL the floors in housekeeping.ps1, on the reasoning that they are one fact
+            // written twice. They are not. The first real upload settled it: aggregating Codecov's own
+            // per-file figures gives the generator 90.62 %, while the floor derived from coverlet says
+            // 94.5 %, and the difference is definitional rather than a regression --
+            //
+            //     coverlet / ReportGenerator : a partially-covered line is COVERED
+            //     Codecov                    : a partially-covered line is NOT covered
+            //
+            // Both are defensible; they are different measurements sharing a name. Copying one tool's
+            // number into the other's configuration produces a threshold that fails for a reason unrelated
+            // to coverage, and asserting their equality enforces the confusion.
+            //
+            // So the invariant is inverted: codecov.yml must carry NO absolute component target. `auto`
+            // compares each component against the same metric on the base commit, which needs no
+            // transcription and cannot encode the wrong definition. The absolute floors stay in
+            // housekeeping.ps1 where coverlet measures them, and the two gates stay separate on purpose.
+            var codecovPath = Path.Combine(RepoPaths.Root, "codecov.yml");
+            Assert.True(File.Exists(codecovPath),
+                "codecov.yml is gone — CI's coverage gate has no configuration.");
+
+            var absolute = Regex.Matches(File.ReadAllText(codecovPath), @"^\s*target:\s*(?<value>[\d.]+)\s*%",
+                                         RegexOptions.Multiline)
+                                .Select(m => m.Groups["value"].Value)
+                                .ToList();
+
+            Assert.True(absolute.Count == 0,
+                "codecov.yml declares absolute coverage target(s): " + string.Join(", ", absolute) + ". " +
+                "Codecov counts a partially-covered line as UNCOVERED and coverlet counts it as covered, so " +
+                "a number carried over from the floors in housekeeping.ps1 gates on a quantity Codecov does " +
+                "not measure — the generator reads 90.62 % there against a 94.5 % floor here, with no " +
+                "regression involved. Use `target: auto`, which compares against the same metric on the " +
+                "base commit. If an absolute target is genuinely wanted, it must be measured FROM CODECOV " +
+                "and say so beside itself.");
+
+            // The floors must still exist, because they are the half of the gate that is absolute. Codecov's
+            // `auto` only forbids getting worse; without these, coverage could ratchet down one
+            // non-regressing commit at a time and nothing would ever be measured against a fixed line.
+            var floors = QualityBadgeRenderer.ParseCoverageFloors(
+                File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1")));
+            Assert.True(floors.Count > 0,
+                "scripts/housekeeping.ps1 no longer declares coverage floors. Codecov's `auto` targets only " +
+                "prevent a DROP against the previous commit; the absolute line lives here, and without it " +
+                "nothing states how much coverage the project requires.");
         }
 
         [Fact]

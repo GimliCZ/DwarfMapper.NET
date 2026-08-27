@@ -48,9 +48,9 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
                 var mapperType = asm.GetType("Fuzz.FuzzMapper")!;
                 var mapper = Activator.CreateInstance(mapperType)!;
 
-                // Same seed → ObjectFactory walks the identical (structurally equal) shape with the identical
+                // Same seed → ObjectFactoryV2 walks the identical (structurally equal) shape with the identical
                 // pseudo-random sequence, so the source instance is the same across all four assemblies.
-                var srcInstance = ObjectFactory.Create(srcType, new Random(seed), 0)!;
+                var srcInstance = ObjectFactoryV2.Create(srcType, new Random(seed), 0)!;
                 canonicalSrc ??= srcInstance;
 
                 object dstInstance;

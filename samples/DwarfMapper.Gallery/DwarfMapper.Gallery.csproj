@@ -12,7 +12,7 @@
              the blittable example: public fields in a plain unmanaged struct are exactly the shape the
              bulk-copy proof is about, and adding Equals/operators would obscure the layout being
              demonstrated. -->
-        <NoWarn>$(NoWarn);CA1050;CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA1716;CA1724;CA5394;CA1812;CA1822;CA1051;CA1815</NoWarn>
+        <NoWarn>$(NoWarn);CA1303;CA1515;CA1819;CA2227;CA1002;CA1861;CA5394;CA1822;CA1051;CA1815</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>

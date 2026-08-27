@@ -6,7 +6,8 @@ namespace DwarfMapper
     ///     Marks a partial class as a DwarfMapper. The generator implements the
     ///     partial mapping methods declared on it at compile time.
     /// </summary>
-    [DwarfSurface(SurfaceCategory.ConsumerDirective)]
+    [DwarfSurface(SurfaceCategory.ConsumerDirective,
+        Security = SecuritySurface.TrustBoundary | SecuritySurface.ResourceBound)]
 // One fixture per OPTION, not per element. Every key below names a DTO shape that makes exactly that option
 // observable; probed against the flat pair the whole bag reads "no effect" while the options work perfectly.
 // The three unlisted options (AutoMatchMembers, GenerateExtensions, RegisterCollectionShapes) are already

@@ -477,7 +477,7 @@ namespace DwarfMapper.Generator.Tests
             // Verify that the long factory occasionally produces values outside int range.
             var rng = new Random(42);
             var values = Enumerable.Range(0, 200)
-                .Select(_ => (long)ObjectFactory.Create(typeof(long), rng, 0)!)
+                .Select(_ => (long)ObjectFactoryV2.Create(typeof(long), rng, 0)!)
                 .ToList();
             // At least some values should be outside the original [1, int.MaxValue) range.
             // With 1-in-4 probability and 200 samples, the chance of all being in range is negligible.

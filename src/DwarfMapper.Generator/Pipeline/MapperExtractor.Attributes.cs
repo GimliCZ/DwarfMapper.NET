@@ -176,7 +176,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Reads <c>[DwarfMapper(MaxDepth = N)]</c>; defaults to 64; clamps to [1, 1000].
+        ///     Reads <c>[DwarfMapper(MaxDepth = N)]</c>; defaults to 64; clamps to [DwarfLimits.MinMaxDepth, DwarfLimits.AbsoluteMaxDepth].
         /// </summary>
         private static int ReadMaxDepth(ImmutableArray<AttributeData> attributes)
         {
@@ -184,21 +184,24 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var named in attr.NamedArguments)
                 if (named.Key == "MaxDepth" && named.Value.Value is int i)
                 {
-                    // Clamp to [1, 1000] — matches DwarfRefContext.AbsoluteMaxDepth
-                    if (i < 1)
+                    // Clamp to [MinMaxDepth, AbsoluteMaxDepth]. The constants are LINKED from
+                    // src/Shared/DwarfLimits.cs into both this assembly and the runtime, so this clamp and
+                    // DwarfRefContext's cannot drift apart -- see that file for why it is a shared source
+                    // file rather than a test asserting two literals agree.
+                    if (i < DwarfLimits.MinMaxDepth)
                     {
-                        return 1;
+                        return DwarfLimits.MinMaxDepth;
                     }
 
-                    if (i > 1000)
+                    if (i > DwarfLimits.AbsoluteMaxDepth)
                     {
-                        return 1000;
+                        return DwarfLimits.AbsoluteMaxDepth;
                     }
 
                     return i;
                 }
 
-            return 64; // default
+            return DwarfLimits.DefaultMaxDepth;
         }
 
         /// <summary>

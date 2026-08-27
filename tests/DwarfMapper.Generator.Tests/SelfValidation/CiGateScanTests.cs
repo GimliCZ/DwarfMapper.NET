@@ -63,7 +63,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             // ── Nightly tier: cron on the default branch plus manual dispatch, never on push ──────────────
             // "Declared" is an even weaker claim for these than for the per-push jobs above — but deleting
             // any of them would still turn a measured floor into decoration, silently.
-            yield return ["mutation", "all three Stryker legs' break floors would stop being measured nightly"];
+            yield return ["mutation", "all five Stryker legs' break floors would stop being measured nightly"];
             yield return ["deep-test", "the deep suite, the coverage floors and ILVerify would stop running nightly"];
             // ── The five added in round-23 Layer 3 (I16) ─────────────────────────────────────────────────
             yield return ["reproducible-build", "the shipped packages would stop being byte-compared across " + "two clean builds of the same commit"];

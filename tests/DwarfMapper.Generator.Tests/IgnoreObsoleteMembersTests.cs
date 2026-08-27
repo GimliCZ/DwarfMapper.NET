@@ -117,5 +117,62 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Contains("DWARF039", Ids(source));
         }
+
+        /// <summary>
+        ///     The PROJECTION endpoint, which nothing exercised until a mutation-battery survivor said so.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         The option matrix declares <c>IgnoreObsoleteMembers</c> <c>Honoured</c> at projection, and the
+        ///         way it checks that is to require the generated output to DIFFER from the same source without the
+        ///         option. That proves the option does <em>something</em>; it cannot say in which direction.
+        ///         Inverting the guard in <c>MapperExtractor.Projection.cs</c> also produces a different output, so
+        ///         that mutant survived the entire suite.
+        ///     </para>
+        ///     <para>
+        ///         These two pin the DIRECTION: with the flag the obsolete member must be absent, and without it —
+        ///         the control — it must be present. An inverted guard fails both.
+        ///     </para>
+        /// </remarks>
+        [Fact]
+        public void At_projection_an_obsolete_destination_is_dropped()
+        {
+            const string source = """
+                                  using System;
+                                  using System.Linq;
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class Src { public int A { get; set; } public int Legacy { get; set; } }
+                                  public class Dst { public int A { get; set; } [Obsolete] public int Legacy { get; set; } }
+                                  [DwarfMapper(IgnoreObsoleteMembers = true)]
+                                  public partial class M { public partial IQueryable<Dst> Project(IQueryable<Src> q); }
+                                  """;
+
+            var (diagnostics, generated) = GeneratorTestHarness.Run(source);
+
+            Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+            Assert.Contains("A = ", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("Legacy = ", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void At_projection_an_obsolete_destination_IS_populated_without_the_flag()
+        {
+            // The control. Without it the test above would also pass against a projection that maps nothing at all.
+            const string source = """
+                                  using System;
+                                  using System.Linq;
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class Src { public int A { get; set; } public int Legacy { get; set; } }
+                                  public class Dst { public int A { get; set; } [Obsolete] public int Legacy { get; set; } }
+                                  [DwarfMapper]
+                                  public partial class M { public partial IQueryable<Dst> Project(IQueryable<Src> q); }
+                                  """;
+
+            var (_, generated) = GeneratorTestHarness.Run(source);
+
+            Assert.Contains("Legacy = ", generated, StringComparison.Ordinal);
+        }
     }
 }

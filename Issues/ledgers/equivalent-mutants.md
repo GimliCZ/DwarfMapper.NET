@@ -29,6 +29,52 @@ source run saw it (informational), `lineCurrent` where the expression sits at th
 - `probably-equivalent` — the ledger argues equivalence but stops short of a full proof; explicitly
   low-priority, never "do not attempt" — a future proof may move it either way, with the entry.
 
+## Anchor maintenance, 2026-08-27 — the identity fields were drifting
+
+Round 27's own review asked whether the relationship structures around the gates were being maintained. For
+this file the answer was "mostly": every `file` resolved and every `anchor` ledger existed, but the
+*positional* and *textual* fields had rotted.
+
+**One row named source that no longer exists.** `DwarfRefContext..ctor (lower clamp)` recorded
+`maxDepth < 1`, and round 27 introduced `src/Shared/DwarfLimits.cs`, replacing the literal with
+`DwarfLimits.MinMaxDepth`. A row's identity is `leg + file + member + mutator + original → mutated`, so an
+`original` naming source that is gone matches **no mutant Stryker can generate** — the entry was still being
+counted in `provenEquivalent`, and the count still reconciled, while describing a mutant that did not exist.
+The expression is updated; **the proof is unchanged**, because `MinMaxDepth == 1` and the two forms still
+differ only at `maxDepth == 1`, where both yield 1.
+
+**Seventeen `lineCurrent` values were stale**, several by hundreds of lines — `BlittableProof` entries at 29,
+80, 81, 85 and 86 actually sit at 274, 370, 371, 378 and 379 after the repo-wide reformat. That field is
+documented as informational, and it is: nothing gates on it. But a reader checking a proof follows the line
+number, and one that lands in unrelated code costs exactly the trust the ledger exists to hold. All
+seventeen are recomputed by locating the row's own `original` text; four rows whose `original` is prose
+(`<empty-quotes literal>`, "one `or` in the SpecialType pattern") or ambiguous (`continue;`) are left
+alone, because for those there is nothing unambiguous to locate.
+
+## Denominators moved on 2026-08-27 — recorded, not absorbed
+
+Two legs' scoreable populations changed with no edit to the code they mutate, so the reason is written down
+here rather than left as an unexplained number.
+
+**generator, 258 → 338.** The four files this leg mutates — `EquatableArray`, `BlittableProof`,
+`ConstructorSelector`, `LocationInfo` — are byte-identical on this branch: zero commits, empty diff. What
+changed is the classification around them. Stryker mutates and compiles the WHOLE project and only then
+filters, and compile-error rollback is a *compilation-dependent* verdict: 4,142 rollbacks became 3,240, and
+the whole-project mutant population grew 11,389 → 13,129 with the code round 27 added. Round 27 also
+switched the legs from Debug to Release builds when repairing the launcher. The previous figure dates from
+2026-08-23, with rounds 25, 26 and 27 in between, so it was stale by more than one cause.
+
+The score moved 84.88 % → 84.32 %, still above its floor of 84. Worth reading as an arithmetic rather than
+a decline: ~219 detected of 258 became 285 of 338, so the 80 newly-scoreable mutants are being killed at
+about 82 % — slightly below the existing rate, which is exactly why the overall figure dips a third of a
+point while more mutants die than before.
+
+**runtime, 119 → 125.** This one has an ordinary cause: round 27 bound each map table to its own ambiguity
+set (`RegistryTable<TDelegate>`), which changed what there is to mutate in `DwarfMapperRegistry.cs`. Score
+97.48 % → 97.60 %.
+
+Both ceilings are recomputed from the new denominators in the same commit, as the rule below requires.
+
 ## Per-leg summary — counts, raw ceilings, offsets
 
 `rawCeiling` = `(scoreable − provenEquivalent) / scoreable`, truncated to two decimals: the highest raw
@@ -38,9 +84,11 @@ recomputes the ceilings in the same commit.
 
 | Leg | Config | Scoreable | Raw score (measured) | proven | ruled-in-practice | probably | rawCeiling |
 |---|---|---:|---:|---:|---:|---:|---:|
-| generator | `stryker-config.json` | 258 | 84.88 % (2026-08-23, round-24 kill program) | 24 | 0 | 6 | 90.69 % |
+| generator | `stryker-config.json` | 338 | 84.32 % (2026-08-27, round-27 battery) | 24 | 0 | 6 | 92.89 % |
 | doctooling | `stryker-config.doctooling.json` | 289 | 95.85 % (2026-08-23, round-24 kill program) | 10 | 0 | 0 | 96.53 % |
-| runtime | `stryker-config.runtime.json` | 119 | 97.48 % (2026-08-23, round-24 kill program) | 2 | 1 | 1 | 98.31 % |
+| runtime | `stryker-config.runtime.json` | 125 | 97.60 % (2026-08-27, round-27 battery) | 2 | 1 | 1 | 98.40 % |
+| codefixes | `stryker-config.codefixes.json` | 177 | 87.01 % (2026-08-26, round-27 kill program) | 22 | 0 | 1 | 87.57 % |
+| pipeline | `stryker-config.pipeline.json` | 239 | 76.99 % (2026-08-27, first measurement) | 0 | 0 | 0 | 100.00 % |
 
 Fuller arithmetic, carried from the research and updated by P5 (context, not gates): the generator leg's
 *realistic* raw ceiling is lower than 88.05 — the 6 probably-equivalent survivors and the 3 NoCoverage
@@ -78,19 +126,20 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     "Issues/ledgers/T3-mutation-survivors.md",
     "Issues/ledgers/E3-E1-report.md",
     "Issues/ledgers/H7-timeout-dissection.md",
-    "Issues/round20/CARRY-FORWARD.md"
+    "Issues/round20/CARRY-FORWARD.md",
+    "Issues/ledgers/codefixes-mutation-survivors.md"
   ],
   "legs": {
     "generator": {
       "config": "stryker-config.json",
-      "scoreable": 258,
-      "measuredRawScore": 84.88,
-      "measuredOn": "2026-08-23",
+      "scoreable": 338,
+      "measuredRawScore": 84.32,
+      "measuredOn": "2026-08-27",
       "provenEquivalent": 24,
       "ruledInPractice": 0,
       "probablyEquivalent": 6,
-      "rawCeiling": 90.69,
-      "rawCeilingFormula": "(258 - 24) / 258"
+      "rawCeiling": 92.89,
+      "rawCeilingFormula": "(338 - 24) / 338"
     },
     "doctooling": {
       "config": "stryker-config.doctooling.json",
@@ -105,14 +154,36 @@ is its documentation. Edit both together — the scan cross-checks the summary n
     },
     "runtime": {
       "config": "stryker-config.runtime.json",
-      "scoreable": 119,
-      "measuredRawScore": 97.48,
-      "measuredOn": "2026-08-23",
+      "scoreable": 125,
+      "measuredRawScore": 97.6,
+      "measuredOn": "2026-08-27",
       "provenEquivalent": 2,
       "ruledInPractice": 1,
       "probablyEquivalent": 1,
-      "rawCeiling": 98.31,
-      "rawCeilingFormula": "(119 - 2) / 119"
+      "rawCeiling": 98.4,
+      "rawCeilingFormula": "(125 - 2) / 125"
+    },
+    "codefixes": {
+      "config": "stryker-config.codefixes.json",
+      "scoreable": 177,
+      "measuredRawScore": 87.01,
+      "measuredOn": "2026-08-26",
+      "provenEquivalent": 22,
+      "ruledInPractice": 0,
+      "probablyEquivalent": 1,
+      "rawCeiling": 87.57,
+      "rawCeilingFormula": "(177 - 22) / 177"
+    },
+    "pipeline": {
+      "config": "stryker-config.pipeline.json",
+      "scoreable": 239,
+      "measuredRawScore": 76.99,
+      "measuredOn": "2026-08-27",
+      "provenEquivalent": 0,
+      "ruledInPractice": 0,
+      "probablyEquivalent": 0,
+      "rawCeiling": 100.0,
+      "rawCeilingFormula": "(239 - 0) / 239 — nothing is adjudicated equivalent yet, so every undetected mutant here is an open worklist item rather than a proven equivalence"
     }
   },
   "entries": [
@@ -135,7 +206,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "LayoutIdentical",
       "lineAtProof": 29,
-      "lineCurrent": 29,
+      "lineCurrent": 274,
       "mutator": "Logical",
       "original": "IsPrimitive(a) || IsPrimitive(b)",
       "mutated": "IsPrimitive(a) && IsPrimitive(b)",
@@ -163,7 +234,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/ConstructorSelector.cs",
       "member": "Select (hasExplicitNonParameterlessCtor predicate)",
       "lineAtProof": 58,
-      "lineCurrent": 58,
+      "lineCurrent": 83,
       "mutator": "Equality",
       "original": "c.Parameters.Length > 0",
       "mutated": "c.Parameters.Length >= 0",
@@ -177,7 +248,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/ConstructorSelector.cs",
       "member": "AllParametersHaveASource",
       "lineAtProof": 243,
-      "lineCurrent": 243,
+      "lineCurrent": 279,
       "mutator": "Equality",
       "original": "src.IndexOf('.') >= 0",
       "mutated": "src.IndexOf('.') > 0",
@@ -191,7 +262,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "InstanceFields (sort comparator, file-path key, a-side)",
       "lineAtProof": 80,
-      "lineCurrent": 80,
+      "lineCurrent": 370,
       "mutator": "Conditional/Equality/String (4 distinct: cond->true, > -> >=, both string.Empty literals -> \"Stryker was here!\")",
       "original": "a.Locations.Length > 0 ? a.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty",
       "mutated": "the four forms above",
@@ -205,7 +276,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "InstanceFields (sort comparator, file-path key, b-side)",
       "lineAtProof": 81,
-      "lineCurrent": 81,
+      "lineCurrent": 371,
       "mutator": "Conditional/Equality/String (4 distinct: cond->true, > -> >=, both string.Empty literals -> \"Stryker was here!\")",
       "original": "b.Locations.Length > 0 ? b.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty",
       "mutated": "the four forms above",
@@ -219,7 +290,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "InstanceFields (sort comparator, position tie-break, a-side)",
       "lineAtProof": 85,
-      "lineCurrent": 85,
+      "lineCurrent": 378,
       "mutator": "Conditional/Equality (4 distinct: cond->true, cond->false, > -> <, > -> >=)",
       "original": "a.Locations.Length > 0 ? a.Locations[0].SourceSpan.Start : 0",
       "mutated": "the four guard mutations above",
@@ -233,7 +304,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.Generator/Pipeline/BlittableProof.cs",
       "member": "InstanceFields (sort comparator, position tie-break, b-side)",
       "lineAtProof": 86,
-      "lineCurrent": 86,
+      "lineCurrent": 379,
       "mutator": "Conditional/Equality (2 remaining: cond->true, > -> >=)",
       "original": "b.Locations.Length > 0 ? b.Locations[0].SourceSpan.Start : 0",
       "mutated": "the two guard mutations above",
@@ -247,7 +318,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/DocSnippetInjector.cs",
       "member": "LongestBacktickRun",
       "lineAtProof": 83,
-      "lineCurrent": 97,
+      "lineCurrent": 102,
       "mutator": "Equality",
       "original": "run > longest",
       "mutated": "run >= longest",
@@ -261,7 +332,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/DocSnippetInjector.cs",
       "member": "ParseId (malformed-marker guard)",
       "lineAtProof": 110,
-      "lineCurrent": 110,
+      "lineCurrent": 118,
       "mutator": "Equality",
       "original": "end < 0",
       "mutated": "end <= 0",
@@ -275,7 +346,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
       "member": "ParseId (malformed-marker guard)",
       "lineAtProof": 121,
-      "lineCurrent": 121,
+      "lineCurrent": 137,
       "mutator": "Equality",
       "original": "close < 0",
       "mutated": "close <= 0",
@@ -289,7 +360,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/DocTableInjector.cs",
       "member": "Inject (unclosed-table guard)",
       "lineAtProof": 31,
-      "lineCurrent": 31,
+      "lineCurrent": 37,
       "mutator": "Equality",
       "original": "end < 0",
       "mutated": "end <= 0",
@@ -303,7 +374,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/ExampleCatalogue.cs",
       "member": "Build (ambiguous-match message ternary)",
       "lineAtProof": 74,
-      "lineCurrent": 74,
+      "lineCurrent": 75,
       "mutator": "Equality",
       "original": "matches.Count > 1",
       "mutated": "matches.Count >= 1",
@@ -331,7 +402,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper.DocTooling/SnippetScanner.cs",
       "member": "Dedent (common-prefix loop guard)",
       "lineAtProof": 170,
-      "lineCurrent": 170,
+      "lineCurrent": 189,
       "mutator": "Equality",
       "original": "prefix.Length > 0",
       "mutated": "prefix.Length >= 0",
@@ -387,13 +458,13 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper/DwarfRefContext.cs",
       "member": "DwarfRefContext..ctor (lower clamp)",
       "lineAtProof": 77,
-      "lineCurrent": 77,
+      "lineCurrent": 105,
       "mutator": "Equality",
-      "original": "maxDepth < 1",
-      "mutated": "maxDepth <= 1",
+      "original": "maxDepth < DwarfLimits.MinMaxDepth",
+      "mutated": "maxDepth <= DwarfLimits.MinMaxDepth",
       "occurrences": 1,
       "category": "proven-equivalent",
-      "proof": "The two forms differ on exactly one input, maxDepth == 1, and agree there: the original falls through '1 > AbsoluteMaxDepth' (false) and yields maxDepth = 1; the mutant takes the clamp branch and yields the literal 1. Identical output for every input. (The sibling L77 Conditional-false mutant is a REAL hole - E3-E1 #8 - not this entry.)",
+      "proof": "The two forms differ on exactly one input, maxDepth == 1, and agree there: the original falls through '1 > AbsoluteMaxDepth' (false) and yields maxDepth = 1; the mutant takes the clamp branch and yields the literal 1. Identical output for every input. (The sibling L77 Conditional-false mutant is a REAL hole - E3-E1 #8 - not this entry.) UPDATED 2026-08-27: round 27 introduced src/Shared/DwarfLimits.cs and replaced the literal 1 with DwarfLimits.MinMaxDepth. The proof is UNCHANGED because MinMaxDepth == 1: the two forms still differ only at maxDepth == 1, where both yield 1. The expression text is updated because the row’s identity is leg+file+member+mutator+original, and an identity naming source that no longer exists matches no mutant Stryker can generate.",
       "anchor": "Issues/ledgers/E3-E1-report.md § the equivalent mutant (DwarfRefContext L77 Equality)"
     },
     {
@@ -415,7 +486,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper/DwarfMapExceptions.cs",
       "member": "FormatMessage (ambiguous-branch guard)",
       "lineAtProof": 86,
-      "lineCurrent": 86,
+      "lineCurrent": 94,
       "mutator": "Equality (recursive pattern)",
       "original": "ambiguousInterfaces is { Count: > 1 }",
       "mutated": "ambiguousInterfaces is { Count: >= 1 }",
@@ -429,7 +500,7 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "file": "src/DwarfMapper/DwarfMapperRegistry.cs",
       "member": "Key.Equals(Key)",
       "lineAtProof": 291,
-      "lineCurrent": 282,
+      "lineCurrent": 356,
       "mutator": "Logical",
       "original": "Source == other.Source && Destination == other.Destination",
       "mutated": "Source == other.Source || Destination == other.Destination",
@@ -437,6 +508,328 @@ is its documentation. Edit both together — the scan cross-checks the summary n
       "category": "ruled-in-practice",
       "proof": "Maintainer ruling, round-20 CF 5.4: Key is a private readonly struct whose only consumer is ConcurrentDictionary, which compares hash codes BEFORE consulting Equals; a half-matching key differs in hash, so Equals is never reached with one. Divergence requires an engineered hash collision with exactly one matching component, which no honest test produces. (E3-E1 listed it as hole #6 before the ruling; line drifted 291 -> 282 by T7's measurement.)",
       "anchor": "Issues/round20/CARRY-FORWARD.md item 5.4; stryker-config.runtime.json comment"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/AddMapIgnoreCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 35,
+      "lineCurrent": 35,
+      "mutator": "Boolean mutation",
+      "original": "ConfigureAwait(false)",
+      "mutated": "ConfigureAwait(true)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "ConfigureAwait selects whether the continuation resumes on a captured SynchronizationContext. It cannot change what the awaited call RETURNS, and the syntax root is the only thing read from it; the provider then does no thread-affine work. Under xunit there is no context to capture, so both forms resume on the thread pool. Distinguishing them would require observing WHICH thread resumed, which asserts nothing about the fix.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/AddMapIgnoreCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 38,
+      "lineCurrent": 38,
+      "mutator": "Statement mutation",
+      "original": "return;",
+      "mutated": ";",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The mutated statement is the early return taken when GetSyntaxRootAsync yields null. A C# source document always has a syntax root -- null is returned only for a document that does not support syntax trees -- and a code fix is only ever registered against a diagnostic in one. The branch is unreachable, so removing its return changes nothing. The guard stays in the source deliberately: the API contract permits null, so deleting it would trade a dead line for a NullReferenceException if that contract is ever met.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/AddMapIgnoreCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 49,
+      "lineCurrent": 49,
+      "mutator": "Boolean mutation",
+      "original": "getInnermostNodeForTie: true",
+      "mutated": "getInnermostNodeForTie: false",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "getInnermostNodeForTie chooses between a node and its direct parent when the two share an identical span. Every caller immediately walks upward with FirstAncestorOrSelf<T>, and a tie means one candidate is the parent of the other, so both have the same ancestors above the tied pair and the search lands on the same node either way.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/AddReverseMapInverseCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 37,
+      "lineCurrent": 37,
+      "mutator": "Boolean mutation",
+      "original": "ConfigureAwait(false)",
+      "mutated": "ConfigureAwait(true)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "ConfigureAwait selects whether the continuation resumes on a captured SynchronizationContext. It cannot change what the awaited call RETURNS, and the syntax root is the only thing read from it; the provider then does no thread-affine work. Under xunit there is no context to capture, so both forms resume on the thread pool. Distinguishing them would require observing WHICH thread resumed, which asserts nothing about the fix.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/AddReverseMapInverseCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 40,
+      "lineCurrent": 40,
+      "mutator": "Statement mutation",
+      "original": "return;",
+      "mutated": ";",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The mutated statement is the early return taken when GetSyntaxRootAsync yields null. A C# source document always has a syntax root -- null is returned only for a document that does not support syntax trees -- and a code fix is only ever registered against a diagnostic in one. The branch is unreachable, so removing its return changes nothing. The guard stays in the source deliberately: the API contract permits null, so deleting it would trade a dead line for a NullReferenceException if that contract is ever met.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/AddReverseMapInverseCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 45,
+      "lineCurrent": 45,
+      "mutator": "Boolean mutation",
+      "original": "getInnermostNodeForTie: true",
+      "mutated": "getInnermostNodeForTie: false",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "getInnermostNodeForTie chooses between a node and its direct parent when the two share an identical span. Every caller immediately walks upward with FirstAncestorOrSelf<T>, and a tie means one candidate is the parent of the other, so both have the same ancestors above the tied pair and the search lands on the same node either way.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/AddReverseMapInverseCodeFixProvider.cs",
+      "member": "InverseName",
+      "lineAtProof": 98,
+      "lineCurrent": 98,
+      "mutator": "Equality mutation",
+      "original": "dot >= 0",
+      "mutated": "dot > 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "LastIndexOf and IndexOf over a type's source text; the two comparisons differ only when the index is exactly 0, i.e. a type written starting with \".\" or \"<\". Neither is valid C# type syntax, so no parse tree can produce one.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/AddReverseMapInverseCodeFixProvider.cs",
+      "member": "InverseName",
+      "lineAtProof": 104,
+      "lineCurrent": 104,
+      "mutator": "Equality mutation",
+      "original": "generic >= 0",
+      "mutated": "generic > 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "LastIndexOf and IndexOf over a type's source text; the two comparisons differ only when the index is exactly 0, i.e. a type written starting with \".\" or \"<\". Neither is valid C# type syntax, so no parse tree can produce one.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/ResolveExplicitOnlyMemberCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 46,
+      "lineCurrent": 46,
+      "mutator": "Boolean mutation",
+      "original": "ConfigureAwait(false)",
+      "mutated": "ConfigureAwait(true)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "ConfigureAwait selects whether the continuation resumes on a captured SynchronizationContext. It cannot change what the awaited call RETURNS, and the syntax root is the only thing read from it; the provider then does no thread-affine work. Under xunit there is no context to capture, so both forms resume on the thread pool. Distinguishing them would require observing WHICH thread resumed, which asserts nothing about the fix.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/ResolveExplicitOnlyMemberCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 49,
+      "lineCurrent": 49,
+      "mutator": "Statement mutation",
+      "original": "return;",
+      "mutated": ";",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The mutated statement is the early return taken when GetSyntaxRootAsync yields null. A C# source document always has a syntax root -- null is returned only for a document that does not support syntax trees -- and a code fix is only ever registered against a diagnostic in one. The branch is unreachable, so removing its return changes nothing. The guard stays in the source deliberately: the API contract permits null, so deleting it would trade a dead line for a NullReferenceException if that contract is ever met.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/ResolveExplicitOnlyMemberCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 60,
+      "lineCurrent": 60,
+      "mutator": "Boolean mutation",
+      "original": "getInnermostNodeForTie: true",
+      "mutated": "getInnermostNodeForTie: false",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "getInnermostNodeForTie chooses between a node and its direct parent when the two share an identical span. Every caller immediately walks upward with FirstAncestorOrSelf<T>, and a tie means one candidate is the parent of the other, so both have the same ancestors above the tied pair and the search lands on the same node either way.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 50,
+      "lineCurrent": 50,
+      "mutator": "Boolean mutation",
+      "original": "ConfigureAwait(false)",
+      "mutated": "ConfigureAwait(true)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "ConfigureAwait selects whether the continuation resumes on a captured SynchronizationContext. It cannot change what the awaited call RETURNS, and the syntax root is the only thing read from it; the provider then does no thread-affine work. Under xunit there is no context to capture, so both forms resume on the thread pool. Distinguishing them would require observing WHICH thread resumed, which asserts nothing about the fix.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 53,
+      "lineCurrent": 53,
+      "mutator": "Statement mutation",
+      "original": "return;",
+      "mutated": ";",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "The mutated statement is the early return taken when GetSyntaxRootAsync yields null. A C# source document always has a syntax root -- null is returned only for a document that does not support syntax trees -- and a code fix is only ever registered against a diagnostic in one. The branch is unreachable, so removing its return changes nothing. The guard stays in the source deliberately: the API contract permits null, so deleting it would trade a dead line for a NullReferenceException if that contract is ever met.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "RegisterCodeFixesAsync",
+      "lineAtProof": 58,
+      "lineCurrent": 58,
+      "mutator": "Boolean mutation",
+      "original": "getInnermostNodeForTie: true",
+      "mutated": "getInnermostNodeForTie: false",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "getInnermostNodeForTie chooses between a node and its direct parent when the two share an identical span. Every caller immediately walks upward with FirstAncestorOrSelf<T>, and a tie means one candidate is the parent of the other, so both have the same ancestors above the tied pair and the search lands on the same node either way.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "WithRestatement",
+      "lineAtProof": 168,
+      "lineCurrent": 168,
+      "mutator": "Null coalescing mutation (remove left)",
+      "original": "classDecl.AttributeLists.LastOrDefault() ?? (SyntaxNode)classDecl",
+      "mutated": "(SyntaxNode)classDecl",
+      "occurrences": 1,
+      "category": "probably-equivalent",
+      "proof": "Chooses the node whose trivia the added attribute list copies: the last existing attribute list, or the class declaration when there is none. The result is re-annotated with Formatter.Annotation immediately afterwards, so the normalised output has been identical in every case tried. NOT a proof -- a formatting-sensitive input may yet distinguish them, which is why this is probably- rather than proven-equivalent.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "WithRestatement",
+      "lineAtProof": 172,
+      "lineCurrent": 173,
+      "mutator": "Block removal mutation",
+      "original": "return document;",
+      "mutated": "{ }",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Removes the early \"return document\" taken when there is nothing to restate. Falling through runs ReplaceNodes and AddRange over empty collections -- both no-ops -- and re-annotates the class for formatting, producing byte-identical text. Pinned by RestateBaseRefusalTests.Restating_a_pair_that_has_not_drifted_leaves_the_document_alone.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "WithRestatement",
+      "lineAtProof": 177,
+      "lineCurrent": 177,
+      "mutator": "Equality mutation",
+      "original": "replacements.Count > 0",
+      "mutated": "replacements.Count >= 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "With >= 0 the guarded call also runs when the collection is empty, and ReplaceNodes over an empty collection is a no-op that returns an equal node. The emitted text is identical.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "WithRestatement",
+      "lineAtProof": 182,
+      "lineCurrent": 182,
+      "mutator": "Equality mutation",
+      "original": "additions.Count > 0",
+      "mutated": "additions.Count >= 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "With >= 0 the guarded call also runs when the collection is empty, and WithAttributeLists(... AddRange over an empty collection is a no-op that returns an equal node. The emitted text is identical.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "Short",
+      "lineAtProof": 285,
+      "lineCurrent": 285,
+      "mutator": "Conditional (false) mutation",
+      "original": "cut < 0 ? name : name.Substring(cut + 1)",
+      "mutated": "name.Substring(cut + 1)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "When cut is -1 the true branch returns name and the false branch computes name.Substring(0), which IS name. The conditional is redundant for its own guard value, so forcing the false branch changes nothing.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "Short",
+      "lineAtProof": 285,
+      "lineCurrent": 285,
+      "mutator": "Equality mutation",
+      "original": "cut < 0",
+      "mutated": "cut <= 0",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Differs from the original only at cut == 0, i.e. a name beginning with \".\", which no type produces.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "TryReadPair",
+      "lineAtProof": 347,
+      "lineCurrent": 347,
+      "mutator": "String mutation",
+      "original": "source = target = string.Empty",
+      "mutated": "source = target = \"Stryker was here!\"",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Initialises the out parameters immediately before \"return false\", so the compiler is satisfied. Every caller is of the form \"if (TryRead... && TryRead...)\" and reads the outs only on the true path. WEAKER THAN THE OTHERS: this rests on caller discipline rather than on the language, and becomes killable the day a caller reads the outs after a false return.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "TryReadPair",
+      "lineAtProof": 349,
+      "lineCurrent": 349,
+      "mutator": "Logical mutation",
+      "original": "|| string.IsNullOrEmpty(pair)",
+      "mutated": "&& string.IsNullOrEmpty(pair)",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "With && the guard stops returning false when the property is PRESENT but empty -- and the empty string then fails the separator check downstream, so TryReadPair returns false on that path anyway. When the property is absent, name is null and IsNullOrEmpty(null) is true, so both forms return false. The two agree on every input.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
+    },
+    {
+      "leg": "codefixes",
+      "file": "src/DwarfMapper.CodeFixes/RestateBaseConfigurationCodeFixProvider.cs",
+      "member": "TryReadDerivedPair",
+      "lineAtProof": 367,
+      "lineCurrent": 367,
+      "mutator": "String mutation",
+      "original": "source = target = string.Empty",
+      "mutated": "source = target = \"Stryker was here!\"",
+      "occurrences": 1,
+      "category": "proven-equivalent",
+      "proof": "Initialises the out parameters immediately before \"return false\", so the compiler is satisfied. Every caller is of the form \"if (TryRead... && TryRead...)\" and reads the outs only on the true path. WEAKER THAN THE OTHERS: this rests on caller discipline rather than on the language, and becomes killable the day a caller reads the outs after a false return.",
+      "anchor": "Issues/ledgers/codefixes-mutation-survivors.md"
     }
   ]
 }

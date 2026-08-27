@@ -15,7 +15,24 @@
 # Usage:  scripts/conformance-gate.sh [rid]
 set -euo pipefail
 
-RID="${1:-linux-x64}"
+# The RID labels the evidence file, so a wrong default is a FALSE PROVENANCE RECORD -- this defaulted to
+# linux-x64 and filed a Windows run under that name. CI passes the rid explicitly (ci.yml), so this
+# default serves only local runs; it now reads the host instead of assuming the CI platform.
+if [[ -n "${1:-}" ]]; then
+  RID="$1"
+else
+  case "$(uname -s)" in
+    Linux)                RID_OS=linux ;;
+    Darwin)               RID_OS=osx ;;
+    MINGW*|MSYS*|CYGWIN*) RID_OS=win ;;
+    *)                    RID_OS=linux ;;
+  esac
+  case "$(uname -m)" in
+    arm64|aarch64) RID_ARCH=arm64 ;;
+    *)             RID_ARCH=x64 ;;
+  esac
+  RID="$RID_OS-$RID_ARCH"
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS_DIR="$ROOT/conformance/results"
 DATE="$(date -u +%Y-%m-%d)"
@@ -37,7 +54,11 @@ echo "$OUTPUT"
 
 # The sample's final line is "<pass> passed, <fail> failed  (of <total>)".
 SUMMARY="$(printf '%s\n' "$OUTPUT" | grep -E '[0-9]+ passed, [0-9]+ failed' | tail -1 || true)"
-PASSED="$(printf '%s' "$SUMMARY" | sed -nE 's/.*?([0-9]+) passed.*/\1/p')"
+# ERE HAS NO LAZY QUANTIFIER: `.*?` is a greedy `.*` followed by an optional literal `?`, so on
+# "78 passed" the `.*` ate the leading 7 and this recorded Passed: 8. Every conformance artifact ever
+# committed carries the truncated number (47->7, 72->2, 75->5, 78->8) while its own body states the
+# true one. Anchoring at the start of the line removes the ambiguity rather than hiding it.
+PASSED="$(printf '%s' "$SUMMARY" | sed -nE 's/^[[:space:]]*([0-9]+) passed.*/\1/p')"
 FAILED="$(printf '%s' "$SUMMARY" | sed -nE 's/.*, ([0-9]+) failed.*/\1/p')"
 TOTAL="$(printf '%s' "$SUMMARY" | sed -nE 's/.*\(of ([0-9]+)\).*/\1/p')"
 

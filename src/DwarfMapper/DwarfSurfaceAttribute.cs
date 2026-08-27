@@ -10,6 +10,94 @@ namespace DwarfMapper
     ///         independent allowlist dictionaries, each of which was one person typing a reason once.
     ///     </para>
     /// </summary>
+    /// <summary>
+    ///     Where a human looks this element up, and therefore what must exist for them to find it.
+    ///     <para>
+    ///         A third axis, independent of the other two. <see cref="SurfaceCategory" /> answers "what must be
+    ///         PROVED about this?" and is already satisfied — a <c>ConsumerDirective</c> must appear in a
+    ///         runnable sample, and a Conformance feature discharges that. But Conformance proves an observable
+    ///         runtime difference; it does not teach. A reader asking "how do I use
+    ///         <c>[MapCollectionKey]</c>?" and finding an assertion has found the proof and not the answer.
+    ///     </para>
+    ///     <para>
+    ///         Measured when this axis was added: 24 of 29 attributes had a Conformance feature, 14 had a
+    ///         Gallery example, and 10 were proven but undiscoverable. That gap is what this axis closes.
+    ///     </para>
+    ///     <para>
+    ///         Same rule as the other axes: every value carries an obligation, none waives one. Enforced by
+    ///         <c>DiscoverabilityObligationTests</c>.
+    ///     </para>
+    /// </summary>
+    internal enum Discoverability
+    {
+        /// <summary>
+        ///     Obligation: a Gallery region exists for it, and the generated Gallery README quotes that region.
+        ///     The DEFAULT, deliberately — a newly added attribute acquires the strongest obligation unless
+        ///     someone narrows it on purpose, exactly as <see cref="SurfaceEndpoints.All" /> is the default
+        ///     claim.
+        /// </summary>
+        GalleryExample,
+
+        /// <summary>
+        ///     Obligation: a Conformance feature AND a prose section in <c>docs/</c>. For elements a Gallery
+        ///     example cannot honestly show — a build-failure-only element cannot compile, and a cross-assembly
+        ///     element needs two projects the Gallery does not have.
+        /// </summary>
+        ConformanceOnly,
+
+        /// <summary>
+        ///     Obligation, and it is INVERTED: the element must be <c>[EditorBrowsable(Never)]</c> and must NOT
+        ///     appear in the Gallery. An example showing a consumer hand-writing an attribute the generator
+        ///     emits would document an API that does not exist that way — so its absence is a thing to prove,
+        ///     not a thing to excuse. This is why the axis needs no <c>Exempt</c> member.
+        /// </summary>
+        Infrastructure
+    }
+
+    /// <summary>
+    ///     What a surface element is security-relevant FOR, and therefore what must be documented and pinned
+    ///     about it.
+    ///     <para>
+    ///         A separate axis from <see cref="SurfaceCategory" /> rather than more categories, because the two
+    ///         questions are independent: <c>[Reinterpret]</c> is a <c>ConsumerDirective</c> whose proof
+    ///         obligation is the executed cross-product, AND a memory-safety override whose obligation is a
+    ///         refusal test. Folding them would force one to be chosen over the other.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="FlagsAttribute" /> because one element can be several: <c>[DwarfMapper]</c> carries
+    ///         both <c>AllowNonPublic</c> (a trust boundary) and <c>MaxDepth</c> (a resource bound).
+    ///     </para>
+    ///     <para>
+    ///         Every non-<see cref="None" /> value carries an obligation, matching the rule
+    ///         <see cref="SurfaceCategory" /> states: classifying redirects the proof, it never waives it.
+    ///         Enforced by <c>SecuritySurfaceObligationTests</c>.
+    ///     </para>
+    /// </summary>
+    [Flags]
+    internal enum SecuritySurface
+    {
+        /// <summary>No security consequence. See the detector note on <see cref="DwarfSurfaceAttribute.Security" />.</summary>
+        None = 0,
+
+        /// <summary>
+        ///     Widens what the generator may bind to, or who may contribute a mapping. Obligation: a
+        ///     <c>SECURITY.md</c> trust-model section naming the boundary, and a test pinning the invariant.
+        /// </summary>
+        TrustBoundary = 1,
+
+        /// <summary>
+        ///     Lets the consumer override a compile-time proof about memory layout. Obligation: a test proving
+        ///     the unsafe path is unreachable without its proof.
+        /// </summary>
+        MemorySafety = 2,
+
+        /// <summary>
+        ///     Sets or influences a resource limit — the guard against unbounded work. Obligation: the bound is
+        ///     pinned by a test, and every site enforcing it is proven to agree.
+        /// </summary>
+        ResourceBound = 4
+    }
+
     internal enum SurfaceCategory
     {
         /// <summary>
@@ -128,6 +216,30 @@ namespace DwarfMapper
         ///     </para>
         /// </summary>
         public string? ProbeKey { get; set; }
+
+        /// <summary>
+        ///     What this element is security-relevant for. Default <see cref="SecuritySurface.None" />.
+        ///     <para>
+        ///         A default of <c>None</c> would normally be the shape that passes vacuously, which this
+        ///         repository treats as the primary failure mode. It does not here, because the value is
+        ///         DETECTED as well as declared: <c>SecuritySurfaceObligationTests</c> derives the expected
+        ///         flags from the element's own shape — an attribute exposing <c>AllowNonPublic</c> must
+        ///         declare <see cref="SecuritySurface.TrustBoundary" />, one exposing <c>MaxDepth</c> must
+        ///         declare <see cref="SecuritySurface.ResourceBound" />, and the blit override must declare
+        ///         <see cref="SecuritySurface.MemorySafety" /> — and asserts declared ⊇ detected.
+        ///     </para>
+        ///     <para>
+        ///         The limit of that, stated rather than discovered later: it proves no KNOWN mechanism is
+        ///         undeclared. A novel one goes undetected until someone adds a detector for it.
+        ///     </para>
+        /// </summary>
+        public SecuritySurface Security { get; set; } = SecuritySurface.None;
+
+        /// <summary>
+        ///     Where a reader finds this element. Defaults to <see cref="Discoverability.GalleryExample" />,
+        ///     the strongest obligation, so narrowing it is always a deliberate act.
+        /// </summary>
+        public Discoverability Discovery { get; set; } = Discoverability.GalleryExample;
     }
 
     /// <summary>

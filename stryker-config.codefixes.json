@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.Core/Stryker.Core/Schemas/stryker-config.json",
+  "comment": "Mutation testing for the CODE FIX PROVIDERS. A fourth config rather than entries in stryker-config.json because Stryker mutates ONE project per run, and this is a different project (DwarfMapper.CodeFixes.csproj). WHY THIS LEG EXISTS (round 27): a scope audit measured that only 15.3 % of src/ sits inside any leg's 'mutate' globs, and singled this project out -- 88.8 % LINE coverage with 0 % mutation coverage, precisely the combination mutation testing exists to interrogate, because it describes code thoroughly EXECUTED by tests that may assert nothing about it. It is also the most literally user-facing code in the repository: an analyzer reports a problem and these rewrite the consumer's own source to fix it, so a fix that emits subtly wrong code is worse than one that fails loudly. FIRST MEASUREMENT 2026-08-26: 52.54 % (93 detected of 177 scoreable; 55 survived, 29 uncovered). The prediction held -- barely half the mutants detected in code that is 88.8 % executed. AFTER THE KILL PROGRAM, same day, four batches, whole suite, 12 logical cores, Release build via scripts/gate-checks.ps1: score 87.01 % (154 detected of 177 -- 154 killed, 0 timeout; 19 survived, 4 uncovered), 6 min 20 s wall-clock. break is that score floored to 87, low tracks break, high sits above it. Per provider: ResolveExplicitOnlyMember 90.3 %, RestateBaseConfiguration 87.6 %, AddMapIgnore 87.5 %, AddReverseMapInverse 80.0 %. WHAT THE 61 KILLS WERE ABOUT. Three themes, none of them 'more tests of the happy path'. (1) THE REFUSALS: every provider declines to offer a fix when its inputs are unusable -- a dotted member, an empty or absent diagnostic property, a location outside the syntax the fix rewrites -- and not one refusal was exercised, because the generator only ever produces the shapes that succeed. Reaching them needed SYNTHETIC diagnostics built with a chosen property bag and location. (2) WHAT THE USER SEES: action titles and equivalence keys. A blanked title is not a crash; it is an empty entry in the lightbulb, and ResolveExplicitOnlyMember offers two actions that differ only by their text. (3) SYNTAX A COMPILER WOULD HAVE REJECTED: a code fix reads syntax, not a compiled model, so `[MapIgnore<T>]` with no argument list and `[MapProperty<S,T>(Use = ...)]` with only named arguments are legal things to type. Reading the arguments without checking for their absence throws inside the user's lightbulb. EVERY REMAINING UNDETECTED MUTANT IS DISPOSITIONED -- 22 proven-equivalent and 1 probably-equivalent, with the case analysis for each in Issues/ledgers/codefixes-mutation-survivors.md and the machine-readable rows in Issues/ledgers/equivalent-mutants.md. rawCeiling is 87.57 %, so the measured 87.01 % sits one probably-equivalent mutant below the highest score this leg can honestly reach. NOTE -- raise break only by killing survivors, never by re-measuring on a lucky run; the floor moves in the same commit as the kills that earned it. NOTE -- the 'mutate' globs must be PROJECT-relative ('**/Name.cs'), never repo-root-relative: Stryker resolves them against src/DwarfMapper.CodeFixes, so a repo-root path matches nothing, every mutant is dropped with 'Removed by mutate filter', and Stryker STILL EXITS 0. Assert-MutantsWereTested (scripts/housekeeping.ps1) exists for exactly that hazard and returned 177 for this run. NOTE -- all four providers are listed explicitly rather than globbed with '**/*.cs', so adding a fifth is a deliberate act that shows up in review; the three sibling configs follow the same convention. NOTE -- there is deliberately NO 'test-projects' key; see NOTE 3 in stryker-config.runtime.json for the measurement showing such a list is inert here.",
+  "stryker-config": {
+    "project": "DwarfMapper.CodeFixes.csproj",
+    "mutate": [
+      "**/AddMapIgnoreCodeFixProvider.cs",
+      "**/AddReverseMapInverseCodeFixProvider.cs",
+      "**/ResolveExplicitOnlyMemberCodeFixProvider.cs",
+      "**/RestateBaseConfigurationCodeFixProvider.cs"
+    ],
+    "additional-timeout": 120000,
+    "thresholds": {
+      "high": 90,
+      "low": 87,
+      "break": 87
+    },
+    "project-info": {
+      "name": "github.com/GimliCZ/DwarfMapper.NET",
+      "module": "codefixes"
+    },
+    "reporters": [
+      "progress",
+      "html",
+      "json"
+    ]
+  }
+}

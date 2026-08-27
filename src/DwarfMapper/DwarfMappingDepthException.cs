@@ -12,7 +12,12 @@ namespace DwarfMapper
     ///     <para>
     ///         If you encounter this exception, consider one of:
     ///         <list type="bullet">
-    ///             <item>Increase <c>[DwarfMapper(MaxDepth = N)]</c> (hard cap: 1000).</item>
+    ///             <item>
+    ///                 Increase <c>[DwarfMapper(MaxDepth = N)]</c>, up to
+    ///                 <see cref="DwarfRefContext.AbsoluteMaxDepth" />. Referenced rather than restated: this
+    ///                 page used to name the number, and a bound repeated in prose drifts the moment the
+    ///                 constant moves.
+    ///             </item>
     ///             <item>Use <c>ReferenceHandling = Preserve</c> to map graphs without recursion.</item>
     ///             <item>Truncate the source chain before mapping to stay within the depth limit.</item>
     ///         </list>
@@ -27,7 +32,8 @@ namespace DwarfMapper
             : base(
                 $"DwarfMapper mapping depth exceeded the limit of {maxDepth}. " +
                 $"Actual depth reached: {actualDepth}. " +
-                $"Increase [DwarfMapper(MaxDepth = N)] (max 1000), or enable ReferenceHandling = Preserve " +
+                $"Increase [DwarfMapper(MaxDepth = N)] (max {DwarfLimits.AbsoluteMaxDepth}), or enable " +
+                $"ReferenceHandling = Preserve " +
                 $"to handle cyclic/deep graphs without recursion.")
         {
             MaxDepth = maxDepth;

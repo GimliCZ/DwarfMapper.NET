@@ -5,7 +5,7 @@
         <IsPackable>false</IsPackable>
         <!-- CA1707: test methods intentionally use underscores -->
         <!-- CA1515: test types need not be sealed -->
-        <NoWarn>$(NoWarn);CA1707;CA1515</NoWarn>
+        <NoWarn>$(NoWarn);CA1707</NoWarn>
     </PropertyGroup>
 
     <!-- The cases are REAL .cs files, deliberately red. They must never be compiled by this project — that is
@@ -23,6 +23,7 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="JunitXml.TestLogger"/>
         <PackageReference Include="xunit"/>
         <PackageReference Include="xunit.runner.visualstudio"/>
         <PackageReference Include="coverlet.collector"/>

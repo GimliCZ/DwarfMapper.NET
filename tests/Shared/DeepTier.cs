@@ -99,7 +99,7 @@ namespace DwarfMapper.TestInfrastructure
 
         /// <summary>
         ///     PolymorphicMemberFuzzTests graph seeds. Fast = the original five seeds exactly; deep extends the
-        ///     ObjectFactory seed space to 45 distinct seeds over the same abstract-membered graph.
+        ///     ObjectFactoryV2 seed space to 45 distinct seeds over the same abstract-membered graph.
         /// </summary>
         PolymorphicGraphSeeds,
 

@@ -57,7 +57,12 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         private const int ExpectedCoverageFloors = 5;
 
         /// <summary>How many legs the mutation ledger's per-leg summary must carry.</summary>
-        private const int ExpectedMutationLegs = 3;
+        /// <remarks>
+        ///     Four since round 27 added the code-fix leg. This is a VACUITY floor, not a list: it exists so a
+        ///     reader that silently parsed fewer rows than are gated cannot render a short table that the
+        ///     committed document then matches.
+        /// </remarks>
+        private const int ExpectedMutationLegs = 5;
 
         /// <summary>
         ///     Colour, derived from the gate's own verdict on the rendered number — never hand-assigned per
@@ -132,10 +137,19 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                          legs.Select(l =>
                              string.Create(CultureInfo.InvariantCulture, $"break {l.Break} ({l.Name})"))) +
                      ". Every number here is read from those files and byte-compared by the doc suite, so a " +
-                     "stale badge is a failing build rather than a quiet lie.</sub>");
+                     "stale badge is a failing build rather than a quiet lie. Each score describes only the " +
+                     "files its own leg names, which is a minority of `src/`; " +
+                     $"[what sits outside every leg]({ScopeAuditPath}) is measured there.</sub>");
 
             return rows;
         }
+
+        /// <summary>
+        ///     The scope audit, LINKED rather than quoted. A percentage baked in here would be a second copy
+        ///     of a measured number with nothing comparing the two — precisely the failure this generated
+        ///     table exists to prevent — so the caption points at the file that measures it instead.
+        /// </summary>
+        private const string ScopeAuditPath = "Issues/round27/AUDIT-mutation-scope.md";
 
         private static string Percent(double value, int decimals)
         {

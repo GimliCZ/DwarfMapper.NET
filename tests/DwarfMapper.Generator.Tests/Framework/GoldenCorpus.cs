@@ -84,6 +84,34 @@ namespace DwarfMapper.Generator.Tests.Framework
                                           [DwarfMapper] public partial class M { [FlattenGraph("Entry", "Nodes")] public partial RootDto Map(Root r); }
                                           """, "DwarfGenerator");
 
+            // The HETEROGENEOUS FlattenGraph path: an abstract node base with declared [MapDerivedType] arms,
+            // where each concrete type gets its own traversal. Added because scripts/extracted-reach.ps1
+            // measured that the corpus reached NONE of the 468 lines that path occupies -- so byte-identity
+            // over the manifest was locking nothing there, however green it read. A dedicated snapshot test
+            // covers the same shape; this puts it under the manifest as well, where the lock is per-case and
+            // survives the snapshot being retired.
+            yield return ("HeteroFlattenGraph", """
+                                                using DwarfMapper;
+                                                using System.Collections.Generic;
+                                                namespace Demo;
+                                                public abstract class FsNode { public string Name { get; set; } = ""; }
+                                                public class Folder : FsNode { public List<FsNode> Children { get; set; } = new(); }
+                                                public class FileNode : FsNode { public long Size { get; set; } }
+                                                public abstract class FsNodeDto { public string Name { get; set; } = ""; }
+                                                public class FolderDto : FsNodeDto { public List<FsNodeDto>? Children { get; set; } }
+                                                public class FileNodeDto : FsNodeDto { public long Size { get; set; } }
+                                                public class Tree { public FsNode? Root { get; set; } public string Label { get; set; } = ""; }
+                                                public class TreeDto { public List<FsNodeDto> Nodes { get; set; } = new(); public string Label { get; set; } = ""; }
+                                                [DwarfMapper]
+                                                public partial class M
+                                                {
+                                                    [FlattenGraph(nameof(Tree.Root), nameof(TreeDto.Nodes))]
+                                                    [MapDerivedType<Folder, FolderDto>]
+                                                    [MapDerivedType<FileNode, FileNodeDto>]
+                                                    public partial TreeDto Map(Tree t);
+                                                }
+                                                """, "DwarfGenerator");
+
             yield return ("Flatten", """
                                      using DwarfMapper;
                                      namespace Demo;
