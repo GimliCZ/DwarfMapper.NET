@@ -10,7 +10,19 @@
       "**/OptionTableRenderer.cs",
       "**/ExampleCatalogue.cs"
     ],
-    "thresholds": { "high": 96, "low": 95, "break": 95 },
-    "reporters": ["progress", "html", "json"]
+    "thresholds": {
+      "high": 96,
+      "low": 95,
+      "break": 95
+    },
+    "project-info": {
+      "name": "github.com/GimliCZ/DwarfMapper.NET",
+      "module": "doctooling"
+    },
+    "reporters": [
+      "progress",
+      "html",
+      "json"
+    ]
   }
 }

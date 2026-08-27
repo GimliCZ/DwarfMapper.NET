@@ -10,7 +10,19 @@
       "**/Pipeline/ConstructorSelector.cs",
       "**/Diagnostics/LocationInfo.cs"
     ],
-    "thresholds": { "high": 90, "low": 84, "break": 84 },
-    "reporters": ["progress", "html", "json"]
+    "thresholds": {
+      "high": 90,
+      "low": 84,
+      "break": 84
+    },
+    "project-info": {
+      "name": "github.com/GimliCZ/DwarfMapper.NET",
+      "module": "generator"
+    },
+    "reporters": [
+      "progress",
+      "html",
+      "json"
+    ]
   }
 }

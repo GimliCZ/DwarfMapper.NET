@@ -81,6 +81,25 @@ jobs:
       # would fight it.
       - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults
 
+      # ── Publish coverage to Codecov ─────────────────────────────────────────
+      # PREPARATION, not yet the gate. The inline gate below still runs, deliberately: a replacement gate is
+      # not proven until it has produced a verdict on a real push, and removing enforcement before that is
+      # how a repository ends up with neither. The cutover — what to delete, and the evidence required first
+      # — is written down in Issues/round27/PLAN-hosted-reports.md.
+      #
+      # fail_ci_if_error is FALSE on purpose. An upload failure means Codecov was unreachable; a coverage
+      # regression means the code got worse. Conflating them teaches everyone to re-run red builds, which is
+      # the habit that makes a gate worthless. The blocking verdict is the STATUS CHECK, configured in
+      # codecov.yml, which simply does not appear if the upload never arrived.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: ./TestResults/**/coverage.cobertura.xml
+          fail_ci_if_error: false
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
       # ── Coverage gate for DwarfMapper.Generator ─────────────────────────────
       # Thresholds: line ≥ 80% / branch ≥ 70% (achieved ≈84.5%/77.4%; gate is −5pp margin).
       # Target-file requirements (EquatableArray / TypeInterfaces / BlittableProof /
