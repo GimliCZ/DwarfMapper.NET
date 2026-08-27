@@ -79,7 +79,13 @@ jobs:
       # timeout eats the evidence. Applied to every plain `dotnet test` step in this workflow; the Stryker
       # legs deliberately do NOT carry it — there the per-mutant ceiling plays that role and a second killer
       # would fight it.
-      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults
+      # --logger junit: `dotnet test` ships trx/html/console and NO junit, and Codecov test analytics
+      # reads JUnit XML only. Without it the upload below finds nothing and reports success.
+      # continue-on-error so a FAILING TEST still reaches the upload — test analytics exists to
+      # show which tests fail and how often, which is precisely the run you must not skip.
+      - run: dotnet test DwarfMapper.NET.sln -c Release --no-build --filter "Category!=SurfaceMatrix" --blame-hang --blame-hang-timeout 5m --collect:"XPlat Code Coverage" --results-directory TestResults --logger "junit;LogFilePath=TestResults/junit/{assembly}.junit.xml"
+        continue-on-error: true
+        id: tests
 
       # ── Publish coverage to Codecov ─────────────────────────────────────────
       # PREPARATION, not yet the gate. The inline gate below still runs, deliberately: a replacement gate is
@@ -91,14 +97,36 @@ jobs:
       # regression means the code got worse. Conflating them teaches everyone to re-run red builds, which is
       # the habit that makes a gate worthless. The blocking verdict is the STATUS CHECK, configured in
       # codecov.yml, which simply does not appear if the upload never arrived.
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      - name: Upload test results to Codecov
+        # !cancelled() rather than always(): a cancelled run has no meaningful results, but a FAILED one has
+        # the most meaningful results there are. Paired with continue-on-error on the test step above, a red
+        # suite still publishes which tests were red.
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./TestResults/junit/*.junit.xml
+
+      - name: Upload coverage reports to Codecov
+        # SHA-pinned like all 45 of its neighbours; README's "all GitHub Actions pinned to commit SHAs" is a
+        # claim this file has to keep true, and an unpinned tag is a mutable pointer someone else controls.
+        # The comment carries the human-readable version so the pin can be audited without a lookup.
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          # The token is a REFERENCE, resolved by GitHub at run time from repository secrets. Nothing secret
+          # is stored here; add it under Settings > Secrets and variables > Actions as CODECOV_TOKEN.
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./TestResults/**/coverage.cobertura.xml
           fail_ci_if_error: false
           verbose: true
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      # The test step is continue-on-error so both uploads run; the build must still fail on a red suite, so
+      # its outcome is re-asserted here, AFTER the results have been published.
+      - name: Fail the build if any test failed
+        if: steps.tests.outcome == 'failure'
+        run: |
+          echo "::error::Test suite failed - see the Codecov test-results report for which tests and how often"
+          exit 1
 
       # ── Coverage is gated by Codecov ────────────────────────────────────────
       # An inline gate lived here: ~70 lines of embedded Python checking ONE assembly

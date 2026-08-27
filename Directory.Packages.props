@@ -17,6 +17,11 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <!-- Test-only JUnit logger. `dotnet test` ships trx/html/console and no junit, and Codecov's
+         test-results-action reads JUnit XML only — so without this the upload step would find nothing and
+         report success, which is the failure mode this repository spends the most effort avoiding.
+         MIT, and a logger runs at test time and is never distributed, so it sets no precedent here. -->
+    <PackageVersion Include="JunitXml.TestLogger" Version="8.0.0" />
     <!-- Test-only: exercises the generated IServiceCollection.AddDwarfMappers() DI registration. -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
     <!-- Property-based testing with INTEGRATED shrinking, closing open item 4 of
