@@ -300,6 +300,64 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         }
 
         [Fact]
+        public void R5_the_coverage_floors_and_codecov_targets_are_the_same_numbers()
+        {
+            // ONE FACT, TWO RENDERINGS. `$coverageFloors` in housekeeping.ps1 gates locally and in the
+            // nightly, and renders the README's coverage badges; codecov.yml's component targets gate the
+            // same assemblies in CI. Nothing reconciles them, so without this they are free to drift into
+            // disagreeing about the same measurement — and the failure would be silent in the direction that
+            // matters, since the looser of the two would simply stop catching things.
+            //
+            // The floors stay the SOURCE rather than being moved into codecov.yml: they are already parsed
+            // by QualityBadgeRenderer, and relocating them would mean teaching both PowerShell and C# to
+            // read YAML in order to remove one duplicate — buying a copy back in parsers. This asserts the
+            // equality instead, which is the same shape as M5 for the mutation legs.
+            var floors = QualityBadgeRenderer.ParseCoverageFloors(
+                File.ReadAllText(Path.Combine(RepoPaths.Root, "scripts", "housekeeping.ps1")));
+
+            var codecovPath = Path.Combine(RepoPaths.Root, "codecov.yml");
+            Assert.True(File.Exists(codecovPath),
+                "codecov.yml is gone — CI's coverage gate has no configuration and the floors below gate " +
+                "nothing outside a local run.");
+
+            // Component blocks are `- component_id: x` … `name: <assembly>` … `target: <n>%`. Read as text
+            // rather than through a YAML library: this project ships no YAML dependency, and adding one to
+            // assert five numbers would be a poor trade.
+            var codecov = File.ReadAllText(codecovPath);
+            var targets = new Dictionary<string, double>(StringComparer.Ordinal);
+            foreach (Match block in Regex.Matches(codecov,
+                         @"name:\s*(?<name>DwarfMapper[\w.]*)\s*\n(?:.*\n)*?\s*target:\s*(?<target>[\d.]+)%",
+                         RegexOptions.None))
+            {
+                targets[block.Groups["name"].Value] =
+                    double.Parse(block.Groups["target"].Value, CultureInfo.InvariantCulture);
+            }
+
+            var problems = new List<string>();
+            foreach (var floor in floors)
+            {
+                if (!targets.TryGetValue(floor.Assembly, out var target))
+                {
+                    problems.Add($"{floor.Assembly}: floor {floor.Floor} has no component target in codecov.yml");
+                }
+                else if (Math.Abs(target - floor.Floor) > 0.001)
+                {
+                    problems.Add($"{floor.Assembly}: floor {floor.Floor} vs codecov target {target}");
+                }
+            }
+
+            foreach (var extra in targets.Keys.Where(k => floors.All(f => f.Assembly != k)))
+            {
+                problems.Add($"{extra}: codecov.yml gates an assembly the floors do not name");
+            }
+
+            Assert.True(problems.Count == 0,
+                "scripts/housekeeping.ps1 and codecov.yml disagree about the coverage floors. They are the " +
+                "same measurement written twice, so they move together in one commit — and the one that is " +
+                "wrong is whichever was not re-measured.\n  " + string.Join("\n  ", problems));
+        }
+
+        [Fact]
         public void R3_coverage_exclusions_in_src_are_exactly_pinned_and_individually_justified()
         {
             // P4's instrument, guarded from day one (the ruling-(b) boundary: [ExcludeFromCodeCoverage] with
