@@ -21,7 +21,7 @@
              AOT-safe — that is the point of NarrowMapper / StringToIntAotMapper / the record's Score.
              The diagnostic is correct to flag them; making them explicit would defeat the sample, so it
              is suppressed here only. Mirrors the same suppression in DwarfMapper.IntegrationTests. -->
-        <NoWarn>$(NoWarn);CA1050;CA1515;CA1303;CA2007;MA0004;CA1819;DWARF038;DWARF044</NoWarn>
+        <NoWarn>$(NoWarn);CA1515;CA1303;CA2007;MA0004;CA1819;DWARF038;DWARF044</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>

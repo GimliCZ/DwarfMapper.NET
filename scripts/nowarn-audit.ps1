@@ -66,19 +66,28 @@ try {
                           Where-Object { $_ -and $_ -notmatch '^\$\(' })
         }
 
-        $declared = $declared | Select-Object -Unique
-        if (-not $declared) { continue }
+        # @(...) forced, not decorative: Select-Object -Unique returns a SCALAR when the list has one
+        # element, and under Set-StrictMode a scalar has no .Count. src/DwarfMapper.CodeFixes declares
+        # exactly one code, so the single-item case is real and not hypothetical.
+        $declared = @($declared | Select-Object -Unique)
+        if ($declared.Count -eq 0) { continue }
 
         $relative = $project.FullName.Substring($root.Length + 1).Replace('\', '/')
         Write-Host "== $relative" -ForegroundColor Cyan
         Write-Host "   declared: $($declared -join ' ')" -ForegroundColor DarkGray
 
-        $output = & dotnet build $project.FullName -c Release --nologo -v n `
+        # --no-incremental is LOAD BEARING, and its absence produced a spectacular false result the first
+        # time this ran: `dotnet build` on an up-to-date project skips compilation, emits no warnings at all,
+        # and every declared code therefore looks stale. That run reported 101 of 157 suppressions (64.3 %)
+        # as suppressing nothing. A single forced rebuild of one of them -- Gallery, reported 14 of 14 stale
+        # -- emitted 420 CA1515, 68 CA5394 and 26 CA1002. Acting on the first number would have deleted a
+        # hundred live suppressions and turned the build red across the repository.
+        $output = & dotnet build $project.FullName -c Release --nologo -v n --no-incremental `
                                  -p:NoWarn= -p:TreatWarningsAsErrors=false 2>&1 | Out-String
 
-        $fired = [regex]::Matches($output, 'warning\s+([A-Z]+[0-9]+)') |
-                 ForEach-Object { $_.Groups[1].Value } |
-                 Select-Object -Unique
+        $fired = @([regex]::Matches($output, 'warning\s+([A-Z]+[0-9]+)') |
+                   ForEach-Object { $_.Groups[1].Value } |
+                   Select-Object -Unique)
 
         $stale = @($declared | Where-Object { $fired -notcontains $_ })
 

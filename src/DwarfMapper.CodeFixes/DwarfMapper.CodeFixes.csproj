@@ -17,7 +17,7 @@
              or set EnforceExtendedAnalyzerRules, because the RS* rules forbid the Workspaces dependency that
              every code-fix legitimately requires. -->
         <!-- CA1303: code-action titles are short fixed UI strings, not localized resources. -->
-        <NoWarn>$(NoWarn);CA1303</NoWarn>
+        <NoWarn>$(NoWarn)</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>

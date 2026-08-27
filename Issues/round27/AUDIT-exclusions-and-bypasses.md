@@ -11,8 +11,9 @@ This is the enumeration. **Every count is measured**, by expanding the relevant 
 
 The short answer: **the suppression surface is in good order, and the scope is not.** Nothing here is being
 silently excused — the mechanisms that could hide a defect are individually pinned, justified and, where it
-matters, re-measured rather than trusted. What is genuinely missing is reach: mutation testing runs over
-9.4 % of `src/`, and the code round 27 created is entirely outside it.
+matters, re-measured rather than trusted — and a third of the declared warning suppressions turned out to
+be suppressing nothing and were deleted. What is genuinely missing is reach: mutation testing runs over
+12.0 % of `src/`, and most of the code round 27 created is still outside it.
 
 ## The suppression surface — nine mechanisms, all governed
 
@@ -63,12 +64,33 @@ exempted — there is no `NoWarn` at the root at all. Against that baseline:
 
 | where | `NoWarn` | judgement |
 |---|---|---|
-| `src/DwarfMapper.CodeFixes` | `CA1303` | localisation of analyzer messages; one rule |
-| `src/DwarfMapper.Testing` | `CA5394`, `CA1510`, `CA1032` | a fuzzing package: `CA5394` is "do not use insecure randomness", which is the package's entire job |
+| `src/DwarfMapper.CodeFixes` | *(none)* | its lone `CA1303` fired on nothing and was removed by the trim below |
+| `src/DwarfMapper.Testing` | `CA5394`, `CA1510`, `CA1032` | a fuzzing package: `CA5394` is "do not use insecure randomness", which is the package's entire job — all three still fire |
 | `samples/*`, `benchmarks/*` | long lists | not shipping code; sample projects are written for readability |
 | `tests/*` | naming/API rules | not shipping code |
 
-Four rules across two shipping projects, each defensible. **No `src/` project relaxes a correctness rule.**
+Three rules in one shipping project after the trim, each defensible and each demonstrably still firing.
+**No `src/` project relaxes a correctness rule.**
+
+### The lists were a third dead, and are now trimmed
+
+`scripts/nowarn-audit.ps1` rebuilds each project with `NoWarn` cleared as a **global** MSBuild property —
+which the project file cannot override — and reports every declared code that never fires. Measured
+2026-08-27: **52 of 157 declared suppressions (33.1 %) suppressed nothing.** 51 were removed (the two
+`DWARF044` entries are kept: they are the generator's own diagnostics and the AOT sample's real exercise is
+`dotnet publish`, which this audit does not run). A forced full-solution rebuild afterwards is clean at 0
+errors and 0 warnings, which is the proof that each removed code was dead: had one been load-bearing, the
+build would have gone red immediately and loudly.
+
+**107 declared suppressions remain**, all of them demonstrably still firing. In `src/` the trim removed
+exactly one — `CA1303` from `DwarfMapper.CodeFixes` — and `DwarfMapper.Testing`'s three all still fire,
+`CA5394` among them, which is the rule about insecure randomness and is that package's entire job.
+
+The first run of that script reported **101 of 157 (64.3 %)**, and it was wrong. `dotnet build` on an
+up-to-date project skips compilation and emits no warnings at all, so every declared code looked dormant;
+the tell was several projects reading 100 % stale. One forced rebuild of `Gallery` — reported 14 of 14 dead —
+emitted 420 `CA1515`, 68 `CA5394` and 26 `CA1002`. Acting on the first number would have deleted a hundred
+live suppressions. `--no-incremental` is now in the script with that finding recorded beside it.
 
 The `.editorconfig` carries exactly four `severity = none` entries — `CS0414`, `CA1802`, `CA1823`, `IDE0051` —
 and all four are scoped to a **single test file**, `SurfaceFixtures.cs`, whose 19 `[SurfaceProbe]` fields are
