@@ -106,6 +106,28 @@ self-confirming.
 
 ---
 
+## Resolved — 33/33, and the rules that keep it there
+
+Repaired and re-run 2026-08-27 at `d7e4744`, in a clean worktree, with the lane's own new green-baseline
+gate passing first: **33 killed, 0 survived, 0 stale, 0 compile-break**, exit 0. Every catalogued defect is
+caught by the guard the catalogue names for it.
+
+The repair is in `0485ff7`; the rules that stop it rotting again are in `78a5776` as
+`MutationMethodologyScanTests`, which runs in milliseconds against the ordinary build rather than the hour
+this lane takes:
+
+| rule | what it refuses |
+|---|---|
+| M1 | an entry matching nothing — the failure that hid nine times |
+| M1b | breadth nobody chose: >1 site needs a `g` flag or a sed address |
+| M2 | a constant condition, which cannot compile here and so credits a guard that never ran |
+| M3 | a row without unique id, named guard and description |
+| M4 | the lane losing its baseline check, per-mutant build, or its failure on either |
+| M5 | the five leg-naming sites disagreeing |
+| M6 | a ledger adjudication naming source that no longer exists |
+
+The original worklist below is kept because it is the record of what was wrong.
+
 ## What to do
 
 1. **Add a compile check to the lane.** Build once after applying each mutant; a mutant that does not compile
