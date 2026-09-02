@@ -116,8 +116,11 @@ so a version with no section here ships with no notes.
   ~60 KB of IL and the XML docs by ~15 KB, to 280 KB, and no commit re-measured the number as the gate's own
   comment demands. The gate did exactly its job — the same five entries, no new dependency, no new resource,
   only more of the same — but it runs only in the nightly CI job, `housekeeping.ps1` never packs, and the
-  nightly went unread. The ceiling is re-measured to 280 KB with the per-entry growth recorded beside it in
-  `scripts/gate-checks.ps1`; `DwarfMapper.Testing` re-measures to the same 47 KB.
+  nightly went unread. The ceiling is re-measured — on Windows and in the gate's own ubuntu container — to
+  282 KB (the emission fixes below added the last kilobyte and a half; the two platforms straddle a KB boundary
+  by 208 bytes of CRLF, and the ceiling is the larger measurement so one tree is green wherever the gate runs),
+  with the per-entry growth recorded beside it in `scripts/gate-checks.ps1`; `DwarfMapper.Testing` re-measures
+  to the same 47 KB.
 - **Three compiler warnings emitted from inside the generated file, reported by a consuming solution on
   1.1.0-rc5, each one a warning the consumer could not suppress** — neither `#pragma` nor an `.editorconfig`
   `[*.g.cs]` section reaches a diagnostic the compiler raises in a generated tree, so the only lever left was a

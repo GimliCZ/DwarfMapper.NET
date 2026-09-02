@@ -615,6 +615,13 @@ Only fires for a genuinely annotated source (`string?`) flowing into an annotate
 a `#nullable disable` context is *oblivious*, the compiler raises no `CS8601` there, and neither does this — a
 legacy codebase is not flooded with warnings about a contract it never opted into.
 
+The same rule, the same report and the same suppression cover a **constructor parameter** bound from a
+nullable source member (`new Dst(alias: s.Alias)` where `Alias` is `string?` and the parameter is `string`) —
+whether bound by name or through `[MapProperty]`. The message names the source member; the "member" in its
+wording is the source side. It used to fire for object-initializer members only, so the same source member
+bound once through the initializer and once through the constructor got the `!` and this warning on one path
+and a bare `CS8604` from inside the generated file on the other.
+
 ---
 
 ## dwarf071
