@@ -510,7 +510,7 @@ is clean under warnings-as-errors + AnalysisMode All + Meziantou, so every entry
   full analyzer set); fast-tier suite: all 9 projects green after one correction — `OptionTableRendererTests.A_null_committed_document_still_renders_the_mechanical_columns` proved the "always false" `markdown is null` check is a TOLERATED contract (a null committed document renders the mechanical columns), so that file is left exactly as it was and Rider's finding there is wrong in substance; Generator.Tests 7192, IntegrationTests 868, CompilerTests 52, NegativeCases 120, Testing.Tests 80, DifferentialTests 70, the three consumer/corpus suites.
 - Applied to the working tree at 07:20 (scratchpad/rider-cleanup.patch, 100 files) together with the F24–F26 fix (scratchpad/consumer-fixes.patch, 5 files); verification on the real tree: scratchpad/verify.log.
 
-## P12 — consumer-reported codegen defects (teammate session, 07:05; findings F24–F26, all FIXED)
+## P12 — consumer-reported codegen defects (teammate session, 07:05; findings F24–F27, all FIXED)
 
 Handed over by the session working on the consuming solution (four mapper projects on 1.1.0-rc5): nine CS
 warnings emitted from inside `.g.cs` files, three distinct causes, with the empirical note that neither
@@ -600,6 +600,31 @@ schemas. Corpus holes, the [[test-infra-holes-pattern]] again.
   one tree is green wherever the gate runs; 281 would leave 92 B on ubuntu and be red on every Windows pack),
   both numbers and the reasoning in the gate's comment block; the gate passes on scratchpad/pkgsize4 at 282.
   Observation for the maintainer: writing the doc XML with LF on all platforms would make the numbers coincide.
+
+### F27 MEDIUM — FIXED — the F26 guard named CS0618 only; the bare `[Obsolete]` raises CS0612 and went through
+- Found by the round-28 patch-coverage pass (Codecov: 92.88% patch, 28 lines missing across 8 generator files),
+  not by a consumer: the test written to cover `IsObsolete`'s "fewer than two constructor arguments" branch
+  used the message-less `[Obsolete]`, and the warning-free assertion failed with **CS0612** — the id the
+  compiler uses for the bare form, distinct from CS0618 for `[Obsolete("message")]`. F26 was tested against
+  the message form only (the consumer's shape), so its guard was a `#pragma warning disable CS0618` and the
+  bare form still leaked out of the generated file, unsuppressible consumer-side exactly as F26 described.
+- Fix: `ObsoleteGuard` disables and restores `CS0612, CS0618`. No golden snapshot names the pragma; the two
+  pinning assertions in `ConsumerReportedEmissionWarningsTests` and the CHANGELOG entry now name both ids.
+- Same class as every round-28 finding: a corpus hole (one attribute form of two), not subtle code. The
+  patch-coverage pass is what found it — a branch nobody had executed was a branch nobody had asserted on.
+- Patch-coverage pass itself (`Round28PatchCoverageTests`, 21 tests): the 28 missing lines are all executed;
+  the partial-branch outcomes that remain are structural — `BlittableProof` 496 (`declaration is null`: every
+  field's declaring syntax has a type-declaration ancestor), 548 (`attr.AttributeClass?.` null: an attribute
+  with no class), `IgnoredSourceMembers?.` null (every in-product caller passes the set; the parameter default
+  exists for direct callers), `ImplementsIEnumerable(tgt)` true (the collection arm claims an enumerable
+  target with DWARF027 before the object-pair predicate is asked), and `IsObsolete`'s `AttributeClass?.` null.
+  `DictionaryConverter.SourceValueIsNullableRef` had an unreachable `return false` (every admitted source
+  implements `IEnumerable<KeyValuePair<,>>`); rewritten as one expression so no dead line remains.
+- Coverage band: Generator 94.8 -> 95.5 (11042/11560), a full point over the 94.5 floor, so the band rule
+  made the raise mandatory; floor re-pinned at the truncated measurement, 95.5, in scripts/housekeeping.ps1.
+- The generator's Stryker leg was NOT re-run (51 min; margin 0.4 pp over the 84 break): the two generator edits
+  are the pragma string (killed by the `Contains` assertions) and the removed dead line (fewer mutants). The
+  next `-Deep` reading is the measurement.
 
 ## P9 — IDE-grade inspection (notes only)
 

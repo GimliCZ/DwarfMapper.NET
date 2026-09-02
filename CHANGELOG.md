@@ -137,8 +137,10 @@ so a version with no section here ships with no notes.
   - An enum with an `[Obsolete]` member: every enum↔string and enum↔enum switch names every member, so the
     generated file carried CS0618 the consumer could only silence by un-deprecating a domain value kept for
     backward compatibility. Each switch that has to name such a member is now wrapped in a scoped
-    `#pragma warning disable/restore CS0618` — only that switch, never the file; an `[Obsolete(…, error: true)]`
-    member (CS0619, which no pragma lifts and nobody can reference) is skipped instead of named.
+    `#pragma warning disable/restore CS0612, CS0618` — only that switch, never the file; an `[Obsolete(…, error: true)]`
+    member (CS0619, which no pragma lifts and nobody can reference) is skipped instead of named. CS0612 is
+    the id the compiler uses for the bare, message-less `[Obsolete]`; a first cut of the guard named only
+    CS0618 and the round-28 patch-coverage test for that form caught it.
   The same two nullability shapes were then swept through every other emitter that binds them, each fixed the
   same way: dictionary VALUES (`Dictionary<string, Child?>`), the projection endpoint (`.Project` now
   null-forgives a nullable source into a non-nullable member or constructor parameter inside the expression

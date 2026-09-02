@@ -205,8 +205,8 @@ namespace DwarfMapper.Generator.Tests
             // into a runtime ArgumentOutOfRangeException. The emitted switch still names it.
             var generated = GeneratorAssert.CompilesClean(ObsoleteEnumToString, NullableContextOptions.Enable);
             Assert.Contains("Platform.Trovo => \"Trovo\"", generated, StringComparison.Ordinal);
-            Assert.Contains("#pragma warning disable CS0618", generated, StringComparison.Ordinal);
-            Assert.Contains("#pragma warning restore CS0618", generated, StringComparison.Ordinal);
+            Assert.Contains("#pragma warning disable CS0612, CS0618", generated, StringComparison.Ordinal);
+            Assert.Contains("#pragma warning restore CS0612, CS0618", generated, StringComparison.Ordinal);
         }
 
         [Fact]

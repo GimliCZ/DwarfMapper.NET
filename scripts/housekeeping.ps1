@@ -117,6 +117,13 @@ if ($Nightly) {
 #
 #   Testing    87.1 -> 96.4   the GraphOracleComparer sensitivity tests (negative controls)
 #
+# Re-measured 2026-09-02 (round-28 patch coverage — Codecov flagged 28 lines of the merge; the tests that
+# execute them moved the Generator a full point, so the band rule made this raise mandatory):
+#   DwarfMapper 91.5/79.5 · Generator 95.5/89.6 · DocTooling 96.3/92.1 · CodeFixes 96.2/88.6 · Testing 96.4/92.6
+# Exact covered/coverable: Generator 11042/11560 = 95.5190.
+#
+#   Generator  94.5 -> 95.5   Round28PatchCoverageTests (the 28 lines, plus the F27 CS0612 guard they found)
+#
 # Two things to read twice. First, the 87.1 above was NEVER MET: the tree at the commit that pinned it
 # (cb14993) measures 704/809 = 87.02, and so did every later tree in both tiers, with a byte-identical
 # covered-line set — so `-Coverage` and `-Nightly` threw at this gate on every run since 2026-08-26 and
@@ -131,7 +138,7 @@ if ($Nightly) {
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
     'DwarfMapper'            = 91.2
-    'DwarfMapper.Generator'  = 94.5
+    'DwarfMapper.Generator'  = 95.5
     'DwarfMapper.DocTooling' = 96.0
     'DwarfMapper.CodeFixes'  = 96.2
     'DwarfMapper.Testing'    = 96.4

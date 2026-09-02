@@ -305,16 +305,15 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static bool SourceValueIsNullableRef(ITypeSymbol srcType)
         {
-            foreach (var t in srcType.AllInterfaces.Prepend(srcType))
-                if (t is INamedTypeSymbol { IsGenericType: true } n &&
-                    n.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T &&
-                    n.TypeArguments[0] is INamedTypeSymbol { Name: "KeyValuePair", TypeArguments.Length: 2 } kv)
-                {
-                    var v = kv.TypeArguments[1];
-                    return v.IsReferenceType && v.NullableAnnotation == NullableAnnotation.Annotated;
-                }
-
-            return false;
+            // Every admitted dictionary source implements the interface, so the lookup always answers; a
+            // single expression keeps that fact from leaving an unreachable fallback behind.
+            var value = srcType.AllInterfaces.Prepend(srcType)
+                .OfType<INamedTypeSymbol>()
+                .Where(n => n.IsGenericType && n.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+                .Select(n => n.TypeArguments[0] as INamedTypeSymbol)
+                .FirstOrDefault(kv => kv is { Name: "KeyValuePair", TypeArguments.Length: 2 })
+                ?.TypeArguments[1];
+            return value is { IsReferenceType: true, NullableAnnotation: NullableAnnotation.Annotated };
         }
 
         private static string Expr(string access, string? conv, NullHandling nh, string tgtFq, bool needsCtx = false, bool srcIsNullableRef = false)

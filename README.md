@@ -1052,7 +1052,7 @@ Generated from the gates' own files, never hand-typed — see `QualityBadgeRende
 
 <!-- table: quality-badges -->
 [![coverage DwarfMapper](https://img.shields.io/badge/coverage%20DwarfMapper-91.2%25-brightgreen)](scripts/housekeeping.ps1)
-[![coverage DwarfMapper.Generator](https://img.shields.io/badge/coverage%20DwarfMapper.Generator-94.5%25-brightgreen)](scripts/housekeeping.ps1)
+[![coverage DwarfMapper.Generator](https://img.shields.io/badge/coverage%20DwarfMapper.Generator-95.5%25-brightgreen)](scripts/housekeeping.ps1)
 [![coverage DwarfMapper.DocTooling](https://img.shields.io/badge/coverage%20DwarfMapper.DocTooling-96.0%25-brightgreen)](scripts/housekeeping.ps1)
 [![coverage DwarfMapper.CodeFixes](https://img.shields.io/badge/coverage%20DwarfMapper.CodeFixes-96.2%25-brightgreen)](scripts/housekeeping.ps1)
 [![coverage DwarfMapper.Testing](https://img.shields.io/badge/coverage%20DwarfMapper.Testing-96.4%25-brightgreen)](scripts/housekeeping.ps1)

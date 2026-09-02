@@ -381,9 +381,10 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <para>
         ///         An exhaustive enum map has to name every member, deprecated ones included: a domain enum keeps
         ///         them for backward compatibility, and dropping the arm would turn a legal (deprecated) input into
-        ///         a runtime <c>ArgumentOutOfRangeException</c>. Naming one is CS0618 — a warning raised INSIDE the
-        ///         generated file, which the consumer can neither <c>#pragma</c> nor <c>.editorconfig</c> away — so
-        ///         each switch that names such a member is wrapped in a scoped <c>#pragma warning disable CS0618</c>
+        ///         a runtime <c>ArgumentOutOfRangeException</c>. Naming one is CS0618 (CS0612 for the message-less
+        ///         form) — a warning raised INSIDE the generated file, which the consumer can neither
+        ///         <c>#pragma</c> nor <c>.editorconfig</c> away — so each switch that names such a member is
+        ///         wrapped in a scoped <c>#pragma warning disable CS0612, CS0618</c>
         ///         (<see cref="ObsoleteGuard" />), and only then. The error form is CS0619, an error no pragma
         ///         lifts, and the member is unreferenceable by anyone: <see cref="EnumMembers" /> skips it.
         ///     </para>
@@ -419,22 +420,24 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Writes <paramref name="body" /> between a scoped CS0618 disable/restore when
-        ///     <paramref name="wrap" /> is set; otherwise the body alone. The pragma is deliberately not in the file
-        ///     header: it belongs around the one switch that has to name a deprecated member, so a CS0618 anywhere
-        ///     else in the generated file stays visible.
+        ///     Writes <paramref name="body" /> between a scoped CS0612/CS0618 disable/restore when
+        ///     <paramref name="wrap" /> is set; otherwise the body alone. Both ids, because the compiler raises
+        ///     CS0612 for the bare <c>[Obsolete]</c> and CS0618 for <c>[Obsolete("message")]</c> — a guard naming
+        ///     only the second let the bare form through. The pragma is deliberately not in the file header: it
+        ///     belongs around the one switch that has to name a deprecated member, so an obsolete-use warning
+        ///     anywhere else in the generated file stays visible.
         /// </summary>
         private static void ObsoleteGuard(CodeWriter w, bool wrap, Action body)
         {
             if (wrap)
             {
-                w.Line("#pragma warning disable CS0618 // [Obsolete] members are still legal values of this enum; an exhaustive map must name them");
+                w.Line("#pragma warning disable CS0612, CS0618 // [Obsolete] members are still legal values of this enum; an exhaustive map must name them");
             }
 
             body();
             if (wrap)
             {
-                w.Line("#pragma warning restore CS0618");
+                w.Line("#pragma warning restore CS0612, CS0618");
             }
         }
 
