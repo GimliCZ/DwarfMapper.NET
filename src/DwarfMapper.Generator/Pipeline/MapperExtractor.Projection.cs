@@ -999,7 +999,39 @@ namespace DwarfMapper.Generator.Pipeline
                         true);
                 }
 
+                if (NullRefIntoNonNullableRef(srcType, tgtType))
+                {
+                    // Same rule as the class endpoint (MemberMap.NullRefIntoNonNullable): a bare nullable access
+                    // into a non-nullable member or constructor parameter is CS8601/CS8604 from inside the
+                    // generated file, in an expression tree the consumer can edit even less than a method body.
+                    // Null-forgiven here, and DWARF070 carries the signal against the DTO — once per source
+                    // member per method, whichever binding (initializer or constructor) reached it first.
+                    ReportProjectionNullRefIntoNonNullable(diagnostics, location, srcExpr);
+                    return srcExpr + "!";
+                }
+
                 return srcExpr;
+            }
+
+            /// <summary>
+            ///     DWARF070 for the projection endpoint, keyed on the source member the access names so the
+            ///     initializer and constructor bindings of one member report once.
+            /// </summary>
+            static void ReportProjectionNullRefIntoNonNullable(
+                List<DiagnosticInfo> diagnostics,
+                LocationInfo? location,
+                string srcExpr)
+            {
+                var name = srcExpr.Substring(srcExpr.LastIndexOf('.') + 1).TrimStart('@');
+                foreach (var d in diagnostics)
+                    if (ReferenceEquals(d.Descriptor, DiagnosticDescriptors.NullableRefSourceToNonNullableTarget) &&
+                        d.MessageArg == name &&
+                        Equals(d.Location, location))
+                    {
+                        return;
+                    }
+
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullableRefSourceToNonNullableTarget, location, name));
             }
 
             // ── 2. Enum by-value cast (enum→enum) ─────────────────────────────────

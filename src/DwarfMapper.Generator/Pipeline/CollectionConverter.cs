@@ -282,6 +282,12 @@ namespace DwarfMapper.Generator.Pipeline
             // Use nullable-aware format for element type so emitted container types and Add() calls match
             // nullable element types (e.g. List<List<int>?> not List<List<int>>).
             var elemFq = FqTypeArg(tgtElem);
+            // A nullable-reference ELEMENT (`Child?[]`, `List<Child?>`) reaching a synthesized object helper: the
+            // helper takes a non-nullable parameter and null-guards internally (null in, null out), exactly like the
+            // converters on the member path, so the argument is null-forgiven the same way. Left bare it was a
+            // CS8604 per element from inside the generated file — in a consumer where a null element is the NORMAL
+            // case (an "empty slot"), and where no pragma or .editorconfig can reach a generated tree.
+            var srcElemIsNullableRef = srcElem.IsReferenceType && srcElem.NullableAnnotation == NullableAnnotation.Annotated;
             var srcFq = Fq(srcType);
             // Nullable-aware param type: strips outer nullable annotation then re-adds ?, preserving
             // inner nullable type arguments (e.g. Dictionary<string, List<int>?> → Dictionary<string, List<int>?>?).
@@ -324,7 +330,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var identity = SymbolEqualityComparer.Default.Equals(srcElem, tgtElem) && elemConverter is null && elemNull == NullHandling.None;
-            var item = ElementExpr("__item", elemConverter, elemNull, elemFq, elemNeedsCtx);
+            var item = ElementExpr("__item", elemConverter, elemNull, elemFq, elemNeedsCtx, srcElemIsNullableRef);
 
             // Effective preserve: are we emitting register-before-fill for THIS collection? (Preserve only.)
             var registerBeforeFill = isPreserve && IsMutableReferenceCollection(shape.Target);
@@ -374,10 +380,16 @@ namespace DwarfMapper.Generator.Pipeline
             NullHandling elemNull)
         {
             var elemFq = FqTypeArg(tgtElem);
+            // A nullable-reference ELEMENT (`Child?[]`, `List<Child?>`) reaching a synthesized object helper: the
+            // helper takes a non-nullable parameter and null-guards internally (null in, null out), exactly like the
+            // converters on the member path, so the argument is null-forgiven the same way. Left bare it was a
+            // CS8604 per element from inside the generated file — in a consumer where a null element is the NORMAL
+            // case (an "empty slot"), and where no pragma or .editorconfig can reach a generated tree.
+            var srcElemIsNullableRef = srcElem.IsReferenceType && srcElem.NullableAnnotation == NullableAnnotation.Annotated;
             var srcFq = Fq(srcType);
             var srcParamType = FqNullableParam(srcType);
             // Recursion-capable element → identity fast-path is never applicable; element call threads ctx.
-            var item = ElementExpr("__item", ctxElementConverter, elemNull, elemFq, true);
+            var item = ElementExpr("__item", ctxElementConverter, elemNull, elemFq, true, srcElemIsNullableRef);
 
             var w = new CodeWriter(1);
             EmitBody(w,
@@ -1266,7 +1278,8 @@ namespace DwarfMapper.Generator.Pipeline
             string? conv,
             NullHandling nh,
             string elemFq,
-            bool needsCtx = false)
+            bool needsCtx = false,
+            bool srcElemIsNullableRef = false)
         {
             if (conv is null)
             {
@@ -1282,6 +1295,11 @@ namespace DwarfMapper.Generator.Pipeline
             // When the element converter is recursion-capable (under Preserve mode), thread ctx and depth+1.
             var extra = needsCtx ? ", ctx, depth + 1" : "";
 
+            // Null-forgive a nullable-reference element into a synthesized helper's non-nullable parameter (the
+            // helper null-guards: null in, null out). The array fast path indexes `src[__i]` twice, and flow
+            // analysis does not track an indexer, so even the `is null ? null :` arm needs it.
+            var forgive = srcElemIsNullableRef && GeneratedNames.IsSynthesized(conv) ? "!" : "";
+
             string Call(string arg)
             {
                 return conv + "(" + arg + extra + ")";
@@ -1292,11 +1310,11 @@ namespace DwarfMapper.Generator.Pipeline
                 NullHandling.NullableProject =>
                     "(" + item + ".HasValue ? (" + elemFq + ")" + Call(item + ".Value") + " : null)",
                 NullHandling.NullableProjectRef =>
-                    "(" + item + " is null ? null : (" + elemFq + ")" + Call(item) + ")",
+                    "(" + item + " is null ? null : (" + elemFq + ")" + Call(item + forgive) + ")",
                 NullHandling.ThrowIfNull => Call(item +
                                                  " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")"),
                 NullHandling.ValueOrDefault => Call(item + ".GetValueOrDefault()"),
-                _ => Call(item)
+                _ => Call(item + forgive)
             };
         }
 
@@ -1515,7 +1533,8 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         // ─── Target kinds ─────────────────────────────────────────────────────────
-        // ReSharper disable InconsistentNaming -- the members deliberately carry the BCL interface names they classify
+        // the members deliberately carry the BCL interface names they classify
+        // ReSharper disable InconsistentNaming
         internal enum TargetKind
         {
             // ── Concrete / today ──────────────────────────────────────────

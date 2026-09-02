@@ -617,6 +617,11 @@ namespace DwarfMapper.Generator.Pipeline
                             eNull,
                             eNeedsCtx,
                             SourceMayBeNullRef(srcType),
+                            // Same raw-assign rule as the member path: a nullable reference bound bare to a
+                            // non-nullable parameter is null-forgiven by the emitter and reported as DWARF070
+                            // below. It used to be set on members only, so `Alias = s.Alias!` and
+                            // `alias: s.Alias` (CS8604, unsuppressible in a .g.cs) came out of ONE method.
+                            NullRefIntoNonNullable: IsDirectNullRefAssign(eConv, eNull, srcType, param.Type),
                             ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(eConv,
                                 srcType,
                                 param.Type,
@@ -697,6 +702,7 @@ namespace DwarfMapper.Generator.Pipeline
                         nullH,
                         needsCtx,
                         SourceMayBeNullRef(srcMember.Type),
+                        NullRefIntoNonNullable: IsDirectNullRefAssign(conv, nullH, srcMember.Type, param.Type),
                         ConverterParamIsNonNullableRef: ForgiveNestedNullableArg(conv,
                             srcMember.Type,
                             param.Type,
@@ -712,6 +718,15 @@ namespace DwarfMapper.Generator.Pipeline
                     allOk = false;
                 }
             }
+
+            // DWARF070 for constructor arguments — the signal the member path has always given. Reported here
+            // because constructor arguments never enter ResolveMembers' list, which is where the member-side
+            // report lives; ordered by parameter name so generator output stays deterministic.
+            foreach (var a in args.Where(a => a.NullRefIntoNonNullable).OrderBy(a => a.TargetName, StringComparer.Ordinal))
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.NullableRefSourceToNonNullableTarget,
+                    location,
+                    a.SourceName));
 
             ctorArgs = args.ToArray();
             return allOk;

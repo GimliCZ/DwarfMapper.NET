@@ -129,6 +129,7 @@ namespace DwarfMapper.Generator.Pipeline
             // the actual target type (e.g. Dictionary<string, List<int>?> not Dictionary<string, List<int>>).
             var keyFq = FqTypeArg(tgtKey);
             var valFq = FqTypeArg(tgtVal);
+            var srcValIsNullableRef = SourceValueIsNullableRef(srcType);
             var nullTag = nullAsNull ? "_nn" : "";
 
             var isMutableDict = targetKind != DictTargetKind.ImmutableDictionary && targetKind != DictTargetKind.IImmutableDictionary;
@@ -167,7 +168,7 @@ namespace DwarfMapper.Generator.Pipeline
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
             var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
-            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx);
+            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef);
             var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
             var ctxParams = threadCtx ? CtxDepthParams : "";
 
@@ -241,6 +242,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var keyFq = FqTypeArg(tgtKey);
             var valFq = FqTypeArg(tgtVal);
+            var srcValIsNullableRef = SourceValueIsNullableRef(srcType);
             var isImmutable = targetKind == DictTargetKind.ImmutableDictionary || targetKind == DictTargetKind.IImmutableDictionary;
             var retTypeFq = isImmutable
                 ? "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">"
@@ -249,7 +251,7 @@ namespace DwarfMapper.Generator.Pipeline
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
             var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
-            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx);
+            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef);
 
             var w = new CodeWriter(1);
             using (w.Block("private " + retAnnot + " " + existingName + "(" + srcParam + " src" + CtxDepthParams + ")"))
@@ -295,7 +297,27 @@ namespace DwarfMapper.Generator.Pipeline
         ///     onto the non-null arm so the conditional's type never depends on target-typing); one whose
         ///     destination cannot is unwrapped by the documented NullStrategy rule.
         /// </summary>
-        private static string Expr(string access, string? conv, NullHandling nh, string tgtFq, bool needsCtx = false)
+        /// <summary>
+        ///     Whether the source dictionary's VALUE type is a nullable reference (<c>Dictionary&lt;string, Child?&gt;</c>),
+        ///     read off the <c>IEnumerable&lt;KeyValuePair&lt;K, V&gt;&gt;</c> the source implements so every admitted
+        ///     source shape (concrete, interface, read-only) answers the same way. Drives the per-value null-forgiving
+        ///     in <see cref="Expr" />, the dictionary twin of CollectionConverter's nullable-element rule.
+        /// </summary>
+        private static bool SourceValueIsNullableRef(ITypeSymbol srcType)
+        {
+            foreach (var t in srcType.AllInterfaces.Prepend(srcType))
+                if (t is INamedTypeSymbol { IsGenericType: true } n &&
+                    n.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T &&
+                    n.TypeArguments[0] is INamedTypeSymbol { Name: "KeyValuePair", TypeArguments.Length: 2 } kv)
+                {
+                    var v = kv.TypeArguments[1];
+                    return v.IsReferenceType && v.NullableAnnotation == NullableAnnotation.Annotated;
+                }
+
+            return false;
+        }
+
+        private static string Expr(string access, string? conv, NullHandling nh, string tgtFq, bool needsCtx = false, bool srcIsNullableRef = false)
         {
             if (conv is null)
             {
@@ -309,6 +331,9 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var extra = needsCtx ? ", ctx, depth + 1" : "";
+            // Null-forgive a nullable-reference value into a synthesized helper's non-nullable parameter; the
+            // helper null-guards (null in, null out). See CollectionConverter.ElementExpr for the full argument.
+            var forgive = srcIsNullableRef && GeneratedNames.IsSynthesized(conv) ? "!" : "";
 
             string Call(string arg)
             {
@@ -320,11 +345,11 @@ namespace DwarfMapper.Generator.Pipeline
                 NullHandling.NullableProject =>
                     "(" + access + ".HasValue ? (" + tgtFq + ")" + Call(access + ".Value") + " : null)",
                 NullHandling.NullableProjectRef =>
-                    "(" + access + " is null ? null : (" + tgtFq + ")" + Call(access) + ")",
+                    "(" + access + " is null ? null : (" + tgtFq + ")" + Call(access + forgive) + ")",
                 NullHandling.ThrowIfNull => Call(access +
                                                  " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")"),
                 NullHandling.ValueOrDefault => Call(access + ".GetValueOrDefault()"),
-                _ => Call(access)
+                _ => Call(access + forgive)
             };
         }
 

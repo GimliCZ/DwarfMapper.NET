@@ -118,6 +118,33 @@ so a version with no section here ships with no notes.
   only more of the same — but it runs only in the nightly CI job, `housekeeping.ps1` never packs, and the
   nightly went unread. The ceiling is re-measured to 280 KB with the per-entry growth recorded beside it in
   `scripts/gate-checks.ps1`; `DwarfMapper.Testing` re-measures to the same 47 KB.
+- **Three compiler warnings emitted from inside the generated file, reported by a consuming solution on
+  1.1.0-rc5, each one a warning the consumer could not suppress** — neither `#pragma` nor an `.editorconfig`
+  `[*.g.cs]` section reaches a diagnostic the compiler raises in a generated tree, so the only lever left was a
+  project-wide `NoWarn` that also hides real warnings in hand-written code. All three were corpus holes: the
+  warning-free oracle existed and had run since it was written, and no schema cell declared the shape.
+  - A nullable-ELEMENT collection (`Child?[]`, `List<Child?>`) mapped through a synthesized object helper
+    passed each element bare to the helper's non-nullable parameter: CS8604 per element, in a consumer where
+    a null element means "empty slot" and is the normal case. The element is now null-forgiven exactly as the
+    member path forgives a nullable source into the same helper (the helper null-guards: null in, null out).
+  - A nullable source member bound to a non-nullable CONSTRUCTOR parameter was emitted bare, while the same
+    member assigned through the object initializer was null-forgiven and reported as DWARF070 — one method,
+    one source member, two treatments. Constructor arguments now set the same raw-assign flag, get the same
+    `!`, and report the same DWARF070 against the DTO.
+  - An enum with an `[Obsolete]` member: every enum↔string and enum↔enum switch names every member, so the
+    generated file carried CS0618 the consumer could only silence by un-deprecating a domain value kept for
+    backward compatibility. Each switch that has to name such a member is now wrapped in a scoped
+    `#pragma warning disable/restore CS0618` — only that switch, never the file; an `[Obsolete(…, error: true)]`
+    member (CS0619, which no pragma lifts and nobody can reference) is skipped instead of named.
+  The same two nullability shapes were then swept through every other emitter that binds them, each fixed the
+  same way: dictionary VALUES (`Dictionary<string, Child?>`), the projection endpoint (`.Project` now
+  null-forgives a nullable source into a non-nullable member or constructor parameter inside the expression
+  tree and reports DWARF070 once per source member per method — it used to emit the bare access), and the
+  `[MapTo]` registry generator, whose collection helper was declared over `Child[]` for a `Child?[]` member
+  (CS8620), returned `ChildDto[]` where the member is `ChildDto?[]` (CS8619), and handed elements bare to its
+  object helper (CS8604). `ConsumerReportedEmissionWarningsTests` pins every shape and sibling, with the
+  positive controls: the deprecated value is still mapped, a clean enum gets no pragma, the explicit
+  `[MapProperty]` constructor binding and the runtime null-slot contract are unchanged.
 - **DWARF064's remedy was inert; now it works, at both endpoints, under every name convention.** The
   message tells the reader to write `[MapIgnoreSource("X")]` "if the shadow is intentional", but
   `TryValidateMapValueTarget` consulted only whether a source member existed — the ignore-*source* set never

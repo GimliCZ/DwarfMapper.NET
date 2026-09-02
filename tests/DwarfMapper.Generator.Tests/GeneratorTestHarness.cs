@@ -284,11 +284,17 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         public static ImmutableArray<Diagnostic> GeneratedCodeWarnings(
             string source,
-            NullableContextOptions nullable = NullableContextOptions.Enable)
+            NullableContextOptions nullable = NullableContextOptions.Enable,
+            bool includeRegistry = false)
         {
             var compilation = BuildCompilation("DwarfMapperWarnTestAsm", source, nullable);
 
-            var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+            // The registry generator ([MapTo]) has its own element loop and object helpers, so a shape that is
+            // clean through the class model can still warn through the registry; opt in per test rather than
+            // always, so the combinatorial cells keep measuring exactly the generator they were written against.
+            var driver = includeRegistry
+                ? CSharpGeneratorDriver.Create(new DwarfGenerator(), new MapToGenerator())
+                : CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
 
             return outputCompilation.GetDiagnostics()
