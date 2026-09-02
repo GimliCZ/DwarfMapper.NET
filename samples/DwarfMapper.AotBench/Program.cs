@@ -80,7 +80,10 @@ foreach (var n in new[]
     }
 
     for (var i = 0; i < n; i++)
-        if (dst[i].X != src[i].X || dst[i].Y != src[i].Y || dst[i].Z != src[i].Z)
+        // Bit-exact on purpose: a blit that flips a NaN payload or a signed zero is a wrong blit.
+        if (BitConverter.SingleToInt32Bits(dst[i].X) != BitConverter.SingleToInt32Bits(src[i].X) ||
+            BitConverter.SingleToInt32Bits(dst[i].Y) != BitConverter.SingleToInt32Bits(src[i].Y) ||
+            BitConverter.SingleToInt32Bits(dst[i].Z) != BitConverter.SingleToInt32Bits(src[i].Z))
         {
             Fail($"blit n={n} i={i}");
             break;

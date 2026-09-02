@@ -2,6 +2,8 @@
 
 using System.ComponentModel;
 
+// members named with C# keywords (@class, @event) are the escaped-identifier shape under test
+// ReSharper disable InconsistentNaming
 namespace ConsumerTests.Contracts
 {
     // ── The plain shapes a consumer already has ──────────────────────────────────────────────────────────

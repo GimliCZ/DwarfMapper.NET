@@ -135,7 +135,7 @@ namespace DwarfMapper.Generator.Tests
 
             // Pinned to the arm, not just the id: all three arms report DWARF073, so asserting the id alone
             // would pass on either of the other two and leave this one uncovered again.
-            Assert.Contains(reported, d => d.GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+            Assert.Contains(reported, d => d.GetMessage(CultureInfo.InvariantCulture)
                 .Contains("IFormattable", StringComparison.Ordinal));
         }
     }

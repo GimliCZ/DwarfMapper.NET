@@ -315,6 +315,8 @@ namespace DwarfMapper.Testing.Tests
                 var made = Assert.IsType<HasCollections>(
                     ObjectFactoryV2.Create(typeof(HasCollections), new Random(seed), 0));
 
+                // the factory assigns through reflection and may leave this null; that is the case being skipped
+                // ReSharper disable once ConditionIsAlwaysTrueOrFalse
                 if (made.Lookup is null)
                 {
                     continue;

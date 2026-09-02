@@ -348,7 +348,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
                         .GroupBy(x => x.Id, StringComparer.Ordinal)
                         .ToDictionary(g2 => g2.Key, g2 => g2.Count(), StringComparer.Ordinal);
                     return (d.Select(x => x.Id + ":" + x.Severity).Distinct(StringComparer.Ordinal).ToArray(),
-                        (IReadOnlyDictionary<string, int>)compilerErrorCounts, g);
+                        compilerErrorCounts, g);
                 });
         }
 

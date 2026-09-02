@@ -144,7 +144,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             //
             // Under an explicit NullCollections = AsNull the mapper yields null, which the null==null case
             // above already accepts, so this is correct for both settings.
-            if (sv is null && dv is System.Collections.IEnumerable dvEmpty && !dvEmpty.GetEnumerator().MoveNext())
+            if (sv is null && dv is IEnumerable dvEmpty && !dvEmpty.Cast<object?>().Any())
             {
                 return;
             }

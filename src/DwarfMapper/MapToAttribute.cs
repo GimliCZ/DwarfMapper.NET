@@ -17,6 +17,9 @@ namespace DwarfMapper
         /// <param name="targets">One or more destination types — e.g. <c>[MapTo(typeof(A), typeof(B))]</c>.</param>
         public MapToAttribute(params Type[] targets)
         {
+            // public surface: `[MapTo(null)]` from an
+            // ReSharper disable once ConstantNullCoalescingCondition
+            // oblivious caller reaches here as a null array, and an attribute must never throw in its constructor.
             Targets = targets ?? Array.Empty<Type>();
         }
 

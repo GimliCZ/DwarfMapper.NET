@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using DwarfMapper;
+// a consumer namespace on purpose: the registry has to work from outside DwarfMapper.*
+// ReSharper disable once CheckNamespace
 namespace RegistryProto
 {
     // Proves the [MapTo] front door end-to-end: no user `partial`, called as an extension. Member directives

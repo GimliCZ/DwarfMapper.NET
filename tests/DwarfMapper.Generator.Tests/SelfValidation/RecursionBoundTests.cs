@@ -36,10 +36,10 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         public void The_runtime_clamps_a_configured_depth_into_the_shared_bounds()
         {
             // Above the cap, below the floor, and an ordinary value passed through untouched.
-            Assert.Equal(DwarfMapper.DwarfRefContext.AbsoluteMaxDepth, new DwarfMapper.DwarfRefContext(500_000).MaxDepth);
-            Assert.Equal(1, new DwarfMapper.DwarfRefContext(0).MaxDepth);
-            Assert.Equal(1, new DwarfMapper.DwarfRefContext(int.MinValue).MaxDepth);
-            Assert.Equal(64, new DwarfMapper.DwarfRefContext(64).MaxDepth);
+            Assert.Equal(DwarfRefContext.AbsoluteMaxDepth, new DwarfRefContext(500_000).MaxDepth);
+            Assert.Equal(1, new DwarfRefContext(0).MaxDepth);
+            Assert.Equal(1, new DwarfRefContext(int.MinValue).MaxDepth);
+            Assert.Equal(64, new DwarfRefContext(64).MaxDepth);
         }
 
         [Fact]
@@ -73,9 +73,9 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 + generated);
 
             Assert.All(depths,
-                d => Assert.True(d == DwarfMapper.DwarfRefContext.AbsoluteMaxDepth,
+                d => Assert.True(d == DwarfRefContext.AbsoluteMaxDepth,
                     $"The generator emitted MaxDepth {d} where the runtime's cap is "
-                    + $"{DwarfMapper.DwarfRefContext.AbsoluteMaxDepth}. The two sides have drifted — which is "
+                    + $"{DwarfRefContext.AbsoluteMaxDepth}. The two sides have drifted — which is "
                     + "exactly what src/Shared/DwarfLimits.cs exists to make impossible."));
         }
 

@@ -54,6 +54,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     finding claim the directive was honoured there. A diagnostic that fires on a directive with no
         ///     effect is a cell that looks measured and is not.
         /// </returns>
+        /// <param name="compilation">The compilation the root's member walk runs against.</param>
         private static List<(string Root, IReadOnlyList<(string Name, ITypeSymbol Type)> Leaves, bool NullableHop)>
             ResolveFlattenInfos(
                 IReadOnlyList<string> flattenRoots,
@@ -169,7 +170,6 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         private static void ResolveUnflattenTarget(
             ITypeSymbol sourceType,
-            INamedTypeSymbol targetType,
             string srcName,
             string tgtName,
             string? useMethod,
@@ -279,7 +279,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (TryResolveConversion(compilation,
                     uSrc!,
-                    leafType!,
+                    leafType,
                     useMethod,
                     allMethods,
                     autoCandidates,
@@ -611,7 +611,6 @@ namespace DwarfMapper.Generator.Pipeline
                 NullStrategy nullStrategy,
                 bool autoNest,
                 NestedMappingRegistry? nestedRegistry,
-                bool nullAsNull,
                 bool isPreserve,
                 bool allowNonPublic,
                 HashSet<string> consumedTargets,

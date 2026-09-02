@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// fixture members are named after the primitive they carry (NI, ND, NE = nullable int/double/enum)
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // ── Test domain types ─────────────────────────────────────────────────────────
@@ -295,7 +297,7 @@ namespace DwarfMapper.IntegrationTests
             Assert.Equal(double.Epsilon, dtoEps.D);
 
             // MinValue / MaxValue
-            var srcMM = new Basics
+            var srcMinMax = new Basics
             {
                 Str = "",
                 G = Guid.Empty,
@@ -305,9 +307,9 @@ namespace DwarfMapper.IntegrationTests
                 F = float.MaxValue,
                 D = double.MaxValue
             };
-            var dtoMM = Map(srcMM);
-            Assert.Equal(float.MaxValue, dtoMM.F);
-            Assert.Equal(double.MaxValue, dtoMM.D);
+            var dtoMinMax = Map(srcMinMax);
+            Assert.Equal(float.MaxValue, dtoMinMax.F);
+            Assert.Equal(double.MaxValue, dtoMinMax.D);
 
             var srcmm = new Basics
             {

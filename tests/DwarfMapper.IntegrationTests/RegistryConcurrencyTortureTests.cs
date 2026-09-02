@@ -107,6 +107,8 @@ namespace DwarfMapper.IntegrationTests
                 {
                     try
                     {
+                        // every worker is joined before the barrier is disposed
+                        // ReSharper disable once AccessToDisposedClosure
                         barrier.SignalAndWait();
                         body(index);
                     }
@@ -162,6 +164,8 @@ namespace DwarfMapper.IntegrationTests
 
                 var observer = new Thread(() =>
                 {
+                    // the flag IS shared with the writer; Volatile.Read is the intended read
+                    // ReSharper disable once AccessToModifiedClosure
                     while (!Volatile.Read(ref stop))
                         if (DwarfMapperRegistry.TryGet(src, dst, out var current) && current is not null)
                         {
@@ -183,7 +187,7 @@ namespace DwarfMapper.IntegrationTests
                     var mine = threadIndex;
                     DwarfMapperRegistry.Register(src,
                         dst,
-                        _ =>
+                        source =>
                         {
                             _ = mine;
                             return Activator.CreateInstance(dst)!;
@@ -410,6 +414,8 @@ namespace DwarfMapper.IntegrationTests
                 var observerBox = new UpdateBox();
                 var observer = new Thread(() =>
                 {
+                    // the flag IS shared with the writer; Volatile.Read is the intended read
+                    // ReSharper disable once AccessToModifiedClosure
                     while (!Volatile.Read(ref stop))
                         if (DwarfMapperRegistry.IsUpdateProvided(src, typeof(UpdateBox)))
                         {

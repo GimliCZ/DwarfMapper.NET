@@ -74,7 +74,7 @@ namespace DwarfMapper.Generator.Tests
 
             var model = compilation.GetSemanticModel(tree);
             var decl = tree.GetRoot().DescendantNodes().OfType<InterfaceDeclarationSyntax>().Single();
-            var iface = (INamedTypeSymbol)model.GetDeclaredSymbol(decl)!;
+            var iface = model.GetDeclaredSymbol(decl)!;
             return (compilation, iface);
         }
     }

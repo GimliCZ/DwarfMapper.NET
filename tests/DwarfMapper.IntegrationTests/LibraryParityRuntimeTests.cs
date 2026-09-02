@@ -2,6 +2,8 @@
 
 using System.Globalization;
 
+// snake_case and lowercase members are the name-convention shapes this parity suite maps
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // Library-parity suite: one runtime test per competitor feature/mechanic, proving DwarfMapper reproduces

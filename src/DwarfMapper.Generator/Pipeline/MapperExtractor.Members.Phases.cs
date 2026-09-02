@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Collections.Generic;
-using System.Linq;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -226,7 +224,6 @@ namespace DwarfMapper.Generator.Pipeline
 
                     ResolveUnflattenTarget(
                         req.SourceType,
-                        req.TargetType,
                         srcName,
                         tgtName,
                         useMethod,

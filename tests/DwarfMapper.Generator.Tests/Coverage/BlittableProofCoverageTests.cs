@@ -695,7 +695,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var model = compilation.GetSemanticModel(tree);
             var decl = tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().Single();
-            var user = (INamedTypeSymbol)model.GetDeclaredSymbol(decl)!;
+            var user = model.GetDeclaredSymbol(decl)!;
             var vector2 = compilation.GetTypeByMetadataName("System.Numerics.Vector2");
 
             Assert.NotNull(vector2); // a null here would make the refusal assertions vacuous
@@ -740,7 +740,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                          })
                      })
             {
-                var (_, types) = CompileFiles(files);
+                var types = CompileFiles(files);
                 var order = string.Join(", ", files.Select(f => f.Item1));
                 var split = types["SplitSrc"];
                 var whole = types["WholeDst"];
@@ -784,7 +784,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                          }
                      })
             {
-                var (_, types) = CompileFiles(files);
+                var types = CompileFiles(files);
                 var order = string.Join(", ", files.Select(f => f.Item1));
                 var split = types["SplitSrc"];
 
@@ -1068,8 +1068,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         }
 
         /// <summary>Multi-file variant of <see cref="Compile" />: each source gets its own tree with an explicit file path.</summary>
-        private static (Compilation Compilation, IReadOnlyDictionary<string, INamedTypeSymbol> Types)
-            CompileFiles(IReadOnlyList<(string Path, string Source)> files)
+        private static Dictionary<string, INamedTypeSymbol> CompileFiles(IReadOnlyList<(string Path, string Source)> files)
         {
             var trees = files
                 .Select(f => CSharpSyntaxTree.ParseText(f.Source, path: f.Path))
@@ -1097,7 +1096,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                     }
             }
 
-            return (compilation, types);
+            return types;
         }
     }
 }

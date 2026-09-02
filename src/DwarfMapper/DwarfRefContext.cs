@@ -159,6 +159,9 @@ namespace DwarfMapper
         /// <param name="tgt">The newly constructed target object (not yet fully populated).</param>
         public void SetReference(object src, object tgt)
         {
+            // public surface: a caller compiled without
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalse
+            // nullable annotations can still hand this null, and the documented contract is "never inserted".
             if (_identity is null || src is null)
             {
                 return;

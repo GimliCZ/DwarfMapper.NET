@@ -552,6 +552,8 @@ namespace DwarfMapper.Conformance
 // ── F22 NameConvention.Flexible (snake_case <-> PascalCase) ──────────────────
     public class F22S
     {
+        // snake_case is the shape F22 exists to map
+        // ReSharper disable once InconsistentNaming
         public string user_name { get; set; } = "";
     }
 
@@ -1077,6 +1079,8 @@ namespace DwarfMapper.Conformance
 // rewritten F03/F04's expectations instead of testing this one.
     public class F36S
     {
+        // the all-lowercase spelling is the shape F36 exists to map
+        // ReSharper disable once InconsistentNaming
         public int itemcount { get; set; }
     }
 

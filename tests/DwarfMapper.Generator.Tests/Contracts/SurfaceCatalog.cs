@@ -307,7 +307,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///         A pure function over the declaration's own values rather than an inline loop in the gate, so
         ///         the malformed shapes can be fed to it directly. Every one of these checks passes vacuously
         ///         against today's two well-formed declarations; a gate that has never fired is unverified code,
-        ///         and this is the same reason <see cref="SurfaceProbe.FirstNewOccurrence" /> is separated out.
+        ///         and this is the same reason <see cref="SurfaceProbe.NewOccurrences" /> is separated out.
         ///     </para>
         /// </summary>
         /// <param name="name">The element's usage name, for the message.</param>
@@ -757,14 +757,14 @@ namespace DwarfMapper.Generator.Tests.Contracts
         /// <summary>Every <c>{Member}</c> placeholder in a declared argument list.</summary>
         internal static IReadOnlyList<string> MemberPlaceholders(string declared)
         {
-            return Regex.Matches(declared ?? "", @"\{(\w+)\}")
+            return Regex.Matches(declared, @"\{(\w+)\}")
                 .Select(m => m.Groups[1].Value).ToList();
         }
 
         /// <summary>Every <c>typeof(X)</c> the declared argument list names.</summary>
         internal static IReadOnlyList<string> TypeReferences(string declared)
         {
-            return Regex.Matches(declared ?? "", @"typeof\(\s*(\w+)\s*\)")
+            return Regex.Matches(declared, @"typeof\(\s*(\w+)\s*\)")
                 .Select(m => m.Groups[1].Value).ToList();
         }
 

@@ -645,7 +645,7 @@ namespace DwarfMapper.Testing
             var c = Create(typeC, rng, 0)!;
             var d = Create(typeD, rng, 0)!;
 
-            void Set(object target, string propName, object value)
+            static void Set(object target, string propName, object value)
             {
                 var p = target.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance) ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}", nameof(propName));
                 p.SetValue(target, value);
@@ -674,7 +674,7 @@ namespace DwarfMapper.Testing
             var root = Create(rootType, rng, 0)!;
             var child = Create(childType, rng, 0)!;
 
-            void Set(object target, string propName, object? value)
+            static void Set(object target, string propName, object? value)
             {
                 var p = target.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance) ?? throw new ArgumentException($"Property '{propName}' not found on {target.GetType().Name}", nameof(propName));
                 p.SetValue(target, value);

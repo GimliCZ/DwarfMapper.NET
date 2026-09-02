@@ -5,7 +5,7 @@ using AutoMapper;
 namespace DwarfMapper.DifferentialTests
 {
     /// <summary>One shape mapped by DwarfMapper and by one oracle, ready to compare.</summary>
-    internal sealed record Comparison(string Shape, string Oracle, object? Dwarf, object? Oracle_);
+    internal sealed record Comparison(string Shape, string Oracle, object? Dwarf, object? OracleValue);
 
     /// <summary>
     ///     Every (shape, oracle) comparison this project makes, in one enumerable.

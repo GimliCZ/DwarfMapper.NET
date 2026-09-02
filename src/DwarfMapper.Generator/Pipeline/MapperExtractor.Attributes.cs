@@ -110,7 +110,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.RegisterCollectionShapes" />
+        ///     Reads the class-level <c>DwarfMapperAttribute.RegisterCollectionShapes</c>
         ///     value. Defaults to <c>true</c> — the collection registrations are an opt-OUT, because the trap they
         ///     close is invisible to every compile-time check and only fires at first use.
         /// </summary>
@@ -127,7 +127,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.GenerateExtensions" /> value
+        ///     Reads the class-level <c>DwarfMapperAttribute.GenerateExtensions</c> value
         ///     from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c> (the convenience facade is opt-out).
         /// </summary>
         private static bool ReadGenerateExtensions(ImmutableArray<AttributeData> attributes)
@@ -205,7 +205,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoNest" /> value
+        ///     Reads the class-level <c>DwarfMapperAttribute.AutoNest</c> value
         ///     from the <c>[DwarfMapper]</c> attribute. Defaults to <c>true</c>.
         /// </summary>
         private static bool ReadAutoNest(ImmutableArray<AttributeData> attributes)
@@ -221,7 +221,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.AutoMatchMembers" /> value.
+        ///     Reads the class-level <c>DwarfMapperAttribute.AutoMatchMembers</c> value.
         ///     Defaults to <c>true</c>. When <c>false</c> the mapper is explicit-only (the trust-boundary guard) and
         ///     nothing is auto-wired by name — see <see cref="DiagnosticDescriptors.AutoMatchDisabled" />.
         /// </summary>
@@ -246,7 +246,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.IgnoreObsoleteMembers" /> value.
+        ///     Reads the class-level <c>DwarfMapperAttribute.IgnoreObsoleteMembers</c> value.
         ///     Defaults to <c>false</c>.
         /// </summary>
         private static bool ReadIgnoreObsoleteMembers(ImmutableArray<AttributeData> attributes)
@@ -288,7 +288,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Reads the class-level <see cref="DwarfMapper.DwarfMapperAttribute.SkipNullSourceMembers" /> value.
+        ///     Reads the class-level <c>DwarfMapperAttribute.SkipNullSourceMembers</c> value.
         ///     Defaults to <c>false</c>.
         /// </summary>
         private static bool ReadSkipNullSourceMembers(ImmutableArray<AttributeData> attributes)
@@ -468,7 +468,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     Reads <c>[DwarfMapper(ReferenceHandling = ...)]</c>; returns the integer value of the
-        ///     <see cref="DwarfMapper.ReferenceHandlingStrategy" /> enum (0 = None, 1 = Preserve).
+        ///     <c>DwarfMapper.ReferenceHandlingStrategy</c> enum (0 = None, 1 = Preserve).
         ///     Defaults to 0 (None).
         /// </summary>
         private static int ReadReferenceHandling(ImmutableArray<AttributeData> attributes)
@@ -485,7 +485,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     Reads <c>[DwarfMapper(OnCycle = ...)]</c>; returns the integer value of the
-        ///     <see cref="DwarfMapper.OnCycleStrategy" /> enum (0 = Throw, 1 = SetNull).
+        ///     <c>DwarfMapper.OnCycleStrategy</c> enum (0 = Throw, 1 = SetNull).
         ///     Defaults to 0 (Throw).
         /// </summary>
         private static int ReadOnCycle(ImmutableArray<AttributeData> attributes)
@@ -544,7 +544,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Canonical form for <see cref="NameConvention.Flexible" /> matching: removes <c>_</c> and lowercases,
+        ///     Canonical form for <c>NameConvention.Flexible</c> matching: removes <c>_</c> and lowercases,
         ///     so <c>PascalCase</c>/<c>camelCase</c>/<c>snake_case</c>/<c>UPPER_CASE</c> all reduce to the same key.
         /// </summary>
         private static string NormalizeName(string name)

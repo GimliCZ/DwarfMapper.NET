@@ -8,7 +8,7 @@ namespace DwarfMapper.Generator.Tests
     ///         It used to be <c>foreach (var __part in v.Split(','))</c> with <c>__part.Trim()</c>: a string[] plus N
     ///         substrings on every call, and another string per part that actually needed trimming. Its own doc comment
     ///         called that "allocation-light". It is now a <c>ReadOnlySpan&lt;char&gt;</c> slice loop, which allocates
-    ///         nothing. <see cref="DwarfMapper.IntegrationTests" /> covers the behaviour; this pins the shape, because
+    ///         nothing. <c>DwarfMapper.IntegrationTests</c> covers the behaviour; this pins the shape, because
     ///         a future edit could silently reintroduce Split and no behavioural test would notice.
     ///     </para>
     /// </summary>

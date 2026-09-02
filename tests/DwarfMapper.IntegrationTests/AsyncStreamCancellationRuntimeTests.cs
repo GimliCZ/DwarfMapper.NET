@@ -28,6 +28,8 @@ namespace DwarfMapper.IntegrationTests
     {
         // An INFINITE source: if the token were not honoured the enumeration would never end, so this test can only
         // pass when cancellation genuinely reaches the generated iterator.
+        // an endless stream is the fixture; cancellation is the only exit
+        // ReSharper disable once IteratorNeverReturns
         private static async IAsyncEnumerable<CancelSrc> Infinite([EnumeratorCancellation] CancellationToken ct = default)
         {
             for (var i = 0;; i++)
@@ -50,7 +52,7 @@ namespace DwarfMapper.IntegrationTests
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
             {
-                await foreach (var _ in mapper.Map(Infinite(cts.Token), cts.Token).WithCancellation(cts.Token).ConfigureAwait(false))
+                await foreach (var _ in mapper.Map(Infinite(cts.Token), cts.Token).ConfigureAwait(false))
                 {
                     seen++;
                     if (seen == 3)

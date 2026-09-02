@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// snake_case and UPPER_CASE members are the name-convention shapes under test
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // Runtime (behavioural) verification of the Phase 1–8 features, which previously had generator/compile

@@ -26,7 +26,7 @@ namespace DwarfMapper.Generator
         internal const string MarkerAttributeFullName = KnownNames.DwarfMapperFqn;
 
         /// <summary>
-        ///     Metadata name (with generic arity) of <see cref="DwarfMapper.GenerateMapAttribute{TSource,TTarget}" />,
+        ///     Metadata name (with generic arity) of <c>DwarfMapper.GenerateMapAttribute&lt;TSource,TTarget&gt;</c>,
         ///     used to drive the co-located pipeline: a class bearing this attribute but no <c>[DwarfMapper]</c> gets a
         ///     separate generated <c>&lt;Host&gt;Mapper</c>.
         /// </summary>

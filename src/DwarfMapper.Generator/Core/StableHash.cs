@@ -18,6 +18,8 @@ namespace DwarfMapper.Generator.Core
         ///     FNV-1a over UTF-16 code units (one round per char). This is the form nine call sites already used
         ///     byte-for-byte, so routing them here changes no generated name.
         /// </summary>
+        // FNV-1a is the algorithm's name
+        // ReSharper disable once InconsistentNaming
         public static string Fnv1a(string s)
         {
             unchecked
@@ -43,6 +45,8 @@ namespace DwarfMapper.Generator.Core
         ///         turns what was an accidental divergence across ten files into a deliberate one in a single file.
         ///     </para>
         /// </summary>
+        // FNV-1a is the algorithm's name
+        // ReSharper disable once InconsistentNaming
         public static string Fnv1aPerByte(string s)
         {
             unchecked

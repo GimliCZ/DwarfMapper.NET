@@ -82,7 +82,6 @@ namespace DwarfMapper.Generator.Pipeline
                         (INamedTypeSymbol)src,
                         (INamedTypeSymbol)tgt,
                         location,
-                        targetName,
                         diagnostics);
             }
 
@@ -191,7 +190,6 @@ namespace DwarfMapper.Generator.Pipeline
             INamedTypeSymbol src,
             INamedTypeSymbol tgt,
             LocationInfo? location,
-            string targetName,
             List<DiagnosticInfo> diagnostics)
         {
             var name = MethodName("EnumName", src, tgt);

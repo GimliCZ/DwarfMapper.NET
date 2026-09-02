@@ -162,7 +162,7 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal([7, 9], ((IEnumerable)mappedValue!).Cast<int>());
             Assert.Equal([7, 9], ((IEnumerable)projectedValue!).Cast<int>());
 
-            object? Member(object dst)
+            static object? Member(object dst)
             {
                 return dst.GetType().GetProperty("M")!.GetValue(dst);
             }

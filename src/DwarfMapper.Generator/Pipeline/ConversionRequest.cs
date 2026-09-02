@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Collections.Generic;
 using DwarfMapper.Generator.Diagnostics;
-using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
 
 namespace DwarfMapper.Generator.Pipeline

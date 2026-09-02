@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// fixture names carry the NNE (nullable-to-nullable enum) scenario prefix
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // ── long? → int? ──────────────────────────────────────────────────────────────

@@ -162,7 +162,6 @@ namespace DwarfMapper.Generator.Pipeline
                 return name;
             }
 
-            var srcFq = Fq(srcType);
             // Nullable-aware param type: strips outer nullable, preserves inner nullable type arguments,
             // then adds ? for the outer — avoids CS8620 when source has nullable value/element types.
             var srcParam = FqNullableParam(srcType);
@@ -470,6 +469,8 @@ namespace DwarfMapper.Generator.Pipeline
             return stripped.ToDisplayString(NullableFullyQualifiedFormat) + "?";
         }
 
+        // the members deliberately carry the BCL interface names they classify
+        // ReSharper disable InconsistentNaming
         internal enum DictTargetKind
         {
             Dictionary, // Dictionary<K,V>         — concrete (today)

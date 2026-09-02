@@ -10,7 +10,7 @@ namespace DwarfMapper.Generator.Tests.Framework
     ///     Runs ANY <see cref="IIncrementalGenerator" />. Six sites previously hardcoded
     ///     <c>CSharpGeneratorDriver.Create(new DwarfGenerator())</c>, so adding the registry generator required a
     ///     bespoke harness method rather than passing the generator in. Reuses
-    ///     <see cref="GeneratorTestHarness.BuildCompilation" /> because the metadata-reference set is cached there
+    ///     <see cref="GeneratorTestHarness.BuildCompilation(string, string, NullableContextOptions, bool)" /> because the metadata-reference set is cached there
     ///     and must stay single-sourced.
     /// </summary>
     internal static class GeneratorRunner

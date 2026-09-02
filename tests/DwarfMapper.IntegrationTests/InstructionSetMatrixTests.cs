@@ -129,7 +129,7 @@ namespace DwarfMapper.IntegrationTests
             for (var i = 0; i < n; i++)
             {
                 // The scalar oracle, computed here rather than trusted from the mapper.
-                Assert.Equal((long)src[i], dst.V[i]);
+                Assert.Equal(src[i], dst.V[i]);
             }
         }
 
@@ -140,7 +140,7 @@ namespace DwarfMapper.IntegrationTests
 
             var dst = new IsaMapper().MapWiden(new IsaWidenSrc { V = src });
 
-            Assert.Equal([(long)int.MinValue, -1L, 0L, 1L, int.MaxValue], dst.V);
+            Assert.Equal([int.MinValue, -1L, 0L, 1L, int.MaxValue], dst.V);
         }
 
         [Theory]

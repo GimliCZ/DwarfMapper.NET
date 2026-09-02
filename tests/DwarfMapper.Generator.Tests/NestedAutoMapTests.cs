@@ -107,7 +107,7 @@ namespace DwarfMapper.Generator.Tests
 
             // Count occurrences of the synthesized method DEFINITION (private ... __DwarfMap_Obj_)
             // There should be exactly one definition for the Pt→PtDto pair.
-            var methodDefinitionCount = CountMethodDefinitions(generated, "Demo.Pt", "Demo.PtDto");
+            var methodDefinitionCount = CountMethodDefinitions(generated);
             Assert.Equal(1, methodDefinitionCount);
         }
 
@@ -279,7 +279,7 @@ namespace DwarfMapper.Generator.Tests
                                }
                                """;
             // Generator must complete quickly (not hang). If it hangs, the test will time out.
-            var generated = GeneratorAssert.CompilesClean(src);
+            GeneratorAssert.CompilesClean(src);
         }
 
         // ────────────────────────────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ namespace DwarfMapper.Generator.Tests
                                    public partial NodeDto Map(Node n);
                                }
                                """;
-            var generated = GeneratorAssert.CompilesClean(src);
+            GeneratorAssert.CompilesClean(src);
         }
 
         // ────────────────────────────────────────────────────────────────────────────
@@ -415,7 +415,7 @@ namespace DwarfMapper.Generator.Tests
         ///     We look at how many times `private` prefixes a method returning the target full-name.
         ///     Simple approach: count `private` + return-type + `__DwarfMap_Obj_` signatures.
         /// </summary>
-        private static int CountMethodDefinitions(string generated, string srcFqn, string tgtFqn)
+        private static int CountMethodDefinitions(string generated)
         {
             // Look for "private global::Demo.PtDto __DwarfMap_Obj_" style signatures
             // The types in fully-qualified form will contain dots, e.g. "global::Demo.PtDto"

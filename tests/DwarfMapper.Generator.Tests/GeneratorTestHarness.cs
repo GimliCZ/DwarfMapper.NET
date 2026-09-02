@@ -15,7 +15,7 @@ namespace DwarfMapper.Generator.Tests
     {
         /// <summary>
         ///     The metadata reference set, built ONCE and reused across every compilation. Each
-        ///     <see cref="MetadataReference.CreateFromFile(string)" /> reads assembly metadata from disk under a
+        ///     <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" /> reads assembly metadata from disk under a
         ///     lock — rebuilding it per call (~50 references) serialised parallel compilations on metadata I/O and
         ///     dominated wall-clock (the full power-set fuzz was contention-bound, not CPU-bound). MetadataReference
         ///     instances are immutable and thread-safe to share, so a single cached array is both correct and far
@@ -44,7 +44,7 @@ namespace DwarfMapper.Generator.Tests
         ///         substitute a different build of one that already worked.
         ///     </para>
         ///     <para>
-        ///         Built ONCE and reused. <see cref="MetadataReference.CreateFromFile(string)" /> reads metadata from
+        ///         Built ONCE and reused. <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" /> reads metadata from
         ///         disk under a lock — rebuilding per call serialised parallel compilations on metadata I/O and
         ///         dominated wall-clock (the full power-set fuzz was contention-bound, not CPU-bound). The instances
         ///         are immutable and thread-safe to share.
@@ -152,7 +152,7 @@ namespace DwarfMapper.Generator.Tests
 
         /// <summary>
         ///     Runs the <c>[MapTo]</c> registry generator (a SEPARATE <see cref="IIncrementalGenerator" /> from
-        ///     <see cref="DwarfGenerator" />, so the default <see cref="Run(string, NullableContextOptions)" /> never
+        ///     <see cref="DwarfGenerator" />, so the default <see cref="Run(string, NullableContextOptions, bool)" /> never
         ///     exercises it) and returns its diagnostics. The registry's whole error surface — the
         ///     <c>DWARFR01</c>–<c>DWARFR06</c> family — is only reachable through this driver.
         /// </summary>
@@ -166,7 +166,7 @@ namespace DwarfMapper.Generator.Tests
         /// <summary>
         ///     Every generated file, ordered by path and concatenated — including the assembly-wide aggregates
         ///     (<c>DwarfMapper.Extensions.g.cs</c>, the DI registration, the validation facade) that
-        ///     <see cref="Run(string, NullableContextOptions)" /> deliberately drops so single-mapper snapshots
+        ///     <see cref="Run(string, NullableContextOptions, bool)" /> deliberately drops so single-mapper snapshots
         ///     stay stable regardless of emit order.
         ///     <para>
         ///         The option-support matrix needs this. Measuring only the per-mapper file made every option

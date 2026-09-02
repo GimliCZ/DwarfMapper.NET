@@ -93,6 +93,8 @@ namespace DwarfMapper.Testing.Tests
             var shapes = Graphs().Select(g => g.Shape).ToList();
 
             Assert.Contains(shapes, s => s is not null);
+            // the factory can null a non-nullable member; only the populated ones are typed
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalse
             Assert.All(shapes.Where(s => s is not null), s => Assert.IsType<Square>(s));
         }
 
@@ -129,6 +131,8 @@ namespace DwarfMapper.Testing.Tests
                 var a = ObjectFactoryV2.Create<HoldsAbstract>(seed);
                 var b = ObjectFactoryV2.Create<HoldsAbstract>(seed);
 
+                // the factory can null it; determinism must hold either way
+                // ReSharper disable once ConditionalAccessQualifierIsNonNullableAccordingToAPIContract
                 Assert.Equal(a.Shape?.GetType(), b.Shape?.GetType());
                 Assert.Equal(a.Shape?.Sides, b.Shape?.Sides);
                 Assert.Equal(a.Titled?.GetType(), b.Titled?.GetType());

@@ -731,7 +731,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     </para>
         /// </summary>
         private static List<(INamedTypeSymbol Src, INamedTypeSymbol Tgt, bool WrittenGeneric)>
-            ReadDerivedTypeAttributes(IMethodSymbol method, Compilation compilation)
+            ReadDerivedTypeAttributes(IMethodSymbol method)
         {
             var result = new List<(INamedTypeSymbol, INamedTypeSymbol, bool)>();
             foreach (var attr in method.GetAttributes())
@@ -744,10 +744,9 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // Generic form: MapDerivedTypeAttribute<TSource, TTarget>
                 if (cls.IsGenericType &&
-                    cls.ConstructedFrom?.ToDisplayString().StartsWith(
+                    cls.ConstructedFrom.ToDisplayString().StartsWith(
                         "DwarfMapper.MapDerivedTypeAttribute<",
-                        StringComparison.Ordinal) ==
-                    true &&
+                        StringComparison.Ordinal) &&
                     cls.TypeArguments.Length == 2 &&
                     cls.TypeArguments[0] is INamedTypeSymbol gSrc &&
                     cls.TypeArguments[1] is INamedTypeSymbol gTgt)
@@ -886,7 +885,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     The wrapper does the identity-map TryGetReference/SetReference dance around the dispatch switch
         ///     so that when a container helper (e.g. <c>__DwarfMap_Obj_Container_*</c>) calls the wrapper
         ///     twice with the SAME source reference, the second call returns the already-mapped target — i.e.
-        ///     <see cref="Assert.Same" /> topology fidelity under <c>ReferenceHandling = Preserve</c>.
+        ///     <c>Assert.Same</c> topology fidelity under <c>ReferenceHandling = Preserve</c>.
         ///     Pattern (for src=PsvAnimal, tgt=PsvAnimalDto):
         ///     <code>
         ///   private PsvAnimalDto __DwarfMap_Disp_...(PsvAnimal a, DwarfRefContext ctx, int depth)

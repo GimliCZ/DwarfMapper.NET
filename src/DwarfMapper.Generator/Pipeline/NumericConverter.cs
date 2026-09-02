@@ -12,7 +12,7 @@ namespace DwarfMapper.Generator.Pipeline
     ///     a call to <c>INumberBase&lt;TSelf&gt;.CreateChecked</c>, which throws
     ///     <c>OverflowException</c> when the value does not fit the target type.
     ///     This converter is only reached when there is NO implicit conversion between
-    ///     <paramref name="src" /> and <paramref name="tgt" /> (widening stays on the
+    ///     <c>src</c> and <c>tgt</c> (widening stays on the
     ///     zero-cost direct-assign path). Enum types are excluded: enums have
     ///     <c>SpecialType.None</c>, so <see cref="TypeInterfaces.IsIntegral" /> returns
     ///     false for them — they stay in <see cref="EnumConverter" />.
@@ -20,7 +20,7 @@ namespace DwarfMapper.Generator.Pipeline
     internal static class NumericConverter
     {
         /// <summary>
-        ///     True when <paramref name="src" /> and <paramref name="tgt" /> are both basic numeric types but sit in
+        ///     True when <c>src</c> and <c>tgt</c> are both basic numeric types but sit in
         ///     DIFFERENT categories (integer kind vs floating/decimal kind) — e.g. <c>long → double</c>,
         ///     <c>int → float</c>, <c>long → decimal</c>. Such conversions are *implicit* in C#, so the compiler is
         ///     silent, yet they lose precision once the magnitude exceeds the mantissa.

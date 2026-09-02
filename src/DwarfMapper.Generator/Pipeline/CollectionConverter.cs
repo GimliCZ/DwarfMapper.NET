@@ -417,7 +417,6 @@ namespace DwarfMapper.Generator.Pipeline
                 case TargetKind.Array:
                     EmitArray(w,
                         name,
-                        srcFq,
                         srcParamType,
                         elemFq,
                         item,
@@ -435,7 +434,6 @@ namespace DwarfMapper.Generator.Pipeline
                 case TargetKind.IReadOnlyCollection:
                     EmitList(w,
                         name,
-                        srcFq,
                         srcParamType,
                         elemFq,
                         item,
@@ -452,7 +450,6 @@ namespace DwarfMapper.Generator.Pipeline
                 case TargetKind.IReadOnlySet:
                     EmitHashSet(w,
                         name,
-                        srcFq,
                         srcParamType,
                         elemFq,
                         item,
@@ -483,7 +480,6 @@ namespace DwarfMapper.Generator.Pipeline
                     // Still thread ctx/depth to element if needed (via closure in the Select lambda).
                     EmitLazyEnumerable(w,
                         name,
-                        srcFq,
                         srcParamType,
                         srcElem,
                         elemFq,
@@ -503,7 +499,6 @@ namespace DwarfMapper.Generator.Pipeline
                         srcParamType,
                         elemFq,
                         item,
-                        shape,
                         identity,
                         shape.NullAsNull,
                         threadCtx);
@@ -559,7 +554,6 @@ namespace DwarfMapper.Generator.Pipeline
         private static void EmitArray(
             CodeWriter w,
             string name,
-            string srcFq,
             string srcParamType,
             string elem,
             string item,
@@ -671,7 +665,6 @@ namespace DwarfMapper.Generator.Pipeline
         private static void EmitList(
             CodeWriter w,
             string name,
-            string srcFq,
             string srcParamType,
             string elem,
             string item,
@@ -754,7 +747,6 @@ namespace DwarfMapper.Generator.Pipeline
         private static void EmitHashSet(
             CodeWriter w,
             string name,
-            string srcFq,
             string srcParamType,
             string elem,
             string item,
@@ -799,7 +791,6 @@ namespace DwarfMapper.Generator.Pipeline
         private static void EmitLazyEnumerable(
             CodeWriter w,
             string name,
-            string srcFq,
             string srcParamType,
             ITypeSymbol srcElemType,
             string elem,
@@ -868,7 +859,6 @@ namespace DwarfMapper.Generator.Pipeline
             string srcParamType,
             string elem,
             string item,
-            Shape shape,
             bool identity,
             bool nullAsNull,
             bool elemNeedsCtx)
@@ -1525,6 +1515,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         // ─── Target kinds ─────────────────────────────────────────────────────────
+        // ReSharper disable InconsistentNaming -- the members deliberately carry the BCL interface names they classify
         internal enum TargetKind
         {
             // ── Concrete / today ──────────────────────────────────────────

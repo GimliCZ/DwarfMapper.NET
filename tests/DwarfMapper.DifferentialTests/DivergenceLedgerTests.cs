@@ -59,7 +59,7 @@ namespace DwarfMapper.DifferentialTests
             var hit = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (var comparison in ShapeCatalog.All())
-            foreach (var difference in MemberComparer.Differences(comparison.Dwarf, comparison.Oracle_))
+            foreach (var difference in MemberComparer.Differences(comparison.Dwarf, comparison.OracleValue))
             {
                 var path = difference.Split(':')[0];
                 foreach (var accepted in AcceptedDivergences.All)
@@ -96,7 +96,7 @@ namespace DwarfMapper.DifferentialTests
                 .ToList();
 
             var compared = ShapeCatalog.All()
-                .Where(c => c.Dwarf is not null && c.Oracle_ is not null)
+                .Where(c => c.Dwarf is not null && c.OracleValue is not null)
                 .Select(c => c.Dwarf!.GetType())
                 .Distinct()
                 .ToList();

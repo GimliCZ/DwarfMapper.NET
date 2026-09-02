@@ -850,7 +850,7 @@ namespace DwarfMapper.Testing
         ///     True when the collection's iteration order is genuinely unspecified (a set or a dictionary), so two
         ///     equal instances may enumerate differently and comparing positionally would be wrong.
         /// </summary>
-        private static bool IsUnorderedCollection(IEnumerable e)
+        private static bool IsUnorderedCollection(object e)
         {
             if (e is IDictionary)
             {

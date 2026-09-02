@@ -22,7 +22,7 @@ namespace DwarfMapper.Generator.Tests
                                [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
                                public partial class M { public partial NodeDto Map(Node n); }
                                """;
-            var generated = GeneratorAssert.CompilesClean(src);
+            GeneratorAssert.CompilesClean(src);
         }
 
         // ── 2. Preserve mode emits TryGetReference check ─────────────────────────────

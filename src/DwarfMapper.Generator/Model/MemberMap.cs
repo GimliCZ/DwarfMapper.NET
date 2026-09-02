@@ -54,7 +54,7 @@ namespace DwarfMapper.Generator.Model
     /// </param>
     /// <param name="NullRefIntoNonNullable">
     ///     When <c>true</c>, a nullable-annotated REFERENCE source is being raw-assigned to a non-nullable
-    ///     reference target (the documented <see cref="DwarfMapper.NullStrategy"/> contract: it governs nullable
+    ///     reference target (the documented <c>DwarfMapper.NullStrategy</c> contract: it governs nullable
     ///     VALUE types only). The assignment is intentional, but it makes the C# compiler emit CS8601 from inside
     ///     the generated file — an unfixable warning for a consumer with TreatWarningsAsErrors, in code they cannot
     ///     edit. The emitter therefore appends the null-forgiving <c>!</c> to silence CS8601, and DwarfMapper

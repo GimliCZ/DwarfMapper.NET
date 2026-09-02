@@ -225,7 +225,7 @@ internal static class CombinatorialSchema
             // polymorphic_dispatch: special source builder — self-contained, not a member type
             if (shape == "polymorphic_dispatch")
             {
-                var polySource = BuildPolymorphicDispatchSource(basicType, srcElem, dstElem, seed);
+                var polySource = BuildPolymorphicDispatchSource(srcElem, dstElem, seed);
                 if (polySource is null)
                 {
                     return null;
@@ -235,7 +235,7 @@ internal static class CombinatorialSchema
             }
 
             // Build source code
-            var source = BuildSource(basicType, srcElem, dstElem, shape, seed);
+            var source = BuildSource(srcElem, dstElem, shape, seed);
             if (source is null)
             {
                 return null;
@@ -250,7 +250,6 @@ internal static class CombinatorialSchema
         // ── Source builder ───────────────────────────────────────────────────────────
 
         private static string? BuildSource(
-            string basicType,
             string srcElem,
             string dstElem,
             string shape,
@@ -324,10 +323,6 @@ internal static class CombinatorialSchema
             // Src class
             var srcMember = ShapeMemberType(srcElem, shape, true);
             var dstMember = ShapeMemberType(dstElem, shape, false);
-            if (srcMember is null || dstMember is null)
-            {
-                return null;
-            }
 
             sb.AppendLine("public class CmbSrc");
             sb.AppendLine("{");
@@ -350,8 +345,7 @@ internal static class CombinatorialSchema
             return sb.ToString();
         }
 
-        private static string? BuildPolymorphicDispatchSource(
-            string basicType,
+        private static string BuildPolymorphicDispatchSource(
             string srcElem,
             string dstElem,
             int seed)

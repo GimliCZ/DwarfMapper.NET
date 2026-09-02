@@ -123,37 +123,37 @@ namespace DwarfMapper.IntegrationTests
         public void Second_distinct_provider_is_flagged_ambiguous_first_wins()
         {
             DwarfMapperRegistry.Register(typeof(S4),
-                typeof(D4a),
-                s => new D4a
+                typeof(D4A),
+                s => new D4A
                 {
                     V = ((S4)s).V
                 });
-            Assert.False(DwarfMapperRegistry.IsAmbiguous(typeof(S4), typeof(D4a)));
+            Assert.False(DwarfMapperRegistry.IsAmbiguous(typeof(S4), typeof(D4A)));
 
             DwarfMapperRegistry.Register(typeof(S4),
-                typeof(D4a),
-                _ => new D4a
+                typeof(D4A),
+                _ => new D4A
                 {
                     V = -1
                 }); // second provider
-            Assert.True(DwarfMapperRegistry.IsAmbiguous(typeof(S4), typeof(D4a)));
+            Assert.True(DwarfMapperRegistry.IsAmbiguous(typeof(S4), typeof(D4A)));
 
             // First registration wins.
-            var result = (D4a)DwarfMapperRegistry.Map(new S4
+            var result = (D4A)DwarfMapperRegistry.Map(new S4
                 {
                     V = 9
                 },
-                typeof(D4a));
+                typeof(D4A));
             Assert.Equal(9, result.V);
 
             // A different destination from the same source is NOT ambiguous.
             DwarfMapperRegistry.Register(typeof(S4),
-                typeof(D4b),
-                s => new D4b
+                typeof(D4B),
+                s => new D4B
                 {
                     V = ((S4)s).V
                 });
-            Assert.False(DwarfMapperRegistry.IsAmbiguous(typeof(S4), typeof(D4b)));
+            Assert.False(DwarfMapperRegistry.IsAmbiguous(typeof(S4), typeof(D4B)));
         }
 
         [Fact]
@@ -247,12 +247,12 @@ namespace DwarfMapper.IntegrationTests
             public int V { get; set; }
         }
 
-        private sealed class D4a
+        private sealed class D4A
         {
             public int V { get; set; }
         }
 
-        private sealed class D4b
+        private sealed class D4B
         {
             public int V { get; set; }
         }

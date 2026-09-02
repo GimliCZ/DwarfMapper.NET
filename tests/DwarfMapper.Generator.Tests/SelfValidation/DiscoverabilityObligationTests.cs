@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Reflection;
 using System.Text.RegularExpressions;
 using DwarfMapper.Generator.Tests.Contracts;
 

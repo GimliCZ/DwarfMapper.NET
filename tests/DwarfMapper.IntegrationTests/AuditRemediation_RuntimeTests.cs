@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// fixture type names carry the FG (flatten-graph) prefix of the scenarios they belong to
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // ═══════════════════════════════════════════════════════════════════════════════

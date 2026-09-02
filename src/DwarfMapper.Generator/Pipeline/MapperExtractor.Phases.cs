@@ -951,7 +951,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // to edges for ALL overloads, manufacturing a false self-cycle (e.g. Map(Person) →
                     // List<Addr> helper → Map(Addr) wrongly resolving to Map(Person)). Overloaded
                     // self-map-through-collection falls back to the documented None-mode behaviour.
-                    if (em is not null && !(declaredNameCount.TryGetValue(em, out var oc) && oc > 1))
+                    if (!(declaredNameCount.TryGetValue(em, out var oc) && oc > 1))
                     {
                         allCallGraph[cand.HelperName].Add(em);
                     }
@@ -1259,8 +1259,8 @@ namespace DwarfMapper.Generator.Pipeline
             ref bool classIgnoreLivenessBlinded,
             CancellationToken ct)
         {
-            var methodDiagStart = 0;
-            var withheld = false;
+            int methodDiagStart;
+            bool withheld;
 
             ct.ThrowIfCancellationRequested();
 
@@ -1354,7 +1354,7 @@ namespace DwarfMapper.Generator.Pipeline
             var isHeteroFlattenGraph = flattenGraphRawEarly.Count > 0;
 
             // ── Plan 21: [MapDerivedType] dispatch ───────────────────────────
-            var rawDerivedPairs = ReadDerivedTypeAttributes(method, ctx.SemanticModel.Compilation);
+            var rawDerivedPairs = ReadDerivedTypeAttributes(method);
             if (rawDerivedPairs.Count > 0 && !isHeteroFlattenGraph)
             {
                 var resolvedArms =
@@ -1781,7 +1781,6 @@ namespace DwarfMapper.Generator.Pipeline
                     policy.NullStrategy,
                     methodAutoNest,
                     acc.NestedRegistry,
-                    policy.NullCollections == NullCollectionsBehavior.AsNull,
                     policy.IsPreserveMode,
                     policy.AllowNonPublic,
                     flattenGraphConsumed,
@@ -1893,7 +1892,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // ── Source-member coverage (RequiredMapping = Both) ───────────────────────────
             ReportSourceMemberCoverage(method, ctx, decls, policy, acc, sourceType, targetType, members,
-                ctorArgs, resolvedFgDirectives, extraParamSig, methodLocation, methodDiagStart, withheld);
+                ctorArgs, resolvedFgDirectives, extraParamSig, methodLocation, methodDiagStart);
         }
 
         // ── Async streaming map: IAsyncEnumerable<D> Map(IAsyncEnumerable<S> src) ──
@@ -1917,7 +1916,7 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? methodLocation,
             int methodDiagStart)
         {
-            var withheld = false;
+            bool withheld;
 
             var asCtParam = method.Parameters.Length == 2 && IsCancellationToken(method.Parameters[1].Type)
                 ? method.Parameters[1].Name
@@ -2073,7 +2072,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // (a stateful identity map cannot live inside an expression tree).
                 if (policy.ReferenceHandling != 0)
                 {
-                    EmitDWARF028(acc.Diagnostics,
+                    EmitDwarf028(acc.Diagnostics,
                         methodLocation,
                         method.Name,
                         "reference handling is not supported in projection (stateful identity map cannot live in an expression tree); use ReferenceHandling=None or map at runtime");
@@ -2117,7 +2116,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (hasApplicableHook)
                 {
-                    EmitDWARF028(acc.Diagnostics,
+                    EmitDwarf028(acc.Diagnostics,
                         methodLocation,
                         method.Name,
                         "hooks (BeforeMap/AfterMap) are not supported in IQueryable projection (expression trees cannot contain hook calls); move hooks to a runtime mapper or remove them");
@@ -2175,7 +2174,6 @@ namespace DwarfMapper.Generator.Pipeline
                         IgnoreObsolete: policy.IgnoreObsolete),
                     projExplicitMaps,
                     policy.EnumPolicy,
-                    policy.ReferenceHandling,
                     "__s",
                     ReadMapPropertyExtras(method),
                     projConsumedSources,
@@ -2260,7 +2258,7 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? methodLocation,
             int methodDiagStart)
         {
-            var withheld = false;
+            bool withheld;
 
             if (method.Parameters.Length == 2 && method.Parameters[1].Type is INamedTypeSymbol updTgt && method.Parameters[1].Type.IsReferenceType && (method.ReturnsVoid || SymbolEqualityComparer.Default.Equals(method.ReturnType, method.Parameters[1].Type)))
             {
@@ -2511,7 +2509,7 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? methodLocation,
             int methodDiagStart)
         {
-            var withheld = false;
+            bool withheld;
 
             if (method.ReturnsVoid &&
                 method.Parameters.Length == 2 &&
@@ -2661,9 +2659,9 @@ namespace DwarfMapper.Generator.Pipeline
             IReadOnlyList<FlattenGraphDirective> resolvedFgDirectives,
             List<string> extraParamSig,
             LocationInfo? methodLocation,
-            int methodDiagStart,
-            bool withheld)
+            int methodDiagStart)
         {
+            bool withheld;
             if (policy.RequiredMapping == 1) // RequiredMappingStrategy.Both
             {
                 EmitSourceCoverage(
@@ -2781,7 +2779,7 @@ namespace DwarfMapper.Generator.Pipeline
             LocationInfo? genLoc,
             Dictionary<int, HostPairDirectives> hostDirectives)
         {
-            var withheld = false;
+            bool withheld;
 
             for (var genIndex = 0; genIndex < genPairs.Count; genIndex++)
             {

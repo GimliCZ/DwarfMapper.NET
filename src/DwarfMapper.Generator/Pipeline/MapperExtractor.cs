@@ -317,7 +317,7 @@ namespace DwarfMapper.Generator.Pipeline
                 ? ReadCoLocatedHostDirectives(classSymbol, genPairs, diagnostics)
                 : EmptyHostDirectives;
 
-            ExpandWrapperMaps(classSymbol, genComp, genPairs, diagnostics, genLoc);
+            ExpandWrapperMaps(classSymbol, genPairs, diagnostics, genLoc);
 
             // A [GenerateMap<S,T>] emits a `public T Map(S)` overload that is, to every caller, indistinguishable
             // from a declared partial mapper — so resolution must be able to FIND it. It could not: mapperMethods
@@ -430,8 +430,8 @@ namespace DwarfMapper.Generator.Pipeline
 
             foreach (var (model, name) in pendingNestedModels)
             {
-                var isRC = nestedRegistry.IsRecursionCapable(name);
-                if (isRC)
+                var isRecursionCapable = nestedRegistry.IsRecursionCapable(name);
+                if (isRecursionCapable)
                 {
                     recursionCapableNames.Add(name);
                 }
@@ -439,7 +439,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // Rebuild the model with the correct IsRecursionCapable flag.
                 methods.Add(model with
                 {
-                    IsRecursionCapable = isRC
+                    IsRecursionCapable = isRecursionCapable
                 });
             }
 
@@ -1152,11 +1152,11 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // [MapDerivedType], in BOTH of its forms, through the reader the create-map branch reads with —
                 // which is also where the WRITTEN form comes from, so the message quotes the syntax the caller
-                // typed rather than normalizing one into the other. `compilation` is the reader's own parameter;
-                // it is passed rather than a second reader written, because a second reader of these attributes is
-                // precisely the shape that has shipped two generator crashes on this branch.
+                // typed rather than normalizing one into the other. The one reader is reused rather than a
+                // second reader written, because a second reader of these attributes is precisely the shape that
+                // has shipped two generator crashes on this branch.
                 foreach (var (derivedSrc, derivedTgt, writtenGeneric) in
-                         ReadDerivedTypeAttributes(method, compilation))
+                         ReadDerivedTypeAttributes(method))
                 {
                     var dSrc = derivedSrc.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
                     var dTgt = derivedTgt.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
@@ -1503,7 +1503,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Renders a non-failing constant as a C# literal. Callers that can fail on assignability must
         ///     validate BEFORE calling (the MapConfig path is pre-validated by the compiler via the generic member type).
         /// </summary>
-        private static string RenderConstantLiteral(object? value, ITypeSymbol? valueType, ITypeSymbol targetType, Compilation compilation)
+        private static string RenderConstantLiteral(object? value, ITypeSymbol? valueType, ITypeSymbol targetType)
         {
             if (value is null)
             {
@@ -1568,7 +1568,7 @@ namespace DwarfMapper.Generator.Pipeline
                     return false;
                 }
 
-                literal = RenderConstantLiteral(tc.Value, tc.Type, targetType, compilation);
+                literal = RenderConstantLiteral(tc.Value, tc.Type, targetType);
                 return true;
             }
 
@@ -1582,7 +1582,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Floating/decimal targets need an explicit cast — an un-suffixed literal like "1.5" is a double
             // and would not compile when assigned to float/decimal.
-            literal = RenderConstantLiteral(tc.Value, tc.Type, targetType, compilation);
+            literal = RenderConstantLiteral(tc.Value, tc.Type, targetType);
             return true;
         }
 

@@ -184,7 +184,7 @@ namespace DwarfMapper.Generator.Pipeline
         /// <summary>
         ///     Builds the ambient cross-assembly self-registration: a <c>[ModuleInitializer]</c> that registers
         ///     every eligible stateless, PUBLIC-typed create-map (<c>T Map(S)</c>) into
-        ///     <see cref="global::DwarfMapper.DwarfMapperRegistry" /> at load (zero reflection, AOT-safe), plus the
+        ///     <c>DwarfMapper.DwarfMapperRegistry</c> at load (zero reflection, AOT-safe), plus the
         ///     matching <c>[assembly: DwarfProvidesMap(...)]</c> manifest read by the validation root. Only maps
         ///     whose source AND destination are effectively public are registered — internal types cannot be named
         ///     by another assembly, so they have no cross-assembly (ambient) meaning. Returns the source (or

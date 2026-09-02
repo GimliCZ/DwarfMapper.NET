@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// fixture type names carry the scenario prefix (MoRS/MoRT = MapConfig-on-record source/target)
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // Differential-parity fixtures for MapConfig_Map_rename_matches_attribute_form (below): the SAME (S -> T) rename

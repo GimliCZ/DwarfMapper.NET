@@ -17,7 +17,7 @@ namespace DwarfMapper.Generator.Model
     /// <param name="IsRecursionCapable">
     ///     When <c>true</c>, this synthesized method is on a type-graph cycle and must be
     ///     emitted with the depth-guarded signature <c>(S s, DwarfRefContext ctx, int depth)</c>.
-    ///     The public declared mapper creates a <see cref="global::DwarfMapper.DwarfRefContext"/>
+    ///     The public declared mapper creates a <c>DwarfMapper.DwarfRefContext</c>
     ///     and passes <c>ctx, 0</c> into the first tracked call.
     ///     False for acyclic pairs (zero overhead).
     /// </param>

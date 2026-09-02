@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// fixture DTO names keep the I-prefix of the interface they stand in for
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // ── Type hierarchy ─────────────────────────────────────────────────────────────
