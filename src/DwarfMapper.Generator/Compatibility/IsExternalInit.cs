@@ -2,6 +2,8 @@
 
 using System.ComponentModel;
 
+// a polyfill has to live where the compiler looks for it
+// ReSharper disable once CheckNamespace
 namespace System.Runtime.CompilerServices
 {
     /// <summary>

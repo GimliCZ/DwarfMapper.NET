@@ -90,8 +90,10 @@ namespace DwarfMapper.CompilerTests
         ///     The P5 forward-reference row's own claim, end-to-end: the SAME graph compiled with its split
         ///     node's files in both orders produces the same accept/refuse outcome and byte-identical generated
         ///     source. This is the K0-level restatement of
-        ///     <c>CanReinterpret_partial_file_struct_verdict_is_file_order_independent</c> (P5's comparator-mutant
-        ///     kill in Generator.Tests) — same shape, measured at the emission seam instead of the proof seam.
+        ///     <c>CanReinterpret_partial_struct_with_fields_in_two_declarations_is_refused_in_both_compile_orders</c>
+        ///     (the proof-seam kill in Generator.Tests) — same shape, measured at the emission seam instead of
+        ///     the proof seam. The two seams give different-looking verdicts for one reason: the proof refuses
+        ///     to BLIT the split struct, and the mapper still MAPS it, by name, through the scalar path.
         /// </summary>
         [Fact]
         public void Partial_split_row_verdict_and_emission_are_file_order_independent()

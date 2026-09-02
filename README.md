@@ -86,8 +86,8 @@ on ordinary DTOs, faster only on blittable/layout-identical collections, and far
   designed out: only members the generator explicitly resolved are ever written.
 - **Provably-safe unsafe.** The blittable fast-path is gated by analyzer proofs (unmanaged types, matching size, no
   managed references, compatible layout). The **automatic** fast-path never emits a cast without that full layout+name
-  proof — it falls back to plain assignments instead. (The opt-in `[Reinterpret]` override emits a memory-safe,
-  size-guarded blit whose field correspondence *you* assert.)
+  proof — it falls back to plain assignments instead. (The opt-in `[Reinterpret]` override emits a memory-safe blit
+  — the same byte-level proof, minus the names — whose field correspondence *you* assert.)
 - **Declarative only.** Configuration lives in attributes and partial methods — never a runtime fluent builder. (Fluent
   runtime config is the reflection trap that breaks AOT; we don't go there.)
 
@@ -118,7 +118,8 @@ Pairing walks the two sorted member lists ordinally. The result is a determinist
   source member must be consumed or explicitly marked source-ignored. *"I forgot to map it" stops compiling.*
 - **Blit proof:** for a whole array member (`TSrc[] → TDst[]`) the generator asks: is the element type unmanaged,
   identically sized, and layout-compatible? If yes, the whole span is bulk-copied with a single
-  `MemoryMarshal.Cast<TSrc,TDst>(...).CopyTo(...)` (behind a runtime size guard); `int[]→long[]` widening uses
+  `MemoryMarshal.Cast<TSrc,TDst>(...).CopyTo(...)` — the proof is the guard; there is no runtime size check in the
+  copy, because the same-bytes verdict is established once, at generation time; `int[]→long[]` widening uses
   `Vector.Widen`. Everything else — including ordinary scalar members — is plain direct assignment. (There is no
   member-level run-coalescing; the fast-path is whole-array only.)
 
@@ -647,14 +648,17 @@ handling — are rejected as `DWARF028` (with a reason); do those with a runtime
 
 ### Blittable fast-path (SIMD)
 
-When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing, and
-the same ordered field names/types (including nested structs, recursively) — DwarfMapper skips the element loop and
-reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove, behind a JIT-folded runtime size guard.
-This is the one place DwarfMapper beats a hand-written name-based copy, and it is emitted **only when proven safe** —
-otherwise it falls back to the element loop. For layout-compatible types the proof can't confirm (differing field names
-you know are positionally correct, types from referenced assemblies), opt in with `[Reinterpret("Member")]` — still
-memory-safe (unmanaged + size guard), with the field correspondence as your assertion. A bad `[Reinterpret]` target is
-`DWARF022`.
+When `TSrc[]` and `TDst[]` have **provably identical memory layout** — both unmanaged, `Sequential`, same packing and
+explicit `Size`, the same `[InlineArray]` length, every instance field in one declaration, and the same ordered field
+names/types (including nested structs and fixed-buffer lengths, recursively) — DwarfMapper skips the element loop and
+reinterprets the whole block in one vectorized `MemoryMarshal.Cast` memmove. The proof **is** the guard: the copy
+carries no runtime size check, because the same-bytes verdict is settled at generation time, and every shape the
+proof cannot settle is refused there. This is the one place DwarfMapper beats a hand-written name-based copy, and it
+is emitted **only when proven safe** — otherwise it falls back to the element loop, and `DWARF100` names the one
+thing that kept the pair off the fast path. For layout-compatible types the proof can't confirm (differing field
+names you know are positionally correct), opt in with `[Reinterpret("Member")]` — still memory-safe (the same
+unmanaged + same-bytes proof, with only the name check waived), with the field correspondence as your assertion. A
+bad `[Reinterpret]` target is `DWARF022`.
 
 ### Update-into-existing
 
@@ -1048,10 +1052,10 @@ Generated from the gates' own files, never hand-typed — see `QualityBadgeRende
 
 <!-- table: quality-badges -->
 [![coverage DwarfMapper](https://img.shields.io/badge/coverage%20DwarfMapper-91.2%25-brightgreen)](scripts/housekeeping.ps1)
-[![coverage DwarfMapper.Generator](https://img.shields.io/badge/coverage%20DwarfMapper.Generator-94.5%25-brightgreen)](scripts/housekeeping.ps1)
+[![coverage DwarfMapper.Generator](https://img.shields.io/badge/coverage%20DwarfMapper.Generator-95.5%25-brightgreen)](scripts/housekeeping.ps1)
 [![coverage DwarfMapper.DocTooling](https://img.shields.io/badge/coverage%20DwarfMapper.DocTooling-96.0%25-brightgreen)](scripts/housekeeping.ps1)
 [![coverage DwarfMapper.CodeFixes](https://img.shields.io/badge/coverage%20DwarfMapper.CodeFixes-96.2%25-brightgreen)](scripts/housekeeping.ps1)
-[![coverage DwarfMapper.Testing](https://img.shields.io/badge/coverage%20DwarfMapper.Testing-87.1%25-brightgreen)](scripts/housekeeping.ps1)
+[![coverage DwarfMapper.Testing](https://img.shields.io/badge/coverage%20DwarfMapper.Testing-96.4%25-brightgreen)](scripts/housekeeping.ps1)
 
 [![mutation generator](https://img.shields.io/badge/mutation%20generator-84.32%25-brightgreen)](stryker-config.json)
 [![mutation doctooling](https://img.shields.io/badge/mutation%20doctooling-95.85%25-brightgreen)](stryker-config.doctooling.json)

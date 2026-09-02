@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// fixture type names carry the T (topology) scenario prefix
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // Tree node whose Children can contain an ancestor (cycle through a collection).

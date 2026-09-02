@@ -129,6 +129,7 @@ namespace DwarfMapper.Generator.Pipeline
             // the actual target type (e.g. Dictionary<string, List<int>?> not Dictionary<string, List<int>>).
             var keyFq = FqTypeArg(tgtKey);
             var valFq = FqTypeArg(tgtVal);
+            var srcValIsNullableRef = SourceValueIsNullableRef(srcType);
             var nullTag = nullAsNull ? "_nn" : "";
 
             var isMutableDict = targetKind != DictTargetKind.ImmutableDictionary && targetKind != DictTargetKind.IImmutableDictionary;
@@ -162,13 +163,12 @@ namespace DwarfMapper.Generator.Pipeline
                 return name;
             }
 
-            var srcFq = Fq(srcType);
             // Nullable-aware param type: strips outer nullable, preserves inner nullable type arguments,
             // then adds ? for the outer — avoids CS8620 when source has nullable value/element types.
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
             var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
-            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx);
+            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef);
             var emptyDict = nullAsNull ? "null" : "new " + retTypeFq + "()";
             var ctxParams = threadCtx ? CtxDepthParams : "";
 
@@ -242,6 +242,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var keyFq = FqTypeArg(tgtKey);
             var valFq = FqTypeArg(tgtVal);
+            var srcValIsNullableRef = SourceValueIsNullableRef(srcType);
             var isImmutable = targetKind == DictTargetKind.ImmutableDictionary || targetKind == DictTargetKind.IImmutableDictionary;
             var retTypeFq = isImmutable
                 ? "global::System.Collections.Immutable.ImmutableDictionary<" + keyFq + ", " + valFq + ">"
@@ -250,7 +251,7 @@ namespace DwarfMapper.Generator.Pipeline
             var srcParam = FqNullableParam(srcType);
             var retAnnot = nullAsNull ? retTypeFq + "?" : retTypeFq;
             var keyExpr = Expr("__kv.Key", keyConverter, keyNull, keyFq, keyNeedsCtx);
-            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx);
+            var valExpr = Expr("__kv.Value", valConverter, valNull, valFq, valNeedsCtx, srcValIsNullableRef);
 
             var w = new CodeWriter(1);
             using (w.Block("private " + retAnnot + " " + existingName + "(" + srcParam + " src" + CtxDepthParams + ")"))
@@ -296,7 +297,26 @@ namespace DwarfMapper.Generator.Pipeline
         ///     onto the non-null arm so the conditional's type never depends on target-typing); one whose
         ///     destination cannot is unwrapped by the documented NullStrategy rule.
         /// </summary>
-        private static string Expr(string access, string? conv, NullHandling nh, string tgtFq, bool needsCtx = false)
+        /// <summary>
+        ///     Whether the source dictionary's VALUE type is a nullable reference (<c>Dictionary&lt;string, Child?&gt;</c>),
+        ///     read off the <c>IEnumerable&lt;KeyValuePair&lt;K, V&gt;&gt;</c> the source implements so every admitted
+        ///     source shape (concrete, interface, read-only) answers the same way. Drives the per-value null-forgiving
+        ///     in <see cref="Expr" />, the dictionary twin of CollectionConverter's nullable-element rule.
+        /// </summary>
+        private static bool SourceValueIsNullableRef(ITypeSymbol srcType)
+        {
+            // Every admitted dictionary source implements the interface, so the lookup always answers; a
+            // single expression keeps that fact from leaving an unreachable fallback behind.
+            var value = srcType.AllInterfaces.Prepend(srcType)
+                .OfType<INamedTypeSymbol>()
+                .Where(n => n.IsGenericType && n.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+                .Select(n => n.TypeArguments[0] as INamedTypeSymbol)
+                .FirstOrDefault(kv => kv is { Name: "KeyValuePair", TypeArguments.Length: 2 })
+                ?.TypeArguments[1];
+            return value is { IsReferenceType: true, NullableAnnotation: NullableAnnotation.Annotated };
+        }
+
+        private static string Expr(string access, string? conv, NullHandling nh, string tgtFq, bool needsCtx = false, bool srcIsNullableRef = false)
         {
             if (conv is null)
             {
@@ -310,6 +330,9 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             var extra = needsCtx ? ", ctx, depth + 1" : "";
+            // Null-forgive a nullable-reference value into a synthesized helper's non-nullable parameter; the
+            // helper null-guards (null in, null out). See CollectionConverter.ElementExpr for the full argument.
+            var forgive = srcIsNullableRef && GeneratedNames.IsSynthesized(conv) ? "!" : "";
 
             string Call(string arg)
             {
@@ -321,11 +344,11 @@ namespace DwarfMapper.Generator.Pipeline
                 NullHandling.NullableProject =>
                     "(" + access + ".HasValue ? (" + tgtFq + ")" + Call(access + ".Value") + " : null)",
                 NullHandling.NullableProjectRef =>
-                    "(" + access + " is null ? null : (" + tgtFq + ")" + Call(access) + ")",
+                    "(" + access + " is null ? null : (" + tgtFq + ")" + Call(access + forgive) + ")",
                 NullHandling.ThrowIfNull => Call(access +
                                                  " ?? throw new global::System.InvalidOperationException(\"Dictionary entry was null\")"),
                 NullHandling.ValueOrDefault => Call(access + ".GetValueOrDefault()"),
-                _ => Call(access)
+                _ => Call(access + forgive)
             };
         }
 
@@ -470,6 +493,8 @@ namespace DwarfMapper.Generator.Pipeline
             return stripped.ToDisplayString(NullableFullyQualifiedFormat) + "?";
         }
 
+        // the members deliberately carry the BCL interface names they classify
+        // ReSharper disable InconsistentNaming
         internal enum DictTargetKind
         {
             Dictionary, // Dictionary<K,V>         — concrete (today)

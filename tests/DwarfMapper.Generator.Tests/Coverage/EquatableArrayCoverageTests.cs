@@ -178,7 +178,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
             {
                 1
             });
-            Assert.False(a.Equals("not an EquatableArray"));
+            object notAnArray = "not an EquatableArray";
+            Assert.False(a.Equals(notAnArray));
         }
 
         // ─── GetHashCode ──────────────────────────────────────────────────────────

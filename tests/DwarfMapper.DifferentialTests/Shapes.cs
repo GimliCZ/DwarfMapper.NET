@@ -3,6 +3,8 @@
 using System.ComponentModel;
 using Riok.Mapperly.Abstractions;
 
+// members named with C# keywords (@class, @event, @operator) are the escaped-identifier shape under test
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.DifferentialTests
 {
     // ═══ The shapes ══════════════════════════════════════════════════════════════════════════════════════════

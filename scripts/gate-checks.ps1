@@ -495,9 +495,44 @@ function Assert-NoMutatedProductBinaries {
 #   DwarfMapper.Testing.1.0.2-rc.1.nupkg   48,508 B and  48,508 B  -> floor( 48508/1024) =  47 KB
 # (The one-byte wobble is NuGet's random .psmdcp part name, not build output - scripts/repro-pack-check.py
 # measured exactly that and its header records it.)
+#
+# RE-MEASURED 2026-09-02 (round-28 audit), Windows, SDK 10.0.101, Release, -p:EnablePackageValidation=false
+# (the nightly job's own pack line), working tree of the round-27/28 diff:
+#   DwarfMapper.1.0.2-rc.1.nupkg          287,189 B  -> floor(287189/1024) = 280 KB   (was 247)
+#   DwarfMapper.Testing.1.0.2-rc.1.nupkg   48,769 B  -> floor( 48769/1024) =  47 KB   (unchanged)
+# The main package outgrew its ceiling during rounds 24-27 and no commit re-measured it, so the nightly
+# `package-size` job has been red since then: the gate did its job, and nobody read the nightly. Where the
+# ~33 KB went (bytes raw / deflated, 1.0.2-rc.1 at e9d2a77 -> the rc5 pack of this tree):
+#   DwarfMapper.Generator.dll   517,120 / 168,960 -> 576,512 / 189,348   the rounds' pipeline growth
+#   DwarfMapper.xml             153,769 /  34,693 -> 168,571 /  38,638   doc comments on the new surface
+#   DwarfMapper.dll              40,960 /  17,333 ->  42,496 /  18,082
+#   README.md                    73,456 /  24,921 ->  74,062 /  25,089
+#   DwarfMapper.CodeFixes.dll    24,576 unchanged
+# The gate itself runs on ubuntu-latest (ci.yml package-size job), so the same tree was also packed in a
+# mcr.microsoft.com/dotnet/sdk:10.0.101 container with CI=true and a locked restore, the job's exact recipe:
+#   DwarfMapper.1.0.2-rc.1.nupkg          286,985 B  -> 280 KB   (Windows 287,189: the 204-byte delta is
+#   DwarfMapper.Testing.1.0.2-rc.1.nupkg   48,715 B  ->  47 KB    CRLF vs LF in DwarfMapper.xml and the
+#   nuspec, plus 10-20 bytes of deflate variance per DLL; every DLL is byte-identical raw on both.)
+# Both environments truncate to the same KB; the ceiling is the number the gate will actually measure.
+#
+# AND AGAIN THE SAME DAY, after the round-28 fixes for the consumer-reported emission warnings (nullable-element
+# collections and dictionary values, constructor-argument and projection null-forgiving, the [MapTo] registry's
+# collection helper annotations, [Obsolete] enum members: ~1.7 KB of generator IL in all):
+#   Windows  DwarfMapper.1.0.2-rc.1.nupkg  288,884 B -> 282 KB      Testing 48,772 B -> 47 KB
+#   ubuntu   DwarfMapper.1.0.2-rc.1.nupkg  288,676 B -> 281 KB      Testing 48,732 B -> 47 KB   (the gate's own)
+# The two platforms now STRADDLE the KB boundary (the 208-byte CRLF/LF difference in the XML doc and nuspec).
+# The ceiling is the larger measurement, 282: it is a measurement (Windows), and the same tree must be green
+# wherever the gate is run - 281 would leave 92 bytes on ubuntu and be red on every Windows pack. Headroom to
+# the first red byte (289,792): 908 B Windows, 1,116 B ubuntu. Same five entries. If the doc XML were written
+# with LF on every platform the two numbers would coincide; that is a build change, not a gate change.
+# Same five entries, no dependency, no resource - none of the class this gate exists to catch - so this is a
+# raise with its reason, not a finding against the package. Headroom to the first red byte (281 KB = 287,744 B) is 555 bytes. Note that this
+# gate runs ONLY in the nightly CI `package-size` job: scripts/housekeeping.ps1 never packs, so no local run,
+# `-Nightly` included, can see this red. A local pack + Assert-PackageSizeWithinCeiling under -Nightly would
+# close that hole; it is the one gate the script does not mirror.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 247
+    'DwarfMapper'         = 282
     'DwarfMapper.Testing' = 47
 }
 

@@ -10,7 +10,7 @@ namespace DwarfMapper.Generator.Tests.Framework
     ///     Runs ANY <see cref="IIncrementalGenerator" />. Six sites previously hardcoded
     ///     <c>CSharpGeneratorDriver.Create(new DwarfGenerator())</c>, so adding the registry generator required a
     ///     bespoke harness method rather than passing the generator in. Reuses
-    ///     <see cref="GeneratorTestHarness.BuildCompilation" /> because the metadata-reference set is cached there
+    ///     <see cref="GeneratorTestHarness.BuildCompilation(string, string, NullableContextOptions, bool)" /> because the metadata-reference set is cached there
     ///     and must stay single-sourced.
     /// </summary>
     internal static class GeneratorRunner
@@ -33,6 +33,7 @@ namespace DwarfMapper.Generator.Tests.Framework
             // RunGeneratorsAndUpdateCompilation returns the UPDATED driver (GeneratorDriver is immutable) —
             // GetRunResult must be called on that return value, not on the pre-run "driver".
             var result = ranDriver.GetRunResult();
+            AssertNoGeneratorCrash(result);
             var outputs = result.Results
                 .SelectMany(r => r.GeneratedSources)
                 .ToImmutableDictionary(
@@ -41,6 +42,35 @@ namespace DwarfMapper.Generator.Tests.Framework
                     StringComparer.Ordinal);
 
             return new GeneratorRun(diagnostics, outputs);
+        }
+
+        /// <summary>
+        ///     Fails the test if any generator threw.
+        /// </summary>
+        /// <remarks>
+        ///     Roslyn does not let a generator exception escape: it parks it on
+        ///     <see cref="GeneratorRunResult.Exception" /> and downgrades it to a CS8785 WARNING. From the outside a
+        ///     crash and a deliberate refusal are then indistinguishable — both produce no sources, and the build
+        ///     still reports zero errors. Every assertion in this suite is written against sources or diagnostics,
+        ///     so before this check existed the whole battery would go green while the generator was dying on every
+        ///     input. That is exactly how an ArgumentOutOfRangeException in <c>LocationInfo.From</c> reached a
+        ///     consumer and erased every generated map in their project.
+        /// </remarks>
+        public static void AssertNoGeneratorCrash(GeneratorDriverRunResult result)
+        {
+            ArgumentNullException.ThrowIfNull(result);
+
+            foreach (var r in result.Results)
+            {
+                if (r.Exception is { } ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Generator '{r.Generator.GetGeneratorType().Name}' THREW {ex.GetType().Name}: {ex.Message}. " +
+                        "A generator that throws contributes nothing to the compilation. " +
+                        $"Stack: {ex.StackTrace}",
+                        ex);
+                }
+            }
         }
 
         /// <summary>

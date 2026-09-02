@@ -1,5 +1,6 @@
 ﻿// SPDX-License-Identifier: GPL-2.0-only
 
+using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -82,7 +83,6 @@ namespace DwarfMapper.Generator.Pipeline
                         (INamedTypeSymbol)src,
                         (INamedTypeSymbol)tgt,
                         location,
-                        targetName,
                         diagnostics);
             }
 
@@ -191,7 +191,6 @@ namespace DwarfMapper.Generator.Pipeline
             INamedTypeSymbol src,
             INamedTypeSymbol tgt,
             LocationInfo? location,
-            string targetName,
             List<DiagnosticInfo> diagnostics)
         {
             var name = MethodName("EnumName", src, tgt);
@@ -234,29 +233,32 @@ namespace DwarfMapper.Generator.Pipeline
             HashSet<string> targetNames)
         {
             var w = new CodeWriter(1);
-            w.Line("private static " + Fq(tgt) + " " + name + "(" + Fq(src) + " v) => v switch");
-            w.Line("{");
-            using (w.Indent())
+            ObsoleteGuard(w, NamesObsoleteMember(src) || NamesObsoleteMember(tgt), () =>
             {
-                var seenValues = new HashSet<object>();
-                foreach (var m in EnumMembers(src))
+                w.Line("private static " + Fq(tgt) + " " + name + "(" + Fq(src) + " v) => v switch");
+                w.Line("{");
+                using (w.Indent())
                 {
-                    if (m.ConstantValue is null ||
-                        !seenValues.Add(m.ConstantValue))
+                    var seenValues = new HashSet<object>();
+                    foreach (var m in EnumMembers(src))
                     {
-                        continue; // alias of an already-emitted value
+                        if (m.ConstantValue is null ||
+                            !seenValues.Add(m.ConstantValue))
+                        {
+                            continue; // alias of an already-emitted value
+                        }
+
+                        if (targetNames.Contains(m.Name))
+                        {
+                            w.Line(Fq(src) + "." + m.Name + " => " + Fq(tgt) + "." + m.Name + ",");
+                        }
                     }
 
-                    if (targetNames.Contains(m.Name))
-                    {
-                        w.Line(Fq(src) + "." + m.Name + " => " + Fq(tgt) + "." + m.Name + ",");
-                    }
+                    w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unmapped enum value\"),");
                 }
 
-                w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unmapped enum value\"),");
-            }
-
-            w.Line("};");
+                w.Line("};");
+            });
             return w.ToString();
         }
 
@@ -285,42 +287,45 @@ namespace DwarfMapper.Generator.Pipeline
             var underlying = Fq(src.EnumUnderlyingType!);
 
             var w = new CodeWriter(1);
-            using (w.Block("private static " + Fq(tgt) + " " + name + "(" + Fq(src) + " v)"))
+            ObsoleteGuard(w, NamesObsoleteMember(src) || NamesObsoleteMember(tgt), () =>
             {
-                w.Line("var __r = default(" + Fq(tgt) + ");");
-                w.Line("var __rest = (" + underlying + ")v;");
-
-                var seenValues = new HashSet<object>();
-                foreach (var m in EnumMembers(src))
+                using (w.Block("private static " + Fq(tgt) + " " + name + "(" + Fq(src) + " v)"))
                 {
-                    if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue))
+                    w.Line("var __r = default(" + Fq(tgt) + ");");
+                    w.Line("var __rest = (" + underlying + ")v;");
+
+                    var seenValues = new HashSet<object>();
+                    foreach (var m in EnumMembers(src))
                     {
-                        continue;
+                        if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue))
+                        {
+                            continue;
+                        }
+
+                        if (!targetNames.Contains(m.Name))
+                        {
+                            continue;
+                        }
+
+                        // The zero member (None = 0) carries no bit: `(v & None) == None` is true for every value, so
+                        // testing it would be meaningless. It needs no arm — default(TTarget) already IS zero.
+                        if (IsZero(m.ConstantValue))
+                        {
+                            continue;
+                        }
+
+                        var srcMember = Fq(src) + "." + m.Name;
+                        using (w.Block("if ((v & " + srcMember + ") == " + srcMember + ")"))
+                        {
+                            w.Line("__r |= " + Fq(tgt) + "." + m.Name + ";");
+                            w.Line("__rest &= unchecked((" + underlying + ")~(" + underlying + ")" + srcMember + ");");
+                        }
                     }
 
-                    if (!targetNames.Contains(m.Name))
-                    {
-                        continue;
-                    }
-
-                    // The zero member (None = 0) carries no bit: `(v & None) == None` is true for every value, so
-                    // testing it would be meaningless. It needs no arm — default(TTarget) already IS zero.
-                    if (IsZero(m.ConstantValue))
-                    {
-                        continue;
-                    }
-
-                    var srcMember = Fq(src) + "." + m.Name;
-                    using (w.Block("if ((v & " + srcMember + ") == " + srcMember + ")"))
-                    {
-                        w.Line("__r |= " + Fq(tgt) + "." + m.Name + ";");
-                        w.Line("__rest &= unchecked((" + underlying + ")~(" + underlying + ")" + srcMember + ");");
-                    }
+                    w.Line("if (__rest != 0) throw new global::System.ArgumentOutOfRangeException(" + "nameof(v), v, \"Unmapped enum flag\");");
+                    w.Line("return __r;");
                 }
-
-                w.Line("if (__rest != 0) throw new global::System.ArgumentOutOfRangeException(" + "nameof(v), v, \"Unmapped enum flag\");");
-                w.Line("return __r;");
-            }
+            });
 
             return w.ToString();
         }
@@ -362,8 +367,78 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var m in enumType.GetMembers())
                 if (m is IFieldSymbol { IsConst: true, HasConstantValue: true } f)
                 {
+                    if (IsObsolete(f, out var isError) && isError)
+                    {
+                        continue; // [Obsolete(…, error: true)] is CS0619, which no pragma lifts; nobody can name it
+                    }
+
                     yield return f;
                 }
+        }
+
+        /// <summary>
+        ///     Whether an enum member carries <c>[Obsolete]</c>, and whether it is the error form.
+        ///     <para>
+        ///         An exhaustive enum map has to name every member, deprecated ones included: a domain enum keeps
+        ///         them for backward compatibility, and dropping the arm would turn a legal (deprecated) input into
+        ///         a runtime <c>ArgumentOutOfRangeException</c>. Naming one is CS0618 (CS0612 for the message-less
+        ///         form) — a warning raised INSIDE the generated file, which the consumer can neither
+        ///         <c>#pragma</c> nor <c>.editorconfig</c> away — so each switch that names such a member is
+        ///         wrapped in a scoped <c>#pragma warning disable CS0612, CS0618</c>
+        ///         (<see cref="ObsoleteGuard" />), and only then. The error form is CS0619, an error no pragma
+        ///         lifts, and the member is unreferenceable by anyone: <see cref="EnumMembers" /> skips it.
+        ///     </para>
+        /// </summary>
+        private static bool IsObsolete(IFieldSymbol member, out bool isError)
+        {
+            isError = false;
+            foreach (var attribute in member.GetAttributes())
+            {
+                if (attribute.AttributeClass?.ToDisplayString() != "System.ObsoleteAttribute")
+                {
+                    continue;
+                }
+
+                // ObsoleteAttribute(string message, bool error): the second constructor argument is the error flag.
+                isError = attribute.ConstructorArguments.Length >= 2 && attribute.ConstructorArguments[1].Value is true;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>True when any member the map will name carries a warning-level <c>[Obsolete]</c>.</summary>
+        private static bool NamesObsoleteMember(INamedTypeSymbol enumType)
+        {
+            foreach (var m in EnumMembers(enumType))
+                if (IsObsolete(m, out _))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     Writes <paramref name="body" /> between a scoped CS0612/CS0618 disable/restore when
+        ///     <paramref name="wrap" /> is set; otherwise the body alone. Both ids, because the compiler raises
+        ///     CS0612 for the bare <c>[Obsolete]</c> and CS0618 for <c>[Obsolete("message")]</c> — a guard naming
+        ///     only the second let the bare form through. The pragma is deliberately not in the file header: it
+        ///     belongs around the one switch that has to name a deprecated member, so an obsolete-use warning
+        ///     anywhere else in the generated file stays visible.
+        /// </summary>
+        private static void ObsoleteGuard(CodeWriter w, bool wrap, Action body)
+        {
+            if (wrap)
+            {
+                w.Line("#pragma warning disable CS0612, CS0618 // [Obsolete] members are still legal values of this enum; an exhaustive map must name them");
+            }
+
+            body();
+            if (wrap)
+            {
+                w.Line("#pragma warning restore CS0612, CS0618");
+            }
         }
 
         private static bool IsIntegral(ITypeSymbol t)
@@ -520,26 +595,29 @@ namespace DwarfMapper.Generator.Pipeline
                 // [EnumMember]/[Description] custom names apply to non-flags enums only.
                 var flags = IsFlagsEnum(src);
                 var w = new CodeWriter(1);
-                w.Line("private static string " + name + "(" + Fq(src) + " v) => v switch");
-                w.Line("{");
-                using (w.Indent())
+                ObsoleteGuard(w, NamesObsoleteMember(src), () =>
                 {
-                    var seenValues = new HashSet<object>();
-                    foreach (var m in EnumMembers(src))
+                    w.Line("private static string " + name + "(" + Fq(src) + " v) => v switch");
+                    w.Line("{");
+                    using (w.Indent())
                     {
-                        if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue))
+                        var seenValues = new HashSet<object>();
+                        foreach (var m in EnumMembers(src))
                         {
-                            continue;
+                            if (m.ConstantValue is null || !seenValues.Add(m.ConstantValue))
+                            {
+                                continue;
+                            }
+
+                            var text = flags ? m.Name : SerializedName(m, stringSource);
+                            w.Line(Fq(src) + "." + m.Name + " => \"" + Escape(text) + "\",");
                         }
 
-                        var text = flags ? m.Name : SerializedName(m, stringSource);
-                        w.Line(Fq(src) + "." + m.Name + " => \"" + Escape(text) + "\",");
+                        w.Line("_ => v.ToString(),");
                     }
 
-                    w.Line("_ => v.ToString(),");
-                }
-
-                w.Line("};");
+                    w.Line("};");
+                });
                 synth[name] = new SynthesizedMethod(name, w.ToString());
             }
 
@@ -571,28 +649,31 @@ namespace DwarfMapper.Generator.Pipeline
         private static string EmitStringToEnum(string name, INamedTypeSymbol tgt, EnumStringSource stringSource)
         {
             var w = new CodeWriter(1);
-            w.Line("private static " + Fq(tgt) + " " + name + "(string v) => v switch");
-            w.Line("{");
-            using (w.Indent())
+            ObsoleteGuard(w, NamesObsoleteMember(tgt), () =>
             {
-                // Match on the serialized name ([EnumMember]/[Description] or the identifier). De-dup by that name so a
-                // duplicated [EnumMember(Value=…)] cannot emit two identical case labels (CS0152) — first member wins.
-                var seenNames = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var m in EnumMembers(tgt))
+                w.Line("private static " + Fq(tgt) + " " + name + "(string v) => v switch");
+                w.Line("{");
+                using (w.Indent())
                 {
-                    var text = SerializedName(m, stringSource);
-                    if (!seenNames.Add(text))
+                    // Match on the serialized name ([EnumMember]/[Description] or the identifier). De-dup by that name so a
+                    // duplicated [EnumMember(Value=…)] cannot emit two identical case labels (CS0152) — first member wins.
+                    var seenNames = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (var m in EnumMembers(tgt))
                     {
-                        continue;
+                        var text = SerializedName(m, stringSource);
+                        if (!seenNames.Add(text))
+                        {
+                            continue;
+                        }
+
+                        w.Line("\"" + Escape(text) + "\" => " + Fq(tgt) + "." + m.Name + ",");
                     }
 
-                    w.Line("\"" + Escape(text) + "\" => " + Fq(tgt) + "." + m.Name + ",");
+                    w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),");
                 }
 
-                w.Line("_ => throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\"),");
-            }
-
-            w.Line("};");
+                w.Line("};");
+            });
             return w.ToString();
         }
 
@@ -616,35 +697,38 @@ namespace DwarfMapper.Generator.Pipeline
             // Span-vs-constant pattern matching is avoided for the same class of reason: it requires a recent
             // LangVersion in the CONSUMER's project, which this generator does not control.
             var w = new CodeWriter(1);
-            using (w.Block("private static " + Fq(tgt) + " " + name + "(string v)"))
+            ObsoleteGuard(w, NamesObsoleteMember(tgt), () =>
             {
-                w.Line("var __r = default(" + Fq(tgt) + ");");
-                w.Line("var __s = global::System.MemoryExtensions.AsSpan(v);");
-                using (w.Block("while (true)"))
+                using (w.Block("private static " + Fq(tgt) + " " + name + "(string v)"))
                 {
-                    w.Line("var __i = global::System.MemoryExtensions.IndexOf(__s, ',');");
-                    w.Line("var __part = global::System.MemoryExtensions.Trim(__i < 0 ? __s : __s.Slice(0, __i));");
-                    using (w.Block("if (__part.Length > 0)"))
+                    w.Line("var __r = default(" + Fq(tgt) + ");");
+                    w.Line("var __s = global::System.MemoryExtensions.AsSpan(v);");
+                    using (w.Block("while (true)"))
                     {
-                        var first = true;
-                        foreach (var m in EnumMembers(tgt))
+                        w.Line("var __i = global::System.MemoryExtensions.IndexOf(__s, ',');");
+                        w.Line("var __part = global::System.MemoryExtensions.Trim(__i < 0 ? __s : __s.Slice(0, __i));");
+                        using (w.Block("if (__part.Length > 0)"))
                         {
-                            w.Line((first ? "if" : "else if") + " (global::System.MemoryExtensions.Equals(__part, global::System.MemoryExtensions.AsSpan(\"" + m.Name + "\"), global::System.StringComparison.Ordinal)) __r |= " + Fq(tgt) + "." + m.Name + ";");
-                            first = false;
+                            var first = true;
+                            foreach (var m in EnumMembers(tgt))
+                            {
+                                w.Line((first ? "if" : "else if") + " (global::System.MemoryExtensions.Equals(__part, global::System.MemoryExtensions.AsSpan(\"" + m.Name + "\"), global::System.StringComparison.Ordinal)) __r |= " + Fq(tgt) + "." + m.Name + ";");
+                                first = false;
+                            }
+
+                            // Unknown names still throw — reflection-free and never silent.
+                            w.Line((first ? "" : "else ") + "throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\");");
                         }
 
-                        // Unknown names still throw — reflection-free and never silent.
-                        w.Line((first ? "" : "else ") + "throw new global::System.ArgumentOutOfRangeException(nameof(v), v, \"Unrecognized enum name\");");
+                        w.Line();
+                        w.Line("if (__i < 0) break;");
+                        w.Line("__s = __s.Slice(__i + 1);");
                     }
 
                     w.Line();
-                    w.Line("if (__i < 0) break;");
-                    w.Line("__s = __s.Slice(__i + 1);");
+                    w.Line("return __r;");
                 }
-
-                w.Line();
-                w.Line("return __r;");
-            }
+            });
 
             return w.ToString();
         }

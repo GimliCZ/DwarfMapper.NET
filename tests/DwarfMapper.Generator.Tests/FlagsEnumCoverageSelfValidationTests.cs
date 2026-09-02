@@ -19,7 +19,7 @@ namespace DwarfMapper.Generator.Tests
     ///         </item>
     ///         <item>
     ///             <description>
-    ///                 <see cref="ObjectFactory" /> picked a single DECLARED member for any enum, so even
+    ///                 <see cref="DwarfMapper.Testing.ObjectFactoryV2" /> picked a single DECLARED member for any enum, so even
     ///                 had the shape existed, it could never have produced a combined value — every enum the fuzzers ever fed
     ///                 through the mapper happened to have a name, which is precisely the case the buggy switch handled.
     ///             </description>

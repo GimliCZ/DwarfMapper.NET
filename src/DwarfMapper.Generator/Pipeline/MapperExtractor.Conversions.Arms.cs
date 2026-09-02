@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Collections.Generic;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -291,7 +290,7 @@ namespace DwarfMapper.Generator.Pipeline
                         req.Location,
                         req.TargetName,
                         diagnostics,
-                        out var innerNN,
+                        out var innerNonNull,
                         out _,
                         out _,
                         req.AutoNest,
@@ -299,9 +298,9 @@ namespace DwarfMapper.Generator.Pipeline
                         req.NullAsNull,
                         implicitConversions: req.ImplicitConversions,
                         reservedConverters: req.ReservedConverters) &&
-                    innerNN is not null)
+                    innerNonNull is not null)
                 {
-                    converterMethod = innerNN;
+                    converterMethod = innerNonNull;
                     nullHandling = NullHandling.NullableProject;
                     resolved = true;
                     return true;
@@ -544,7 +543,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // because its element resolved to a declared method and so WAS recorded here.
                 if (!req.IsPreserve && !req.IsSetNull && !elemNeedsCtx && req.NestedRegistry is not null && elemConv is not null && (!GeneratedNames.IsAnySynthesized(elemConv) || GeneratedNames.IsObjectMap(elemConv)) && tgtElem is INamedTypeSymbol tgtElemNamed && IsMappableObjectPair(req.Compilation, srcElem, tgtElemNamed))
                 {
-                    var hName = converterMethod!;
+                    var hName = converterMethod;
                     var capSrc = req.SrcType;
                     var capElem = srcElem;
                     var capTgt = tgtElem;
@@ -704,26 +703,26 @@ namespace DwarfMapper.Generator.Pipeline
                 // closure so the post-pass can upgrade this dict helper if that method is self-recursive.
                 if (!req.IsPreserve && !req.IsSetNull && req.NestedRegistry is not null)
                 {
-                    var KeyIsPublicObj = keyConv is not null &&
+                    var keyIsPublicObj = keyConv is not null &&
                                          !keyNeedsCtx &&
                                          !GeneratedNames.IsAnySynthesized(keyConv) &&
                                          tgtKey is INamedTypeSymbol tk &&
                                          IsMappableObjectPair(req.Compilation, srcKey, tk);
-                    var ValIsPublicObj = valConv is not null &&
+                    var valIsPublicObj = valConv is not null &&
                                          !valNeedsCtx &&
                                          !GeneratedNames.IsAnySynthesized(valConv) &&
                                          tgtVal is INamedTypeSymbol tv &&
                                          IsMappableObjectPair(req.Compilation, srcVal, tv);
-                    if (KeyIsPublicObj || ValIsPublicObj)
+                    if (keyIsPublicObj || valIsPublicObj)
                     {
-                        var hName = converterMethod!;
+                        var hName = converterMethod;
                         var elems = new List<string>();
-                        if (KeyIsPublicObj)
+                        if (keyIsPublicObj)
                         {
                             elems.Add(keyConv!);
                         }
 
-                        if (ValIsPublicObj)
+                        if (valIsPublicObj)
                         {
                             elems.Add(valConv!);
                         }
@@ -744,7 +743,7 @@ namespace DwarfMapper.Generator.Pipeline
                             {
                                 var nk = cKeyConv;
                                 var nkCtx = false;
-                                if (KeyIsPublicObj)
+                                if (keyIsPublicObj)
                                 {
                                     var r = resolve(cKeyConv!);
                                     if (!string.Equals(r, cKeyConv, StringComparison.Ordinal))
@@ -756,7 +755,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                                 var nv = cValConv;
                                 var nvCtx = false;
-                                if (ValIsPublicObj)
+                                if (valIsPublicObj)
                                 {
                                     var r = resolve(cValConv!);
                                     if (!string.Equals(r, cValConv, StringComparison.Ordinal))

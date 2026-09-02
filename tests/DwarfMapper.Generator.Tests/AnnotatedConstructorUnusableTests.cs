@@ -176,7 +176,7 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("no mapper option can reach", msg, StringComparison.Ordinal);
             Assert.Contains("Make the constructor internal", msg, StringComparison.Ordinal);
 
-            string diagFor(IEnumerable<Diagnostic> d)
+            static string diagFor(IEnumerable<Diagnostic> d)
             {
                 return Message(d);
             }

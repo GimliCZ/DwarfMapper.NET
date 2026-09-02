@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 namespace DwarfMapper.Generator.Pipeline
 {
@@ -224,15 +227,27 @@ namespace DwarfMapper.Generator.Pipeline
                 return true;
             }
 
-            if (!IsSourceSequential(a, out var packA))
+            if (!IsSourceSequential(a, out var packA, out var sizeA))
             {
                 reason = $"'{a.Name}' declares a [StructLayout] that is not Sequential, so its field order is not guaranteed";
                 return true;
             }
 
-            if (!IsSourceSequential(b, out var packB))
+            if (!IsSourceSequential(b, out var packB, out var sizeB))
             {
                 reason = $"'{b.Name}' declares a [StructLayout] that is not Sequential, so its field order is not guaranteed";
+                return true;
+            }
+
+            if (FieldsSpanPartialDeclarations(a, fa))
+            {
+                reason = $"'{a.Name}' declares instance fields in more than one partial declaration, so the compiler defines no field order for it (CS0282); keep every instance field in one declaration";
+                return true;
+            }
+
+            if (FieldsSpanPartialDeclarations(b, fb))
+            {
+                reason = $"'{b.Name}' declares instance fields in more than one partial declaration, so the compiler defines no field order for it (CS0282); keep every instance field in one declaration";
                 return true;
             }
 
@@ -241,6 +256,27 @@ namespace DwarfMapper.Generator.Pipeline
                 reason = $"'{a.Name}' packs to {packA} and '{b.Name}' packs to {packB}, so the two layouts differ";
                 return true;
             }
+
+            if (sizeA != sizeB)
+            {
+                reason = $"'{a.Name}' occupies {SizeWord(sizeA)} and '{b.Name}' {SizeWord(sizeB)}: an explicit [StructLayout] Size changes the bytes without changing the fields";
+                return true;
+            }
+
+            var inlineA = InlineArrayLength(a);
+            var inlineB = InlineArrayLength(b);
+            if (inlineA != inlineB)
+            {
+                reason = $"'{a.Name}' is {InlineArrayWord(inlineA)} and '{b.Name}' is {InlineArrayWord(inlineB)}: an [InlineArray] repeats its one field, so the two counts must agree";
+                return true;
+            }
+
+            for (var i = 0; i < fa.Count; i++)
+                if (!SameFixedBuffer(fa[i], fb[i]))
+                {
+                    reason = $"field {i} is {FixedBufferWord(fa[i])} on '{a.Name}' but {FixedBufferWord(fb[i])} on '{b.Name}', and a fixed buffer's length is part of the layout";
+                    return true;
+                }
 
             for (var i = 0; i < fa.Count; i++)
                 if (!string.Equals(fa[i].Name, fb[i].Name, StringComparison.Ordinal))
@@ -252,6 +288,21 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
             return false; // nothing left to block it — it would have been proven, so there is nothing to explain
+        }
+
+        private static string SizeWord(int size)
+        {
+            return size == 0 ? "its natural size" : $"an explicit Size of {size.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        private static string InlineArrayWord(int length)
+        {
+            return length == 0 ? "not an inline array" : $"an [InlineArray({length.ToString(CultureInfo.InvariantCulture)})]";
+        }
+
+        private static string FixedBufferWord(IFieldSymbol f)
+        {
+            return f.IsFixedSizeBuffer ? $"a fixed buffer of {f.FixedSize.ToString(CultureInfo.InvariantCulture)}" : "a pointer";
         }
 
         /// <summary>
@@ -302,12 +353,12 @@ namespace DwarfMapper.Generator.Pipeline
                 return false; // excludes enums (TypeKind.Enum): by-name enum mapping != byte copy
             }
 #pragma warning restore CA1508
-            if (!IsSourceSequential(na, out var packA) || !IsSourceSequential(nb, out var packB))
+            if (!IsSourceSequential(na, out var packA, out var sizeA) || !IsSourceSequential(nb, out var packB, out var sizeB))
             {
                 return false;
             }
 
-            if (packA != packB)
+            if (packA != packB || sizeA != sizeB || InlineArrayLength(na) != InlineArrayLength(nb))
             {
                 return false;
             }
@@ -315,6 +366,13 @@ namespace DwarfMapper.Generator.Pipeline
             var fa = InstanceFields(na);
             var fb = InstanceFields(nb);
             if (fa.Count == 0 || fa.Count != fb.Count)
+            {
+                return false;
+            }
+
+            // Applies to [Reinterpret] as much as to the automatic blit: the opt-in asserts that the BYTES may be
+            // read positionally, and a struct with no defined field order has no defined bytes to assert about.
+            if (FieldsSpanPartialDeclarations(na, fa) || FieldsSpanPartialDeclarations(nb, fb))
             {
                 return false;
             }
@@ -327,6 +385,11 @@ namespace DwarfMapper.Generator.Pipeline
                         StringComparison.Ordinal))
                 {
                     return false; // positional == name-based requires same names
+                }
+
+                if (!SameFixedBuffer(fa[i], fb[i]))
+                {
+                    return false; // the type comparison below sees only the element pointer type
                 }
 
                 if (!LayoutIdentical(fa[i].Type,
@@ -360,32 +423,83 @@ namespace DwarfMapper.Generator.Pipeline
                     fields.Add(f);
                 }
 
-            // GetMembers() order is declaration order, which for a struct split across PARTIAL files depends on the
-            // order the compiler happened to see the files. The blit proof compares fields POSITIONALLY, so an
-            // unstable order can flip a struct pair between "provably blittable" and "not" from build to build.
-            // (It cannot make an unsafe ACCEPT: for a sequential-layout struct the declaration order is also the
-            // emitted layout, so a reordering is a genuine layout change. This is purely about determinism.)
-            fields.Sort((a, b) =>
-            {
-                var pathA = a.Locations.Length > 0 ? a.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty;
-                var pathB = b.Locations.Length > 0 ? b.Locations[0].SourceTree?.FilePath ?? string.Empty : string.Empty;
-                var byFile = string.CompareOrdinal(pathA, pathB);
-                if (byFile != 0)
-                {
-                    return byFile;
-                }
-
-                var posA = a.Locations.Length > 0 ? a.Locations[0].SourceSpan.Start : 0;
-                var posB = b.Locations.Length > 0 ? b.Locations[0].SourceSpan.Start : 0;
-                return posA.CompareTo(posB);
-            });
-
+            // GetMembers() order IS the layout. Roslyn emits a type's fields in member order and the runtime lays
+            // a Sequential struct out in emitted order, so this list, compared positionally, is a comparison of
+            // the two layouts — and it is deliberately NOT re-sorted. It once was: a sort by (file path, position)
+            // was added so that a struct whose fields are split across partial files would get the same verdict
+            // whatever order the build fed the files in, on the reasoning that for a Sequential struct
+            // "declaration order is the emitted layout". That reasoning is exactly right about the UNSORTED
+            // list and exactly why sorting it was unsound: the compiler orders split fields by the order it
+            // received the files, which is MSBuild's — case-insensitive on Windows, where "Point.cs" precedes
+            // "Point.Extra.cs" — while the sort was ordinal, where it follows it. The sorted list then lined up
+            // by name with a twin whose real layout was the reverse, the proof accepted, and the emitted
+            // MemoryMarshal.Cast handed every element back with its fields' bytes swapped. The determinism the
+            // sort was after is provided by refusing that shape instead: see FieldsSpanPartialDeclarations.
             return fields;
         }
 
-        private static bool IsSourceSequential(INamedTypeSymbol t, out int pack)
+        /// <summary>
+        ///     True when the struct's instance fields are declared in more than one partial declaration — the
+        ///     shape the compiler itself warns about (CS0282: "there is no defined ordering between fields in
+        ///     multiple declarations of partial struct"). Its layout is whichever file order the build happened
+        ///     to use, so nothing about it is provable at generation time; the scalar path maps it by name.
+        ///     <para>
+        ///         Decided per declaration rather than per file: two parts in ONE file are two declarations to the
+        ///         compiler as well, and the rule that fits the warning is the rule that stays sound. A field whose
+        ///         declaration cannot be placed at all — a synthesized field with no syntax and no owning member —
+        ///         counts as spanning, because "cannot tell" is a refusal here, never a guess. Backing fields
+        ///         (auto-properties, C# 14 <c>field</c>, field-like events) are placed through the member they
+        ///         back. A struct with a single declaration is exempt: within one declaration source order is
+        ///         member order is layout, and there is nothing left to be uncertain about.
+        ///     </para>
+        /// </summary>
+        private static bool FieldsSpanPartialDeclarations(INamedTypeSymbol t, List<IFieldSymbol> fields)
+        {
+            if (t.DeclaringSyntaxReferences.Length <= 1)
+            {
+                return false;
+            }
+
+            (SyntaxTree Tree, TextSpan Span)? home = null;
+            foreach (var f in fields)
+            {
+                var part = DeclaringPart(f);
+                if (part is null)
+                {
+                    return true;
+                }
+
+                if (home is null)
+                {
+                    home = part;
+                }
+                else if (!ReferenceEquals(home.Value.Tree, part.Value.Tree) || home.Value.Span != part.Value.Span)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>The type declaration that lexically contains the field (or the member it backs), as a (tree, span) key.</summary>
+        private static (SyntaxTree Tree, TextSpan Span)? DeclaringPart(IFieldSymbol f)
+        {
+            var owner = f.DeclaringSyntaxReferences.Length > 0 ? f : f.AssociatedSymbol;
+            if (owner is null || owner.DeclaringSyntaxReferences.Length == 0)
+            {
+                return null;
+            }
+
+            var reference = owner.DeclaringSyntaxReferences[0];
+            var declaration = reference.GetSyntax().FirstAncestorOrSelf<TypeDeclarationSyntax>();
+            return declaration is null ? null : (reference.SyntaxTree, declaration.Span);
+        }
+
+        private static bool IsSourceSequential(INamedTypeSymbol t, out int pack, out int size)
         {
             pack = 0;
+            size = 0;
             // Auto-blit requires a source struct so that an absent [StructLayout] reliably means the C# default (Sequential).
             if (!t.Locations.Any(l => l.IsInSource))
             {
@@ -407,11 +521,49 @@ namespace DwarfMapper.Generator.Pipeline
                         {
                             pack = p;
                         }
+                        else if (na.Key == "Size" && na.Value.Value is int sz)
+                        {
+                            // Size is a floor on the struct's size: the runtime pads a smaller natural layout up
+                            // to it. It changes the bytes without changing the field list, so two structs whose
+                            // fields agree still lay out differently when their Sizes do not. Reported, and
+                            // compared, like Pack; 0 is the attribute's own default and means "natural size".
+                            size = sz;
+                        }
 
                     return true;
                 }
 
-            return true; // no [StructLayout] -> C# struct default is Sequential, Pack 0
+            return true; // no [StructLayout] -> C# struct default is Sequential, Pack 0, natural Size
+        }
+
+        /// <summary>
+        ///     The element count of an <c>[InlineArray(n)]</c> struct, or 0 when it is not one. An inline array
+        ///     repeats its single field <c>n</c> times in the runtime layout, so — like an explicit
+        ///     <see cref="System.Runtime.InteropServices.StructLayoutAttribute.Size" /> — it changes the bytes
+        ///     without changing the field list, and two such structs share a layout only when their counts agree.
+        /// </summary>
+        private static int InlineArrayLength(INamedTypeSymbol t)
+        {
+            foreach (var attr in t.GetAttributes())
+                if (attr.AttributeClass?.ToDisplayString() == "System.Runtime.CompilerServices.InlineArrayAttribute" &&
+                    attr.ConstructorArguments.Length == 1 &&
+                    attr.ConstructorArguments[0].Value is int length)
+                {
+                    return length;
+                }
+
+            return 0;
+        }
+
+        /// <summary>
+        ///     True when two fields agree on being (or not being) a fixed-size buffer, and on its length. A fixed
+        ///     buffer's symbol type is the element POINTER type — <c>fixed int Buf[4]</c> and <c>fixed int Buf[8]</c>
+        ///     are both <c>int*</c> to the type comparison, as is a genuine <c>int*</c> field — while its length,
+        ///     which is what the runtime reserves bytes for, lives on the field.
+        /// </summary>
+        private static bool SameFixedBuffer(IFieldSymbol a, IFieldSymbol b)
+        {
+            return a.IsFixedSizeBuffer == b.IsFixedSizeBuffer && a.FixedSize == b.FixedSize;
         }
     }
 }

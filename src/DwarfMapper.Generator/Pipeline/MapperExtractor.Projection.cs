@@ -101,7 +101,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Emits DWARF028 (ProjectionNotTranslatable) with a fully-formatted single-arg message.
         ///     The descriptor uses "{0}" so both member name and reason are concatenated here.
         /// </summary>
-        private static void EmitDWARF028(
+        private static void EmitDwarf028(
             List<DiagnosticInfo> diagnostics,
             LocationInfo? location,
             string memberName,
@@ -159,7 +159,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     method is emitted at all.
         /// </param>
         /// <param name="ignores">
-        ///     The effective <c>[MapIgnore]</c> set. Under <paramref name="ignoreObsolete" /> the target's retired
+        ///     The effective <c>[MapIgnore]</c> set. Under <c>IgnoreObsoleteMembers</c> the target's retired
         ///     members are folded into a COPY of it, never into the caller's.
         /// </param>
         /// <param name="compilation">The compilation every member enumeration and type question runs against.</param>
@@ -168,9 +168,20 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Diagnostic sink. An untranslatable member appends <c>DWARF028</c> naming the member and the reason;
         ///     the method is then dropped rather than emitted half-filled.
         /// </param>
-        /// <param name="caseInsensitive">
-        ///     <c>[DwarfMapper(CaseInsensitive = true)]</c>. Folded together with <paramref name="nameConvention" />
-        ///     into the one comparer that rides down into the nested and constructor resolvers.
+        /// <param name="options">
+        ///     The mapper's option bundle, read here exactly as the runtime resolver reads it: <c>CaseInsensitive</c>
+        ///     and <c>NameConvention</c> fold into the one comparer that rides down into the nested and constructor
+        ///     resolvers; <c>AutoNest</c> is threaded to the expression resolver, where a false value refuses an
+        ///     unrequested nested pair instead of quietly synthesizing one; <c>NullAsNull</c> is the
+        ///     <c>NullCollections</c> setting; <c>ImplicitConversions</c> decides whether a lossy-but-C#-implicit
+        ///     conversion is an Info suggestion or a build Error; <c>SkipNullSourceMembers</c> is refused per
+        ///     AFFECTED member (an object initializer always assigns); <c>AllowNonPublic</c> sharpens the refusal
+        ///     rather than widening what is read; <c>ExplicitOnly</c> (<c>AutoMatchMembers = false</c>) blocks the
+        ///     implicit by-name wire exactly as at the runtime resolver; <c>IgnoreObsolete</c> folds the target's
+        ///     <c>[Obsolete]</c> members into the ignore set except any a directive deliberately targets.
+        ///     <c>ReferenceHandling</c> never reaches this resolver: the call site refuses every mode but
+        ///     <c>None</c> with <c>DWARF028</c> and drops the method first, because a stateful identity map
+        ///     cannot live inside an expression tree.
         /// </param>
         /// <param name="explicitMaps">
         ///     The <c>[MapProperty]</c> renames as (source, target, <c>Use</c>) triples. Resolved before
@@ -180,54 +191,13 @@ namespace DwarfMapper.Generator.Pipeline
         ///     The mapper's <c>EnumStrategy</c>, threaded to the expression resolver, where <c>ByName</c> is refused
         ///     as untranslatable.
         /// </param>
-        /// <param name="referenceHandling">
-        ///     The mapper's <c>ReferenceHandling</c> mode. Nothing here reads it, and it is always <c>None</c> when
-        ///     it arrives: the call site refuses every other mode with <c>DWARF028</c> and drops the method before
-        ///     this resolver runs, because a stateful identity map cannot live inside an expression tree.
-        /// </param>
         /// <param name="paramExpr">
         ///     The lambda parameter every source read is rooted at (<c>"__s"</c> from the one call site), so an
         ///     emitted access reads <c>__s.Member</c>.
         /// </param>
-        /// <param name="nameConvention">
-        ///     <c>NameConvention</c> as its underlying int; <c>1</c> is <c>Flexible</c>, which matches on normalized
-        ///     names. Reaching this endpoint too is what stops one mapper resolving members one way through
-        ///     <c>.Map</c> and another through <c>.Project</c>.
-        /// </param>
         /// <param name="mapPropertyExtras">
         ///     Per-target <c>[MapProperty]</c> modifiers — <c>NullSubstitute</c> and <c>When</c> — checked against
         ///     each explicit map, so a modifier an expression tree cannot express is refused rather than dropped.
-        /// </param>
-        /// <param name="skipNullSourceMembers">
-        ///     The effective <c>SkipNullSourceMembers</c> for this method, from the one reader all four scopes go
-        ///     through. Refused per AFFECTED member: an object initializer always assigns, so it has no way to leave
-        ///     a destination default in place.
-        /// </param>
-        /// <param name="allowNonPublic">
-        ///     <c>[DwarfMapper(AllowNonPublic = true)]</c>. It does NOT widen what this endpoint reads — it sharpens
-        ///     the refusal, so a source member that exists but is non-public is named as such instead of reported
-        ///     missing.
-        /// </param>
-        /// <param name="explicitOnly">
-        ///     <c>[DwarfMapper(AutoMatchMembers = false)]</c>, the anti-over-posting trust boundary. Blocks the
-        ///     implicit by-name wire here exactly as it does at the runtime resolver; explicit directives are
-        ///     already resolved by the time it is consulted.
-        /// </param>
-        /// <param name="ignoreObsolete">
-        ///     <c>[DwarfMapper(IgnoreObsoleteMembers = true)]</c>: folds the target's <c>[Obsolete]</c> members into
-        ///     the ignore set, except any that a <c>[MapProperty]</c> or <c>[MapValue]</c> deliberately targets.
-        /// </param>
-        /// <param name="autoNest">
-        ///     The effective <c>AutoNest</c> for this method. Threaded to the expression resolver, where a false
-        ///     value refuses an unrequested nested pair instead of quietly synthesizing one.
-        /// </param>
-        /// <param name="nullAsNull">
-        ///     The mapper's <c>NullCollections</c> setting: <c>AsNull</c> when true, the documented <c>AsEmpty</c>
-        ///     default when false.
-        /// </param>
-        /// <param name="implicitConversions">
-        ///     <c>[DwarfMapper(ImplicitConversions = …)]</c>, deciding whether a lossy-but-C#-implicit conversion is
-        ///     an Info suggestion or a build Error.
         /// </param>
         /// <param name="consumedSources">
         ///     Optional set the source names actually read are added to, so the caller can run source-side
@@ -248,6 +218,10 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Validated through the same <c>TryValidateMapValueTarget</c> the create map runs, so the rule is one
         ///     statement rather than two that can drift.
         /// </param>
+        /// <param name="ignoredSourceMembers">
+        ///     Source members disowned by <c>[MapIgnoreSource]</c>, by real name, for the DWARF064 shadow rule this
+        ///     endpoint shares with the create map. Null means none were declared.
+        /// </param>
         private static List<ProjectionMemberMap> ResolveProjectionMembers(
             ITypeSymbol sourceType,
             INamedTypeSymbol targetType,
@@ -258,7 +232,6 @@ namespace DwarfMapper.Generator.Pipeline
             in MapperOptions options,
             IReadOnlyList<(string Source, string Target, string? Use)> explicitMaps,
             EnumPolicy enumPolicy,
-            int referenceHandling,
             string paramExpr,
             IReadOnlyList<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>?
                 mapPropertyExtras = null,
@@ -274,7 +247,12 @@ namespace DwarfMapper.Generator.Pipeline
             HashSet<string>? consumedSources = null,
             IReadOnlyList<string>? flattenRoots = null,
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
-                mapValues = null)
+                mapValues = null,
+            // Source members disowned by [MapIgnoreSource], by real name. Read by the DWARF064 shadow rule, which
+            // this endpoint shares with the create map through TryValidateMapValueTarget — and which reached
+            // the create map's [MapIgnoreSource] set first and this one not at all, the "fixed at 1 of N sites"
+            // shape. Null means "none declared".
+            HashSet<string>? ignoredSourceMembers = null)
         {
             // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
             // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
@@ -443,7 +421,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // A custom converter (Use=) cannot run inside a provider-translated projection.
                 if (use is not null)
                 {
-                    EmitDWARF028(diagnostics,
+                    EmitDwarf028(diagnostics,
                         location,
                         tgtName,
                         "custom converter (Use=) is not translatable in projection; remove Use= or map at runtime");
@@ -458,7 +436,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     if (extra.HasNullSub)
                     {
-                        EmitDWARF028(diagnostics,
+                        EmitDwarf028(diagnostics,
                             location,
                             tgtName,
                             "NullSubstitute is not translatable in projection (the substitution would be silently " + "dropped and a null stored instead); remove it or map this member at runtime");
@@ -467,7 +445,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                     if (extra.When is not null)
                     {
-                        EmitDWARF028(diagnostics,
+                        EmitDwarf028(diagnostics,
                             location,
                             tgtName,
                             "When= is not translatable in projection (the predicate cannot run inside an expression " + "tree, so the member would always be assigned); remove it or map this member at runtime");
@@ -548,7 +526,12 @@ namespace DwarfMapper.Generator.Pipeline
                         ignores,
                         ctorParamTypes.ContainsKey,
                         writableByName,
-                        sources.ContainsKey,
+                        // The projection lookup is already keyed the way this pair matches and carries the real
+                        // source name — the spelling [MapIgnoreSource] is read under, here and for source coverage.
+                        name => sources.TryGetValue(name, out var shadowed)
+                                && !(ignoredSourceMembers?.Contains(shadowed.Name) ?? false)
+                            ? shadowed.Name
+                            : null,
                         location,
                         diagnostics,
                         out var mvTgtType))
@@ -578,7 +561,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // provider translates an expression tree into a query and cannot call back into managed code
                     // to ask what the value should be. Same wording shape as the [MapProperty(Use=)] refusal
                     // twenty lines up, so a caller who hits both is not told two different stories.
-                    EmitDWARF028(diagnostics,
+                    EmitDwarf028(diagnostics,
                         location,
                         mv.Target,
                         "[MapValue(Use = ...)] is not translatable in projection (a query provider cannot call a " + "method inside an expression tree); assign a constant instead, or map this member at " + "runtime");
@@ -658,7 +641,7 @@ namespace DwarfMapper.Generator.Pipeline
                     // plainly there. Name the real reason instead.
                     if (options.AllowNonPublic && ReadableMembers(sourceType, compilation, true).Any(m => comparer.Equals(m.Name, target.Name)))
                     {
-                        EmitDWARF028(diagnostics,
+                        EmitDwarf028(diagnostics,
                             location,
                             target.Name,
                             "the matching source member is non-public and AllowNonPublic is not honoured by " + "projection (an expression tree is built from the public surface); map this member " + "at runtime, or make the source member public");
@@ -746,7 +729,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // members the option never touched stay quiet.
                 if (options.SkipNullSourceMembers && (src.Type.IsReferenceType || IsNullableValue(src.Type, out _)) && deferrableTargets.Contains(target.Name))
                 {
-                    EmitDWARF028(diagnostics,
+                    EmitDwarf028(diagnostics,
                         location,
                         target.Name,
                         "SkipNullSourceMembers is not translatable in projection (an object initializer always " + "assigns, so a null source would overwrite the target's default instead of keeping it); " + "map this member at runtime, or drop the option for this mapper");
@@ -864,7 +847,7 @@ namespace DwarfMapper.Generator.Pipeline
             // ── Depth guard ───────────────────────────────────────────────────────
             if (depth > ProjectionMaxDepth)
             {
-                EmitDWARF028(diagnostics,
+                EmitDwarf028(diagnostics,
                     location,
                     targetMemberName,
                     $"projection nesting depth exceeded {ProjectionMaxDepth}; split into a runtime mapper");
@@ -884,7 +867,7 @@ namespace DwarfMapper.Generator.Pipeline
                 if (!CollectionConverter.IsTargetKindTranslatable(shape.Target))
                 {
                     var tgtTypeName = tgtType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-                    EmitDWARF028(diagnostics,
+                    EmitDwarf028(diagnostics,
                         location,
                         targetMemberName,
                         $"collection type '{tgtTypeName}' is not translatable in projection (HashSet/ISet/immutable/Dictionary targets are not supported by EF Core)");
@@ -975,7 +958,7 @@ namespace DwarfMapper.Generator.Pipeline
                     out _,
                     out _))
             {
-                EmitDWARF028(diagnostics,
+                EmitDwarf028(diagnostics,
                     location,
                     targetMemberName,
                     "Dictionary targets are not translatable in projection; map at runtime");
@@ -1016,7 +999,39 @@ namespace DwarfMapper.Generator.Pipeline
                         true);
                 }
 
+                if (NullRefIntoNonNullableRef(srcType, tgtType))
+                {
+                    // Same rule as the class endpoint (MemberMap.NullRefIntoNonNullable): a bare nullable access
+                    // into a non-nullable member or constructor parameter is CS8601/CS8604 from inside the
+                    // generated file, in an expression tree the consumer can edit even less than a method body.
+                    // Null-forgiven here, and DWARF070 carries the signal against the DTO — once per source
+                    // member per method, whichever binding (initializer or constructor) reached it first.
+                    ReportProjectionNullRefIntoNonNullable(diagnostics, location, srcExpr);
+                    return srcExpr + "!";
+                }
+
                 return srcExpr;
+            }
+
+            /// <summary>
+            ///     DWARF070 for the projection endpoint, keyed on the source member the access names so the
+            ///     initializer and constructor bindings of one member report once.
+            /// </summary>
+            static void ReportProjectionNullRefIntoNonNullable(
+                List<DiagnosticInfo> diagnostics,
+                LocationInfo? location,
+                string srcExpr)
+            {
+                var name = srcExpr.Substring(srcExpr.LastIndexOf('.') + 1).TrimStart('@');
+                foreach (var d in diagnostics)
+                    if (ReferenceEquals(d.Descriptor, DiagnosticDescriptors.NullableRefSourceToNonNullableTarget) &&
+                        d.MessageArg == name &&
+                        Equals(d.Location, location))
+                    {
+                        return;
+                    }
+
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NullableRefSourceToNonNullableTarget, location, name));
             }
 
             // ── 2. Enum by-value cast (enum→enum) ─────────────────────────────────
@@ -1043,7 +1058,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // Narrowing / lossy (e.g. enum:long→int, or unsigned-underlying enum:uint→int) — the source
                 // underlying does not fit the target range and a projection can't do a checked cast.
-                EmitDWARF028(diagnostics,
+                EmitDwarf028(diagnostics,
                     location,
                     targetMemberName,
                     "enum→integral conversion is narrowing (the enum's underlying type does not fit the target integral type) and cannot be range-checked in a projection; map it at runtime");
@@ -1062,7 +1077,7 @@ namespace DwarfMapper.Generator.Pipeline
 
                 // Narrowing / lossy (e.g. long→enum:int, or int→enum:uint sign change) — the source does not
                 // fit the enum's underlying range and a projection can't do a checked cast.
-                EmitDWARF028(diagnostics,
+                EmitDwarf028(diagnostics,
                     location,
                     targetMemberName,
                     "integral→enum conversion is narrowing (the source does not fit the enum's underlying type) and cannot be range-checked in a projection; map it at runtime");
@@ -1072,7 +1087,7 @@ namespace DwarfMapper.Generator.Pipeline
             // ── UNSAFE: enum by-name (enumPolicy == ByName, different enum types) ──
             if ((srcType.TypeKind == TypeKind.Enum || tgtType.TypeKind == TypeKind.Enum) && enumPolicy.Strategy == EnumStrategy.ByName)
             {
-                EmitDWARF028(diagnostics,
+                EmitDwarf028(diagnostics,
                     location,
                     targetMemberName,
                     "enum by-name mapping is not translatable in projection; use EnumStrategy.ByValue or map at runtime");
@@ -1082,7 +1097,7 @@ namespace DwarfMapper.Generator.Pipeline
             // ── UNSAFE: numeric narrowing (NumericConverter would fire: both integral, no implicit) ──
             if (TypeInterfaces.IsIntegral(srcType) && TypeInterfaces.IsIntegral(tgtType))
             {
-                EmitDWARF028(diagnostics,
+                EmitDwarf028(diagnostics,
                     location,
                     targetMemberName,
                     "narrowing numeric conversion is not SQL-translatable (would need CreateChecked); map at runtime or use a widening target type");
@@ -1093,7 +1108,7 @@ namespace DwarfMapper.Generator.Pipeline
             if ((srcType.SpecialType == SpecialType.System_String && tgtType.TypeKind != TypeKind.Enum && TypeInterfaces.ImplementsIParsable(compilation, tgtType)) ||
                 (tgtType.SpecialType == SpecialType.System_String && srcType.SpecialType != SpecialType.System_String && srcType.TypeKind != TypeKind.Enum && (TypeInterfaces.ImplementsIFormattable(srcType) || srcType.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char)))
             {
-                EmitDWARF028(diagnostics,
+                EmitDwarf028(diagnostics,
                     location,
                     targetMemberName,
                     "string parse/format is not translatable in projection (IParsable/IFormattable); map at runtime");
@@ -1190,7 +1205,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // is for .Map: an un-annotated (or oblivious) reference target is a promise that it holds no
                 // null, so the documented NullStrategy contract keeps governing it — and NullStrategy is the
                 // one thing this endpoint cannot express.
-                EmitDWARF028(diagnostics,
+                EmitDwarf028(diagnostics,
                     location,
                     targetMemberName,
                     "a nullable source mapped to a target that cannot hold null needs a null decision, and " + "NullStrategy is not translatable in projection; make the target nullable, or map this " + "member at runtime");
@@ -1243,7 +1258,7 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             // ── Fallback: no translatable conversion found ────────────────────────
-            EmitDWARF028(diagnostics,
+            EmitDwarf028(diagnostics,
                 location,
                 targetMemberName,
                 "no translatable conversion found; map at runtime instead");
@@ -1645,7 +1660,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // ResolveProjectionCtorExpr emits; which constructor to call was decided above.
                 if (bestCtor is null)
                 {
-                    EmitDWARF028(diagnostics,
+                    EmitDwarf028(diagnostics,
                         location,
                         targetMemberName,
                         $"nested type '{tgtFqn}' has no writable members and no usable constructor");
@@ -1719,7 +1734,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // A nullable-ANNOTATED REFERENCE target keeps the long-standing ternary — it can hold the null.
                 if (tgtType.IsValueType)
                 {
-                    EmitDWARF028(diagnostics,
+                    EmitDwarf028(diagnostics,
                         location,
                         targetMemberName,
                         $"a nullable source mapped to the value-type target '{tgtFqn}' needs a null decision, and " + "NullStrategy is not translatable in projection; make the target nullable, or map this " + "member at runtime");
@@ -1835,7 +1850,6 @@ namespace DwarfMapper.Generator.Pipeline
 
                 if (!TryBindProjectionCtorParam(param.Name,
                         srcReadable,
-                        comparer,
                         location,
                         diagnostics,
                         out var srcMember))
@@ -1899,7 +1913,6 @@ namespace DwarfMapper.Generator.Pipeline
         private static bool TryBindProjectionCtorParam(
             string paramName,
             Dictionary<string, (string Name, ITypeSymbol Type)> srcReadable,
-            StringComparer comparer,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
             out (string Name, ITypeSymbol Type) srcMember)
@@ -2008,7 +2021,7 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     Emits DWARF038 for a non-lossless implicit basic-type conversion: an Info-level suggestion when
-        ///     <paramref name="implicitConversions" /> is true (permissive — the conversion is still applied), or a
+        ///     <c>ImplicitConversions</c> is true (permissive — the conversion is still applied), or a
         ///     build Error when false (strict — the user must opt in via <c>[MapProperty(Use = …)]</c>).
         /// </summary>
         /// <summary>
@@ -2037,7 +2050,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Reports DWARF010 and binds NOTHING for an ambiguous group, exactly like the runtime path.
         /// </summary>
         /// <summary>
-        ///     Name comparer for <see cref="NameConvention.Flexible" />: two names are equal when their normalized
+        ///     Name comparer for <c>NameConvention.Flexible</c>: two names are equal when their normalized
         ///     forms are (<c>NormalizeName</c> strips <c>_</c> and lowercases), so <c>user_id</c> and <c>UserId</c>
         ///     match.
         ///     <para>
@@ -2074,7 +2087,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             public override int GetHashCode(string obj)
             {
-                return obj is null ? 0 : Ordinal.GetHashCode(NormalizeName(obj));
+                return Ordinal.GetHashCode(NormalizeName(obj));
             }
         }
     }

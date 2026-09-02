@@ -2,6 +2,8 @@
 
 using System.Diagnostics.CodeAnalysis;
 
+// constructor parameters are spelled like the members they bind to; that binding is what these fixtures test
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // ── Positional record → positional record ─────────────────────────────────────
@@ -142,7 +144,7 @@ namespace DwarfMapper.IntegrationTests
 
         public int A { get; }
 
-        public string B { get; } = "";
+        public string B { get; }
     }
 
     [DwarfMapper]

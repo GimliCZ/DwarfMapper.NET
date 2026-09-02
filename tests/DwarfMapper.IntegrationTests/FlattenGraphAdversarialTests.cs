@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// fixture type names carry the IEk (interface-edge-kind) scenario prefix
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     // ── Top-level collection target-type matrix ───────────────────────────────────

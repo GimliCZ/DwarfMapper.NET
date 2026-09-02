@@ -96,6 +96,8 @@ namespace DwarfMapper.IntegrationTests
             for (var seed = from; seed < from + 500; seed++)
             {
                 var p = ObjectFactoryV2.Create<AlertProfile>(seed);
+                // the factory assigns through reflection and can null any reference member; the annotations do not bind it
+                // ReSharper disable once ConditionIsAlwaysTrueOrFalse
                 if (p.Primary is not null && p.ByChannel is { Count: > 0 } && p.ByChannel.Values.All(v => v is not null))
                 {
                     return p;

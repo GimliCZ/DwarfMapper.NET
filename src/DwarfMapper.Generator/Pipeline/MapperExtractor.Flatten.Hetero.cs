@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
@@ -272,7 +269,6 @@ namespace DwarfMapper.Generator.Pipeline
                 tgtCollName,
                 traversalHelperNameH,
                 converterHelperNameH));
-            return; // skip the homogeneous path below
         }
     }
 }

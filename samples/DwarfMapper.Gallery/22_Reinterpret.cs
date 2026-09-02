@@ -5,9 +5,10 @@
 // The AUTOMATIC bulk copy needs matching field names as well as matching layout, so a struct whose fields
 // were renamed falls back to per-element assignment — which is correct, just slower. [Reinterpret] says
 // "I assert these fields correspond"; the generator still refuses unless the types are unmanaged and the
-// sizes match, and still emits the runtime size guard. What you are overriding is the NAME proof, nothing
-// else. Get the correspondence wrong and you get wrong data, quietly — so only reach for this with a layout
-// you control and a test that checks the values.
+// bytes provably match — same packing, same Size, same field widths in the same order — and there is no
+// runtime guard behind that verdict: the proof is settled once, at generation time. What you are overriding
+// is the NAME proof, nothing else. Get the correspondence wrong and you get wrong data, quietly — so only
+// reach for this with a layout you control and a test that checks the values.
 
 namespace DwarfMapper.Gallery.Ex22
 {

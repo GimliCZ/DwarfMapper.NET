@@ -332,6 +332,8 @@ if (snCollResult.V != 1 ||
     return 1;
 }
 
+// OnCycle=SetNull writes null into a slot the annotations call non-null; that is what this checks
+// ReSharper disable once ConditionIsAlwaysTrueOrFalse
 if (snCollResult.Children[0].Children is null ||
     snCollResult.Children[0].Children!.Count != 1 ||
     snCollResult.Children[0].Children![0] is not null)

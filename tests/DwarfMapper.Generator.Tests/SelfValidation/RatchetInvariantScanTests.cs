@@ -32,8 +32,8 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
     /// </summary>
     public class RatchetInvariantScanTests
     {
-        private const int PinnedEntryRows = 46;
-        private const int PinnedTotalOccurrences = 67;
+        private const int PinnedEntryRows = 42;
+        private const int PinnedTotalOccurrences = 53;
 
         // ── R3: adjudications are counted categories with proofs ──────────────────
 
@@ -45,14 +45,13 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
         /// </summary>
         private static readonly Dictionary<string, int> PinnedEquivalentCounts = new(StringComparer.Ordinal)
         {
-            // Round-22 P5 grew the generator proven rows by two (L80/L81 file-path-key guards: every field
-            // reachable through IsSourceSequential's source-struct gate has a source location with a non-null
-            // SourceTree, so the guard is always true and the string.Empty arms are dead) and SHRANK the L86
-            // probably row 4 -> 2 with the invalidating evidence (the partial-file fixture KILLED the b-side
-            // cond->false and < 0 tie-break mutants T3 had judged no-op). Proofs in the T3 ledger's P5 section
-            // (same commit).
-            ["generator|proven-equivalent"] = 24,
-            ["generator|probably-equivalent"] = 6,
+            // Round-22 P5 grew the generator proven rows by two (L80/L81 file-path-key guards) and SHRANK the
+            // L86 probably row 4 -> 2. All four of those rows adjudicated the InstanceFields sort comparator,
+            // and the comparator is deleted — it was the defect behind an unsound blit acceptance — so the
+            // rows are retired with it: proven 24 -> 16, probably 6 -> 0. The probably category has no
+            // generator rows left, and an empty category carries no pin (the count check below requires
+            // every pinned category to have rows). Ledger section "Rows retired on 2026-09-01".
+            ["generator|proven-equivalent"] = 16,
             // Round-22 P3 grew the doctooling rows by nine, each with its case-analysis proof in the T3
             // ledger's P3 section (same commit): two unreachable-zero IndexOf/FindIndex boundaries, the
             // ambiguous-match ternary evaluated only outside its distinguishing count, a fall-through

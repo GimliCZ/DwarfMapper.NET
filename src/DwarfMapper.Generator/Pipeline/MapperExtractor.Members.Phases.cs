@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System.Collections.Generic;
-using System.Linq;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -82,6 +80,35 @@ namespace DwarfMapper.Generator.Pipeline
             }
         }
 
+        /// <summary>
+        ///     The source member a <c>[MapValue]</c> for <paramref name="target" /> shadows: the first member of the
+        ///     group auto-match would have used — keyed the way THIS pair matches, normalized under
+        ///     <c>NameConvention.Flexible</c> and by the pair's comparer otherwise — that <c>[MapIgnoreSource]</c>
+        ///     has not disowned. <see langword="null" /> when nothing would have matched or all of it is disowned.
+        /// </summary>
+        /// <remarks>
+        ///     Disowning is tested against the member's REAL name, never the target's spelling: source coverage
+        ///     reads <c>[MapIgnoreSource]</c> by real name, so a remedy that silenced DWARF064 under the target's
+        ///     spelling would leave the same member unconsumed for DWARF039. Under exact matching the two
+        ///     spellings coincide and the distinction costs nothing; under <c>CaseInsensitive</c> or Flexible it
+        ///     is the difference between a remedy the reader can follow once and one they must write twice.
+        /// </remarks>
+        private static string? ShadowedSourceMember(MemberRequest req, MemberLookups lookups, string target)
+        {
+            if (!lookups.SourceGroups.TryGetValue(lookups.Flexible ? NormalizeName(target) : target, out var group))
+            {
+                return null;
+            }
+
+            foreach (var (name, _) in group)
+                if (!(req.IgnoredSourceMembers?.Contains(name) ?? false))
+                {
+                    return name;
+                }
+
+            return null;
+        }
+
         // MAPVALUE: constant / computed values assigned to a destination member (no source). Processed
         // after [MapProperty] (so conflicts are caught) and before AUTO matching. A [MapValue]'d target
         // counts as mapped, suppressing DWARF001. The projection resolver reads the directive in the SAME
@@ -104,7 +131,7 @@ namespace DwarfMapper.Generator.Pipeline
                         req.Ignores,
                         name => req.ConsumedCtorParams is not null && req.ConsumedCtorParams.Contains(name),
                         lookups.WritableByName,
-                        name => lookups.SourceGroups.ContainsKey(lookups.Flexible ? NormalizeName(name) : name),
+                        name => ShadowedSourceMember(req, lookups, name),
                         req.Location,
                         acc.Diagnostics,
                         out var mvTgtType))
@@ -197,7 +224,6 @@ namespace DwarfMapper.Generator.Pipeline
 
                     ResolveUnflattenTarget(
                         req.SourceType,
-                        req.TargetType,
                         srcName,
                         tgtName,
                         useMethod,

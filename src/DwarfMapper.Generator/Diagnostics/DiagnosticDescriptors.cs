@@ -543,7 +543,7 @@ namespace DwarfMapper.Generator.Diagnostics
         public static readonly DiagnosticDescriptor DuplicateFacadeExtension = new(
             "DWARF058",
             "Convenience extension method was not generated (ambiguous)",
-            "{0}",
+            "DWARF058: {0}",
             Category,
             DiagnosticSeverity.Info,
             true,
@@ -580,7 +580,7 @@ namespace DwarfMapper.Generator.Diagnostics
         public static readonly DiagnosticDescriptor RequiredMapNotProvided = new(
             "DWARF061",
             "Required ambient map is not provided",
-            "Map '{0}' -> '{1}' is consumed through IDwarfMapper but no referenced assembly provides it. Declare [GenerateMap<{0}, {1}>] in a referenced assembly (it self-registers into the ambient registry), or reference the assembly that already declares it.",
+            "DWARF061: the map '{0}' -> '{1}' is consumed through IDwarfMapper but no referenced assembly provides it. Declare [GenerateMap<{0}, {1}>] in a referenced assembly (it self-registers into the ambient registry), or reference the assembly that already declares it.",
             Category,
             DiagnosticSeverity.Error,
             true,
@@ -593,7 +593,7 @@ namespace DwarfMapper.Generator.Diagnostics
         public static readonly DiagnosticDescriptor AmbientMapperNotRegistered = new(
             "DWARF062",
             "Mapper not added to the ambient registry",
-            "Mapper '{0}' has constructor dependencies, so its maps are not self-registered in the ambient DwarfMapper registry. Inject it directly, or give it a parameterless constructor to make its maps resolvable through IDwarfMapper.",
+            "DWARF062: mapper '{0}' has constructor dependencies, so its maps are not self-registered in the ambient DwarfMapper registry. Inject it directly, or give it a parameterless constructor to make its maps resolvable through IDwarfMapper.",
             Category,
             DiagnosticSeverity.Info,
             true,
@@ -602,11 +602,16 @@ namespace DwarfMapper.Generator.Diagnostics
 
         // Two assemblies in the graph provide an ambient map for the same (source, destination). The registry
         // keeps the first registration; the rest are ignored. Reported at the validation root. Args: {0}=source,
-        // {1}=destination.
+        // {1}=destination, {2}=comma-separated names of the providing assemblies.
+        //
+        // The message leads with its own id and names the providers because this diagnostic is reported with
+        // Location.None: it has no file, no line, and IDEs title generator diagnostics generically (Rider shows
+        // every one as "Generator 'DwarfGenerator' failed to generate sources", which reads as a crash). The
+        // message text is therefore the ONLY thing identifying what fired and where the conflict is.
         public static readonly DiagnosticDescriptor AmbiguousAmbientProvider = new(
             "DWARF063",
             "Ambiguous ambient map provider",
-            "More than one assembly provides an ambient map '{0}' -> '{1}'. The ambient registry keeps the first registration and ignores the others; ensure the duplicate definitions are intentional, or remove all but one.",
+            "DWARF063: the ambient map '{0}' -> '{1}' is provided by more than one assembly ({2}). The ambient registry keeps the first registration and ignores the others; ensure the duplicate definitions are intentional, or remove all but one.",
             Category,
             DiagnosticSeverity.Warning,
             true,
@@ -618,7 +623,7 @@ namespace DwarfMapper.Generator.Diagnostics
         public static readonly DiagnosticDescriptor MapValueShadowsSource = new(
             "DWARF064",
             "[MapValue] shadows an auto-matchable source member",
-            "[MapValue] for '{0}' overrides the same-named source member '{0}', so the real source value is never read. Remove the [MapValue] to map the source member, or [MapIgnoreSource(\"{0}\")] if the shadow is intentional.",
+            "[MapValue] for '{0}' overrides the source member '{1}' that would have auto-matched it, so the real source value is never read. Remove the [MapValue] to map the source member, or [MapIgnoreSource(\"{1}\")] if the shadow is intentional.",
             Category,
             DiagnosticSeverity.Info,
             true,
@@ -945,7 +950,7 @@ namespace DwarfMapper.Generator.Diagnostics
         public static readonly DiagnosticDescriptor DivergentSynthesizedPair = new(
             "DWARF081",
             "The same nested pair is synthesized two different ways",
-            "Mappers {0} each auto-synthesize '{1}' -> '{2}', and their copies do not agree ({3}). A synthesized " +
+            "DWARF081: mappers {0} each auto-synthesize '{1}' -> '{2}', and their copies do not agree ({3}). A synthesized " +
             "helper inherits the policy of the mapper that reached it, so one pair of types is mapped two ways " +
             "in this assembly and nothing else reports it. Declare the pair once and share it (a partial method, " +
             "or [GenerateMap] on one mapper), narrow the differing option to the pair that needs it (e.g. " +

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// fixture type names carry the scenario prefix (TL = typed list)
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     public class CAddr

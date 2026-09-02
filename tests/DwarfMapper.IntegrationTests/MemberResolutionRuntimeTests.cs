@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// a lowercase member is the case-insensitive resolution shape under test
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.IntegrationTests
 {
     public class FieldSource

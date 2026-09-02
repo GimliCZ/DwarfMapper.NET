@@ -361,7 +361,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
             }
 
             var onDisk = Directory.GetFiles(RepoPaths.Root, "stryker-config*.json")
-                                  .Select(p => Path.GetFileName(p)!)
+                                  .Select(p => Path.GetFileName(p))
                                   .ToHashSet(StringComparer.Ordinal);
 
             var ledger = Names(

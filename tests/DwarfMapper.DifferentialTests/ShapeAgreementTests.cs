@@ -36,7 +36,7 @@ namespace DwarfMapper.DifferentialTests
             var comparison = ShapeCatalog.All().Single(c =>
                 string.Equals(c.Shape, shape, StringComparison.Ordinal) && string.Equals(c.Oracle, oracle, StringComparison.Ordinal));
 
-            var unexplained = MemberComparer.Differences(comparison.Dwarf, comparison.Oracle_)
+            var unexplained = MemberComparer.Differences(comparison.Dwarf, comparison.OracleValue)
                 .Where(d => !AcceptedDivergences.IsAccepted(shape, oracle, d.Split(':')[0]))
                 .ToList();
 

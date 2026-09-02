@@ -621,7 +621,7 @@ namespace DwarfMapper.Generator.Tests
 
             var model = compilation.GetSemanticModel(tree);
             var types = tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>()
-                .Select(d => (INamedTypeSymbol)model.GetDeclaredSymbol(d)!)
+                .Select(d => model.GetDeclaredSymbol(d)!)
                 .ToDictionary(t => t.Name, StringComparer.Ordinal);
 
             return (compilation, types);
@@ -659,7 +659,7 @@ namespace DwarfMapper.Generator.Tests
 
             var model = compilation.GetSemanticModel(tree);
             var types = tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>()
-                .Select(d => (INamedTypeSymbol)model.GetDeclaredSymbol(d)!)
+                .Select(d => model.GetDeclaredSymbol(d)!)
                 .ToDictionary(t => t.Name, StringComparer.Ordinal);
 
             return (compilation, types["Dst"], types["Src"]);
@@ -667,12 +667,10 @@ namespace DwarfMapper.Generator.Tests
 
         private static string Internal(string ctorAccessibility, bool flag)
         {
-            return OnlyCtor(ctorAccessibility,
-                flag,
-                ctorAccessibility.Length == 0);
+            return OnlyCtor(ctorAccessibility, flag);
         }
 
-        private static string OnlyCtor(string ctorAccessibility, bool flag, bool extraParameterless = false)
+        private static string OnlyCtor(string ctorAccessibility, bool flag)
         {
             var acc = ctorAccessibility.Length == 0 ? "internal" : ctorAccessibility;
             var attr = flag ? "[DwarfMapper(AllowNonPublic = true)]" : "[DwarfMapper]";

@@ -946,7 +946,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     parameters, then assigns each settable destination member from the source (no construction,
         ///     target identity preserved). Returns <c>dest</c> for the non-void form. Recursion-capable nested
         ///     members (e.g. a self-referential collection) get a fresh <c>DwarfRefContext</c> for the depth
-        ///     guard, so deep/cyclic data throws <see cref="DwarfMapper.DwarfMappingDepthException" /> rather
+        ///     guard, so deep/cyclic data throws <c>DwarfMapper.DwarfMappingDepthException</c> rather
         ///     than StackOverflowing.
         /// </summary>
         private static void EmitUpdateIntoMethod(StringBuilder sb, MapMethodModel method, string indent)

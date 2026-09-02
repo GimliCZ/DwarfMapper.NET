@@ -7,14 +7,11 @@ using DwarfMapper.Generator.Tests.Contracts;
 namespace DwarfMapper.Generator.Tests.Framework
 {
     /// <summary>
-    ///     The manifest file: one sorted line per case, "
-    ///     <id>
-    ///         <sha256>
-    ///             ". <see cref="Load" /> never auto-creates it —
-    ///             a missing file simply comes back as an empty dictionary; it is the caller's job (see
-    ///             <c>GoldenCorpusTests.Generated_output_matches_the_golden_manifest</c>) to treat that as a failure with
-    ///             instructions, because a self-healing golden file lets CI silently bless whatever it produced. A malformed
-    ///             line is never silently dropped either — it throws, so the manifest can never shrink unnoticed.
+    ///     The manifest file: one sorted line per case, "&lt;id&gt; &lt;sha256&gt;". <see cref="Load" /> never
+    ///     auto-creates it — a missing file simply comes back as an empty dictionary; it is the caller's job (see
+    ///     <c>GoldenCorpusTests.Generated_output_matches_the_golden_manifest</c>) to treat that as a failure with
+    ///     instructions, because a self-healing golden file lets CI silently bless whatever it produced. A malformed
+    ///     line is never silently dropped either — it throws, so the manifest can never shrink unnoticed.
     /// </summary>
     internal static class GoldenManifest
     {

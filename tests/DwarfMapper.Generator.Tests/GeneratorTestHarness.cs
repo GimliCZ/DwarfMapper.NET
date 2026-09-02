@@ -15,7 +15,7 @@ namespace DwarfMapper.Generator.Tests
     {
         /// <summary>
         ///     The metadata reference set, built ONCE and reused across every compilation. Each
-        ///     <see cref="MetadataReference.CreateFromFile(string)" /> reads assembly metadata from disk under a
+        ///     <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" /> reads assembly metadata from disk under a
         ///     lock — rebuilding it per call (~50 references) serialised parallel compilations on metadata I/O and
         ///     dominated wall-clock (the full power-set fuzz was contention-bound, not CPU-bound). MetadataReference
         ///     instances are immutable and thread-safe to share, so a single cached array is both correct and far
@@ -44,7 +44,7 @@ namespace DwarfMapper.Generator.Tests
         ///         substitute a different build of one that already worked.
         ///     </para>
         ///     <para>
-        ///         Built ONCE and reused. <see cref="MetadataReference.CreateFromFile(string)" /> reads metadata from
+        ///         Built ONCE and reused. <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" /> reads metadata from
         ///         disk under a lock — rebuilding per call serialised parallel compilations on metadata I/O and
         ///         dominated wall-clock (the full power-set fuzz was contention-bound, not CPU-bound). The instances
         ///         are immutable and thread-safe to share.
@@ -125,9 +125,10 @@ namespace DwarfMapper.Generator.Tests
 
         public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(
             string source,
-            NullableContextOptions nullable = NullableContextOptions.Disable)
+            NullableContextOptions nullable = NullableContextOptions.Disable,
+            bool allowUnsafe = false)
         {
-            var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
+            var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable, allowUnsafe);
 
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
@@ -151,7 +152,7 @@ namespace DwarfMapper.Generator.Tests
 
         /// <summary>
         ///     Runs the <c>[MapTo]</c> registry generator (a SEPARATE <see cref="IIncrementalGenerator" /> from
-        ///     <see cref="DwarfGenerator" />, so the default <see cref="Run(string, NullableContextOptions)" /> never
+        ///     <see cref="DwarfGenerator" />, so the default <see cref="Run(string, NullableContextOptions, bool)" /> never
         ///     exercises it) and returns its diagnostics. The registry's whole error surface — the
         ///     <c>DWARFR01</c>–<c>DWARFR06</c> family — is only reachable through this driver.
         /// </summary>
@@ -165,7 +166,7 @@ namespace DwarfMapper.Generator.Tests
         /// <summary>
         ///     Every generated file, ordered by path and concatenated — including the assembly-wide aggregates
         ///     (<c>DwarfMapper.Extensions.g.cs</c>, the DI registration, the validation facade) that
-        ///     <see cref="Run(string, NullableContextOptions)" /> deliberately drops so single-mapper snapshots
+        ///     <see cref="Run(string, NullableContextOptions, bool)" /> deliberately drops so single-mapper snapshots
         ///     stay stable regardless of emit order.
         ///     <para>
         ///         The option-support matrix needs this. Measuring only the per-mapper file made every option
@@ -283,11 +284,17 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         public static ImmutableArray<Diagnostic> GeneratedCodeWarnings(
             string source,
-            NullableContextOptions nullable = NullableContextOptions.Enable)
+            NullableContextOptions nullable = NullableContextOptions.Enable,
+            bool includeRegistry = false)
         {
             var compilation = BuildCompilation("DwarfMapperWarnTestAsm", source, nullable);
 
-            var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
+            // The registry generator ([MapTo]) has its own element loop and object helpers, so a shape that is
+            // clean through the class model can still warn through the registry; opt in per test rather than
+            // always, so the combinatorial cells keep measuring exactly the generator they were written against.
+            var driver = includeRegistry
+                ? CSharpGeneratorDriver.Create(new DwarfGenerator(), new MapToGenerator())
+                : CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
 
             return outputCompilation.GetDiagnostics()
@@ -329,9 +336,16 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         public static (Assembly? Assembly, ImmutableArray<Diagnostic> Errors) EmitAssembly(string source)
         {
-            var asmName = "FuzzAsm_" + Guid.NewGuid().ToString("N");
-            var compilation = BuildCompilation(asmName, source);
+            return EmitAssembly(BuildCompilation("FuzzAsm_" + Guid.NewGuid().ToString("N"), source));
+        }
 
+        /// <summary>
+        ///     <see cref="EmitAssembly(string)" /> for a compilation the caller built — several syntax trees in a
+        ///     chosen order, unsafe code, a specific assembly name. The generator runs against exactly that
+        ///     compilation, so what it saw is what the test controls.
+        /// </summary>
+        public static (Assembly? Assembly, ImmutableArray<Diagnostic> Errors) EmitAssembly(CSharpCompilation compilation)
+        {
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
 
@@ -355,18 +369,35 @@ namespace DwarfMapper.Generator.Tests
         public static CSharpCompilation BuildCompilation(
             string assemblyName,
             string source,
-            NullableContextOptions nullable = NullableContextOptions.Disable)
+            NullableContextOptions nullable = NullableContextOptions.Disable,
+            bool allowUnsafe = false)
         {
-            var syntaxTree = CSharpSyntaxTree.ParseText(source);
-            return CSharpCompilation.Create(
-                assemblyName,
+            return BuildCompilation(assemblyName,
                 new[]
                 {
-                    syntaxTree
+                    CSharpSyntaxTree.ParseText(source)
                 },
+                nullable,
+                allowUnsafe);
+        }
+
+        /// <summary>
+        ///     The multi-tree form. Tree order is the order the compiler sees the files in, which is the order it
+        ///     lays out a partial struct's fields in — a test that needs a particular file order states it here.
+        /// </summary>
+        public static CSharpCompilation BuildCompilation(
+            string assemblyName,
+            IReadOnlyList<SyntaxTree> trees,
+            NullableContextOptions nullable = NullableContextOptions.Disable,
+            bool allowUnsafe = false)
+        {
+            return CSharpCompilation.Create(
+                assemblyName,
+                trees,
                 References.Value,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-                    nullableContextOptions: nullable));
+                    nullableContextOptions: nullable,
+                    allowUnsafe: allowUnsafe));
         }
     }
 }

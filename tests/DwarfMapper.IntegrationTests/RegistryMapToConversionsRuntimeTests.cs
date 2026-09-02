@@ -5,6 +5,8 @@
 // and List/array collections (incl. collections of nested).
 
 using DwarfMapper;
+// a consumer namespace on purpose: the registry has to work from outside DwarfMapper.*
+// ReSharper disable once CheckNamespace
 namespace RegistryProto.Conv
 {
     public enum Color
@@ -121,7 +123,7 @@ namespace RegistryProto.Conv
             Assert.Equal(Hue.Green, dto.Favorite); // enum by name
             Assert.Equal((string?)"Prague", (string?)dto.Home.City); // nested
             Assert.Equal((string?)"11000", (string?)dto.Home.Zip);
-            Assert.Equal<List<long>>(new List<long>
+            Assert.Equal(new List<long>
                 {
                     1,
                     2,

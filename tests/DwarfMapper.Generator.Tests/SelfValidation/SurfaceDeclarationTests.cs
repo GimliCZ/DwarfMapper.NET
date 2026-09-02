@@ -481,7 +481,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                     key => key is not null && fixtureNames.TryGetValue(key, out var n) ? n : null).ToArray();
             }
 
-            SurfaceProbeClaim Property(
+            static SurfaceProbeClaim Property(
                 string name,
                 string? key = null,
                 string? value = null,
@@ -492,7 +492,7 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 return new SurfaceProbeClaim(name, DwarfSurfaceProbeAttribute.NotAConstructor, key, value, args, options, unmeasured);
             }
 
-            SurfaceProbeClaim Ctor(
+            static SurfaceProbeClaim Ctor(
                 int arity,
                 string? key = null,
                 string? value = null,

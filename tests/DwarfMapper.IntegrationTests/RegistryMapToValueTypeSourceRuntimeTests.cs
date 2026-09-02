@@ -3,6 +3,8 @@
 using System.Collections;
 using DwarfMapper;
 
+// a consumer namespace on purpose: the registry has to work from outside DwarfMapper.*
+// ReSharper disable once CheckNamespace
 namespace RegistryValueSource
 {
     // [MapTo] on a value type, compiled by the real generator in this project's own build and then CALLED.

@@ -96,5 +96,55 @@ namespace DwarfMapper.Testing.Tests
             var text = StructuralComparer.Render(diffs);
             Assert.Contains("X", text, StringComparison.Ordinal);
         }
+
+        [Fact]
+        public void Collection_count_difference_is_reported_at_the_collection_path()
+        {
+            var diffs = StructuralComparer.Diff(new Box
+                {
+                    Xs = new List<int>
+                    {
+                        1,
+                        2,
+                        3
+                    }
+                },
+                new Box
+                {
+                    Xs = new List<int>
+                    {
+                        1,
+                        2
+                    }
+                });
+
+            var count = Assert.Single(diffs, d => string.Equals(d.Path, "root.Xs.Count", StringComparison.Ordinal));
+            Assert.Equal("3", count.Expected);
+            Assert.Equal("2", count.Actual);
+        }
+
+        [Fact]
+        public void A_self_referencing_graph_terminates_at_the_depth_cap()
+        {
+            // The comparer keeps no visited set; a cycle is walked until MaxDepth and must not recurse forever.
+            var a = new CycleNode { Id = 1 };
+            a.Next = a;
+            var b = new CycleNode { Id = 1 };
+            b.Next = b;
+
+            Assert.Empty(StructuralComparer.Diff(a, b));
+
+            b.Id = 2;
+            var diffs = StructuralComparer.Diff(a, b);
+            Assert.Contains(diffs, d => string.Equals(d.Path, "root.Id", StringComparison.Ordinal));
+            Assert.All(diffs, d => Assert.EndsWith(".Id", d.Path, StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void Render_rejects_null()
+        {
+            Assert.Equal("diffs",
+                Assert.Throws<ArgumentNullException>(() => StructuralComparer.Render(null!)).ParamName);
+        }
     }
 }

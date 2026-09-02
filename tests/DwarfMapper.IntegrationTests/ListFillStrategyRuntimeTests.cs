@@ -79,7 +79,7 @@ namespace DwarfMapper.IntegrationTests
 
             var dst = new ListFillMapper().Map(src);
 
-            Assert.Equal([(long)int.MinValue, -1L, 0L, 1L, int.MaxValue], dst.Numbers);
+            Assert.Equal([int.MinValue, -1L, 0L, 1L, int.MaxValue], dst.Numbers);
         }
 
         [Fact]

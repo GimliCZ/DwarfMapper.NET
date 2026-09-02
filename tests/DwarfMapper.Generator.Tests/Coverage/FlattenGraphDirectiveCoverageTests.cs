@@ -89,7 +89,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
         public void Equals_object_with_different_type_returns_false()
         {
             var a = new FlattenGraphDirective("N", "C", "T", "V");
-            Assert.False(a.Equals("not a directive"));
+            object notADirective = "not a directive";
+            Assert.False(a.Equals(notADirective));
         }
 
         // ─── Record with operator == / != ─────────────────────────────────────────

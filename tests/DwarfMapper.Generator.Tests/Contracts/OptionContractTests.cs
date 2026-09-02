@@ -23,7 +23,7 @@ namespace DwarfMapper.Generator.Tests.Contracts
     ///     </para>
     /// </summary>
     /// <summary>
-    ///     One option's declared contract at the projection endpoint. <paramref name="Types" /> substitutes the
+    ///     One option's declared contract at the projection endpoint. <c>Types</c> substitutes the
     ///     DTO pair when an option only becomes observable against a shape that triggers it — an enum for
     ///     <c>EnumStrategy</c>, a nested class for <c>AutoNest</c>. Declaring an option without a triggering
     ///     shape would make "no difference" indistinguishable from "silently dropped".

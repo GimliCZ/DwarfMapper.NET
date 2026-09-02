@@ -171,6 +171,53 @@ namespace DwarfMapper.Generator.Tests.Coverage
             Assert.Equal("", info.FilePath);
         }
 
+        // ─── Regression: stale span must not take the whole generator down ────────
+
+        // An IDE hands the generator symbols from a compilation snapshot the user is still editing, so
+        // ISymbol.Locations can name a span in a file that has since shrunk. GetLineSpan() then throws
+        // ArgumentOutOfRangeException('character') inside Roslyn, and because a source generator that
+        // throws "will not contribute to the output", ONE stale span erased every generated map in the
+        // consuming project. Reported from a consuming solution as DwarfGenerator failing in MapperExtractor.ExtractCore.
+        private static Location StaleLocation()
+        {
+            var tree = CSharpSyntaxTree.ParseText("class C {}", path: "Stale.cs");
+            // A span naming text well past the end of THIS tree - what an edited-away region looks like.
+            return Location.Create(tree, new TextSpan(tree.Length + 20, 5));
+        }
+
+        [Fact]
+        public void From_span_past_end_of_text_returns_null_rather_than_throwing()
+        {
+            var location = StaleLocation();
+
+            var ex = Record.Exception(() => LocationInfo.From(location));
+
+            Assert.Null(ex);
+            Assert.Null(LocationInfo.From(location));
+        }
+
+        [Fact]
+        public void The_stale_span_fixture_really_does_throw_without_the_guard()
+        {
+            // Non-vacuity control: proves the test above exercises the real failure rather than a span
+            // Roslyn tolerates. If Roslyn ever stops throwing here, this fails and the guard can be revisited.
+            var location = StaleLocation();
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => location.GetLineSpan());
+        }
+
+        [Fact]
+        public void A_diagnostic_built_from_a_stale_span_still_reports_without_a_position()
+        {
+            // The degradation contract every consumer relies on: `Location?.ToLocation() ?? Location.None`.
+            var location = StaleLocation();
+
+            var info = LocationInfo.From(location);
+            var reported = info?.ToLocation() ?? Location.None;
+
+            Assert.Equal(Location.None, reported);
+        }
+
         // ─── Deterministic: same info created twice equals ────────────────────────
 
         [Fact]

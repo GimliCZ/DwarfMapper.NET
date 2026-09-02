@@ -448,6 +448,21 @@ namespace DwarfMapper.Generator.Registry
             return t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         }
 
+        private static readonly SymbolDisplayFormat NullableFullyQualifiedFormat =
+            SymbolDisplayFormat.FullyQualifiedFormat.AddMiscellaneousOptions(
+                SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
+        /// <summary>
+        ///     Fully-qualified name WITH nullable reference annotations, for the places where the annotation is
+        ///     part of the contract: a collection helper declared over <c>Child[]</c> cannot take a
+        ///     <c>Child?[]</c> member (CS8620), and the class model's helpers already carry the annotation.
+        /// </summary>
+        private static string FqNullable(ITypeSymbol t)
+        {
+            return t.ToDisplayString(NullableFullyQualifiedFormat);
+        }
+
+
         private static string Emit(Model model)
         {
             var w = new CodeWriter();
@@ -632,7 +647,12 @@ namespace DwarfMapper.Generator.Registry
                     IsObjectType(nt))
                 {
                     var m = SynthNested(ns, nt, targetName);
-                    return m is null ? null : $"{m}({srcExpr})";
+                    // A nullable-reference source into the helper's non-nullable parameter: the helper
+                    // null-propagates (`s is null ? default! : …`), so the argument is null-forgiven rather than
+                    // left as a CS8604 the consumer cannot suppress in a generated file — one element or member
+                    // at a time, exactly as the class model's emitter does for its synthesized helpers.
+                    var forgive = srcType.IsReferenceType && srcType.NullableAnnotation == NullableAnnotation.Annotated ? "!" : "";
+                    return m is null ? null : $"{m}({srcExpr}{forgive})";
                 }
 
                 return null;
@@ -787,13 +807,15 @@ namespace DwarfMapper.Generator.Registry
                     return null;
                 }
 
-                var key = "Coll|" + Fq(srcType) + "|" + Fq(tgtType);
+                // Keyed and typed WITH nullable annotations: `Child?[]` and `Child[]` sources are two helpers,
+                // and the declared parameter must admit the annotated member it is handed (CS8620 otherwise).
+                var key = "Coll|" + FqNullable(srcType) + "|" + FqNullable(tgtType);
                 var name = "__DwarfMapColl_" + StableHash.Fnv1a(key);
                 if (!Synth.ContainsKey(name))
                 {
-                    var fqSrc = Fq(srcType);
-                    var fqDElem = Fq(dElem);
-                    var fqTgt = Fq(tgtType);
+                    var fqSrc = FqNullable(srcType); // as declared, annotations included; the outer form is unchanged from before
+                    var fqDElem = FqNullable(dElem);
+                    var fqTgt = FqNullable(tgtType); // the return type carries the element annotation the member declares (CS8619 otherwise)
                     var emptyExpr = dstArray
                         ? $"global::System.Array.Empty<{fqDElem}>()"
                         : $"new global::System.Collections.Generic.List<{fqDElem}>()";

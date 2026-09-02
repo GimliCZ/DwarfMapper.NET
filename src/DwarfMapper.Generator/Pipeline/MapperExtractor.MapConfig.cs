@@ -23,7 +23,7 @@ namespace DwarfMapper.Generator.Pipeline
                     body = b;
                     break;
 
-                case ParenthesizedLambdaExpressionSyntax { ParameterList.Parameters: { Count: 1 } ps, Body: ExpressionSyntax b } pl:
+                case ParenthesizedLambdaExpressionSyntax { ParameterList.Parameters: { Count: 1 } ps, Body: ExpressionSyntax b }:
                     param = ps[0].Identifier.ValueText;
                     body = b;
                     break;
@@ -270,7 +270,7 @@ namespace DwarfMapper.Generator.Pipeline
                         // and RenderConstantLiteral only adds a cast for a float/double/decimal TARGET, which only
                         // arises when the constant's own type already is float/double/decimal; any other divergence
                         // (e.g. an int literal into a float member) is a widening C# accepts with no cast needed.
-                        var literal = RenderConstantLiteral(cv.Value, vt, vt!, compilation);
+                        var literal = RenderConstantLiteral(cv.Value, vt, vt!);
                         result.Props.Add(new PairProp
                         {
                             Source = src,
@@ -325,7 +325,7 @@ namespace DwarfMapper.Generator.Pipeline
                                 Target = tgt,
                                 Member = tgtPath,
                                 IsConstant = true,
-                                ConstLiteral = RenderConstantLiteral(cv.Value, vt, vt!, compilation),
+                                ConstLiteral = RenderConstantLiteral(cv.Value, vt, vt!),
                                 Loc = loc
                             });
                         }

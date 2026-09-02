@@ -157,7 +157,7 @@ namespace DwarfMapper.Generator.Tests
                      })
                 Assert.DoesNotContain(claim, Message(signature), StringComparison.Ordinal);
 
-            string Message(string signature)
+            static string Message(string signature)
             {
                 return GeneratorAssert.Reports(Types +
                                                $$"""

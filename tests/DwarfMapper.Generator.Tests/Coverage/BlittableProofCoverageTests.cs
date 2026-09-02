@@ -22,18 +22,22 @@ namespace DwarfMapper.Generator.Tests.Coverage
         // expresses it via NodeSpec.SplitAcrossFiles, and it is pinned END-TO-END (same accept/refuse outcome
         // AND byte-identical generated source in both file orders) as PinnedCorpus row
         // 'P5-K0-partial-split-struct-pair' in tests/DwarfMapper.CompilerTests (PinnedCorpusTests). This test
-        // remains the seam-level kill (the comparator-mutant geometry below needs BlittableProof directly);
-        // the corpus row is the emission-level restatement, not a replacement.
+        // remains the seam-level kill; the corpus row is the emission-level restatement, not a replacement.
         //
-        // The geometry is engineered so every comparator mutant diverges:
-        //  - "Alpha.cs" < "Beta.cs" ordinally, and the field declared in Alpha.cs is the one that must sort
-        //    FIRST, so deleting the sort (or neutering the file-path key) breaks the reversed compile order;
-        //  - the Alpha.cs field sits at a HIGHER source offset than the Beta.cs field (the padding comment
-        //    below), so a mutant that compares POSITIONS across files ('byFile != 0' → '== 0') inverts the
-        //    order even in the forward compile order.
+        // The verdict the shape gets is REFUSE, in both orders. It was once ACCEPT in both: the proof re-sorted
+        // the fields by (ordinal file path, position) so that the compile order could not move the verdict —
+        // and that was the defect. The compiler lays a Sequential struct out in the order it received the
+        // files, the sort put them in another, and against a twin declared in the sorted order the proof
+        // accepted a MemoryMarshal.Cast whose bytes came back swapped (BlitSoundnessTests executes the shape).
+        // What the compile order must not move is now "refused": a struct whose instance fields span more
+        // than one partial declaration is the shape the compiler itself declines to order (CS0282), and the
+        // proof declines with it.
+        //
+        // The geometry is engineered so the refusal cannot be for a boring reason: in the forward compile
+        // order the split struct's field list is POSITIONALLY IDENTICAL to the whole twin's (First, Second),
+        // so nothing but the rule stands between the pair and a blit; in the reversed order it is the twin's
+        // reverse — the layout the sort used to paper over.
         private const string PartialAlphaFile =
-            "// Padding so that the field declared in this file sits at a HIGHER SourceSpan.Start than the\n" +
-            "// field declared in Beta.cs — see the comparator-mutant geometry note above the fixture.\n" +
             "namespace T { public partial struct SplitSrc { public int First; } }";
 
         private const string PartialBetaFile =
@@ -42,11 +46,6 @@ namespace DwarfMapper.Generator.Tests.Coverage
         private const string WholeDstFile =
             "namespace T { public struct WholeDst { public int First; public int Second; } }";
 
-        // Five: above the two- and three-element special cases in List<T>.Sort and below the seventeen-element
-        // threshold where the quicksort partition refuses an inconsistent comparator — the band in which the
-        // sort's insertion path actually depends on the comparator's position key. See
-        // CanReinterpret_one_field_per_file_split_matches_its_single_file_twin.
-        private const int WideFieldCount = 5;
         // ─── Compilation helper ───────────────────────────────────────────────────
 
         /// <summary>
@@ -54,7 +53,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
         ///     Same reference set as GeneratorTestHarness.
         /// </summary>
         private static (Compilation Compilation, IReadOnlyDictionary<string, INamedTypeSymbol> Types)
-            Compile(string source)
+            Compile(string source, bool allowUnsafe = false)
         {
             var tree = CSharpSyntaxTree.ParseText(source);
             var refs = AppDomain.CurrentDomain.GetAssemblies()
@@ -70,7 +69,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                     tree
                 },
                 refs,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: allowUnsafe));
 
             var model = compilation.GetSemanticModel(tree);
             var root = tree.GetRoot();
@@ -696,7 +695,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
 
             var model = compilation.GetSemanticModel(tree);
             var decl = tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().Single();
-            var user = (INamedTypeSymbol)model.GetDeclaredSymbol(decl)!;
+            var user = model.GetDeclaredSymbol(decl)!;
             var vector2 = compilation.GetTypeByMetadataName("System.Numerics.Vector2");
 
             Assert.NotNull(vector2); // a null here would make the refusal assertions vacuous
@@ -712,43 +711,275 @@ namespace DwarfMapper.Generator.Tests.Coverage
         }
 
         /// <summary>
-        ///     The determinism guarantee of <c>InstanceFields</c> (T3 kill-first #2): <c>GetMembers()</c> order
-        ///     for a struct split across partial files depends on the order the compiler saw the files, and the
-        ///     blit proof compares fields positionally — the sort by (file path, position) is the only thing
-        ///     making the verdict build-order-independent. Deleting that sort outright survived the whole suite
-        ///     until this fixture: same struct pair, both compile orders, same verdict, both directions.
+        ///     A struct whose instance fields span two partial declarations is refused in BOTH compile orders
+        ///     and both directions — and under <c>[Reinterpret]</c> too. The refusal IS the determinism
+        ///     guarantee: the compiler orders such a struct's fields by the order it happened to receive the
+        ///     files (CS0282 says as much), so its layout is not a fact of the source and nothing about it is
+        ///     provable at generation time. The forward order is the kill: there the split list reads
+        ///     (First, Second) exactly like the twin, and a proof that compares the two lists positionally
+        ///     without asking where the fields were declared accepts it.
         /// </summary>
         [Fact]
-        public void CanReinterpret_partial_file_struct_verdict_is_file_order_independent()
+        public void CanReinterpret_partial_struct_with_fields_in_two_declarations_is_refused_in_both_compile_orders()
         {
+            foreach (var (files, expectedOrder) in new[]
+                     {
+                         (new[]
+                         {
+                             ("Alpha.cs", PartialAlphaFile), ("Beta.cs", PartialBetaFile), ("Dst.cs", WholeDstFile)
+                         }, new[]
+                         {
+                             "First", "Second"
+                         }),
+                         (new[]
+                         {
+                             ("Beta.cs", PartialBetaFile), ("Alpha.cs", PartialAlphaFile), ("Dst.cs", WholeDstFile)
+                         }, new[]
+                         {
+                             "Second", "First"
+                         })
+                     })
+            {
+                var types = CompileFiles(files);
+                var order = string.Join(", ", files.Select(f => f.Item1));
+                var split = types["SplitSrc"];
+                var whole = types["WholeDst"];
+
+                // Geometry: the compiler's field order follows the compile order. Forward, the split struct is
+                // positionally identical to its twin and only the rule refuses it; reversed, it is the twin's
+                // reverse — the layout a name-aligned sort could not see.
+                Assert.Equal(expectedOrder, split.GetMembers().OfType<IFieldSymbol>().Select(f => f.Name));
+                Assert.Equal(2, split.DeclaringSyntaxReferences.Length);
+
+                Assert.False(BlittableProof.CanReinterpret(split, whole),
+                    $"SplitSrc → WholeDst must be refused under compile order [{order}]");
+                Assert.False(BlittableProof.CanReinterpret(whole, split),
+                    $"WholeDst → SplitSrc must be refused under compile order [{order}]");
+                Assert.False(BlittableProof.SameBytesIgnoringNames(split, whole),
+                    $"[Reinterpret] asserts the bytes may be read positionally, and a struct with no defined field order has none to assert about (compile order [{order}])");
+            }
+        }
+
+        /// <summary>
+        ///     The rule is "instance fields span declarations", not "is partial": a partial struct that keeps
+        ///     every instance field in ONE declaration — a constant, a static and a method in the other — has
+        ///     one defined field order whatever the compile order, and blits against its whole twin as before.
+        /// </summary>
+        [Fact]
+        public void CanReinterpret_partial_struct_with_all_instance_fields_in_one_declaration_still_blits()
+        {
+            const string fieldsFile = "namespace T { public partial struct SplitSrc { public int First; public int Second; } }";
+            const string restFile =
+                "namespace T { public partial struct SplitSrc { public const int Limit = 3; public static int Counter; public int Sum() => First + Second; } }";
+
             foreach (var files in new[]
                      {
                          new[]
                          {
-                             ("Alpha.cs", PartialAlphaFile), ("Beta.cs", PartialBetaFile), ("Dst.cs", WholeDstFile)
+                             ("Fields.cs", fieldsFile), ("Rest.cs", restFile), ("Dst.cs", WholeDstFile)
                          },
                          new[]
                          {
-                             ("Beta.cs", PartialBetaFile), ("Alpha.cs", PartialAlphaFile), ("Dst.cs", WholeDstFile)
+                             ("Rest.cs", restFile), ("Fields.cs", fieldsFile), ("Dst.cs", WholeDstFile)
                          }
                      })
             {
-                var (_, types) = CompileFiles(files);
+                var types = CompileFiles(files);
                 var order = string.Join(", ", files.Select(f => f.Item1));
-
-                // Precondition of the L83 kill: the cross-file source positions really are inverted relative
-                // to the sorted field order (First@Alpha.cs starts AFTER Second@Beta.cs).
                 var split = types["SplitSrc"];
-                var first = (IFieldSymbol)split.GetMembers("First").Single();
-                var second = (IFieldSymbol)split.GetMembers("Second").Single();
-                Assert.True(first.Locations[0].SourceSpan.Start > second.Locations[0].SourceSpan.Start,
-                    "fixture geometry broken: First must sit at a higher offset than Second");
+
+                // Precondition: it IS the partial shape — two declarations, the second holding members of every
+                // other kind — so the refusal above is shown to be a refusal of spanning fields, not of "partial".
+                Assert.Equal(2, split.DeclaringSyntaxReferences.Length);
+                Assert.Equal(new[]
+                    {
+                        "First", "Second"
+                    },
+                    split.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic && !f.IsConst).Select(f => f.Name));
 
                 Assert.True(BlittableProof.CanReinterpret(split, types["WholeDst"]),
                     $"SplitSrc → WholeDst must blit under compile order [{order}]");
                 Assert.True(BlittableProof.CanReinterpret(types["WholeDst"], split),
                     $"WholeDst → SplitSrc must blit under compile order [{order}]");
             }
+        }
+
+        /// <summary>
+        ///     Decided per DECLARATION, not per file: two parts in one file are two declarations to the compiler
+        ///     as well, and its warning (CS0282) is about declarations. A per-file rule would accept this pair.
+        /// </summary>
+        [Fact]
+        public void CanReinterpret_partial_struct_split_within_one_file_is_refused()
+        {
+            var src = """
+                      namespace T {
+                          public partial struct SplitSrc { public int First; }
+                          public partial struct SplitSrc { public int Second; }
+                          public struct WholeDst { public int First; public int Second; }
+                      }
+                      """;
+            var (_, types) = Compile(src);
+            var split = types["SplitSrc"];
+            Assert.Equal(2, split.DeclaringSyntaxReferences.Length);
+            Assert.Single(split.DeclaringSyntaxReferences.Select(r => r.SyntaxTree).Distinct());
+            Assert.Equal(new[]
+                {
+                    "First", "Second"
+                },
+                split.GetMembers().OfType<IFieldSymbol>().Select(f => f.Name));
+
+            Assert.False(BlittableProof.CanReinterpret(split, types["WholeDst"]));
+            Assert.False(BlittableProof.CanReinterpret(types["WholeDst"], split));
+        }
+
+        /// <summary>
+        ///     A backing field has no syntax of its own; it is placed through the member it backs. Two
+        ///     auto-properties in two declarations are two backing fields in two declarations — refused — while
+        ///     the same two in one declaration, with a method in the other, are placeable and accepted.
+        /// </summary>
+        [Fact]
+        public void CanReinterpret_places_backing_fields_through_the_member_they_back()
+        {
+            var spanning = """
+                           namespace T {
+                               public partial struct SplitSrc { public int First { get; set; } }
+                               public partial struct SplitSrc { public int Second { get; set; } }
+                               public struct WholeDst { public int First { get; set; } public int Second { get; set; } }
+                           }
+                           """;
+            var (_, types) = Compile(spanning);
+            Assert.All(types["SplitSrc"].GetMembers().OfType<IFieldSymbol>(), f => Assert.Empty(f.DeclaringSyntaxReferences));
+            Assert.False(BlittableProof.CanReinterpret(types["SplitSrc"], types["WholeDst"]));
+            Assert.False(BlittableProof.CanReinterpret(types["WholeDst"], types["SplitSrc"]));
+
+            var together = """
+                           namespace T {
+                               public partial struct SplitSrc { public int First { get; set; } public int Second { get; set; } }
+                               public partial struct SplitSrc { public int Sum() => First + Second; }
+                               public struct WholeDst { public int First { get; set; } public int Second { get; set; } }
+                           }
+                           """;
+            (_, types) = Compile(together);
+            Assert.All(types["SplitSrc"].GetMembers().OfType<IFieldSymbol>(), f => Assert.Empty(f.DeclaringSyntaxReferences));
+            Assert.True(BlittableProof.CanReinterpret(types["SplitSrc"], types["WholeDst"]));
+            Assert.True(BlittableProof.CanReinterpret(types["WholeDst"], types["SplitSrc"]));
+        }
+
+        /// <summary>
+        ///     A field that cannot be placed at all — a primary-constructor capture has neither syntax nor an
+        ///     owning member — counts as spanning: "cannot tell" is a refusal, never a guess. A single-declaration
+        ///     struct is exempt from the question, so the twin here is exactly that, capture and all.
+        /// </summary>
+        [Fact]
+        public void CanReinterpret_refuses_a_partial_struct_whose_field_cannot_be_placed()
+        {
+            var src = """
+                      namespace T {
+                          public partial struct SplitSrc(int seed) { public int First = seed; public int Seed => seed; }
+                          public partial struct SplitSrc { public int Sum() => First + Seed; }
+                          public struct WholeDst(int seed) { public int First = seed; public int Seed => seed; }
+                      }
+                      """;
+            var (_, types) = Compile(src);
+            var split = types["SplitSrc"];
+            var whole = types["WholeDst"];
+            var capture = split.GetMembers().OfType<IFieldSymbol>().Single(f => f.Name != "First");
+            Assert.Empty(capture.DeclaringSyntaxReferences);
+            Assert.Null(capture.AssociatedSymbol);
+
+            // Precondition: the two field lists line up — capture fields included, since both captures carry the
+            // same parameter name — so the unplaceable capture is the only thing refusing the pair.
+            Assert.Equal(
+                whole.GetMembers().OfType<IFieldSymbol>().Select(f => f.Name),
+                split.GetMembers().OfType<IFieldSymbol>().Select(f => f.Name));
+
+            Assert.False(BlittableProof.CanReinterpret(split, whole));
+            Assert.False(BlittableProof.CanReinterpret(whole, split));
+        }
+
+        // ─── The field list is not the whole layout: Size, [InlineArray], fixed buffers ───
+
+        /// <summary>
+        ///     An explicit <c>[StructLayout] Size</c> pads the struct without adding a field: 4 bytes of fields
+        ///     become 32 bytes of struct, and the proof once saw only the 4. Refused unless both sides declare
+        ///     the same one — and accepted when they do, because then it is the same padding.
+        /// </summary>
+        [Theory]
+        [InlineData("", "[StructLayout(LayoutKind.Sequential, Size = 32)]", false)]
+        [InlineData("[StructLayout(LayoutKind.Sequential, Size = 32)]", "", false)]
+        [InlineData("[StructLayout(LayoutKind.Sequential, Size = 16)]", "[StructLayout(LayoutKind.Sequential, Size = 32)]", false)]
+        [InlineData("[StructLayout(LayoutKind.Sequential, Size = 32)]", "[StructLayout(LayoutKind.Sequential, Size = 32)]", true)]
+        public void CanReinterpret_compares_explicit_StructLayout_Size(string srcLayout, string dstLayout, bool expected)
+        {
+            var src = $$"""
+                        using System.Runtime.InteropServices;
+                        namespace T {
+                            {{srcLayout}} public struct SrcS { public int X; }
+                            {{dstLayout}} public struct DstS { public int X; }
+                        }
+                        """;
+            var (_, types) = Compile(src);
+            Assert.Equal(expected, BlittableProof.CanReinterpret(types["SrcS"], types["DstS"]));
+            Assert.Equal(expected, BlittableProof.CanReinterpret(types["DstS"], types["SrcS"]));
+            Assert.Equal(expected, BlittableProof.SameBytesIgnoringNames(types["SrcS"], types["DstS"]));
+        }
+
+        /// <summary>
+        ///     An <c>[InlineArray(n)]</c> struct repeats its ONE field <c>n</c> times in the runtime layout while
+        ///     the symbol model still shows one field, so a plain twin and an inline array of the same element
+        ///     — or two inline arrays of different lengths — read as identical to a field-list comparison.
+        /// </summary>
+        [Theory]
+        [InlineData("", "[InlineArray(4)]", false)]
+        [InlineData("[InlineArray(4)]", "", false)]
+        [InlineData("[InlineArray(4)]", "[InlineArray(8)]", false)]
+        [InlineData("[InlineArray(4)]", "[InlineArray(4)]", true)]
+        public void CanReinterpret_compares_InlineArray_length(string srcAttr, string dstAttr, bool expected)
+        {
+            var src = $$"""
+                        using System.Runtime.CompilerServices;
+                        namespace T {
+                            {{srcAttr}} public struct SrcI { public int E; }
+                            {{dstAttr}} public struct DstI { public int E; }
+                        }
+                        """;
+            var (_, types) = Compile(src);
+            Assert.Equal(expected, BlittableProof.CanReinterpret(types["SrcI"], types["DstI"]));
+            Assert.Equal(expected, BlittableProof.CanReinterpret(types["DstI"], types["SrcI"]));
+            Assert.Equal(expected, BlittableProof.SameBytesIgnoringNames(types["SrcI"], types["DstI"]));
+        }
+
+        /// <summary>
+        ///     A fixed buffer's symbol type is the element POINTER type — <c>fixed int Buf[4]</c>,
+        ///     <c>fixed int Buf[8]</c> and a genuine <c>int* Buf</c> are all <c>int*</c> to the type comparison —
+        ///     while its length, the bytes the runtime reserves, lives on the field. Refused unless both fields
+        ///     agree on being a fixed buffer and on its length.
+        /// </summary>
+        [Theory]
+        [InlineData("public unsafe fixed int Buf[4];", "public unsafe fixed int Buf[8];", false)]
+        [InlineData("public unsafe fixed int Buf[8];", "public unsafe fixed int Buf[4];", false)]
+        [InlineData("public unsafe fixed int Buf[4];", "public unsafe int* Buf;", false)]
+        [InlineData("public unsafe int* Buf;", "public unsafe fixed int Buf[4];", false)]
+        [InlineData("public unsafe fixed int Buf[4];", "public unsafe fixed int Buf[4];", true)]
+        public void CanReinterpret_compares_fixed_buffer_length(string srcField, string dstField, bool expected)
+        {
+            var src = $$"""
+                        namespace T {
+                            public struct SrcF { public int Tag; {{srcField}} }
+                            public struct DstF { public int Tag; {{dstField}} }
+                        }
+                        """;
+            var (compilation, types) = Compile(src, allowUnsafe: true);
+            Assert.Empty(compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));
+
+            // Precondition: the two fields really are the same type to the type comparison, so the field's own
+            // fixed-buffer facts are the only thing that can tell them apart.
+            var srcBuf = (IFieldSymbol)types["SrcF"].GetMembers("Buf").Single();
+            var dstBuf = (IFieldSymbol)types["DstF"].GetMembers("Buf").Single();
+            Assert.True(SymbolEqualityComparer.Default.Equals(srcBuf.Type, dstBuf.Type));
+
+            Assert.Equal(expected, BlittableProof.CanReinterpret(types["SrcF"], types["DstF"]));
+            Assert.Equal(expected, BlittableProof.SameBytesIgnoringNames(types["SrcF"], types["DstF"]));
         }
 
         // ─── Symmetric enum coverage: the na-side TypeKind check (P5 NoCoverage sweep) ───
@@ -836,94 +1067,8 @@ namespace DwarfMapper.Generator.Tests.Coverage
                 "the refusal must hold in both directions");
         }
 
-        /// <summary>
-        ///     The WIDE half of the InstanceFields determinism guarantee: the same field list declared one field
-        ///     per file on one side and all in one file on the other must reach the same order, hence the same
-        ///     verdict.
-        ///     <para>
-        ///         <see cref="CanReinterpret_partial_file_struct_verdict_is_file_order_independent" /> pins the
-        ///         file-path key, but its structs hold TWO fields each — and a two-element
-        ///         <c>List&lt;T&gt;.Sort</c> is one <c>SwapIfGreater(keys[0], keys[1])</c> call, which a
-        ///         comparator that has lost its POSITION key can still get right by accident. Four to sixteen
-        ///         elements take the insertion-sort path instead (two and three are special-cased above it,
-        ///         seventeen and up reach the quicksort partition, which rejects an inconsistent comparator
-        ///         outright), and there a comparator whose left-hand position is stuck at zero claims every
-        ///         candidate sorts before everything already placed — which REVERSES a same-file field list.
-        ///     </para>
-        ///     <para>
-        ///         Hence the geometry: five fields, so the single-file side reverses while the one-per-file side
-        ///         is ordered entirely by its file-path key and does not, and the two lists stop lining up by
-        ///         name. Both compile orders and both directions, as the two-field fixture does.
-        ///     </para>
-        /// </summary>
-        [Fact]
-        public void CanReinterpret_one_field_per_file_split_matches_its_single_file_twin()
-        {
-            IReadOnlyList<(string Path, string Source)> forward = WideFiles();
-            IReadOnlyList<(string Path, string Source)> backward = forward.Reverse()
-                .ToList();
-
-            foreach (var files in new[]
-                     {
-                         forward, backward
-                     })
-            {
-                var (_, types) = CompileFiles(files);
-                var order = string.Join(", ", files.Select(f => f.Path));
-                var split = types["SplitWide"];
-                var whole = types["WholeWide"];
-
-                // Geometry 1: the split side really does put every field in its OWN file, so its order comes
-                // from the file-path key alone and the position tie-break never speaks for it.
-                Assert.Equal(
-                    Enumerable.Range(1, WideFieldCount)
-                        .Select(i => $"W{i}.cs"),
-                    split.GetMembers()
-                        .OfType<IFieldSymbol>()
-                        .Select(f => f.Locations[0].SourceTree!.FilePath)
-                        .OrderBy(p => p, StringComparer.Ordinal));
-
-                // Geometry 2: the whole side really does put every field in ONE file at ascending, non-zero
-                // offsets, so the position tie-break is the only thing ordering it.
-                var wholeFields = whole.GetMembers()
-                    .OfType<IFieldSymbol>()
-                    .ToList();
-                Assert.Equal(WideFieldCount, wholeFields.Count);
-                Assert.All(wholeFields,
-                    f => Assert.Equal("WholeWide.cs", f.Locations[0].SourceTree!.FilePath));
-                var positions = wholeFields.Select(f => f.Locations[0].SourceSpan.Start)
-                    .ToList();
-                Assert.All(positions, p => Assert.True(p > 0, "fixture geometry broken: a zero source offset"));
-                Assert.Equal(positions.OrderBy(p => p), positions);
-
-                Assert.True(BlittableProof.CanReinterpret(split, whole),
-                    $"SplitWide → WholeWide must blit under compile order [{order}]");
-                Assert.True(BlittableProof.CanReinterpret(whole, split),
-                    $"WholeWide → SplitWide must blit under compile order [{order}]");
-            }
-        }
-
-        /// <summary>
-        ///     The wide fixture's files: <c>W1.cs</c>…<c>W5.cs</c> each contributing one field to a partial
-        ///     <c>SplitWide</c>, plus one file holding the whole twin. The file names sort ordinally in the same
-        ///     order as the fields they declare, so the expected order is the obvious one in both compile orders.
-        /// </summary>
-        private static List<(string Path, string Source)> WideFiles()
-        {
-            var files = new List<(string Path, string Source)>();
-            for (var i = 1; i <= WideFieldCount; i++)
-                files.Add(($"W{i}.cs", $"namespace T {{ public partial struct SplitWide {{ public int F{i}; }} }}"));
-
-            var body = string.Join(" ",
-                Enumerable.Range(1, WideFieldCount)
-                    .Select(i => $"public int F{i};"));
-            files.Add(("WholeWide.cs", "namespace T { public struct WholeWide { " + body + " } }"));
-            return files;
-        }
-
         /// <summary>Multi-file variant of <see cref="Compile" />: each source gets its own tree with an explicit file path.</summary>
-        private static (Compilation Compilation, IReadOnlyDictionary<string, INamedTypeSymbol> Types)
-            CompileFiles(IReadOnlyList<(string Path, string Source)> files)
+        private static Dictionary<string, INamedTypeSymbol> CompileFiles(IReadOnlyList<(string Path, string Source)> files)
         {
             var trees = files
                 .Select(f => CSharpSyntaxTree.ParseText(f.Source, path: f.Path))
@@ -951,7 +1096,7 @@ namespace DwarfMapper.Generator.Tests.Coverage
                     }
             }
 
-            return (compilation, types);
+            return types;
         }
     }
 }

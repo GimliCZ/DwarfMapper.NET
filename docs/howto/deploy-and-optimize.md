@@ -112,9 +112,11 @@ the method signature that matches your access pattern:
 
 When the layout allows it, the generator beats even a hand-written name-based copy — and it's automatic:
 
-- **Blittable bulk copy.** A layout-identical element pair (both unmanaged, sequential, same packing, same
-  ordered fields) is reinterpreted as a single `MemoryMarshal.Cast` block copy behind a JIT-folded size
-  guard — benchmarked **~2× faster** than every competitor on a 1000-struct array, which copy field-by-field.
+- **Blittable bulk copy.** A layout-identical element pair (both unmanaged, sequential, same packing and
+  `Size`, same ordered fields, every instance field in one declaration) is reinterpreted as a single
+  `MemoryMarshal.Cast` block copy, the same-bytes verdict settled at generation time rather than re-checked
+  per call — benchmarked **~2× faster** than every competitor on a 1000-struct array, which copy
+  field-by-field.
   The storage does not have to be an array on both sides: **`List<T>`** (and the interfaces that materialise
   to it — `IList<T>`, `IReadOnlyList<T>`, `ICollection<T>`, `IReadOnlyCollection<T>`) and
   **`ImmutableArray<T>`** take it too, measured **2.3–3.3× faster** than the element loop for a

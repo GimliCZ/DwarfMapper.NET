@@ -256,11 +256,15 @@ namespace DwarfMapper.IntegrationTests
             var a = new B3Container
             {
                 Tag = "A",
+                // the SAME enumerable on both containers is the shared-reference case under test
+                // ReSharper disable once PossibleMultipleEnumeration
                 Nums = sharedNums
             };
             var b = new B3Container
             {
                 Tag = "B",
+                // the SAME enumerable on both containers is the shared-reference case under test
+                // ReSharper disable once PossibleMultipleEnumeration
                 Nums = sharedNums
             };
             a.Sibling = b;

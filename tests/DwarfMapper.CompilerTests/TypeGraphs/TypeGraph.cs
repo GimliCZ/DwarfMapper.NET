@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+// enum members deliberately carry the BCL interface names they classify
+// ReSharper disable InconsistentNaming
 namespace DwarfMapper.CompilerTests.TypeGraphs
 {
     /// <summary>The declaration kind of a graph node. Every kind the mapper can declare a pair over.</summary>

@@ -50,7 +50,8 @@ namespace DwarfMapper.Generator.Tests.Contracts
             var rendered = $"[{sentinel}]";
 
             var sites = Enum.GetValues<AttributeTargets>()
-                .Where(t => t != AttributeTargets.All && int.PopCount((int)t) == 1);
+                .Where(t => t != AttributeTargets.All && int.PopCount((int)t) == 1)
+                .ToArray();
 
             var offenders = new List<string>();
             foreach (var endpoint in EndpointSources.All)

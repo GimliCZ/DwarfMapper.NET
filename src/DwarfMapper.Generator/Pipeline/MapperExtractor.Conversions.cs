@@ -13,12 +13,7 @@ namespace DwarfMapper.Generator.Pipeline
     internal static partial class MapperExtractor
     {
         /// <summary>
-        ///     Returns true when <paramref name="src" /> is a named type that would be a mappable-object-pair
-        ///     source except that it is abstract or an interface — i.e. it would silently drop derived members
-        ///     (C2: DWARF033 guard).
-        /// </summary>
-        /// <summary>
-        ///     True when <paramref name="src" /> is a concrete, NON-SEALED class that at least one other type in
+        ///     True when the source is a concrete, NON-SEALED class that at least one other type in
         ///     this compilation derives from — i.e. a member declared as this type can hold a subclass instance at
         ///     run time, whose extra members an auto-nested map would silently drop (DWARF071).
         ///     <para>
@@ -476,12 +471,12 @@ namespace DwarfMapper.Generator.Pipeline
             // (Struct collections like ImmutableArray<T> must NOT be object-field-mapped; they belong to
             //  CollectionConverter/DictionaryConverter, or fall to DWARF005 until supported. string is
             //  already excluded above by the SpecialType.None check.)
-            if (ImplementsIEnumerable(compilation, namedSrc))
+            if (ImplementsIEnumerable(namedSrc))
             {
                 return false;
             }
 
-            if (ImplementsIEnumerable(compilation, tgt))
+            if (ImplementsIEnumerable(tgt))
             {
                 return false;
             }
@@ -590,12 +585,12 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            if (ImplementsIEnumerable(compilation, namedSrc))
+            if (ImplementsIEnumerable(namedSrc))
             {
                 return false;
             }
 
-            if (ImplementsIEnumerable(compilation, tgt))
+            if (ImplementsIEnumerable(tgt))
             {
                 return false;
             }
@@ -613,7 +608,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     Returns true when <paramref name="type" /> implements <c>IEnumerable</c> (generic or non-generic),
         ///     which means it is a collection/sequence type that belongs to CollectionConverter/DictionaryConverter.
         /// </summary>
-        private static bool ImplementsIEnumerable(Compilation compilation, INamedTypeSymbol type)
+        private static bool ImplementsIEnumerable(INamedTypeSymbol type)
         {
             // Fast checks: well-known collection / dict names (all supported + well-known unsupported)
             if (type.Name is "List" or "Array" or "HashSet" or "Dictionary"

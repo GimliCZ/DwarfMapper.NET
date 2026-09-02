@@ -102,7 +102,7 @@ namespace DwarfMapper.Generator.Tests.Fuzzing
             // longer triggers.
             var start = Fixture.FromSeed(5, 10);
 
-            bool Oracle(Fixture f)
+            static bool Oracle(Fixture f)
             {
                 return f.Members.Any(m => m.Shape == MemberShape.List);
             }

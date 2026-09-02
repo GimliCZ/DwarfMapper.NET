@@ -378,6 +378,8 @@ namespace DwarfMapper.Generator.Tests.Contracts
         ///     </para>
         /// </summary>
         /// <param name="types">The fixture in play; the slot it carries decides every slot site.</param>
+        /// <param name="endpoint">The endpoint whose site set is being asked about.</param>
+        /// <param name="site">The attribute target the question is about.</param>
         public static string? SiteAbsenceReason(Endpoint endpoint, AttributeTargets site, string? types = null)
         {
             if (Slots.TryGetValue(site, out var slot))

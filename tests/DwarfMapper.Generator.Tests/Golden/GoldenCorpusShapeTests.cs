@@ -30,7 +30,7 @@ namespace DwarfMapper.Generator.Tests.Golden
         [Fact]
         public void Both_generators_contribute_cases()
         {
-            var byGenerator = GoldenCorpus.Cases().Select(c => c.GeneratorName).Distinct(StringComparer.Ordinal);
+            var byGenerator = GoldenCorpus.Cases().Select(c => c.GeneratorName).Distinct(StringComparer.Ordinal).ToArray();
 
             Assert.Contains("DwarfGenerator", byGenerator, StringComparer.Ordinal);
             Assert.Contains("MapToGenerator", byGenerator, StringComparer.Ordinal);

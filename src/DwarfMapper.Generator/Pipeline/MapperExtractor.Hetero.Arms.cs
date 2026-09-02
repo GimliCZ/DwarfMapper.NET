@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using DwarfMapper.Generator.Core;
 using DwarfMapper.Generator.Diagnostics;
@@ -77,7 +74,6 @@ namespace DwarfMapper.Generator.Pipeline
                 // An EDGE member is any readable member whose type is assignable to nav.NodeType, or a
                 // collection thereof (including inherited base edges).
                 // SF-F3 fix: also detect Dictionary<K,V> where V is assignable to nav.NodeType.
-                var nodeBaseNoAnnot = nav.NodeType.WithNullableAnnotation(NullableAnnotation.None);
                 var derivedEdgeMembers = new List<(string Name, bool IsCollection, bool IsDictValue)>();
                 var derivedLeafMembers = new List<(string Name, ITypeSymbol Type)>();
 
