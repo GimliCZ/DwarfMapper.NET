@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-
-using System;
-using System.Collections.Generic;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -74,7 +71,9 @@ namespace DwarfMapper.Generator.Pipeline
             IReadOnlyList<(string Name, ITypeSymbol Type)>? ExtraParams,
             Dictionary<string, string>? StringFormats,
             bool RequiredMembersAlreadySatisfied,
-            IReadOnlyCollection<string>? FactoryExcludedMembers);
+            IReadOnlyCollection<string>? FactoryExcludedMembers,
+            // Source members disowned by [MapIgnoreSource]; read only by the DWARF064 shadow rule.
+            HashSet<string>? IgnoredSourceMembers);
 
         /// <summary>
         ///     The name lookups the prologue derives from a <see cref="MemberRequest" /> and every pass then reads.

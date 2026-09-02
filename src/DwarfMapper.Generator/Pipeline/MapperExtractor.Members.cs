@@ -133,7 +133,14 @@ namespace DwarfMapper.Generator.Pipeline
             // PARAMETER carries a mapped source value, whereas a factory-excluded member carries whatever the
             // factory chose and drops the source value silently. Only the second is a data-loss hazard, so only
             // the second raises DWARF080. Null when no factory is in force.
-            IReadOnlyCollection<string>? factoryExcludedMembers = null)
+            IReadOnlyCollection<string>? factoryExcludedMembers = null,
+            // SOURCE members the mapper explicitly disowns via [MapIgnoreSource]. Read by exactly one rule:
+            // DWARF064, whose message tells the reader to write [MapIgnoreSource("X")] "if the shadow is
+            // intentional". Until this was threaded through, that remedy did nothing — the check consulted
+            // only whether a same-named source member existed, never whether the mapper had disowned it — so
+            // a consumer who followed the message watched the diagnostic survive. Distinct from `ignores`,
+            // which is the DESTINATION set.
+            HashSet<string>? ignoredSourceMembers = null)
         {
             // IgnoreObsoleteMembers: drop [Obsolete] destination members from mapping by folding them into the
             // ignore set — every downstream check (auto-match, read-only-loss, explicit-target validation) already
@@ -251,7 +258,8 @@ namespace DwarfMapper.Generator.Pipeline
                 extraParams,
                 stringFormats,
                 requiredMembersAlreadySatisfied,
-                factoryExcludedMembers);
+                factoryExcludedMembers,
+                ignoredSourceMembers);
             var lookups = new MemberLookups(comparer,
                 flexible,
                 writableByName,
@@ -383,7 +391,12 @@ namespace DwarfMapper.Generator.Pipeline
         /// <param name="ignores">The effective ignore set, with whichever comparer the caller built it under.</param>
         /// <param name="isConstructorParameter">Whether the name is a parameter of the constructor in force.</param>
         /// <param name="writableByName">The destination members this endpoint can write, by name.</param>
-        /// <param name="sourceHasMatchingMember">Whether a source member of this name would have auto-matched.</param>
+        /// <param name="shadowedSourceMember">
+        ///     The REAL name of the source member that would have auto-matched this target and that the mapper has
+        ///     not disowned with <c>[MapIgnoreSource]</c>; <see langword="null" /> when there is none. A name rather
+        ///     than a flag because the DWARF064 remedy must spell the source member as source coverage spells it —
+        ///     under <c>CaseInsensitive</c> or <c>NameConvention.Flexible</c> that is not the target's spelling.
+        /// </param>
         /// <param name="location">The declaration site every refusal raised here is reported at.</param>
         /// <param name="diagnostics">
         ///     Diagnostic sink; a failing rule appends one entry naming it — <c>MapValueInvalid</c> for the
@@ -399,7 +412,7 @@ namespace DwarfMapper.Generator.Pipeline
             HashSet<string> ignores,
             Func<string, bool> isConstructorParameter,
             Dictionary<string, ITypeSymbol> writableByName,
-            Func<string, bool> sourceHasMatchingMember,
+            Func<string, string?> shadowedSourceMember,
             LocationInfo? location,
             List<DiagnosticInfo> diagnostics,
             out ITypeSymbol targetType)
@@ -446,13 +459,20 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
-            // Item 12 (DWARF064): the [MapValue] shadows a real same-named source member that would have
-            // auto-matched. The constant/provider silently masks the source data — usually a leftover stub
-            // from before the source member existed (DWARF039 source-coverage does not fire here). Reported,
-            // not refused: the directive still applies.
-            if (sourceHasMatchingMember(target))
+            // Item 12 (DWARF064): the [MapValue] shadows a real source member that would have auto-matched.
+            // The constant/provider silently masks the source data — usually a leftover stub from before the
+            // source member existed (DWARF039 source-coverage does not fire here). Reported, not refused: the
+            // directive still applies. The message names the shadowed member by its real spelling, because
+            // that is the spelling [MapIgnoreSource] must carry to disown it — for this rule and for source
+            // coverage alike.
+            var shadowed = shadowedSourceMember(target);
+            if (shadowed is not null)
             {
-                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MapValueShadowsSource, location, target));
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.MapValueShadowsSource,
+                    location,
+                    target,
+                    MessageArg2: shadowed));
             }
 
             return true;

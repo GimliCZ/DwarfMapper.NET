@@ -274,7 +274,12 @@ namespace DwarfMapper.Generator.Pipeline
             HashSet<string>? consumedSources = null,
             IReadOnlyList<string>? flattenRoots = null,
             IReadOnlyList<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>?
-                mapValues = null)
+                mapValues = null,
+            // Source members disowned by [MapIgnoreSource], by real name. Read by the DWARF064 shadow rule, which
+            // this endpoint shares with the create map through TryValidateMapValueTarget — and which reached
+            // the create map's [MapIgnoreSource] set first and this one not at all, the "fixed at 1 of N sites"
+            // shape. Null means "none declared".
+            HashSet<string>? ignoredSourceMembers = null)
         {
             // IgnoreObsoleteMembers, target side: fold obsolete destination members into the ignore set,
             // exactly as ResolveMembers does, so every downstream check honours it through one addition. An
@@ -548,7 +553,12 @@ namespace DwarfMapper.Generator.Pipeline
                         ignores,
                         ctorParamTypes.ContainsKey,
                         writableByName,
-                        sources.ContainsKey,
+                        // The projection lookup is already keyed the way this pair matches and carries the real
+                        // source name — the spelling [MapIgnoreSource] is read under, here and for source coverage.
+                        name => sources.TryGetValue(name, out var shadowed)
+                                && !(ignoredSourceMembers?.Contains(shadowed.Name) ?? false)
+                            ? shadowed.Name
+                            : null,
                         location,
                         diagnostics,
                         out var mvTgtType))

@@ -30,7 +30,7 @@ namespace DwarfMapper.NegativeCases
     /// </remarks>
     internal static class CaseDriver
     {
-        private static readonly Lazy<ImmutableArray<MetadataReference>> Refs = new(() =>
+        internal static readonly Lazy<ImmutableArray<MetadataReference>> Refs = new(() =>
         {
             var tpa = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? string.Empty;
 

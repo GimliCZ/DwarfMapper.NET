@@ -125,9 +125,10 @@ namespace DwarfMapper.Generator.Tests
 
         public static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource) Run(
             string source,
-            NullableContextOptions nullable = NullableContextOptions.Disable)
+            NullableContextOptions nullable = NullableContextOptions.Disable,
+            bool allowUnsafe = false)
         {
-            var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable);
+            var compilation = BuildCompilation("DwarfMapperTestAsm", source, nullable, allowUnsafe);
 
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var genDiagnostics);
@@ -329,9 +330,16 @@ namespace DwarfMapper.Generator.Tests
         /// </summary>
         public static (Assembly? Assembly, ImmutableArray<Diagnostic> Errors) EmitAssembly(string source)
         {
-            var asmName = "FuzzAsm_" + Guid.NewGuid().ToString("N");
-            var compilation = BuildCompilation(asmName, source);
+            return EmitAssembly(BuildCompilation("FuzzAsm_" + Guid.NewGuid().ToString("N"), source));
+        }
 
+        /// <summary>
+        ///     <see cref="EmitAssembly(string)" /> for a compilation the caller built — several syntax trees in a
+        ///     chosen order, unsafe code, a specific assembly name. The generator runs against exactly that
+        ///     compilation, so what it saw is what the test controls.
+        /// </summary>
+        public static (Assembly? Assembly, ImmutableArray<Diagnostic> Errors) EmitAssembly(CSharpCompilation compilation)
+        {
             var driver = CSharpGeneratorDriver.Create(new DwarfGenerator());
             driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
 
@@ -355,18 +363,35 @@ namespace DwarfMapper.Generator.Tests
         public static CSharpCompilation BuildCompilation(
             string assemblyName,
             string source,
-            NullableContextOptions nullable = NullableContextOptions.Disable)
+            NullableContextOptions nullable = NullableContextOptions.Disable,
+            bool allowUnsafe = false)
         {
-            var syntaxTree = CSharpSyntaxTree.ParseText(source);
-            return CSharpCompilation.Create(
-                assemblyName,
+            return BuildCompilation(assemblyName,
                 new[]
                 {
-                    syntaxTree
+                    CSharpSyntaxTree.ParseText(source)
                 },
+                nullable,
+                allowUnsafe);
+        }
+
+        /// <summary>
+        ///     The multi-tree form. Tree order is the order the compiler sees the files in, which is the order it
+        ///     lays out a partial struct's fields in — a test that needs a particular file order states it here.
+        /// </summary>
+        public static CSharpCompilation BuildCompilation(
+            string assemblyName,
+            IReadOnlyList<SyntaxTree> trees,
+            NullableContextOptions nullable = NullableContextOptions.Disable,
+            bool allowUnsafe = false)
+        {
+            return CSharpCompilation.Create(
+                assemblyName,
+                trees,
                 References.Value,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-                    nullableContextOptions: nullable));
+                    nullableContextOptions: nullable,
+                    allowUnsafe: allowUnsafe));
         }
     }
 }

@@ -190,20 +190,24 @@ namespace DwarfMapper.Generator
             // are value types; the pair sets are wrapped in EquatableArray (raw ImmutableArray has REFERENCE
             // equality on its backing array). Guarded by Unrelated_edit_leaves_the_root_validation_output_cached.
             var emptyPairs = EquatableArray.From(Array.Empty<(string, string)>());
+            var emptyProviders = EquatableArray.From(Array.Empty<(string, string, string)>());
             var rootInfo = context.CompilationProvider.Select((compilation, _) =>
             {
                 var (isRoot, autoValidate) = AmbientValidator.GetRootConfig(compilation);
                 if (!isRoot)
                 {
                     return (IsRoot: false, AutoValidate: false, DiAvailable: false,
-                        Provided: emptyPairs, Required: emptyPairs);
+                        Provided: emptyProviders, Required: emptyPairs, OwnAssembly: string.Empty);
                 }
 
                 var (provided, required) = AmbientValidator.ReadReferenced(compilation);
                 var diAvailable = compilation.GetTypeByMetadataName(
                     "Microsoft.Extensions.DependencyInjection.IServiceCollection") is not null;
                 return (IsRoot: true, AutoValidate: autoValidate, DiAvailable: diAvailable,
-                    Provided: EquatableArray.From(provided), Required: EquatableArray.From(required));
+                    Provided: EquatableArray.From(provided), Required: EquatableArray.From(required),
+                    // Carried so DWARF063 can name THIS assembly alongside the referenced ones. A string is
+                    // value-equatable, so the incremental cache is unaffected.
+                    OwnAssembly: compilation.AssemblyName ?? string.Empty);
             });
 
             context.RegisterSourceOutput(
@@ -228,12 +232,14 @@ namespace DwarfMapper.Generator
                             destination));
 
                     // DWARF063: a pair provided by more than one assembly (first registration wins).
-                    foreach (var (source, destination) in AmbientValidator.AmbiguousProviders(own, root.Provided))
+                    foreach (var (source, destination, providers) in AmbientValidator.AmbiguousProviders(
+                                 own, root.Provided, root.OwnAssembly))
                         spc.ReportDiagnostic(Diagnostic.Create(
                             DiagnosticDescriptors.AmbiguousAmbientProvider,
                             Location.None,
                             source,
-                            destination));
+                            destination,
+                            providers));
 
                     // Runtime fail-fast fallback: DwarfMap.Validate() over every consumed pair (own + referenced).
                     // The checked set IS the consumed link flow, so round-trip vs one-way is covered automatically.

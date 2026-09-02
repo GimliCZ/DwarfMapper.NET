@@ -108,13 +108,33 @@ if ($Nightly) {
 #
 # DwarfMapper (91.5 vs 91.2) and DocTooling (96.3 vs 96.0) are inside the 1.0 pp band, so they pass without
 # a mandatory raise and are left alone — moving a floor by a third of a point is churn, not a ratchet.
+#
+# Re-measured 2026-09-02 (round-28 audit) — fast tier, Release, exact covered/coverable from
+# TestResults/coverage-report/Summary.json, truncated as the rule requires:
+#   DwarfMapper 91.5/79.5 · Generator 94.6/89.0 · DocTooling 96.3/92.1 · CodeFixes 96.2/88.6 · Testing 96.4/92.6
+# Exact covered/coverable: DwarfMapper 291/318 · Generator 10832/11446 · DocTooling 420/436 ·
+# CodeFixes 258/268 · Testing 780/809 = 96.4153.
+#
+#   Testing    87.1 -> 96.4   the GraphOracleComparer sensitivity tests (negative controls)
+#
+# Two things to read twice. First, the 87.1 above was NEVER MET: the tree at the commit that pinned it
+# (cb14993) measures 704/809 = 87.02, and so did every later tree in both tiers, with a byte-identical
+# covered-line set — so `-Coverage` and `-Nightly` threw at this gate on every run since 2026-08-26 and
+# nothing behind stage 1b (exhaustion, AOT, ILVerify, BenchSmoke, mutation) ran through this script. The
+# value was written a tenth above what the tool reports; the rule is the truncated measurement, nothing
+# else. Second, what the 704 -> 780 covered lines were: every violation-reporting line of the graph oracle
+# (TopologyCompare's one `violations.Add`, both FlattenGraphDiff violations, every CrossTypeCompare diff,
+# ValueCompare's null and count arms), `TopologyPreserved`, and the field/dictionary walks — none executed
+# by any test, because every consumer asserts `Count == 0`. An oracle nobody has seen fail grades nothing;
+# tests/DwarfMapper.Testing.Tests/GraphOracleSensitivityTests.cs is the set of failures it now has to
+# produce. Generator (94.6 vs 94.5), DwarfMapper and DocTooling stay inside the band and are left alone.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $coverageFloors = [ordered]@{
     'DwarfMapper'            = 91.2
     'DwarfMapper.Generator'  = 94.5
     'DwarfMapper.DocTooling' = 96.0
     'DwarfMapper.CodeFixes'  = 96.2
-    'DwarfMapper.Testing'    = 87.1
+    'DwarfMapper.Testing'    = 96.4
 }
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────

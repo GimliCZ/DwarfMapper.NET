@@ -9,7 +9,7 @@ namespace DwarfMapper.Generator
     /// </summary>
     /// <remarks>
     ///     Generated files were assembled two different ways: the emitters use <c>StringBuilder.AppendLine</c>, which
-    ///     writes <see cref="System.Environment.NewLine" /> (CRLF on Windows, LF elsewhere), while the synthesized
+    ///     writes <c>Environment.NewLine</c> (CRLF on Windows, LF elsewhere), while the synthesized
     ///     converter/helper bodies are built with hard <c>"\n"</c> literals and then spliced into that same builder.
     ///     A single generated file therefore contained BOTH conventions, and which mixture you got depended on the
     ///     build machine's OS — so the same source produced byte-different output on Windows and Linux. That breaks

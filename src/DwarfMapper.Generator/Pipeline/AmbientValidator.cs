@@ -68,10 +68,15 @@ namespace DwarfMapper.Generator.Pipeline
         ///     (these live in metadata as assembly attributes — readable; the generator cannot see its OWN
         ///     not-yet-emitted manifests, so the root supplies its own provided/required separately).
         /// </summary>
-        public static (ImmutableArray<(string Source, string Destination)> Provided,
+        // Provided carries the PROVIDING ASSEMBLY, not just the pair. DWARF063's whole job is to say a pair is
+        // provided more than once, and a reader cannot act on that without knowing WHICH assemblies collided —
+        // the diagnostic is reported with Location.None, so the message text is the only information there is.
+        // Keeping the identity here also lets AmbiguousProviders count DISTINCT providers rather than raw
+        // occurrences, which is what its message has always claimed to mean.
+        public static (ImmutableArray<(string Source, string Destination, string Assembly)> Provided,
             ImmutableArray<(string Source, string Destination)> Required) ReadReferenced(Compilation compilation)
         {
-            var provided = ImmutableArray.CreateBuilder<(string, string)>();
+            var provided = ImmutableArray.CreateBuilder<(string, string, string)>();
             var required = ImmutableArray.CreateBuilder<(string, string)>();
 
             foreach (var asm in compilation.SourceModule.ReferencedAssemblySymbols)
@@ -81,7 +86,7 @@ namespace DwarfMapper.Generator.Pipeline
                     case KnownNames.DwarfProvidesMapFqn:
                         if (ReadPair(a) is { } p)
                         {
-                            provided.Add(p);
+                            provided.Add((p.Item1, p.Item2, asm.Name));
                         }
 
                         break;
@@ -165,12 +170,12 @@ namespace DwarfMapper.Generator.Pipeline
         public static IReadOnlyList<(string Source, string Destination)> MissingRequires(
             IEnumerable<(string Source, string Destination)> ownProvided,
             IEnumerable<(string Source, string Destination)> ownRequired,
-            IEnumerable<(string Source, string Destination)> referencedProvided,
+            IEnumerable<(string Source, string Destination, string Assembly)> referencedProvided,
             IEnumerable<(string Source, string Destination)> referencedRequired)
         {
             var provided = new HashSet<(string, string)>();
             foreach (var p in ownProvided) provided.Add(p);
-            foreach (var p in referencedProvided) provided.Add(p);
+            foreach (var p in referencedProvided) provided.Add((p.Source, p.Destination));
 
             var required = new SortedSet<(string, string)>(OrdinalPair);
             foreach (var r in ownRequired) required.Add(r);
@@ -187,27 +192,50 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     Pairs provided by MORE THAN ONE assembly in the graph (this compilation + referenced) — the ambient
-        ///     registry keeps the first registration and ignores the rest, so these become DWARF063 warnings.
+        ///     Pairs provided by more than one DISTINCT assembly in the graph (this compilation + referenced), each
+        ///     with the names of the assemblies providing it — the ambient registry keeps the first registration and
+        ///     ignores the rest, so these become DWARF063 warnings.
         /// </summary>
-        public static IReadOnlyList<(string Source, string Destination)> AmbiguousProviders(
+        /// <remarks>
+        ///     This used to count OCCURRENCES: every entry incremented a counter, so a pair listed twice by a single
+        ///     assembly — or a pair reaching the counter twice because one component appeared twice in a reference
+        ///     closure — tripped a diagnostic whose text says "more than one ASSEMBLY provides". The message and the
+        ///     implementation disagreed, and the message was the correct one. Counting distinct providing assemblies
+        ///     is what it always meant, and it is what makes naming them in the message possible.
+        /// </remarks>
+        public static IReadOnlyList<(string Source, string Destination, string Providers)> AmbiguousProviders(
             IEnumerable<(string Source, string Destination)> ownProvided,
-            IEnumerable<(string Source, string Destination)> referencedProvided)
+            IEnumerable<(string Source, string Destination, string Assembly)> referencedProvided,
+            string ownAssemblyName)
         {
-            var counts = new Dictionary<(string, string), int>();
-            foreach (var p in ownProvided)
-                counts[p] = counts.TryGetValue(p, out var c) ? c + 1 : 1;
-            foreach (var p in referencedProvided)
-                counts[p] = counts.TryGetValue(p, out var c) ? c + 1 : 1;
+            var providers = new Dictionary<(string, string), SortedSet<string>>();
 
-            var result = new SortedSet<(string, string)>(OrdinalPair);
-            foreach (var kv in counts)
-                if (kv.Value > 1)
+            void Add((string, string) pair, string assembly)
+            {
+                if (!providers.TryGetValue(pair, out var set))
                 {
-                    result.Add(kv.Key);
+                    set = new SortedSet<string>(StringComparer.Ordinal);
+                    providers[pair] = set;
                 }
 
-            return new List<(string, string)>(result);
+                set.Add(assembly);
+            }
+
+            foreach (var p in ownProvided) Add(p, ownAssemblyName);
+            foreach (var p in referencedProvided) Add((p.Source, p.Destination), p.Assembly);
+
+            var ordered = new SortedSet<(string, string)>(OrdinalPair);
+            foreach (var kv in providers)
+                if (kv.Value.Count > 1)
+                {
+                    ordered.Add(kv.Key);
+                }
+
+            var result = new List<(string, string, string)>();
+            foreach (var pair in ordered)
+                result.Add((pair.Item1, pair.Item2, string.Join(", ", providers[pair])));
+
+            return result;
         }
 
         /// <summary>

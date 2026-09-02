@@ -328,8 +328,9 @@ dotnet run -c Release --project benchmarks/DwarfMapper.Benchmarks
 DwarfMapper has **two** SIMD fast-paths that no competitor offers:
 
 1. **Blittable bulk copy** — a layout-identical element pair is reinterpreted as a single
-   `MemoryMarshal.Cast` block copy behind a JIT-folded size guard; the runtime lowers that memmove to the
-   widest available vector instructions automatically (struct-array case at memcpy speed). It is not limited
+   `MemoryMarshal.Cast` block copy, with the same-bytes verdict settled at generation time rather than
+   re-checked at runtime; the runtime lowers that memmove to the widest available vector instructions
+   automatically (struct-array case at memcpy speed). It is not limited
    to `TSrc[]`→`TDst[]`: **`List<T>` on either side** (and therefore `IList<T>`, `IReadOnlyList<T>`,
    `ICollection<T>` and `IReadOnlyCollection<T>`, which all materialise to `List<T>`), **`ImmutableArray<T>`
    in both directions**, and **enum arrays** all take it when the proof holds. Enum arrays qualify only where

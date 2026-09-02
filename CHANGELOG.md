@@ -29,8 +29,143 @@ so a version with no section here ships with no notes.
   abstract/interface substitution, `[Flags]` combined values and deterministic constructor selection from the
   factory it replaced, so no fixture capability was lost.
 
+### Added
+
+- **A corpus that tests the diagnostic *pathway*, not just the diagnostic.** Every DWARF id is reported by an
+  `IIncrementalGenerator` through `SourceProductionContext.ReportDiagnostic`, and Roslyn does not route
+  generator diagnostics through the analyzer pipeline — so `#pragma warning disable` and an editorconfig
+  `dotnet_diagnostic.X.severity` have **no effect** on them, and only compilation-level `NoWarn` works. All
+  three were measured against a real consumer solution before anything was written. `SuppressionPathwayTests`
+  now pins that: the fixture reports DWARF076, `NoWarn` silences it, a correctly-placed `#pragma` does not, and
+  suppressing one id leaves the others reporting. It carries its own non-vacuity control, and it reads the
+  generator's parked exception so a crash cannot make every assertion pass by reporting nothing.
+  If Roslyn ever starts honouring pragmas here, the pragma test fails — and that failure is the signal to
+  reword every message that currently routes around the limitation.
+
 ### Fixed
 
+- **The blit proof could accept a struct pair whose real layouts were each other's reverse, and the emitted
+  `MemoryMarshal.Cast` then handed every element back with its fields' bytes swapped.** The proof compares the
+  two field lists positionally, and it re-sorted each list by (ordinal file path, position) first — added so
+  that a struct whose fields are split across partial files would get one verdict whatever order the build fed
+  the files in, on the reasoning that for a `Sequential` struct declaration order *is* the emitted layout. That
+  reasoning is exactly right about the unsorted list, and exactly why sorting it was unsound: the compiler
+  orders split fields by the order it received the files, which is MSBuild's — case-insensitive on Windows,
+  where `Point.cs` precedes `Point.Extra.cs` — while the sort was ordinal, where it follows it. The sorted list
+  lined up by name with a twin declared in the reverse order, the proof accepted, and `P{X=1,Y=2}` came out as
+  `Q{X=2,Y=1}` — silently, because the runtime size check inside the copy was removed in round 26 on the
+  strength of this proof. The sort is gone; a struct whose instance fields span more than one partial
+  declaration (the shape behind CS0282) is now refused outright — automatic blit and `[Reinterpret]` alike,
+  since an opt-in cannot assert bytes the compiler never defined — and `DWARF100` says so. Partial structs
+  that keep every instance field in one declaration still blit. Held at the seam in both compile orders and
+  both directions, and end-to-end by `BlitSoundnessTests`, which compiles the production shape, maps it and
+  reads the values back.
+- **The blit proof read the field list as the whole layout; three things change the bytes without changing
+  it.** An explicit `[StructLayout(Size = …)]`, an `[InlineArray(n)]` and a fixed-size buffer's length
+  (`fixed int Buf[4]` and `fixed int Buf[8]` are both `int*` to the type comparison) were all invisible to the
+  proof, which accepted a 4-byte struct against its 32-byte `Size = 32` twin, a plain struct against its
+  `[InlineArray(4)]`, and a 16-byte buffer against a 32-byte one. Cast the wide way the copy threw "destination
+  is too short"; cast the narrow way it silently filled a fraction of the destination and left the rest
+  zeroed. All three are now part of the comparison, each with its own `DWARF100` reason. `Pack` was already
+  compared but never documented as a reason; the `dwarf100` entry now lists all of them.
+- **The README and comparison still advertised a "JIT-folded runtime size guard" on the blit that round 26
+  deleted.** The generation-time proof is the only guard — which is what makes the two fixes above fixes
+  rather than hardening — and the prose now says so.
+- **A diagnostic raised while resolving a nested pair had no location; now it is anchored at the declared
+  method that reached the pair.** A nested pair — `Child` inside `S -> T`, synthesized because a member of the
+  outer pair needed it — has no declaration of its own, and everything its resolution reported (`DWARF001`
+  for a target-only member, `DWARF005` for an unconvertible one, `DWARF038`, `DWARF070`, the rest) went out
+  with `Location.None`: the compiler printed `CSC : error DWARF001: …` against the project, with no file and
+  no line, and Rider titled it "Generator 'DwarfGenerator' failed to generate sources". The message named the
+  member but not the pair, and its remedy — annotate the method — named a method that does not exist for a
+  synthesized pair. The anchor was meant to be the requesting method's location; the code that computed it
+  was dead, and the null was later recorded as the contract. The registry now keeps the location each pair was
+  first requested at and the pair's own resolution reports under it, so a pair any number of levels down
+  inherits the declared method's line through the pairs between. Pinned by `NestedPairDiagnosticLocationTests`.
+- **Three documents described a guarantee the code does not give, or withheld one it does.** The
+  cross-assembly howto's "one provider per pair" limit read as if `DwarfMap.Validate()` would catch a duplicate
+  provider; it checks presence, not uniqueness — `DWARF063` covers duplicates the validation root can see at
+  compile time, and a plugin loaded only at runtime stays first-wins in load order, `IsAmbiguous` being the
+  runtime question to ask. The howto now says so. In the other direction, `docs/SECURITY.md` and
+  `docs/CORRECTNESS.md` still said the `aot-trim-gate` job only compiles the NativeAOT sample; it has
+  asserted a native image and executed the sample's behavioural gate on both platforms since the conformance
+  gates landed. Both now describe the job that runs.
+- **The graph oracle that grades every topology, flatten-graph and cross-type fuzzer had never been seen to
+  fail.** Every consumer of `GraphOracleComparer` asserts that the violation list is empty, and no test in
+  either tier executed a single line that adds to it: the topology oracle's one violation, both
+  `FlattenGraphDiff` violations, every `CrossTypeDiff` mismatch, `ValueDiff`'s null and count arms,
+  `TopologyPreserved`, the walk through public fields and the reach through dictionary values. A change that
+  silenced any of them — a `violations.Add` turned into a no-op, the shared-instance check turned into
+  `true` — would have left the whole suite green, and no mutation leg covers `DwarfMapper.Testing` to say
+  otherwise. `GraphOracleSensitivityTests` now pairs each violation with the positive control one edit away:
+  a diamond whose shared node was mapped twice passes the value oracle and is named by the topology oracle,
+  a cycle the target did not close, an EMPTY collection that is still "not degraded", a back-edge above the
+  walker's depth cap, null against a value, a count that does not match, nulls sorted first, a float widened
+  to a double, a value past `decimal`'s range, enums of two types, and the render helpers' prefixes and null
+  guards. `RoundTrip` now proves that the seed in a `RoundTripException` rebuilds the instance that failed and
+  reproduces its diffs, and `StructuralComparer` that a self-referencing graph stops at its depth cap.
+- **The `DwarfMapper.Testing` coverage floor was a tenth above anything the tree ever measured, so every
+  `-Coverage` and `-Nightly` run stopped at the gate.** The floor was pinned at 87.1 on 2026-08-26; the tree
+  at that commit measures 704/809 = 87.02, and so did every later one, with the same covered-line set. The
+  gate threw on `measured < floor` and nothing behind it — exhaustion, the AOT publish-and-execute, ILVerify,
+  the benchmark smoke, the mutation legs — ran through the script from then on. The floor is now 96.4, the
+  truncated measurement (780/809) after the sensitivity tests above, and the script's comment records both
+  the never-met value and what the covered lines were.
+- **The nightly `package-size` job had been red since round 24, and no local run could have shown it.** The
+  `DwarfMapper` package ceiling was measured at 247 KB on 2026-08-22; rounds 24–27 grew the generator by
+  ~60 KB of IL and the XML docs by ~15 KB, to 280 KB, and no commit re-measured the number as the gate's own
+  comment demands. The gate did exactly its job — the same five entries, no new dependency, no new resource,
+  only more of the same — but it runs only in the nightly CI job, `housekeeping.ps1` never packs, and the
+  nightly went unread. The ceiling is re-measured to 280 KB with the per-entry growth recorded beside it in
+  `scripts/gate-checks.ps1`; `DwarfMapper.Testing` re-measures to the same 47 KB.
+- **DWARF064's remedy was inert; now it works, at both endpoints, under every name convention.** The
+  message tells the reader to write `[MapIgnoreSource("X")]` "if the shadow is intentional", but
+  `TryValidateMapValueTarget` consulted only whether a source member existed — the ignore-*source* set never
+  reached `ResolveMembers` or `ResolveProjectionMembers` at all, so the attribute changed nothing and anyone
+  who followed the message watched the diagnostic survive. The set is now threaded to the shadow check at the
+  create map **and** the projection (class-level plus the method's own; synthesized pairs get class-level,
+  having no declared method), and disowning is tested by the source member's **real** name — the spelling
+  source coverage already reads `[MapIgnoreSource]` under. That last part matters under `CaseInsensitive` and
+  `NameConvention.Flexible`, where the shadowed member is not spelled like the target: the message used to put
+  the *target's* name in both slots, so the attribute it dictated would have silenced this diagnostic and
+  disowned nothing. It now names the shadowed member as the source spells it. Proved by three case **pairs**
+  — exact-name create map, `CaseInsensitive` create map, projection — each firing case pinning the real-name
+  wording and each `_Remedy` sibling applying exactly the attribute the message names and asserting
+  `EXPECT: none`. Every remedy case fails without its half of the fix, which is what makes them evidence
+  rather than decoration.
+- **The five diagnostics reported with no location now identify themselves.** DWARF058, DWARF061, DWARF062,
+  DWARF063 and DWARF081 are reported at the assembly level with `Location.None` — no file, no line — and IDEs
+  title generator diagnostics generically: Rider shows every one of them as
+  *"Generator 'DwarfGenerator' failed to generate sources"*, which reads as a crash and hides both the id and
+  the severity. A consumer saw 128 of those and reasonably concluded the generator was dying. Their message
+  text is the only identifying context they have, so it now leads with the id.
+- **DWARF063 counted occurrences, not assemblies.** Its text says "provided by more than one **assembly**",
+  but `AmbiguousProviders` incremented a per-pair counter for every entry, so a pair listed twice by a single
+  assembly — or one component appearing twice in a reference closure — tripped it. The message and the
+  implementation disagreed and the message was right: it now counts **distinct** providing assemblies. It also
+  **names them** (`… is provided by more than one assembly (Demo.Api, Demo.Plugins)`), which is the
+  information the old wording asked you to act on but never supplied. `AmbientValidator.ReadReferenced` keeps
+  the providing assembly per pair rather than discarding it.
+- **The generator could crash and take every generated map in the consumer's project with it.**
+  `LocationInfo.From` called `Location.GetLineSpan()` unguarded. A `Location` is a span into a particular
+  `SourceText`, and inside an IDE the generator is handed symbols from a compilation snapshot the user is
+  still editing — `ISymbol.Locations` can name a span in another file that has since shrunk, at which point
+  `GetLineSpan()` throws `ArgumentOutOfRangeException('character')` inside Roslyn. Roslyn does not let that
+  escape: it parks the exception on `GeneratorRunResult.Exception` and downgrades it to a **CS8785 warning**,
+  so the build still reports zero errors while `DwarfGenerator` "will not contribute to the output" — one
+  stale span silently erased the entire mapping layer. Reported from a consumer as
+  `MapperExtractor.ExtractCore`. `From` now bounds-checks the span and returns `null` rather than throwing;
+  every consumer already spells the degraded path `Location?.ToLocation() ?? Location.None`, so a diagnostic
+  loses its position and nothing else.
+- **Nothing in the test suite could tell a crashing generator from a refusing one.** Both produce no sources
+  and no errors, and every assertion in the suite reads sources or diagnostics — so the battery would have
+  gone green with the generator dying on every input. `GeneratorRunner.Run` now asserts
+  `GeneratorRunResult.Exception is null`, which retro-fits crash detection onto all 7150 generator tests, and
+  a new adversary suite attacks the engine with unparseable source, unresolved/error symbols, self-referential
+  and mutually recursive types, open generics, 60-deep nesting, astral-plane and verbatim-keyword identifiers,
+  2000-character names, duplicated and contradictory attributes, `ref struct` and interface targets, and an
+  empty compilation. It carries its own non-vacuity control — a deliberately throwing generator that the
+  harness must catch — because a resilience suite whose detector is broken passes perfectly.
 - **Two emitters disagreed on how the emitted null guard is written.** The registry emitter wrote the guard
   inline as `if (source is null) throw new global::System.ArgumentNullException(nameof(source));`, while every
   other emitter used the BCL throw-helper `global::System.ArgumentNullException.ThrowIfNull(source)`.

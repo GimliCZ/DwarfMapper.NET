@@ -40,7 +40,13 @@ namespace DwarfMapper.Generator.Diagnostics
         // taken down with it (TASKS.md I14). Read by MapperClassModel.HasBlockingError, which decides emission;
         // the diagnostic is still REPORTED either way. Part of value equality, like SeverityOverride, so the
         // incremental cache tells a scoped refusal from a class-killing one.
-        bool ScopedToMethod = false)
+        bool ScopedToMethod = false,
+        // A second message argument, for the rare descriptor whose message must name TWO things: DWARF064 names
+        // the target the [MapValue] is for AND the real spelling of the source member it shadows, because that
+        // spelling is what the remedy it prints has to carry. Every other pipeline descriptor either has one
+        // placeholder or has its caller build the whole string (DWARF067–069). Null means the message has one
+        // placeholder. A plain string, like MemberName, so the record stays value-equatable for the cache.
+        string? MessageArg2 = null)
     {
         /// <summary>Property bag key under which <see cref="MemberName" /> reaches a CodeFixProvider.</summary>
         public const string MemberPropertyKey = "Member";
@@ -69,9 +75,12 @@ namespace DwarfMapper.Generator.Diagnostics
                 properties = null!;
             }
 
+            var messageArgs = MessageArg2 is null
+                ? new object[] { MessageArg }
+                : new object[] { MessageArg, MessageArg2 };
             return SeverityOverride is { } sev
-                ? Diagnostic.Create(Descriptor, location, sev, null, properties, MessageArg)
-                : Diagnostic.Create(Descriptor, location, properties, MessageArg);
+                ? Diagnostic.Create(Descriptor, location, sev, null, properties, messageArgs)
+                : Diagnostic.Create(Descriptor, location, properties, messageArgs);
         }
     }
 }

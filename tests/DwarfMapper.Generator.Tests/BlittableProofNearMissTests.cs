@@ -19,15 +19,16 @@ namespace DwarfMapper.Generator.Tests
     /// </summary>
     public class BlittableProofNearMissTests
     {
+        // allowUnsafe for the fixed-buffer fixture; it changes nothing for the others.
         private static bool ReportsNearMiss(string source)
         {
-            var (diagnostics, _) = GeneratorTestHarness.Run(source);
+            var (diagnostics, _) = GeneratorTestHarness.Run(source, allowUnsafe: true);
             return diagnostics.Any(d => d.Id == "DWARF100");
         }
 
         private static string NearMissReason(string source)
         {
-            var (diagnostics, _) = GeneratorTestHarness.Run(source);
+            var (diagnostics, _) = GeneratorTestHarness.Run(source, allowUnsafe: true);
             var hint = diagnostics.SingleOrDefault(d => d.Id == "DWARF100");
             return hint is null ? string.Empty : hint.GetMessage(CultureInfo.InvariantCulture);
         }
@@ -99,6 +100,57 @@ namespace DwarfMapper.Generator.Tests
                                 public partial class M { public partial D Map(C c); }
                                 """
                 },
+                {
+                    // The split side is the DESTINATION so that the source keeps the literal `public struct SrcV {`
+                    // the shape-breaking test below rewrites; the rule itself is symmetric.
+                    "more than one partial declaration", """
+                                                         using DwarfMapper;
+                                                         namespace Demo;
+                                                         public struct SrcV { public int X; public int Y; }
+                                                         public partial struct DstV { public int X; }
+                                                         public partial struct DstV { public int Y; }
+                                                         public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                                         public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                                         [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                         """
+                },
+                {
+                    "explicit [StructLayout] Size", """
+                                                    using System.Runtime.InteropServices;
+                                                    using DwarfMapper;
+                                                    namespace Demo;
+                                                    public struct SrcV { public int X; }
+                                                    [StructLayout(LayoutKind.Sequential, Size = 32)]
+                                                    public struct DstV { public int X; }
+                                                    public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                                    public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                                    [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                    """
+                },
+                {
+                    "[InlineArray] repeats its one field", """
+                                                          using System.Runtime.CompilerServices;
+                                                          using DwarfMapper;
+                                                          namespace Demo;
+                                                          public struct SrcV { public int E; }
+                                                          [InlineArray(4)]
+                                                          public struct DstV { public int E; }
+                                                          public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                                          public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                                          [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                          """
+                },
+                {
+                    "fixed buffer's length is part of the layout", """
+                                                                  using DwarfMapper;
+                                                                  namespace Demo;
+                                                                  public struct SrcV { public int Tag; public unsafe fixed int Buf[4]; }
+                                                                  public struct DstV { public int Tag; public unsafe fixed int Buf[8]; }
+                                                                  public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                                                  public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                                  """
+                },
             };
 
         [Theory]
@@ -130,9 +182,9 @@ namespace DwarfMapper.Generator.Tests
                 .Select(m => m.Groups[1].Value)
                 .ToList();
 
-            // Six assignment SITES for four reason KINDS — the metadata and non-Sequential reasons each have
-            // an 'a' arm and a 'b' arm. Counting sites would therefore be the wrong assertion; what must hold
-            // is that no site can produce wording that no fixture provokes.
+            // Eleven assignment SITES for eight reason KINDS — the metadata, non-Sequential and split-declaration
+            // reasons each have an 'a' arm and a 'b' arm. Counting sites would therefore be the wrong assertion;
+            // what must hold is that no site can produce wording that no fixture provokes.
             Assert.NotEmpty(literals);
             var phrases = EveryReasonBranch.Select(row => (string)row[0]).ToList();
             var unreached = literals

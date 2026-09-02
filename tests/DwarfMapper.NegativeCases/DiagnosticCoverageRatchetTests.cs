@@ -39,7 +39,7 @@ namespace DwarfMapper.NegativeCases
         ///     the same commit as the entry it loses, and never raise it — a raise would be the hatch this pin
         ///     exists to close.
         /// </summary>
-        private const int PredatesThisProjectPin = 65;
+        private const int PredatesThisProjectPin = 64;
 
         /// <summary>
         ///     The highest DWARF id that existed on 2026-08-12, compared ordinally (the ids are fixed-width, and
@@ -89,7 +89,10 @@ namespace DwarfMapper.NegativeCases
             // DWARF061 removed 2026-08-16: the validation root's whole observable effect is this refusal, so it
             // is where [assembly: DwarfMapperValidationRoot] is proved to do anything at all.
             "DWARF060", "DWARF062", "DWARF063",
-            "DWARF064", "DWARF065", "DWARF066", "DWARF067",
+            // DWARF064 removed: it now has a case AND a _Remedy sibling proving the remedy its message
+            // names actually silences it. That pairing is why the exemption could be lifted — the remedy
+            // was inert until the ignore-source set was threaded into the shadow check.
+            "DWARF065", "DWARF066", "DWARF067",
             "DWARF068", "DWARF069", "DWARF070", "DWARF071",
             "DWARF073", "DWARF074", "DWARF075", "DWARF076",
             "DWARF077"

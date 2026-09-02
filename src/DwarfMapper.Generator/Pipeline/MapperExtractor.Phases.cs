@@ -1172,7 +1172,15 @@ namespace DwarfMapper.Generator.Pipeline
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.SelfMap,
                     selfLoc,
-                    $"Source and target are the same type '{m.ParameterTypeFullName}', so '{m.MethodName}' just " + "emits a shallow copy of every member. This is usually a mistyped type argument — did you mean " + "a different target? If a shallow copy IS what you want, suppress DWARF076 here to say so."));
+                    // The remedy names <NoWarn> and NOT a #pragma on purpose, and the distinction is not
+                    // pedantry: Roslyn filters generator-reported diagnostics at the COMPILATION level only, so
+                    // neither `#pragma warning disable DWARF076` nor an editorconfig
+                    // `dotnet_diagnostic.DWARF076.severity` reaches them. Both were tried against a real consumer
+                    // solution and neither suppressed anything; only NoWarn did. The previous wording said
+                    // "suppress DWARF076 here", which sends the reader to a per-site pragma that silently does
+                    // nothing — a remedy that cannot be followed is worse than no remedy, because the reader
+                    // concludes the diagnostic is broken rather than that the advice was.
+                    $"Source and target are the same type '{m.ParameterTypeFullName}', so '{m.MethodName}' just " + "emits a shallow copy of every member. This is usually a mistyped type argument — did you mean " + "a different target? If a shallow copy IS what you want, add DWARF076 to <NoWarn> in the project " + "to say so — a per-site #pragma does NOT suppress generator diagnostics."));
             }
 
         }
@@ -1192,6 +1200,30 @@ namespace DwarfMapper.Generator.Pipeline
             return declaredNameCount.TryGetValue(mm.MethodName, out var cnt) && cnt > 1
                 ? mm.MethodName + "\u00a7" + mm.ParameterTypeFullName
                 : mm.MethodName;
+        }
+
+        /// <summary>
+        ///     The source members this mapper disowns for <paramref name="method" /> — class-level
+        ///     <c>[MapIgnoreSource]</c> plus the method's own, by their REAL source spelling. Read by the DWARF064
+        ///     shadow rule, whose message names <c>[MapIgnoreSource]</c> as the way to declare a shadow
+        ///     intentional; until it was threaded through, that remedy was inert. Same construction as the
+        ///     source-coverage set in <c>EmitSourceCoverage</c>, so the two rules agree on what "disowned" means.
+        /// </summary>
+        private static HashSet<string> IgnoredSourcesFor(MapperDeclarations decls, IMethodSymbol method)
+        {
+            var set = new HashSet<string>(decls.ClassIgnoreSources, StringComparer.Ordinal);
+            foreach (var s in ReadIgnoreSources(method))
+                set.Add(s);
+            return set;
+        }
+
+        /// <summary>
+        ///     Class-level <c>[MapIgnoreSource]</c> only — for synthesized pairs, which have no declared method
+        ///     to read a method-level set from.
+        /// </summary>
+        private static HashSet<string> ClassIgnoredSources(MapperDeclarations decls)
+        {
+            return new HashSet<string>(decls.ClassIgnoreSources, StringComparer.Ordinal);
         }
 
         /// <summary>
@@ -1851,7 +1883,8 @@ namespace DwarfMapper.Generator.Pipeline
                 // NOT gated on objInitOnly: a parameterless constructor can still carry
                 // [SetsRequiredMembers], and it satisfies the required members exactly as a parameterized one
                 // would. Gating here produced a false DWARF079 on that shape.
-                CtorSetsRequiredMembers(ctor));
+                CtorSetsRequiredMembers(ctor),
+                ignoredSourceMembers: IgnoredSourcesFor(decls, method));
 
             // Append FlattenGraph-injected member maps (traversal helper calls).
             // These come AFTER normal members so the object initializer order is:
@@ -2159,7 +2192,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // the resulting CS8795 read as NotCompilable — so three of the four cells closed by
                     // moving into the population the parity theory judges by nothing. R4 is fixed.
                     ReadFlattenRoots(method),
-                    ReadMapValues(method));
+                    ReadMapValues(method),
+                    IgnoredSourcesFor(decls, method));
 
                 // Source-side completeness for projection. The resolver already knows which source members it
                 // read, so this needed tracking rather than new analysis — it was simply never asked.
@@ -2306,7 +2340,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // object initializer to omit a member from and `required` cannot be violated here.
                     // Without this, ignoring a required member on an update-into method reported a false
                     // DWARF079 — caught by NonTrivialShapeRuntimeTests, which does exactly that legitimately.
-                    requiredMembersAlreadySatisfied: true);
+                    requiredMembersAlreadySatisfied: true,
+                    ignoredSourceMembers: IgnoredSourcesFor(decls, method));
 
                 // Source-side completeness applies here too. It lived inline in the create-map branch, so
                 // RequiredMapping = Both reported unconsumed source members through .Map and said nothing
@@ -3020,7 +3055,8 @@ namespace DwarfMapper.Generator.Pipeline
                     stringFormats: genFormats,
                     mapperReservedConverters: decls.MapperReservedConverters,
                     requiredMembersAlreadySatisfied: genCtorSetsRequired,
-                    factoryExcludedMembers: genFactoryExcluded);
+                    factoryExcludedMembers: genFactoryExcluded,
+                    ignoredSourceMembers: ClassIgnoredSources(decls));
 
                 var genBefore = new List<string>();
                 foreach (var h in decls.BeforeHookDefs)
@@ -3126,7 +3162,7 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 ct.ThrowIfCancellationRequested();
 
-                var (nestedSrc, nestedTgt, nestedName, pairAutoNest) = acc.NestedRegistry.Dequeue();
+                var (nestedSrc, nestedTgt, nestedName, pairAutoNest, nestedOrigin) = acc.NestedRegistry.Dequeue();
 
                 // Pair-scoped member config for this acc.Synthesized pair (empty when none declared on the class), so a
                 // [MapProperty<S,T>] rename applies even when S -> T is mapped as a nested/collection element.
@@ -3137,14 +3173,14 @@ namespace DwarfMapper.Generator.Pipeline
                 // so subsequent GetOrReserve calls record edges in the dependency graph.
                 acc.NestedRegistry.SetCurrentPair(nestedName);
 
-                // C3: use the first declared method's location as the diagnostic anchor for
-                // nested acc.Diagnostics (not null, so DWARF030 has a non-null location).
-                // ISSUE-012: the loop that used to sit here scanned `acc.Methods` for the first partial one and then
-                // `break`-ed out of a comment-only body, discarding the index and never assigning nestedLocation —
-                // dead code that only implied a location was being computed. The method model does not carry a
-                // LocationInfo, so null is the actual contract here (DWARF030 only requires non-null at its own
-                // emission site).
-                LocationInfo? nestedLocation = null;
+                // The diagnostic anchor for everything this pair's resolution reports (DWARF001/005/025/038/070,
+                // …): the site that first requested the pair — the declared method whose member reached it, or
+                // for a deeper pair the anchor its requester was built under, since the requester resolves its
+                // members at this very location and threads it into GetOrReserve. C3 intended this ("use the first
+                // declared method's location"), ISSUE-012 found the code that was supposed to compute it dead and
+                // recorded null as the contract — which put every nested-pair error on the project node instead
+                // of a line, with a remedy ("annotate the method") that names nothing the reader can find.
+                LocationInfo? nestedLocation = nestedOrigin;
 
                 // A helper acc.Synthesized for a pair the class ALSO declares must construct it the way the declared
                 // pair does. Under Preserve/SetNull the element route is REQUIRED to be a acc.Synthesized helper —
@@ -3304,7 +3340,8 @@ namespace DwarfMapper.Generator.Pipeline
                     // never wrote this pair, so they certainly did not offer it one.
                     mapperReservedConverters: decls.MapperReservedConverters,
                     requiredMembersAlreadySatisfied: nestedCtor is not null && CtorSetsRequiredMembers(nestedCtor),
-                    factoryExcludedMembers: nestedFactoryExcluded);
+                    factoryExcludedMembers: nestedFactoryExcluded,
+                    ignoredSourceMembers: ClassIgnoredSources(decls));
 
                 // Only the pairs registered above — a genuinely NESTED member pair is deliberately left alone,
                 // because source coverage has never applied at depth and turning it on for every acc.Synthesized pair

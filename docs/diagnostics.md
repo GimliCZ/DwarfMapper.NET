@@ -544,9 +544,12 @@ all but one definition. Reported at the validation root.
 ## dwarf064
 **[MapValue] shadows an auto-matchable source member** · Info
 
-A `[MapValue]` supplies a constant/provider for a target that *also* has a same-named readable source member,
-so the real source value is never read — usually a leftover stub from before the source member existed. **Fix:**
-remove the `[MapValue]` to map the source member, or `[MapIgnoreSource("{member}")]` if the shadow is intended.
+A `[MapValue]` supplies a constant/provider for a target that *also* has a readable source member which would
+have auto-matched it under the mapper's name convention (`first_name` for `FirstName` under `Flexible` counts),
+so the real source value is never read — usually a leftover stub from before the source member existed. The
+message names that source member as the source spells it. **Fix:** remove the `[MapValue]` to map the source
+member, or `[MapIgnoreSource("{source member}")]` — the name from the message — if the shadow is intended. A
+source member already disowned by `[MapIgnoreSource]` does not count as a shadow, at either endpoint.
 
 ## dwarf065
 **Update-into replaces a nested member instead of merging it** · Info
@@ -1835,7 +1838,7 @@ public struct Point { public int X; public int Y; }
 public struct PointDto { public int X; public int Y; }
 ```
 
-**Fix:** whatever the message names. The three it reports are worth knowing in advance:
+**Fix:** whatever the message names. The reasons it reports are worth knowing in advance:
 
 - **A layout that is not `Sequential`.** `Auto` permits the runtime to reorder fields, so the two layouts are
   not *provably* identical even when they look it. Declaring `[StructLayout(LayoutKind.Sequential)]` is the
@@ -1844,9 +1847,22 @@ public struct PointDto { public int X; public int Y; }
 - **A struct declared in metadata.** For a struct DwarfMapper can see the source of, an absent
   `[StructLayout]` reliably means the C# default of `Sequential`; for one from another assembly it does not,
   so the proof cannot be completed.
+- **Instance fields spread across more than one `partial` declaration.** The compiler itself defines no field
+  order for that shape (CS0282: the layout is whichever order the build fed the files in), so there is nothing
+  to prove against. Keep every instance field in one declaration; static members, constants, methods and
+  properties without backing fields may live anywhere.
+- **A `Pack` that differs.** Same fields, different padding, different bytes.
+- **An explicit `[StructLayout] Size` that differs.** `Size` pads the struct up without adding a field, so two
+  structs with identical field lists can still occupy different bytes.
+- **`[InlineArray]` lengths that differ** — or an inline array against a plain struct of its one element. The
+  attribute repeats the single field, so the counts are part of the layout.
+- **A fixed-size buffer whose length differs** — or a fixed buffer against a pointer field. `fixed int Buf[4]`
+  and `fixed int Buf[8]` have the same field type (`int*`); the length is what the runtime reserves bytes for.
 - **Field names that differ.** DwarfMapper maps **by name**, so a positional reinterpret only agrees with the
   declared mapping when the names line up. Rename to align them — or apply `[Reinterpret]` to say that
   positional semantics are what you actually meant.
+
+Every reason but the last applies to `[Reinterpret]` too: the opt-in waives the name check, not the bytes.
 
 **Why informational, and why it stays that way.** The mapping works. Only speed is lost, and plenty of
 callers will not care about an array of four elements. A warning here would become a *build failure* under

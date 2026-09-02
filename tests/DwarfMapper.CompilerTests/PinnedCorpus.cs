@@ -47,12 +47,13 @@ namespace DwarfMapper.CompilerTests
 
         /// <summary>
         ///     The P5→K0 forward reference, honoured: BlittableProofCoverageTests'
-        ///     <c>CanReinterpret_partial_file_struct_verdict_is_file_order_independent</c> built this shape by
-        ///     hand as a K0 corpus row in waiting — the same struct pair split across two files, compiled in
-        ///     BOTH file orders, same verdict. Here it is expressed in the descriptor (the split axis exists for
-        ///     this row) and asserted at K0's level: both file orders must produce the same accept/refuse
-        ///     outcome, no silent CS errors, and BYTE-IDENTICAL generated source — the file-order-independence
-        ///     claim the P5 mutants attacked, measured end-to-end rather than at the BlittableProof seam.
+        ///     <c>CanReinterpret_partial_struct_with_fields_in_two_declarations_is_refused_in_both_compile_orders</c>
+        ///     built this shape by hand as a K0 corpus row in waiting — the same struct pair split across two
+        ///     files, compiled in BOTH file orders, same verdict (today: the blit is refused, because the
+        ///     compiler defines no field order for such a struct). Here it is expressed in the descriptor (the
+        ///     split axis exists for this row) and asserted at K0's level: both file orders must produce the
+        ///     same accept/refuse outcome, no silent CS errors, and BYTE-IDENTICAL generated source — the
+        ///     scalar path maps the pair by NAME, which is why the file order cannot reach the emission at all.
         /// </summary>
         public static CorpusRow PartialFileSplitStructPair { get; } = new(
             "P5-K0-partial-split-struct-pair",

@@ -64,7 +64,11 @@ do **not** declare the map in the consuming assembly — it is declared once, an
 - **Public types only** — internal types cannot be named by another assembly, so they are in-assembly only.
 - **Stateless mappers only** — a mapper with constructor dependencies is not ambient-registered (`DWARF062`);
   inject it directly.
-- **One provider per pair** — two assemblies providing the same `(S,T)` is `DWARF063` (the first wins).
+- **One provider per pair** — two assemblies providing the same `(S,T)` is `DWARF063` (the first wins). The
+  check reads the manifests the root can see at compile time; a duplicate that only arrives at runtime (a
+  lazy-loaded plugin the root never referenced) is still first-wins, in load order, and `DwarfMap.Validate()`
+  checks presence, not uniqueness. If load-order independence matters there, ask
+  `DwarfMapperRegistry.IsAmbiguous(typeof(S), typeof(T))` after the plugins have loaded.
 - **Base-type resolution is a runtime fallback** — `DwarfMapperRegistry.Map` matches by the object's runtime
   type, then walks its base types. If only `Base→Dto` is registered and you call `Map<Dto>(derivedInstance)`,
   the **base map runs and members that exist only on the derived type are silently dropped** (the compile-time

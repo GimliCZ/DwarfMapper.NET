@@ -24,7 +24,7 @@ namespace DwarfMapper.Generator.Pipeline
     {
         private const int MaxPairs = 512;
 
-        private readonly Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest)> _buildQueue = new();
+        private readonly Queue<(ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest, LocationInfo? Origin)> _buildQueue = new();
 
         // ── None-mode collection/dict ctx-upgrade candidates ────────────────────────
         // A None-mode collection/dict helper whose element/key/value resolves to a PUBLIC declared
@@ -79,10 +79,12 @@ namespace DwarfMapper.Generator.Pipeline
             => _ctxUpgradeCandidates;
 
         /// <summary>
-        ///     Dequeues the next pending (src, tgt, methodName, autoNest) to build.
-        ///     autoNest is the per-method value that triggered the enqueue (C1 fix).
+        ///     Dequeues the next pending (src, tgt, methodName, autoNest, origin) to build.
+        ///     autoNest is the per-method value that triggered the enqueue (C1 fix); origin is the location the
+        ///     first requester of the pair was resolving at — the declared method whose member reached it, or,
+        ///     for a deeper pair, the anchor its requesting pair was itself built under.
         /// </summary>
-        public (ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest) Dequeue()
+        public (ITypeSymbol Src, INamedTypeSymbol Tgt, string Name, bool AutoNest, LocationInfo? Origin) Dequeue()
         {
             return _buildQueue.Dequeue();
         }
@@ -124,9 +126,12 @@ namespace DwarfMapper.Generator.Pipeline
         /// <param name="src">The nested pair's source type; its fully-qualified name is half the registry key.</param>
         /// <param name="tgt">The nested pair's destination type; its fully-qualified name is the other half.</param>
         /// <param name="location">
-        ///     The declaration site, threaded here by every caller for diagnostic reporting. Nothing on this path
-        ///     reads it: the one refusal here — the <c>MaxPairs</c> cap — records the triggering pair on the registry
-        ///     and returns <see langword="null" />, leaving the caller to report at a location it already holds.
+        ///     The site the caller is resolving at. Stored with the enqueued pair and handed back by
+        ///     <see cref="Dequeue" /> as the anchor for every diagnostic the pair's own resolution reports:
+        ///     a synthesized pair has no declaration of its own, and without this its DWARF001/005/025/… carried
+        ///     <c>Location.None</c> — no file, no line, and in Rider the generic "failed to generate sources" title.
+        ///     The one refusal here — the <c>MaxPairs</c> cap — records the triggering pair on the registry and
+        ///     returns <see langword="null" />, leaving the caller to report at the location it already holds.
         /// </param>
         /// <param name="autoNest">
         ///     C1 fix: the per-method autoNest value that triggered this enqueue.
@@ -162,7 +167,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             methodName = BuildMethodName(srcFqn, tgtFqn);
             _reserved[key] = methodName;
-            _buildQueue.Enqueue((src, tgt, methodName, autoNest));
+            _buildQueue.Enqueue((src, tgt, methodName, autoNest, location));
 
             // Record the dependency edge: current pair → new pair.
             RecordEdge(methodName);

@@ -495,9 +495,27 @@ function Assert-NoMutatedProductBinaries {
 #   DwarfMapper.Testing.1.0.2-rc.1.nupkg   48,508 B and  48,508 B  -> floor( 48508/1024) =  47 KB
 # (The one-byte wobble is NuGet's random .psmdcp part name, not build output - scripts/repro-pack-check.py
 # measured exactly that and its header records it.)
+#
+# RE-MEASURED 2026-09-02 (round-28 audit), Windows, SDK 10.0.101, Release, -p:EnablePackageValidation=false
+# (the nightly job's own pack line), working tree of the round-27/28 diff:
+#   DwarfMapper.1.0.2-rc.1.nupkg          287,189 B  -> floor(287189/1024) = 280 KB   (was 247)
+#   DwarfMapper.Testing.1.0.2-rc.1.nupkg   48,769 B  -> floor( 48769/1024) =  47 KB   (unchanged)
+# The main package outgrew its ceiling during rounds 24-27 and no commit re-measured it, so the nightly
+# `package-size` job has been red since then: the gate did its job, and nobody read the nightly. Where the
+# ~33 KB went (bytes raw / deflated, 1.0.2-rc.1 at e9d2a77 -> the rc5 pack of this tree):
+#   DwarfMapper.Generator.dll   517,120 / 168,960 -> 576,512 / 189,348   the rounds' pipeline growth
+#   DwarfMapper.xml             153,769 /  34,693 -> 168,571 /  38,638   doc comments on the new surface
+#   DwarfMapper.dll              40,960 /  17,333 ->  42,496 /  18,082
+#   README.md                    73,456 /  24,921 ->  74,062 /  25,089
+#   DwarfMapper.CodeFixes.dll    24,576 unchanged
+# Same five entries, no dependency, no resource - none of the class this gate exists to catch - so this is a
+# raise with its reason, not a finding against the package. Headroom to the first red byte (281 KB = 287,744 B) is 555 bytes. Note that this
+# gate runs ONLY in the nightly CI `package-size` job: scripts/housekeeping.ps1 never packs, so no local run,
+# `-Nightly` included, can see this red. A local pack + Assert-PackageSizeWithinCeiling under -Nightly would
+# close that hole; it is the one gate the script does not mirror.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────
 $script:PackageSizeCeilingsKb = [ordered]@{
-    'DwarfMapper'         = 247
+    'DwarfMapper'         = 280
     'DwarfMapper.Testing' = 47
 }
 

@@ -41,8 +41,10 @@ and `CORRECTNESS.md` asserted CI "runs a behavioural gate over the published nat
 | SEC-07 | Generated code is trim/NativeAOT-safe | `CI:aot-trim-gate` |
 
 `CI:`-prefixed entries are mechanised by a CI job rather than a test. They are the weakest bindings in this
-table — a job can be skipped, and until Phase 5 lands `aot-trim-gate` only *compiles* the AOT sample rather
-than running it.
+table — the scan checks only that a job of that name is defined in `ci.yml`, and a job can be skipped.
+`aot-trim-gate` itself publishes the sample with `-warnaserror`, asserts the output is a native image (no
+managed assembly, no `runtimeconfig.json`), and then executes it as a behavioural gate, on `linux-x64` and
+`win-x64`.
 
 ## Over-posting / mass-assignment guidance (consumer responsibility)
 
