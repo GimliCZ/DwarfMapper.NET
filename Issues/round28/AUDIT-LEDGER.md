@@ -590,8 +590,11 @@ schemas. Corpus holes, the [[test-infra-holes-pattern]] again.
   the remaining F24 gap is not reachable there. rc7 (rc6 + the sweep) was packed at 08:15 and offered; the
   consumer session stays on rc6 with evidence that none of the three swept shapes is reachable in that solution
   (no `.Project`, no `[MapTo]`, every mapped dictionary value type non-nullable — read off the emitted trees),
-  so FusedChat is a non-signal for the sweep sites, not an untested consumer. They will re-verify only if a
-  later version CHANGES rc6 behaviour rather than adding to it.
+  so FusedChat is a non-signal for the sweep sites, not an untested consumer. At the user's request (09:0x)
+  the consumer session then bumped all eight references rc6 → rc7 (packed 08:15 from the code committed as
+  d09cc16 on audit/round28) and re-verified: 0 errors, 0 generated-file warnings, 0 DWARF leaks, the same 78
+  unique solution warnings as rc6 (empty delta both ways), 709 passed / 0 failed / 4 pre-existing skips — rc7
+  identical to rc6 in every measured respect there, as predicted. Both sides uncommitted pending review.
 - Package after the fix and the sweep: Windows 288,884 B = 282 KB, container 288,676 B = 281 KB — the two
   platforms straddle the boundary by the 208-byte CRLF/LF delta. Ceiling set to 282 (the larger measurement, so
   one tree is green wherever the gate runs; 281 would leave 92 B on ubuntu and be red on every Windows pack),
