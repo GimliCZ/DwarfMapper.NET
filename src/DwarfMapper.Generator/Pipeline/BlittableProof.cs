@@ -149,6 +149,11 @@ namespace DwarfMapper.Generator.Pipeline
         ///         The name-mismatch case is the one this exists for. Such a pair is byte-identical and one rename
         ///         away from the fast path, and nothing in the build would otherwise say so.
         ///     </para>
+        ///     <para>
+        ///         A one-sided <c>Nullable&lt;T&gt;</c> is the one field-TYPE difference that still gets reported:
+        ///         once the optional wrapper is stripped the two sides are byte-identical, so the pair is one
+        ///         <c>?</c> away from the fast path in exactly the sense the name-mismatch case is one rename away.
+        ///     </para>
         /// </summary>
         public static bool TryExplainNearMiss(ITypeSymbol src, ITypeSymbol dst, out string reason)
         {
@@ -208,11 +213,28 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Types must line up positionally for this to be a near-miss at all; if they do not, the pair is
             // simply two different structs and the element loop is the right answer.
+            //
+            // One exception, checked ahead of the general refusal: a member that is Nullable<T> on exactly one
+            // side, where the OTHER side's type is itself layout-identical to T. That pair genuinely is one `?`
+            // away from the fast path — unwrap the optional and the bytes agree — so it is reported here, before
+            // the ordinary "field types differ" gate would silence it. A one-sided Nullable<T> whose T does NOT
+            // match (e.g. `long?` against `int`) is still a real conversion, not a near-miss, and stays silent:
+            // the LayoutIdentical check on the unwrapped types is what tells the two apart.
             for (var i = 0; i < fa.Count; i++)
+            {
+                var aIsNullable = fa[i].Type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T };
+                var bIsNullable = fb[i].Type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T };
+                if (aIsNullable != bIsNullable && LayoutIdentical(Unwrap(fa[i].Type), Unwrap(fb[i].Type)))
+                {
+                    reason = $"member '{fa[i].Name}' is Nullable<T> on one side only — an optional nested member has to be optional on both sides to keep the same bytes";
+                    return true;
+                }
+
                 if (!LayoutIdentical(fa[i].Type, fb[i].Type))
                 {
                     return false;
                 }
+            }
 
             // Only now, with the shapes known to align, is there a fast path worth explaining the absence of.
             if (!a.Locations.Any(l => l.IsInSource))
@@ -322,6 +344,16 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
+            // Nullable<T> is {bool hasValue; T value}, sequential, unmanaged when T is (C# 8 rule); two Nullable<T>
+            // instantiations have the same layout exactly when their T's do. The metadata-struct rule below would refuse
+            // it (no source to read [StructLayout] from), so it is decided here, by the proof over T — measured in
+            // Issues/round29 §10: an optional nested member keeps the root blit at 0.15x / 0.06x.
+            if (a is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nna &&
+                b is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nnb)
+            {
+                return LayoutIdentical(nna.TypeArguments[0], nnb.TypeArguments[0], byBytesOnly);
+            }
+
             if (IsPrimitive(a) || IsPrimitive(b))
             {
                 // The automatic blit demands the SAME TYPE: int -> uint is a conversion the mapper should
@@ -401,6 +433,14 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return true;
+        }
+
+        /// <summary>The type argument of <c>Nullable&lt;T&gt;</c>, or <paramref name="t" /> itself when it is not one.</summary>
+        private static ITypeSymbol Unwrap(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } n
+                ? n.TypeArguments[0]
+                : t;
         }
 
         private static bool IsPrimitive(ITypeSymbol t)

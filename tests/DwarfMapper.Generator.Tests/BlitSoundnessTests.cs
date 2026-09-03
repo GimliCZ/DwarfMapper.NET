@@ -211,6 +211,46 @@ namespace DwarfMapper.Generator.Tests
                 .ToList();
         }
 
+        [Fact]
+        public void Optional_nested_struct_member_keeps_the_root_blit()
+        {
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct Addr { public int Street, City, Zip, Country; }
+                    public struct AddrDto { public int Street, City, Zip, Country; }
+                    public struct Order { public long Id; public Addr? Ship; public long Amount; }
+                    public struct OrderDto { public long Id; public AddrDto? Ship; public long Amount; }
+                    public class Src { public Order[] Items { get; set; } = System.Array.Empty<Order>(); }
+                    public class Dst { public OrderDto[] Items { get; set; } = System.Array.Empty<OrderDto>(); }
+                    [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+                }
+                """;
+            var generated = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
+            Assert.Contains("__DwarfBlit_", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("DWARF100", GeneratorTestHarness.Run(src).Diagnostics.Select(d => d.Id));
+        }
+
+        [Fact]
+        public void Nullable_on_one_side_only_is_a_near_miss_that_names_the_member()
+        {
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct Addr { public int Street, City, Zip, Country; }
+                    public struct Order { public long Id; public Addr? Ship; }
+                    public struct OrderDto { public long Id; public Addr Ship; }
+                    public class Src { public Order[] Items { get; set; } = System.Array.Empty<Order>(); }
+                    public class Dst { public OrderDto[] Items { get; set; } = System.Array.Empty<OrderDto>(); }
+                    [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+                }
+                """;
+            var d = GeneratorAssert.Reports(src, "DWARF100");
+            Assert.Contains("Nullable<T> on one side only", Assert.Single(d).GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        }
+
         private static void AssertNoBlitHelper(Assembly asm)
         {
             var helpers = BlitHelpers(asm);

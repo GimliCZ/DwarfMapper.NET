@@ -151,6 +151,20 @@ namespace DwarfMapper.Generator.Tests
                                                                   [DwarfMapper] public partial class M { public partial D Map(C c); }
                                                                   """
                 },
+                {
+                    // Round 29: a member that is Nullable<T> on exactly one side, where the unwrapped T is itself
+                    // layout-identical to the other side — one `?` away from the fast path (T0.1).
+                    "Nullable<T> on one side only", """
+                                                   using DwarfMapper;
+                                                   namespace Demo;
+                                                   public struct Addr { public int X; public int Y; }
+                                                   public struct SrcV { public long Id; public Addr? Ship; }
+                                                   public struct DstV { public long Id; public Addr Ship; }
+                                                   public class C { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                                   public class D { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                                   [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                   """
+                },
             };
 
         [Theory]
