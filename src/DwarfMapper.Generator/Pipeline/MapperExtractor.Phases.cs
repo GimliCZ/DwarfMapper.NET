@@ -2528,19 +2528,43 @@ namespace DwarfMapper.Generator.Pipeline
             ITypeSymbol srcElem,
             ITypeSymbol tgtElem)
         {
+            return DescribeElementPairCustomization(decls, compilation, srcElem, tgtElem) is not null;
+        }
+
+        /// <summary>
+        ///     The rule itself: the SPELLING of the pair-scoped directive or hook that customizes this element
+        ///     pair (<c>"[MapIgnore&lt;T&gt;]"</c>, <c>"[BeforeMap] hook"</c>, …), or <see langword="null" /> when
+        ///     nothing does. <see cref="ElementPairHasCustomization" /> is the boolean derived from it, so the
+        ///     gates that only need yes/no and the diagnostic that has to NAME the thing cannot disagree about
+        ///     what counts as customization.
+        ///     <para>
+        ///         Round 29 T0.2d: DWARF106 was reported only when the element pair resolved to a user
+        ///         CONVERSION, so <c>[Reinterpret]</c> overriding a pair-scoped directive or a hook — the same
+        ///         intentional bypass, the same invisible consequence — was silent. Widening it needed the
+        ///         directive's name in the message, which is the only reason this returns a string rather than a
+        ///         bool. Whichever check matches FIRST names the message; the order below is the gate's own, and
+        ///         a pair carrying two directives is customized either way.
+        ///     </para>
+        /// </summary>
+        private static string? DescribeElementPairCustomization(
+            MapperDeclarations decls,
+            Compilation compilation,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem)
+        {
             if (AnyPairIgnore(decls.PairIgnores, tgtElem))
             {
-                return true;
+                return "[MapIgnore<T>]";
             }
 
             if (AnyPairProp(decls.PairProps, srcElem, tgtElem))
             {
-                return true;
+                return "[MapProperty<S,T>]";
             }
 
             if (AnyPairValue(decls.PairValues, tgtElem))
             {
-                return true;
+                return "[MapValue<T>]";
             }
 
             // Round 29 T0.2c review fix 1. A pair-scoped [MapConstructor<S,T>] delegates CONSTRUCTION of the
@@ -2559,7 +2583,7 @@ namespace DwarfMapper.Generator.Pipeline
             if (decls.GenPairs.Exists(gp => SymbolEqualityComparer.Default.Equals(gp.Src, srcElem) && SymbolEqualityComparer.Default.Equals(gp.Tgt, tgtElem)) &&
                 AnyPairConstructor(decls.PairConstructors, srcElem, tgtElem))
             {
-                return true;
+                return "[MapConstructor<S,T>]";
             }
 
             // Same match rule as DrainNestedMappingQueue's nested-pair hook wiring: a [BeforeMap] whose parameter
@@ -2568,7 +2592,7 @@ namespace DwarfMapper.Generator.Pipeline
             foreach (var h in decls.BeforeHookDefs)
                 if (HasImplicitConversion(compilation, srcElem, h.ParamType))
                 {
-                    return true;
+                    return "[BeforeMap] hook";
                 }
 
             foreach (var h in decls.AfterHookDefs)
@@ -2578,11 +2602,11 @@ namespace DwarfMapper.Generator.Pipeline
                     : HasImplicitConversion(compilation, srcElem, h.P0) && HasImplicitConversion(compilation, tgtElem, h.P1);
                 if (applies)
                 {
-                    return true;
+                    return "[AfterMap] hook";
                 }
             }
 
-            return false;
+            return null;
         }
 
         // ── Zero-alloc span map: void Map(ReadOnlySpan<S>/Span<S> src, Span<D> dst) ──

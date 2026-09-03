@@ -53,15 +53,25 @@ so a version with no section here ships with no notes.
 
 ### Added
 
-- **`DWARF106` (Info) — `[Reinterpret]` takes the block copy instead of a declared conversion.** Reports the one
-  conflict the new blit rule (below) deliberately resolves in favour of the attribute: the member carries
-  `[Reinterpret]`, and its element pair also has a conversion you wrote — a declared method on the mapper, or a
-  user-defined conversion operator. `[Reinterpret]` still wins, because it names one member explicitly while an
-  auto-adopted converter is ambient; but it no longer wins silently. The message names the member, the
-  conversion that is not being called, and says that removing `[Reinterpret]` from that member uses it.
-  Informational on purpose: an error would be a false positive on a mapper that uses the same helper for
-  another member, and a warning becomes a build failure under `TreatWarningsAsErrors`. A `[Reinterpret]` member
-  with no conversion in sight says nothing — this reports the conflict, not the attribute.
+- **`DWARF106` (Info) — `[Reinterpret]` takes the block copy instead of a declared conversion *or a pair-scoped
+  directive*.** Reports the one conflict the new blit rule (below) deliberately resolves in favour of the
+  attribute: the member carries `[Reinterpret]`, and its element pair also has something you wrote that a block
+  copy will not run. **One id, two message shapes.** The first is a conversion — a declared method on the
+  mapper, or a user-defined conversion operator. The second is a pair-scoped `[MapIgnore<T>]` /
+  `[MapProperty<S,T>]` / `[MapValue<T>]` / `[MapConstructor<S,T>]`, or a `[BeforeMap]`/`[AfterMap]` hook
+  matching the element pair: those are applied by the ONE synthesized helper the pair gets, and the block copy
+  never calls that helper, so the directive silently does nothing for those elements while continuing to work
+  for every other member that maps the pair. `[Reinterpret]` still wins in both cases, because it names one
+  member explicitly while an auto-adopted converter or a pair-scoped directive is ambient; but it no longer
+  wins silently. The message names the member, and either the conversion that is not being called or the
+  directive's spelling and the element pair it was declared for; both say that removing `[Reinterpret]` from
+  that member uses it. When both apply the conversion is named, being the more specific fact. The
+  customization question is the gate's own (`ElementPairHasCustomization`, now deriving from the rule that
+  yields the directive's name), asked through the same non-mutating lookups, so the diagnostic and the gate can
+  never disagree. Informational on purpose: an error would be a false positive on a mapper that uses the same
+  helper for another member, and a warning becomes a build failure under `TreatWarningsAsErrors`. A
+  `[Reinterpret]` member with neither in sight says nothing — this reports the conflict, not the attribute.
+  (the directive shape: round 29, T0.2d)
 
 - **A corpus that tests the diagnostic *pathway*, not just the diagnostic.** Every DWARF id is reported by an
   `IIncrementalGenerator` through `SourceProductionContext.ReportDiagnostic`, and Roslyn does not route
@@ -104,7 +114,8 @@ so a version with no section here ships with no notes.
   `CanReinterpret` proves the copy reproduces byte for byte), and the element loop is kept otherwise. Asked
   through the resolver's OWN predicates and with NON-mutating directive lookups, so a directive nothing applies
   is still reported by DWARF056. `[Reinterpret]` is unaffected: it names one member explicitly and still forces
-  the copy. Layout-identical pairs with neither a converter nor a directive blit exactly as before. Pinned by
+  the copy — and, since T0.2d, says so with **`DWARF106`** whichever of the two it is overriding, so the
+  override is no longer silent for pair-scoped directives either. Layout-identical pairs with neither a converter nor a directive blit exactly as before. Pinned by
   `BlitSoundnessTests` and `ElementConverterBeatsBlitRuntimeTests`. (round 29, T0.2c)
 - **The blit near-miss (DWARF100) went quiet on a span map whose element names were reconciled by
   `[MapProperty<S,T>]`** — the one caller the hint is written for. It now follows the proof at both endpoints and

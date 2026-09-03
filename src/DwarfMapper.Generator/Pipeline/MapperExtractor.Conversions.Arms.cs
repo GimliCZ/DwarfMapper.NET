@@ -379,15 +379,26 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     Reports <c>DWARF106</c> when <c>[Reinterpret]</c> on <paramref name="memberName" /> takes the block
-        ///     copy in place of a conversion the element pair would otherwise have resolved to.
+        ///     copy in place of something the element pair would otherwise have been given: a conversion the user
+        ///     wrote, or a pair-scoped directive / hook the element helper would have carried.
         /// </summary>
         /// <remarks>
-        ///     Round 29 T0.2c review fix 3. Asks the SAME question the array/list gate asks — through the same
-        ///     <see cref="ElementPairResolvesToUserConversion" /> — so the diagnostic can never disagree with the
-        ///     gate about whether a conversion was there to bypass. It reports what the gate would have honoured
-        ///     and <c>[Reinterpret]</c> overrides; when the gate finds nothing, there is no conflict and nothing
-        ///     is said. The element request is built with the same values the member-level resolution below uses,
-        ///     for the same reason: the question must be the one the resolver would have answered.
+        ///     Round 29 T0.2c review fix 3. Asks the SAME questions the array/list gate asks — through the same
+        ///     <see cref="ElementPairResolvesToUserConversion" /> and the same
+        ///     <c>NestedMappingRegistry.PairCustomization</c> the gate's <c>PairIsCustomized</c> is derived from
+        ///     — so the diagnostic can never disagree with the gate about whether there was anything there to
+        ///     bypass. It reports what the gate would have honoured and <c>[Reinterpret]</c> overrides; when the
+        ///     gate finds nothing, there is no conflict and nothing is said. The element request is built with the
+        ///     same values the member-level resolution below uses, for the same reason: the question must be the
+        ///     one the resolver would have answered.
+        ///     <para>
+        ///         Round 29 T0.2d widened it. The original returned early unless a user CONVERSION resolved, so
+        ///         <c>[Reinterpret]</c> overriding a pair-scoped <c>[MapIgnore&lt;T&gt;]</c> /
+        ///         <c>[MapProperty&lt;S,T&gt;]</c> / <c>[MapValue&lt;T&gt;]</c> / <c>[MapConstructor&lt;S,T&gt;]</c>
+        ///         or a <c>[BeforeMap]</c>/<c>[AfterMap]</c> hook was silent — the same intentional bypass, the
+        ///         same invisible consequence. One id, two message shapes; the conversion is reported first when
+        ///         both are present, because that is the arm the gate answers first.
+        ///     </para>
         /// </remarks>
         private static void ReportReinterpretBypass(
             MemberRequest req,
@@ -416,22 +427,39 @@ namespace DwarfMapper.Generator.Pipeline
                 req.Options.ImplicitConversions,
                 lookups.ReservedConverters);
 
-            if (!ElementPairResolvesToUserConversion(probe, srcElem, tgtElem))
+            string bypassed;
+            string outcome;
+            if (ElementPairResolvesToUserConversion(probe, srcElem, tgtElem))
             {
-                return;
+                // Name the thing that is not being called. A declared method is named directly; an operator has
+                // no name a user could grep for, so it is described by the pair it converts between.
+                FindUserDeclaredConversion(probe, out var found, out _);
+                bypassed = found is not null
+                    ? $"the declared conversion method '{found}'"
+                    : $"the user-defined conversion operator from '{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' to '{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
+                outcome = "is not called for its elements";
             }
+            else
+            {
+                // The directive shape. A pair-scoped directive or hook has no single symbol to name, so the
+                // message names its SPELLING and the element pair it was declared for — which is what the user
+                // wrote and what they would grep for.
+                var directive = req.NestedRegistry?.PairCustomization(srcElem, tgtElem);
+                if (directive is null)
+                {
+                    return;
+                }
 
-            // Name the thing that is not being called. A declared method is named directly; an operator has no
-            // name a user could grep for, so it is described by the pair it converts between.
-            FindUserDeclaredConversion(probe, out var found, out _);
-            var bypassed = found is not null
-                ? $"the declared conversion method '{found}'"
-                : $"the user-defined conversion operator from '{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' to '{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
+                bypassed = $"the pair-scoped {directive} for " +
+                           $"'{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' → " +
+                           $"'{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
+                outcome = "is not applied to its elements";
+            }
 
             acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretBypassesConversion,
                 req.Location,
-                $"[Reinterpret] on '{memberName}' takes the block copy, so {bypassed} is not called for its " +
-                $"elements; remove [Reinterpret] from '{memberName}' to use it instead",
+                $"[Reinterpret] on '{memberName}' takes precedence over {bypassed}, so it {outcome}; " +
+                $"remove [Reinterpret] from '{memberName}' to use it instead",
                 MemberName: memberName));
         }
 

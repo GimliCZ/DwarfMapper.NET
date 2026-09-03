@@ -19,8 +19,13 @@
 //       What is NOT here: a [Reinterpret] member with no conversion in sight. That is the ordinary, intended
 //       use of the attribute and says nothing at all — the diagnostic reports a CONFLICT, not the attribute.
 //       BlitSoundnessTests pins that silence so this row cannot drift into ambient noise.
+//
+//       Also not here: the DIRECTIVE shape of the same id (round 29, T0.2d) — [Reinterpret] overriding a
+//       pair-scoped [MapIgnore<T>]/[MapProperty<S,T>]/[MapValue<T>]/[MapConstructor<S,T>] or a
+//       [BeforeMap]/[AfterMap] hook. One descriptor, two message shapes; that one is pinned by
+//       DWARF106_ReinterpretBypassesDirective.cs alongside this row.
 // EXPECT: DWARF106
-// EXPECT-MESSAGE DWARF106: takes the block copy
+// EXPECT-MESSAGE DWARF106: takes precedence over
 // EXPECT-MESSAGE DWARF106: 'Scale'
 // EXPECT-MESSAGE DWARF106: remove [Reinterpret]
 

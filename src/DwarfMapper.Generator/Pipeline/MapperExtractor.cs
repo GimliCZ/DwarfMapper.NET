@@ -382,7 +382,7 @@ namespace DwarfMapper.Generator.Pipeline
             // customize this element pair?" travels to it on the registry, which is the collaborator both sides
             // already share and is scoped to exactly this extraction. Wired here, next to `decls`, because this
             // is the single site where every value it reads is decided.
-            nestedRegistry.SetPairCustomizationRule((s, t) => ElementPairHasCustomization(decls, genComp, s, t));
+            nestedRegistry.SetPairCustomizationRule((s, t) => DescribeElementPairCustomization(decls, genComp, s, t));
 
             var policy = new MapperPolicy(allowNonPublic, caseInsensitive, classAutoNest, explicitOnly,
                 ignoreObsolete, implicitConversions, isPreserveMode, isSetNullMode, skipNullSrc, maxDepth,

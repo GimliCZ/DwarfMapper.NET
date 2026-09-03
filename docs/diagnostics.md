@@ -1888,11 +1888,23 @@ wholesale — taking the cases worth reading down with it.
 ---
 
 ## dwarf106
-**[Reinterpret] takes the block copy instead of a declared conversion** · Info
+**[Reinterpret] takes the block copy instead of a declared conversion or directive** · Info
 
 Your mapping is **correct and does exactly what you asked**. This hint reports a *conflict* you can only see by
-reading two places at once: the member carries `[Reinterpret]`, and its element pair also has a conversion you
-wrote — a declared method on the mapper, or a user-defined conversion operator between the element types.
+reading two places at once: the member carries `[Reinterpret]`, and its element pair also has something you
+wrote that the block copy will not run. Two shapes, one id:
+
+- **a conversion** — a declared method on the mapper, or a user-defined conversion operator between the
+  element types. The message names it:
+  `[Reinterpret] on 'Data' takes precedence over the declared conversion method 'Scale', so it is not called
+  for its elements; remove [Reinterpret] from 'Data' to use it instead`
+- **a pair-scoped directive or hook** — `[MapIgnore<T>]`, `[MapProperty<S,T>]`, `[MapValue<T>]`,
+  `[MapConstructor<S,T>]`, or a `[BeforeMap]`/`[AfterMap]` matching the element pair. A directive has no single
+  symbol to point at, so the message names its spelling and the element pair it was declared for:
+  `[Reinterpret] on 'Data' takes precedence over the pair-scoped [MapIgnore<T>] for 'Src' → 'Dst', so it is
+  not applied to its elements; remove [Reinterpret] from 'Data' to use it instead`
+
+When both apply, the conversion is named — it is the more specific fact, and the one you can grep for.
 
 <!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
 ```csharp
@@ -1906,14 +1918,20 @@ public partial class M
 }
 ```
 
-Everywhere else DwarfMapper resolves this the other way: a conversion you wrote keeps the element loop and the
-block copy stands down, because **a proof enables a fast path, it never changes semantics**. `[Reinterpret]` is
-the one deliberate exception. It names **one member, explicitly**, while an auto-adopted converter is *ambient*
-— matched by type, and quite possibly written for a different member entirely. The explicit instruction wins.
+Everywhere else DwarfMapper resolves this the other way: a conversion you wrote — or a pair-scoped directive
+matching the element pair — keeps the element loop and the block copy stands down, because **a proof enables a
+fast path, it never changes semantics**. `[Reinterpret]` is the one deliberate exception. It names **one
+member, explicitly**, while an auto-adopted converter is *ambient* — matched by type, and quite possibly
+written for a different member entirely. The explicit instruction wins.
+
+The directive shape matters for the same reason and is easier to miss: a pair-scoped directive is applied by
+the ONE synthesized helper the element pair gets, and a block copy never calls that helper. Your `[MapIgnore]`
+still works for every other member that maps the pair — just not behind `[Reinterpret]`, where nothing in the
+output would ever tell you.
 
 **Fix:** nothing, if the block copy is what you meant — that is the normal case and the reason this is not a
-warning. To call the conversion instead, remove `[Reinterpret]` from the member the message names; the pair
-then takes the element loop and your method or operator runs per element.
+warning. To get the conversion or the directive instead, remove `[Reinterpret]` from the member the message
+names; the pair then takes the element loop, and your method, operator, directive or hook applies per element.
 
 **Why informational, and why not louder.** An error here would be a false positive on correct code: the same
 mapper may use that helper legitimately for another member, and refusing the build over an intentional
@@ -1921,8 +1939,8 @@ combination helps no one. A warning becomes a *build failure* under `TreatWarnin
 `dwarf070` sprang on this project once already. An intentional bypass is exactly what an informational
 diagnostic is for.
 
-**Why it does not fire more often.** A `[Reinterpret]` member with no conversion in sight says nothing at all.
-This reports the conflict, not the attribute.
+**Why it does not fire more often.** A `[Reinterpret]` member with neither a conversion nor a directive in
+sight says nothing at all. This reports the conflict, not the attribute.
 ---
 
 ---

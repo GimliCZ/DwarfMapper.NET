@@ -1773,16 +1773,17 @@ namespace DwarfMapper.Generator.Diagnostics
         /// </summary>
         public static readonly DiagnosticDescriptor ReinterpretBypassesConversion = new(
             "DWARF106",
-            "[Reinterpret] takes the block copy instead of a declared conversion",
+            "[Reinterpret] takes the block copy instead of a declared conversion or directive",
             "{0}",
             Category,
             DiagnosticSeverity.Info,
             true,
             "[Reinterpret] forces the blittable block copy for the member it names, which copies bytes and calls " +
-            "nothing. Without it, this element pair would have resolved to the conversion named in the message — so " +
+            "nothing. Without it, this element pair would have resolved to the conversion named in the message, or " +
+            "been given the synthesized helper that carries the pair-scoped directive or hook named there — so " +
             "the two are in conflict, and the explicit [Reinterpret] wins. That is intentional and the mapping is " +
             "correct; this is informational so the bypass is visible rather than silent. Remove [Reinterpret] from " +
-            "the member to use the conversion instead, or keep it and the block copy stands.",
+            "the member to use the conversion or directive instead, or keep it and the block copy stands.",
             HelpBase + "dwarf106");
     }
 }

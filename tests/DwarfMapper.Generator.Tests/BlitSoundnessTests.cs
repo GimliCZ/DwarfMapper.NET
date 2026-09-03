@@ -593,6 +593,83 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("DstV", hint, StringComparison.Ordinal);
         }
 
+        [Theory]
+        // One row per kind the customization rule knows, so "the message names the directive" is checked for
+        // every arm of it rather than for whichever one happened to be written first.
+        [InlineData("[MapIgnore<DstV>(\"Y\")]\n", "", "[MapIgnore<T>]")]
+        [InlineData("[MapProperty<SrcV, DstV>(\"X\", \"Y\")]\n", "", "[MapProperty<S,T>]")]
+        [InlineData("[MapValue<DstV>(\"Y\", 42)]\n", "", "[MapValue<T>]")]
+        [InlineData("", "[BeforeMap] public static void Pre(SrcV s) { }", "[BeforeMap] hook")]
+        [InlineData("", "[AfterMap] public static void Touch(SrcV s, ref DstV d) { d.X += 1; }", "[AfterMap] hook")]
+        public void Reinterpret_reports_the_bypass_for_a_pair_scoped_directive_or_hook_too(
+            string classAttribute,
+            string member,
+            string expectedDirective)
+        {
+            // Round 29 T0.2d. DWARF106 used to return early unless the element pair resolved to a user
+            // CONVERSION, so [Reinterpret] overriding a pair-scoped directive or a hook — the same intentional
+            // bypass, with a consequence just as invisible (the directive is simply never applied, and the
+            // output is a correct block copy either way) — was silent. Same id, second message shape.
+            var src = GateSource(classAttribute, member)
+                .Replace("public partial B Map(A a);", """[Reinterpret("V")] public partial B Map(A a);""", StringComparison.Ordinal);
+
+            // The decision is unchanged: [Reinterpret] names this member explicitly and still wins.
+            AssertBlitted(GeneratorAssert.CompilesClean(src));
+
+            var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
+                .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Contains("'V'", hint, StringComparison.Ordinal);
+            Assert.Contains(expectedDirective, hint, StringComparison.Ordinal);
+            // The element pair the directive was declared for, so the reader can find it in a mapper that
+            // declares several.
+            Assert.Contains("'SrcV'", hint, StringComparison.Ordinal);
+            Assert.Contains("'DstV'", hint, StringComparison.Ordinal);
+            Assert.Contains("remove [Reinterpret]", hint, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData("ReferenceHandling = ReferenceHandlingStrategy.Preserve")]
+        [InlineData("OnCycle = OnCycleStrategy.SetNull")]
+        public void Reinterpret_reports_the_bypass_for_a_pair_scoped_MapConstructor(string mode)
+        {
+            // The sixth kind the customization rule knows, and the one that cannot be expressed in GateSource:
+            // [MapConstructor] is scoped to DECLARED pairs, and a [GenerateMap<SrcV, DstV>] beside it gives the
+            // pair a declared `DstV Map(SrcV)` — which the conversion arm then names instead. Under Preserve and
+            // SetNull that declared method is not the element route (PrefersSynthesizedObjectMap hands the pair
+            // to the synthesized helper, which is where the factory is wired), so the conversion arm answers
+            // "none" and the directive shape is what the reader gets. Same two modes as
+            // A_pair_scoped_MapConstructor_survives_the_modes_that_route_through_the_synthesized_helper, for the
+            // same reason.
+            var src = PairConstructorSource(mode)
+                .Replace("public partial B Map(A a);", """[Reinterpret("V")] public partial B Map(A a);""", StringComparison.Ordinal);
+
+            AssertBlitted(GeneratorAssert.CompilesClean(src));
+
+            var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
+                .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Contains("'V'", hint, StringComparison.Ordinal);
+            Assert.Contains("[MapConstructor<S,T>]", hint, StringComparison.Ordinal);
+            Assert.Contains("'SrcV'", hint, StringComparison.Ordinal);
+            Assert.Contains("'DstV'", hint, StringComparison.Ordinal);
+            Assert.Contains("remove [Reinterpret]", hint, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Reinterpret_reports_the_conversion_rather_than_the_directive_when_both_are_present()
+        {
+            // Two message shapes, one id — so which one fires when both apply has to be pinned rather than
+            // left to the order the checks happen to sit in. The conversion is named: it is the arm the gate
+            // answers first, and it is the more specific fact (a method the user can grep for by name).
+            var src = GateSource("[MapIgnore<DstV>(\"Y\")]\n",
+                    "public static DstV Conv(SrcV s) => new DstV { X = s.X * 2, Y = s.Y };")
+                .Replace("public partial B Map(A a);", """[Reinterpret("V")] public partial B Map(A a);""", StringComparison.Ordinal);
+
+            var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
+                .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Contains("'Conv'", hint, StringComparison.Ordinal);
+            Assert.DoesNotContain("pair-scoped", hint, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Reinterpret_with_no_conversion_in_sight_says_nothing()
         {
