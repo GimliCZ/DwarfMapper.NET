@@ -26,9 +26,11 @@ so a version with no section here ships with no notes.
     delete/rename the converter you did not intend to offer.
   - **`[AutoNest(false)]` plus a pair-scoped directive on a blittable element pair** used to blit and emit a
     `DWARF056` warning. The directive now keeps the element loop, and with auto-nesting disabled there is no
-    synthesized mapper for the pair to route through, so it fails with **`DWARF005`**. **Remedy:** apply
-    `[Reinterpret]` to the member if the block copy is what you wanted (it overrides the directive and now says
-    so via `DWARF106`); or drop the pair-scoped directive; or re-enable auto-nesting for that method.
+    synthesized mapper for the pair to route through, so it fails with **`DWARF005`**. **Remedy:** drop the
+    pair-scoped directive, or re-enable auto-nesting for that method. On an **array** member you may instead
+    apply `[Reinterpret]`, which names that member explicitly and keeps the block copy; note it is
+    array-to-array only, so on a `List<T>` or `ImmutableArray<T>` member it is refused with **`DWARF022`** and
+    one of the first two remedies is the answer.
 
   A third consequence goes the other way and needs no action: a pair-scoped `[MapIgnore<T>]`/`[MapProperty<S,T>]`/
   `[MapValue<T>]` on a blittable element pair **stops reporting `DWARF056`**. It used to say "matched no pair"

@@ -515,26 +515,27 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
         }
 
-        [Fact]
-        public void A_pair_scoped_MapNullSkip_is_byte_equivalent_and_keeps_the_blit()
+        [Theory]
+        // The other half of the T0.2 re-review's claim, and this half holds: an unmanaged struct pair has no
+        // nullable source member to skip, so the directive cannot change a byte. Deliberately NOT a reason to
+        // refuse the fast path.
+        [InlineData("[MapNullSkip<SrcV, DstV>]\n", "")]
+        // Round 29 T0.2c review fix 2 — the SCOPING of the [MapConstructor] question, which was previously
+        // unproven: delete the `decls.GenPairs.Exists(...)` half of that condition and nothing failed. A
+        // pair-scoped [MapConstructor] naming a pair NO [GenerateMap<S,T>] declares is honoured by nobody
+        // (DrainNestedMappingQueue's factory wiring is scoped the same way, and DWARF056 reports the directive
+        // as matching no pair), so it changes no byte and must NOT cost the fast path — refusing the blit for
+        // it would make DWARF056's "matched no pair" untrue. Note the factory itself does not adopt the pair
+        // either: a method named by a pair-scoped directive is a RESERVED converter, so
+        // FindUserDeclaredConversion skips it, which is what leaves this row measuring the scoping and nothing
+        // else.
+        [InlineData("[MapConstructor<SrcV, DstV>(nameof(Make))]\n",
+            "public static DstV Make(SrcV s) => new DstV { X = s.X, Y = s.Y };")]
+        public void A_pair_scoped_directive_that_changes_no_byte_keeps_the_blit(
+            string classAttribute,
+            string member)
         {
-            // The other half of the T0.2 re-review's claim, and this half holds: an unmanaged struct pair has
-            // no nullable source member to skip, so the directive cannot change a byte. Deliberately NOT a
-            // reason to refuse the fast path.
-            const string src = """
-                using DwarfMapper;
-                namespace T
-                {
-                    public struct SrcV { public int X; }
-                    public struct DstV { public int X; }
-                    public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
-                    public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
-                    [DwarfMapper]
-                    [MapNullSkip<SrcV, DstV>]
-                    public partial class M { public partial B Map(A a); }
-                }
-                """;
-            AssertBlitted(GeneratorAssert.CompilesClean(src));
+            AssertBlitted(GeneratorAssert.CompilesClean(GateSource(classAttribute, member)));
         }
 
         [Fact]
