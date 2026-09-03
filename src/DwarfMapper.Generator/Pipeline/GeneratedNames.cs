@@ -73,6 +73,20 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when <paramref name="name" /> wraps a USER-DEFINED conversion operator
+        ///     (<see cref="UserConv" />) — <c>UserConversionConverter</c>'s synthesized shim around an
+        ///     <c>implicit</c>/<c>explicit operator</c> the caller wrote. Round 29 T0.2 fix-round-2: a span map's
+        ///     blit gate must refuse this specifically — it is the one <see cref="IsSynthesized" />-true prefix
+        ///     that can run ARBITRARY caller code, unlike <see cref="ObjectMap" /> (member-by-member, and a span
+        ///     map separately checks for pair-scoped customization of that) or the enum arms (byte-identical
+        ///     <c>CreateChecked</c>, no customization surface at all).
+        /// </summary>
+        public static bool IsUserConv(string? name)
+        {
+            return name is not null && name.StartsWith(UserConv, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     True for the "complex" synthesized helpers whose signature may gain <c>(ctx, depth)</c> — object,
         ///     collection, or dictionary maps. Used where a leaf must fall back to topology degradation rather than
         ///     inline such a helper (e.g. FlattenGraph leaves).

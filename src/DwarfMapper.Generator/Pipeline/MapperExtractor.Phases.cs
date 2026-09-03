@@ -2498,35 +2498,45 @@ namespace DwarfMapper.Generator.Pipeline
         ///     back for this pair is shared by every route that reaches it — a class-level
         ///     <c>[MapIgnore&lt;T&gt;]</c>, <c>[MapProperty&lt;S,T&gt;]</c>, or <c>[MapValue&lt;T&gt;]</c>, or a
         ///     <c>[BeforeMap]</c>/<c>[AfterMap]</c> hook whose parameter types match this pair, is baked into
-        ///     THAT NAME's body (see the drain loop at ~line 3386 below, which wires the identical hook match).
-        ///     A block copy bypasses the helper entirely, so it would silently skip whatever any of these
-        ///     customizes. Reuses <c>decls.PairProps</c>/<c>PairIgnores</c>/<c>PairValues</c> — the SAME
-        ///     class-wide lists the drain loop consults — rather than re-reading the class's attributes, so a
-        ///     match here marks the same <c>Consumed</c> flag the DWARF056 "matched no pair" check reads.
+        ///     THAT NAME's body (see <c>DrainNestedMappingQueue</c>'s nested-pair hook wiring, which applies the
+        ///     identical <c>[BeforeMap]</c>/<c>[AfterMap]</c> match rule used below). A block copy bypasses the
+        ///     helper entirely, so it would silently skip whatever any of these customizes.
         /// </summary>
+        /// <remarks>
+        ///     Round 29 T0.2 fix-round-2 (Important #2): a QUERY, not a decision — <see cref="AnyPairIgnore" />/
+        ///     <see cref="AnyPairProp" />/<see cref="AnyPairValue" /> are the non-mutating siblings of
+        ///     <see cref="MatchPairIgnores" />/<see cref="MatchPairProps" />/<see cref="MatchPairValues" />
+        ///     (same match rule, factored into <see cref="IsPairTargetMatch" />/<see cref="IsPairPropMatch" /> so
+        ///     there is exactly one definition of "matches" for both the mutating builder and this query). Calling
+        ///     the MUTATING form here marked a pair-scoped attribute <c>Consumed</c> merely because THIS gate
+        ///     asked about it — even on a pair where nothing else ever applies it (e.g. a plain
+        ///     <c>int → long</c> span map beside a stray <c>[MapIgnore&lt;long&gt;("X")]</c>, or a customized
+        ///     pair whose blit this gate refuses because a user converter already owns construction and never
+        ///     reads the ignore at all) — which silenced the DWARF056 "matched no pair" sweep for a directive
+        ///     that, in truth, matched nothing. Asking must not have that side effect.
+        /// </remarks>
         private static bool SpanElementPairHasCustomization(
             MapperDeclarations decls,
             Compilation compilation,
             ITypeSymbol srcElem,
             ITypeSymbol tgtElem)
         {
-            if (MatchPairIgnores(decls.PairIgnores, tgtElem).Count > 0)
+            if (AnyPairIgnore(decls.PairIgnores, tgtElem))
             {
                 return true;
             }
 
-            var (pairExplicit, pairExtras) = MatchPairProps(decls.PairProps, srcElem, tgtElem);
-            if (pairExplicit.Count > 0 || pairExtras.Count > 0)
+            if (AnyPairProp(decls.PairProps, srcElem, tgtElem))
             {
                 return true;
             }
 
-            if (MatchPairValues(decls.PairValues, tgtElem).Count > 0)
+            if (AnyPairValue(decls.PairValues, tgtElem))
             {
                 return true;
             }
 
-            // Same match rule as the nested-pair hook wiring below (~line 3386): a [BeforeMap] whose parameter
+            // Same match rule as DrainNestedMappingQueue's nested-pair hook wiring: a [BeforeMap] whose parameter
             // the source implicitly converts to, or a [AfterMap] whose parameter(s) the source/target implicitly
             // convert to, applies to this pair and must run — which a block copy would silently skip.
             foreach (var h in decls.BeforeHookDefs)
@@ -2656,10 +2666,30 @@ namespace DwarfMapper.Generator.Pipeline
                 // converter, or a pair-scoped [MapIgnore<T>]/[MapProperty<S,T>]/[MapValue<T>], or a
                 // [BeforeMap]/[AfterMap] hook that matches this element pair, is baked into what THAT NAME
                 // does, not into a different name the blit could safely bypass. Blitting past any of those
-                // is a silent behaviour change, not a speed-up. So the blit is taken only when spanConv is
-                // either absent (a direct/implicit element assignment) or the DEFAULT synthesized auto-nest —
-                // never a user method — AND no pair-scoped directive or hook targets this exact element pair.
-                var spanIsDefaultConverter = spanConv is null || GeneratedNames.IsSynthesized(spanConv);
+                // is a silent behaviour change, not a speed-up.
+                //
+                // Round 29 T0.2 fix-round-2 (Important #1, continued): IsSynthesized alone was too wide — it
+                // also admits __DwarfMap_UserConv_*, the shim UserConversionConverter wraps a user's OWN
+                // implicit/explicit operator in (reachable here whenever auto-nest is off, e.g. [AutoNest(false)],
+                // so the auto-nest arm never claims the pair and the user-operator arm does instead). That is
+                // exactly as customizable as a hand-written element converter and must not be blitted past.
+                // Excluded explicitly via GeneratedNames.IsUserConv rather than narrowed to IsObjectMap alone:
+                // CanReinterpretEnums resolves through EnumConverter's OWN synthesized helpers (__DwarfMap_EnumVal_*
+                // / EnumNum_* / NumEnum_*, verified empirically — an enum-by-value span map blits today), which
+                // are byte-identical CreateChecked identity conversions with NO customization surface (no
+                // MapIgnore/MapProperty/MapValue/hook mechanism reaches an enum arm at all); narrowing to
+                // IsObjectMap-only would have silently made the CanReinterpretEnums half of the OR below
+                // permanently unreachable for span maps — the same class of dead-condition defect this whole
+                // gate exists to avoid. `spanConv is null` is kept for parity with the array arm's unconditional
+                // check and is believed UNREACHABLE in combination with a true CanReinterpret/CanReinterpretEnums
+                // verdict: identity is refused up front (BlittableProof.CanReinterpret's own early-out), two
+                // DISTINCT types are never implicitly convertible in C# without a user-defined operator, and
+                // HasImplicitConversion (the earlier resolver arm that would produce a null spanConv) explicitly
+                // excludes user-defined conversions (`!conversion.IsUserDefined`) — so a user operator always
+                // resolves via the UserConv arm above, never via a null spanConv. Kept anyway, defensively, on
+                // the same "prove it, don't assume it" footing as every other gate in this file.
+                var spanIsDefaultConverter = spanConv is null ||
+                                             (GeneratedNames.IsSynthesized(spanConv) && !GeneratedNames.IsUserConv(spanConv));
                 var spanPairIsCustomized = SpanElementPairHasCustomization(decls, spanComp, spanSrcElem, spanDstElem);
                 var spanBlits = spanIsDefaultConverter && !spanPairIsCustomized &&
                                 (BlittableProof.CanReinterpret(spanSrcElem, spanDstElem) ||

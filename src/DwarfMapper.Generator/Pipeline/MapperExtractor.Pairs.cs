@@ -146,9 +146,24 @@ namespace DwarfMapper.Generator.Pipeline
             return result;
         }
 
+        /// <summary>True when a pair-scoped <c>[MapProperty&lt;S,T&gt;]</c> targets exactly <c>(src, tgt)</c>.</summary>
+        private static bool IsPairPropMatch(PairProp p, ITypeSymbol src, ITypeSymbol tgt)
+        {
+            return SymbolEqualityComparer.Default.Equals(p.Source, src) && SymbolEqualityComparer.Default.Equals(p.Target, tgt);
+        }
+
+        /// <summary>True when a pair-scoped <c>[MapIgnore&lt;T&gt;]</c>/<c>[MapValue&lt;T&gt;]</c> targets exactly <c>tgt</c>.</summary>
+        private static bool IsPairTargetMatch(ITypeSymbol candidateTarget, ITypeSymbol tgt)
+        {
+            return SymbolEqualityComparer.Default.Equals(candidateTarget, tgt);
+        }
+
         /// <summary>
         ///     Returns the pair-scoped explicit renames and NullSubstitute/When extras for the <c>(src → tgt)</c> pair,
-        ///     marking each matching attribute as consumed (for the DWARF056 "matched nothing" check).
+        ///     marking each matching attribute as consumed (for the DWARF056 "matched nothing" check). Round 29 T0.2
+        ///     fix-round-2: callers that only need to ASK whether a pair-scoped rename applies — without deciding
+        ///     resolution, and so without owning the right to mark it consumed — use the non-mutating
+        ///     <see cref="AnyPairProp" /> instead, which shares this method's <see cref="IsPairPropMatch" /> rule.
         /// </summary>
         private static (List<(string Source, string Target, string? Use)> Explicit,
             List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)> Extras)
@@ -158,7 +173,7 @@ namespace DwarfMapper.Generator.Pipeline
             var extras = new List<(string Target, bool HasNullSub, TypedConstant NullSub, string? When, string? NullSubLiteral)>();
             foreach (var p in all)
             {
-                if (!SymbolEqualityComparer.Default.Equals(p.Source, src) || !SymbolEqualityComparer.Default.Equals(p.Target, tgt))
+                if (!IsPairPropMatch(p, src, tgt))
                 {
                     continue;
                 }
@@ -174,17 +189,48 @@ namespace DwarfMapper.Generator.Pipeline
             return (ex, extras);
         }
 
+        /// <summary>
+        ///     True when some pair-scoped <c>[MapProperty&lt;S,T&gt;]</c> targets exactly <c>(src, tgt)</c> —
+        ///     the QUERY form of <see cref="MatchPairProps" />, sharing its <see cref="IsPairPropMatch" /> rule
+        ///     but never marking <c>Consumed</c>. For a caller deciding whether to REFUSE a fast path because a
+        ///     directive customizes the pair (round 29 T0.2 fix-round-2): marking it consumed there would be
+        ///     wrong when nothing else ever applies it — that pair-scoped attribute would then silently vanish
+        ///     from the DWARF056 "matched no pair" sweep instead of correctly flagging a directive nothing reads.
+        /// </summary>
+        private static bool AnyPairProp(List<PairProp> all, ITypeSymbol src, ITypeSymbol tgt)
+        {
+            foreach (var p in all)
+                if (IsPairPropMatch(p, src, tgt))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
         private static HashSet<string> MatchPairIgnores(List<PairIgnore> all, ITypeSymbol tgt)
         {
             var set = new HashSet<string>(StringComparer.Ordinal);
             foreach (var ig in all)
-                if (SymbolEqualityComparer.Default.Equals(ig.Target, tgt))
+                if (IsPairTargetMatch(ig.Target, tgt))
                 {
                     ig.Consumed = true;
                     set.Add(ig.Member);
                 }
 
             return set;
+        }
+
+        /// <summary>Non-mutating query form of <see cref="MatchPairIgnores" /> — see <see cref="AnyPairProp" />'s remarks.</summary>
+        private static bool AnyPairIgnore(List<PairIgnore> all, ITypeSymbol tgt)
+        {
+            foreach (var ig in all)
+                if (IsPairTargetMatch(ig.Target, tgt))
+                {
+                    return true;
+                }
+
+            return false;
         }
 
         private static List<PairValue> ReadPairMapValues(INamedTypeSymbol classSymbol)
@@ -233,13 +279,25 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var result = new List<(string Target, bool IsConstant, TypedConstant Value, string? Use, string? ConstLiteral)>();
             foreach (var v in all)
-                if (SymbolEqualityComparer.Default.Equals(v.Target, tgt))
+                if (IsPairTargetMatch(v.Target, tgt))
                 {
                     v.Consumed = true;
                     result.Add((v.Member, v.IsConstant, v.Value, v.Use, v.ConstLiteral));
                 }
 
             return result;
+        }
+
+        /// <summary>Non-mutating query form of <see cref="MatchPairValues" /> — see <see cref="AnyPairProp" />'s remarks.</summary>
+        private static bool AnyPairValue(List<PairValue> all, ITypeSymbol tgt)
+        {
+            foreach (var v in all)
+                if (IsPairTargetMatch(v.Target, tgt))
+                {
+                    return true;
+                }
+
+            return false;
         }
 
         // ── Pair-scoped member config: [MapProperty<S,T>] / [MapIgnore<T>] declared on the class ──────────────
