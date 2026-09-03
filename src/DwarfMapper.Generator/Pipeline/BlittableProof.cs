@@ -21,6 +21,16 @@ namespace DwarfMapper.Generator.Pipeline
                 return false;
             }
 
+            // A TOP-LEVEL Nullable<T> element/pair can never be the type argument this proof's callers cast
+            // over: MemoryMarshal.Cast<TFrom, TTo> is constrained `where : struct`, and C# refuses a
+            // Nullable<T> as that argument (CS0453) even though Nullable<T> itself satisfies `unmanaged`. The
+            // recursive NESTED unwrap inside LayoutIdentical (an optional FIELD keeping its enclosing struct's
+            // blit) is unaffected — only the pair CanReinterpret itself is asked to bless is refused here.
+            if (IsNullableValueType(src) || IsNullableValueType(dst))
+            {
+                return false;
+            }
+
             return LayoutIdentical(src, dst);
         }
 
@@ -44,6 +54,13 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         public static bool SameBytesIgnoringNames(ITypeSymbol src, ITypeSymbol dst)
         {
+            // Same top-level refusal as CanReinterpret, and for the same reason: a Nullable<T> pair cannot be
+            // the type argument its caller casts over (CS0453), whatever [Reinterpret] asserts about the bytes.
+            if (IsNullableValueType(src) || IsNullableValueType(dst))
+            {
+                return false;
+            }
+
             return LayoutIdentical(src, dst, byBytesOnly: true);
         }
 
@@ -161,6 +178,16 @@ namespace DwarfMapper.Generator.Pipeline
 
             // Identity already takes the Clone() memmove; there is no fast path being missed.
             if (SymbolEqualityComparer.Default.Equals(src, dst))
+            {
+                return false;
+            }
+
+            // A top-level Nullable<T> pair is a categorical refusal, not a near-miss: even where the bytes
+            // agree, CanReinterpret still refuses it (MemoryMarshal.Cast's `struct` constraint refuses
+            // Nullable<T> — CS0453), so there is no fast path this pair is "close to" for the near-miss
+            // message to explain. The NESTED case (a field that is Nullable<T> on one side only) is a
+            // genuine near-miss and is handled below, inside the per-field loop.
+            if (IsNullableValueType(src) || IsNullableValueType(dst))
             {
                 return false;
             }
@@ -433,6 +460,18 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return true;
+        }
+
+        /// <summary>
+        ///     True when <paramref name="t" /> is itself a <c>Nullable&lt;T&gt;</c> instantiation. Used to refuse
+        ///     a pair at the TOP LEVEL — see <see cref="CanReinterpret" />, <see cref="SameBytesIgnoringNames" />
+        ///     and <see cref="TryExplainNearMiss" /> — where blessing it would hand a caller a type argument
+        ///     <c>MemoryMarshal.Cast</c>'s <c>struct</c> constraint refuses (CS0453). A NESTED field of this type
+        ///     is a different question, answered by unwrapping inside <see cref="LayoutIdentical" />'s recursion.
+        /// </summary>
+        private static bool IsNullableValueType(ITypeSymbol t)
+        {
+            return t is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T };
         }
 
         /// <summary>The type argument of <c>Nullable&lt;T&gt;</c>, or <paramref name="t" /> itself when it is not one.</summary>
