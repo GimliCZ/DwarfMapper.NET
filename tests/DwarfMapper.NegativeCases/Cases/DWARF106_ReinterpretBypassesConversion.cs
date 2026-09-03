@@ -25,9 +25,9 @@
 //       [BeforeMap]/[AfterMap] hook. One descriptor, two message shapes; that one is pinned by
 //       DWARF106_ReinterpretBypassesDirective.cs alongside this row.
 // EXPECT: DWARF106
-// EXPECT-MESSAGE DWARF106: takes precedence over
-// EXPECT-MESSAGE DWARF106: 'Scale'
-// EXPECT-MESSAGE DWARF106: remove [Reinterpret]
+// EXPECT-MESSAGE DWARF106: takes precedence over the declared conversion method 'Scale'
+// EXPECT-MESSAGE DWARF106: the block copy fills 'Data' without calling it
+// EXPECT-MESSAGE DWARF106: remove [Reinterpret] from 'Data' to use it instead
 
 using DwarfMapper;
 

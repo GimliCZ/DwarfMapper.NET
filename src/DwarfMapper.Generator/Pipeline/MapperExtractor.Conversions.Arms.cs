@@ -428,7 +428,7 @@ namespace DwarfMapper.Generator.Pipeline
                 lookups.ReservedConverters);
 
             string bypassed;
-            string outcome;
+            string verb;
             if (ElementPairResolvesToUserConversion(probe, srcElem, tgtElem))
             {
                 // Name the thing that is not being called. A declared method is named directly; an operator has
@@ -437,29 +437,30 @@ namespace DwarfMapper.Generator.Pipeline
                 bypassed = found is not null
                     ? $"the declared conversion method '{found}'"
                     : $"the user-defined conversion operator from '{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' to '{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
-                outcome = "is not called for its elements";
+                verb = "calling";
             }
             else
             {
                 // The directive shape. A pair-scoped directive or hook has no single symbol to name, so the
-                // message names its SPELLING and the element pair it was declared for — which is what the user
-                // wrote and what they would grep for.
-                var directive = req.NestedRegistry?.PairCustomization(srcElem, tgtElem);
-                if (directive is null)
+                // phrase comes from the customization rule itself — the only place that knows which kind matched
+                // and therefore whether it was DECLARED FOR this pair (an attribute) or MATCHED TO it by
+                // implicit conversion (a hook), and which verb reads correctly for it.
+                if (req.NestedRegistry?.PairCustomization(srcElem, tgtElem) is not { } customization)
                 {
                     return;
                 }
 
-                bypassed = $"the pair-scoped {directive} for " +
-                           $"'{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' → " +
-                           $"'{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
-                outcome = "is not applied to its elements";
+                bypassed = customization.What;
+                verb = customization.Verb;
             }
 
+            // "the block copy fills '<member>'" rather than "it is not called for its elements": every pronoun
+            // in the old frame bound to the bypassed thing rather than to the member, which is the one noun a
+            // reader needs to act on. The member is named three times on purpose — it is what they go and edit.
             acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretBypassesConversion,
                 req.Location,
-                $"[Reinterpret] on '{memberName}' takes precedence over {bypassed}, so it {outcome}; " +
-                $"remove [Reinterpret] from '{memberName}' to use it instead",
+                $"[Reinterpret] on '{memberName}' takes precedence over {bypassed}, so the block copy fills " +
+                $"'{memberName}' without {verb} it; remove [Reinterpret] from '{memberName}' to use it instead",
                 MemberName: memberName));
         }
 

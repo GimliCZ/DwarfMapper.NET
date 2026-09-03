@@ -23,17 +23,19 @@
 //       code, and a warning is a build failure under TreatWarningsAsErrors.
 //
 //       The mapper also maps the SAME element pair as a plain nested member (`One`), which is what keeps this
-//       row about DWARF106 alone. That member does get the pair's synthesized helper, so the [MapIgnore] is
-//       genuinely applied there and DWARF056 has nothing to report — and it makes the point the id exists for
-//       visible in one file: the directive works everywhere except behind [Reinterpret], and only DWARF106
-//       says so. (With `One` deleted, DWARF056 fires too, and truthfully: the block copy would then leave the
-//       directive applied by nobody. Asking the customization question does not consume it — the Any* lookups
-//       are non-mutating — which is what keeps that sweep honest.)
+//       row about DWARF106 alone. That member gets the pair's synthesized helper, so the [MapIgnore] is
+//       genuinely applied there — and it makes the point the id exists for visible in one file: the directive
+//       works everywhere except behind [Reinterpret], and only DWARF106 says so.
+//
+//       This row therefore says NOTHING about the DWARF056 sweep: with `One` present the ignore is consumed
+//       and 056 is silent either way, so nothing here would notice if the customization question started
+//       consuming directives. That property is proved by
+//       BlitSoundnessTests.A_pair_directive_nothing_applies_is_still_reported_by_DWARF056, which is where it
+//       belongs.
 // EXPECT: DWARF106
-// EXPECT-MESSAGE DWARF106: takes precedence over
-// EXPECT-MESSAGE DWARF106: pair-scoped
-// EXPECT-MESSAGE DWARF106: [MapIgnore<T>]
-// EXPECT-MESSAGE DWARF106: remove [Reinterpret]
+// EXPECT-MESSAGE DWARF106: takes precedence over the pair-scoped [MapIgnore<T>] declared for
+// EXPECT-MESSAGE DWARF106: the block copy fills 'Data' without applying it
+// EXPECT-MESSAGE DWARF106: remove [Reinterpret] from 'Data' to use it instead
 
 using DwarfMapper;
 

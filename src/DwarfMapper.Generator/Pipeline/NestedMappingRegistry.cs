@@ -61,7 +61,7 @@ namespace DwarfMapper.Generator.Pipeline
         // and "customized" is precisely what gets baked into the body behind that name. Extract-scoped, like the
         // closures in _ctxUpgradeCandidates, so capturing ITypeSymbols is safe. Null until wired, and then the
         // answer is "no" — the same verdict a mapper with no pair-scoped attributes produces.
-        private Func<ITypeSymbol, ITypeSymbol, string?>? _pairIsCustomized;
+        private Func<ITypeSymbol, ITypeSymbol, (string What, string Verb)?>? _pairIsCustomized;
 
         // Cached result; null until ComputeRecursionCapability() is called.
         private HashSet<string>? _recursionCapable;
@@ -126,7 +126,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <c>[BeforeMap]</c>/<c>[AfterMap]</c> hook matching the pair. Wired once per extraction, from the
         ///     one site where the mapper's declarations are known.
         /// </summary>
-        public void SetPairCustomizationRule(Func<ITypeSymbol, ITypeSymbol, string?> rule)
+        public void SetPairCustomizationRule(Func<ITypeSymbol, ITypeSymbol, (string What, string Verb)?> rule)
         {
             _pairIsCustomized = rule;
         }
@@ -141,14 +141,15 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     The SPELLING of the directive or hook that customizes <paramref name="src" />→<paramref name="tgt" />
-        ///     (<c>"[MapIgnore&lt;T&gt;]"</c>, <c>"[AfterMap] hook"</c>, …), or <see langword="null" /> when nothing
-        ///     does. Round 29 T0.2d: DWARF106 has to NAME what <c>[Reinterpret]</c> is overriding, and the answer
-        ///     must be the one this registry's own gate uses — so the rule yields the name and
-        ///     <see cref="PairIsCustomized" /> is the boolean derived from it, rather than a second predicate that
-        ///     could drift from the first.
+        ///     How to NAME the directive or hook that customizes <paramref name="src" />→<paramref name="tgt" /> —
+        ///     a complete noun phrase (<c>"the pair-scoped [MapIgnore&lt;T&gt;] declared for 'A' → 'B'"</c>,
+        ///     <c>"the [AfterMap] hook matching 'A' → 'B'"</c>) and the gerund that reads correctly for it — or
+        ///     <see langword="null" /> when nothing does. Round 29 T0.2d: DWARF106 has to name what
+        ///     <c>[Reinterpret]</c> is overriding, and the answer must be the one this registry's own gate uses —
+        ///     so the rule yields the phrase and <see cref="PairIsCustomized" /> is the boolean derived from it,
+        ///     rather than a second predicate that could drift from the first.
         /// </summary>
-        public string? PairCustomization(ITypeSymbol src, ITypeSymbol tgt)
+        public (string What, string Verb)? PairCustomization(ITypeSymbol src, ITypeSymbol tgt)
         {
             return _pairIsCustomized?.Invoke(src, tgt);
         }

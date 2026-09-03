@@ -564,9 +564,10 @@ namespace DwarfMapper.Generator.Tests
             // naming the member, what is not being called, and how to get it called.
             var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
                 .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
-            Assert.Contains("'V'", hint, StringComparison.Ordinal);
-            Assert.Contains("'Conv'", hint, StringComparison.Ordinal);
-            Assert.Contains("remove [Reinterpret]", hint, StringComparison.Ordinal);
+            Assert.Equal(
+                "[Reinterpret] on 'V' takes precedence over the declared conversion method 'Conv', so the block " +
+                "copy fills 'V' without calling it; remove [Reinterpret] from 'V' to use it instead",
+                hint);
         }
 
         [Fact]
@@ -588,23 +589,34 @@ namespace DwarfMapper.Generator.Tests
             AssertBlitted(GeneratorAssert.CompilesClean(src));
             var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
                 .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
-            Assert.Contains("conversion operator", hint, StringComparison.Ordinal);
-            Assert.Contains("SrcV", hint, StringComparison.Ordinal);
-            Assert.Contains("DstV", hint, StringComparison.Ordinal);
+            Assert.Equal(
+                "[Reinterpret] on 'V' takes precedence over the user-defined conversion operator from 'SrcV' to " +
+                "'DstV', so the block copy fills 'V' without calling it; remove [Reinterpret] from 'V' to use it " +
+                "instead",
+                hint);
         }
 
         [Theory]
         // One row per kind the customization rule knows, so "the message names the directive" is checked for
         // every arm of it rather than for whichever one happened to be written first.
-        [InlineData("[MapIgnore<DstV>(\"Y\")]\n", "", "[MapIgnore<T>]")]
-        [InlineData("[MapProperty<SrcV, DstV>(\"X\", \"Y\")]\n", "", "[MapProperty<S,T>]")]
-        [InlineData("[MapValue<DstV>(\"Y\", 42)]\n", "", "[MapValue<T>]")]
-        [InlineData("", "[BeforeMap] public static void Pre(SrcV s) { }", "[BeforeMap] hook")]
-        [InlineData("", "[AfterMap] public static void Touch(SrcV s, ref DstV d) { d.X += 1; }", "[AfterMap] hook")]
+        // A pair-scoped ATTRIBUTE is "declared for" the pair and is APPLIED; a hook is only "matching" it (its
+        // parameter types accept the pair by implicit conversion) and is RUN. The whole clause is the expectation
+        // so that distinction cannot quietly collapse into one wording.
+        [InlineData("[MapIgnore<DstV>(\"Y\")]\n", "",
+            "the pair-scoped [MapIgnore<T>] declared for 'SrcV' \u2192 'DstV'", "applying")]
+        [InlineData("[MapProperty<SrcV, DstV>(\"X\", \"Y\")]\n", "",
+            "the pair-scoped [MapProperty<S,T>] declared for 'SrcV' \u2192 'DstV'", "applying")]
+        [InlineData("[MapValue<DstV>(\"Y\", 42)]\n", "",
+            "the pair-scoped [MapValue<T>] declared for 'SrcV' \u2192 'DstV'", "applying")]
+        [InlineData("", "[BeforeMap] public static void Pre(SrcV s) { }",
+            "the [BeforeMap] hook matching 'SrcV' \u2192 'DstV'", "running")]
+        [InlineData("", "[AfterMap] public static void Touch(SrcV s, ref DstV d) { d.X += 1; }",
+            "the [AfterMap] hook matching 'SrcV' \u2192 'DstV'", "running")]
         public void Reinterpret_reports_the_bypass_for_a_pair_scoped_directive_or_hook_too(
             string classAttribute,
             string member,
-            string expectedDirective)
+            string expectedDirective,
+            string expectedVerb)
         {
             // Round 29 T0.2d. DWARF106 used to return early unless the element pair resolved to a user
             // CONVERSION, so [Reinterpret] overriding a pair-scoped directive or a hook — the same intentional
@@ -618,13 +630,10 @@ namespace DwarfMapper.Generator.Tests
 
             var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
                 .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
-            Assert.Contains("'V'", hint, StringComparison.Ordinal);
-            Assert.Contains(expectedDirective, hint, StringComparison.Ordinal);
-            // The element pair the directive was declared for, so the reader can find it in a mapper that
-            // declares several.
-            Assert.Contains("'SrcV'", hint, StringComparison.Ordinal);
-            Assert.Contains("'DstV'", hint, StringComparison.Ordinal);
-            Assert.Contains("remove [Reinterpret]", hint, StringComparison.Ordinal);
+            Assert.Equal(
+                $"[Reinterpret] on 'V' takes precedence over {expectedDirective}, so the block copy fills 'V' " +
+                $"without {expectedVerb} it; remove [Reinterpret] from 'V' to use it instead",
+                hint);
         }
 
         [Theory]
@@ -647,11 +656,11 @@ namespace DwarfMapper.Generator.Tests
 
             var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
                 .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
-            Assert.Contains("'V'", hint, StringComparison.Ordinal);
-            Assert.Contains("[MapConstructor<S,T>]", hint, StringComparison.Ordinal);
-            Assert.Contains("'SrcV'", hint, StringComparison.Ordinal);
-            Assert.Contains("'DstV'", hint, StringComparison.Ordinal);
-            Assert.Contains("remove [Reinterpret]", hint, StringComparison.Ordinal);
+            Assert.Equal(
+                "[Reinterpret] on 'V' takes precedence over the pair-scoped [MapConstructor<S,T>] declared for " +
+                "'SrcV' \u2192 'DstV', so the block copy fills 'V' without applying it; remove [Reinterpret] " +
+                "from 'V' to use it instead",
+                hint);
         }
 
         [Fact]

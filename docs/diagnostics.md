@@ -1896,15 +1896,38 @@ wrote that the block copy will not run. Two shapes, one id:
 
 - **a conversion** — a declared method on the mapper, or a user-defined conversion operator between the
   element types. The message names it:
-  `[Reinterpret] on 'Data' takes precedence over the declared conversion method 'Scale', so it is not called
-  for its elements; remove [Reinterpret] from 'Data' to use it instead`
-- **a pair-scoped directive or hook** — `[MapIgnore<T>]`, `[MapProperty<S,T>]`, `[MapValue<T>]`,
-  `[MapConstructor<S,T>]`, or a `[BeforeMap]`/`[AfterMap]` matching the element pair. A directive has no single
-  symbol to point at, so the message names its spelling and the element pair it was declared for:
-  `[Reinterpret] on 'Data' takes precedence over the pair-scoped [MapIgnore<T>] for 'Src' → 'Dst', so it is
-  not applied to its elements; remove [Reinterpret] from 'Data' to use it instead`
 
-When both apply, the conversion is named — it is the more specific fact, and the one you can grep for.
+  ```text
+  [Reinterpret] on 'Data' takes precedence over the declared conversion method 'Scale', so the block copy fills 'Data' without calling it; remove [Reinterpret] from 'Data' to use it instead
+  ```
+
+  An operator has no name to grep for, so it is described by the pair it converts between:
+
+  ```text
+  [Reinterpret] on 'V' takes precedence over the user-defined conversion operator from 'SrcV' to 'DstV', so the block copy fills 'V' without calling it; remove [Reinterpret] from 'V' to use it instead
+  ```
+- **a pair-scoped directive** — `[MapIgnore<T>]`, `[MapProperty<S,T>]`, `[MapValue<T>]` or
+  `[MapConstructor<S,T>]`. It has no single symbol to point at, so the message names its spelling and the
+  element pair it was **declared for**:
+
+  ```text
+  [Reinterpret] on 'Data' takes precedence over the pair-scoped [MapIgnore<T>] declared for 'DirectiveSrc' → 'DirectiveDst', so the block copy fills 'Data' without applying it; remove [Reinterpret] from 'Data' to use it instead
+  ```
+- **a `[BeforeMap]`/`[AfterMap]` hook** — worded differently on purpose. A hook is not declared for a pair;
+  it is **matched to** one, because its parameter types accept the pair by implicit conversion. Saying it was
+  "declared for" the pair would send you looking for a declaration that does not exist. A hook is also *run*
+  rather than *applied*:
+
+  ```text
+  [Reinterpret] on 'V' takes precedence over the [AfterMap] hook matching 'SrcV' → 'DstV', so the block copy fills 'V' without running it; remove [Reinterpret] from 'V' to use it instead
+  ```
+
+When both a conversion and a directive apply, the conversion is named — it is the more specific fact, and
+the one you can grep for.
+
+Every sentence names the member three times over, which is deliberate: the member is the one thing you go and
+edit, and an earlier wording ("so it is not called for its elements") bound both pronouns to the conversion
+instead, leaving the reader to work out whose elements "its" meant.
 
 <!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
 ```csharp

@@ -1286,6 +1286,37 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when the expression <see cref="ElementExpr" /> builds may read <c>item</c> TWICE. On its
+        ///     CONVERTER branch (<c>conv is not null</c>) these two arms do:
+        ///     <see cref="NullHandling.NullableProject" /> emits <c>item.HasValue ? conv(item.Value) : null</c> and
+        ///     <see cref="NullHandling.NullableProjectRef" /> emits <c>item is null ? null : conv(item)</c>; every
+        ///     other arm, on either branch, reads it once.
+        ///     <para>
+        ///         DELIBERATELY over-binding, and not an invariant to build on: with <c>conv is null</c> those same
+        ///         two <see cref="NullHandling" /> values fall to <c>_ =&gt; item</c>, a single read, and this still
+        ///         answers true. Binding a local for a single-read expression is correct, merely redundant, so the
+        ///         predicate is kept a function of <see cref="NullHandling" /> alone rather than growing a second
+        ///         parameter that every caller would have to thread. The case is unreachable in the corpus anyway:
+        ///         the golden manifest moved 0 of its cases when the binding was introduced, which is what says no
+        ///         emitted shape takes the redundant arm today.
+        ///     </para>
+        ///     <para>
+        ///         This is the one rule behind the element BINDING that two emitters both need, so it lives beside
+        ///         the expression builder rather than being restated by each of them. A caller whose <c>item</c>
+        ///         text is a re-evaluated expression rather than a local — the span map's <c>src[__i]</c>, and
+        ///         <see cref="EmitArray" />'s bounds-check-elision fast path, which substitutes the same indexer
+        ///         into the shared expression — must bind that expression to a local first when this returns true:
+        ///         C#'s nullable flow analysis does not carry the null-state established by the FIRST read of an
+        ///         indexer into a SECOND, independent read of it, so the lifted <c>.Value</c> is CS8629 ("Nullable
+        ///         value type may be null") inside a generated file the consumer cannot annotate or suppress.
+        ///     </para>
+        /// </summary>
+        internal static bool ElementExprReadsItemTwice(NullHandling nh)
+        {
+            return nh is NullHandling.NullableProject or NullHandling.NullableProjectRef;
+        }
+
+        /// <summary>
         ///     The per-element expression: the element's null handling COMPOSED with its converter.
         ///     <para>
         ///         The converter branch used to ignore <paramref name="nh" /> entirely and emit <c>Conv(__item)</c>,
@@ -1321,27 +1352,6 @@ namespace DwarfMapper.Generator.Pipeline
         ///     there is no index expression they could pass; forking a second literal for them instead of
         ///     falling back would be the duplication this method exists to avoid.
         /// </param>
-        /// <summary>
-        ///     True when <see cref="ElementExpr" /> reads <c>item</c> TWICE — the two lifting arms
-        ///     (<see cref="NullHandling.NullableProject" />: <c>item.HasValue ? conv(item.Value) : null</c>, and
-        ///     <see cref="NullHandling.NullableProjectRef" />: <c>item is null ? null : conv(item)</c>). Every other
-        ///     arm reads it once.
-        ///     <para>
-        ///         This is the one rule behind the element BINDING that two emitters both need, so it lives beside
-        ///         the expression builder rather than being restated by each of them. A caller whose <c>item</c>
-        ///         text is a re-evaluated expression rather than a local — the span map's <c>src[__i]</c>, and
-        ///         <see cref="EmitArray" />'s bounds-check-elision fast path, which substitutes the same indexer
-        ///         into the shared expression — must bind that expression to a local first when this returns true:
-        ///         C#'s nullable flow analysis does not carry the null-state established by the FIRST read of an
-        ///         indexer into a SECOND, independent read of it, so the lifted <c>.Value</c> is CS8629 ("Nullable
-        ///         value type may be null") inside a generated file the consumer cannot annotate or suppress.
-        ///     </para>
-        /// </summary>
-        internal static bool ElementExprReadsItemTwice(NullHandling nh)
-        {
-            return nh is NullHandling.NullableProject or NullHandling.NullableProjectRef;
-        }
-
         internal static string ElementExpr(
             string item,
             string? conv,

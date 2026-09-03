@@ -115,8 +115,9 @@ so a version with no section here ships with no notes.
   through the resolver's OWN predicates and with NON-mutating directive lookups, so a directive nothing applies
   is still reported by DWARF056. `[Reinterpret]` is unaffected: it names one member explicitly and still forces
   the copy — and, since T0.2d, says so with **`DWARF106`** whichever of the two it is overriding, so the
-  override is no longer silent for pair-scoped directives either. Layout-identical pairs with neither a converter nor a directive blit exactly as before. Pinned by
-  `BlitSoundnessTests` and `ElementConverterBeatsBlitRuntimeTests`. (round 29, T0.2c)
+  override is no longer silent for pair-scoped directives either. Layout-identical pairs with neither a
+  converter nor a directive blit exactly as before. Pinned by `BlitSoundnessTests` and
+  `ElementConverterBeatsBlitRuntimeTests`. (round 29, T0.2c)
 - **The blit near-miss (DWARF100) went quiet on a span map whose element names were reconciled by
   `[MapProperty<S,T>]`** — the one caller the hint is written for. It now follows the proof at both endpoints and
   is silenced only when a user conversion owns the element pair, where "you are one rename away from the block

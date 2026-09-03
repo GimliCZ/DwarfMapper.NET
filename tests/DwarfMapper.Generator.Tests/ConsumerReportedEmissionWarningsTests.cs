@@ -135,6 +135,56 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("for (int __i = 0; __i < src.Length; __i++) { var __item = src[__i];", generated, StringComparison.Ordinal);
         }
 
+        // The OTHER arm the one binding rule covers: NullableProjectRef, `__item is null ? null : conv(__item)`.
+        // Reaching it needs a possibly-null REFERENCE source element mapped to a Nullable<STRUCT> target element
+        // (MapperExtractor.Conversions.Arms.HandleTargetNullableComposition): the synthesized helper returns a
+        // value type and so has no way to answer "null", which is why the CALL SITE has to test first.
+        //
+        // `Child?[] → ChildDto?[]` — the obvious guess, and the shape the round-28 tests above use — does NOT
+        // reach it: with a reference TARGET the helper null-guards internally, so that pair takes the plain arm
+        // with a null-forgiving `!` (`conv(src[__i]!)`) and reads the element once. Verified against the emitted
+        // text before this test was written rather than assumed, because a pin aimed at the wrong arm is worse
+        // than no pin: it passes, and it guards nothing.
+        private const string NullableRefElementToNullableStructArray = """
+            using DwarfMapper;
+            namespace T
+            {
+                public class Child { public int V { get; set; } }
+                public struct PointDto { public int V { get; set; } }
+                public class Src { public Child?[] Items { get; set; } = new Child?[8]; }
+                public class Dst { public PointDto?[] Items { get; set; } = new PointDto?[8]; }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+            }
+            """;
+
+        [Fact]
+        public void Nullable_reference_element_to_nullable_struct_array_keeps_the_bounds_check_elision_loop()
+        {
+            // Round 29 T0.2d review fix round 1. The struct arm (NullableProject) had a shape pin and this arm did
+            // not, so it could have regressed to the foreach form — losing the store-index bounds-check elision the
+            // arm exists for — with every warning-free and runtime test still green, because both forms map
+            // identically and neither warns. A performance property no test names is one that regresses quietly.
+            var generated = GeneratorAssert.CompilesClean(NullableRefElementToNullableStructArray, NullableContextOptions.Enable);
+
+            // The elision loop, with the element bound ONCE — the whole point of the fix on this arm too.
+            Assert.Contains("for (int __i = 0; __i < src.Length; __i++) { var __item = src[__i];", generated, StringComparison.Ordinal);
+            Assert.Contains("__item is null ? null :", generated, StringComparison.Ordinal);
+
+            // And not the foreach form, whose separate post-incremented write index the JIT cannot prove in bounds.
+            Assert.DoesNotContain("foreach (var __item in src)", generated, StringComparison.Ordinal);
+
+            // The element is read from the array exactly once: a second `src[__i]` inside the conditional is the
+            // defect this task removed, and on THIS arm the null-forgiving `!` would hide it from the compiler.
+            Assert.DoesNotContain("src[__i] is null", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Nullable_reference_element_to_nullable_struct_array_maps_null_slots_and_values()
+        {
+            // The behaviour the shape pin above is protecting, so a future reader can see the pin is not cosmetic.
+            AssertWarningFree(NullableRefElementToNullableStructArray, "Child?[] -> PointDto?[]");
+        }
+
         // ── 2. constructor argument: nullable source into a non-nullable parameter (CS8604) ──────────────────
         // The member path null-forgives `Alias = source.Alias!` and reports DWARF070 against the DTO; the
         // constructor-argument path bound the same source member to `string alias` bare.
