@@ -53,6 +53,24 @@ so a version with no section here ships with no notes.
 
 ### Added
 
+- **`DWARF101` (Info) — a transfer-model struct spends a quarter or more of its bytes on padding, and the
+  message names the field order that packs it.** Reported for the element types of a mapped collection, where
+  the waste is paid once per item: `{bool; long; byte; double; short}` is 40 bytes, 20 of them padding, and
+  the same five fields declared `long, double, short, bool, byte` are 24. Measured on that exact shape
+  (`Issues/round29/RESEARCH-hardware-mode.md`, row *D. layout hygiene*), the packed pair blits in
+  0.57×–0.62× the time and allocates 0.60× the memory. **Remedy:** declare the fields in the order the
+  message prints — on BOTH sides of the pair, since packing only one of a layout-identical pair costs it the
+  block copy. Ignoring it is also a legitimate answer, which is why it is informational rather than a
+  warning.
+
+  **It is deliberately hard to trigger.** Both thresholds must hold — at least a quarter of the size AND at
+  least 8 bytes — so the ubiquitous `{byte; long}` (7 bytes wasted of 16) stays silent, as does anything
+  whose layout the generator cannot compute: metadata structs, `LayoutKind.Auto`/`Explicit`, an explicit
+  `Pack` or `Size`, `[InlineArray]`, fixed buffers, fields split across `partial` declarations, and any
+  struct containing a platform-sized `nint`/`nuint`/`IntPtr`/`UIntPtr`, whose width belongs to the machine
+  the consumer runs on rather than the one that built the mapper. An informational diagnostic is only worth
+  having while it is rare.
+
 - **`DWARF106` (Info) — `[Reinterpret]` takes the block copy instead of a declared conversion *or a pair-scoped
   directive*.** Reports the one conflict the new blit rule (below) deliberately resolves in favour of the
   attribute: the member carries `[Reinterpret]`, and its element pair also has something you wrote that a block

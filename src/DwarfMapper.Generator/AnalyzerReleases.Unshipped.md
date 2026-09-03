@@ -106,6 +106,7 @@ DWARF097 | DwarfMapper | Warning | Mapping method was not generated
 DWARF098 | DwarfMapper | Warning | [DwarfMapperConstructor] names a constructor the mapper cannot use
 DWARF099 | DwarfMapper | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations
 DWARF100 | DwarfMapper | Info | Array or span pair narrowly missed the blittable fast path
+DWARF101 | DwarfMapper | Info | Struct layout pads more than a quarter of its size
 DWARF106 | DwarfMapper | Info | [Reinterpret] takes the block copy instead of a declared conversion or directive
 
 ; ── Registry front door ([MapTo]) ──────────────────────────────────────────────

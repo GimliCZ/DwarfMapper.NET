@@ -10,6 +10,14 @@ namespace DwarfMapper.Generator.Pipeline
     /// <summary>
     ///     Proves whether two distinct unmanaged structs are byte-identical in layout AND field-name-aligned,
     ///     so a positional reinterpret equals DwarfMapper's name-based mapping. Recurses through nested structs.
+    ///     <para>
+    ///         Five of its helpers — <see cref="PrimitiveSize" />, <see cref="InstanceFields" />,
+    ///         <see cref="IsSourceSequential" />, <see cref="FieldsSpanPartialDeclarations" /> and
+    ///         <see cref="InlineArrayLength" /> — are visible to the assembly rather than private because
+    ///         <see cref="LayoutHygiene" /> measures the same layouts for <c>DWARF101</c> (round 29,
+    ///         <c>T0.3</c>). They encode the CLR's rules for a Sequential struct, and a second copy of those
+    ///         rules would be free to drift from this proof without a single test noticing.
+    ///     </para>
     /// </summary>
     internal static class BlittableProof
     {
@@ -72,7 +80,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         costs an exotic opt-in; allowing them would make the proof depend on the wrong machine.
         ///     </para>
         /// </summary>
-        private static int PrimitiveSize(ITypeSymbol t)
+        public static int PrimitiveSize(ITypeSymbol t)
         {
             return t.SpecialType switch
             {
@@ -493,7 +501,7 @@ namespace DwarfMapper.Generator.Pipeline
                 or SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Char;
         }
 
-        private static List<IFieldSymbol> InstanceFields(INamedTypeSymbol t)
+        public static List<IFieldSymbol> InstanceFields(INamedTypeSymbol t)
         {
             var fields = new List<IFieldSymbol>();
             foreach (var m in t.GetMembers())
@@ -532,7 +540,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///         member order is layout, and there is nothing left to be uncertain about.
         ///     </para>
         /// </summary>
-        private static bool FieldsSpanPartialDeclarations(INamedTypeSymbol t, List<IFieldSymbol> fields)
+        public static bool FieldsSpanPartialDeclarations(INamedTypeSymbol t, List<IFieldSymbol> fields)
         {
             if (t.DeclaringSyntaxReferences.Length <= 1)
             {
@@ -575,7 +583,7 @@ namespace DwarfMapper.Generator.Pipeline
             return declaration is null ? null : (reference.SyntaxTree, declaration.Span);
         }
 
-        private static bool IsSourceSequential(INamedTypeSymbol t, out int pack, out int size)
+        public static bool IsSourceSequential(INamedTypeSymbol t, out int pack, out int size)
         {
             pack = 0;
             size = 0;
@@ -621,7 +629,7 @@ namespace DwarfMapper.Generator.Pipeline
         ///     <see cref="System.Runtime.InteropServices.StructLayoutAttribute.Size" /> — it changes the bytes
         ///     without changing the field list, and two such structs share a layout only when their counts agree.
         /// </summary>
-        private static int InlineArrayLength(INamedTypeSymbol t)
+        public static int InlineArrayLength(INamedTypeSymbol t)
         {
             foreach (var attr in t.GetAttributes())
                 if (attr.AttributeClass?.ToDisplayString() == "System.Runtime.CompilerServices.InlineArrayAttribute" &&

@@ -1887,6 +1887,57 @@ ordinary mappings, and a hint common enough to appear on every struct mapping wo
 wholesale — taking the cases worth reading down with it.
 ---
 
+## dwarf101
+**Struct layout pads more than a quarter of its size** · Info
+
+Your mapping is **correct, and so is your struct**. This is a memory hint: a struct used as the element of a
+mapped collection spends a quarter or more of its bytes on alignment padding, and the message names the field
+order that would not. An element type is allocated once per item, so those wasted bytes are multiplied by the
+length of every array of it.
+
+<!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
+```csharp
+public struct Sample                      // DWARF101 — 40 bytes, 20 of them padding
+{
+    public bool Ok; public long Id; public byte Kind; public double Value; public short Code;
+}
+
+// the same struct, in the order the message prints — 24 bytes, and silent
+public struct Sample
+{
+    public long Id; public double Value; public short Code; public bool Ok; public byte Kind;
+}
+```
+
+**Fix:** declare the fields in the order the message prints — largest alignment first, ties in the order you
+already had them. Nothing else changes: not the field names, not the mapping, not one line of generated code.
+
+- **What it buys.** Measured on this exact shape (`Issues/round29/RESEARCH-hardware-mode.md`, row **D. layout
+  hygiene**): the packed pair blits in **0.57×–0.62×** the time of the padded one and allocates **0.60×** the
+  memory. The saving is the same 40 % whether the pair takes the block copy or the element loop — it is the
+  array that got smaller.
+- **Reorder BOTH sides of a pair.** The block copy needs the two element types to be layout-identical, so
+  packing only the destination breaks that and drops the pair back to the element loop — and `dwarf100` will
+  not say so either, because two field lists that no longer line up positionally are an ordinary mapping
+  rather than a near-miss. Both sides are reported for this reason.
+- **A field order chosen for readability is a legitimate answer.** Grouping fields by meaning is worth bytes
+  to plenty of people. This is a hint; ignoring it is a decision, not a defect.
+
+**When it stays quiet**, which is most of the time:
+
+- **Under either threshold.** Both must hold: at least a quarter of the size wasted, **and** at least 8 bytes.
+  `{byte Kind; long Id}` wastes 7 of its 16 — well over a quarter, and one byte under the floor. That shape is
+  half the transfer models in existence, and a hint that fired on it would be suppressed wholesale, taking the
+  cases worth reading down with it (see `dwarf070` for how this project learned that lesson).
+- **A struct declared in metadata.** Its field order is not yours to change, so the remedy would be unusable.
+- **A layout this generator cannot compute**: `LayoutKind.Auto` or `Explicit`, an explicit `Pack` or `Size`,
+  `[InlineArray]`, a fixed-size buffer, instance fields split across `partial` declarations (CS0282), or a
+  field whose width is the platform's — `nint`, `nuint`, `IntPtr`, `UIntPtr`. A number measured on the build
+  machine would be a false claim about the machine you deploy to, so nothing is claimed.
+- **A padded struct mapped as a scalar member.** It wastes those bytes once. The claim here is about arrays.
+- **Padding that lives inside a nested struct.** It is charged to the type that declares those fields, never
+  to the one that contains it — reordering the outer fields could not recover it.
+---
 ## dwarf106
 **[Reinterpret] takes the block copy instead of a declared conversion or directive** · Info
 

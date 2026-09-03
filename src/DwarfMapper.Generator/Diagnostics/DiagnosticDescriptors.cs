@@ -1752,6 +1752,48 @@ namespace DwarfMapper.Generator.Diagnostics
             HelpBase + "dwarf100");
 
         /// <summary>
+        ///     <c>DWARF101</c> — a struct used as the element of a mapped collection spends a quarter or more of
+        ///     its bytes on alignment padding, and the message names the field order that packs it.
+        ///     <para>
+        ///         <b>Informational, and it must stay that way</b>: nothing is wrong with the mapping or with the
+        ///         struct. A warning here would become a build failure under <c>TreatWarningsAsErrors</c> over a
+        ///         field order the consumer may have chosen deliberately (grouping by meaning is a real reason to
+        ///         leave bytes on the floor).
+        ///     </para>
+        ///     <para>
+        ///         Two thresholds, BOTH required: at least a quarter of the size, and at least
+        ///         <see cref="Pipeline.LayoutHygiene.MinimumWastedBytes" /> bytes. The quarter alone would fire on
+        ///         <c>{byte; long}</c> — a flag beside an identifier, which is half the transfer models in
+        ///         existence — and an Info that common is suppressed wholesale by the first consumer who meets
+        ///         it, taking the cases worth reading with it. That is the lesson
+        ///         <c>BlittableProof.TryExplainNearMiss</c> records for <c>DWARF100</c>, applied here from the
+        ///         start.
+        ///     </para>
+        ///     <para>
+        ///         Scoped to COLLECTION elements, and to structs the consumer declares. An element type is
+        ///         allocated once per item, so its padding multiplies by the array length — that is the whole
+        ///         claim, and it does not hold for a scalar member, which wastes those bytes once. A struct from
+        ///         metadata is never named: its field order is not the consumer's to change, so the remedy would
+        ///         be unusable even where the number is right. Round 29, <c>T0.3</c>.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor StructLayoutPadding = new(
+            "DWARF101",
+            "Struct layout pads more than a quarter of its size",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            "A Sequential struct places each field at the next offset that is a multiple of its own alignment, so " +
+            "the declared order decides how many bytes are spent on padding. For a struct used as a collection " +
+            "element that cost is paid once per item: a 40-byte element that packs into 24 makes every array of " +
+            "it 40% smaller. Reordering the fields — largest alignment first — is the whole fix, and it changes " +
+            "no behaviour. It also helps the block copy: a smaller element type still blits, and a twin that " +
+            "keeps the same order stays layout-identical. This is a performance hint, which is why it is " +
+            "informational; a field order chosen for readability is a legitimate answer to it.",
+            HelpBase + "dwarf101");
+
+        /// <summary>
         ///     <c>[Reinterpret]</c> on a member took the block copy, and by doing so did NOT call a conversion
         ///     the element pair would otherwise have resolved to — a user-declared method on the mapper, or a
         ///     user-defined conversion operator between the element types.

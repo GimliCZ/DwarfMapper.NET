@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Globalization;
 using DwarfMapper.Generator.Diagnostics;
 using DwarfMapper.Generator.Model;
 using Microsoft.CodeAnalysis;
@@ -465,6 +466,62 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     Reports <c>DWARF101</c> when <paramref name="element" /> — a struct on one side of a mapped
+        ///     collection — wastes a quarter or more of its bytes on alignment padding, naming the field order
+        ///     that packs it. Silent for anything <see cref="LayoutHygiene.Measure" /> refuses to measure, which
+        ///     includes every struct the consumer does not declare.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Round 29, <c>T0.3</c>. Called for BOTH element types, and once per struct TYPE rather than once
+        ///         per member. The two are connected: reporting only the destination would be the tidier rule and
+        ///         the wrong one, because a pair that blits today is layout-identical, and a consumer who reorders
+        ///         one side alone breaks that identity and loses the block copy in silence — <c>DWARF100</c> would
+        ///         not say so either, since the two field lists no longer line up positionally at all. Both sides
+        ///         are named so the remedy is applied to both. An identity pair (<c>V[] → V[]</c>) collapses to
+        ///         one report through the dedupe below rather than through a special case.
+        ///     </para>
+        ///     <para>
+        ///         The dedupe is a scan of the sink for a report carrying the SAME text, which is what makes the
+        ///         message type-only: it names the struct, its numbers and its field order, and nothing about the
+        ///         member it was reached through — so two members of one padded type produce one identical string,
+        ///         and the second is dropped. <paramref name="req" />'s location and target name still ride along,
+        ///         so the report lands on the first member that reached the type and a code fix could find it. The
+        ///         sink is the mapper class's own diagnostic list, so "once" means once per mapper class; a probe
+        ///         resolving into a throwaway list (the flatten and hetero leaf probes) cannot see it, which is
+        ///         the one gap in the rule and is bounded by those probes' own scope.
+        ///     </para>
+        /// </remarks>
+        private static void ReportPaddedElementStruct(
+            ConversionRequest req,
+            List<DiagnosticInfo> diagnostics,
+            ITypeSymbol element)
+        {
+            if (LayoutHygiene.Measure(element) is not { } layout || !LayoutHygiene.WastesAQuarter(layout))
+            {
+                return;
+            }
+
+            var message =
+                $"'{element.ToDisplayString()}' is {layout.Size.ToString(CultureInfo.InvariantCulture)} bytes with " +
+                $"{layout.Padding.ToString(CultureInfo.InvariantCulture)} bytes of padding; declaring its fields as " +
+                $"{layout.PackedOrderText} makes it {layout.PackedSize.ToString(CultureInfo.InvariantCulture)} bytes " +
+                "— smaller arrays, and a layout-identical twin can take the blit";
+
+            foreach (var reported in diagnostics)
+                if (ReferenceEquals(reported.Descriptor, DiagnosticDescriptors.StructLayoutPadding) &&
+                    string.Equals(reported.MessageArg, message, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StructLayoutPadding,
+                req.Location,
+                message,
+                MemberName: req.TargetName));
+        }
+
+        /// <summary>
         ///     Collections: element-wise conversion, including the in-place and context-threading shapes.
         /// </summary>
         /// <returns>
@@ -489,6 +546,15 @@ namespace DwarfMapper.Generator.Pipeline
                     out var collShape,
                     req.NullAsNull))
             {
+                // ── Layout hygiene on the element types (round 29, T0.3) ────────────────────────────────────
+                // Reported HERE, above every branch below, because the padding is worth the same to the reader
+                // whether the pair goes on to blit or to take the element loop: a block copy copies the wasted
+                // bytes as faithfully as the loop writes them, and the array is the same size either way. The
+                // near-miss below could not carry it — that one speaks only when the blit was REFUSED, so the
+                // pairs with the most to gain (the ones already blitting) would never have heard it.
+                ReportPaddedElementStruct(req, diagnostics, srcElem);
+                ReportPaddedElementStruct(req, diagnostics, tgtElem);
+
                 // ── The blit is a fast path, never a change of meaning (round 29, T0.2c) ────────────────────
                 // This arm decides the block copy at chain position 2 — BEFORE the arms that adopt a
                 // user-declared conversion for the ELEMENT pair, and before the element recursion below runs at
