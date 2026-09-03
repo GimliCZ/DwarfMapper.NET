@@ -251,6 +251,279 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("Nullable<T> on one side only", Assert.Single(d).GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         }
 
+        // ── The proof never overrides the resolver (round 29, T0.2c) ─────────────────────────────────────
+        // HandleCollectionConversion decides the array/list block copy at chain position 2 — before the arms
+        // that adopt a user-declared element conversion, and before the element pair is resolved at all. Every
+        // shape below used to blit past exactly what the mapper's author asked for, with no diagnostic. The
+        // rule these pin is one sentence: a proof enables a fast path, it never changes semantics.
+
+        /// <summary>The layout-identical element pair every case below shares, plus the array and list carriers.</summary>
+        private const string GatePairs = """
+                                         public struct SrcV { public int X; public int Y; }
+                                         public struct DstV { public int X; public int Y; }
+                                         public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                                         public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                                         public class LA { public System.Collections.Generic.List<SrcV> V { get; set; } = new(); }
+                                         public class LB { public System.Collections.Generic.List<DstV> V { get; set; } = new(); }
+                                         """;
+
+        private static string GateSource(string classAttributes, string members, bool list = false)
+        {
+            return "using DwarfMapper;\nnamespace T\n{\n" + GatePairs + "\n" +
+                   "[DwarfMapper]\n" + classAttributes + "public partial class M\n{\n" + members + "\n" +
+                   (list ? "public partial LB Map(LA a);\n" : "public partial B Map(A a);\n") + "}\n}\n";
+        }
+
+        /// <summary>The blit was taken: some <c>__DwarfBlit_</c>/<c>__DwarfBlitL_</c> helper reinterprets the storage.</summary>
+        private static void AssertBlitted(string generated)
+        {
+            Assert.Contains("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     The element loop was kept AND it calls <paramref name="expectedCall" /> — both halves, because
+        ///     "no blit" alone would also pass if the pair had simply failed to resolve.
+        /// </summary>
+        private static void AssertLoopCalls(string generated, string expectedCall)
+        {
+            Assert.DoesNotContain("__DwarfBlit_", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("__DwarfBlitL_", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
+            Assert.Contains(expectedCall, generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_user_declared_element_conversion_method_keeps_the_array_loop()
+        {
+            var src = GateSource("", "public static DstV Conv(SrcV s) => new DstV { X = s.X * 2, Y = s.Y };");
+            AssertLoopCalls(GeneratorAssert.CompilesClean(src), "Conv(");
+        }
+
+        [Fact]
+        public void A_user_declared_element_conversion_method_keeps_the_list_loop()
+        {
+            var src = GateSource("", "public static DstV Conv(SrcV s) => new DstV { X = s.X * 2, Y = s.Y };", true);
+            AssertLoopCalls(GeneratorAssert.CompilesClean(src), "Conv(");
+        }
+
+        [Fact]
+        public void A_user_declared_element_conversion_method_keeps_the_loop_for_an_enum_array()
+        {
+            // The enum half of the OR: CanReinterpretEnums accepts SrcE[] → DstE[] under ByValue and used to
+            // decide the copy on its own, so a declared SrcE → DstE converter was bypassed as well.
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public enum SrcE { A = 0, B = 1 }
+                    public enum DstE { A = 0, B = 1 }
+                    public class A { public SrcE[] V { get; set; } = System.Array.Empty<SrcE>(); }
+                    public class B { public DstE[] V { get; set; } = System.Array.Empty<DstE>(); }
+                    [DwarfMapper(EnumStrategy = EnumStrategy.ByValue)]
+                    public partial class M
+                    {
+                        public static DstE Conv(SrcE s) => DstE.B;
+                        public partial B Map(A a);
+                    }
+                }
+                """;
+            AssertLoopCalls(GeneratorAssert.CompilesClean(src), "Conv(");
+        }
+
+        [Fact]
+        public void A_user_defined_conversion_operator_keeps_the_loop_when_it_is_what_resolution_would_pick()
+        {
+            // [AutoNest(false)] is load-bearing, not decoration. The user-operator arm is the LAST in the
+            // chain: with auto-nest ON the element pair resolves to a synthesized __DwarfMap_Obj_* and the
+            // operator is not called on the scalar path either (pinned by the test below), so there is nothing
+            // for the blit to bypass. With auto-nest off the operator IS the resolver's answer, and blitting
+            // past it silently drops the *2.
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct SrcV { public int X; }
+                    public struct DstV { public int X; public static implicit operator DstV(SrcV s) => new DstV { X = s.X * 2 }; }
+                    public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                    public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                    [DwarfMapper] public partial class M { [AutoNest(false)] public partial B Map(A a); }
+                }
+                """;
+            AssertLoopCalls(GeneratorAssert.CompilesClean(src), "__DwarfMap_UserConv_");
+        }
+
+        [Fact]
+        public void A_user_defined_conversion_operator_the_resolver_would_not_pick_keeps_the_blit()
+        {
+            // The precedence half of the rule above: with auto-nest on, the scalar path is the by-name object
+            // map, which the proof reproduces byte for byte. Refusing the blit here would cost the fast path
+            // for a difference that does not exist.
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct SrcV { public int X; }
+                    public struct DstV { public int X; public static implicit operator DstV(SrcV s) => new DstV { X = s.X * 2 }; }
+                    public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                    public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                    [DwarfMapper] public partial class M { public partial B Map(A a); }
+                }
+                """;
+            AssertBlitted(GeneratorAssert.CompilesClean(src));
+        }
+
+        [Theory]
+        [InlineData("[MapIgnore<DstV>(\"Y\")]\n", "")]
+        [InlineData("[MapProperty<SrcV, DstV>(\"X\", \"Y\")]\n", "")]
+        [InlineData("[MapValue<DstV>(\"Y\", 42)]\n", "")]
+        [InlineData("", "[AfterMap] public static void Touch(SrcV s, ref DstV d) { d.X += 1; }")]
+        public void A_pair_scoped_directive_or_hook_on_the_element_pair_keeps_the_array_loop(
+            string classAttribute,
+            string member)
+        {
+            // NestedMappingRegistry.GetOrReserve is keyed purely by the type pair, so whatever these customize
+            // is baked into the ONE __DwarfMap_Obj_* helper the element pair gets. A block copy bypasses the
+            // helper, and with it the directive — silently.
+            var src = GateSource(classAttribute, member);
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.DoesNotContain("__DwarfBlit_", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
+            Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
+
+            // The semantic half, and the one that would still fail if the loop were kept for the wrong reason:
+            // the directive is now APPLIED by the element pair's own helper, so it no longer "matches no pair".
+            // Before the gate this same source blitted AND reported DWARF056. (The hook row carries no
+            // pair-scoped attribute, so its DWARF056 assertion is vacuous and harmless.)
+            GeneratorAssert.DoesNotReport(src, "DWARF056");
+
+            // And no near-miss: the pair lines up by name, so TryExplainNearMiss has nothing to explain — which
+            // is what makes it safe for the near-miss gate NOT to consult the customization half.
+            GeneratorAssert.DoesNotReport(src, "DWARF100");
+        }
+
+        [Fact]
+        public void A_pair_scoped_directive_on_the_element_pair_keeps_the_list_loop()
+        {
+            var src = GateSource("[MapIgnore<DstV>(\"Y\")]\n", "", true);
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.DoesNotContain("__DwarfBlitL_", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
+            Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
+            GeneratorAssert.DoesNotReport(src, "DWARF056");
+            GeneratorAssert.DoesNotReport(src, "DWARF100");
+        }
+
+        [Fact]
+        public void A_pair_scoped_MapConstructor_keeps_the_loop_and_the_factory_runs_per_element()
+        {
+            // The re-review of T0.2 judged PairConstructors byte-equivalent for a blittable pair and left them
+            // out of the span gate. They are NOT byte-equivalent — this factory doubles X — but they need no
+            // question of their own: a pair-scoped [MapConstructor] is honoured only for a pair some
+            // [GenerateMap<S,T>] declares (DWARF056 refuses it otherwise), and a declared pair contributes a
+            // candidate method, so the user-declared-conversion question already refuses the blit. Pinned here
+            // so the reasoning cannot quietly stop being true.
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct SrcV { public int X; }
+                    public struct DstV { public int X; public DstV(int x) { X = x * 2; } }
+                    public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                    public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                    [DwarfMapper]
+                    [GenerateMap<SrcV, DstV>]
+                    [MapConstructor<SrcV, DstV>(nameof(Make))]
+                    public partial class M
+                    {
+                        public static DstV Make(SrcV s) => new DstV(s.X);
+                        public partial B Map(A a);
+                    }
+                }
+                """;
+            AssertLoopCalls(GeneratorAssert.CompilesClean(src), "Make(");
+        }
+
+        [Fact]
+        public void A_pair_scoped_MapNullSkip_is_byte_equivalent_and_keeps_the_blit()
+        {
+            // The other half of the T0.2 re-review's claim, and this half holds: an unmanaged struct pair has
+            // no nullable source member to skip, so the directive cannot change a byte. Deliberately NOT a
+            // reason to refuse the fast path.
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct SrcV { public int X; }
+                    public struct DstV { public int X; }
+                    public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                    public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                    [DwarfMapper]
+                    [MapNullSkip<SrcV, DstV>]
+                    public partial class M { public partial B Map(A a); }
+                }
+                """;
+            AssertBlitted(GeneratorAssert.CompilesClean(src));
+        }
+
+        [Fact]
+        public void A_plain_layout_identical_pair_still_blits_for_both_storages()
+        {
+            AssertBlitted(GeneratorAssert.CompilesClean(GateSource("", "")));
+            AssertBlitted(GeneratorAssert.CompilesClean(GateSource("", "", true)));
+        }
+
+        [Fact]
+        public void Reinterpret_is_an_explicit_instruction_and_a_user_converter_does_not_override_it()
+        {
+            // The decision, pinned: [Reinterpret("V")] names THIS member and forces the block copy; an
+            // auto-adopted converter is ambient (the same helper may exist for another member entirely), so it
+            // does not revoke a member-scoped instruction — and refusing the build over it would be a false
+            // positive for any mapper that uses the helper elsewhere. [Reinterpret] returns before this gate is
+            // reached, which is also why the near-miss never speaks for it.
+            var src = GateSource("", "public static DstV Conv(SrcV s) => new DstV { X = s.X * 2, Y = s.Y };")
+                .Replace("public partial B Map(A a);", "[Reinterpret(\"V\")] public partial B Map(A a);", StringComparison.Ordinal);
+            var generated = GeneratorAssert.CompilesClean(src);
+            AssertBlitted(generated);
+            Assert.DoesNotContain("Conv(", generated, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_pair_directive_nothing_applies_is_still_reported_by_DWARF056()
+        {
+            // The non-mutating-lookup lock. The gate ASKS whether a pair-scoped directive matches the element
+            // pair; asking must not mark it Consumed. Here the user converter owns the element pair, so the
+            // [MapIgnore<DstV>] is applied by nobody — and DWARF056 has to say so. Using the mutating
+            // MatchPairIgnores for the question would silence it.
+            var src = GateSource("[MapIgnore<DstV>(\"Y\")]\n",
+                "public static DstV Conv(SrcV s) => new DstV { X = s.X * 2, Y = s.Y };");
+            AssertLoopCalls(GeneratorAssert.EmitsCompilableCode(src), "Conv(");
+            GeneratorAssert.Reports(src, "DWARF056");
+        }
+
+        [Fact]
+        public void A_near_miss_is_not_reported_when_a_user_converter_owns_the_element_pair()
+        {
+            // DWARF100 tells a caller they are one rename away from the block copy. With a converter bound to
+            // the pair that is untrue — the rename would change nothing — so the near-miss stays quiet.
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct SrcV { public int X; public int Y; }
+                    public struct DstV { public int X; public int Renamed; }
+                    public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                    public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                    [DwarfMapper] public partial class M
+                    {
+                        public static DstV Conv(SrcV s) => new DstV { X = s.X, Renamed = s.Y };
+                        public partial B Map(A a);
+                    }
+                }
+                """;
+            AssertLoopCalls(GeneratorAssert.CompilesClean(src), "Conv(");
+            GeneratorAssert.DoesNotReport(src, "DWARF100");
+        }
+
         private static void AssertNoBlitHelper(Assembly asm)
         {
             var helpers = BlitHelpers(asm);

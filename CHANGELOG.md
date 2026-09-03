@@ -44,6 +44,23 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **The array/list block copy silently bypassed a user-declared element converter or a pair-scoped directive.**
+  A `SrcV[] → DstV[]` (or `List<>`/`ImmutableArray<>`) member whose element types are layout-identical took the
+  blit on the strength of the proof alone — decided several arms *before* resolution would have adopted the
+  mapper's own `public static DstV Conv(SrcV s)`, its `implicit operator`, or applied a pair-scoped
+  `[MapIgnore<T>]` / `[MapProperty<S,T>]` / `[MapValue<T>]` / `[BeforeMap]` / `[AfterMap]` matching the element
+  pair. The converter was never called, the directive never applied, and nothing in the build said so. The new
+  rule is the one the span map already follows: **a proof enables a fast path, it never changes semantics** — so
+  the blit is now taken only when the element pair's resolution would land on a synthesized object map (which
+  `CanReinterpret` proves the copy reproduces byte for byte), and the element loop is kept otherwise. Asked
+  through the resolver's OWN predicates and with NON-mutating directive lookups, so a directive nothing applies
+  is still reported by DWARF056. `[Reinterpret]` is unaffected: it names one member explicitly and still forces
+  the copy. Layout-identical pairs with neither a converter nor a directive blit exactly as before. Pinned by
+  `BlitSoundnessTests` and `ElementConverterBeatsBlitRuntimeTests`. (round 29, T0.2c)
+- **The blit near-miss (DWARF100) went quiet on a span map whose element names were reconciled by
+  `[MapProperty<S,T>]`** — the one caller the hint is written for. It now follows the proof at both endpoints and
+  is silenced only when a user conversion owns the element pair, where "you are one rename away from the block
+  copy" would be false. The array arm's behaviour is unchanged. (round 29, T0.2c)
 - **A span map over nullable elements (`ReadOnlySpan<P?>`, `ReadOnlySpan<C?>`) emitted code that did not
   compile in the CONSUMER's build.** The struct case handed the source span's `Nullable<P>` element bare to
   the synthesized helper's non-nullable `P` parameter — `CS1503` — and the class case's declared partial

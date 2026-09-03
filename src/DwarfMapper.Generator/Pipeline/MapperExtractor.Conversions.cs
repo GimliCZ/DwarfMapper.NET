@@ -213,91 +213,25 @@ namespace DwarfMapper.Generator.Pipeline
 
             // User-provided auto-candidate methods (no Use= annotation, auto-matched by type).
             // Checked BEFORE built-in synthesized converters (NumericConverter, ParsableConverter)
-            // so that a user method can intentionally shadow the built-in behavior.
-            // Two sources of user candidates:
-            //   1. autoCandidates  — partial mapper methods (S → D object-level mappers)
-            //   2. allMethods      — non-partial scalar converter helpers (e.g. int Shrink(long v))
-            //      These are already in allMethods; excluding partials avoids double-counting mappers.
-            // A method named by some [MapProperty(Use = …)] is RESERVED: the author dedicated it to that one
-            // member, which is a statement of intent, not an offer of a general-purpose converter. Without
-            // this guard it is also auto-adopted for every other member whose types happen to line up —
-            // silently, with no diagnostic and a green build.
-            //
-            // Found migrating a real codebase: a `string BuildDocumentId(Guid)` written for Document.Id (it
-            // prefixes a date) was also applied to Document.DispatchId, a plain auto-matched Guid→string
-            // member, so every record would have stored the decorated id in the plain field. An explicit
-            // Use= for THIS member still resolves above and is unaffected — only auto-adoption is blocked.
-            static bool IsReserved(IReadOnlyCollection<string>? reserved, string name)
+            // so that a user method can intentionally shadow the built-in behavior. The search itself is
+            // FindUserDeclaredConversion — shared verbatim with the array/list blit gate, which has to ask
+            // the same question one arm earlier (round 29 T0.2c); see that method's remarks.
+            FindUserDeclaredConversion(req, out var found, out var ambiguous);
+            if (ambiguous)
             {
-                return reserved is not null && reserved.Contains(name, StringComparer.Ordinal);
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion,
+                    location,
+                    targetName));
+                return false;
             }
 
-            string? found = null;
-            foreach (var c in autoCandidates)
-                if (!IsReserved(reservedConverters, c.Name) && HasImplicitConversion(compilation, srcType, c.ParamType) && HasImplicitConversion(compilation, c.ReturnType, tgtType))
-                {
-                    if (found is not null)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion,
-                            location,
-                            targetName));
-                        return false;
-                    }
-
-                    found = c.Name;
-                }
-
-            // Also search all non-partial user methods (scalar converters not declared as partial mappers).
-            foreach (var m in allMethods)
+            if (found is not null && !PrefersSynthesizedObjectMap(req, found))
             {
-                if (IsReserved(reservedConverters, m.Name))
-                {
-                    continue;
-                }
-
-                // Skip methods that are already in autoCandidates (partial mapper methods).
-                if (autoCandidates.Any(ac => string.Equals(ac.Name, m.Name, StringComparison.Ordinal) && SymbolEqualityComparer.Default.Equals(ac.ParamType, m.ParamType) && SymbolEqualityComparer.Default.Equals(ac.ReturnType, m.ReturnType)))
-                {
-                    continue;
-                }
-
-                if (HasImplicitConversion(compilation, srcType, m.ParamType) && HasImplicitConversion(compilation, m.ReturnType, tgtType))
-                {
-                    if (found is not null)
-                    {
-                        diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.AmbiguousConversion,
-                            location,
-                            targetName));
-                        return false;
-                    }
-
-                    found = m.Name;
-                }
+                converterMethod = found;
+                return true;
             }
-
-            if (found is not null)
-            {
-                // Plan 19 C2b: Under Preserve OR SetNull mode, if the found auto-candidate is a PUBLIC
-                // partial mapper method (from autoCandidates) and autoNest is enabled, prefer the
-                // synthesized private __DwarfMap_Obj_* form instead. Public methods don't accept the
-                // shared DwarfRefContext — calling them from a collection/dict helper would create a fresh
-                // context, losing identity/depth/on-stack state and causing infinite loops on cycles.
-                // We fall through to the auto-nest path below only when these conditions hold;
-                // user-provided converter helpers (allMethods, not autoCandidates) are always respected.
-                var foundIsAutoCandidate = (isPreserve || isSetNull) &&
-                                           autoNest &&
-                                           nestedRegistry is not null &&
-                                           autoCandidates.Any(ac =>
-                                               string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
-                                           tgtType is INamedTypeSymbol &&
-                                           IsMappableObjectPair(compilation, srcType, (INamedTypeSymbol)tgtType);
-                if (!foundIsAutoCandidate)
-                {
-                    converterMethod = found;
-                    return true;
-                }
-                // Fall through to synthesize a private __DwarfMap_Obj_* form.
-            }
+            // A found name that PrefersSynthesizedObjectMap claims falls through to the auto-nest arm, which
+            // synthesizes the private __DwarfMap_Obj_* form instead.
 
             // Integral↔integral narrowing / sign-change: emit CreateChecked (throws on overflow).
             // Must come after the implicit-conversion check (widening uses direct assign, not this)
@@ -388,6 +322,118 @@ namespace DwarfMapper.Generator.Pipeline
 
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.NoImplicitConversion, location, targetName));
             return false;
+        }
+
+        // ── What the resolver WOULD answer, asked without answering it ──────────────────────────────────
+        // The three queries below are the chain's own predicates, lifted out of the arms that used to state
+        // them inline. They exist because HandleCollectionConversion decides the array/list blit near the TOP
+        // of this chain and has to know what the auto-candidate, auto-nest and user-operator arms — all far
+        // below it — would say about the ELEMENT pair, before any of them has run and without their side
+        // effects (a reserved nested pair, a synthesized helper, a diagnostic).
+        // Lifted rather than restated: a second copy of "would a user method be adopted here?" is exactly the
+        // drift that let the blit bypass a user converter in the first place. Round 29 T0.2c.
+
+        /// <summary>
+        ///     Searches the mapper's declared methods for the conversion the auto-candidate arm would adopt for
+        ///     <c>req.SrcType → req.TgtType</c>.
+        /// </summary>
+        /// <param name="found">the single matching method's name, or <see langword="null" /> when none matched.</param>
+        /// <param name="ambiguous">
+        ///     <see langword="true" /> when more than one matched — the arm's DWARF013 refusal, reported by the
+        ///     caller that owns the decision rather than by this query.
+        /// </param>
+        /// <remarks>
+        ///     Two sources of user candidates: <c>AutoCandidates</c> (partial mapper methods, S → D object-level
+        ///     mappers) and <c>AllMethods</c> (non-partial scalar converter helpers, e.g. <c>int Shrink(long v)</c>);
+        ///     the second skips what the first already offered, so a partial mapper is not counted twice.
+        ///     <para>
+        ///         A method named by some <c>[MapProperty(Use = …)]</c> is RESERVED: the author dedicated it to
+        ///         that one member, which is a statement of intent, not an offer of a general-purpose converter.
+        ///         Without this guard it is also auto-adopted for every other member whose types happen to line up
+        ///         — silently, with no diagnostic and a green build. Found migrating a real codebase: a
+        ///         <c>string BuildDocumentId(Guid)</c> written for <c>Document.Id</c> (it prefixes a date) was also
+        ///         applied to <c>Document.DispatchId</c>, a plain auto-matched Guid→string member, so every record
+        ///         would have stored the decorated id in the plain field. An explicit <c>Use=</c> for THIS member
+        ///         resolves at the top of the chain and is unaffected — only auto-adoption is blocked.
+        ///     </para>
+        /// </remarks>
+        private static void FindUserDeclaredConversion(ConversionRequest req, out string? found, out bool ambiguous)
+        {
+            static bool IsReserved(IReadOnlyCollection<string>? reserved, string name)
+            {
+                return reserved is not null && reserved.Contains(name, StringComparer.Ordinal);
+            }
+
+            found = null;
+            ambiguous = false;
+
+            foreach (var c in req.AutoCandidates)
+                if (!IsReserved(req.ReservedConverters, c.Name) && HasImplicitConversion(req.Compilation, req.SrcType, c.ParamType) && HasImplicitConversion(req.Compilation, c.ReturnType, req.TgtType))
+                {
+                    ambiguous |= found is not null;
+                    found ??= c.Name;
+                }
+
+            // Also search all non-partial user methods (scalar converters not declared as partial mappers).
+            foreach (var m in req.AllMethods)
+            {
+                if (IsReserved(req.ReservedConverters, m.Name))
+                {
+                    continue;
+                }
+
+                // Skip methods that are already in AutoCandidates (partial mapper methods).
+                if (req.AutoCandidates.Any(ac => string.Equals(ac.Name, m.Name, StringComparison.Ordinal) && SymbolEqualityComparer.Default.Equals(ac.ParamType, m.ParamType) && SymbolEqualityComparer.Default.Equals(ac.ReturnType, m.ReturnType)))
+                {
+                    continue;
+                }
+
+                if (HasImplicitConversion(req.Compilation, req.SrcType, m.ParamType) && HasImplicitConversion(req.Compilation, m.ReturnType, req.TgtType))
+                {
+                    ambiguous |= found is not null;
+                    found ??= m.Name;
+                }
+            }
+        }
+
+        /// <summary>
+        ///     True when the auto-candidate arm, having found <paramref name="found" />, hands the pair on to the
+        ///     auto-nest arm instead of adopting it.
+        /// </summary>
+        /// <remarks>
+        ///     Plan 19 C2b: under Preserve OR SetNull mode, a found auto-candidate that is a PUBLIC partial mapper
+        ///     method (from <c>AutoCandidates</c>) with auto-nest enabled yields to the synthesized private
+        ///     <c>__DwarfMap_Obj_*</c> form. Public methods don't accept the shared <c>DwarfRefContext</c> —
+        ///     calling one from a collection/dict helper would create a fresh context, losing identity/depth/
+        ///     on-stack state and looping forever on cycles. User-provided converter HELPERS (<c>AllMethods</c>,
+        ///     not <c>AutoCandidates</c>) are always respected.
+        ///     <para>
+        ///         The blit gate reads this too, and must: when the answer is yes the resolver's verdict is the
+        ///         synthesized object map, which for a layout-identical pair is what the blit copies — so a pair
+        ///         in this state is still blittable, and treating the found name as a user converter would have
+        ///         cost every Preserve-mode collection of a declared struct pair its fast path for nothing.
+        ///     </para>
+        /// </remarks>
+        private static bool PrefersSynthesizedObjectMap(ConversionRequest req, string found)
+        {
+            return (req.IsPreserve || req.IsSetNull) &&
+                   req.AutoNest &&
+                   req.NestedRegistry is not null &&
+                   req.AutoCandidates.Any(ac => string.Equals(ac.Name, found, StringComparison.Ordinal)) &&
+                   req.TgtType is INamedTypeSymbol namedTgt &&
+                   IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt);
+        }
+
+        /// <summary>
+        ///     True when <see cref="HandleAutoNestedObjectMap" /> would CLAIM this pair — the condition that arm
+        ///     opens with, shared so the blit gate can ask it without running it (and so the two cannot drift).
+        /// </summary>
+        private static bool AutoNestWouldClaim(ConversionRequest req)
+        {
+            return req.AutoNest &&
+                   req.NestedRegistry is not null &&
+                   req.TgtType is INamedTypeSymbol namedTgt &&
+                   IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt, req.AllowInterfaceSrc);
         }
 
         /// <summary>

@@ -2492,7 +2492,7 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
-        ///     True when a pair-scoped directive or hook targets EXACTLY the span map's (src, tgt) element
+        ///     True when a pair-scoped directive or hook targets EXACTLY the given (src, tgt) element
         ///     pair (round 29, T0.2 fix-round-1, Important #1). <see cref="NestedMappingRegistry.GetOrReserve" />
         ///     is keyed purely by the type pair, so the ONE synthesized <c>__DwarfMap_Obj_*</c> helper it hands
         ///     back for this pair is shared by every route that reaches it — a class-level
@@ -2514,8 +2514,15 @@ namespace DwarfMapper.Generator.Pipeline
         ///     pair whose blit this gate refuses because a user converter already owns construction and never
         ///     reads the ignore at all) — which silenced the DWARF056 "matched no pair" sweep for a directive
         ///     that, in truth, matched nothing. Asking must not have that side effect.
+        ///     <para>
+        ///         Round 29 T0.2c: TWO callers now, which is why the name lost its <c>Span</c>. The span endpoint
+        ///         calls it directly, just below; the array/list arm reaches it through
+        ///         <see cref="NestedMappingRegistry.PairIsCustomized" />, which <c>ExtractCore</c> wires to this
+        ///         method — the arm sits inside <c>TryResolveConversion</c>, which never sees
+        ///         <see cref="MapperDeclarations" />. One rule, asked from two places, so neither can drift.
+        ///     </para>
         /// </remarks>
-        private static bool SpanElementPairHasCustomization(
+        private static bool ElementPairHasCustomization(
             MapperDeclarations decls,
             Compilation compilation,
             ITypeSymbol srcElem,
@@ -2690,13 +2697,19 @@ namespace DwarfMapper.Generator.Pipeline
                 // the same "prove it, don't assume it" footing as every other gate in this file.
                 var spanIsDefaultConverter = spanConv is null ||
                                              (GeneratedNames.IsSynthesized(spanConv) && !GeneratedNames.IsUserConv(spanConv));
-                var spanPairIsCustomized = SpanElementPairHasCustomization(decls, spanComp, spanSrcElem, spanDstElem);
+                var spanPairIsCustomized = ElementPairHasCustomization(decls, spanComp, spanSrcElem, spanDstElem);
                 var spanBlits = spanIsDefaultConverter && !spanPairIsCustomized &&
                                 (BlittableProof.CanReinterpret(spanSrcElem, spanDstElem) ||
                                  BlittableProof.CanReinterpretEnums(spanSrcElem, spanDstElem, policy.EnumPolicy.Strategy));
+                // Round 29 T0.2c: the near-miss follows the PROOF, and is silenced only by a user conversion
+                // owning the pair — not by spanPairIsCustomized. A pair-scoped [MapProperty<S,T>] rename is
+                // exactly the caller this diagnostic is for: they reconciled the names by hand, and renaming the
+                // field really is what would hand them the block copy. Suppressing it there deleted a hint the
+                // array arm has emitted (and pinned) since DWARF100 was introduced; the two arms now say the
+                // same thing. A non-rename directive cannot produce a false hint: TryExplainNearMiss answers
+                // false for a pair that already lines up by name.
                 if (!spanBlits &&
                     spanIsDefaultConverter &&
-                    !spanPairIsCustomized &&
                     BlittableProof.TryExplainNearMiss(spanSrcElem, spanDstElem, out var spanNearMissReason))
                 {
                     acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,

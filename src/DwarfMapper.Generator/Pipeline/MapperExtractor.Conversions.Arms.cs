@@ -39,7 +39,9 @@ namespace DwarfMapper.Generator.Pipeline
 
             if (req.AutoNest && req.NestedRegistry is not null && req.TgtType is INamedTypeSymbol namedTgt)
             {
-                if (IsMappableObjectPair(req.Compilation, req.SrcType, namedTgt, req.AllowInterfaceSrc))
+                // AutoNestWouldClaim is this same condition, asked by the blit gate one arm earlier; the two
+                // are one method so they cannot drift apart (round 29 T0.2c).
+                if (AutoNestWouldClaim(req))
                 {
                     // DWARF071: the source is a CONCRETE class that other types derive from. It maps fine, but only
                     // the declared members are mapped — a derived instance at run time loses everything declared
@@ -311,6 +313,64 @@ namespace DwarfMapper.Generator.Pipeline
         }
 
         /// <summary>
+        ///     True when resolving the collection's ELEMENT pair would land on a conversion the USER wrote — a
+        ///     declared method the auto-candidate arm adopts, or the user's own <c>implicit</c>/<c>explicit
+        ///     operator</c>. Asked by <see cref="HandleCollectionConversion" /> before the blit proofs, which is
+        ///     several arms before either of those arms actually runs.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Reads the ELEMENT pair through <c>req with</c>, so the two questions below are asked of exactly
+        ///         the request the recursive <c>TryResolveConversion</c> further down will build: same methods,
+        ///         same reservations, same auto-nest, same modes. <c>UseMethod</c> is cleared and
+        ///         <c>AllowInterfaceSrc</c> reset to <see langword="false" /> because that recursion passes
+        ///         neither — a <c>Use=</c> names the converter for the COLLECTION member, never for its elements.
+        ///     </para>
+        ///     <para>
+        ///         The operator question is asked about PRECEDENCE, not existence: the user-operator arm is the
+        ///         LAST in the chain, so an operator only becomes the resolver's answer when the auto-nest arm
+        ///         declines the pair (e.g. under <c>[AutoNest(false)]</c>). With auto-nest on, the element pair
+        ///         resolves to a synthesized <c>__DwarfMap_Obj_*</c> and the operator is not called on the scalar
+        ///         path either — so the blit is not bypassing anything and stays. This mirrors the span gate,
+        ///         which reaches the same conclusion from the other side by testing the verdict it already has
+        ///         for <c>GeneratedNames.IsUserConv</c>.
+        ///     </para>
+        ///     <para>
+        ///         A pair-scoped <c>[MapConstructor&lt;S,T&gt;]</c> needs no separate question: it is honoured
+        ///         only for a pair some <c>[GenerateMap&lt;S,T&gt;]</c> declares (otherwise DWARF056 refuses it),
+        ///         and a declared pair contributes a candidate method, so this query already refuses the blit for
+        ///         it. Pinned by test. A pair-scoped <c>[MapNullSkip&lt;S,T&gt;]</c> genuinely is byte-equivalent
+        ///         on a pair the blit proof accepted — an unmanaged struct pair has no nullable member to skip —
+        ///         and is deliberately not consulted; also pinned.
+        ///     </para>
+        /// </remarks>
+        private static bool ElementPairResolvesToUserConversion(
+            ConversionRequest req,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem)
+        {
+            var elemReq = req with
+            {
+                SrcType = srcElem,
+                TgtType = tgtElem,
+                UseMethod = null,
+                AllowInterfaceSrc = false
+            };
+
+            // Ambiguity counts as "the user wrote a conversion for this pair": the resolver refuses it with
+            // DWARF013, and a block copy that quietly resolved the ambiguity by ignoring both candidates would
+            // be the loudest possible bypass.
+            FindUserDeclaredConversion(elemReq, out var found, out var ambiguous);
+            if (ambiguous || (found is not null && !PrefersSynthesizedObjectMap(elemReq, found)))
+            {
+                return true;
+            }
+
+            return !AutoNestWouldClaim(elemReq) &&
+                   UserConversionConverter.Exists(req.Compilation, srcElem, tgtElem);
+        }
+
+        /// <summary>
         ///     Collections: element-wise conversion, including the in-place and context-threading shapes.
         /// </summary>
         /// <returns>
@@ -335,8 +395,33 @@ namespace DwarfMapper.Generator.Pipeline
                     out var collShape,
                     req.NullAsNull))
             {
+                // ── The blit is a fast path, never a change of meaning (round 29, T0.2c) ────────────────────
+                // This arm decides the block copy at chain position 2 — BEFORE the arms that adopt a
+                // user-declared conversion for the ELEMENT pair, and before the element recursion below runs at
+                // all. So the proof used to be the whole decision, and a `public static DstV Conv(SrcV s)`
+                // declared beside a `SrcV[] → DstV[]` member was silently never called: the bytes were copied
+                // and nothing in the build said so. Same for a pair-scoped [MapIgnore<T>]/[MapProperty<S,T>]/
+                // [MapValue<T>] or a [BeforeMap]/[AfterMap] hook matching the element pair.
+                //
+                // The fix mirrors the span map's gate (MapperExtractor.Phases.cs, TryHandleSpanMap) from the
+                // opposite side: the span endpoint resolves the element pair first and then asks whether the
+                // verdict it got back is a DEFAULT converter; this arm cannot resolve first — doing so would
+                // synthesize an unused __DwarfMap_Obj_* for every blitted pair, and under [AutoNest(false)]
+                // would turn a working blit into DWARF005 — so it asks the resolver's own questions instead,
+                // through the resolver's own predicates (FindUserDeclaredConversion / AutoNestWouldClaim /
+                // UserConversionConverter.Exists), and never through a second copy of them.
+                //
+                // What still blits: a pair whose element resolution would land on a SYNTHESIZED object map
+                // (or on nothing at all). CanReinterpret proves the by-name field correspondence that map
+                // would apply, so the two agree byte for byte — which is exactly why the proof is allowed to
+                // replace it, and only it.
+                var elemHasUserConversion = ElementPairResolvesToUserConversion(req, srcElem, tgtElem);
+                var elemPairIsCustomized = req.NestedRegistry?.PairIsCustomized(srcElem, tgtElem) == true;
+                var elemPairKeepsTheLoop = elemHasUserConversion || elemPairIsCustomized;
+
                 if (collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
+                    !elemPairKeepsTheLoop &&
                     BlittableProof.CanReinterpret(srcElem,
                         tgtElem))
                 {
@@ -351,6 +436,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // no member, and an enum may legally hold any value of its underlying type.
                 if (collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
+                    !elemPairKeepsTheLoop &&
                     BlittableProof.CanReinterpretEnums(srcElem, tgtElem, req.EnumPolicy.Strategy))
                 {
                     converterMethod = CollectionConverter.SynthesizeBlit(synthesized, req.SrcType, srcElem, tgtElem);
@@ -379,8 +465,9 @@ namespace DwarfMapper.Generator.Pipeline
                     var tgtIsImmutableArray = collShape.Target == CollectionConverter.TargetKind.ImmutableArray;
                     var srcIsList = CollectionConverter.IsConcreteList(req.SrcType);
                     var srcIsImmutableArray = CollectionConverter.IsImmutableArray(req.SrcType);
-                    var elementBlits = BlittableProof.CanReinterpret(srcElem, tgtElem) ||
-                                       BlittableProof.CanReinterpretEnums(srcElem, tgtElem, req.EnumPolicy.Strategy);
+                    var elementBlits = !elemPairKeepsTheLoop &&
+                                       (BlittableProof.CanReinterpret(srcElem, tgtElem) ||
+                                        BlittableProof.CanReinterpretEnums(srcElem, tgtElem, req.EnumPolicy.Strategy));
 
                     var srcStorage = collShape.SourceIsArray ? CollectionConverter.BlitStorage.Array
                         : srcIsList ? CollectionConverter.BlitStorage.List
@@ -412,8 +499,19 @@ namespace DwarfMapper.Generator.Pipeline
                 // but the caller is one rename away from a block copy, and nothing else in the build reports that.
                 // Never reached for [Reinterpret] members: that branch forces the blit and returns before this
                 // method is called, so DWARF022 stays the only voice on the explicit form.
+                //
+                // Gated on elemHasUserConversion — and deliberately NOT on elemPairIsCustomized (round 29 T0.2c).
+                // The two halves of the blit refusal are not the same kind of fact here. A user conversion OWNS
+                // the pair: no rename would hand that caller the block copy, so "you are one rename away" would
+                // be false. A pair-scoped rename is the opposite — it is precisely the caller who reconciled a
+                // name mismatch by hand and for whom renaming the field IS the fix, which
+                // BlittableProofNearMissTests.A_name_mismatch_reconciled_by_MapProperty_still_reports_the_near_miss
+                // has pinned since the diagnostic was introduced. A pair directive that is NOT a rename cannot
+                // produce a spurious hint either: TryExplainNearMiss answers false for a pair that already lines
+                // up by name, which is the only shape a [MapIgnore]/[MapValue]/hook refusal leaves behind.
                 if (collShape.Target == CollectionConverter.TargetKind.Array &&
                     collShape.SourceIsArray &&
+                    !elemHasUserConversion &&
                     BlittableProof.TryExplainNearMiss(srcElem, tgtElem, out var nearMissReason))
                 {
                     diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,

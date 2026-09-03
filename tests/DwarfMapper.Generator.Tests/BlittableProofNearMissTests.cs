@@ -281,6 +281,27 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Fact]
+        public void A_span_map_reconciled_by_MapProperty_reports_the_near_miss_like_the_array_arm_does()
+        {
+            // Round 29 T0.2c regression: the span gate used to silence its near-miss for ANY pair-scoped
+            // directive, including the rename this diagnostic exists for — so the same source said "one rename
+            // away from a block copy" through an array member and said nothing through a span map. The
+            // near-miss follows the PROOF at both endpoints; only a user conversion owning the pair silences it.
+            const string s = """
+                             using System;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public struct SrcV { public int X; public int Y; }
+                             public struct DstV { public int A; public int B; }
+                             [DwarfMapper]
+                             [MapProperty<SrcV, DstV>("X", "A")]
+                             [MapProperty<SrcV, DstV>("Y", "B")]
+                             public partial class M { public partial void Map(ReadOnlySpan<SrcV> src, Span<DstV> dst); }
+                             """;
+            Assert.True(ReportsNearMiss(s));
+        }
+
+        [Fact]
         public void A_provable_pair_blits_and_says_nothing()
         {
             // Nothing was missed, so there is nothing to report.

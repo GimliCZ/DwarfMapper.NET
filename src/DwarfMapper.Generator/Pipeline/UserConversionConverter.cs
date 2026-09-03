@@ -38,8 +38,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             isExplicit = false;
 
-            var conv = ((CSharpCompilation)compilation).ClassifyConversion(src, tgt);
-            if (!conv.Exists || !conv.IsUserDefined)
+            if (!Exists(compilation, src, tgt, out var conv))
             {
                 return null;
             }
@@ -57,6 +56,29 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             return name;
+        }
+
+        /// <summary>
+        ///     True when a user-defined conversion operator exists from <paramref name="src" /> to
+        ///     <paramref name="tgt" /> — the QUESTION <see cref="TryCreate" /> answers by SYNTHESIZING, asked
+        ///     without writing anything.
+        /// </summary>
+        /// <remarks>
+        ///     Round 29 T0.2c: the array/list blit gate must know whether the element pair's resolution would
+        ///     land on a user's own operator, and it asks BEFORE resolution runs — so it cannot afford
+        ///     <see cref="TryCreate" />'s synthesis side effect (a helper emitted for a pair the blit may then
+        ///     take anyway). Both share this one classification so "there is an operator" cannot drift between
+        ///     the asker and the adopter.
+        /// </remarks>
+        public static bool Exists(Compilation compilation, ITypeSymbol src, ITypeSymbol tgt)
+        {
+            return Exists(compilation, src, tgt, out _);
+        }
+
+        private static bool Exists(Compilation compilation, ITypeSymbol src, ITypeSymbol tgt, out Conversion conversion)
+        {
+            conversion = ((CSharpCompilation)compilation).ClassifyConversion(src, tgt);
+            return conversion.Exists && conversion.IsUserDefined;
         }
 
         private static string Fq(ITypeSymbol t)

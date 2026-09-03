@@ -377,6 +377,13 @@ namespace DwarfMapper.Generator.Pipeline
                 classIgnoreSources, mapperReservedConverters, valueProviders, pairProps, pairIgnores,
                 pairValues, pairConstructors, pairNullSkips, beforeHookDefs, afterHookDefs);
 
+            // Round 29 T0.2c: the array/list blit decision lives inside TryResolveConversion, which is handed a
+            // pair of types and never sees `decls` — so the ONE question "does a pair-scoped directive or hook
+            // customize this element pair?" travels to it on the registry, which is the collaborator both sides
+            // already share and is scoped to exactly this extraction. Wired here, next to `decls`, because this
+            // is the single site where every value it reads is decided.
+            nestedRegistry.SetPairCustomizationRule((s, t) => ElementPairHasCustomization(decls, genComp, s, t));
+
             var policy = new MapperPolicy(allowNonPublic, caseInsensitive, classAutoNest, explicitOnly,
                 ignoreObsolete, implicitConversions, isPreserveMode, isSetNullMode, skipNullSrc, maxDepth,
                 nameConvention, referenceHandling, requiredMapping, nullCollections, nullStrategy, enumPolicy);
