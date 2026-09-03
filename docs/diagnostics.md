@@ -1865,6 +1865,10 @@ public struct PointDto { public int X; public int Y; }
   attribute repeats the single field, so the counts are part of the layout.
 - **A fixed-size buffer whose length differs** — or a fixed buffer against a pointer field. `fixed int Buf[4]`
   and `fixed int Buf[8]` have the same field type (`int*`); the length is what the runtime reserves bytes for.
+- **A member that is `Nullable<T>` on one side only, whose unwrapped `T`'s are layout-identical.** Unwrap
+  the optional and the two sides are byte-identical, so the pair is one `?` away from the fast path.
+  A one-sided `Nullable<T>` whose unwrapped types do **not** agree (e.g. `long?` against `int`) is an
+  ordinary conversion, not a near-miss, and stays silent.
 - **Field names that differ.** DwarfMapper maps **by name**, so a positional reinterpret only agrees with the
   declared mapping when the names line up. Rename to align them — or apply `[Reinterpret]` to say that
   positional semantics are what you actually meant.
@@ -1875,9 +1879,11 @@ Every reason but the last applies to `[Reinterpret]` too: the opt-in waives the 
 callers will not care about an array of four elements. A warning here would become a *build failure* under
 `TreatWarningsAsErrors`, which is a trap this project has already sprung once (see `dwarf070`).
 
-**Why it does not fire more often.** A pair whose field counts or field *types* differ is silent. Those are
-not missed fast paths, they are ordinary mappings, and a hint common enough to appear on every struct mapping
-would be suppressed wholesale — taking the cases worth reading down with it.
+**Why it does not fire more often.** A pair whose field counts differ, or whose field *types* differ, is
+silent — except a member that is `Nullable<T>` on one side only whose unwrapped types are
+layout-identical, which is the near-miss listed above. Those are not missed fast paths, they are
+ordinary mappings, and a hint common enough to appear on every struct mapping would be suppressed
+wholesale — taking the cases worth reading down with it.
 ---
 
 ---

@@ -1724,13 +1724,16 @@ namespace DwarfMapper.Generator.Diagnostics
         ///         Scoped to a NEAR-MISS on purpose — see <c>BlittableProof.TryExplainNearMiss</c>. The broad
         ///         reading, "report whenever something looked blittable", would fire on every ordinary struct-array
         ///         mapping whose members differ, and a diagnostic that common gets suppressed wholesale, hiding
-        ///         the cases worth reading. A pair whose field counts or field TYPES differ is therefore silent.
+        ///         the cases worth reading. A pair whose field counts differ, or whose field TYPES differ, is
+        ///         therefore silent — EXCEPT a member that is <c>Nullable&lt;T&gt;</c> on one side only whose
+        ///         unwrapped types are layout-identical, which is its own near-miss (round 29, <c>T0.1</c>): unwrap
+        ///         the optional and the two sides are byte-identical, one <c>?</c> away from the fast path.
         ///     </para>
         ///     <para>
-        ///         The case this exists for is a byte-identical pair whose FIELD NAMES differ. It is one rename
-        ///         from a large win, DwarfMapper cannot take it silently because it maps by name, and nothing else
-        ///         in the build would ever say so. The remedy is a rename, or <c>[Reinterpret]</c> to declare that
-        ///         positional semantics are what the caller actually wants. Round 25, <c>T0-B</c>.
+        ///         The other case this exists for is a byte-identical pair whose FIELD NAMES differ. It is one
+        ///         rename from a large win, DwarfMapper cannot take it silently because it maps by name, and
+        ///         nothing else in the build would ever say so. The remedy is a rename, or <c>[Reinterpret]</c> to
+        ///         declare that positional semantics are what the caller actually wants. Round 25, <c>T0-B</c>.
         ///     </para>
         /// </summary>
         public static readonly DiagnosticDescriptor BlitNearMiss = new(
