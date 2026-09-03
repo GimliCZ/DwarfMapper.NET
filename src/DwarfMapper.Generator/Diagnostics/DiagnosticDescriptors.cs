@@ -1750,5 +1750,39 @@ namespace DwarfMapper.Generator.Diagnostics
             "performance hint, which is why it is informational. Fix it by aligning the names, or apply " +
             "[Reinterpret] to state that positional semantics are intended.",
             HelpBase + "dwarf100");
+
+        /// <summary>
+        ///     <c>[Reinterpret]</c> on a member took the block copy, and by doing so did NOT call a conversion
+        ///     the element pair would otherwise have resolved to — a user-declared method on the mapper, or a
+        ///     user-defined conversion operator between the element types.
+        ///     <para>
+        ///         Round 29, <c>T0.2c</c> review fix 3. Everywhere else in the generator a user conversion now
+        ///         beats the blit: the proof enables a fast path, it never changes semantics. <c>[Reinterpret]</c>
+        ///         is the deliberate exception, because it names ONE member explicitly while an auto-adopted
+        ///         converter is ambient — the same helper may well have been written for a different member
+        ///         entirely. Honouring the explicit instruction is right; doing it silently is not, because the
+        ///         two facts sit in different files and nothing else in the build relates them.
+        ///     </para>
+        ///     <para>
+        ///         INFORMATIONAL, and deliberately not a refusal. Erroring would break a mapper that legitimately
+        ///         uses the helper for a scalar member elsewhere, which is a false positive on correct code; and
+        ///         a warning becomes a build failure under <c>TreatWarningsAsErrors</c> — the trap
+        ///         <c>DWARF070</c> taught this project once already. An intentional bypass is exactly what an
+        ///         Info is for: silence and a refusal are the two wrong ends.
+        ///     </para>
+        /// </summary>
+        public static readonly DiagnosticDescriptor ReinterpretBypassesConversion = new(
+            "DWARF106",
+            "[Reinterpret] takes the block copy instead of a declared conversion",
+            "{0}",
+            Category,
+            DiagnosticSeverity.Info,
+            true,
+            "[Reinterpret] forces the blittable block copy for the member it names, which copies bytes and calls " +
+            "nothing. Without it, this element pair would have resolved to the conversion named in the message — so " +
+            "the two are in conflict, and the explicit [Reinterpret] wins. That is intentional and the mapping is " +
+            "correct; this is informational so the bypass is visible rather than silent. Remove [Reinterpret] from " +
+            "the member to use the conversion instead, or keep it and the block copy stands.",
+            HelpBase + "dwarf106");
     }
 }

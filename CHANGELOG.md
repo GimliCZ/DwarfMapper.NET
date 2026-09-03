@@ -15,6 +15,26 @@ so a version with no section here ships with no notes.
 
 ### Changed
 
+- **Two sources that used to build now report an error, both because the array/list block copy stopped
+  overriding the resolver (see *Fixed*).** Neither is a silent behaviour change — each replaces a silent WRONG
+  mapping with a diagnostic that names the fix:
+  - **Two declared methods converting the same element pair** (e.g. two `DstV Convert(SrcV)` overloads on the
+    mapper) beside a `SrcV[]`/`List<SrcV>` member used to take the block copy, quietly resolving the ambiguity
+    by calling neither. The element pair is now resolved, so the existing **`DWARF013`** ("more than one mapping
+    method converts these types") reports it. **Remedy:** disambiguate with
+    `[MapProperty(Use = nameof(TheOneYouMeant))]` on the member, which resolves ahead of auto-adoption; or
+    delete/rename the converter you did not intend to offer.
+  - **`[AutoNest(false)]` plus a pair-scoped directive on a blittable element pair** used to blit and emit a
+    `DWARF056` warning. The directive now keeps the element loop, and with auto-nesting disabled there is no
+    synthesized mapper for the pair to route through, so it fails with **`DWARF005`**. **Remedy:** apply
+    `[Reinterpret]` to the member if the block copy is what you wanted (it overrides the directive and now says
+    so via `DWARF106`); or drop the pair-scoped directive; or re-enable auto-nesting for that method.
+
+  A third consequence goes the other way and needs no action: a pair-scoped `[MapIgnore<T>]`/`[MapProperty<S,T>]`/
+  `[MapValue<T>]` on a blittable element pair **stops reporting `DWARF056`**. It used to say "matched no pair"
+  because the block copy meant the pair never got a helper to apply it to; the directive is now genuinely
+  applied, so the diagnostic correctly goes quiet.
+
 - **The public API surface is now frozen.** All 315 entries moved from `PublicAPI.Unshipped.txt` to
   `PublicAPI.Shipped.txt` — 277 for `DwarfMapper`, 38 for `DwarfMapper.Testing`. From here a rename or a
   removal is a declared break the analyzer refuses, rather than a free edit. Done ahead of the first tag
@@ -30,6 +50,16 @@ so a version with no section here ships with no notes.
   factory it replaced, so no fixture capability was lost.
 
 ### Added
+
+- **`DWARF106` (Info) — `[Reinterpret]` takes the block copy instead of a declared conversion.** Reports the one
+  conflict the new blit rule (below) deliberately resolves in favour of the attribute: the member carries
+  `[Reinterpret]`, and its element pair also has a conversion you wrote — a declared method on the mapper, or a
+  user-defined conversion operator. `[Reinterpret]` still wins, because it names one member explicitly while an
+  auto-adopted converter is ambient; but it no longer wins silently. The message names the member, the
+  conversion that is not being called, and says that removing `[Reinterpret]` from that member uses it.
+  Informational on purpose: an error would be a false positive on a mapper that uses the same helper for
+  another member, and a warning becomes a build failure under `TreatWarningsAsErrors`. A `[Reinterpret]` member
+  with no conversion in sight says nothing — this reports the conflict, not the attribute.
 
 - **A corpus that tests the diagnostic *pathway*, not just the diagnostic.** Every DWARF id is reported by an
   `IIncrementalGenerator` through `SourceProductionContext.ReportDiagnostic`, and Roslyn does not route

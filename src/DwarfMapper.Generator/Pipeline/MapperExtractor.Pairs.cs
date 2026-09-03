@@ -146,6 +146,38 @@ namespace DwarfMapper.Generator.Pipeline
             return result;
         }
 
+        /// <summary>
+        ///     True when a pair-scoped <c>[MapConstructor&lt;S,T&gt;]</c> names exactly <c>(src, tgt)</c>.
+        /// </summary>
+        private static bool IsPairCtorMatch(PairConstructor pc, ITypeSymbol src, ITypeSymbol tgt)
+        {
+            return SymbolEqualityComparer.Default.Equals(pc.Source, src) && SymbolEqualityComparer.Default.Equals(pc.Target, tgt);
+        }
+
+        /// <summary>
+        ///     Non-mutating query form of the <c>[MapConstructor&lt;S,T&gt;]</c> lookup — see
+        ///     <see cref="AnyPairProp" />'s remarks for why asking must not mark anything <c>Consumed</c>.
+        /// </summary>
+        /// <remarks>
+        ///     Round 29 T0.2c review fix 1. The blit gate needs this because a factory is baked into whichever
+        ///     route the element pair takes, and under Preserve/SetNull that route is the SYNTHESIZED helper
+        ///     rather than the declared method — so the "did the user declare a conversion?" question answers no
+        ///     and the pair still is not blittable. Callers must scope the question to pairs some
+        ///     <c>[GenerateMap&lt;S,T&gt;]</c> declares, which is the same scoping
+        ///     <c>DrainNestedMappingQueue</c>'s factory wiring applies: a <c>[MapConstructor]</c> naming an
+        ///     undeclared pair is honoured by nobody and reported by DWARF056.
+        /// </remarks>
+        private static bool AnyPairConstructor(List<PairConstructor> all, ITypeSymbol src, ITypeSymbol tgt)
+        {
+            foreach (var pc in all)
+                if (IsPairCtorMatch(pc, src, tgt))
+                {
+                    return true;
+                }
+
+            return false;
+        }
+
         /// <summary>True when a pair-scoped <c>[MapProperty&lt;S,T&gt;]</c> targets exactly <c>(src, tgt)</c>.</summary>
         private static bool IsPairPropMatch(PairProp p, ITypeSymbol src, ITypeSymbol tgt)
         {

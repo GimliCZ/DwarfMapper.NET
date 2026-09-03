@@ -2543,6 +2543,25 @@ namespace DwarfMapper.Generator.Pipeline
                 return true;
             }
 
+            // Round 29 T0.2c review fix 1. A pair-scoped [MapConstructor<S,T>] delegates CONSTRUCTION of the
+            // element to a user factory, which a block copy plainly does not call. It is asked here, with the
+            // other pair-scoped directives, rather than through the "would the resolver adopt a user
+            // conversion?" question, because under Preserve/SetNull that question correctly answers NO: the
+            // declared pair method cannot accept the shared DwarfRefContext, so PrefersSynthesizedObjectMap
+            // routes the element through the synthesized __DwarfMap_Obj_* helper — and it is THAT helper which
+            // DrainNestedMappingQueue wires the factory into. The blit therefore skipped the factory in exactly
+            // the two modes where the declared-method rule looked like it had the case covered.
+            //
+            // Scoped to DECLARED pairs, the identical scoping the factory wiring itself applies: a
+            // [MapConstructor] naming a pair no [GenerateMap<S,T>] declares is honoured by nobody and reported
+            // by DWARF056, and refusing a fast path for a directive that changes nothing would make that
+            // diagnostic untrue.
+            if (decls.GenPairs.Exists(gp => SymbolEqualityComparer.Default.Equals(gp.Src, srcElem) && SymbolEqualityComparer.Default.Equals(gp.Tgt, tgtElem)) &&
+                AnyPairConstructor(decls.PairConstructors, srcElem, tgtElem))
+            {
+                return true;
+            }
+
             // Same match rule as DrainNestedMappingQueue's nested-pair hook wiring: a [BeforeMap] whose parameter
             // the source implicitly converts to, or a [AfterMap] whose parameter(s) the source/target implicitly
             // convert to, applies to this pair and must run — which a block copy would silently skip.
@@ -3073,7 +3092,7 @@ namespace DwarfMapper.Generator.Pipeline
                 string? genFactory = null;
                 foreach (var pc in decls.PairConstructors)
                 {
-                    if (!SymbolEqualityComparer.Default.Equals(pc.Source, genSrc) || !SymbolEqualityComparer.Default.Equals(pc.Target, genTgt))
+                    if (!IsPairCtorMatch(pc, genSrc, genTgt))
                     {
                         continue;
                     }
@@ -3347,7 +3366,7 @@ namespace DwarfMapper.Generator.Pipeline
                 {
                     foreach (var pc in decls.PairConstructors)
                     {
-                        if (!SymbolEqualityComparer.Default.Equals(pc.Source, nestedSrc) || !SymbolEqualityComparer.Default.Equals(pc.Target, nestedTgt))
+                        if (!IsPairCtorMatch(pc, nestedSrc, nestedTgt))
                         {
                             continue;
                         }

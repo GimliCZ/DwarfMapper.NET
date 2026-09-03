@@ -711,6 +711,13 @@ namespace DwarfMapper.Generator.Pipeline
                         ta.ElementType.IsUnmanagedType &&
                         BlittableProof.SameBytesIgnoringNames(sa.ElementType, ta.ElementType))
                     {
+                        // DWARF106 (round 29, T0.2c review fix 3). Everywhere else the blit now yields to a
+                        // conversion the user wrote; [Reinterpret] is the one place it does not, because it
+                        // names THIS member explicitly while an auto-adopted converter is ambient. Honouring
+                        // the explicit instruction is right — saying nothing about it is not. The two facts sit
+                        // in different files and no other diagnostic relates them, so the bypass is reported,
+                        // informationally, naming what is not being called and how to get it called.
+                        ReportReinterpretBypass(req, lookups, acc, target.Name, sa.ElementType, ta.ElementType);
                         var blit = CollectionConverter.SynthesizeBlit(acc.Synthesized,
                             source.Type,
                             sa.ElementType,

@@ -265,13 +265,20 @@ namespace DwarfMapper.Generator.Tests
                                          public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
                                          public class LA { public System.Collections.Generic.List<SrcV> V { get; set; } = new(); }
                                          public class LB { public System.Collections.Generic.List<DstV> V { get; set; } = new(); }
+                                         public class IB { public ImmutableArray<DstV> V { get; set; } }
                                          """;
 
-        private static string GateSource(string classAttributes, string members, bool list = false)
+        private static string GateSource(string classAttributes, string members, string storage = "array")
         {
-            return "using DwarfMapper;\nnamespace T\n{\n" + GatePairs + "\n" +
-                   "[DwarfMapper]\n" + classAttributes + "public partial class M\n{\n" + members + "\n" +
-                   (list ? "public partial LB Map(LA a);\n" : "public partial B Map(A a);\n") + "}\n}\n";
+            var map = storage switch
+            {
+                "list" => "public partial LB Map(LA a);\n",
+                "immutable" => "public partial IB Map(A a);\n",
+                _ => "public partial B Map(A a);\n"
+            };
+            return "using System.Collections.Immutable;\nusing DwarfMapper;\nnamespace T\n{\n" + GatePairs +
+                   "\n[DwarfMapper]\n" + classAttributes + "public partial class M\n{\n" + members + "\n" +
+                   map + "}\n}\n";
         }
 
         /// <summary>The blit was taken: some <c>__DwarfBlit_</c>/<c>__DwarfBlitL_</c> helper reinterprets the storage.</summary>
@@ -302,7 +309,14 @@ namespace DwarfMapper.Generator.Tests
         [Fact]
         public void A_user_declared_element_conversion_method_keeps_the_list_loop()
         {
-            var src = GateSource("", "public static DstV Conv(SrcV s) => new DstV { X = s.X * 2, Y = s.Y };", true);
+            var src = GateSource("", "public static DstV Conv(SrcV s) => new DstV { X = s.X * 2, Y = s.Y };", "list");
+            AssertLoopCalls(GeneratorAssert.CompilesClean(src), "Conv(");
+        }
+
+        [Fact]
+        public void A_user_declared_element_conversion_method_keeps_the_immutable_array_loop()
+        {
+            var src = GateSource("", "public static DstV Conv(SrcV s) => new DstV { X = s.X * 2, Y = s.Y };", "immutable");
             AssertLoopCalls(GeneratorAssert.CompilesClean(src), "Conv(");
         }
 
@@ -373,13 +387,17 @@ namespace DwarfMapper.Generator.Tests
         }
 
         [Theory]
-        [InlineData("[MapIgnore<DstV>(\"Y\")]\n", "")]
-        [InlineData("[MapProperty<SrcV, DstV>(\"X\", \"Y\")]\n", "")]
-        [InlineData("[MapValue<DstV>(\"Y\", 42)]\n", "")]
-        [InlineData("", "[AfterMap] public static void Touch(SrcV s, ref DstV d) { d.X += 1; }")]
+        [InlineData("[MapIgnore<DstV>(\"Y\")]\n", "", "__DwarfMap_Obj_")]
+        [InlineData("[MapProperty<SrcV, DstV>(\"X\", \"Y\")]\n", "", "__DwarfMap_Obj_")]
+        [InlineData("[MapValue<DstV>(\"Y\", 42)]\n", "", "__DwarfMap_Obj_")]
+        // The hook row anchors on Touch( rather than on the helper's name: a synthesized helper that exists
+        // but silently fails to replicate the pair's Before/AfterMap hooks is a KNOWN hazard class in this
+        // repository, so "the loop was kept" does not by itself prove "the hook runs".
+        [InlineData("", "[AfterMap] public static void Touch(SrcV s, ref DstV d) { d.X += 1; }", "Touch(")]
         public void A_pair_scoped_directive_or_hook_on_the_element_pair_keeps_the_array_loop(
             string classAttribute,
-            string member)
+            string member,
+            string expectedCall)
         {
             // NestedMappingRegistry.GetOrReserve is keyed purely by the type pair, so whatever these customize
             // is baked into the ONE __DwarfMap_Obj_* helper the element pair gets. A block copy bypasses the
@@ -388,7 +406,7 @@ namespace DwarfMapper.Generator.Tests
             var generated = GeneratorAssert.CompilesClean(src);
             Assert.DoesNotContain("__DwarfBlit_", generated, StringComparison.Ordinal);
             Assert.DoesNotContain("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
-            Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
+            Assert.Contains(expectedCall, generated, StringComparison.Ordinal);
 
             // The semantic half, and the one that would still fail if the loop were kept for the wrong reason:
             // the directive is now APPLIED by the element pair's own helper, so it no longer "matches no pair".
@@ -401,10 +419,14 @@ namespace DwarfMapper.Generator.Tests
             GeneratorAssert.DoesNotReport(src, "DWARF100");
         }
 
-        [Fact]
-        public void A_pair_scoped_directive_on_the_element_pair_keeps_the_list_loop()
+        [Theory]
+        [InlineData("list")]
+        // ImmutableArray shares SynthesizeBlitListShape with List — the THIRD blit site — so this row is what
+        // keeps that site's coverage durable rather than resting on a probe that no longer exists.
+        [InlineData("immutable")]
+        public void A_pair_scoped_directive_on_the_element_pair_keeps_the_list_family_loop(string storage)
         {
-            var src = GateSource("[MapIgnore<DstV>(\"Y\")]\n", "", true);
+            var src = GateSource("[MapIgnore<DstV>(\"Y\")]\n", "", storage);
             var generated = GeneratorAssert.CompilesClean(src);
             Assert.DoesNotContain("__DwarfBlitL_", generated, StringComparison.Ordinal);
             Assert.DoesNotContain("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
@@ -443,6 +465,56 @@ namespace DwarfMapper.Generator.Tests
             AssertLoopCalls(GeneratorAssert.CompilesClean(src), "Make(");
         }
 
+        /// <summary>
+        ///     The source of <see cref="A_pair_scoped_MapConstructor_keeps_the_loop_and_the_factory_runs_per_element" />,
+        ///     parameterised by the reference mode — the mode is what decides which ROUTE the element pair takes
+        ///     to the factory, and for two of the three modes that route is not the declared method.
+        /// </summary>
+        private static string PairConstructorSource(string mode)
+        {
+            return """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct SrcV { public int X; }
+                    public struct DstV { public int X; public DstV(int x) { X = x * 2; } }
+                    public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                    public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                    [DwarfMapper(MODE)]
+                    [GenerateMap<SrcV, DstV>]
+                    [MapConstructor<SrcV, DstV>(nameof(Make))]
+                    public partial class M
+                    {
+                        public static DstV Make(SrcV s) => new DstV(s.X);
+                        public partial B Map(A a);
+                    }
+                }
+                """.Replace("MODE", mode, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData("ReferenceHandling = ReferenceHandlingStrategy.Preserve")]
+        [InlineData("OnCycle = OnCycleStrategy.SetNull")]
+        public void A_pair_scoped_MapConstructor_survives_the_modes_that_route_through_the_synthesized_helper(
+            string mode)
+        {
+            // Round 29 T0.2c review fix 1. Under Preserve and SetNull the declared pair method is NOT the
+            // element route: PrefersSynthesizedObjectMap hands the pair to the auto-nest arm, because a public
+            // method cannot accept the shared DwarfRefContext. So the user-declared-conversion question answers
+            // "no user conversion" and, before this fix, the blit was taken — while it is the SYNTHESIZED helper
+            // that carries the pair-scoped factory in those modes (DrainNestedMappingQueue's nested-pair factory
+            // wiring, scoped to declared pairs). Blitting past it skipped Make() exactly as it did in None mode,
+            // which is the bypass the None-mode test above was written to prove closed. Closed for real now, by
+            // ElementPairHasCustomization consulting PairConstructors rather than by the declared-method rule.
+            var src = PairConstructorSource(mode);
+            var generated = GeneratorAssert.CompilesClean(src);
+            Assert.DoesNotContain("MemoryMarshal.Cast<", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("__DwarfBlit_", generated, StringComparison.Ordinal);
+            Assert.Contains("Make(", generated, StringComparison.Ordinal);
+            // The route these two modes actually take, named so a refactor that changes it is visible here.
+            Assert.Contains("__DwarfMap_Obj_", generated, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void A_pair_scoped_MapNullSkip_is_byte_equivalent_and_keeps_the_blit()
         {
@@ -469,7 +541,8 @@ namespace DwarfMapper.Generator.Tests
         public void A_plain_layout_identical_pair_still_blits_for_both_storages()
         {
             AssertBlitted(GeneratorAssert.CompilesClean(GateSource("", "")));
-            AssertBlitted(GeneratorAssert.CompilesClean(GateSource("", "", true)));
+            AssertBlitted(GeneratorAssert.CompilesClean(GateSource("", "", "list")));
+            AssertBlitted(GeneratorAssert.CompilesClean(GateSource("", "", "immutable")));
         }
 
         [Fact]
@@ -485,6 +558,50 @@ namespace DwarfMapper.Generator.Tests
             var generated = GeneratorAssert.CompilesClean(src);
             AssertBlitted(generated);
             Assert.DoesNotContain("Conv(", generated, StringComparison.Ordinal);
+
+            // Review fix 3: winning is right, winning SILENTLY is not. The bypass is reported informationally,
+            // naming the member, what is not being called, and how to get it called.
+            var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
+                .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Contains("'V'", hint, StringComparison.Ordinal);
+            Assert.Contains("'Conv'", hint, StringComparison.Ordinal);
+            Assert.Contains("remove [Reinterpret]", hint, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Reinterpret_reports_the_bypass_for_a_user_defined_operator_too()
+        {
+            // The operator half. It has no name to grep for, so the message describes the pair it converts
+            // between rather than pretending to name a method.
+            const string src = """
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct SrcV { public int X; }
+                    public struct DstV { public int X; public static implicit operator DstV(SrcV s) => new DstV { X = s.X * 2 }; }
+                    public class A { public SrcV[] V { get; set; } = System.Array.Empty<SrcV>(); }
+                    public class B { public DstV[] V { get; set; } = System.Array.Empty<DstV>(); }
+                    [DwarfMapper] public partial class M { [AutoNest(false)] [Reinterpret("V")] public partial B Map(A a); }
+                }
+                """;
+            AssertBlitted(GeneratorAssert.CompilesClean(src));
+            var hint = Assert.Single(GeneratorAssert.Reports(src, "DWARF106"))
+                .GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Contains("conversion operator", hint, StringComparison.Ordinal);
+            Assert.Contains("SrcV", hint, StringComparison.Ordinal);
+            Assert.Contains("DstV", hint, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Reinterpret_with_no_conversion_in_sight_says_nothing()
+        {
+            // DWARF106 reports a CONFLICT, not the attribute. Without this control the Info would drift into
+            // ambient noise on every ordinary [Reinterpret] — which is how an informational diagnostic gets
+            // suppressed wholesale, taking the cases worth reading with it.
+            var src = GateSource("", "")
+                .Replace("public partial B Map(A a);", """[Reinterpret("V")] public partial B Map(A a);""", StringComparison.Ordinal);
+            AssertBlitted(GeneratorAssert.CompilesClean(src));
+            GeneratorAssert.DoesNotReport(src, "DWARF106");
         }
 
         [Fact]

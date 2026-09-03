@@ -375,7 +375,7 @@ namespace DwarfMapper.Generator.Pipeline
             // while the parameter list that answer cost us goes away.
             var decls = new MapperDeclarations(classSymbol, allMethods, mapperMethods, classIgnores,
                 classIgnoreSources, mapperReservedConverters, valueProviders, pairProps, pairIgnores,
-                pairValues, pairConstructors, pairNullSkips, beforeHookDefs, afterHookDefs);
+                pairValues, pairConstructors, pairNullSkips, beforeHookDefs, afterHookDefs, genPairs);
 
             // Round 29 T0.2c: the array/list blit decision lives inside TryResolveConversion, which is handed a
             // pair of types and never sees `decls` — so the ONE question "does a pair-scoped directive or hook

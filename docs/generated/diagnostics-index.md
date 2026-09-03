@@ -104,5 +104,6 @@ this table exists so the *list* cannot drift from the code.
 | `DWARF098` | Warning | [DwarfMapperConstructor] names a constructor the mapper cannot use |
 | `DWARF099` | Error | One pair carries two contradicting [MapNullSkip<TSource, TTarget>] declarations |
 | `DWARF100` | Info | Array or span pair narrowly missed the blittable fast path |
+| `DWARF106` | Info | [Reinterpret] takes the block copy instead of a declared conversion |
 
-96 diagnostics.
+97 diagnostics.

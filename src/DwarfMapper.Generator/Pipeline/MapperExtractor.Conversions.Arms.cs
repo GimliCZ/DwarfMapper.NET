@@ -336,12 +336,19 @@ namespace DwarfMapper.Generator.Pipeline
         ///         for <c>GeneratedNames.IsUserConv</c>.
         ///     </para>
         ///     <para>
-        ///         A pair-scoped <c>[MapConstructor&lt;S,T&gt;]</c> needs no separate question: it is honoured
-        ///         only for a pair some <c>[GenerateMap&lt;S,T&gt;]</c> declares (otherwise DWARF056 refuses it),
-        ///         and a declared pair contributes a candidate method, so this query already refuses the blit for
-        ///         it. Pinned by test. A pair-scoped <c>[MapNullSkip&lt;S,T&gt;]</c> genuinely is byte-equivalent
-        ///         on a pair the blit proof accepted — an unmanaged struct pair has no nullable member to skip —
-        ///         and is deliberately not consulted; also pinned.
+        ///         A pair-scoped <c>[MapConstructor&lt;S,T&gt;]</c> is deliberately NOT this question's business,
+        ///         and the first draft of this gate got that wrong. It looked covered here: the factory is
+        ///         honoured only for a pair some <c>[GenerateMap&lt;S,T&gt;]</c> declares, and a declared pair
+        ///         contributes a candidate method, so the search below finds it. But under Preserve and SetNull
+        ///         <see cref="PrefersSynthesizedObjectMap" /> hands that candidate BACK — a public method cannot
+        ///         accept the shared <c>DwarfRefContext</c> — so this method correctly answers "no user
+        ///         conversion" while the synthesized helper the pair actually routes through is the very thing
+        ///         carrying the factory. It is asked with the other pair-scoped directives instead, in
+        ///         <c>ElementPairHasCustomization</c>, which is where "the helper for this pair is customized"
+        ///         belongs. Pinned for all three reference modes. A pair-scoped
+        ///         <c>[MapNullSkip&lt;S,T&gt;]</c> genuinely is byte-equivalent on a pair the blit proof accepted
+        ///         — an unmanaged struct pair has no nullable member to skip — and is consulted by neither; also
+        ///         pinned.
         ///     </para>
         /// </remarks>
         private static bool ElementPairResolvesToUserConversion(
@@ -368,6 +375,64 @@ namespace DwarfMapper.Generator.Pipeline
 
             return !AutoNestWouldClaim(elemReq) &&
                    UserConversionConverter.Exists(req.Compilation, srcElem, tgtElem);
+        }
+
+        /// <summary>
+        ///     Reports <c>DWARF106</c> when <c>[Reinterpret]</c> on <paramref name="memberName" /> takes the block
+        ///     copy in place of a conversion the element pair would otherwise have resolved to.
+        /// </summary>
+        /// <remarks>
+        ///     Round 29 T0.2c review fix 3. Asks the SAME question the array/list gate asks — through the same
+        ///     <see cref="ElementPairResolvesToUserConversion" /> — so the diagnostic can never disagree with the
+        ///     gate about whether a conversion was there to bypass. It reports what the gate would have honoured
+        ///     and <c>[Reinterpret]</c> overrides; when the gate finds nothing, there is no conflict and nothing
+        ///     is said. The element request is built with the same values the member-level resolution below uses,
+        ///     for the same reason: the question must be the one the resolver would have answered.
+        /// </remarks>
+        private static void ReportReinterpretBypass(
+            MemberRequest req,
+            MemberLookups lookups,
+            MemberAccumulators acc,
+            string memberName,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem)
+        {
+            var probe = new ConversionRequest(req.Compilation,
+                srcElem,
+                tgtElem,
+                null,
+                req.AllMethods,
+                req.AutoCandidates,
+                req.EnumPolicy,
+                req.NullStrategy,
+                req.Location,
+                memberName,
+                req.Options.AutoNest,
+                req.NestedRegistry,
+                req.Options.NullAsNull,
+                req.Options.IsPreserve,
+                false,
+                req.Options.IsSetNull,
+                req.Options.ImplicitConversions,
+                lookups.ReservedConverters);
+
+            if (!ElementPairResolvesToUserConversion(probe, srcElem, tgtElem))
+            {
+                return;
+            }
+
+            // Name the thing that is not being called. A declared method is named directly; an operator has no
+            // name a user could grep for, so it is described by the pair it converts between.
+            FindUserDeclaredConversion(probe, out var found, out _);
+            var bypassed = found is not null
+                ? $"the declared conversion method '{found}'"
+                : $"the user-defined conversion operator from '{srcElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}' to '{tgtElem.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
+
+            acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.ReinterpretBypassesConversion,
+                req.Location,
+                $"[Reinterpret] on '{memberName}' takes the block copy, so {bypassed} is not called for its " +
+                $"elements; remove [Reinterpret] from '{memberName}' to use it instead",
+                MemberName: memberName));
         }
 
         /// <summary>

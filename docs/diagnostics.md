@@ -1887,6 +1887,44 @@ ordinary mappings, and a hint common enough to appear on every struct mapping wo
 wholesale — taking the cases worth reading down with it.
 ---
 
+## dwarf106
+**[Reinterpret] takes the block copy instead of a declared conversion** · Info
+
+Your mapping is **correct and does exactly what you asked**. This hint reports a *conflict* you can only see by
+reading two places at once: the member carries `[Reinterpret]`, and its element pair also has a conversion you
+wrote — a declared method on the mapper, or a user-defined conversion operator between the element types.
+
+<!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->
+```csharp
+[DwarfMapper]
+public partial class M
+{
+    public static Dst Scale(Src s) => new Dst { X = s.X * 2 };   // never called for Data's elements
+
+    [Reinterpret("Data")]                                        // DWARF106 — the block copy wins
+    public partial Target Map(Source s);
+}
+```
+
+Everywhere else DwarfMapper resolves this the other way: a conversion you wrote keeps the element loop and the
+block copy stands down, because **a proof enables a fast path, it never changes semantics**. `[Reinterpret]` is
+the one deliberate exception. It names **one member, explicitly**, while an auto-adopted converter is *ambient*
+— matched by type, and quite possibly written for a different member entirely. The explicit instruction wins.
+
+**Fix:** nothing, if the block copy is what you meant — that is the normal case and the reason this is not a
+warning. To call the conversion instead, remove `[Reinterpret]` from the member the message names; the pair
+then takes the element loop and your method or operator runs per element.
+
+**Why informational, and why not louder.** An error here would be a false positive on correct code: the same
+mapper may use that helper legitimately for another member, and refusing the build over an intentional
+combination helps no one. A warning becomes a *build failure* under `TreatWarningsAsErrors` — the trap
+`dwarf070` sprang on this project once already. An intentional bypass is exactly what an informational
+diagnostic is for.
+
+**Why it does not fire more often.** A `[Reinterpret]` member with no conversion in sight says nothing at all.
+This reports the conflict, not the attribute.
+---
+
 ---
 
 ## Runtime exceptions
