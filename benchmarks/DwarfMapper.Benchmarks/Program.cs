@@ -401,6 +401,12 @@ public partial class DwarfM
 
     public partial BlitScalarDst MapBlitScalar(BlitSrc s);
     public partial BlitListScalarDst MapBlitListScalar(BlitSrc s);
+
+    // Round 29 T0.2 — the span-map blit's own ratio pair, same shape as the two above: the FAST span map
+    // reinterprets (MemoryMarshal.Cast + CopyTo), the SCALAR span map targets Vec3Ren (the same
+    // [StructLayout(Auto)] twin that defeats the array blit above), so it keeps the per-element loop.
+    public partial void MapSpanBlit(ReadOnlySpan<Vec3Src> src, Span<Vec3Dst> dst);
+    public partial void MapSpanBlitScalar(ReadOnlySpan<Vec3Src> src, Span<Vec3Ren> dst);
 }
 
 // ── Mapperly (compile-time source gen) ────────────────────────────────────────
@@ -482,6 +488,11 @@ public class MapperBenchmarks
     private SetSrc _set = null!;
     private WidenSrc _widen = null!;
 
+    // Round 29 T0.2 — preallocated OUTSIDE the measured method, like every span-map destination: the
+    // benchmark measures the mapping call, not the buffer's own allocation, and the 0 B pin depends on it.
+    private Vec3Dst[] _spanBlitDst = null!;
+    private Vec3Ren[] _spanBlitScalarDst = null!;
+
     [Params(1000)]
     public int N { get; set; }
 
@@ -548,6 +559,8 @@ public class MapperBenchmarks
         {
             Items = RealisticPayloads.Elements<Vec3Src>(N, 4)
         };
+        _spanBlitDst = new Vec3Dst[N];
+        _spanBlitScalarDst = new Vec3Ren[N];
         _widen = new WidenSrc
         {
             V = RealisticPayloads.Elements<int>(N, 5)
@@ -869,6 +882,26 @@ public class MapperBenchmarks
     public BlitDst Blit_AutoMapper()
     {
         return _auto.Map<BlitDst>(_blit);
+    }
+
+    // ── Round 29 T0.2 — the span map's own blit vs its scalar (element-loop) twin ────
+    // Same _blit.Items payload as the array Blit category above and the same ratio-pair discipline as
+    // BlitRatio: FAST is the MemoryMarshal.Cast + CopyTo block copy, SCALAR is the per-element loop the fast
+    // path replaces, same process, same destination size, only the destination buffer's layout differs.
+    [Benchmark]
+    [BenchmarkCategory("SpanBlit")]
+    public int SpanBlit_Dwarf()
+    {
+        _dwarf.MapSpanBlit(_blit.Items, _spanBlitDst);
+        return _spanBlitDst.Length;
+    }
+
+    [Benchmark]
+    [BenchmarkCategory("SpanBlit")]
+    public int SpanBlit_Scalar()
+    {
+        _dwarf.MapSpanBlitScalar(_blit.Items, _spanBlitScalarDst);
+        return _spanBlitScalarDst.Length;
     }
 
     // ── Primitive widening array (DwarfMapper's Vector.Widen vs element loop) ────

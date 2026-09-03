@@ -977,6 +977,11 @@ so a version with no section here ships with no notes.
   - `DWARF080` — a `[MapConstructor]` factory owns construction, so a mapped source value for an `init`-only or `required` member is discarded.
   - `DWARF081` — two mappers auto-synthesize the same nested pair two different ways, because a synthesized helper inherits the policy of the mapper that reached it.
   - `DWARF083` — a declared enum↔string mapping writes `[EnumMember]`/`[Description]` values rather than the member identifiers.
+- **A zero-alloc span map takes the blit.** `void Map(ReadOnlySpan<S> src, Span<D> dst)` now shares the array/list
+  blit's proof: when the element pair is layout-identical (`BlittableProof.CanReinterpret`/`CanReinterpretEnums`),
+  the body is one `MemoryMarshal.Cast<S, D>(src).CopyTo(dst)` block copy after the length guard, instead of the
+  per-element loop — zero allocation either way. A pair that narrowly misses gets `DWARF100`, worded for the
+  method rather than a member (a span map has no target member to name). (round 29, T0.2)
 
 ### Changed
 

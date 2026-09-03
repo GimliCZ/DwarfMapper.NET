@@ -31,7 +31,9 @@
     "",
     "2026-08-26 (round 27): the enum category was reworked to compare LIKE FOR LIKE, 53 -> 55 benchmarks. It previously pitted DwarfMapper's by-NAME mapping against competitors doing by-VALUE, which measures two different operations and flatters whichever one is cheaper. Now there are two categories: Enum_* is by-name (Dwarf, Mapperly configured with EnumMappingStrategy.ByName, AutoMapper) and EnumByValue_* is by-value (Dwarf opted in via [DwarfMapper(EnumStrategy = ByValue)], Mapperly and Mapster at their defaults). Net +2 rather than +3: Enum_Mapster moved into the by-value category rather than being duplicated, because Mapster has no by-name mode to configure. EnumByValue_Dwarf is pinned at 24 B/op, the same as its by-name twin - the strategy changes which comparison is fair, not what is allocated.",
     "",
-    "2026-08-23 (round 26, second addition): four NestedFill_* scenarios, 49 -> 53 benchmarks. A realistic graph mixing BOTH fill strategies in one map \u2014 reference-element Lines on the Add path, value-element Totals and per-line Quantities on the span fill. NumList isolates the fill strategy; this measures what is left of it beside the cost of allocating nested destination objects. Only the Dwarf row is pinned."
+    "2026-08-23 (round 26, second addition): four NestedFill_* scenarios, 49 -> 53 benchmarks. A realistic graph mixing BOTH fill strategies in one map \u2014 reference-element Lines on the Add path, value-element Totals and per-line Quantities on the span fill. NumList isolates the fill strategy; this measures what is left of it beside the cost of allocating nested destination objects. Only the Dwarf row is pinned.",
+    "",
+    "2026-09-03 (round 29, T0.2): two SpanBlit_* scenarios added, 55 -> 57 benchmarks. SpanBlit_Dwarf is the zero-alloc span map void Map(ReadOnlySpan<Vec3Src> src, Span<Vec3Dst> dst) taking the BlittableProof block copy (MemoryMarshal.Cast + CopyTo) into a preallocated destination array; SpanBlit_Scalar is its [StructLayout(Auto)] twin (Vec3Ren), which keeps the per-element loop \u2014 same pair-selection discipline as BlitRatio. Both pin at 0 B/op: every element is a value-type struct copied into a preallocated destination array, so neither path allocates anything, unlike the array/list blit rows above which allocate the destination array itself."
   ],
   "measuredWith": {
     "sdk": "10.0.101",
@@ -41,7 +43,7 @@
     "tree": "d7b60cd4ae425dfc735b66622c50f5e8f0babfdb plus the T8 smoke config committed together with this file",
     "job": "ShortRun via DWARF_BENCH_SMOKE=1, N=1000, seed RealisticPayloads.Seed=20260724"
   },
-  "totalBenchmarks": 55,
+  "totalBenchmarks": 57,
   "pins": {
     "Flat_Dwarf": 40,
     "Nested_Dwarf": 112,
@@ -62,7 +64,9 @@
     "BlitRatio_List_Fast": 12112,
     "BlitRatio_List_Scalar": 16112,
     "NumList_Dwarf": 8112,
-    "NestedFill_Dwarf": 8112
+    "NestedFill_Dwarf": 8112,
+    "SpanBlit_Dwarf": 0,
+    "SpanBlit_Scalar": 0
   },
   "unstable": {}
 }

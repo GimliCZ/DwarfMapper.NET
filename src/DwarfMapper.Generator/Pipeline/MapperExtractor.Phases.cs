@@ -2585,6 +2585,23 @@ namespace DwarfMapper.Generator.Pipeline
                         (spanSrcElem, spanDstElem, methodLocation, ReadIgnoreSources(method).ToList()));
                 }
 
+                // Zero-alloc span map, blit fast path (round 29, T0.2): the proof is the decision, independent
+                // of what the resolver above picked for spanConv (typically a synthesized __DwarfMap_Obj_*
+                // element mapper) — mirrors the array/list arm at MapperExtractor.Conversions.Arms.cs:382-383.
+                // The synthesized element converter stays in the accumulator either way: resolution still ran
+                // for its completeness (DWARF001), directive-gap and coverage side effects, it is simply unused
+                // by the emitted body when the blit fires.
+                var spanBlits = BlittableProof.CanReinterpret(spanSrcElem, spanDstElem) ||
+                                BlittableProof.CanReinterpretEnums(spanSrcElem, spanDstElem, policy.EnumPolicy.Strategy);
+                if (!spanBlits && BlittableProof.TryExplainNearMiss(spanSrcElem, spanDstElem, out var spanNearMissReason))
+                {
+                    acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,
+                        methodLocation,
+                        $"'{method.Name}' maps a span whose element types are nearly layout-identical, so it " +
+                        $"takes the element-by-element copy: {spanNearMissReason}",
+                        MemberName: method.Name));
+                }
+
                 var spanElemMember = new MemberMap(
                     "",
                     "",
@@ -2619,6 +2636,9 @@ namespace DwarfMapper.Generator.Pipeline
                     "",
                     IsSpanMap: true,
                     SpanTargetParameterName: method.Parameters[1].Name,
+                    SpanMapBlits: spanBlits,
+                    SpanSourceElementFullName: spanSrcElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    SpanTargetElementFullName: spanDstElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     // The create and update models carry MaxDepth and these did not, which was an omission
                     // relative to its siblings. Since B33 it is READ: when the element converter carries the
                     // (ctx, depth) tail, EmitElementContext sizes the shared DwarfRefContext from this value,

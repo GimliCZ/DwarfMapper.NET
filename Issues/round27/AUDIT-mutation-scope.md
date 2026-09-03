@@ -23,16 +23,21 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 68 | 7 | 28,181 | 1,969 | **7.0 %** | 94.5 % |
+| `DwarfMapper.Generator` | 69 | 7 | 28,284 | 2,008 | **7.1 %** | 94.5 % |
 | `DwarfMapper` (runtime) | 42 | 6 | 3,431 | 941 | **27.4 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,110 | 657 | **59.2 %** | 96.3 % |
 | `DwarfMapper.CodeFixes` | 4 | 4 | 711 | 711 | **100 %** | 96.2 % |
 | `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **133** | **22** | **35,538** | **4,278** | **12.0 %** | |
+| **all** | **134** | **22** | **35,641** | **4,317** | **12.1 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
+`DwarfMapper.Generator`'s file/line counts were bumped again 2026-09-03 (round 29, T0.2): the span-map blit
+added one file, `Pipeline/MapEmitter.SpanMap.cs` (82 lines, outside every `mutate` glob), and a top-level
+`Nullable<T>` refusal in `BlittableProof.cs` (39 lines, INSIDE the glob — a CS0453 regression T0.1's Nullable
+branch introduced, found and fixed in the same task) — mutated lines move with it, both shares within the
+gate's 1 pp tolerance of where they were.
 
 **Round 27 made the generator's share worse, not better.** The seam stage added 6,659 lines across 13 new
 `Pipeline/` files — `MapperExtractor.Phases.cs` (3,398), `.Conversions.Arms.cs` (795),

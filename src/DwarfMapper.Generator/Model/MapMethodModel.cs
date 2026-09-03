@@ -97,6 +97,22 @@ namespace DwarfMapper.Generator.Model
     ///     direct/implicit element assignment).
     /// </param>
     /// <param name="SpanTargetParameterName">The destination span parameter name for an <see cref="IsSpanMap"/> method.</param>
+    /// <param name="SpanMapBlits">
+    ///     When <c>true</c>, the <see cref="IsSpanMap"/> element pair is proven layout-identical
+    ///     (<see cref="BlittableProof.CanReinterpret"/> / <see cref="BlittableProof.CanReinterpretEnums"/>), so the
+    ///     body is a single <c>MemoryMarshal.Cast&lt;S, D&gt;(src).CopyTo(dst)</c> block copy after the length guard,
+    ///     rather than the per-element loop. The element converter resolved into <see cref="Members"/>[0] is left
+    ///     unused on this path (still synthesized, for the completeness/diagnostics passes that ask what the pair
+    ///     resolves to) — round 29, T0.2.
+    /// </param>
+    /// <param name="SpanSourceElementFullName">
+    ///     The source span's element type, fully qualified — the first type argument to
+    ///     <c>MemoryMarshal.Cast&lt;S, D&gt;</c> on a <see cref="SpanMapBlits"/> body.
+    /// </param>
+    /// <param name="SpanTargetElementFullName">
+    ///     The destination span's element type, fully qualified — the second type argument to
+    ///     <c>MemoryMarshal.Cast&lt;S, D&gt;</c> on a <see cref="SpanMapBlits"/> body.
+    /// </param>
     /// <param name="EmitAsNonPartial">
     ///     When <c>true</c>, this is an attribute-declared mapper (<c>[GenerateMap&lt;S,T&gt;]</c>) emitted as a
     ///     FULL <c>public</c> method rather than a <c>partial</c> implementation — the user did not declare a
@@ -177,6 +193,9 @@ namespace DwarfMapper.Generator.Model
         bool UpdateReturnsVoid = false,
         bool IsSpanMap = false,
         string SpanTargetParameterName = "",
+        bool SpanMapBlits = false,
+        string SpanSourceElementFullName = "",
+        string SpanTargetElementFullName = "",
         bool EmitAsNonPartial = false,
         bool IsAsyncStreamMap = false,
         string? AsyncCancellationParam = null,

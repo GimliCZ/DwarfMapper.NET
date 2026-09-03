@@ -695,9 +695,12 @@ public partial class Mapper
 ```
 <!-- endsnippet -->
 
-Each element runs through the full conversion pipeline (`dst[i] = convert(src[i])`). The destination must be a writable
-`Span<D>` (source may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws
-`ArgumentException` — never a silent truncation.
+When the element pair is proven layout-identical (the same fast path as the array/list blit above), the body is one
+`MemoryMarshal.Cast<S, D>(src).CopyTo(dst)` block copy; otherwise each element runs through the full conversion
+pipeline (`dst[i] = convert(src[i])`). A pair that narrowly misses the block copy — byte-identical but for the field
+names, say — gets `DWARF100` explaining exactly what to change. The destination must be a writable `Span<D>` (source
+may be `Span<S>` or `ReadOnlySpan<S>`), and a destination smaller than the source throws `ArgumentException` — never a
+silent truncation.
 
 ### Async streaming
 
@@ -953,8 +956,10 @@ README.md
 - **Polymorphic dispatch** (`[MapDerivedType]`) and graph degradation (`[FlattenGraph]`, homogeneous + heterogeneous)
 - **Update-into-existing**: `void Map(S src, T dest)` / `T Map(S src, T dest)` maps onto an existing instance (identity
   preserved); same completeness gate, conversions, hooks, `[MapProperty]`/`[MapIgnore]`
-- **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps element-wise into a caller buffer (no
-  allocation), with a defensive length guard (too-small destination throws, never silent truncation)
+- **Zero-alloc span mapping**: `void Map(ReadOnlySpan<S> src, Span<D> dst)` maps into a caller buffer (no allocation),
+  with a defensive length guard (too-small destination throws, never silent truncation) — a single
+  `MemoryMarshal.Cast(src).CopyTo(dst)` block copy when the element pair is proven layout-identical, the
+  element-by-element loop otherwise (`DWARF100` on a near miss)
 - **In-repo BenchmarkDotNet suite** (`benchmarks/DwarfMapper.Benchmarks`): DwarfMapper vs. hand-written **and vs.
   Mapperly / Mapster / AutoMapper 14** across flat / nested / collection / blit scenarios (see [
   `docs/COMPARISON.md`](docs/COMPARISON.md) for the full capability/testing/migration comparison, [
