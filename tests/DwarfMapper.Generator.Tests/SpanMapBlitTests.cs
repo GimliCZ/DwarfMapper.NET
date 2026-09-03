@@ -129,12 +129,14 @@ namespace DwarfMapper.Generator.Tests
         ///     <c>TryExplainNearMiss</c> refuse it before the layout proof runs at all).
         /// </summary>
         /// <remarks>
-        ///     Asserted against the raw generator output rather than through <c>GeneratorAssert</c>'s
-        ///     compile-clean helpers: a span map's PER-ELEMENT resolution of a nullable STRUCT element (as
-        ///     opposed to the array/list converter's own nullable-element lifting) is a separate, pre-existing
-        ///     gap this task does not own — <c>src[__i]</c> (<c>P?</c>) is passed bare to the synthesized
-        ///     helper's non-nullable <c>P</c> parameter (CS1503), with or without the fix here. This test's only
-        ///     claim is about the CAST, not about the loop's own compilability for this element shape.
+        ///     Round 29 T0.2b fixed the gap these remarks used to document: the span map's PER-ELEMENT
+        ///     resolution of a nullable STRUCT element now goes through the same lift
+        ///     <c>CollectionConverter.ElementExpr</c> gives an array/list element (<c>src[__i]</c> is no longer
+        ///     handed bare to the synthesized helper's non-nullable <c>P</c> parameter — see
+        ///     <c>SpanMapNullableElementTests.Nullable_struct_elements_are_lifted_null_preserving</c> for the
+        ///     full null-preserving assertion). This test's own claim is unchanged and narrower: the pair is
+        ///     categorically not a reinterpret, so no cast and no DWARF100 near-miss — now checked through
+        ///     <c>CompilesClean</c> since the loop this cast decision sits inside compiles.
         /// </remarks>
         [Fact]
         public void Nullable_element_pair_is_not_a_reinterpret()
@@ -149,9 +151,11 @@ namespace DwarfMapper.Generator.Tests
                     [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<P?> src, Span<Q?> dst); }
                 }
                 """;
-            var (diagnostics, generated) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
+            var generated = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
+            var (diagnostics, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF100");
             Assert.DoesNotContain("MemoryMarshal.Cast", generated, StringComparison.Ordinal);
+            Assert.Contains("for (int __i", generated, StringComparison.Ordinal);
         }
 
         /// <summary>

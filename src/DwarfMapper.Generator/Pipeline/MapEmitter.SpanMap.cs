@@ -56,25 +56,49 @@ namespace DwarfMapper.Generator.Pipeline
             }
 
             sb.Append(indent).Append("    for (int __i = 0; __i < ").Append(src).AppendLine(".Length; __i++)");
-            sb.Append(indent).Append("        ").Append(dst).Append("[__i] = ");
 
-            if (elem?.ConverterMethod is null)
-                // Direct/implicit element assignment (e.g. int → long widening).
+            // Round 29 T0.2b: the per-element expression is the SAME rule CollectionConverter.ElementExpr
+            // applies to an array/list element — a Nullable<P>/nullable-annotated-reference element is LIFTED
+            // (null → null, value → converter → re-wrapped), never handed bare to a synthesized helper's
+            // non-nullable parameter (that was CS1503 in the consumer's build; nobody had ever declared
+            // Span<P?> in the corpus before). ", __dwarf_ctx, 0" replaces the shared helper's own "ctx, depth +
+            // 1" tail: the context local this method's own body declares (see EmitElementContext above) is
+            // named __dwarf_ctx, and a span element is always a fresh depth-0 call, exactly like the
+            // async-stream loop's element converter call just above in this file.
+            var elemNh = elem?.NullHandling ?? NullHandling.None;
+
+            // NullableProject/NullableProjectRef reference the element TWICE (.HasValue then .Value, or
+            // "is null" then the plain value) — indexing the span twice for that loses nullable flow tracking
+            // between the two reads (CS8629 on the second .Value, even though it is the same slot). Found while
+            // wiring this in: CollectionConverter.EmitArray's OWN bounds-check-elision fast path for an
+            // array→array source (the "src[__i]" textual substitution over the shared item expression) has this
+            // EXACT defect for P?[] → Q?[] today — a pre-existing generated-code warning, out of this task's
+            // scope (a different emitter, and fixing it risks moving array/list golden snapshots), reported
+            // rather than copied. This inline loop avoids it by binding one local instead. Every other
+            // NullHandling references the element once, so the pre-existing direct-index form is kept
+            // byte-identical (it is pinned by SpanMapBlitTests' literal `src[__i]` assertions).
+            var needsLocal = elemNh is NullHandling.NullableProject or NullHandling.NullableProjectRef;
+            if (needsLocal)
             {
-                sb.Append(src).Append("[__i]");
+                sb.Append(indent).AppendLine("    {");
+                sb.Append(indent).Append("        var __item = ").Append(src).AppendLine("[__i];");
             }
-            else
+
+            sb.Append(indent).Append("        ").Append(dst).Append("[__i] = ")
+                .Append(CollectionConverter.ElementExpr(
+                    needsLocal ? "__item" : src + "[__i]",
+                    elem?.ConverterMethod,
+                    elemNh,
+                    method.SpanTargetElementFullName,
+                    elem?.ConverterNeedsDepthCtx ?? false,
+                    elem?.SourceIsNullableRef ?? false,
+                    ", __dwarf_ctx, 0"))
+                .AppendLine(";");
+
+            if (needsLocal)
             {
-                sb.Append(elem.ConverterMethod).Append('(').Append(src).Append("[__i]");
-                if (elem.ConverterNeedsDepthCtx)
-                {
-                    sb.Append(", __dwarf_ctx, 0");
-                }
-
-                sb.Append(')');
+                sb.Append(indent).AppendLine("    }");
             }
-
-            sb.AppendLine(";");
 
             sb.Append(indent).AppendLine("}");
         }

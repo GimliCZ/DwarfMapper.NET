@@ -2706,12 +2706,21 @@ namespace DwarfMapper.Generator.Pipeline
                         MemberName: method.Name));
                 }
 
+                // Round 29 T0.2b: mirrors CollectionConverter.Synthesize's own srcElemIsNullableRef computation
+                // — a nullable-annotated REFERENCE element (ReadOnlySpan<C?>) reaching a synthesized object
+                // helper needs the same null-forgiving '!' the collection converter's element loop applies
+                // (the helper null-guards internally: null in, null out). Read by MapEmitter.SpanMap's call
+                // into the shared CollectionConverter.ElementExpr.
+                var spanSrcElemIsNullableRef = spanSrcElem.IsReferenceType &&
+                                                spanSrcElem.NullableAnnotation == NullableAnnotation.Annotated;
+
                 var spanElemMember = new MemberMap(
                     "",
                     "",
                     spanConv,
                     spanNull,
-                    spanNeedsCtx);
+                    spanNeedsCtx,
+                    SourceIsNullableRef: spanSrcElemIsNullableRef);
 
                 // I17: an unmapped destination member is a statement about THIS method's pair and THIS
                 // method's [MapIgnore] set, not about the mapper. The method is WITHHELD from emission; the
@@ -2726,8 +2735,14 @@ namespace DwarfMapper.Generator.Pipeline
                 acc.Methods.Add(new MapMethodModel(
                     method.Name,
                     AccessibilityText(method.DeclaredAccessibility),
-                    method.Parameters[1].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    // Nullable-aware format (round 29 T0.2b): a plain FullyQualifiedFormat silently drops the
+                    // '?' on a nullable-annotated REFERENCE type argument (Span<D?> → "global::T.D"), so the
+                    // generated partial's declared parameter type stopped matching the user's own partial
+                    // declaration — CS8611 in the consumer's build, on the signature itself, before element
+                    // resolution is even reached. Same format CollectionConverter uses for its own helper
+                    // parameter types, for the same reason.
+                    method.Parameters[1].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    method.Parameters[0].Type.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     method.Parameters[0].Name,
                     false,
                     EquatableArray.From(new[]
@@ -2741,8 +2756,8 @@ namespace DwarfMapper.Generator.Pipeline
                     IsSpanMap: true,
                     SpanTargetParameterName: method.Parameters[1].Name,
                     SpanMapBlits: spanBlits,
-                    SpanSourceElementFullName: spanSrcElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    SpanTargetElementFullName: spanDstElem.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    SpanSourceElementFullName: spanSrcElem.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
+                    SpanTargetElementFullName: spanDstElem.ToDisplayString(CollectionConverter.NullableFullyQualifiedFormat),
                     // The create and update models carry MaxDepth and these did not, which was an omission
                     // relative to its siblings. Since B33 it is READ: when the element converter carries the
                     // (ctx, depth) tail, EmitElementContext sizes the shared DwarfRefContext from this value,

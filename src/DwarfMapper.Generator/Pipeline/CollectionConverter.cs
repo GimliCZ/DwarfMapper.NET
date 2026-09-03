@@ -27,7 +27,11 @@ namespace DwarfMapper.Generator.Pipeline
         // Nullable-aware fully-qualified format — includes ? on nullable reference type arguments.
         // Used for PARAMETER types so the helper signature accepts nullable-annotated source types
         // (e.g. Dictionary<string, List<int>?>) without a CS8620 mismatch.
-        private static readonly SymbolDisplayFormat NullableFullyQualifiedFormat =
+        // Internal (not private): round 29 T0.2b reuses it for the span map's declared parameter/return
+        // types (ReadOnlySpan<C?> / Span<D?>) — the same CS8611 partial-signature mismatch a plain
+        // FullyQualifiedFormat produces here (it silently drops the '?' on the span's nullable-annotated
+        // reference type argument) is the same hole this format was built to close.
+        internal static readonly SymbolDisplayFormat NullableFullyQualifiedFormat =
             SymbolDisplayFormat.FullyQualifiedFormat
                 .WithMiscellaneousOptions(
                     SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
@@ -1273,13 +1277,23 @@ namespace DwarfMapper.Generator.Pipeline
         ///         NullStrategy rule.
         ///     </para>
         /// </summary>
-        private static string ElementExpr(
+        /// <param name="ctxDepthArgs">
+        ///     The literal <c>(ctx, depth)</c> tail appended when <paramref name="needsCtx" /> is true. Defaults to
+        ///     the synthesized-helper-body spelling (<c>", ctx, depth + 1"</c> — the local parameter names
+        ///     <see cref="EmitBody" /> declares). Round 29 T0.2b: the span map's INLINE element loop shares this
+        ///     rule but lives in the caller's own method body, where the shared context local is
+        ///     <c>__dwarf_ctx</c> and there is no recursion depth to increment (a fresh depth-0 call per element,
+        ///     exactly like the async-stream loop's <c>EmitElementContext</c> — see <c>MapEmitter.SpanMap.cs</c>),
+        ///     so that caller passes <c>", __dwarf_ctx, 0"</c> instead of accepting the default.
+        /// </param>
+        internal static string ElementExpr(
             string item,
             string? conv,
             NullHandling nh,
             string elemFq,
             bool needsCtx = false,
-            bool srcElemIsNullableRef = false)
+            bool srcElemIsNullableRef = false,
+            string ctxDepthArgs = ", ctx, depth + 1")
         {
             if (conv is null)
             {
@@ -1292,8 +1306,8 @@ namespace DwarfMapper.Generator.Pipeline
                 };
             }
 
-            // When the element converter is recursion-capable (under Preserve mode), thread ctx and depth+1.
-            var extra = needsCtx ? ", ctx, depth + 1" : "";
+            // When the element converter is recursion-capable (under Preserve mode), thread the (ctx, depth) tail.
+            var extra = needsCtx ? ctxDepthArgs : "";
 
             // Null-forgive a nullable-reference element into a synthesized helper's non-nullable parameter (the
             // helper null-guards: null in, null out). The array fast path indexes `src[__i]` twice, and flow

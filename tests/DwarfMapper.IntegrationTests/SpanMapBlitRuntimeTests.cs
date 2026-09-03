@@ -28,6 +28,37 @@ namespace DwarfMapper.IntegrationTests
         public partial void Map(ReadOnlySpan<BlitVec3Src> src, Span<BlitVec3Dst> dst);
     }
 
+    // Round 29 T0.2b: a Nullable<T> element pair is not layout-identical to MemoryMarshal.Cast's struct
+    // constraint (CS0453 — see SpanMapBlitTests.Nullable_element_pair_is_not_a_reinterpret), so this pair keeps
+    // the element loop, which now lifts the nullable element through the synthesized helper instead of handing
+    // it bare (that was CS1503 in the consumer's build before this fix).
+    public struct NullableElemSrc
+    {
+        public int V;
+    }
+
+    public struct NullableElemDst
+    {
+        public int V;
+    }
+
+    [DwarfMapper]
+    public partial class SpanMapNullableElementMapper
+    {
+        public partial void Map(ReadOnlySpan<NullableElemSrc?> src, Span<NullableElemDst?> dst);
+    }
+
+    // Round 29 T0.2b, shape (c): the destination element CANNOT hold null, so the pair resolves through
+    // TryResolveConversion's nullable-value-source arm exactly like the array/list arm resolves P?[] -> Q[]
+    // (empirically confirmed: the array arm emits the identical
+    // `src[__i] ?? throw new InvalidOperationException("Collection element was null")` guard) — a runtime
+    // throw under the default NullStrategy.Throw, not a compile-time refusal.
+    [DwarfMapper]
+    public partial class SpanMapNullableToNonNullableElementMapper
+    {
+        public partial void Map(ReadOnlySpan<NullableElemSrc?> src, Span<NullableElemDst> dst);
+    }
+
     public class SpanMapBlitRuntimeTests
     {
         private static BlitVec3Src[] MakeSource(int count)
@@ -91,6 +122,69 @@ namespace DwarfMapper.IntegrationTests
                 Assert.Equal(src[i].Y, dst[i].Y);
                 Assert.Equal(src[i].Z, dst[i].Z);
             }
+        }
+
+        /// <summary>
+        ///     Round 29 T0.2b: five elements, the middle two null. Null must stay null (never an unchecked
+        ///     <c>.Value</c> that throws, never a silently unmapped null) and every non-null value must still map
+        ///     through the synthesized element helper.
+        /// </summary>
+        [Fact]
+        public void Nullable_struct_elements_preserve_null_and_map_values()
+        {
+            NullableElemSrc? Some(int v)
+            {
+                return new NullableElemSrc { V = v };
+            }
+
+            var src = new NullableElemSrc?[] { Some(1), Some(2), null, null, Some(5) };
+            var dst = new NullableElemDst?[5];
+
+            new SpanMapNullableElementMapper().Map(src, dst);
+
+            Assert.Equal(1, dst[0]!.Value.V);
+            Assert.Equal(2, dst[1]!.Value.V);
+            Assert.Null(dst[2]);
+            Assert.Null(dst[3]);
+            Assert.Equal(5, dst[4]!.Value.V);
+        }
+
+        /// <summary>
+        ///     Round 29 T0.2b, shape (c): the RUNTIME half of the throw-on-null decision — the compile-time half
+        ///     (that the pair resolves this way at all, and the exact throw text) is pinned in
+        ///     <c>SpanMapNullableElementTests.Nullable_struct_source_into_non_nullable_target_throws_on_null_like_the_array_arm</c>.
+        ///     Happy path first (no element is null: every value must still map), then the null-in-the-middle
+        ///     case actually throws <see cref="InvalidOperationException" /> at the point of the null element —
+        ///     never an unchecked <c>.Value</c> (which would also throw, but with the wrong, unexplained message)
+        ///     and never a silently substituted default.
+        /// </summary>
+        [Fact]
+        public void Nullable_struct_source_into_non_nullable_target_maps_when_no_element_is_null()
+        {
+            NullableElemSrc? Some(int v)
+            {
+                return new NullableElemSrc { V = v };
+            }
+
+            var src = new NullableElemSrc?[] { Some(1), Some(2), Some(3) };
+            var dst = new NullableElemDst[3];
+
+            new SpanMapNullableToNonNullableElementMapper().Map(src, dst);
+
+            Assert.Equal(1, dst[0].V);
+            Assert.Equal(2, dst[1].V);
+            Assert.Equal(3, dst[2].V);
+        }
+
+        [Fact]
+        public void Nullable_struct_source_into_non_nullable_target_throws_on_a_null_element()
+        {
+            var src = new NullableElemSrc?[] { new NullableElemSrc { V = 1 }, null, new NullableElemSrc { V = 3 } };
+            var dst = new NullableElemDst[3];
+
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => new SpanMapNullableToNonNullableElementMapper().Map(src, dst));
+            Assert.Equal("Collection element was null", ex.Message);
         }
     }
 }
