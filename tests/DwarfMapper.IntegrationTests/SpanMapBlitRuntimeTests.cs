@@ -49,13 +49,14 @@ namespace DwarfMapper.IntegrationTests
     }
 
     // Round 29 T0.2b, shape (c): the destination element CANNOT hold null, so the pair resolves through
-    // TryResolveConversion's nullable-value-source arm exactly like the array/list arm resolves P?[] -> Q[]
-    // (empirically confirmed: the array arm emits
-    // `src[__i] ?? throw new InvalidOperationException("Collection element was null")`) — a runtime throw
-    // under the default NullStrategy.Throw, not a compile-time refusal. Review fix round 1: the span map's
-    // own message additionally names the index (__i is always in scope in its inline loop), so its text is
-    // "Element at index N was null, and the destination element type does not admit null." — a locatable
-    // superset of the array arm's generic text, built from the SAME CollectionConverter.ElementExpr site.
+    // TryResolveConversion's nullable-value-source arm exactly like the array/list arm resolves P?[] -> Q[] —
+    // same BEHAVIOUR (NullHandling.ThrowIfNull, a runtime throw under the default NullStrategy.Throw, never a
+    // compile-time refusal; empirically confirmed the array arm reaches the identical arm). The MESSAGE TEXT
+    // is not identical, and is not meant to be: the array arm's own message stays the pre-existing generic
+    // "Collection element was null" (several of its target shapes have no loop counter to name), while the
+    // span map's inline loop always has __i and elemFq in scope, so review fix rounds 1-2 opted it into
+    // CollectionConverter.ElementExpr's indexExpr parameter for a self-diagnosing message naming both the
+    // index AND the destination type — see the assertion below for the exact text this mapper produces.
     [DwarfMapper]
     public partial class SpanMapNullableToNonNullableElementMapper
     {
@@ -180,10 +181,10 @@ namespace DwarfMapper.IntegrationTests
         }
 
         /// <summary>
-        ///     Review fix round 1: the thrown message names the index of the null element (1 here), not the
-        ///     generic array/list-arm text — see the doc comment on
-        ///     <see cref="SpanMapNullableToNonNullableElementMapper" /> above for why the two arms' messages
-        ///     legitimately differ.
+        ///     Review fix rounds 1-2: the thrown message names the index of the null element (1 here) AND the
+        ///     destination element type, not the generic array/list-arm text — see the doc comment on
+        ///     <see cref="SpanMapNullableToNonNullableElementMapper" /> above for why the two arms' message TEXT
+        ///     legitimately differs even though the underlying resolution decision (throw, not refuse) mirrors.
         /// </summary>
         [Fact]
         public void Nullable_struct_source_into_non_nullable_target_throws_on_a_null_element()
@@ -193,7 +194,9 @@ namespace DwarfMapper.IntegrationTests
 
             var ex = Assert.Throws<InvalidOperationException>(
                 () => new SpanMapNullableToNonNullableElementMapper().Map(src, dst));
-            Assert.Equal("Element at index 1 was null, and the destination element type does not admit null.", ex.Message);
+            Assert.Equal(
+                "Element at index 1 was null, and the destination element type 'global::DwarfMapper.IntegrationTests.NullableElemDst' does not admit null.",
+                ex.Message);
         }
     }
 }

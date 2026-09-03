@@ -54,8 +54,11 @@ so a version with no section here ships with no notes.
   nullable-reference elements compiles warning-free under nullable enable, preserving null as null and
   mapping every non-null value through the element converter. `ReadOnlySpan<P?> → Span<Q>` (a target that
   cannot hold null) resolves exactly like the array arm resolves `P?[] → Q[]` — a runtime
-  `InvalidOperationException` on a null element, `"Element at index N was null, and the destination element
-  type does not admit null."`, never an unchecked `.Value` and never a silently unmapped null. Pinned by
+  `InvalidOperationException`, never an unchecked `.Value` and never a silently unmapped null. That
+  BEHAVIOUR mirrors the array arm; the MESSAGE does not — the array arm's own text stays its pre-existing
+  `"Collection element was null"` (several of its target shapes have no loop counter to name), while the
+  span map always has both in scope, so its own message additionally names the index and the destination
+  type: `"Element at index N was null, and the destination element type 'Q' does not admit null."` Pinned by
   `SpanMapNullableElementTests` and `SpanMapBlitRuntimeTests`. (round 29, T0.2b)
 - **The blit proof could accept a struct pair whose real layouts were each other's reverse, and the emitted
   `MemoryMarshal.Cast` then handed every element back with its fields' bytes swapped.** The proof compares the

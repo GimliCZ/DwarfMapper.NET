@@ -1287,13 +1287,15 @@ namespace DwarfMapper.Generator.Pipeline
         ///     so that caller passes <c>", __dwarf_ctx, 0"</c> instead of accepting the default.
         /// </param>
         /// <param name="indexExpr">
-        ///     Round 29 T0.2b review fix round 1: a bare "Collection element was null" gives a consumer nothing
-        ///     to locate the bad element with. When the caller's loop shape has a numeric index in scope, passing
-        ///     its expression here (e.g. <c>"__i"</c>) switches the <c>ThrowIfNull</c> message to name it:
-        ///     <c>"Element at index " + __i + " was null, and the destination element type does not admit
-        ///     null."</c> — built once, here, so every <c>ThrowIfNull</c> caller shares the SAME richer message
-        ///     rather than each emitter carrying its own text. Left at the <see langword="null" /> default, the
-        ///     exact pre-existing "Collection element was null" text is kept UNCHANGED — several
+        ///     Round 29 T0.2b review fix round 1 (and round 2, which added the destination type name): a bare
+        ///     "Collection element was null" gives a consumer nothing to locate the bad element with or to know
+        ///     what it was trying to become. When the caller's loop shape has a numeric index in scope, passing
+        ///     its expression here (e.g. <c>"__i"</c>) switches the <c>ThrowIfNull</c> message to a
+        ///     self-diagnosing one naming BOTH: <c>"Element at index " + __i + " was null, and the destination
+        ///     element type '" + elemFq + "' does not admit null."</c> — built once, here (<paramref
+        ///     name="elemFq" /> is already in scope), so every <c>ThrowIfNull</c> caller shares the SAME richer
+        ///     message rather than each emitter carrying its own text. Left at the <see langword="null" />
+        ///     default, the exact pre-existing "Collection element was null" text is kept UNCHANGED — several
         ///     <c>CollectionConverter</c> target shapes (<c>List.Add</c>/<c>HashSet.Add</c>/immutable-collection
         ///     builders/<c>Stack</c>/<c>Queue</c>) enumerate with <c>foreach</c> and never declare a counter, so
         ///     there is no index expression they could pass; forking a second literal for them instead of
@@ -1311,7 +1313,7 @@ namespace DwarfMapper.Generator.Pipeline
         {
             var nullMessageExpr = indexExpr is null
                 ? "\"Collection element was null\""
-                : "\"Element at index \" + " + indexExpr + " + \" was null, and the destination element type does not admit null.\"";
+                : "\"Element at index \" + " + indexExpr + " + \" was null, and the destination element type '" + elemFq + "' does not admit null.\"";
 
             if (conv is null)
             {

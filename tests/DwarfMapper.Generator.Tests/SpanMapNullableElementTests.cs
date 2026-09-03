@@ -82,11 +82,14 @@ namespace DwarfMapper.Generator.Tests
         ///     <c>TryResolveConversion</c> nullable-value-source arm, under the default
         ///     <see cref="DwarfMapper.NullStrategy.Throw" />: a runtime <c>InvalidOperationException</c> per null
         ///     element, never an unchecked <c>.Value</c> and never a silently unmapped null. Round 29 T0.2b
-        ///     review fix round 1: the MESSAGE now names the index too — <c>__i</c> is always in scope in this
-        ///     inline loop, so this caller opts into <c>CollectionConverter.ElementExpr</c>'s <c>indexExpr</c>
-        ///     parameter; the array/list arm's OWN message stays the pre-existing generic text (several of its
-        ///     target shapes have no loop counter to name), so this is a locatable SUPERSET of that behaviour,
-        ///     not a divergent one.
+        ///     review fix rounds 1-2: the MESSAGE is self-diagnosing — it names both the index (<c>__i</c> is
+        ///     always in scope in this inline loop, so this caller opts into
+        ///     <c>CollectionConverter.ElementExpr</c>'s <c>indexExpr</c> parameter) and the destination element
+        ///     type that cannot hold the null (<c>elemFq</c>, already in scope at that same call). The
+        ///     array/list arm's OWN message stays the pre-existing generic "Collection element was null" text
+        ///     (several of its target shapes have no loop counter to name), so this is a locatable SUPERSET of
+        ///     that BEHAVIOUR (still <c>NullHandling.ThrowIfNull</c>, still a runtime throw, never a refusal) —
+        ///     the two arms' message TEXT legitimately differs; only the underlying resolution decision mirrors.
         /// </summary>
         [Fact]
         public void Nullable_struct_source_into_non_nullable_target_throws_on_null_like_the_array_arm()
@@ -105,7 +108,7 @@ namespace DwarfMapper.Generator.Tests
             Assert.Empty(GeneratorTestHarness.GeneratedCodeWarnings(src));
             Assert.Contains("for (int __i", generated, StringComparison.Ordinal);
             Assert.Contains(
-                "throw new global::System.InvalidOperationException(\"Element at index \" + __i + \" was null, and the destination element type does not admit null.\")",
+                "throw new global::System.InvalidOperationException(\"Element at index \" + __i + \" was null, and the destination element type 'global::T.Q' does not admit null.\")",
                 generated, StringComparison.Ordinal);
         }
 
