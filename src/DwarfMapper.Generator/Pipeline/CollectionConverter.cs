@@ -1286,6 +1286,19 @@ namespace DwarfMapper.Generator.Pipeline
         ///     exactly like the async-stream loop's <c>EmitElementContext</c> — see <c>MapEmitter.SpanMap.cs</c>),
         ///     so that caller passes <c>", __dwarf_ctx, 0"</c> instead of accepting the default.
         /// </param>
+        /// <param name="indexExpr">
+        ///     Round 29 T0.2b review fix round 1: a bare "Collection element was null" gives a consumer nothing
+        ///     to locate the bad element with. When the caller's loop shape has a numeric index in scope, passing
+        ///     its expression here (e.g. <c>"__i"</c>) switches the <c>ThrowIfNull</c> message to name it:
+        ///     <c>"Element at index " + __i + " was null, and the destination element type does not admit
+        ///     null."</c> — built once, here, so every <c>ThrowIfNull</c> caller shares the SAME richer message
+        ///     rather than each emitter carrying its own text. Left at the <see langword="null" /> default, the
+        ///     exact pre-existing "Collection element was null" text is kept UNCHANGED — several
+        ///     <c>CollectionConverter</c> target shapes (<c>List.Add</c>/<c>HashSet.Add</c>/immutable-collection
+        ///     builders/<c>Stack</c>/<c>Queue</c>) enumerate with <c>foreach</c> and never declare a counter, so
+        ///     there is no index expression they could pass; forking a second literal for them instead of
+        ///     falling back would be the duplication this method exists to avoid.
+        /// </param>
         internal static string ElementExpr(
             string item,
             string? conv,
@@ -1293,14 +1306,19 @@ namespace DwarfMapper.Generator.Pipeline
             string elemFq,
             bool needsCtx = false,
             bool srcElemIsNullableRef = false,
-            string ctxDepthArgs = ", ctx, depth + 1")
+            string ctxDepthArgs = ", ctx, depth + 1",
+            string? indexExpr = null)
         {
+            var nullMessageExpr = indexExpr is null
+                ? "\"Collection element was null\""
+                : "\"Element at index \" + " + indexExpr + " + \" was null, and the destination element type does not admit null.\"";
+
             if (conv is null)
             {
                 return nh switch
                 {
                     NullHandling.ThrowIfNull => item +
-                                                " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")",
+                                                " ?? throw new global::System.InvalidOperationException(" + nullMessageExpr + ")",
                     NullHandling.ValueOrDefault => item + ".GetValueOrDefault()",
                     _ => item
                 };
@@ -1326,7 +1344,7 @@ namespace DwarfMapper.Generator.Pipeline
                 NullHandling.NullableProjectRef =>
                     "(" + item + " is null ? null : (" + elemFq + ")" + Call(item + forgive) + ")",
                 NullHandling.ThrowIfNull => Call(item +
-                                                 " ?? throw new global::System.InvalidOperationException(\"Collection element was null\")"),
+                                                 " ?? throw new global::System.InvalidOperationException(" + nullMessageExpr + ")"),
                 NullHandling.ValueOrDefault => Call(item + ".GetValueOrDefault()"),
                 _ => Call(item + forgive)
             };

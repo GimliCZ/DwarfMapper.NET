@@ -81,7 +81,12 @@ namespace DwarfMapper.Generator.Tests
         ///     resolves EXACTLY the way the array/list arm resolves <c>P?[] → Q[]</c> — through the same
         ///     <c>TryResolveConversion</c> nullable-value-source arm, under the default
         ///     <see cref="DwarfMapper.NullStrategy.Throw" />: a runtime <c>InvalidOperationException</c> per null
-        ///     element, never an unchecked <c>.Value</c> and never a silently unmapped null.
+        ///     element, never an unchecked <c>.Value</c> and never a silently unmapped null. Round 29 T0.2b
+        ///     review fix round 1: the MESSAGE now names the index too — <c>__i</c> is always in scope in this
+        ///     inline loop, so this caller opts into <c>CollectionConverter.ElementExpr</c>'s <c>indexExpr</c>
+        ///     parameter; the array/list arm's OWN message stays the pre-existing generic text (several of its
+        ///     target shapes have no loop counter to name), so this is a locatable SUPERSET of that behaviour,
+        ///     not a divergent one.
         /// </summary>
         [Fact]
         public void Nullable_struct_source_into_non_nullable_target_throws_on_null_like_the_array_arm()
@@ -99,7 +104,8 @@ namespace DwarfMapper.Generator.Tests
             var generated = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
             Assert.Empty(GeneratorTestHarness.GeneratedCodeWarnings(src));
             Assert.Contains("for (int __i", generated, StringComparison.Ordinal);
-            Assert.Contains("throw new global::System.InvalidOperationException(\"Collection element was null\")",
+            Assert.Contains(
+                "throw new global::System.InvalidOperationException(\"Element at index \" + __i + \" was null, and the destination element type does not admit null.\")",
                 generated, StringComparison.Ordinal);
         }
 
@@ -123,6 +129,72 @@ namespace DwarfMapper.Generator.Tests
             Assert.Empty(GeneratorTestHarness.GeneratedCodeWarnings(src));
             Assert.Contains("for (int __i", generated, StringComparison.Ordinal);
             Assert.Contains("dst[__i] = src[__i];", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Round 29 T0.2b review fix round 1, gap (i): a struct source lifted into a CLASS target —
+        ///     <c>NullableProject</c>'s <c>elemFq</c> cast is now the nullable-aware REFERENCE format
+        ///     (<c>global::T.D?</c>, not the bare <c>global::T.D</c> a plain <c>FullyQualifiedFormat</c> would
+        ///     have produced before this task's signature fix), so this pins that the two fixes compose: the
+        ///     cast target type itself carries the '?' the signature fix taught <c>SpanTargetElementFullName</c>
+        ///     to keep.
+        /// </summary>
+        [Fact]
+        public void Nullable_struct_source_lifted_into_a_nullable_class_target()
+        {
+            const string src = """
+                using System;
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct P { public int V; }
+                    public class D { public int V; }
+                    [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<P?> src, Span<D?> dst); }
+                }
+                """;
+            var generated = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
+            Assert.Empty(GeneratorTestHarness.GeneratedCodeWarnings(src));
+            Assert.Contains("for (int __i", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("MemoryMarshal.Cast", generated, StringComparison.Ordinal);
+            Assert.Contains(".HasValue ?", generated, StringComparison.Ordinal);
+            // The nullable-aware cast: (global::T.D?), not the bare (global::T.D) the pre-fix format gave.
+            Assert.Contains("(global::T.D?)", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Round 29 T0.2b review fix round 1, gap (ii): a nullable element whose converter is
+        ///     context-threaded — <c>ctxDepthArgs</c> (<c>", __dwarf_ctx, 0"</c>) combined with <c>needsLocal</c>
+        ///     (the <c>var __item = src[__i];</c> binding <c>NullableProject</c> requires). <c>Preserve</c>
+        ///     forces EVERY object-map element to thread <c>(ctx, depth)</c> — not only a genuinely cyclic one —
+        ///     because Preserve must register every nested reference for potential future sharing, whether or
+        ///     not this particular type graph happens to cycle; empirically confirmed the simplest way to reach
+        ///     it is a plain, non-recursive struct→class element pair under
+        ///     <c>ReferenceHandlingStrategy.Preserve</c>.
+        /// </summary>
+        [Fact]
+        public void Nullable_struct_element_with_a_context_threaded_converter()
+        {
+            const string src = """
+                using System;
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct P { public int V; }
+                    public class D { public int V; }
+                    [DwarfMapper(ReferenceHandling = ReferenceHandlingStrategy.Preserve)]
+                    public partial class M { public partial void Map(ReadOnlySpan<P?> src, Span<D?> dst); }
+                }
+                """;
+            var generated = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
+            Assert.Empty(GeneratorTestHarness.GeneratedCodeWarnings(src));
+            Assert.Contains("for (int __i", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("MemoryMarshal.Cast", generated, StringComparison.Ordinal);
+            Assert.Contains(".HasValue ?", generated, StringComparison.Ordinal);
+            // needsLocal: the local binding NullableProject requires so the span isn't indexed twice (CS8629).
+            Assert.Contains("var __item = src[__i];", generated, StringComparison.Ordinal);
+            // ctxDepthArgs: the (ctx, depth) tail spelled with the caller's own local names, not the
+            // synthesized-helper-body "ctx, depth + 1" ElementExpr defaults to.
+            Assert.Contains(", __dwarf_ctx, 0)", generated, StringComparison.Ordinal);
         }
     }
 }

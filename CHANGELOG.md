@@ -44,6 +44,19 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **A span map over nullable elements (`ReadOnlySpan<P?>`, `ReadOnlySpan<C?>`) emitted code that did not
+  compile in the CONSUMER's build.** The struct case handed the source span's `Nullable<P>` element bare to
+  the synthesized helper's non-nullable `P` parameter — `CS1503` — and the class case's declared partial
+  signature silently dropped the `?` on the span's nullable-annotated reference type argument, mismatching
+  the user's own declaration — `CS8611` on the signature itself, before element resolution was even reached.
+  Both are fixed the same way the array/list arm already lifts a nullable element
+  (`CollectionConverter.ElementExpr`, now shared rather than duplicated): a span map over `Nullable<P>` or
+  nullable-reference elements compiles warning-free under nullable enable, preserving null as null and
+  mapping every non-null value through the element converter. `ReadOnlySpan<P?> → Span<Q>` (a target that
+  cannot hold null) resolves exactly like the array arm resolves `P?[] → Q[]` — a runtime
+  `InvalidOperationException` on a null element, `"Element at index N was null, and the destination element
+  type does not admit null."`, never an unchecked `.Value` and never a silently unmapped null. Pinned by
+  `SpanMapNullableElementTests` and `SpanMapBlitRuntimeTests`. (round 29, T0.2b)
 - **The blit proof could accept a struct pair whose real layouts were each other's reverse, and the emitted
   `MemoryMarshal.Cast` then handed every element back with its fields' bytes swapped.** The proof compares the
   two field lists positionally, and it re-sorted each list by (ordinal file path, position) first — added so

@@ -92,7 +92,11 @@ namespace DwarfMapper.Generator.Pipeline
                     method.SpanTargetElementFullName,
                     elem?.ConverterNeedsDepthCtx ?? false,
                     elem?.SourceIsNullableRef ?? false,
-                    ", __dwarf_ctx, 0"))
+                    ", __dwarf_ctx, 0",
+                    // Round 29 T0.2b review fix round 1: __i is always in scope in this inline loop (unlike
+                    // several CollectionConverter target shapes, which is why this argument is opt-in), so a
+                    // ThrowIfNull element here can always name which index was null.
+                    "__i"))
                 .AppendLine(";");
 
             if (needsLocal)

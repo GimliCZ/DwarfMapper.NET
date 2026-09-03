@@ -50,9 +50,12 @@ namespace DwarfMapper.IntegrationTests
 
     // Round 29 T0.2b, shape (c): the destination element CANNOT hold null, so the pair resolves through
     // TryResolveConversion's nullable-value-source arm exactly like the array/list arm resolves P?[] -> Q[]
-    // (empirically confirmed: the array arm emits the identical
-    // `src[__i] ?? throw new InvalidOperationException("Collection element was null")` guard) — a runtime
-    // throw under the default NullStrategy.Throw, not a compile-time refusal.
+    // (empirically confirmed: the array arm emits
+    // `src[__i] ?? throw new InvalidOperationException("Collection element was null")`) — a runtime throw
+    // under the default NullStrategy.Throw, not a compile-time refusal. Review fix round 1: the span map's
+    // own message additionally names the index (__i is always in scope in its inline loop), so its text is
+    // "Element at index N was null, and the destination element type does not admit null." — a locatable
+    // superset of the array arm's generic text, built from the SAME CollectionConverter.ElementExpr site.
     [DwarfMapper]
     public partial class SpanMapNullableToNonNullableElementMapper
     {
@@ -176,6 +179,12 @@ namespace DwarfMapper.IntegrationTests
             Assert.Equal(3, dst[2].V);
         }
 
+        /// <summary>
+        ///     Review fix round 1: the thrown message names the index of the null element (1 here), not the
+        ///     generic array/list-arm text — see the doc comment on
+        ///     <see cref="SpanMapNullableToNonNullableElementMapper" /> above for why the two arms' messages
+        ///     legitimately differ.
+        /// </summary>
         [Fact]
         public void Nullable_struct_source_into_non_nullable_target_throws_on_a_null_element()
         {
@@ -184,7 +193,7 @@ namespace DwarfMapper.IntegrationTests
 
             var ex = Assert.Throws<InvalidOperationException>(
                 () => new SpanMapNullableToNonNullableElementMapper().Map(src, dst));
-            Assert.Equal("Collection element was null", ex.Message);
+            Assert.Equal("Element at index 1 was null, and the destination element type does not admit null.", ex.Message);
         }
     }
 }

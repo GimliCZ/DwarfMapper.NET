@@ -135,8 +135,16 @@ namespace DwarfMapper.Generator.Tests
         ///     handed bare to the synthesized helper's non-nullable <c>P</c> parameter — see
         ///     <c>SpanMapNullableElementTests.Nullable_struct_elements_are_lifted_null_preserving</c> for the
         ///     full null-preserving assertion). This test's own claim is unchanged and narrower: the pair is
-        ///     categorically not a reinterpret, so no cast and no DWARF100 near-miss — now checked through
-        ///     <c>CompilesClean</c> since the loop this cast decision sits inside compiles.
+        ///     categorically not a reinterpret, so no cast and no DWARF100 near-miss — now checked against a
+        ///     compiling emission since the loop this cast decision sits inside compiles.
+        ///     <para>
+        ///         Round 29 T0.2b review fix round 1: one generator run now serves both the diagnostics check
+        ///         and the generated-text checks, via <c>GeneratorAssert.CompilesCleanWithDiagnostics</c>
+        ///         (previously <c>GeneratorAssert.CompilesClean</c> ran the generator once internally and this
+        ///         test called <c>GeneratorTestHarness.Run</c> again on the same source just to get
+        ///         <c>diagnostics</c> — a second, pointless run, and the exact hand-rolled idiom
+        ///         <c>FixtureAdoptionScanTests</c> exists to keep out).
+        ///     </para>
         /// </remarks>
         [Fact]
         public void Nullable_element_pair_is_not_a_reinterpret()
@@ -151,8 +159,7 @@ namespace DwarfMapper.Generator.Tests
                     [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<P?> src, Span<Q?> dst); }
                 }
                 """;
-            var generated = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
-            var (diagnostics, _) = GeneratorTestHarness.Run(src, NullableContextOptions.Enable);
+            var (diagnostics, generated) = GeneratorAssert.CompilesCleanWithDiagnostics(src, NullableContextOptions.Enable);
             Assert.DoesNotContain(diagnostics, d => d.Id == "DWARF100");
             Assert.DoesNotContain("MemoryMarshal.Cast", generated, StringComparison.Ordinal);
             Assert.Contains("for (int __i", generated, StringComparison.Ordinal);
