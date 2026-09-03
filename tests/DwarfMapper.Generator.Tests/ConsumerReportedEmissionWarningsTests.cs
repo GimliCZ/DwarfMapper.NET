@@ -81,6 +81,60 @@ namespace DwarfMapper.Generator.Tests
             Assert.Contains("__DwarfMapColl", generated, StringComparison.Ordinal);
         }
 
+        // ── 1b. nullable-VALUE-type element collection through the bounds-check-elision fast path (CS8629) ──
+        // Round 29 T0.2d. `EmitArray`'s array→array fast path used to substitute the loop indexer textually into
+        // the shared element expression, so a NullableProject element became
+        // `src[__i].HasValue ? conv(src[__i].Value) : null` — TWO independent indexer reads, and the C# nullable
+        // flow analysis does not carry the null-state of the first into the second: CS8629 on `.Value`, inside a
+        // `.g.cs`, in every consumer mapping a `P?[]`. Nobody had ever declared a nullable-VALUE-type element in
+        // the corpus (the round-28 holes were all nullable REFERENCE elements), so no oracle saw it.
+
+        private const string NullableValueElementArray = """
+            using DwarfMapper;
+            namespace T
+            {
+                public struct Point { public int X { get; set; } public int Y { get; set; } }
+                public struct PointDto { public int X { get; set; } public int Y { get; set; } }
+                public class Src { public Point?[] Items { get; set; } = new Point?[4]; }
+                public class Dst { public PointDto?[] Items { get; set; } = new PointDto?[4]; }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+            }
+            """;
+
+        private const string NullableValueElementList = """
+            using System.Collections.Generic;
+            using DwarfMapper;
+            namespace T
+            {
+                public struct Point { public int X { get; set; } public int Y { get; set; } }
+                public struct PointDto { public int X { get; set; } public int Y { get; set; } }
+                public class Src { public List<Point?> Items { get; set; } = new(); }
+                public class Dst { public List<PointDto?> Items { get; set; } = new(); }
+                [DwarfMapper] public partial class M { public partial Dst Map(Src s); }
+            }
+            """;
+
+        [Fact]
+        public void Nullable_value_element_array_maps_without_CS8629()
+        {
+            AssertWarningFree(NullableValueElementArray, "Point?[] -> PointDto?[]");
+        }
+
+        [Fact]
+        public void Nullable_value_element_list_maps_without_CS8629()
+        {
+            AssertWarningFree(NullableValueElementList, "List<Point?> -> List<PointDto?>");
+        }
+
+        [Fact]
+        public void Nullable_value_element_array_keeps_the_bounds_check_elision_loop()
+        {
+            // The fix binds the element once instead of indexing twice; the `for (int __i = 0; __i < src.Length; …)`
+            // shape the JIT needs to elide BOTH bounds checks must survive it (that is the whole point of the arm).
+            var generated = GeneratorAssert.CompilesClean(NullableValueElementArray, NullableContextOptions.Enable);
+            Assert.Contains("for (int __i = 0; __i < src.Length; __i++) { var __item = src[__i];", generated, StringComparison.Ordinal);
+        }
+
         // ── 2. constructor argument: nullable source into a non-nullable parameter (CS8604) ──────────────────
         // The member path null-forgives `Alias = source.Alias!` and reports DWARF070 against the DTO; the
         // constructor-argument path bound the same source member to `string alias` bare.

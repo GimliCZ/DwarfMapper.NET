@@ -335,6 +335,7 @@ namespace DwarfMapper.Generator.Pipeline
 
             var identity = SymbolEqualityComparer.Default.Equals(srcElem, tgtElem) && elemConverter is null && elemNull == NullHandling.None;
             var item = ElementExpr("__item", elemConverter, elemNull, elemFq, elemNeedsCtx, srcElemIsNullableRef);
+            var itemReadTwice = ElementExprReadsItemTwice(elemNull);
 
             // Effective preserve: are we emitting register-before-fill for THIS collection? (Preserve only.)
             var registerBeforeFill = isPreserve && IsMutableReferenceCollection(shape.Target);
@@ -357,7 +358,8 @@ namespace DwarfMapper.Generator.Pipeline
                 identity,
                 threadCtx,
                 registerBeforeFill,
-                tgtElem.IsValueType);
+                tgtElem.IsValueType,
+                itemReadTwice);
 
             synth[name] = new SynthesizedMethod(name, w.ToString());
             return name;
@@ -394,6 +396,9 @@ namespace DwarfMapper.Generator.Pipeline
             var srcParamType = FqNullableParam(srcType);
             // Recursion-capable element → identity fast-path is never applicable; element call threads ctx.
             var item = ElementExpr("__item", ctxElementConverter, elemNull, elemFq, true, srcElemIsNullableRef);
+            // Threaded for uniformity with Synthesize, not because it can be observed here: this overload always
+            // passes threadCtx: true, and the array fast path that consumes the flag requires !threadCtx.
+            var itemReadTwice = ElementExprReadsItemTwice(elemNull);
 
             var w = new CodeWriter(1);
             EmitBody(w,
@@ -408,7 +413,8 @@ namespace DwarfMapper.Generator.Pipeline
                 false,
                 true,
                 false,
-                tgtElem.IsValueType);
+                tgtElem.IsValueType,
+                itemReadTwice);
             synth[existingName] = new SynthesizedMethod(existingName, w.ToString());
         }
 
@@ -426,7 +432,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool identity,
             bool threadCtx,
             bool registerBeforeFill,
-            bool tgtElemIsValueType)
+            bool tgtElemIsValueType,
+            bool itemReadTwice)
         {
             switch (shape.Target)
             {
@@ -440,7 +447,8 @@ namespace DwarfMapper.Generator.Pipeline
                         identity,
                         shape.NullAsNull,
                         threadCtx,
-                        registerBeforeFill);
+                        registerBeforeFill,
+                        itemReadTwice);
                     break;
 
                 case TargetKind.List:
@@ -577,7 +585,8 @@ namespace DwarfMapper.Generator.Pipeline
             bool identity,
             bool nullAsNull,
             bool threadCtx,
-            bool registerBeforeFill)
+            bool registerBeforeFill,
+            bool itemReadTwice)
         {
             var retType = nullAsNull ? elem + "[]?" : elem + "[]";
             var paramType = srcParamType; // nullable-aware; null guard inside the body handles it
@@ -615,7 +624,18 @@ namespace DwarfMapper.Generator.Pipeline
                         // leaves the store index not-provably-in-bounds, so its bounds check survives — measurably
                         // slower in a hot 1000-element loop. Preserve (register-before-fill), ctx-threaded, and
                         // non-array (no indexer) sources keep the foreach form unchanged.
-                        w.Line("for (int __i = 0; __i < " + countExpr + "; __i++) { __r[__i] = " + item.Replace("__item", "src[__i]") + "; }");
+                        //
+                        // Round 29 T0.2d — the SAME rule the span map's inline element loop applies, asked through
+                        // the same ElementExprReadsItemTwice (see MapEmitter.SpanMap.cs): when the shared element
+                        // expression reads its item TWICE, substituting the indexer into both reads is CS8629 -
+                        // `src[__i].HasValue ? conv(src[__i].Value) : null`, where the null-state of the first read
+                        // does not flow to the second — inside a .g.cs, where no consumer pragma can reach it. Bind
+                        // the element once instead; the loop shape the JIT proves in-bounds is untouched, so the
+                        // elision this arm exists for survives. Single-read arms keep the substitution, byte for
+                        // byte, so no already-measured array shape moves.
+                        w.Line(itemReadTwice
+                            ? "for (int __i = 0; __i < " + countExpr + "; __i++) { var __item = src[__i]; __r[__i] = " + item + "; }"
+                            : "for (int __i = 0; __i < " + countExpr + "; __i++) { __r[__i] = " + item.Replace("__item", "src[__i]") + "; }");
                     }
                     else
                     {
@@ -1301,6 +1321,27 @@ namespace DwarfMapper.Generator.Pipeline
         ///     there is no index expression they could pass; forking a second literal for them instead of
         ///     falling back would be the duplication this method exists to avoid.
         /// </param>
+        /// <summary>
+        ///     True when <see cref="ElementExpr" /> reads <c>item</c> TWICE — the two lifting arms
+        ///     (<see cref="NullHandling.NullableProject" />: <c>item.HasValue ? conv(item.Value) : null</c>, and
+        ///     <see cref="NullHandling.NullableProjectRef" />: <c>item is null ? null : conv(item)</c>). Every other
+        ///     arm reads it once.
+        ///     <para>
+        ///         This is the one rule behind the element BINDING that two emitters both need, so it lives beside
+        ///         the expression builder rather than being restated by each of them. A caller whose <c>item</c>
+        ///         text is a re-evaluated expression rather than a local — the span map's <c>src[__i]</c>, and
+        ///         <see cref="EmitArray" />'s bounds-check-elision fast path, which substitutes the same indexer
+        ///         into the shared expression — must bind that expression to a local first when this returns true:
+        ///         C#'s nullable flow analysis does not carry the null-state established by the FIRST read of an
+        ///         indexer into a SECOND, independent read of it, so the lifted <c>.Value</c> is CS8629 ("Nullable
+        ///         value type may be null") inside a generated file the consumer cannot annotate or suppress.
+        ///     </para>
+        /// </summary>
+        internal static bool ElementExprReadsItemTwice(NullHandling nh)
+        {
+            return nh is NullHandling.NullableProject or NullHandling.NullableProjectRef;
+        }
+
         internal static string ElementExpr(
             string item,
             string? conv,
@@ -1330,8 +1371,11 @@ namespace DwarfMapper.Generator.Pipeline
             var extra = needsCtx ? ctxDepthArgs : "";
 
             // Null-forgive a nullable-reference element into a synthesized helper's non-nullable parameter (the
-            // helper null-guards: null in, null out). The array fast path indexes `src[__i]` twice, and flow
-            // analysis does not track an indexer, so even the `is null ? null :` arm needs it.
+            // helper null-guards: null in, null out). Kept on the `is null ? null :` arm too: several callers hand
+            // this method an expression rather than a local (see ElementExprReadsItemTwice), and flow analysis does
+            // not track an indexer across two reads. Round 29 T0.2d gave the array fast path a local binding, which
+            // makes the `!` redundant THERE — it is left in place because removing it would move the foreach-form
+            // List/HashSet/immutable snapshots for a purely cosmetic gain.
             var forgive = srcElemIsNullableRef && GeneratedNames.IsSynthesized(conv) ? "!" : "";
 
             string Call(string arg)

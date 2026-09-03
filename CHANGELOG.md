@@ -76,6 +76,23 @@ so a version with no section here ships with no notes.
 
 ### Fixed
 
+- **Every array member with a nullable element carried an unsuppressible `CS8629` into the consumer's build.**
+  The array→array fast path indexes with a single length-bounded counter so the JIT can elide both bounds
+  checks, and it built that loop by substituting `src[__i]` textually into the shared per-element expression.
+  For a LIFTED element — `Nullable<P>` (`P?[] → Q?[]`), or a nullable reference through a synthesized object
+  helper — that expression reads its element TWICE, so the substitution produced
+  `src[__i].HasValue ? conv(src[__i].Value) : null`: two independent indexer reads, between which C#'s nullable
+  flow analysis does not carry a null-state. The compiler flagged the `.Value` with **`CS8629` ("Nullable value
+  type may be null")** — inside a `.g.cs`, where neither `#pragma warning disable` nor an editorconfig
+  `[*.g.cs]` section reaches it, so under `TreatWarningsAsErrors` (this repo's default, and a very common one)
+  a consumer's only lever was a project-wide `NoWarn` that also hides real warnings in hand-written code. The
+  element is now bound to a local once before the expression, exactly as the span map's inline element loop
+  already did — both emitters ask the same `CollectionConverter.ElementExprReadsItemTwice`, so there is one
+  rule in two places rather than two rules. The `for (int __i = 0; __i < src.Length; __i++)` shape the JIT
+  proves in-bounds is untouched, and every single-read arm keeps the substitution byte for byte (the golden
+  manifest moved 0 existing cases). It went unseen because no schema declared a nullable-VALUE-type element:
+  `CombinatorialSchema` now crosses `nullable_struct_array` with every basic type, and
+  `ConsumerReportedEmissionWarningsTests` pins the shape. (round 29, T0.2d)
 - **The array/list block copy silently bypassed a user-declared element converter or a pair-scoped directive.**
   A `SrcV[] → DstV[]` (or `List<>`/`ImmutableArray<>`) member whose element types are layout-identical took the
   blit on the strength of the proof alone — decided several arms *before* resolution would have adopted the

@@ -130,6 +130,17 @@ internal static class CombinatorialSchema
 
             "nested_object",
             "record_type",
+
+            // A nullable-VALUE-type ELEMENT collection: `CmbStEl_X_Src?[]` → `CmbStEl_X_Dst?[]`. Every other
+            // element cell here is either a reference element (`nested_object` in a collection) or a scalar the
+            // compiler converts implicitly (`int?[]` → `long?[]` needs no helper at all), so the one shape that
+            // makes the emitter LIFT a Nullable<T> element through a synthesized object helper — HasValue then
+            // .Value — was never declared. Round 29 T0.2d: that is the shape whose array fast path emitted
+            // CS8629 into every consumer's generated file, and it went unseen because the schema had no cell
+            // for the class. The element structs are distinct Src/Dst types on purpose: an identity pair takes
+            // Array.Clone() and never reaches the lifting expression at all.
+            "nullable_struct_array",
+
             "polymorphic_dispatch" // [MapDerivedType] dispatch — Plan 22 coverage
         ];
 
@@ -298,6 +309,16 @@ internal static class CombinatorialSchema
                 sb.AppendLine();
             }
 
+            if (shape == "nullable_struct_array")
+            {
+                // STRUCTS, so `?` on the element means Nullable<T> and not a nullable reference. No property
+                // initialisers: a struct's implicit parameterless constructor cannot run them, and `default` is
+                // exactly the value a `T?[]` slot holds anyway.
+                sb.AppendLine("public struct CmbStEl_" + EscapeType(srcElem) + "_Src { public " + srcElem + " Val { get; set; } }");
+                sb.AppendLine("public struct CmbStEl_" + EscapeType(dstElem) + "_Dst { public " + dstElem + " Val { get; set; } }");
+                sb.AppendLine();
+            }
+
             if (shape == "record_type")
             {
                 sb.AppendLine("public record CmbRecord_" + EscapeType(srcElem) + "_Src(" + srcElem + " Val);");
@@ -457,6 +478,9 @@ internal static class CombinatorialSchema
                 // assignment would raise CS8601 in the consumer's build if the emitter did not suppress it, and
                 // DwarfMapper reports DWARF070 so the risk is not silent.
                 "nullable_ref_mismatch" => src ? "string?" : "string",
+                // Nullable<struct> ELEMENTS. `?` binds to the struct, not to the array, so the element pair the
+                // collection emitter sees is `CmbStEl_X_Src?` → `CmbStEl_X_Dst?` — the lifted-through-a-helper case.
+                "nullable_struct_array" => $"CmbStEl_{EscapeType(elem)}_{(src ? "Src" : "Dst")}?[]",
                 "nested_object" => $"CmbNested_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
                 "record_type" => $"CmbRecord_{EscapeType(elem)}_{(src ? "Src" : "Dst")}",
                 "ListOfList" => $"global::System.Collections.Generic.List<global::System.Collections.Generic.List<{elem}>>",

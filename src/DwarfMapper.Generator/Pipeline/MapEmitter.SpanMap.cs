@@ -69,15 +69,14 @@ namespace DwarfMapper.Generator.Pipeline
 
             // NullableProject/NullableProjectRef reference the element TWICE (.HasValue then .Value, or
             // "is null" then the plain value) — indexing the span twice for that loses nullable flow tracking
-            // between the two reads (CS8629 on the second .Value, even though it is the same slot). Found while
-            // wiring this in: CollectionConverter.EmitArray's OWN bounds-check-elision fast path for an
-            // array→array source (the "src[__i]" textual substitution over the shared item expression) has this
-            // EXACT defect for P?[] → Q?[] today — a pre-existing generated-code warning, out of this task's
-            // scope (a different emitter, and fixing it risks moving array/list golden snapshots), reported
-            // rather than copied. This inline loop avoids it by binding one local instead. Every other
+            // between the two reads (CS8629 on the second .Value, even though it is the same slot). The question
+            // is asked through CollectionConverter.ElementExprReadsItemTwice, which is a property of the
+            // expression builder, so this emitter and CollectionConverter.EmitArray's bounds-check-elision fast
+            // path — which substitutes "src[__i]" into that same shared expression and had this EXACT defect for
+            // P?[] → Q?[] until round 29 T0.2d — apply ONE rule rather than two copies of it. Every other
             // NullHandling references the element once, so the pre-existing direct-index form is kept
             // byte-identical (it is pinned by SpanMapBlitTests' literal `src[__i]` assertions).
-            var needsLocal = elemNh is NullHandling.NullableProject or NullHandling.NullableProjectRef;
+            var needsLocal = CollectionConverter.ElementExprReadsItemTwice(elemNh);
             if (needsLocal)
             {
                 sb.Append(indent).AppendLine("    {");
