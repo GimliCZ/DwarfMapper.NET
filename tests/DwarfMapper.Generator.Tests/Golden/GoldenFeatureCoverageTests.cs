@@ -30,6 +30,9 @@ namespace DwarfMapper.Generator.Tests.Golden
                     "SpanMap", "for (int __i = 0; __i < src.Length; __i++)"
                 },
                 {
+                    "SpanMapBlit", "MemoryMarshal.Cast"
+                },
+                {
                     "AsyncStream", "await foreach"
                 },
                 {

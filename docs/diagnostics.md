@@ -1831,10 +1831,11 @@ that is one policy per pair, which is what the attribute is for.
 ---
 
 ## dwarf100
-**Array pair narrowly missed the blittable fast path** · Info
+**Array or span pair narrowly missed the blittable fast path** · Info
 
-Your mapping is **correct and complete**. This is a performance hint, and nothing else: an array pair came
-within one identifiable step of the blittable fast path — a single block copy of the whole array — and took
+Your mapping is **correct and complete**. This is a performance hint, and nothing else: an array, list, or
+span-map element pair came within one identifiable step of the blittable fast path — a single block copy of
+the whole array, or (round 29, T0.2) of a `void Map(ReadOnlySpan<S>, Span<D>)` span map's buffer — and took
 the element-by-element loop instead.
 
 <!-- fence-exempt: the sample shows the shape that TRIGGERS the hint; it compiles and maps correctly, so there is no assertable behaviour to snippet -->

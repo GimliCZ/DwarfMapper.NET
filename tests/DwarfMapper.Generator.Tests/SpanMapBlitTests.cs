@@ -78,6 +78,64 @@ namespace DwarfMapper.Generator.Tests
         ///     helper's non-nullable <c>P</c> parameter (CS1503), with or without the fix here. This test's only
         ///     claim is about the CAST, not about the loop's own compilability for this element shape.
         /// </remarks>
+        /// <summary>
+        ///     Round 29 T0.2 fix-round-1 (Important #1): the blit must not override a user-declared element
+        ///     converter. <c>Scale</c> qualifies as an auto-candidate (a non-void, one-parameter ordinary method
+        ///     whose types match by implicit conversion — see <c>CollectMethods</c>), and
+        ///     <c>TryResolveConversion</c>'s auto-candidate arm picks it up BEFORE the auto-nest arm that would
+        ///     otherwise synthesize <c>__DwarfMap_Obj_*</c>. Since the resolved converter is not the default
+        ///     synthesized helper, the pair must keep the element loop and call it, even though the pair is
+        ///     otherwise layout-identical.
+        /// </summary>
+        [Fact]
+        public void User_declared_element_converter_is_honoured_not_blitted()
+        {
+            const string src = """
+                using System;
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct Vec3S { public float X, Y, Z; }
+                    public struct Vec3D { public float X, Y, Z; }
+                    [DwarfMapper]
+                    public partial class M
+                    {
+                        public partial void Map(ReadOnlySpan<Vec3S> src, Span<Vec3D> dst);
+                        public Vec3D Scale(Vec3S s) => new Vec3D { X = s.X * 2, Y = s.Y * 2, Z = s.Z * 2 };
+                    }
+                }
+                """;
+            var generated = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
+            Assert.Contains("Scale(src[__i])", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("MemoryMarshal.Cast", generated, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     Round 29 T0.2 fix-round-1 (Important #1): a pair-scoped <c>[MapIgnore&lt;T&gt;]</c> targeting the
+        ///     element pair's destination type customizes the SAME synthesized <c>__DwarfMap_Obj_*</c> helper the
+        ///     registry hands back for this pair (it is keyed purely by the type pair, not by which route reached
+        ///     it) — a block copy would silently re-include the ignored member's bytes. Must keep the loop.
+        /// </summary>
+        [Fact]
+        public void Pair_scoped_ignore_on_the_element_pair_keeps_the_loop()
+        {
+            const string src = """
+                using System;
+                using DwarfMapper;
+                namespace T
+                {
+                    public struct Vec3S { public float X, Y, Z; }
+                    public struct Vec3D { public float X, Y, Z; }
+                    [DwarfMapper]
+                    [MapIgnore<Vec3D>("Z")]
+                    public partial class M { public partial void Map(ReadOnlySpan<Vec3S> src, Span<Vec3D> dst); }
+                }
+                """;
+            var generated = GeneratorAssert.CompilesClean(src, NullableContextOptions.Enable);
+            Assert.Contains("for (int __i", generated, StringComparison.Ordinal);
+            Assert.DoesNotContain("MemoryMarshal.Cast", generated, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void Nullable_element_pair_is_not_a_reinterpret()
         {

@@ -1713,8 +1713,8 @@ namespace DwarfMapper.Generator.Diagnostics
             HelpBase + "dwarf099");
 
         /// <summary>
-        ///     <c>DWARF100</c> — an array pair is one identifiable step away from the blittable fast path, and
-        ///     took the element-by-element loop instead.
+        ///     <c>DWARF100</c> — an array, list, or span-map element pair is one identifiable step away from the
+        ///     blittable fast path, and took the element-by-element loop instead.
         ///     <para>
         ///         <b>Informational, and it must stay that way</b>: the mapping is correct and complete. The only
         ///         thing lost is speed, and the caller may not care. Reporting it as a warning would turn a
@@ -1738,13 +1738,13 @@ namespace DwarfMapper.Generator.Diagnostics
         /// </summary>
         public static readonly DiagnosticDescriptor BlitNearMiss = new(
             "DWARF100",
-            "Array pair narrowly missed the blittable fast path",
+            "Array or span pair narrowly missed the blittable fast path",
             "{0}",
             Category,
             DiagnosticSeverity.Info,
             true,
-            "The blittable fast path reinterprets one array's memory as another in a single block copy, which is " +
-            "sound only when the two element types are provably identical in layout AND their field names line " +
+            "The blittable fast path reinterprets one array's (or span's) memory as another in a single block copy, " +
+            "which is sound only when the two element types are provably identical in layout AND their field names line " +
             "up — DwarfMapper maps by name, so a positional reinterpret is equivalent only when the names agree. " +
             "This pair satisfies every part of that proof but one. The mapping is correct either way; this is a " +
             "performance hint, which is why it is informational. Fix it by aligning the names, or apply " +

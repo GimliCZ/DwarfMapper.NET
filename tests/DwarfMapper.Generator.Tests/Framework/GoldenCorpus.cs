@@ -64,6 +64,18 @@ namespace DwarfMapper.Generator.Tests.Framework
                                      [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<int> src, Span<long> dst); }
                                      """, "DwarfGenerator");
 
+            // Round 29 T0.2 fix-round-1 (controller ruling, corpus-hole rule): the widening SpanMap case above
+            // never exercises the blit fast path (int -> long differs in size, so it keeps the element loop).
+            // A layout-identical struct-element pair is the shape that actually reaches MemoryMarshal.Cast.
+            yield return ("SpanMapBlit", """
+                                         using DwarfMapper;
+                                         using System;
+                                         namespace Demo;
+                                         public struct Vec3 { public float X; public float Y; public float Z; }
+                                         public struct Vec3Dst { public float X; public float Y; public float Z; }
+                                         [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<Vec3> src, Span<Vec3Dst> dst); }
+                                         """, "DwarfGenerator");
+
             yield return ("AsyncStream", """
                                          using DwarfMapper;
                                          using System.Collections.Generic;

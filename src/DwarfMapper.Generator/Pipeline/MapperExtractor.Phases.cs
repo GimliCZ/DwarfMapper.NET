@@ -2491,6 +2491,64 @@ namespace DwarfMapper.Generator.Pipeline
             return false;
         }
 
+        /// <summary>
+        ///     True when a pair-scoped directive or hook targets EXACTLY the span map's (src, tgt) element
+        ///     pair (round 29, T0.2 fix-round-1, Important #1). <see cref="NestedMappingRegistry.GetOrReserve" />
+        ///     is keyed purely by the type pair, so the ONE synthesized <c>__DwarfMap_Obj_*</c> helper it hands
+        ///     back for this pair is shared by every route that reaches it — a class-level
+        ///     <c>[MapIgnore&lt;T&gt;]</c>, <c>[MapProperty&lt;S,T&gt;]</c>, or <c>[MapValue&lt;T&gt;]</c>, or a
+        ///     <c>[BeforeMap]</c>/<c>[AfterMap]</c> hook whose parameter types match this pair, is baked into
+        ///     THAT NAME's body (see the drain loop at ~line 3386 below, which wires the identical hook match).
+        ///     A block copy bypasses the helper entirely, so it would silently skip whatever any of these
+        ///     customizes. Reuses <c>decls.PairProps</c>/<c>PairIgnores</c>/<c>PairValues</c> — the SAME
+        ///     class-wide lists the drain loop consults — rather than re-reading the class's attributes, so a
+        ///     match here marks the same <c>Consumed</c> flag the DWARF056 "matched no pair" check reads.
+        /// </summary>
+        private static bool SpanElementPairHasCustomization(
+            MapperDeclarations decls,
+            Compilation compilation,
+            ITypeSymbol srcElem,
+            ITypeSymbol tgtElem)
+        {
+            if (MatchPairIgnores(decls.PairIgnores, tgtElem).Count > 0)
+            {
+                return true;
+            }
+
+            var (pairExplicit, pairExtras) = MatchPairProps(decls.PairProps, srcElem, tgtElem);
+            if (pairExplicit.Count > 0 || pairExtras.Count > 0)
+            {
+                return true;
+            }
+
+            if (MatchPairValues(decls.PairValues, tgtElem).Count > 0)
+            {
+                return true;
+            }
+
+            // Same match rule as the nested-pair hook wiring below (~line 3386): a [BeforeMap] whose parameter
+            // the source implicitly converts to, or a [AfterMap] whose parameter(s) the source/target implicitly
+            // convert to, applies to this pair and must run — which a block copy would silently skip.
+            foreach (var h in decls.BeforeHookDefs)
+                if (HasImplicitConversion(compilation, srcElem, h.ParamType))
+                {
+                    return true;
+                }
+
+            foreach (var h in decls.AfterHookDefs)
+            {
+                var applies = h.P1 is null
+                    ? HasImplicitConversion(compilation, tgtElem, h.P0)
+                    : HasImplicitConversion(compilation, srcElem, h.P0) && HasImplicitConversion(compilation, tgtElem, h.P1);
+                if (applies)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         // ── Zero-alloc span map: void Map(ReadOnlySpan<S>/Span<S> src, Span<D> dst) ──
         // Maps element-wise into a caller-provided destination buffer (no allocation). The
         // destination must be a writable Span<D>; a too-small destination throws (never silent
@@ -2591,9 +2649,25 @@ namespace DwarfMapper.Generator.Pipeline
                 // The synthesized element converter stays in the accumulator either way: resolution still ran
                 // for its completeness (DWARF001), directive-gap and coverage side effects, it is simply unused
                 // by the emitted body when the blit fires.
-                var spanBlits = BlittableProof.CanReinterpret(spanSrcElem, spanDstElem) ||
-                                BlittableProof.CanReinterpretEnums(spanSrcElem, spanDstElem, policy.EnumPolicy.Strategy);
-                if (!spanBlits && BlittableProof.TryExplainNearMiss(spanSrcElem, spanDstElem, out var spanNearMissReason))
+                //
+                // Round 29 T0.2 fix-round-1 (Important #1): the proof alone is NOT the whole decision. The
+                // registry that names spanConv is keyed purely by (srcElem, tgtElem) — GetOrReserve returns the
+                // SAME __DwarfMap_Obj_* name no matter which route reached the pair — so a user-declared
+                // converter, or a pair-scoped [MapIgnore<T>]/[MapProperty<S,T>]/[MapValue<T>], or a
+                // [BeforeMap]/[AfterMap] hook that matches this element pair, is baked into what THAT NAME
+                // does, not into a different name the blit could safely bypass. Blitting past any of those
+                // is a silent behaviour change, not a speed-up. So the blit is taken only when spanConv is
+                // either absent (a direct/implicit element assignment) or the DEFAULT synthesized auto-nest —
+                // never a user method — AND no pair-scoped directive or hook targets this exact element pair.
+                var spanIsDefaultConverter = spanConv is null || GeneratedNames.IsSynthesized(spanConv);
+                var spanPairIsCustomized = SpanElementPairHasCustomization(decls, spanComp, spanSrcElem, spanDstElem);
+                var spanBlits = spanIsDefaultConverter && !spanPairIsCustomized &&
+                                (BlittableProof.CanReinterpret(spanSrcElem, spanDstElem) ||
+                                 BlittableProof.CanReinterpretEnums(spanSrcElem, spanDstElem, policy.EnumPolicy.Strategy));
+                if (!spanBlits &&
+                    spanIsDefaultConverter &&
+                    !spanPairIsCustomized &&
+                    BlittableProof.TryExplainNearMiss(spanSrcElem, spanDstElem, out var spanNearMissReason))
                 {
                     acc.Diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.BlitNearMiss,
                         methodLocation,
