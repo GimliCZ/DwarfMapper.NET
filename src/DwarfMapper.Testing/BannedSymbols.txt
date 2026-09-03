@@ -1,6 +1,3 @@
-T:System.Reflection.Assembly;The shipped runtime claims zero reflection and NativeAOT/trim safety - do not load or inspect assemblies at runtime
-T:System.Activator;The shipped runtime claims zero reflection - construct via generated code, never Activator
-M:System.Object.GetType;The shipped runtime claims zero reflection - the ambient registry's documented runtime-type dispatch is the single sanctioned exception (see DwarfMapperRegistry.Map)
 T:System.Runtime.CompilerServices.Unsafe;round 29: no unsafe code in shipped assemblies
 M:System.GC.AllocateUninitializedArray``1(System.Int32,System.Boolean);round 29: no uninitialized memory
 M:System.Runtime.InteropServices.MemoryMarshal.CreateSpan``1(``0@,System.Int32);round 29: no spans over object interiors

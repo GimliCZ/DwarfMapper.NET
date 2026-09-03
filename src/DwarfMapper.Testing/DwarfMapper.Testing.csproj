@@ -16,11 +16,15 @@
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all"/>
         <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all"/>
-        <!-- No BannedApiAnalyzers here: reflection is this package's product (seeded fuzzing,
-             structural comparison), so the runtime's reflection ban list must not apply. -->
+        <!-- Round 29: BannedApiAnalyzers now applies here too, but scoped to THIS project's own
+             BannedSymbols.txt (the round-29 no-unsafe/no-uninitialized-memory/no-parallelism rule only —
+             reflection is still this package's product, and the runtime's reflection ban list lives in
+             src/DwarfMapper/BannedSymbols.txt, a separate file this project never references). -->
+        <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all"/>
     </ItemGroup>
     <ItemGroup>
         <AdditionalFiles Include="PublicAPI.Shipped.txt"/>
         <AdditionalFiles Include="PublicAPI.Unshipped.txt"/>
+        <AdditionalFiles Include="BannedSymbols.txt"/>
     </ItemGroup>
 </Project>
