@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Collections.Specialized;
 using System.Reflection;
@@ -391,13 +392,33 @@ namespace DwarfMapper.Generator.Tests
             NullableContextOptions nullable = NullableContextOptions.Disable,
             bool allowUnsafe = false)
         {
-            return CSharpCompilation.Create(
-                assemblyName,
-                trees,
-                References.Value,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
-                    nullableContextOptions: nullable,
-                    allowUnsafe: allowUnsafe));
+            // Derive from an EMPTY baseline that already carries this exact (name, options, references) triple,
+            // rather than calling CSharpCompilation.Create per test. Caching the MetadataReference objects
+            // (References, above) stopped the disk reads; it did not stop Roslyn rebuilding a ReferenceManager
+            // and re-binding every referenced assembly's symbols for each new compilation. AddSyntaxTrees on a
+            // compilation whose name, options and references are unchanged reuses that bound state — which is
+            // the whole cost for the shapes this suite compiles, since the sources are a few dozen lines and the
+            // reference set is the framework. The key covers every input Create() was given, so the result is
+            // the same compilation Create() would have produced: same identity, same options, same references,
+            // and the trees in the order the caller listed them (the baseline holds none, so order is preserved
+            // — the multi-tree overload's field-layout contract depends on that).
+            return Baselines
+                .GetOrAdd((assemblyName, nullable, allowUnsafe),
+                    static k => CSharpCompilation.Create(
+                        k.AssemblyName,
+                        Array.Empty<SyntaxTree>(),
+                        References.Value,
+                        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                            nullableContextOptions: k.Nullable,
+                            allowUnsafe: k.AllowUnsafe)))
+                .AddSyntaxTrees(trees);
         }
+
+        /// <summary>
+        ///     One empty compilation per distinct (assembly name, nullable context, allowUnsafe) triple, so the
+        ///     reference binding behind it is paid once per triple instead of once per test. The suite uses a
+        ///     handful of assembly names, so this stays small and lives for the test host's lifetime.
+        /// </summary>
+        private static readonly ConcurrentDictionary<(string AssemblyName, NullableContextOptions Nullable, bool AllowUnsafe), CSharpCompilation> Baselines = new();
     }
 }
