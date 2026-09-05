@@ -1911,6 +1911,8 @@ public struct Sample
 
 **Fix:** declare the fields in the order the message prints — largest alignment first, ties in the order you
 already had them. Nothing else changes: not the field names, not the mapping, not one line of generated code.
+The hint is reported ON the struct's declaration, not on the member that maps it, because that declaration is
+the line you edit — and it is reported once per type however many members reach it.
 
 - **What it buys.** Measured on this exact shape (`Issues/round29/RESEARCH-hardware-mode.md`, row **D. layout
   hygiene**): the packed pair blits in **0.57×–0.62×** the time of the padded one and allocates **0.60×** the
@@ -1930,6 +1932,8 @@ already had them. Nothing else changes: not the field names, not the mapping, no
   half the transfer models in existence, and a hint that fired on it would be suppressed wholesale, taking the
   cases worth reading down with it — the same scoping rule `dwarf100` keeps, and for the same reason.
 - **A struct declared in metadata.** Its field order is not yours to change, so the remedy would be unusable.
+- **A struct another source generator emitted.** Same reason, plus one worse: the hint would land inside a
+  `.g.cs`, where you could not suppress it either.
 - **A layout this generator cannot compute**: `LayoutKind.Auto` or `Explicit`, an explicit `Pack` or `Size`,
   `[InlineArray]`, a fixed-size buffer, instance fields split across `partial` declarations (CS0282), or a
   field whose width is the platform's — `nint`, `nuint`, `IntPtr`, `UIntPtr`. A number measured on the build

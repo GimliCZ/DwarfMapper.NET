@@ -1773,8 +1773,11 @@ namespace DwarfMapper.Generator.Diagnostics
         ///         Scoped to COLLECTION elements, and to structs the consumer declares. An element type is
         ///         allocated once per item, so its padding multiplies by the array length — that is the whole
         ///         claim, and it does not hold for a scalar member, which wastes those bytes once. A struct from
-        ///         metadata is never named: its field order is not the consumer's to change, so the remedy would
-        ///         be unusable even where the number is right. Round 29, <c>T0.3</c>.
+        ///         metadata is never named, nor is one another source generator emitted: their field order is not
+        ///         the consumer's to change, so the remedy would be unusable even where the number is right — and
+        ///         the second would land the hint inside a <c>.g.cs</c>, which the consumer cannot suppress
+        ///         either. Reported ON the struct's declaration rather than on the member that maps it, since
+        ///         that declaration is the line the remedy asks them to edit. Round 29, <c>T0.3</c>.
         ///     </para>
         /// </summary>
         public static readonly DiagnosticDescriptor StructLayoutPadding = new(

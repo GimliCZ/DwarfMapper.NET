@@ -127,7 +127,14 @@ namespace DwarfMapper.Generator.Tests
 
         /// <summary>
         ///     <c>Nullable&lt;T&gt;</c> is <c>{bool hasValue; T value}</c> laid out sequentially: 1 byte, padded
-        ///     to T's alignment, then T. Measured at 20 for a 16-byte, 4-aligned T.
+        ///     to T's alignment, then T. Measured at 20 for a 16-byte, 4-aligned T (<c>Unsafe.SizeOf</c> agrees).
+        ///     <para>
+        ///         Its 3 bytes of padding are real and NOT recoverable — the two fields are the runtime's, in the
+        ///         runtime's order — so it reports no field order and its packed size is its size. What actually
+        ///         keeps it out of the diagnostic is the 8-byte floor, since a <c>Nullable&lt;T&gt;</c>'s padding
+        ///         is <c>alignof T − 1</c> and so at most 7; the empty order is the second, independent reason,
+        ///         asserted separately below.
+        ///     </para>
         /// </summary>
         [Fact]
         public void Measure_lays_out_Nullable_as_a_flag_padded_to_the_value()
@@ -141,6 +148,28 @@ namespace DwarfMapper.Generator.Tests
             Assert.NotNull(layout);
             Assert.Equal(20, layout!.Value.Size);
             Assert.Equal(4, layout.Value.Alignment);
+            Assert.Equal(3, layout.Value.Padding);
+            Assert.Equal(20, layout.Value.PackedSize);
+            Assert.Empty(layout.Value.PackedOrder);
+            Assert.False(LayoutHygiene.WastesAQuarter(layout.Value));
+        }
+
+        /// <summary>
+        ///     The empty-order clause of <c>WastesAQuarter</c>, asserted directly because no shape
+        ///     <c>Measure</c> can produce today reaches it: the only empty order belongs to
+        ///     <c>Nullable&lt;T&gt;</c>, whose padding never clears the floor, so the clause would be a dead
+        ///     guard that a mutant could delete unnoticed. It states a contract worth keeping either way — the
+        ///     diagnostic's entire payload is a field order the consumer retypes, so a layout that has none is
+        ///     never worth reporting, whatever its arithmetic says.
+        /// </summary>
+        [Fact]
+        public void WastesAQuarter_refuses_a_layout_with_no_field_order_to_restate()
+        {
+            var wasteful = new LayoutHygiene.Layout(64, 8, 16, 48, Array.Empty<string>());
+
+            Assert.True(wasteful.Padding >= LayoutHygiene.MinimumWastedBytes && wasteful.Padding * 4 >= wasteful.Size,
+                "the fixture must clear both arithmetic thresholds, or it proves nothing about the clause");
+            Assert.False(LayoutHygiene.WastesAQuarter(wasteful));
         }
 
         /// <summary>
@@ -234,6 +263,57 @@ namespace DwarfMapper.Generator.Tests
             Assert.Equal(40, layout.Size);
             Assert.Equal(20, layout.Padding);
             Assert.Equal("Id, Value, Code, Ok, Kind", layout.PackedOrderText);
+        }
+
+        /// <summary>
+        ///     Plain fields and auto-properties interleaved. <c>BlittableProof.InstanceFields</c> asserts that
+        ///     <c>GetMembers()</c> order IS the layout, and this is the first caller that PRINTS a number from
+        ///     that assumption rather than comparing two lists under it — so the assumption is pinned here
+        ///     against the runtime rather than inherited. Verified: <c>Unsafe.SizeOf</c> 32, and
+        ///     <c>Marshal.OffsetOf</c> puts <c>A@0, &lt;B&gt;k__BackingField@8, C@16, D@24</c>.
+        /// </summary>
+        [Fact]
+        public void Measure_reads_fields_and_auto_properties_in_one_declaration_order()
+        {
+            var layout = MeasureType(
+                """
+                namespace T
+                {
+                    public struct Mixed
+                    {
+                        public byte A;
+                        public long B { get; set; }
+                        public byte C;
+                        public double D;
+                    }
+                }
+                """,
+                "Mixed");
+
+            Assert.Equal(32, layout.Size);
+            Assert.Equal(14, layout.Padding);
+            Assert.Equal(24, layout.PackedSize);
+            Assert.Equal("B, D, A, C", layout.PackedOrderText);
+            Assert.True(LayoutHygiene.WastesAQuarter(layout));
+        }
+
+        /// <summary>
+        ///     A positional <c>record struct</c> lays its parameters out as backing fields in parameter order —
+        ///     measured at 24 for <c>(byte, long, short)</c>, with the fields emitted
+        ///     <c>&lt;Kind&gt;k__BackingField, &lt;Id&gt;k__BackingField, &lt;Code&gt;k__BackingField</c>. The
+        ///     remedy names the positional parameters, which is what a consumer would reorder.
+        /// </summary>
+        [Fact]
+        public void Measure_reads_a_positional_record_struct_in_parameter_order()
+        {
+            var layout = MeasureType(
+                "namespace T { public record struct RS(byte Kind, long Id, short Code); }",
+                "RS");
+
+            Assert.Equal(24, layout.Size);
+            Assert.Equal(13, layout.Padding);
+            Assert.Equal(16, layout.PackedSize);
+            Assert.Equal("Id, Code, Kind", layout.PackedOrderText);
         }
 
         // ─── Measure: the refusals ───────────────────────────────────────────────
@@ -498,6 +578,130 @@ namespace DwarfMapper.Generator.Tests
                              public struct Flagged { public byte Kind; public long Id; }
                              public class C { public Flagged[] V { get; set; } = System.Array.Empty<Flagged>(); }
                              public class D { public Flagged[] V { get; set; } = System.Array.Empty<Flagged>(); }
+                             [DwarfMapper] public partial class M { public partial D Map(C c); }
+                             """));
+        }
+
+        /// <summary>
+        ///     The squiggle lands on the STRUCT's declaration, not on the member whose mapping reached it. The
+        ///     message asks for that type's fields to be reordered, and the user's standing rule is that a
+        ///     refusal (or a hint) points at the exact line to edit. It also removes an arbitrary choice: with
+        ///     two members reaching one padded type, anchoring on the member made the survivor depend on
+        ///     declaration order.
+        /// </summary>
+        [Fact]
+        public void The_report_lands_on_the_struct_declaration_rather_than_on_a_member()
+        {
+            var reported = Assert.Single(Run(PaddedPair));
+
+            var lines = PaddedPair.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            var declaration = Array.FindIndex(lines, l => l.Contains("public struct Sample", StringComparison.Ordinal));
+            Assert.True(declaration >= 0, "the fixture no longer declares the struct this test is looking for");
+
+            var span = reported.Location.GetLineSpan();
+            Assert.Equal(declaration, span.StartLinePosition.Line);
+
+            // Not the member, and not the mapper: both are further down the same file, so a stale anchor would
+            // still have produced a line number — just the wrong one.
+            Assert.NotEqual(Array.FindIndex(lines, l => l.Contains("public Sample[] V", StringComparison.Ordinal)),
+                span.StartLinePosition.Line);
+        }
+
+        /// <summary>
+        ///     A struct emitted by ANOTHER source generator is never named. It passes every measurement test —
+        ///     it is in source, Sequential, and as padded as any hand-written one — and fails the only question
+        ///     a report has to answer: the consumer cannot reorder fields they did not write, and cannot
+        ///     suppress a diagnostic raised inside a <c>.g.cs</c> either.
+        ///     <para>
+        ///         The control half is the point: the SAME source in a file that is not <c>.g.cs</c> reports, so
+        ///         this pins the file path as the discriminator rather than passing for some unrelated reason.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void A_struct_another_generator_emitted_is_never_named()
+        {
+            const string mapper = """
+                                  using DwarfMapper;
+                                  namespace Demo;
+                                  public class C { public Sample[] V { get; set; } = System.Array.Empty<Sample>(); }
+                                  public class D { public Sample[] V { get; set; } = System.Array.Empty<Sample>(); }
+                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                  """;
+            const string dto = """
+                               namespace Demo;
+                               public struct Sample
+                               {
+                                   public bool Ok; public long Id; public byte Kind; public double Value; public short Code;
+                               }
+                               """;
+
+            Assert.Single(RunAcross(mapper, dto, "Sample.cs"));
+            Assert.Empty(RunAcross(mapper, dto, "Sample.g.cs"));
+        }
+
+        /// <summary>
+        ///     Runs the generator over two files, the second under <paramref name="secondPath" />, and returns
+        ///     the DWARF101s. The path is the whole point — <c>GeneratedSourceExtensions.IsGeneratorAuthored</c>
+        ///     reads it — so the trees are built here rather than through the single-source harness entry.
+        /// </summary>
+        private static List<Diagnostic> RunAcross(string first, string second, string secondPath)
+        {
+            var compilation = GeneratorTestHarness.BuildCompilation("DwarfMapperTestAsm",
+                new[]
+                {
+                    CSharpSyntaxTree.ParseText(first, path: "Mapper.cs"),
+                    CSharpSyntaxTree.ParseText(second, path: secondPath)
+                });
+
+            CSharpGeneratorDriver.Create(new DwarfGenerator())
+                .RunGeneratorsAndUpdateCompilation(compilation, out _, out var diagnostics);
+
+            return diagnostics.Where(d => d.Id == "DWARF101").ToList();
+        }
+
+        /// <summary>
+        ///     The span-map arm is silent. Structurally so — the report lives in the collection arm, and a span
+        ///     map maps into a buffer the caller already owns, which is what "smaller arrays" does not describe
+        ///     — but pinned, so that a later task wiring this arm records the scope change instead of making it
+        ///     silently.
+        /// </summary>
+        [Fact]
+        public void A_span_map_over_a_padded_element_reports_nothing()
+        {
+            Assert.Empty(Run("""
+                             using System;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public struct Sample
+                             {
+                                 public bool Ok; public long Id; public byte Kind; public double Value; public short Code;
+                             }
+                             public struct SampleDto
+                             {
+                                 public bool Ok; public long Id; public byte Kind; public double Value; public short Code;
+                             }
+                             [DwarfMapper] public partial class M { public partial void Map(ReadOnlySpan<Sample> s, Span<SampleDto> d); }
+                             """));
+        }
+
+        /// <summary>
+        ///     The dictionary arm is silent, for the same structural reason and pinned for the same one: a
+        ///     <c>Dictionary&lt;K, Padded&gt;</c> multiplies the padding as surely as an array does, so if a
+        ///     later task decides to say so, this test is where that decision gets recorded.
+        /// </summary>
+        [Fact]
+        public void A_dictionary_value_that_is_padded_reports_nothing()
+        {
+            Assert.Empty(Run("""
+                             using System.Collections.Generic;
+                             using DwarfMapper;
+                             namespace Demo;
+                             public struct Sample
+                             {
+                                 public bool Ok; public long Id; public byte Kind; public double Value; public short Code;
+                             }
+                             public class C { public Dictionary<int, Sample> V { get; set; } = new(); }
+                             public class D { public Dictionary<int, Sample> V { get; set; } = new(); }
                              [DwarfMapper] public partial class M { public partial D Map(C c); }
                              """));
         }

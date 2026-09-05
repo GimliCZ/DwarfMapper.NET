@@ -482,14 +482,18 @@ namespace DwarfMapper.Generator.Pipeline
         ///         one report through the dedupe below rather than through a special case.
         ///     </para>
         ///     <para>
-        ///         The dedupe is a scan of the sink for a report carrying the SAME text, which is what makes the
-        ///         message type-only: it names the struct, its numbers and its field order, and nothing about the
-        ///         member it was reached through — so two members of one padded type produce one identical string,
-        ///         and the second is dropped. <paramref name="req" />'s location and target name still ride along,
-        ///         so the report lands on the first member that reached the type and a code fix could find it. The
-        ///         sink is the mapper class's own diagnostic list, so "once" means once per mapper class; a probe
-        ///         resolving into a throwaway list (the flatten and hetero leaf probes) cannot see it, which is
-        ///         the one gap in the rule and is bounded by those probes' own scope.
+        ///         The report is anchored on the TYPE's declaration, not on the member that reached it. The
+        ///         message asks the consumer to reorder that type's fields, so that is where the squiggle has to
+        ///         be for the mandate to hold — "the exact location" is the line they will edit. It also makes
+        ///         once-per-type structural rather than merely tidy: two members of one padded type now produce
+        ///         diagnostics identical in descriptor, location AND text, so dropping the second cannot be
+        ///         dropping information, and the surviving one no longer depends on which member happened to be
+        ///         declared first. The dedupe below is still what performs the drop — a scan of the sink for the
+        ///         same text — and the message stays type-only for it: the struct, its numbers and its field
+        ///         order, and nothing about the member. The sink is the mapper class's own diagnostic list, so
+        ///         "once" means once per mapper class; a probe resolving into a throwaway list (the flatten and
+        ///         hetero leaf probes) cannot see it, which is the one gap in the rule and is bounded by those
+        ///         probes' own scope.
         ///     </para>
         /// </remarks>
         private static void ReportPaddedElementStruct(
@@ -501,6 +505,26 @@ namespace DwarfMapper.Generator.Pipeline
             {
                 return;
             }
+
+            // A struct ANOTHER generator emitted passes every measurement test and fails the only one that
+            // matters at a report: its field order is not the consumer's to change, and a diagnostic raised
+            // inside a .g.cs is one they cannot suppress either — the shape this project has already been bitten
+            // by (GeneratedCodeIsWarningFreeTests exists for the emission side of it). The refusal lives HERE
+            // rather than in Measure on purpose: a generated struct still HAS a size, and Task 2.1 reads that
+            // size for a threshold which asks the consumer to edit nothing. Measurability and actionability are
+            // different questions, so they are asked in different places.
+            foreach (var declaration in element.DeclaringSyntaxReferences)
+                if (GeneratedSourceExtensions.IsGeneratorAuthored(declaration.SyntaxTree))
+                {
+                    return;
+                }
+
+            // Measure has already required an in-source declaration (IsSourceSequential refuses a metadata
+            // struct), so this location exists whenever a layout came back. LocationInfo.From can still decline
+            // a span it cannot map onto a live IDE snapshot, and the member's own location is a better answer
+            // there than none at all.
+            var declared = element.Locations.FirstOrDefault(l => l.IsInSource);
+            var location = (declared is null ? null : LocationInfo.From(declared)) ?? req.Location;
 
             var message =
                 $"'{element.ToDisplayString()}' is {layout.Size.ToString(CultureInfo.InvariantCulture)} bytes with " +
@@ -515,10 +539,11 @@ namespace DwarfMapper.Generator.Pipeline
                     return;
                 }
 
-            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StructLayoutPadding,
-                req.Location,
-                message,
-                MemberName: req.TargetName));
+            // No MemberName, unlike its neighbours: that property bag entry is what a code fix reads to find
+            // the member it must edit, and this diagnostic has no member to edit — the remedy is on the type,
+            // and whichever member reached it first is an accident of declaration order. Handing a future fix
+            // an arbitrary member would be worse than handing it nothing.
+            diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.StructLayoutPadding, location, message));
         }
 
         /// <summary>

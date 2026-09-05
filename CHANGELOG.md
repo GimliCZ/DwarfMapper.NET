@@ -66,7 +66,9 @@ so a version with no section here ships with no notes.
   **It is deliberately hard to trigger.** Both thresholds must hold — at least a quarter of the size AND at
   least 8 bytes — so the ubiquitous `{byte; long}` (7 bytes wasted of 16) stays silent, as does anything
   whose layout the generator cannot compute: metadata structs, `LayoutKind.Auto`/`Explicit`, an explicit
-  `Pack` or `Size`, `[InlineArray]`, fixed buffers, fields split across `partial` declarations, and any
+  `Pack` or `Size`, `[InlineArray]`, fixed buffers, fields split across `partial` declarations, structs another
+  source generator emitted (their field order is not yours to change, and a `.g.cs` is not yours to suppress
+  in either), and any
   struct containing a platform-sized `nint`/`nuint`/`IntPtr`/`UIntPtr`, whose width belongs to the machine
   the consumer runs on rather than the one that built the mapper. An informational diagnostic is only worth
   having while it is rare.

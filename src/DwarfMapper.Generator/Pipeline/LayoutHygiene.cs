@@ -64,10 +64,22 @@ namespace DwarfMapper.Generator.Pipeline
         /// <param name="Alignment">The struct's own alignment — its largest member's.</param>
         /// <param name="Padding">
         ///     Bytes lost to alignment in the DECLARED order: <see cref="Size" /> minus the sum of the field
-        ///     sizes. A nested struct counts at its full size, so this is only ever what reordering the fields
-        ///     of THIS type would recover.
+        ///     sizes. A nested struct counts at its full size, so for a struct this is only ever what reordering
+        ///     the fields of THIS type would recover.
+        ///     <para>
+        ///         <b>The one exception is <c>Nullable&lt;T&gt;</c></b>, whose padding — the bytes between the
+        ///         flag and the value, <c>alignof T − 1</c> of them — is REAL but not recoverable: its two fields
+        ///         are the runtime's, in the runtime's order. That is why its <see cref="PackedSize" /> equals its
+        ///         <see cref="Size" /> and its <see cref="PackedOrder" /> is empty. A reader comparing
+        ///         <see cref="Padding" /> against <c>Size − PackedSize</c> will find them disagreeing there, and
+        ///         the packed figures are the ones that say what can be saved.
+        ///     </para>
         /// </param>
-        /// <param name="PackedSize">What <see cref="Size" /> would be in <see cref="PackedOrder" />.</param>
+        /// <param name="PackedSize">
+        ///     What <see cref="Size" /> would be in <see cref="PackedOrder" /> — and, for a
+        ///     <c>Nullable&lt;T&gt;</c>, <see cref="Size" /> itself, because none of its padding is a consumer's
+        ///     to recover.
+        /// </param>
         /// <param name="PackedOrder">
         ///     The declared members, largest alignment first, ties in declaration order. Empty for a
         ///     <c>Nullable&lt;T&gt;</c>, which is measured for nesting but has no field order a consumer could
@@ -97,10 +109,17 @@ namespace DwarfMapper.Generator.Pipeline
 
         /// <summary>
         ///     True when a struct wastes a quarter or more of itself AND at least
-        ///     <see cref="MinimumWastedBytes" /> bytes on padding — both, never either — and has a field order
-        ///     the consumer can restate. Integer arithmetic on purpose: <c>Padding * 4 >= Size</c> is the
-        ///     quarter, with no rounding to argue about at the edge.
+        ///     <see cref="MinimumWastedBytes" /> bytes on padding — both, never either. Integer arithmetic on
+        ///     purpose: <c>Padding * 4 >= Size</c> is the quarter, with no rounding to argue about at the edge.
         /// </summary>
+        /// <remarks>
+        ///     The empty-order clause is a CONTRACT guard, not the mechanism that keeps <c>Nullable&lt;T&gt;</c>
+        ///     quiet: what does that is the floor, since a <c>Nullable&lt;T&gt;</c>'s padding is
+        ///     <c>alignof T − 1</c> and so at most 7. The clause says the other thing — that a layout with no
+        ///     field order to restate is never reported, because the diagnostic's whole payload is an order the
+        ///     consumer can retype. It is asserted directly (<c>WastesAQuarter_refuses_a_layout_with_no_field_order_to_restate</c>)
+        ///     rather than left to be implied by a shape that cannot reach it today.
+        /// </remarks>
         public static bool WastesAQuarter(Layout layout)
         {
             return layout.PackedOrder.Count > 0 &&
