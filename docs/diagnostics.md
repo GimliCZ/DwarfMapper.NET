@@ -1928,7 +1928,7 @@ already had them. Nothing else changes: not the field names, not the mapping, no
 - **Under either threshold.** Both must hold: at least a quarter of the size wasted, **and** at least 8 bytes.
   `{byte Kind; long Id}` wastes 7 of its 16 — well over a quarter, and one byte under the floor. That shape is
   half the transfer models in existence, and a hint that fired on it would be suppressed wholesale, taking the
-  cases worth reading down with it (see `dwarf070` for how this project learned that lesson).
+  cases worth reading down with it — the same scoping rule `dwarf100` keeps, and for the same reason.
 - **A struct declared in metadata.** Its field order is not yours to change, so the remedy would be unusable.
 - **A layout this generator cannot compute**: `LayoutKind.Auto` or `Explicit`, an explicit `Pack` or `Size`,
   `[InlineArray]`, a fixed-size buffer, instance fields split across `partial` declarations (CS0282), or a
