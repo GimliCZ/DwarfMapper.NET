@@ -292,23 +292,37 @@ namespace DwarfMapper.Generator.Pipeline
                 return behaviour;
             }
 
+            // Layout is read from the FIELDS, including the auto-properties' backing fields — the same source
+            // of truth LayoutHygiene uses for a struct, so a class and the struct it would become are measured
+            // off the same list.
+            var fields = new List<IFieldSymbol>();
+            foreach (var member in type.GetMembers())
+                if (member is IFieldSymbol { IsStatic: false } field)
+                {
+                    fields.Add(field);
+                }
+
+            // The same refusal LayoutHygiene makes for a struct, and it must be made here too: fields split
+            // across partial declarations have no field order the compiler defines (CS0282), so the would-be
+            // struct has no size — and a size is exactly what this returns. Accepting the shape would report a
+            // number computed from whichever order the symbol walk happened to produce.
+            if (BlittableProof.FieldsSpanPartialDeclarations(type, fields))
+            {
+                return Verdict.No(
+                    $"'{type.Name}' declares instance fields in more than one partial declaration, so the " +
+                    "compiler defines no field order for it (CS0282); keep every instance field in one declaration");
+            }
+
             var members = new List<(string Name, int Size, int Align)>();
             var sizeIsUpperBound = false;
 
             path.Add(type);
             try
             {
-                foreach (var member in type.GetMembers())
+                foreach (var field in fields)
                 {
-                    // Layout is read from the FIELDS, including the auto-properties' backing fields — the same
-                    // source of truth LayoutHygiene uses for a struct, so a class and the struct it would
-                    // become are measured off the same list. An auto-property is named by its property, which
-                    // is the name a consumer can type; `<Prop>k__BackingField` is not.
-                    if (member is not IFieldSymbol { IsStatic: false } field)
-                    {
-                        continue;
-                    }
-
+                    // An auto-property is named by its property, which is the name a consumer can type;
+                    // `<Prop>k__BackingField` is not.
                     var name = field.AssociatedSymbol?.Name ?? field.Name;
                     if (!TryMeasureMember(
                             field.Type,
@@ -711,7 +725,13 @@ namespace DwarfMapper.Generator.Pipeline
                 // An OPTIONAL nested model is Nullable<T> around the inline struct — a flag padded up to the
                 // inner alignment, then the value. Sizing it as the bare inner would UNDER-count, and an
                 // under-count is the one direction a bound may not err in.
-                if (memberType.NullableAnnotation == NullableAnnotation.Annotated)
+                //
+                // OBLIVIOUS counts as optional, and that is the point of testing for NotAnnotated rather than
+                // for Annotated: where the nullable context is off, `Inner I` may legally hold null, so its
+                // value form has to carry the flag. Only an explicit non-null annotation buys the bare inline
+                // form. The error this way costs at most one alignment of over-count; the other way it reports
+                // a struct smaller than the consumer will get.
+                if (memberType.NullableAnnotation != NullableAnnotation.NotAnnotated)
                 {
                     measured = LayoutHygiene.AsOptional(measured);
                 }

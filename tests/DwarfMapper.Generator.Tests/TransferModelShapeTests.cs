@@ -177,7 +177,7 @@ namespace DwarfMapper.Generator.Tests
         public void Eligible_for_a_nested_transfer_model_counted_inline()
         {
             var verdict = ClassifyType(
-                "namespace T { public sealed class Inner { public int A { get; set; } public int B { get; set; } } public sealed class Dto { public long L { get; set; } public Inner I { get; set; } } }");
+                "#nullable enable\nnamespace T { public sealed class Inner { public int A { get; set; } public int B { get; set; } } public sealed class Dto { public long L { get; set; } public Inner I { get; set; } } }");
 
             Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
             Assert.Equal(16, verdict.Size);
@@ -200,6 +200,43 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
             Assert.Equal(24, verdict.Size);
+        }
+
+        /// <summary>
+        ///     Self-review finding, round 29 T2.1: with the nullable context OFF — which is where a great deal
+        ///     of existing DTO code lives — <c>Inner I</c> may legally hold null, so its value form has to be
+        ///     <c>Nullable&lt;InnerStruct&gt;</c> and costs the flag. Reading only
+        ///     <c>NullableAnnotation.Annotated</c> counted this member as the bare inline struct (16 B) and
+        ///     reported a struct SMALLER than the consumer would get, which is the one direction an upper bound
+        ///     may not err in. The twin of <see cref="Eligible_for_a_nested_transfer_model_counted_inline" />,
+        ///     which is the same shape with the context on and the member explicitly non-null.
+        /// </summary>
+        [Fact]
+        public void An_oblivious_nested_model_is_costed_as_optional_not_inline()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed class Inner { public int A { get; set; } public int B { get; set; } } public sealed class Dto { public long L { get; set; } public Inner I { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.Eligible, verdict.Kind);
+            Assert.Equal(24, verdict.Size);
+        }
+
+        /// <summary>
+        ///     Self-review finding, round 29 T2.1: <c>LayoutHygiene</c> refuses a struct whose fields are split
+        ///     across partial declarations because the compiler defines no field order for it (CS0282) — and
+        ///     the classifier, which RETURNS a size, was accepting exactly that shape for a class and reporting
+        ///     a number computed from whichever order the symbol walk produced. Same refusal, same wording as
+        ///     <c>BlittableProof</c>'s, so a consumer meets one sentence for one situation.
+        /// </summary>
+        [Fact]
+        public void Refuses_a_class_whose_fields_span_partial_declarations()
+        {
+            var verdict = ClassifyType(
+                "namespace T { public sealed partial class Dto { public byte A { get; set; } } " +
+                "public sealed partial class Dto { public long B { get; set; } } }");
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("partial declaration", verdict.Reason, StringComparison.Ordinal);
         }
 
         /// <summary>
