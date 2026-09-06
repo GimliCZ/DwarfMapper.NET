@@ -5,7 +5,8 @@
 //       says nothing about the fact that the same members declared as a `readonly record struct` would live
 //       inside the array — one allocation for the whole collection instead of one per item. Measured on a
 //       four-class DTO tree (Issues/round29/RESEARCH-hardware-mode.md, section 9): 0.30x the time at 1,000
-//       elements and 0.09x at 100,000; a single flat DTO is 2.2x / 9-12x with 43 % less memory.
+//       elements (3.3x faster) and 0.09x at 100,000 (11x faster). A single flat DTO is 2.2x faster at 1,000
+//       and 9-12x faster at 100,000 — smaller at the low end, comparable at scale — with 43 % less memory.
 //
 //       INFORMATIONAL on purpose, and for a stronger reason than the other performance hints. This one asks
 //       for a change of MEANING — a struct has no reference identity, cannot be null, and cannot be mutated

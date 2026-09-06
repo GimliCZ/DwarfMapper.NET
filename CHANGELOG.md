@@ -65,8 +65,9 @@ so a version with no section here ships with no notes.
   (`list[i].X = v` is CS1612). Every one of those surfaces as a **compile error** rather than a silent
   behaviour change, which is the whole reason the suggestion is safe to make — and why it is informational.
   Ignoring it is a legitimate answer. Measured on a four-class DTO tree decomposed into nested structs
-  (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): 0.30× the time at 1,000 elements and 0.09× at
-  100,000; a single flat DTO is 2.2× / 9–12× with −43 % memory.
+  (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): 0.30× the time at 1,000 elements (3.3× faster)
+  and 0.09× at 100,000 (11× faster). A single flat DTO is 2.2× faster at 1,000 and 9–12× faster at 100,000
+  — smaller at the low end, comparable at scale — with 43 % less memory.
 
   **The size is honest about what it is.** It is the WOULD-BE struct's size, counting any transfer model the
   type holds as a struct too (that is the rewrite being advised), and it is printed as a bound — "at most N

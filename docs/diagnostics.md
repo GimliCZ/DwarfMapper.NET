@@ -1974,10 +1974,12 @@ Every one of those is a **compile error**, not a silent change, which is why the
 at all — and why the diagnostic is informational. Ignoring it is a legitimate answer.
 
 - **What it buys.** Measured on a four-class DTO tree decomposed into nested structs
-  (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): **0.30×** the time at 1,000 elements and
-  **0.09×** at 100,000, with memory 184 → 64 KB and 18.4 → 6.4 MB. A single flat DTO is a smaller win
-  (2.2× at 1k, 9–12× at ≥100k, −43 % memory). Your numbers depend on your types; the message states the
-  mechanism, and these are the measurements behind it.
+  (`Issues/round29/RESEARCH-hardware-mode.md`, section 9): **0.30× the time** at 1,000 elements — 3.3×
+  faster — and **0.09×** at 100,000, an 11× speed-up, with memory 184 → 64 KB and 18.4 → 6.4 MB. A single
+  flat DTO is a smaller win at 1,000 (2.2× faster, ≈0.45× the time) and comparable at 100,000 (9–12× faster,
+  ≈0.08–0.11× the time), with 43 % less memory. **Both figures are speed-ups where they say "faster" and
+  time ratios where they say "the time"** — mixing the two is how a 2.2× win reads as a 2.2× loss. Your
+  numbers depend on your types; the message states the mechanism, and these are the measurements behind it.
 - **The size in the message is the would-be struct's**, not the class object's, and it is stated as a bound
   ("at most N bytes") whenever a member is a reference — a reference is 8 bytes on x64 and 4 on x86, so the
   number can only be an over-estimate. It also counts any transfer model the type *holds* as a struct too,
