@@ -815,6 +815,94 @@ namespace DwarfMapper.Generator.Tests
         }
 
         /// <summary>
+        ///     <b>And a fully CONSTRUCTED generic is refused too, which is the dangerous half.</b>
+        ///     <c>Box&lt;int&gt;</c> has a perfectly knowable size, so nothing about measurement refuses it —
+        ///     what refuses it is that the only declaration a rewrite can change is <c>Box&lt;T&gt;</c>.
+        ///     Round 29 T2.3 built the shape and watched it happen: <c>DWARF103</c> said "Box&lt;int&gt; is 4
+        ///     bytes, declare it a readonly record struct", and taking that advice converted a
+        ///     <c>Box&lt;string&gt;</c> held elsewhere that nothing had classified, no diagnostic had named,
+        ///     and whose real size is 8 — losing its reference identity silently, which is the change this
+        ///     classifier exists to refuse.
+        ///     <para>
+        ///         Narrowed rather than left to the code fix because <c>DWARF103</c> has never shipped, so
+        ///         nothing depends on it, and because a hint that says "this could be a struct" about a type
+        ///         the fix would then decline to convert is advice known to be bad. The silenced report is a
+        ///         non-case, not a real one waiting for another diagnostic.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void Refuses_a_constructed_generic_type()
+        {
+            var (compilation, types) = Compile(
+                "namespace T { public sealed class Box<TValue> { public TValue Value { get; set; } } " +
+                "public sealed class Holder { public Box<int> Boxed { get; set; } } }");
+
+            var constructed = (INamedTypeSymbol)types["Holder"].GetMembers("Boxed")
+                .OfType<IPropertySymbol>().Single().Type;
+
+            var verdict = TransferModelShape.Classify(constructed, compilation);
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("constructed generic", verdict.Reason, StringComparison.Ordinal);
+            Assert.Contains("every other instantiation", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A non-generic type NESTED in a generic one is the same rule reached through the containing
+        ///     chain: <c>Outer&lt;T&gt;.Inner</c> has arity 0 of its own, and rewriting it still edits a
+        ///     declaration that every <c>Outer&lt;…&gt;</c> shares. Reading <c>TypeArguments</c> alone would
+        ///     have missed it.
+        /// </summary>
+        [Fact]
+        public void Refuses_a_type_nested_in_a_generic()
+        {
+            var (compilation, types) = Compile(
+                "namespace T { public sealed class Outer<TValue> { public sealed class Inner " +
+                "{ public int Id { get; set; } } } }");
+
+            var verdict = TransferModelShape.Classify(types["Inner"], compilation);
+
+            Assert.Equal(TransferModelShape.Outcome.NotEligible, verdict.Kind);
+            Assert.Contains("generic", verdict.Reason, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     <b>The anti-drift lock between the classifier and the code fix.</b> The two express the same
+        ///     rule in different currencies — this one walks symbols, <c>ConvertToRecordStructCodeFixProvider</c>
+        ///     tests the <c>DocumentationCommentId</c> for a backtick — and they cannot share code, because
+        ///     <c>DwarfMapper.CodeFixes</c> does not reference this assembly. So the agreement is asserted
+        ///     instead: every shape refused here for being generic carries a backtick in its handle, and the
+        ///     shape that is NOT refused does not.
+        /// </summary>
+        [Fact]
+        public void The_generic_refusal_and_the_code_fixs_handle_test_agree()
+        {
+            var (compilation, types) = Compile(
+                "namespace T { public sealed class Box<TValue> { public TValue Value { get; set; } } " +
+                "public sealed class Outer<TValue> { public sealed class Inner { public int Id { get; set; } } } " +
+                "public sealed class Plain { public int Id { get; set; } } " +
+                "public sealed class Holder { public Box<int> Boxed { get; set; } } }");
+
+            var constructed = (INamedTypeSymbol)types["Holder"].GetMembers("Boxed")
+                .OfType<IPropertySymbol>().Single().Type;
+
+            foreach (var generic in new[] { types["Box"], types["Outer"], types["Inner"], constructed })
+            {
+                Assert.False(TransferModelShape.Classify(generic, compilation).IsShaped, generic.Name);
+                Assert.Contains(
+                    "`",
+                    generic.OriginalDefinition.GetDocumentationCommentId()!,
+                    StringComparison.Ordinal);
+            }
+
+            Assert.True(TransferModelShape.Classify(types["Plain"], compilation).IsShaped);
+            Assert.DoesNotContain(
+                "`",
+                types["Plain"].GetDocumentationCommentId()!,
+                StringComparison.Ordinal);
+        }
+
+        /// <summary>
         ///     A class with no instance state has nothing to carry, and a zero-byte struct is not the remedy for
         ///     it. Refused rather than reported as "0 B, eligible", which would read as advice.
         /// </summary>

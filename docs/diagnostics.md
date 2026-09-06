@@ -1987,16 +1987,16 @@ public readonly record struct OrderDto(long Id, int Quantity);
 
 **Fix:** declare the element type as a `readonly record struct`. The IDE lightbulb offers
 *Convert to readonly record struct (may break call sites): 'X' + N nested transfer models*, which does it for
-you. **It does not update those call sites**, and that is deliberate rather than an omission — the warning
-leads the title because it is the half that must survive a truncated lightbulb entry, and the hazards below
-are the half that explains it — **and does it to the nested models too**, because the size in the message counts any transfer model the type holds as
-a struct as well; converting the element alone would leave you a smaller type than the one you were shown.
-The rewrite makes the declaration compile on its own (`set` becomes `init`, an instance field gains
-`readonly`, initialisers keep a constructor, and a member the nullable context left oblivious keeps its
-`?`). It deliberately does **not** touch your usages — that is the point of the hazards below — and it is
-**not offered on a generic type**: the only declaration there is to rewrite is `Box<T>`, so taking it would
-convert every instantiation, including ones no diagnostic ever named and whose size is not the one printed.
-The remedy is still yours to apply by hand there, where you can see what you are agreeing to. **Read the
+you — **and does it to the nested models too**, because the size in the message counts any transfer model the
+type holds as a struct as well, so converting the element alone would leave you a smaller type than the one
+you were shown. The rewrite also makes the declaration compile on its own: `set` becomes `init`, an instance
+field gains `readonly`, initialisers keep a constructor, and a member the nullable context left oblivious
+keeps its `?`.
+
+**It does not update your call sites**, which is why the title says so before it says anything else — that
+clause leads because it is the half that has to survive a truncated lightbulb entry. Leaving usages alone is
+deliberate rather than an omission: every way a struct differs from a class shows up there as a *compile
+error* rather than as a silent change, and that is what makes the suggestion safe to offer at all. **Read the
 hazards first** — unlike the other performance hints, this one asks for a change of *meaning*:
 
 - A struct has **no reference identity**. Two elements that were the same object become two copies.
@@ -2043,6 +2043,12 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
 **When it stays quiet**, which is nearly always:
 
 - **The element type is already a struct**, or is not a class at all.
+- **The element type is GENERIC**, open or fully constructed, or is nested inside a generic. `Box<int>` has a
+  knowable size, so nothing about measurement refuses it — what does is that the only declaration a rewrite
+  can change is `Box<T>`. Acting on the hint would convert *every* instantiation, including a `Box<string>`
+  elsewhere that was never examined and whose size is not the one printed, and that type would lose its
+  reference identity silently. Suggesting a rewrite we would then decline to perform is worse than saying
+  nothing.
 - **Anything `TransferModelShape` refuses**, which is most types: a class that is derived from, is abstract,
   has a base class, is `static`, is generic, implements any interface other than `IEquatable<T>` of itself,
   implements `IDisposable`, declares an event or a method beyond the record quartet, declares

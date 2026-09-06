@@ -177,45 +177,48 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
         }
 
         /// <summary>
-        ///     <b>A GENERIC transfer model is reported and not offered a fix.</b> The shape is real:
-        ///     <c>List&lt;Src&gt; → List&lt;Box&lt;int&gt;&gt;</c> reports <c>DWARF103</c> for
-        ///     <c>Demo.Box&lt;int&gt;</c> at 4 bytes, and the handle it carries is the DEFINITION,
-        ///     <c>T:Demo.Box`1</c>, because that is the only thing with a declaration to rewrite.
+        ///     <b>A generic handle is never offered the fix, and this is now a SECOND line of defence.</b>
+        ///     The classifier refuses a generic transfer model outright since T2.3 fix round 2, so the
+        ///     generator no longer produces a <c>DWARF103</c> carrying one — which is exactly why the check
+        ///     stays and why the diagnostic here is built by hand. A code fix reads a diagnostic it did not
+        ///     create: one left over in an IDE from before the narrowing, or from a mismatched analyzer
+        ///     version, still arrives at this provider, and a rewrite of <c>Box&lt;T&gt;</c> would convert
+        ///     every instantiation — including ones nothing classified and whose size is not the one printed.
         ///     <para>
-        ///         Converting it would turn EVERY instantiation into a value type. The fixture holds a
-        ///         <c>Box&lt;string&gt;</c> that the classifier never saw, no diagnostic ever named and for
-        ///         which the printed 4 bytes is false — and it would lose reference identity silently, which is
-        ///         the change this feature exists to refuse. So the fix declines, on the id string, before any
-        ///         action is offered: an unoffered fix is a non-event, where an offered one that quietly does
-        ///         the wrong thing to a type nobody classified is not.
-        ///     </para>
-        ///     <para>
-        ///         The diagnostic still fires, and should: its size is correct for the instantiation it names,
-        ///         and applying the remedy by hand puts the consumer where they can see which instantiations
-        ///         they are agreeing to.
+        ///         The refusal is read off the id STRING, so it costs no compilation and happens before any
+        ///         action is registered. <c>TransferModelShapeTests.The_generic_refusal_and_the_code_fixs_handle_test_agree</c>
+        ///         is what keeps this rule and the classifier's from drifting: the two cannot share code,
+        ///         because <c>DwarfMapper.CodeFixes</c> does not reference the generator.
         ///     </para>
         /// </summary>
         [Fact]
-        public async Task A_generic_transfer_model_is_reported_but_never_offered_the_fix()
+        public async Task A_generic_handle_is_never_offered_the_fix()
         {
-            const string source = """
-                                  using DwarfMapper;
-                                  using System.Collections.Generic;
-                                  namespace Demo;
-                                  public sealed class Src { public int Value { get; set; } }
-                                  public sealed class Box<T> { public T Value { get; set; } }
-                                  public sealed class Holder { public Box<string> Text { get; set; } }
-                                  public class C { public List<Src> Rows { get; set; } }
-                                  public class D { public List<Box<int>> Rows { get; set; } }
-                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
-                                  """;
+            var actions = await OfferSyntheticAsync(
+                    ImmutableDictionary<string, string?>.Empty.Add("TransferModelId", "T:Demo.Box`1"))
+                .ConfigureAwait(true);
 
-            // The diagnostic fires, and carries the DEFINITION's handle — the fact that makes the rewrite
-            // dangerous, asserted so the refusal below cannot pass for the wrong reason.
-            var reported = Assert.Single(GeneratorAssert.Reports(source, "DWARF103"));
-            Assert.Equal("T:Demo.Box`1", reported.Properties["TransferModelId"]);
+            Assert.Empty(actions);
+        }
 
-            Assert.Empty(await _fixture.OfferAsync(source).ConfigureAwait(true));
+        /// <summary>
+        ///     And the classifier's half of the same rule, asserted from here so a reader of the refusal
+        ///     suite sees why the row above needs a hand-built diagnostic: the generator does not emit one.
+        /// </summary>
+        [Fact]
+        public void A_generic_element_type_never_produces_a_diagnostic_to_fix()
+        {
+            GeneratorAssert.DoesNotReport("""
+                                          using DwarfMapper;
+                                          using System.Collections.Generic;
+                                          namespace Demo;
+                                          public sealed class Src { public int Value { get; set; } }
+                                          public sealed class Box<T> { public T Value { get; set; } }
+                                          public sealed class Holder { public Box<string> Text { get; set; } }
+                                          public class C { public List<Src> Rows { get; set; } }
+                                          public class D { public List<Box<int>> Rows { get; set; } }
+                                          [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                          """, "DWARF103");
         }
 
         /// <summary>

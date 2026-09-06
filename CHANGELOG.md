@@ -124,13 +124,18 @@ so a version with no section here ships with no notes.
   diagnostic's property bag as `DocumentationCommentId`s rather than being read out of the message text, so
   rewording the message cannot silently stop the lightbulb appearing.
 
-  **It is not offered on a GENERIC transfer model**, and that refusal was measured rather than assumed.
-  `List<Src>` → `List<Box<int>>` reports `DWARF103` for `Box<int>` at 4 bytes, and the only thing with a
-  declaration to rewrite is `Box<T>` — so taking the fix would turn *every* instantiation into a value type,
-  including a `Box<string>` held elsewhere that nothing classified, no diagnostic named, and for which the
-  printed 4 bytes is false. That type would lose reference identity silently, which is the change this whole
-  feature exists to refuse. The diagnostic still fires — its size is right for the instantiation it names, and
-  applying the remedy by hand puts you where you can see which instantiations you are agreeing to.
+  **Neither the fix nor the diagnostic touches a GENERIC transfer model**, and that refusal was measured
+  rather than assumed. `List<Src>` → `List<Box<int>>` used to report `DWARF103` for `Box<int>` at 4 bytes,
+  and the only thing with a declaration to rewrite is `Box<T>` — so taking the advice turned *every*
+  instantiation into a value type, including a `Box<string>` held elsewhere that nothing classified, no
+  diagnostic named, and for which the printed 4 bytes is false. That type lost reference identity silently,
+  which is the change this whole feature exists to refuse, arriving through the remedy meant to deliver it.
+  `TransferModelShape` now refuses a generic type in any form — open, fully constructed, or nested inside one
+  — so the hint never appears, and the code fix declines the same shape from its own side. Narrowing rather
+  than leaving it to the fix is free here and correct on the merits: `DWARF103` has never been released, so
+  nothing depends on it, and a message saying "this could be a struct" about a type we would then refuse to
+  convert is advice known to be bad rather than a real case going quiet. Measured on the consumer corpus
+  before and after: **7 reports / 6 sites / 7 pairs, unchanged** — no report was lost.
 
 - **`DWARF101` (Info) — a transfer-model struct spends a quarter or more of its bytes on padding, and the
   message names the field order that packs it.** Reported for the element types of a mapped collection, where

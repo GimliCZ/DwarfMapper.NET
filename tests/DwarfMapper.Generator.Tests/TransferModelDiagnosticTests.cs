@@ -995,6 +995,49 @@ namespace DwarfMapper.Generator.Tests
             Assert.Empty(RunAcross(mapper, money, "Money.g.cs"));
         }
 
+        /// <summary>
+        ///     <b>A generic element type is not reported at all.</b> This fired until round 29 T2.3 fix round
+        ///     2: <c>List&lt;Src&gt; → List&lt;Box&lt;int&gt;&gt;</c> printed "Box&lt;int&gt; is 4 bytes,
+        ///     declare it a readonly record struct", and the only declaration that advice can be applied to is
+        ///     <c>Box&lt;T&gt;</c> — so taking it converts the <c>Box&lt;string&gt;</c> below too, a type
+        ///     nothing classified, no diagnostic named, and whose real size is 8. It would lose reference
+        ///     identity silently.
+        ///     <para>
+        ///         Narrowed rather than left to the code fix to decline, because the hint itself was the
+        ///         problem: a message that says "this could be a struct" about a type we would then refuse to
+        ///         convert is advice we know to be bad, and <c>DWARF103</c> has never shipped, so nothing
+        ///         depended on it. The control is the same mapping with a non-generic target, which reports.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void A_generic_element_type_is_never_reported()
+        {
+            Assert.Empty(Run("""
+                             using DwarfMapper;
+                             using System.Collections.Generic;
+                             namespace Demo;
+                             public sealed class Src { public int Value { get; set; } }
+                             public sealed class Box<T> { public T Value { get; set; } }
+                             public sealed class Holder { public Box<string> Text { get; set; } }
+                             public class C { public List<Src> Rows { get; set; } }
+                             public class D { public List<Box<int>> Rows { get; set; } }
+                             [DwarfMapper] public partial class M { public partial D Map(C c); }
+                             """));
+
+            // Control: the same mapping with a non-generic destination element still reports, so the silence
+            // above is the generic rule and not some unrelated refusal in the fixture.
+            Assert.Single(Run("""
+                              using DwarfMapper;
+                              using System.Collections.Generic;
+                              namespace Demo;
+                              public sealed class Src { public int Value { get; set; } }
+                              public sealed class BoxDto { public int Value { get; set; } }
+                              public class C { public List<Src> Rows { get; set; } }
+                              public class D { public List<BoxDto> Rows { get; set; } }
+                              [DwarfMapper] public partial class M { public partial D Map(C c); }
+                              """));
+        }
+
         // ─── The handles the code fix resolves through (T2.3 ruling 1) ───────────
 
         /// <summary>

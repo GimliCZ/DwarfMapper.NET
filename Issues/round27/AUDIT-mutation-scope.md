@@ -23,13 +23,13 @@ the doc pipeline — the places where a silent wrong answer is worst. But "Dwarf
 
 | project | files | in a leg | lines | mutated lines | share | line coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| `DwarfMapper.Generator` | 71 | 7 | 31,935 | 2,289 | **7.2 %** | 95.7 % |
+| `DwarfMapper.Generator` | 71 | 7 | 31,965 | 2,289 | **7.2 %** | 95.7 % |
 | `DwarfMapper` (runtime) | 42 | 6 | 3,437 | 944 | **27.5 %** | 73.9 % |
 | `DwarfMapper.DocTooling` | 11 | 5 | 1,110 | 657 | **59.2 %** | 96.3 % |
-| `DwarfMapper.CodeFixes` | 5 | 4 | 1,325 | 711 | **53.7 %** | 96.8 % |
+| `DwarfMapper.CodeFixes` | 5 | 4 | 1,336 | 711 | **53.2 %** | 96.8 % |
 | `DwarfMapper.Testing` | 7 | **0** | 2,054 | 0 | **0 %** | 87.1 % |
 | `Shared` | 1 | **0** | 51 | 0 | **0 %** | — |
-| **all** | **137** | **22** | **39,912** | **4,601** | **11.5 %** | |
+| **all** | **137** | **22** | **39,953** | **4,601** | **11.5 %** | |
 
 Re-measured 2026-08-27 at `0485ff7` by expanding each config's `mutate` globs against the files actually on
 disk. `DwarfMapper.CodeFixes` moved from 0 % to 100 % because the leg this audit recommended was built.
@@ -53,7 +53,7 @@ in full again 2026-09-06 (round 29, T2.3), which added the FIFTH code-fix provid
 diagnostic properties, 28 of them inside `BlittableProof.cs`'s glob); its share reads 7.2 % where it read
 7.3 %.
 
-**`DwarfMapper.CodeFixes` drops from 100 % to 53.7 %, and that is the honest number rather than a regression
+**`DwarfMapper.CodeFixes` drops from 100 % to 53.2 %, and that is the honest number rather than a regression
 nobody noticed.** T2.3 did add the new provider to `stryker-config.codefixes.json` and ran the leg
 (2026-09-06): **79.24 %** — 449 mutants created, 230 tested, 187 killed, 43 survived, 6 uncovered — which
 crashes that config's `break: 87`. Two facts from that run decided it was not a threshold to lower:

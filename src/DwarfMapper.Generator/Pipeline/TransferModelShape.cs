@@ -561,13 +561,43 @@ namespace DwarfMapper.Generator.Pipeline
                 return Verdict.No($"'{type.Name}' is abstract, and a struct cannot be a base type");
             }
 
-            // An OPEN generic has no size: its members' widths depend on the type argument. Refused here so the
-            // reason blames the declaration rather than blaming a type parameter for being unmeasurable.
-            foreach (var argument in type.TypeArguments)
-                if (argument.TypeKind == TypeKind.TypeParameter)
+            // GENERIC in any form — including a fully constructed one, and including a non-generic type
+            // nested inside a generic, which is why this walks the containing chain rather than reading
+            // TypeArguments alone.
+            //
+            // The OPEN case is the obvious one: no size, because the members' widths depend on the type
+            // argument. The CONSTRUCTED case was measured in round 29 T2.3 fix round 1 and is the more
+            // dangerous of the two. `List<Src> → List<Box<int>>` reported "Box<int> is 4 bytes, declare it a
+            // readonly record struct", and the only declaration a rewrite can change is `Box<T>` — so acting
+            // on that advice converts EVERY instantiation, including a `Box<string>` held elsewhere that
+            // nothing classified, no diagnostic named, and whose real size is 8. That type loses reference
+            // identity silently, which is the change this whole classifier exists to refuse. The code fix
+            // declines the same shape from the other side (it refuses a DocumentationCommentId carrying a
+            // backtick, which is this rule in the currency that assembly has); the two are pinned against
+            // each other by a test, because they cannot share code — DwarfMapper.CodeFixes does not
+            // reference this assembly.
+            //
+            // Narrowed rather than left to the fix alone because DWARF103 has never shipped
+            // (AnalyzerReleases.Unshipped.md), so nothing depends on it, and because a diagnostic saying
+            // "this could be a struct" about a type we would then refuse to convert is advice we know to be
+            // bad. Nothing real falls silent: the silenced report is one whose remedy is harmful.
+            for (var declaring = type; declaring is not null; declaring = declaring.ContainingType)
+            {
+                if (declaring.Arity == 0)
                 {
-                    return Verdict.No($"'{type.Name}' is generic; its size depends on the type argument");
+                    continue;
                 }
+
+                foreach (var argument in declaring.TypeArguments)
+                    if (argument.TypeKind == TypeKind.TypeParameter)
+                    {
+                        return Verdict.No($"'{type.Name}' is generic; its size depends on the type argument");
+                    }
+
+                return Verdict.No(
+                    $"'{type.Name}' is a constructed generic; the only declaration a rewrite could change is " +
+                    $"'{declaring.OriginalDefinition.Name}<>', which would change every other instantiation too");
+            }
 
             if (type.BaseType is { SpecialType: not SpecialType.System_Object } baseType)
             {
