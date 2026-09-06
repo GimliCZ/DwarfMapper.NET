@@ -669,11 +669,26 @@ namespace DwarfMapper.Generator.Pipeline
 
             var facts = TransferModelFacts(req.Compilation);
 
-            var verdict = TransferModelShape.Classify(target, req.Compilation, facts);
+            // The list is the models the target INLINES, transitively — the ones whose own struct size is
+            // already inside the number printed below. T2.3's code fix rewrites them with the root, in one
+            // solution change, which is what keeps that number true.
+            var inlined = new List<INamedTypeSymbol>();
+            var verdict = TransferModelShape.Classify(target, req.Compilation, facts, inlined);
             if (!verdict.IsShaped)
             {
                 return;
             }
+
+            // A nested model in a .g.cs takes the whole report down, and only this one is worth stating twice:
+            // the target's own .g.cs check above is about a REMEDY the consumer cannot apply, and this is about
+            // a SIZE that would be wrong if they applied it anyway. An inlined model the fix cannot rewrite
+            // stays a class, so the member stays a reference, so the bytes printed here describe a type nobody
+            // can produce. Silence is the only honest answer.
+            foreach (var model in inlined)
+                if (IsGeneratorAuthored(model))
+                {
+                    return;
+                }
 
             // The SOURCE is classified too, and only for the block-copy clause. It is asked last, after the
             // target's own verdict has already earned the report, so a pair that says nothing never pays for
@@ -709,9 +724,29 @@ namespace DwarfMapper.Generator.Pipeline
                     return;
                 }
 
+            // The handles the code fix resolves its targets through. A DocumentationCommentId rather than the
+            // display name already in the message, because ruling 1 of T2.3 is that a fix must never recover
+            // its target by PARSING the message: that wording was revised across four fix rounds in T2.2, and
+            // a fix coupled to it breaks with no compile error and no failing test — the lightbulb just stops
+            // appearing. The id round-trips through DocumentationCommentId.GetFirstSymbolForDeclarationId, so
+            // the fix rewrites the very symbol classified here.
+            //
+            // OriginalDefinition: a closed generic's id is its definition's id, and the definition is what has
+            // a declaration to rewrite.
+            var nestedIds = new List<string>();
+            foreach (var model in inlined)
+                if (model.OriginalDefinition.GetDocumentationCommentId() is { Length: > 0 } nestedId)
+                {
+                    nestedIds.Add(nestedId);
+                }
+
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionElementCouldBeAStruct,
                 req.Location,
-                message));
+                message,
+                TransferModelId: target.OriginalDefinition.GetDocumentationCommentId(),
+                NestedTransferModelIds: nestedIds.Count == 0
+                    ? null
+                    : string.Join("|", nestedIds)));
         }
 
         /// <summary>

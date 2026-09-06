@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace DwarfMapper.Generator.Tests.CodeFixes
 {
@@ -34,6 +36,19 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
                                                  public partial class M { public partial B Map(A a); }
                                                  """;
 
+        /// <summary>A reported element type that inlines one transfer model of its own.</summary>
+        private const string TransferModelWithNested = """
+                                                       using DwarfMapper;
+                                                       using System.Collections.Generic;
+                                                       namespace Demo;
+                                                       public sealed class Money { public long Units { get; set; } }
+                                                       public sealed class Order { public long Id { get; set; } public Money Total { get; set; } }
+                                                       public sealed class OrderDto { public long Id { get; set; } public Money Total { get; set; } }
+                                                       public class C { public List<Order> Rows { get; set; } }
+                                                       public class D { public List<OrderDto> Rows { get; set; } }
+                                                       [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                                       """;
+
         [Fact]
         public void DWARF001_carries_the_member_name_as_a_property()
         {
@@ -53,6 +68,33 @@ namespace DwarfMapper.Generator.Tests.CodeFixes
             Assert.True(d.Properties.TryGetValue("Member", out var member),
                 "DWARF072 carries no 'Member' property — ResolveExplicitOnlyMemberCodeFixProvider would stop " + "offering its fix.");
             Assert.Equal("X", member);
+        }
+
+        /// <summary>
+        ///     <c>DWARF103</c>'s handles must ROUND-TRIP, which is the whole reason they are
+        ///     <c>DocumentationCommentId</c>s rather than the display names the message already prints.
+        ///     <c>ConvertToRecordStructCodeFixProvider</c> rewrites a consumer's type declaration; resolving the
+        ///     target by name would let the rewrite land on a different type of the same name, and resolving it
+        ///     by parsing the message would let a rewording break the fix with nothing failing.
+        /// </summary>
+        [Fact]
+        public void DWARF103s_handles_resolve_back_to_the_types_they_name()
+        {
+            var compilation = GeneratorTestHarness.BuildCompilation("DwarfMapperTestAsm", TransferModelWithNested);
+            CSharpGeneratorDriver.Create(new DwarfGenerator())
+                .RunGeneratorsAndUpdateCompilation(compilation, out _, out var diagnostics);
+
+            var d = Assert.Single(diagnostics.Where(x => x.Id == "DWARF103"));
+
+            var target = DocumentationCommentId.GetFirstSymbolForDeclarationId(
+                d.Properties["TransferModelId"]!,
+                compilation);
+            Assert.Equal("OrderDto", Assert.IsAssignableFrom<INamedTypeSymbol>(target).Name);
+
+            var nested = DocumentationCommentId.GetFirstSymbolForDeclarationId(
+                d.Properties["NestedTransferModelIds"]!,
+                compilation);
+            Assert.Equal("Money", Assert.IsAssignableFrom<INamedTypeSymbol>(nested).Name);
         }
 
         [Fact]

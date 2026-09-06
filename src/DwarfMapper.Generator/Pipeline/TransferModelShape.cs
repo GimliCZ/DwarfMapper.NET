@@ -344,7 +344,50 @@ namespace DwarfMapper.Generator.Pipeline
         /// </summary>
         public static Verdict Classify(INamedTypeSymbol type, Compilation compilation, CompilationFacts facts)
         {
-            return Classify(type, compilation, facts, new List<INamedTypeSymbol>(), out _);
+            return Classify(type, compilation, facts, new List<INamedTypeSymbol>(), null, out _);
+        }
+
+        /// <summary>
+        ///     <see cref="Classify(INamedTypeSymbol, Compilation, CompilationFacts)" />, and also the transfer
+        ///     models this one INLINES — transitively, in field order, deduplicated, and NOT including
+        ///     <paramref name="type" /> itself.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         <b>This list is what makes the reported SIZE true.</b> A nested shaped model is costed at
+        ///         its own struct size rather than at pointer width (see <c>TryMeasureMember</c>), so the number
+        ///         <c>DWARF103</c> prints is the size the consumer gets ONLY if these types become structs too.
+        ///         Converting the root alone would leave a reference per nested member and retroactively
+        ///         falsify a number already shipped — which is why <c>ConvertToRecordStructCodeFixProvider</c>
+        ///         rewrites the whole list in one solution change, and why the list is collected at the exact
+        ///         line that decides to inline rather than by a second walk free to disagree with it.
+        ///     </para>
+        ///     <para>
+        ///         <b>A collection's ELEMENT type is deliberately not here.</b> <c>List&lt;Inner&gt;</c> and
+        ///         <c>Inner[]</c> stay reference fields whatever <c>Inner</c> becomes, so <c>Inner</c> is costed
+        ///         at pointer width, the printed size is true without touching it, and rewriting it would widen
+        ///         the blast radius for nothing. The element is still CLASSIFIED — an element that cannot be a
+        ///         struct refuses the owner — it is just not something this rewrite has to carry.
+        ///     </para>
+        ///     <para>
+        ///         Empty on a refusal, rather than left holding whatever the walk reached before it gave up: a
+        ///         partial answer to "what must be rewritten" is the wrong shape of fact for a caller that
+        ///         rewrites source.
+        ///     </para>
+        /// </remarks>
+        public static Verdict Classify(
+            INamedTypeSymbol type,
+            Compilation compilation,
+            CompilationFacts facts,
+            List<INamedTypeSymbol> inlinedModels)
+        {
+            var verdict = Classify(type, compilation, facts, new List<INamedTypeSymbol>(), inlinedModels, out _);
+            if (!verdict.IsShaped)
+            {
+                inlinedModels.Clear();
+            }
+
+            return verdict;
         }
 
         private static Verdict Classify(
@@ -352,6 +395,7 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             CompilationFacts facts,
             List<INamedTypeSymbol> path,
+            List<INamedTypeSymbol>? inlinedModels,
             out int alignment)
         {
             alignment = 1;
@@ -419,6 +463,7 @@ namespace DwarfMapper.Generator.Pipeline
                             compilation,
                             facts,
                             path,
+                            inlinedModels,
                             type.Name,
                             name,
                             out var measured,
@@ -862,6 +907,7 @@ namespace DwarfMapper.Generator.Pipeline
             Compilation compilation,
             CompilationFacts facts,
             List<INamedTypeSymbol> path,
+            List<INamedTypeSymbol>? inlinedModels,
             string owner,
             string memberName,
             out (int Size, int Align) measured,
@@ -899,11 +945,17 @@ namespace DwarfMapper.Generator.Pipeline
                     return true;
                 }
 
+                // NULL collector down this arm, and that is the arm's whole difference from the inline one.
+                // The element is checked but costed as a REFERENCE, so the printed size is true whether or not
+                // the element ever becomes a struct — collecting it here would hand the code fix a type it
+                // does not have to rewrite, and rewriting a consumer's class for nothing is exactly the cost
+                // this feature is careful about.
                 if (!TryMeasureMember(
                         element,
                         compilation,
                         facts,
                         path,
+                        null,
                         owner,
                         memberName,
                         out _,
@@ -926,7 +978,7 @@ namespace DwarfMapper.Generator.Pipeline
                 // the OUTER type past 64 too, where the outer's own threshold reports it honestly. The rule
                 // that an unshaped member refuses its owner is about a member that cannot become a struct at
                 // all: an entity, a type with behaviour, a class with a base.
-                var nested = Classify(reference, compilation, facts, path, out var nestedAlignment);
+                var nested = Classify(reference, compilation, facts, path, inlinedModels, out var nestedAlignment);
                 if (!nested.IsShaped)
                 {
                     reason =
@@ -935,6 +987,17 @@ namespace DwarfMapper.Generator.Pipeline
                 }
 
                 measured = (nested.Size, nestedAlignment);
+
+                // Collected HERE, on the line that decides to inline, because this line is what makes the
+                // nested type's own size part of the owner's. Anything computed elsewhere would be a second
+                // reading of the same rule, free to disagree with this one silently — and the direction it
+                // would disagree in is a code fix converting a root whose printed size then describes nothing.
+                // The recursive call above has already added the nested type's OWN inline models, so the list
+                // comes back transitive; adding the nested type after it keeps the deepest-first order stable.
+                if (inlinedModels is not null && !Contains(inlinedModels, reference))
+                {
+                    inlinedModels.Add(reference);
+                }
 
                 // An OPTIONAL nested model is Nullable<T> around the inline struct — a flag padded up to the
                 // inner alignment, then the value. Sizing it as the bare inner would UNDER-count, and an

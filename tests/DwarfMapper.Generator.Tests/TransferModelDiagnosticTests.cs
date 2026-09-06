@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 using System.Globalization;
+using DwarfMapper.Generator.Pipeline;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -40,6 +41,24 @@ namespace DwarfMapper.Generator.Tests
                                           public class D { public List<OrderDto> Rows { get; set; } }
                                           [DwarfMapper] public partial class M { public partial D Map(C c); }
                                           """;
+
+        /// <summary>
+        ///     An otherwise ordinary DTO holding an ORM entity. The T2.3 plan wanted a code-fix row for
+        ///     "nested entity left alone, outer converted"; the engine cannot reach that state, because an
+        ///     unshaped nested type refuses its OWNER. Used by both halves of the pair that replaces it.
+        /// </summary>
+        private const string EntityNested = """
+                                            using DwarfMapper;
+                                            using System.Collections.Generic;
+                                            namespace Demo;
+                                            public sealed class TableAttribute : System.Attribute { }
+                                            [Table] public sealed class Customer { public long Id { get; set; } }
+                                            public sealed class Order { public long Id { get; set; } public Customer Customer { get; set; } }
+                                            public sealed class OrderDto { public long Id { get; set; } public Customer Customer { get; set; } }
+                                            public class C { public List<Order> Rows { get; set; } }
+                                            public class D { public List<OrderDto> Rows { get; set; } }
+                                            [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                            """;
 
         /// <summary>
         ///     The message the fixtures around it produce, for a 16-byte sealed target whose SOURCE is itself
@@ -941,6 +960,139 @@ namespace DwarfMapper.Generator.Tests
 
             Assert.Single(RunAcross(mapper, dto, "OrderDto.cs"));
             Assert.Empty(RunAcross(mapper, dto, "OrderDto.g.cs"));
+        }
+
+        /// <summary>
+        ///     <b>And the same refusal for a NESTED model in a <c>.g.cs</c></b>, which is a different fact from
+        ///     the row above and used to be unstated. The target here is the consumer's own sealed class and is
+        ///     theirs to rewrite; the type it HOLDS is not. The classifier costs that held type inline, at its
+        ///     own struct size, so the 24 bytes this message would print describe a type nobody can produce —
+        ///     the fix cannot rewrite a <c>.g.cs</c>, the member stays a reference, and the real struct is
+        ///     16 bytes. A size that is wrong is worse than a hint that never appeared.
+        ///     <para>
+        ///         The control half is the same file under a hand-written path, which reports.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void A_nested_model_another_generator_emitted_takes_the_whole_report_down()
+        {
+            const string mapper = """
+                                  using DwarfMapper;
+                                  using System.Collections.Generic;
+                                  namespace Demo;
+                                  public sealed class Order { public long Id { get; set; } public Money Total { get; set; } }
+                                  public sealed class OrderDto { public long Id { get; set; } public Money Total { get; set; } }
+                                  public class C { public List<Order> Rows { get; set; } }
+                                  public class D { public List<OrderDto> Rows { get; set; } }
+                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                  """;
+            const string money = """
+                                 namespace Demo;
+                                 public sealed class Money { public long Units { get; set; } }
+                                 """;
+
+            Assert.Single(RunAcross(mapper, money, "Money.cs"));
+            Assert.Empty(RunAcross(mapper, money, "Money.g.cs"));
+        }
+
+        // ─── The handles the code fix resolves through (T2.3 ruling 1) ───────────
+
+        /// <summary>
+        ///     <c>DWARF103</c> carries the type to rewrite as a <c>DocumentationCommentId</c>, and the models
+        ///     that type inlines beside it. Ruling 1 of T2.3: the code fix must not recover its target by
+        ///     reading the message. That wording was revised across four fix rounds in T2.2, and a fix coupled
+        ///     to it breaks with no compile error and no failing test — the lightbulb simply stops appearing.
+        ///     <para>
+        ///         The nested list is not a convenience either. The classifier costs a nested shaped model at
+        ///         its OWN struct size rather than at pointer width, so the byte count this message prints is
+        ///         true only if those types are converted alongside the root.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void The_diagnostic_carries_the_type_to_rewrite_and_the_models_it_inlines()
+        {
+            var one = Assert.Single(Run("""
+                                        using DwarfMapper;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public sealed class Money { public long Units { get; set; } }
+                                        public sealed class Order { public long Id { get; set; } public Money Total { get; set; } }
+                                        public sealed class OrderDto { public long Id { get; set; } public Money Total { get; set; } }
+                                        public class C { public List<Order> Rows { get; set; } }
+                                        public class D { public List<OrderDto> Rows { get; set; } }
+                                        [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                        """));
+
+            Assert.Equal("T:Demo.OrderDto", one.Properties["TransferModelId"]);
+            Assert.Equal("T:Demo.Money", one.Properties["NestedTransferModelIds"]);
+        }
+
+        /// <summary>
+        ///     A collection's ELEMENT type is not on that list, and this is the row that pins the difference.
+        ///     <c>List&lt;Money&gt;</c> stays a reference field whatever <c>Money</c> becomes, so the printed
+        ///     size is true without touching it — and rewriting a consumer's class for nothing is exactly the
+        ///     cost this feature is careful about. The element is still CLASSIFIED: one that could not be a
+        ///     struct refuses the owner outright.
+        /// </summary>
+        [Fact]
+        public void A_collection_element_inside_the_target_is_not_something_the_fix_must_rewrite()
+        {
+            var one = Assert.Single(Run("""
+                                        using DwarfMapper;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public sealed class Money { public long Units { get; set; } }
+                                        public sealed class Order { public long Id { get; set; } public List<Money> Lines { get; set; } }
+                                        public sealed class OrderDto { public long Id { get; set; } public List<Money> Lines { get; set; } }
+                                        public class C { public List<Order> Rows { get; set; } }
+                                        public class D { public List<OrderDto> Rows { get; set; } }
+                                        [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                        """));
+
+            Assert.Equal("T:Demo.OrderDto", one.Properties["TransferModelId"]);
+            Assert.False(one.Properties.ContainsKey("NestedTransferModelIds"));
+        }
+
+        // ─── The state the engine cannot reach (T2.3 ruling 2) ───────────────────
+
+        /// <summary>
+        ///     <b>An outer type holding an EF-entity-shaped member is never reported at all.</b> The T2.3 plan
+        ///     asked for a code-fix row where such a nested type is "left alone and reported, outer converted";
+        ///     that state does not exist. A reference-typed member is classified recursively, and an unshaped
+        ///     nested type refuses the OWNER outright — so there is no <c>DWARF103</c> on the outer type and
+        ///     nothing for a fix to be offered on. These two rows pin the behaviour that is real.
+        /// </summary>
+        [Fact]
+        public void An_outer_type_holding_an_entity_shaped_member_is_not_reported()
+        {
+            Assert.Empty(Run(EntityNested));
+        }
+
+        /// <summary>
+        ///     And the refusal that replaces it is the BETTER diagnostic — it names the member that actually
+        ///     blocks the conversion and quotes the nested type's own reason — so it is locked here rather than
+        ///     left to be observed. Asked of the classifier directly, because the mapping site's answer to this
+        ///     shape is silence and silence cannot carry a reason.
+        /// </summary>
+        [Fact]
+        public void The_owners_refusal_names_the_nested_type_and_quotes_its_reason()
+        {
+            var compilation = GeneratorTestHarness.BuildCompilation("DwarfMapperTestAsm",
+                new[]
+                {
+                    CSharpSyntaxTree.ParseText(EntityNested, path: "Mapper.cs")
+                });
+
+            var target = compilation.GetTypeByMetadataName("Demo.OrderDto");
+            Assert.NotNull(target);
+
+            var verdict = TransferModelShape.Classify(target!, compilation);
+
+            Assert.False(verdict.IsShaped);
+            Assert.Equal(
+                "member 'OrderDto.Customer' of type 'Customer' is not transfer-model shaped: " +
+                "'Customer' carries '[TableAttribute]', so it is an ORM entity",
+                verdict.Reason);
         }
 
         /// <summary>
