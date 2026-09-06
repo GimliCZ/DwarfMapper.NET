@@ -115,6 +115,26 @@ namespace DwarfMapper.Generator.Tests.SelfValidation
                 "matching arms, not that the table stopped growing.");
         }
 
+        // The soundness precondition of CodeLinesOnly, enforced rather than assumed. That stripper is
+        // line-based: it drops lines whose trimmed text starts with `//`, which is exactly right for the
+        // oracle as written and wrong the moment a block comment appears. A `/* ... Half ... */` would
+        // survive stripping, and its prose would then discharge the assertion requirement for a `Half` arm
+        // that nobody ever asserted — the precise laundering CodeLinesOnly exists to prevent, re-entering
+        // through the one comment form it cannot see. Rather than build a lexer for a file that has never
+        // needed one, pin the assumption: if the oracle ever grows a block comment, this fails and tells
+        // whoever wrote it which of the two fixes to make.
+        [Fact]
+        public void Oracle_contains_no_block_comment_that_the_line_based_stripper_would_miss()
+        {
+            var oracle = File.ReadAllText(BclLayoutFactsPath);
+
+            Assert.False(oracle.Contains("/*", StringComparison.Ordinal),
+                "BclLayoutFactsTests.cs now contains a block comment, which CodeLinesOnly does not strip. " +
+                "Its text can therefore satisfy Every_FixedLayoutBclSize_arm_has_a_runtime_assertion for a " +
+                "type that has no assertion. Either rewrite that comment as `//` lines, or teach " +
+                "CodeLinesOnly to strip block comments — do not delete this pin.");
+        }
+
         /// <summary>
         ///     Isolates the parsing and matching predicates the way AssemblyScanTests' Scan6a/Scan9 controls
         ///     do, so the scan above can be shown to REJECT things and not just to pass.
