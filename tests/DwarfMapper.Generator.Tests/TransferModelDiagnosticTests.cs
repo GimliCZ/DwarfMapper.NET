@@ -430,6 +430,137 @@ namespace DwarfMapper.Generator.Tests
             Assert.DoesNotContain("block copy", Message(one), StringComparison.Ordinal);
         }
 
+        /// <summary>
+        ///     ASYMMETRIC, target dirty: the target holds a <c>string</c> and the source holds nothing but
+        ///     primitives, so only the TARGET conjunct of the block-copy gate can suppress the clause. Round 29
+        ///     T2.2 fix round 2, important 1 — both existing suppression fixtures carry a reference on BOTH
+        ///     sides, so either conjunct alone kept them green and deleting the target one would have let
+        ///     critical 1 back in with every assertion still passing.
+        ///     <para>
+        ///         <c>[MapIgnore]</c> is what makes the shape reachable: a target member with no source of its
+        ///         own is a completeness refusal, and the point here is a target that is dirty for a reason the
+        ///         source cannot be blamed for.
+        ///     </para>
+        /// </summary>
+        [Fact]
+        public void A_target_holding_a_reference_is_never_told_it_could_blit_though_the_source_is_clean()
+        {
+            var one = Assert.Single(Run("""
+                                        using DwarfMapper;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public sealed class Order { public long Id { get; set; } public int Quantity { get; set; } }
+                                        public sealed class OrderDto
+                                        {
+                                            public long Id { get; set; }
+                                            public int Quantity { get; set; }
+                                            public string Note { get; set; }
+                                        }
+                                        public class C { public List<Order> Rows { get; set; } }
+                                        public class D { public List<OrderDto> Rows { get; set; } }
+                                        [DwarfMapper]
+                                        public partial class M
+                                        {
+                                            [MapIgnore(nameof(OrderDto.Note))]
+                                            public partial D Map(C c);
+                                        }
+                                        """));
+
+            // The target's own size is a bound; the source's is exact. Only the target conjunct stands between
+            // this message and a block copy the pair can never take.
+            Assert.Contains("it is at most 24 bytes", Message(one), StringComparison.Ordinal);
+            Assert.DoesNotContain("block copy", Message(one), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     ASYMMETRIC, source dirty: the mirror of the fixture above, and it pins the other conjunct. The
+        ///     target is all primitives — its size is exact — while the source holds a <c>string</c>, so a
+        ///     block copy is still impossible and only the SOURCE conjunct says so.
+        /// </summary>
+        [Fact]
+        public void A_source_holding_a_reference_is_never_told_it_could_blit_though_the_target_is_clean()
+        {
+            var one = Assert.Single(Run("""
+                                        using DwarfMapper;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public sealed class Order
+                                        {
+                                            public long Id { get; set; }
+                                            public int Quantity { get; set; }
+                                            public string Note { get; set; }
+                                        }
+                                        public sealed class OrderDto { public long Id { get; set; } public int Quantity { get; set; } }
+                                        public class C { public List<Order> Rows { get; set; } }
+                                        public class D { public List<OrderDto> Rows { get; set; } }
+                                        [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                        """));
+
+            Assert.Contains("it is 16 bytes", Message(one), StringComparison.Ordinal);
+            Assert.DoesNotContain("block copy", Message(one), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A source in a <c>.g.cs</c> is never named by the block-copy clause. Round 29 T2.2 fix round 2,
+        ///     minor 2: the target has been refused for this since T2.2 landed — a consumer cannot rewrite a
+        ///     declaration they did not write — and the clause was inviting them to rewrite a SOURCE under the
+        ///     same disability. The diagnostic itself still fires: the target is theirs to change, and that is
+        ///     the whole allocation win.
+        /// </summary>
+        [Fact]
+        public void A_source_another_generator_emitted_is_never_named_by_the_block_copy_clause()
+        {
+            const string mapper = """
+                                  using DwarfMapper;
+                                  using System.Collections.Generic;
+                                  namespace Demo;
+                                  public sealed class OrderDto { public long Id { get; set; } public int Quantity { get; set; } }
+                                  public class C { public List<Order> Rows { get; set; } }
+                                  public class D { public List<OrderDto> Rows { get; set; } }
+                                  [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                  """;
+            const string source = """
+                                  namespace Demo;
+                                  public sealed class Order { public long Id { get; set; } public int Quantity { get; set; } }
+                                  """;
+
+            // Control: the identical source in a hand-written file earns the clause.
+            Assert.Contains("block copy",
+                Message(Assert.Single(RunAcross(mapper, source, "Order.cs"))),
+                StringComparison.Ordinal);
+
+            var generated = Assert.Single(RunAcross(mapper, source, "Order.g.cs"));
+            Assert.DoesNotContain("block copy", Message(generated), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        ///     A public unsealed SOURCE earns the same assembly-scope caveat the target does, and the two are
+        ///     stated in ONE sentence rather than two. Round 29 T2.2 fix round 2, minor 2: the clause called the
+        ///     source "transfer-model shaped too" on evidence the target's own equivalent would have qualified
+        ///     — the derived-type sweep walks this assembly, and a consuming project can subclass either type.
+        /// </summary>
+        [Fact]
+        public void Both_sides_share_one_derivation_caveat_when_both_are_public_and_unsealed()
+        {
+            var one = Assert.Single(Run("""
+                                        using DwarfMapper;
+                                        using System.Collections.Generic;
+                                        namespace Demo;
+                                        public class Order { public long Id { get; set; } public int Quantity { get; set; } }
+                                        public class OrderDto { public long Id { get; set; } public int Quantity { get; set; } }
+                                        public class C { public List<Order> Rows { get; set; } }
+                                        public class D { public List<OrderDto> Rows { get; set; } }
+                                        [DwarfMapper] public partial class M { public partial D Map(C c); }
+                                        """));
+
+            Assert.EndsWith(
+                " The check that nothing derives from 'Demo.OrderDto' or 'Demo.Order' covered this assembly " +
+                "only, since both are public and not sealed — a project referencing this one can still derive " +
+                "from them.",
+                Message(one),
+                StringComparison.Ordinal);
+        }
+
         // ─── The silence cases ───────────────────────────────────────────────────
 
         /// <summary>The remedy applied: a target element that is ALREADY a struct has nothing to say.</summary>

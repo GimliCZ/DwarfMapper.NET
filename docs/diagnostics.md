@@ -1985,10 +1985,12 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
   ("at most N bytes") whenever a member is a reference — a reference is 8 bytes on x64 and 4 on x86, so the
   number can only be an over-estimate. It also counts any transfer model the type *holds* as a struct too,
   because that is the rewrite being suggested.
-- **Over 32 bytes it asks you to pass it by `in`.** Past 64 it asks more insistently: a value that large is
-  copied at every call, and `in` is what stops that. When the size is a bound, so is the comparison — 40
-  bytes of references is 20 on a 32-bit runtime, under the threshold — so the clause says so and advises
-  `in` either way, which costs nothing on the smaller reading.
+- **Over 32 bytes it asks you to pass it by `in`**, in one wording for every size above that line — a 72-byte
+  type gets the same sentence a 40-byte one does. (Internally 64 bytes is a second band, but it changes only
+  whether the classifier calls the type "too large to copy by value", not what you are told to do about it: a
+  value that large is copied at every call, and `in` is what stops that either way.) When the size is a bound,
+  so is the comparison — 40 bytes of references is 20 on a 32-bit runtime, under the threshold — so the clause
+  says so and advises `in` regardless, which costs nothing on the smaller reading.
 - **The block copy is mentioned only where it is possible AND earned.** Two conditions, both required: the
   *source* element must be transfer-model shaped in its own right (otherwise the sentence would be advising
   that an entity, or a type with behaviour, become a struct — on no evidence, since only the target is
@@ -2000,7 +2002,8 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
 - **"The derived-type check covered this assembly only."** When the type is `public` and not `sealed`, the
   sweep that looked for subclasses saw *this* compilation. A project that references yours can still derive
   from it, and a struct cannot be a base type — so that is yours to confirm, and the message says so rather
-  than implying it was settled.
+  than implying it was settled. It covers **whichever of the two types earned it**, in one sentence: if the
+  message named your source element as well, and both are public and unsealed, both are named here.
 
 **When it stays quiet**, which is nearly always:
 
@@ -2026,7 +2029,9 @@ at all — and why the diagnostic is informational. Ignoring it is a legitimate 
   is about collections, which is why this is reported at the mapping site and not on the type — a type-level
   rule would fire on every DTO in your solution.
 - **A DTO another generator emitted.** You cannot reorder or rewrite a declaration inside a `.g.cs`, and you
-  cannot suppress a diagnostic raised in one either.
+  cannot suppress a diagnostic raised in one either. The same question is asked of the *source* element, but
+  there it costs only the block-copy sentence — the target is still yours to change, and that is where the
+  allocation is.
 - **Once per element pair per mapper**, however many members map that pair.
 ---
 ## dwarf106

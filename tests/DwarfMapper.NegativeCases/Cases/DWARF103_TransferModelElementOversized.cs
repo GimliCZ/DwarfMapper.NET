@@ -12,12 +12,14 @@
 //       need it most. The site reads `Kind == TooLarge || SuggestIn`, and this file is what fails if anyone
 //       simplifies that back to the flag.
 //
-//       THE BLOCK-COPY CLAUSE IS ABSENT HERE, deliberately, and that absence is asserted by the EXACT set
-//       plus the messages below rather than merely hoped for: `OversizedSource` holds a string, so it is not
-//       transfer-model shaped without a reference member, and BlittableProof requires BOTH element types to
-//       be unmanaged. The pair can never blit whatever the consumer declares, and the message that hedges
-//       its byte count for that same reason must not then assert the consequence as fact. Its counterpart
-//       DWARF103_TransferModelElement.cs pins the clause where it IS earned.
+//       THE BLOCK-COPY CLAUSE IS ABSENT HERE, deliberately: `OversizedSource` holds a string, and
+//       BlittableProof requires BOTH element types to be unmanaged, so the pair can never blit whatever the
+//       consumer declares. That absence is NOT asserted by this file, and the correction matters more than
+//       the claim did (T2.2 fix round 2): EXPECT-MESSAGE is a SUBSTRING match — NegativeCaseTests asks
+//       `rendered.Exists(m => m.Contains(substring))` — so a row here can pin what a message says and never
+//       what it does not. The absence is pinned where it can be, by the DoesNotContain assertions in
+//       TransferModelDiagnosticTests, including two asymmetric fixtures that hold each half of the gate
+//       independently. What this file pins is the `in` wording, which had no pin outside the unit suite.
 // EXPECT: DWARF103
 // EXPECT-MESSAGE DWARF103: 'Demo.OversizedSource' → 'Demo.OversizedDto' allocates one 'Demo.OversizedDto' per element
 // EXPECT-MESSAGE DWARF103: it is 72 bytes, and the collection becomes one allocation instead of one per element

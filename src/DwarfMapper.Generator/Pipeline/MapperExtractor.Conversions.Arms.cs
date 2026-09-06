@@ -610,7 +610,9 @@ namespace DwarfMapper.Generator.Pipeline
         ///         is the silent semantic change this project refuses. Preserve and SetNull are refused because
         ///         reference identity is the point of those modes and a value type has none. And a DTO another
         ///         generator emitted is refused for <see cref="ReportPaddedElementStruct" />'s reason: the
-        ///         consumer cannot rewrite a declaration they did not write.
+        ///         consumer cannot rewrite a declaration they did not write — asked of the SOURCE too, though
+        ///         there it costs only the block-copy clause, since the target is still theirs to change and
+        ///         that is where the allocation goes.
         ///     </para>
         ///     <para>
         ///         <b>Once per element PAIR</b>, through the same message-text dedupe as <c>DWARF101</c> — the
@@ -660,13 +662,14 @@ namespace DwarfMapper.Generator.Pipeline
                 return;
             }
 
-            foreach (var declaration in target.DeclaringSyntaxReferences)
-                if (GeneratedSourceExtensions.IsGeneratorAuthored(declaration.SyntaxTree))
-                {
-                    return;
-                }
+            if (IsGeneratorAuthored(target))
+            {
+                return;
+            }
 
-            var verdict = TransferModelShape.Classify(target, req.Compilation, TransferModelFacts(req.Compilation));
+            var facts = TransferModelFacts(req.Compilation);
+
+            var verdict = TransferModelShape.Classify(target, req.Compilation, facts);
             if (!verdict.IsShaped)
             {
                 return;
@@ -677,11 +680,19 @@ namespace DwarfMapper.Generator.Pipeline
             // it — and it is asked at all because the clause advises converting the source, which no other
             // rule in this method has checked. An unshaped source still reports; it just hears nothing about
             // its own type. See TransferModelElementMessage's remarks.
-            var sourceVerdict = srcElem is INamedTypeSymbol namedSource
-                ? TransferModelShape.Classify(namedSource, req.Compilation, TransferModelFacts(req.Compilation))
-                : TransferModelShape.Verdict.No("the source element is not a named type");
+            //
+            // A source in a .g.cs is refused here rather than by the classifier, and only for the CLAUSE: the
+            // consumer cannot rewrite a declaration they did not write, which is the same question
+            // ReportPaddedElementStruct asks and the same one asked of the target above. The diagnostic still
+            // fires — the target is theirs to change, and that is where the allocation goes (fix round 2).
+            // A source from a referenced assembly needs no check here: the classifier refuses a symbol with no
+            // DeclaringSyntaxReferences outright, so it is never IsShaped.
+            var source = (INamedTypeSymbol)srcElem;
+            var sourceVerdict = IsGeneratorAuthored(source)
+                ? TransferModelShape.Verdict.No($"'{source.Name}' is declared in generated source")
+                : TransferModelShape.Classify(source, req.Compilation, facts);
 
-            var message = TransferModelElementMessage(srcElem, target, verdict, sourceVerdict);
+            var message = TransferModelElementMessage(source, target, verdict, sourceVerdict);
 
             foreach (var reported in diagnostics)
                 if (ReferenceEquals(reported.Descriptor, DiagnosticDescriptors.CollectionElementCouldBeAStruct) &&
@@ -693,6 +704,22 @@ namespace DwarfMapper.Generator.Pipeline
             diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.CollectionElementCouldBeAStruct,
                 req.Location,
                 message));
+        }
+
+        /// <summary>
+        ///     True when <paramref name="type" /> is declared in a file another generator emitted. Asked of BOTH
+        ///     element types, because both are named by a message that asks for a declaration to be rewritten —
+        ///     and a <c>.g.cs</c> is neither the consumer's to edit nor theirs to suppress a diagnostic in.
+        /// </summary>
+        private static bool IsGeneratorAuthored(INamedTypeSymbol type)
+        {
+            foreach (var declaration in type.DeclaringSyntaxReferences)
+                if (GeneratedSourceExtensions.IsGeneratorAuthored(declaration.SyntaxTree))
+                {
+                    return true;
+                }
+
+            return false;
         }
 
         /// <summary>
@@ -825,7 +852,11 @@ namespace DwarfMapper.Generator.Pipeline
             // blit, whatever else is true of it. The flag propagates out of a nested model (TryMeasureMember
             // hands nested.SizeIsUpperBound straight back), so it covers the whole inlined graph and not just
             // the top level.
-            if (sourceVerdict.IsShaped && !verdict.SizeIsUpperBound && !sourceVerdict.SizeIsUpperBound)
+            var namesTheSource = sourceVerdict.IsShaped &&
+                                 !verdict.SizeIsUpperBound &&
+                                 !sourceVerdict.SizeIsUpperBound;
+
+            if (namesTheSource)
             {
                 message += $" '{source}' is transfer-model shaped too, and neither type holds a reference: as " +
                            "structs with identical layout and matching field names the pair could take the " +
@@ -842,11 +873,24 @@ namespace DwarfMapper.Generator.Pipeline
                       "it by 'in'.";
             }
 
-            if (verdict.DerivationCheckedWithinAssemblyOnly)
+            // ONE caveat covering whichever of the two types earned it. The source earns it on exactly the
+            // evidence the target does — the sweep walked this assembly, and a consuming project can subclass
+            // either — and only when the message named it in the first place; adding a second sentence instead
+            // would say the same thing twice about a pair that is usually public on both sides (fix round 2).
+            var caveated = verdict.DerivationCheckedWithinAssemblyOnly
+                ? namesTheSource && sourceVerdict.DerivationCheckedWithinAssemblyOnly
+                    ? $"'{target}' or '{source}'"
+                    : $"'{target}'"
+                : namesTheSource && sourceVerdict.DerivationCheckedWithinAssemblyOnly
+                    ? $"'{source}'"
+                    : null;
+
+            if (caveated is not null)
             {
-                message += $" The check that nothing derives from '{target}' covered this assembly only, since " +
-                           $"'{target}' is public and not sealed — a project referencing this one can still " +
-                           "derive from it.";
+                var both = caveated.Contains(" or ");
+                message += $" The check that nothing derives from {caveated} covered this assembly only, since " +
+                           (both ? "both are" : $"{caveated} is") + " public and not sealed — a project " +
+                           "referencing this one can still derive from " + (both ? "them." : "it.");
             }
 
             return message;

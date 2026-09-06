@@ -73,8 +73,10 @@ so a version with no section here ships with no notes.
   without this the message advised that an ORM-tracked entity become a struct — and requires neither type to
   hold a reference, since `CanReinterpret` needs both sides unmanaged and a DTO with a `string` can never
   blit however it is declared. Even then it says "could", naming the layout and field-name identity the
-  proof still requires. An unshaped source is still reported: collapsing N object headers into one array is
-  the measured win and does not depend on the source.
+  proof still requires, and it holds the source to the target's own standards: a source declared in a `.g.cs`
+  is never named (you cannot rewrite it), and a `public` unsealed source is carried into the same
+  assembly-scope caveat the target gets, in one sentence covering both. An unshaped source is still reported:
+  collapsing N object headers into one array is the measured win and does not depend on the source.
 
   **The size is honest about what it is.** It is the WOULD-BE struct's size, counting any transfer model the
   type holds as a struct too (that is the rewrite being advised), and it is printed as a bound — "at most N
